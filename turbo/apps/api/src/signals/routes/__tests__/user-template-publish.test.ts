@@ -46,9 +46,11 @@ function templateClient() {
  *
  * `presentation-reverse-template` produces the visual language as prose;
  * `docx-reverse-template` produces `reference.docx`, which is what pandoc
- * consumes, and writes no `design-system.md` at all. A fixture that gave both
- * kinds the same files would agree with the endpoint and disagree with the
- * packages it has to accept.
+ * consumes, and writes no `design-system.md` at all; the illustration branch
+ * writes the locked frame and the prompt into `SKILL.md` itself and saves its
+ * example pictures under names that follow the subject and dials they
+ * demonstrate. A fixture that gave every kind the same files would agree with
+ * the endpoint and disagree with the packages it has to accept.
  */
 function guidance(
   kind: UserTemplateKind,
@@ -64,6 +66,12 @@ function guidance(
       return [
         { path: "SKILL.md", content: "# Use this template\n" },
         { path: "reference.docx", content: "PK reference bytes\n" },
+      ];
+    }
+    case "illustration": {
+      return [
+        { path: "SKILL.md", content: "# Draw in this style\n" },
+        { path: "ref-market-sage.png", content: "approved piece\n" },
       ];
     }
   }
@@ -263,6 +271,127 @@ describe("POST /api/user-templates", () => {
         return key.endsWith(".docx");
       }),
     );
+  });
+
+  it("publishes an illustration template and covers it with its source", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const referenceId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "market-day.png", contentType: "image/png" },
+      Buffer.from("PNG reference bytes", "utf8"),
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("illustration")),
+    );
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: {
+          title: "Market day",
+          kind: "illustration",
+          sourceFileId: referenceId,
+          packageFileId,
+        },
+      }),
+      [200],
+    );
+
+    // No pages, but a cover: the source is already a picture, so the catalog
+    // has something to show without anything having been rendered.
+    expect(response.body).toMatchObject({
+      kind: "illustration",
+      sourceFilename: "market-day.png",
+      pageCount: null,
+    });
+    expect(response.body.coverUrl).not.toBeNull();
+
+    const listed = await accept(client.list({ headers: webHeaders() }), [200]);
+    // One preview asset, and it is a handle the resolve endpoint accepts —
+    // the grid reissues its covers through that endpoint once they expire.
+    const previewAssetIds = (listed.body[0]?.previewAssets ?? []).map(
+      (asset) => {
+        return asset.previewAssetId;
+      },
+    );
+    expect(previewAssetIds).toHaveLength(1);
+    const reresolved = await accept(
+      client.resolvePreviewUrls({
+        headers: webHeaders(),
+        body: { previewAssetIds },
+      }),
+      [200],
+    );
+    expect(reresolved.body.assets).toHaveLength(1);
+
+    const detail = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: response.body.id },
+      }),
+      [200],
+    );
+    // The cover is the source, so both point at the same object — and it is
+    // still not a page, so the column a reader would scroll stays empty.
+    expect(detail.body.pageUrls).toStrictEqual([]);
+    expect(fixture.signedKey(detail.body.sourceUrl)).toBe(
+      fixture.keys().find((key) => {
+        return key.endsWith(".png");
+      }),
+    );
+  });
+
+  it("refuses a source the kind it was published as cannot be shown as", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const docxSourceId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      {
+        filename: "brand-report.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+      Buffer.from("PK docx bytes", "utf8"),
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("illustration")),
+    );
+
+    // An illustration is shown in the catalog by its source, so a source no
+    // browser can draw would leave a tile that never loads. The package here
+    // is the one the illustration branch writes, so only the source is wrong.
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: {
+          title: "Brand report",
+          kind: "illustration",
+          sourceFileId: docxSourceId,
+          packageFileId,
+        },
+      }),
+      [400],
+    );
+    expect(response.body.error.message).toContain("illustration");
   });
 
   it("takes a document package that carries its skill and nothing else", async () => {

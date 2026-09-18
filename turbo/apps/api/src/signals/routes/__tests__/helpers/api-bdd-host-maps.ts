@@ -167,9 +167,18 @@ export function createHostMapsBddApi(context: TestContext) {
         missingKeys: new Set<string>(),
       };
       const objects = new Map<string, string>();
-      context.mocks.s3.getSignedUrl.mockResolvedValue(
-        "https://r2.example.com/hosted-sites/upload?sig=bdd",
-      );
+      context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+        const input = commandInput(command);
+        if (
+          commandName(command) === "PutObjectCommand" &&
+          typeof input.Key === "string"
+        ) {
+          objects.set(input.Key, "Hosted fixture");
+        }
+        return Promise.resolve(
+          "https://r2.example.com/hosted-sites/upload?sig=bdd",
+        );
+      });
       context.mocks.s3.send.mockImplementation((command: unknown) => {
         const name = commandName(command);
         const input = commandInput(command);

@@ -15,6 +15,7 @@ import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
   MORNING_BRIEF_GENERATION_SOURCE_COVERAGES,
+  morningBriefGenerations,
 } from "@okouai/db/schema/morning-brief-generation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
@@ -23,6 +24,7 @@ import { and, eq } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import { bindNativeGenerationAttempt } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db } from "../external/db";
 import {
   lookupPlatformGenerationCost,
@@ -33,7 +35,7 @@ import {
   type PlatformGenerationOutcome,
   type PlatformGenerationTokens,
 } from "../external/openrouter-platform-generation";
-import { settleIncludingAbort } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import {
   admitMorningBriefLocalAuthority,
   currentMorningBriefCollectionAuthority$,
@@ -126,13 +128,22 @@ const GENERATION_COST_LOOKUP_MS = 5000;
 
 const GENERATION_OPERATION = "morning_brief_generation";
 const GENERATION_PROVIDER = "openrouter";
-const GENERATION_PURPOSE = "preview" as const;
+/**
+ * The purposes this engine can execute for.
+ *
+ * `preview` is the operator endpoint's. `production` is the native scheduler's,
+ * reached only through a validated native occurrence authority. They share the
+ * reservation, single-POST, cost and validation engine and can never read each
+ * other's results, because every read filters on the purpose it asked for.
+ */
+type MorningBriefExecutionPurpose =
+  (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
 
 export type MorningBriefGenerationConflict =
   | MorningBriefCollectionConflict
   | "generation-in-progress";
 
-type MorningBriefGenerationExecution =
+export type MorningBriefGenerationExecution =
   | {
       readonly kind: "not-executed";
       readonly reason: MorningBriefGenerationSkipReason;
@@ -225,11 +236,13 @@ function admissionOf(args: {
   readonly plan: GenerationRequestPlan;
   readonly locale: string | null;
   readonly bundle: MorningBriefSlackBundle;
+  readonly purpose: MorningBriefExecutionPurpose;
 }): MorningBriefGenerationAdmission {
   const { context, plan } = args;
   const language = resolveGenerationLanguage(args.locale);
   return {
     key: generationKeyOf(context),
+    executionPurpose: args.purpose,
     attemptId: randomUUID(),
     membershipId: context.admission.membershipId,
     agentId: context.admission.agentId,
@@ -257,9 +270,55 @@ function admissionOf(args: {
  * and a bounded read that happened to find nothing are recorded under distinct
  * terminal states, so an incomplete read can never be reported as an empty day.
  */
+/**
+ * The native execution authority a production generation is admitted under.
+ *
+ * It is supplied by the scheduler that claimed the occurrence and is bound to
+ * the reserved attempt inside this same transaction, before the sole platform
+ * request. Binding it afterwards would leave a window in which a possibly
+ * invoked attempt has no durable association with the slot that paid for it.
+ */
+/**
+ * The claim that admitted this generation is no longer the member's.
+ *
+ * Thrown inside the reservation transaction so the reservation, the collection
+ * finalization and the native binding all roll back together, and no platform
+ * request is ever made under a claim that moved.
+ */
+class NativeGenerationAuthorityLost extends Error {
+  constructor() {
+    super(
+      "Morning Brief native generation authority was lost before the request",
+    );
+    this.name = "NativeGenerationAuthorityLost";
+  }
+}
+
+interface MorningBriefNativeGenerationAuthority {
+  readonly ownerEpoch: number;
+  readonly membershipId: string;
+  readonly leaseToken: string;
+}
+
+type MorningBriefGenerationRequest = {
+  readonly owner: MorningBriefCollectionOwner;
+  readonly scheduledFor: Date;
+} & (
+  | {
+      readonly purpose: "preview";
+      readonly nativeAuthority?: never;
+    }
+  | {
+      readonly purpose: "production";
+      readonly nativeAuthority: MorningBriefNativeGenerationAuthority;
+    }
+);
+
 async function admitGeneration(
   tx: Tx,
+  purpose: MorningBriefExecutionPurpose,
   context: MorningBriefCollectionHandoffContext,
+  nativeAuthority: MorningBriefNativeGenerationAuthority | undefined,
 ): Promise<AdmittedGeneration> {
   const { bundle } = context;
   const locale = await loadMemberLocale(tx, context.admission.owner);
@@ -267,7 +326,7 @@ async function admitGeneration(
     bundle,
     language: resolveGenerationLanguage(locale).language,
   });
-  const admission = admissionOf({ context, plan, locale, bundle });
+  const admission = admissionOf({ context, plan, locale, bundle, purpose });
 
   if (bundle.entries.length === 0) {
     const state: Extract<
@@ -284,6 +343,27 @@ async function admitGeneration(
     // never be re-claimed, so reaching this means an invariant is broken rather
     // than that a second caller legitimately arrived.
     throw new Error("Morning Brief generation slot was already taken");
+  }
+  if (nativeAuthority !== undefined) {
+    // The reserved attempt and the native slot become durable together, in the
+    // reservation's own transaction and before the sole platform request. A
+    // claimant whose epoch or lease moved while collection ran fails here, the
+    // reservation rolls back with it, and no request is made at all.
+    const bound = await bindNativeGenerationAttempt(
+      tx,
+      context.admission.owner,
+      {
+        scheduledFor: context.admission.scheduledFor,
+        generationAttemptId: admission.attemptId,
+        expectedEpoch: nativeAuthority.ownerEpoch,
+        expectedMembershipId: nativeAuthority.membershipId,
+        leaseToken: nativeAuthority.leaseToken,
+        at: context.at,
+      },
+    );
+    if (!bound) {
+      throw new NativeGenerationAuthorityLost();
+    }
   }
   return { kind: "reserved", admission, plan };
 }
@@ -555,7 +635,7 @@ function viewOfRow(
     throw new Error("Morning Brief generation stores an incomplete result");
   }
   return {
-    purpose: GENERATION_PURPOSE,
+    purpose: row.executionPurpose,
     state: row.state,
     attemptId: row.attemptId,
     model: row.model,
@@ -605,7 +685,7 @@ function viewOfUncommittedAttempt(
   failureReason: MorningBriefGenerationFailureReason,
 ): MorningBriefGenerationView {
   return {
-    purpose: GENERATION_PURPOSE,
+    purpose: admission.executionPurpose,
     state: "reserved",
     attemptId: admission.attemptId,
     model: admission.model,
@@ -966,6 +1046,7 @@ async function releaseStoredGeneration(
     readonly key: MorningBriefGenerationKey;
     readonly attemptId: string;
     readonly occurrenceRow: MorningBriefCollectionOccurrenceRow;
+    readonly purpose: MorningBriefExecutionPurpose;
   },
 ): Promise<GenerationRelease> {
   if (!(await lockCollectionOwner(tx, args.key.owner))) {
@@ -982,7 +1063,7 @@ async function releaseStoredGeneration(
   if (
     !row ||
     row.attemptId !== args.attemptId ||
-    row.executionPurpose !== GENERATION_PURPOSE
+    row.executionPurpose !== args.purpose
   ) {
     return { kind: "gone" };
   }
@@ -1014,6 +1095,7 @@ const resolveExistingGeneration$ = command(
   async (
     { set },
     args: {
+      readonly purpose: MorningBriefExecutionPurpose;
       readonly db: Db;
       readonly key: MorningBriefGenerationKey;
       readonly occurrence: MorningBriefCollectionOccurrenceView;
@@ -1021,7 +1103,7 @@ const resolveExistingGeneration$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const { db, key, occurrence } = args;
-    const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
+    const row = await readMorningBriefGeneration(db, key, args.purpose);
     signal.throwIfAborted();
     if (!row) {
       return { kind: "collection-completed-without-generation", occurrence };
@@ -1085,6 +1167,7 @@ const resolveExistingGeneration$ = command(
         key,
         attemptId: row.attemptId,
         occurrenceRow,
+        purpose: args.purpose,
       });
     });
     signal.throwIfAborted();
@@ -1462,13 +1545,41 @@ const invokeAndPersist$ = command(
   },
 );
 
-export const executeMorningBriefPreviewGeneration$ = command(
+/**
+ * Run the collection that a generation reservation joins, turning a lost native
+ * claim into an outcome rather than a thrown tick failure.
+ *
+ * The reservation refuses inside its own transaction, which is what rolls the
+ * collection finalization back with it. Reporting that as a non-executing
+ * outcome keeps one member's moved claim from failing the whole cron tick.
+ */
+async function collectForGeneration<T>(
+  run: Promise<T>,
+  signal: AbortSignal,
+): Promise<T | { readonly kind: "native-authority-lost" }> {
+  const settled = await settle(run, signal);
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (settled.error instanceof NativeGenerationAuthorityLost) {
+    return { kind: "native-authority-lost" };
+  }
+  throw settled.error;
+}
+
+/**
+ * The one generation engine, executed for an explicit purpose.
+ *
+ * `preview` is the operator endpoint's. `production` is the native scheduler's
+ * and is reached only after that scheduler validated its own occurrence
+ * authority against the durable native row. Both share this
+ * reservation-before-single-POST protocol, the same platform cost accounting
+ * and the same output validation.
+ */
+export const executeMorningBriefGeneration$ = command(
   async (
     { set },
-    args: {
-      readonly owner: MorningBriefCollectionOwner;
-      readonly scheduledFor: Date;
-    },
+    args: MorningBriefGenerationRequest,
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const db = set(writeDb$);
@@ -1489,26 +1600,37 @@ export const executeMorningBriefPreviewGeneration$ = command(
     let occurrenceRow: MorningBriefCollectionOccurrenceRow | undefined;
     let bundleCoverage: MorningBriefSlackBundle["coverage"] = "empty";
     let sources: ReadonlyMap<string, GenerationSource> = new Map();
-    const execution = await set(
-      executeMorningBriefSlackCollection$,
-      {
-        owner: args.owner,
-        scheduledFor: args.scheduledFor,
-        handoff: {
-          onCollected: async (tx, context) => {
-            bundleCoverage = context.bundle.coverage;
-            occurrenceRow = context.occurrence;
-            admitted = await admitGeneration(tx, context);
-            if (admitted.kind === "reserved") {
-              sources = admitted.plan.sources;
-            }
+    const execution = await collectForGeneration(
+      set(
+        executeMorningBriefSlackCollection$,
+        {
+          owner: args.owner,
+          scheduledFor: args.scheduledFor,
+          handoff: {
+            onCollected: async (tx, context) => {
+              bundleCoverage = context.bundle.coverage;
+              occurrenceRow = context.occurrence;
+              admitted = await admitGeneration(
+                tx,
+                args.purpose,
+                context,
+                args.nativeAuthority,
+              );
+              if (admitted.kind === "reserved") {
+                sources = admitted.plan.sources;
+              }
+            },
           },
         },
-      },
+        signal,
+      ),
       signal,
     );
     signal.throwIfAborted();
 
+    if (execution.kind === "native-authority-lost") {
+      return { kind: "not-executed", reason: "native-authority-lost" };
+    }
     if (
       execution.kind === "not-executed" ||
       execution.kind === "invalid-anchor" ||
@@ -1536,7 +1658,7 @@ export const executeMorningBriefPreviewGeneration$ = command(
     if (execution.kind === "already-completed") {
       return await set(
         resolveExistingGeneration$,
-        { db, key, occurrence: execution.occurrence },
+        { db, key, occurrence: execution.occurrence, purpose: args.purpose },
         signal,
       );
     }
@@ -1545,7 +1667,7 @@ export const executeMorningBriefPreviewGeneration$ = command(
       throw new Error("Morning Brief collection finalized without a handoff");
     }
     if (admitted.kind === "skipped") {
-      const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
+      const row = await readMorningBriefGeneration(db, key, args.purpose);
       signal.throwIfAborted();
       if (!row) {
         throw new Error("Morning Brief generation skip was not recorded");
@@ -1569,6 +1691,24 @@ export const executeMorningBriefPreviewGeneration$ = command(
         occurrence: execution.occurrence,
         occurrenceRow,
       },
+      signal,
+    );
+  },
+);
+
+/** The operator preview entry point. */
+export const executeMorningBriefPreviewGeneration$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: MorningBriefCollectionOwner;
+      readonly scheduledFor: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<MorningBriefGenerationExecution> => {
+    return await set(
+      executeMorningBriefGeneration$,
+      { ...args, purpose: "preview" },
       signal,
     );
   },

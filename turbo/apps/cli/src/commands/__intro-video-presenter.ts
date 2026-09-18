@@ -34,6 +34,7 @@ async function runIntroVideoPresenterCommand(
     result.filename,
     result.url,
     "This result is a presenter clip that can be used in subsequent video composition.",
+    result,
   );
   if (options.json) {
     console.log(JSON.stringify({ ...result, ...presentation.json }));

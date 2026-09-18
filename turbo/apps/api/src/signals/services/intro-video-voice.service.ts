@@ -249,6 +249,7 @@ export const recordGeneratedIntroVideoVoice$ = command(
       contentType: params.speech.contentType,
       size: params.speech.audioBytes.byteLength,
       url: artifact.url,
+      privateArtifacts: artifact.isPrivate,
       durationSeconds: params.speech.durationSeconds,
       creditsCharged: estimateCredits(billingQuantity, params.pricing),
       voiceId: params.options.voiceId,

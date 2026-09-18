@@ -135,6 +135,68 @@ protocol change is required. Previously copied URLs remain valid under their
 existing policy. Owner resolution of an old organization alias continues after
 switching it to Only me; recipients lose access.
 
+#### Hosted-site publication identity
+
+Every hosted-site prepare creates an independent site. `--site` is a preferred
+name: the allocator tries that name first, then adds a four-character hash when
+it is reserved, including by a deleted site. Each publication's deployment ID
+seeds its suffix candidates, so repeated publications do not exhaust one fixed
+set of names. Atomic inserts and the existing unique indexes arbitrate concurrent
+requests; an exhausted bounded retry returns an actionable `409 CONFLICT`.
+
+New rows store the allocated name in `slug`, `publicSlug` and `requestedSlug`,
+while the manifest retains the caller's preferred name. This preserves the
+existing database constraints and keeps each publication addressable by older
+readers. The catalog displays the allocated name; `host versions` and `host clone`
+use the returned site slug to inspect that publication. Historical rows and their
+requested-name reservations stay intact. No database migration or historical data
+rewrite runs here.
+
+Completion retries for the same deployment remain idempotent. Previous URLs,
+content, historical version listings and share policies remain unchanged when
+another publication uses the same preferred name, including across chat scopes.
+Existing authorization checks still govern reads and completion; name allocation
+never adopts an existing site.
+
+Older pinned CLIs can consume the allocated `publicSlug` and URL through the
+unchanged response shape. The CLI retains the legacy `--slug-suffix` request field
+for older API servers; the new API assigns suffixes automatically. Older API
+instances must leave serving and supported rollback targets before no-redeploy
+behavior is universal. Issue
+[#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
+site-version model after preserving existing links and metadata.
+
+New prepares bind each upload URL to its declared SHA-256 through the signed
+`x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
+`Content-Type`; identical-byte retries work, while different bytes fail R2's
+checksum validation. The root `/manifest.json` path is reserved for the server's
+delivery manifest. New database manifests carry `immutableContent: true`, which
+the API copies into its server-issued preview grants. The Worker trusts the grant
+for cache eligibility because old uploads could target `/manifest.json`. Completion of
+older drafts does not add that marker because their outstanding upload URLs
+were not checksum-bound.
+
+The host Worker uses the shared `PRIVATE_ARTIFACT_CACHE_CONTROL` for successful
+private previews of marked deployments and immutable organization snapshots.
+It retains `private, no-store` for unmarked deployments, authorization errors,
+and standalone publication responses that must recheck the current share policy.
+New APIs with older Workers remain conservatively uncached; new Workers with
+older API grants likewise retain `no-store`. The optional manifest field is
+preserved by older completion readers without a schema migration. Immutable
+delivery derives HTTP headers from the manifest, so replayed upload credentials
+cannot change presentation through unsigned object metadata.
+
+Retiring the unmarked-deployment path belongs to #35240: legacy content must
+first become immutable through migration or sealing after its last upload
+credential expires, older writers must leave serving and supported rollback
+targets, and old preview grants must finish their lifetime.
+
+Thread HTML cards, links and attachment viewers reuse the existing preview
+signals as images do. No expiry-driven re-resolution or retry is added. A
+48-hour credential controls new network access; the browser may keep already
+cached bytes for the configured cache lifetime. Iframe remounting still restarts
+the document, and catalog reload behavior is unchanged.
+
 #### CLI artifact content reads
 
 `GET /api/artifact-references/:reference/read` requires `artifact:read` and
@@ -185,6 +247,27 @@ issued under `privateArtifacts`. No tolerant reader for an older API, new
 capability, database migration, visibility change, or Worker protocol is added.
 Keep the endpoint in serving and supported rollback APIs while runs pinned to
 the new CLI remain active.
+
+#### Generated private artifact delivery hints
+
+Generation results add optional `privateArtifacts` metadata describing the
+storage mode used at creation. New CLIs use it with the requested visibility
+(defaulting to `only-me`) to add delivery guidance for non-public files. Older
+CLIs ignore the metadata; results from older APIs or persisted jobs without it
+retain their previous output. Hosted sites and HTML presentations keep their
+existing link presentation.
+
+Completed generation jobs survive run deletion and have no read-time age cutoff;
+successful batch directories also remain readable. These are existing public
+generation contracts. Requiring the new metadata would need an explicit
+migration or retirement of those retained results, plus compatible serving and
+rollback APIs; draining active runs alone is insufficient.
+
+New run contexts include `OKOU_CURRENT_INTEGRATION` in the existing trusted
+`platformEnvironment` map. Existing Runners already transport this map, so no
+Runner protocol change or database migration is required. Older contexts without
+the key receive a generic private-link notice, with no guessed integration
+command. Existing pinned CLIs ignore the key.
 
 #### Private attachment uploads
 
@@ -2344,7 +2427,8 @@ There is no ten-second deadline, local attempt marker, deferred onboarding
 handoff, retry, or fallback. Each actual POST is preceded by one Axiom
 `marketing.event.send` record with tag, userId, and orgId; `outcome: started`
 means a send attempt, not server acceptance. No browser request ID header is
-introduced. Existing legacy gtag/PostHog event and account routing is unchanged.
+introduced. PostHog product and funnel events remain in the App; advertising
+account selection and delivery belong to Marketing.
 
 Marketing deduplicates onboarding by user/org and checkout by user/org/event
 UUID. These counts differ intentionally from the legacy gtag browser-session/
@@ -2393,3 +2477,35 @@ schedule, Run, credit, Chat or email behavior, and it does not activate the
 still-unregistered Clerk erasure bridge. It is a local serialization boundary
 for one owner's collection authority; durable membership and materialization
 ownership and global deletion finality remain S7 gates.
+
+## Marketing attribution cutover (#33886)
+
+The App no longer loads gtag, sends Google Ads conversions, looks up an Ads
+account, or polls attribution milestones. Marketing owns the unified business
+events and provider delivery. The API removes the old signup, account and
+milestone attribution routes without aliases, as explicitly requested for this
+prelaunch cutover. Existing pages may lose those retired telemetry calls during
+the API-before-App promotion window; the replacement App removes their callers.
+
+Billing remains operational across that window. Checkout request schemas use
+Zod's default unknown-key stripping, so an older App's extra `adAttribution` is
+ignored rather than rejecting a purchase. The removed `googleAdsConversion`
+response property was optional in the preceding App contract. Both Apps still
+use `completed` and the original purchase response statuses. The retained
+`completePaidCheckout$` polls actual payment reconciliation before continuing
+onboarding or showing billing success. No payment endpoint or fulfillment is
+removed.
+
+The API stops writing Clerk signup attribution and org acquisition columns and
+stops attaching acquisition snapshots to new Stripe billing objects. New
+customers keep `orgId`; sessions and subscriptions retain financial identity,
+tier, price, purchase timestamps and preview routing. Existing metadata copied
+through plan or schedule changes is filtered to avoid reintroducing marketing
+fields, including old privacy receipts; Marketing retains authoritative
+withdrawal state. Historical rows and external objects are not erased in this
+change.
+
+Coordinate the Marketing single-sender cutover with this App/API deployment.
+Verify the replacement App is live before setting a later client floor; an
+already-open old bundle can otherwise continue sending browser conversions.
+This PR does not select a floor or change production provider settings.

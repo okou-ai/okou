@@ -31,7 +31,8 @@ export type PublishUserTemplateArgs =
       readonly kind: "presentation";
       readonly pagesDir: string;
     })
-  | (PublishUserTemplateCommon & { readonly kind: "document" });
+  | (PublishUserTemplateCommon & { readonly kind: "document" })
+  | (PublishUserTemplateCommon & { readonly kind: "illustration" });
 
 interface UploadedFileIds {
   readonly sourceFileId: string;
@@ -47,7 +48,8 @@ async function pagePaths(
     case "presentation": {
       return await orderedPagePaths(args.pagesDir);
     }
-    case "document": {
+    case "document":
+    case "illustration": {
       return [];
     }
   }
@@ -78,6 +80,14 @@ function publishRequestBody(
       return {
         title: args.title,
         kind: "document",
+        sourceFileId: uploaded.sourceFileId,
+        packageFileId: uploaded.packageFileId,
+      };
+    }
+    case "illustration": {
+      return {
+        title: args.title,
+        kind: "illustration",
         sourceFileId: uploaded.sourceFileId,
         packageFileId: uploaded.packageFileId,
       };

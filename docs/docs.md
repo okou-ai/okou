@@ -68,6 +68,9 @@ surface; the index does not replace their detailed rules.
 - [Computer Use authorization request creation](./account-erasure-computer-use-authorization-creation.md):
   account-erasure admission, retained canonical identity, compatibility source
   semantics and failure boundaries for Computer Use authorization links.
+- [Computer Use authorization Apply](./account-erasure-computer-use-authorization-apply.md):
+  canonical chat admission, retained request and thread identity, atomic sidebar
+  completion, bounded SQL inventory and explicit host/legacy residuals.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
@@ -92,6 +95,13 @@ surface; the index does not replace their detailed rules.
   shared Morning Brief OAuth authorization boundary, Gmail's two bounded
   branches and caps, source outcome classification, and the preview-only
   deployment boundary.
+  boundary, and the coverage limits this first collector declares.
+- [Morning Brief platform-funded generation](./morning-brief-generation.md): the
+  single-invocation reservation contract, the validated result shape, and the
+  anonymous platform cost receipt kept outside every user ledger.
+- [Morning Brief thread provenance](./morning-brief-chat-provenance.md): the
+  sticky whole-thread exclusion, its producers and coverage limits, the bounded
+  unread Chat collection that consumes it, and the old-writer activation gate.
 - [Morning Brief platform-funded generation](./morning-brief-generation.md): the
   single-invocation reservation contract, the validated result shape, and the
   anonymous platform cost receipt kept outside every user ledger.

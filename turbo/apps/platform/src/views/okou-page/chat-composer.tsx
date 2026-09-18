@@ -308,7 +308,6 @@ import {
 } from "../../signals/external/user-model-preference.ts";
 import {
   codexFastModeEnabled$,
-  modelPickerFlyoutEnabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
@@ -9847,13 +9846,6 @@ function ComposerRunModelPickerControl({
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
   const { t } = useTranslation();
-  // One switch owns how the picker looks. Effort keeps its own switch, because
-  // it is a run setting the composer shows beside the model rather than a way
-  // of drawing the model list.
-  const modelMenuEnabled = useGet(modelPickerFlyoutEnabled$);
-  // The flyout needs the room a phone does not have; narrow viewports keep the
-  // menu's pages until the sheet layout lands.
-  const modelFlyoutEnabled = modelMenuEnabled && desktopLayout;
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
@@ -9866,11 +9858,13 @@ function ComposerRunModelPickerControl({
           return $.chat.composer.selectModel;
         })}
         triggerClassName={composerModelPickerTriggerClassName()}
-        menuSignals={modelMenuEnabled ? signals.model.menu : undefined}
+        menuSignals={signals.model.menu}
         // The effort control beside it carries the bolt when Fast is on, so the
         // model keeps its own name.
         fastShownByCaller
-        flyoutLayout={modelFlyoutEnabled}
+        // The flyout needs the room a phone does not have; narrow viewports keep
+        // the menu's pages until the sheet layout lands.
+        flyoutLayout={desktopLayout}
         onSelected={() => {
           setModelPickerOpen(false);
         }}
@@ -10327,7 +10321,6 @@ function ComposerTemporaryModelNotice({
     updateUserModelPreference$,
   );
   const codexFastModeEnabled = useGet(codexFastModeEnabled$);
-  const featureSwitches = useGet(featureSwitch$);
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveModelFirstUserDefaultSelection({
     userPreference,
@@ -10341,11 +10334,8 @@ function ComposerTemporaryModelNotice({
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
-  const effort = preferredChatReasoningEffort(selection, featureSwitches);
-  const defaultEffort = preferredChatReasoningEffort(
-    defaultSelection,
-    featureSwitches,
-  );
+  const effort = preferredChatReasoningEffort(selection);
+  const defaultEffort = preferredChatReasoningEffort(defaultSelection);
   const effortChanged = effort !== defaultEffort;
   if (
     !selection ||

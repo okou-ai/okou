@@ -523,6 +523,64 @@ test("A PDF template opens in the browser's own viewer", async () => {
   expect(frame).toHaveAttribute("src", `${DOCUMENT_SOURCE_URL}#navpanes=0`);
 });
 
+const ILLUSTRATION_SOURCE_URL =
+  "https://storage.example.test/private-artifacts/market-day.png?signature=abc";
+
+function illustrationTemplate(
+  overrides: Partial<UserTemplateDetail> = {},
+): UserTemplateDetail {
+  return customTemplate({
+    id: "44444444-4444-4444-8444-444444444444",
+    title: "Market day",
+    sourceFilename: "market-day.png",
+    kind: "illustration",
+    // The source is the cover, so unlike a document this kind has one without
+    // anything having been rendered for it.
+    coverUrl: ILLUSTRATION_SOURCE_URL,
+    pageCount: null,
+    pageUrls: [],
+    sourceUrl: ILLUSTRATION_SOURCE_URL,
+    ...overrides,
+  });
+}
+
+test("An illustration template is tiled by the picture it was reversed from", async () => {
+  mockCustomTemplates([illustrationTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await within(dialog).findByText("Market day");
+  // A document with no cover falls back to a format badge. An illustration
+  // never reaches that branch: its source is already a picture.
+  expect(within(dialog).queryByText("PNG")).not.toBeInTheDocument();
+  const cover = buttonByName("Preview Market day", dialog)?.querySelector(
+    "img",
+  );
+  expect(cover).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
+});
+
+test("Opening an illustration template shows the source picture itself", async () => {
+  mockCustomTemplateStore([illustrationTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Market day");
+  click(buttonByName("Preview Market day", dialog)!);
+
+  // No viewer and no iframe: the browser draws this source, so it is drawn.
+  const picture = await screen.findByTestId("custom-template-source-preview");
+  expect(picture.tagName).toBe("IMG");
+  expect(picture).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
+
+  // The same management column a document's dialog carries, and the catalog
+  // still mounted behind it.
+  const preview = previewDialogAround(picture);
+  expect(within(preview).getByText("From market-day.png")).toBeVisible();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+  expect(within(dialog).getByText("Market day")).toBeInTheDocument();
+});
+
 async function openDetail(
   dialog: HTMLElement,
   title: string,
@@ -799,9 +857,11 @@ test("One entry takes every kind of source a template can be made from", async (
 
   click(tabByText("Custom"));
   const entry = await within(dialog).findByLabelText("Import your own file");
-  // Both kinds go through this one input. A separate tile per kind would ask
+  // Every kind goes through this one input. A separate tile per kind would ask
   // the user to classify their own file before the analysis has read it.
-  expect(entry.getAttribute("accept")).toBe(".pptx,.ppt,.pdf,.docx,.doc");
+  expect(entry.getAttribute("accept")).toBe(
+    ".pptx,.ppt,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.bmp",
+  );
 });
 
 test("Every source is sent with one message that lets the guide sort it", async () => {
@@ -883,7 +943,7 @@ test("A source no kind is made from is refused before it is uploaded", async () 
 
   await expect(
     screen.findByText(
-      "Choose a .pptx, .ppt, .pdf, .docx, .doc file to make a template.",
+      "Choose a .pptx, .ppt, .pdf, .docx, .doc, .png, .jpg, .jpeg, .webp, .bmp file to make a template.",
     ),
   ).resolves.toBeVisible();
   // Refused before the bytes are spent, not after a run has already started on

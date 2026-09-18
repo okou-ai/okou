@@ -157,11 +157,17 @@ async function selectComposerModel(
   currentModelName: string,
   nextModelName: string,
 ): Promise<void> {
-  const picker = await screen.findByRole("combobox", {
-    name: currentModelName,
+  await user.click(await composerModelTrigger(currentModelName));
+  const chatModels = await screen.findByRole("listbox", {
+    name: "Chat models",
   });
-  await user.click(picker);
-  await user.click(await screen.findByRole("option", { name: nextModelName }));
+  await user.click(
+    within(chatModels).getByRole("option", {
+      name: (name) => {
+        return name.includes(nextModelName);
+      },
+    }),
+  );
 }
 
 describe("a model or speed change during an active run", () => {
@@ -190,11 +196,7 @@ describe("a model or speed change during an active run", () => {
     await setupPage({
       context,
       path: RUN_PATH,
-      featureSwitches: {
-        [FeatureSwitchKey.CodexFastMode]: true,
-        // The speed change is read from the legacy select's option list.
-        [FeatureSwitchKey.ModelPickerFlyout]: false,
-      },
+      featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
     });
 
     await readyChat();

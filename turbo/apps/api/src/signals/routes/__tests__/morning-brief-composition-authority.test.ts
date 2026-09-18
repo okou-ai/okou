@@ -984,7 +984,7 @@ describe("Morning Brief exact source selection and retained authority", () => {
 
   it.each([
     [3999, "composed"],
-    [4000, "authority-changed"],
+    [4000, "incomplete"],
   ] as const)(
     "uses the tighter attempt reservation for retained proof (%i ms)",
     async (retainedElapsedMs, expected) => {
@@ -1020,6 +1020,12 @@ describe("Morning Brief exact source selection and retained authority", () => {
 
       const response = await pending;
       expect(response.body.result).toBe(expected);
+      if (response.body.result === "incomplete") {
+        // The retained five-second ceiling and the outer reservation meet at
+        // equality here. The outer lifecycle owns that public classification.
+        expect(response.body.reason).toBe("deadline-exceeded");
+        expect(response.body.detail).toContain("final authority check");
+      }
     },
     TEST_TIMEOUT_MS,
   );

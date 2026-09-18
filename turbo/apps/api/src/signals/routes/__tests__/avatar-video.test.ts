@@ -534,6 +534,7 @@ describe("JoggAI built-in avatar video routes", () => {
       const statusBody = asRecord(await status.json());
       expect(statusBody.status).toBe("completed");
       expect(statusBody.result).toMatchObject({
+        privateArtifacts,
         url: privateArtifacts
           ? expect.stringMatching(/^\/artifacts\/[a-z0-9]{10}\.mp4$/u)
           : expect.stringMatching(

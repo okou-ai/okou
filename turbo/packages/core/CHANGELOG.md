@@ -1,5 +1,38 @@
 # Changelog
 
+## [8.681.1](https://github.com/vm0-ai/okou/compare/core-v8.681.0...core-v8.681.1) (2026-09-18)
+
+
+### Refactoring
+
+* remove the model picker flyout feature switch ([#35191](https://github.com/vm0-ai/okou/issues/35191)) ([4ef1c13](https://github.com/vm0-ai/okou/commit/4ef1c138fd7a337026383435491707e0392adeed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.471.0
+
+## [8.681.0](https://github.com/vm0-ai/okou/compare/core-v8.680.6...core-v8.681.0) (2026-09-18)
+
+
+### Features
+
+* **app:** retire legacy advertising and attribution storage ([#35246](https://github.com/vm0-ai/okou/issues/35246)) ([4a9ca58](https://github.com/vm0-ai/okou/commit/4a9ca58c930903cb1fbf5cccf6c67d95610bc9c6))
+
+
+### Refactoring
+
+* remove effort feature switch ([#35189](https://github.com/vm0-ai/okou/issues/35189)) ([9b0dff2](https://github.com/vm0-ai/okou/commit/9b0dff2c1cc1c4f8a2a10d4cbfb7fea263585bfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.470.0
+
 ## [8.680.6](https://github.com/vm0-ai/okou/compare/core-v8.680.5...core-v8.680.6) (2026-09-18)
 
 

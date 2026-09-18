@@ -30,10 +30,10 @@ import {
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
-
-const PRIVATE_ARTIFACT_CACHE_CONTROL =
-  "private, max-age=31536000, must-revalidate";
-const PRIVATE_NO_STORE_CACHE_CONTROL = "private, no-store";
+import {
+  PRIVATE_ARTIFACT_CACHE_CONTROL,
+  PRIVATE_NO_STORE_CACHE_CONTROL,
+} from "@okouai/api-contracts/contracts/artifact-cache";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
 export interface S3Object {
@@ -943,6 +943,7 @@ function generatePresignedPutUrlWithClient(
     readonly key: string;
     readonly contentType: string;
     readonly metadata?: Readonly<Record<string, string>>;
+    readonly checksumSha256?: string;
   },
   signal?: AbortSignal,
 ): Computed<Promise<string>> {
@@ -964,6 +965,7 @@ function generatePresignedPutUrlWithClient(
       Key: key,
       ContentType: contentType,
       Metadata: options.metadata,
+      ChecksumSHA256: options.checksumSha256,
     });
     return getSignedUrl(client, command, {
       expiresIn: PRESIGNED_URL_TTL_SECONDS,
@@ -980,11 +982,19 @@ export function generateHostedSitesPresignedPutUrl(
   bucket: string,
   key: string,
   contentType: string,
+  sha256: string,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
   return generatePresignedPutUrlWithClient(
     usePublicEndpoint ? hostedSitesPublicS3Client$ : hostedSitesS3Client$,
-    { bucket, key, contentType },
+    {
+      bucket,
+      key,
+      contentType,
+      // The signed query binds every retry to the same bytes without requiring
+      // new request headers from already-running CLI versions.
+      checksumSha256: Buffer.from(sha256, "hex").toString("base64"),
+    },
   );
 }
 

@@ -345,6 +345,7 @@ interface GenerateWebVoiceOptions {
 }
 
 interface GenerateWebVoiceResult {
+  privateArtifacts?: boolean;
   id: string;
   filename: string;
   contentType: string;
@@ -376,6 +377,7 @@ interface GenerateWebImageOptions {
 }
 
 interface GenerateWebImageResult {
+  privateArtifacts?: boolean;
   id: string;
   filename: string;
   contentType: string;
@@ -429,6 +431,7 @@ interface GenerateWebVideoOptions {
 }
 
 interface GenerateWebVideoResult {
+  privateArtifacts?: boolean;
   id: string;
   filename: string;
   contentType: string;

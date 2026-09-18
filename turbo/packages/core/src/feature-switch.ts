@@ -278,24 +278,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
 
-  // Effort's run controls carry Fast, so Fast reaches every user the moment
-  // Effort does. Keep this switch enabled for as long as Effort is enabled:
-  // the client send path still reads it directly to attach the run's tier.
   [FeatureSwitchKey.CodexFastMode]: {
     maintainer: "lancy@okou.ai",
     description: "Enable Codex fast mode for GPT 5.6 runs.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.Effort]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Set Fast mode and chat reasoning effort from the composer's run controls.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.ModelPickerFlyout]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Pick a model from a detached flyout: model types on the left, that type's models in a panel beside it.",
     enabled: true,
   },
   [FeatureSwitchKey.ChatPreference]: {
@@ -494,6 +479,16 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Replace the hosted-HTML-first delivery guidance with a rule that picks docx, xlsx, PDF, CSV, a hosted view or a chat reply from what the user will do with the result.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.GoogleSlidesConversion]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Sync presentation artifacts to Drive as native Google Slides decks instead of storing the uploaded file.",
+    enabled: false,
+    // Narrowed to the maintainer while conversion fidelity is only measured
+    // against hand-built decks; the template corpus has not been checked yet.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
 };
 
