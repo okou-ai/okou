@@ -1716,7 +1716,9 @@
         "browseAll": "Jelajahi semua templat",
         "make": "Buat",
         "templateCount_other": "{{count}} templat",
-        "useTemplate": "Gunakan templat {{title}}"
+        "useTemplate": "Gunakan templat {{title}}",
+        "workflowHint": "Ketik /nama untuk menjalankan salah satu alur kerja Anda, atau jelaskan yang baru.",
+        "workflowSubtitle": "Otomatiskan hal yang Anda ulangi"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
       "threadSuggestions": "Thread chat",

@@ -1195,6 +1195,21 @@ Page tests select the source node and source dot through
 `data-slot="onboarding-diagram-source-node"` and
 `data-slot="onboarding-diagram-source-dot"`, which carry no styles.
 
+### The slash template panel's width
+
+The composer's slash panel popover is `w-[580px]`: the 260px index plus the
+320px pane beside it. The width belongs on the popover rather than to whatever
+the panel happens to contain, because the popover is anchored to the caret and
+the caret sits far enough right that the viewport edge collision-shifts it. A
+shifted popover is re-pinned by any width change, and the index is narrower
+than the pane a row could take away, so the rows would land clear of the
+position the pointer is still resting on.
+
+Every row therefore keeps a pane: the types that own covers get
+`data-slot="slash-template-detail"`, and the Workflow type and the workflow
+rows get `data-slot="slash-template-workflow-pane"` at the same 320px. Adding a
+row that has no pane is a width change, not a content decision.
+
 ## Exception boundary
 
 Only two exception kinds exist:

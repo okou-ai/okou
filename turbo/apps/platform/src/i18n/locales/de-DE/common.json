@@ -1720,7 +1720,9 @@
         "make": "Erstellen",
         "templateCount_one": "{{count}} Vorlage",
         "templateCount_other": "{{count}} Vorlagen",
-        "useTemplate": "Vorlage {{title}} verwenden"
+        "useTemplate": "Vorlage {{title}} verwenden",
+        "workflowHint": "Gib /Name ein, um einen deiner Workflows auszuführen, oder beschreibe einen neuen.",
+        "workflowSubtitle": "Automatisiere, was sich wiederholt"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
       "threadSuggestions": "Chat-Threads",

@@ -1720,7 +1720,9 @@
         "make": "Make",
         "templateCount_one": "{{count}} template",
         "templateCount_other": "{{count}} templates",
-        "useTemplate": "Use template {{title}}"
+        "useTemplate": "Use template {{title}}",
+        "workflowHint": "Type /name to run one of your workflows, or describe a new one.",
+        "workflowSubtitle": "Automate something you repeat"
       },
       "temporarilySwitchTo": "Temporarily switch to",
       "threadSuggestions": "Chat threads",

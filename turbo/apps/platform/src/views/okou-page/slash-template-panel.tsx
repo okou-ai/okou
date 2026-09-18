@@ -213,6 +213,62 @@ function SlashTemplateCover({
   );
 }
 
+/** Both panes open on the same header, so they read as one surface. */
+function SlashTemplatePaneHeader({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  readonly icon: typeof Presentation;
+  readonly title: string;
+  readonly subtitle: string;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2.5">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <Icon size={18} className="text-muted-foreground" aria-hidden />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[14px] font-medium">{title}</span>
+        <span className="block truncate text-[12px] text-muted-foreground">
+          {subtitle}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Where the Workflow type and the workflow rows land. Workflow templates are
+ * text, so it carries no covers, but it holds the cover pane's width: the panel
+ * is what the popover measures, and a panel that narrows under the pointer
+ * moves the whole index out from under it.
+ */
+function SlashTemplateWorkflowPane() {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="w-[320px] shrink-0"
+      data-slot="slash-template-workflow-pane"
+    >
+      <div className="flex h-full flex-col px-4 pt-4">
+        <SlashTemplatePaneHeader
+          icon={SLASH_TEMPLATE_CATEGORY_ICONS.workflow}
+          title={slashTemplateCategoryLabel("workflow")}
+          subtitle={t(($) => {
+            return $.chat.composer.slashPanel.workflowSubtitle;
+          })}
+        />
+        <p className="mt-[11px] text-[12px] text-muted-foreground">
+          {t(($) => {
+            return $.chat.composer.slashPanel.workflowHint;
+          })}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SlashTemplateDetailPane({
   category,
   onSelectTemplate,
@@ -241,24 +297,16 @@ function SlashTemplateDetailPane({
         above a white gutter. The trailing space lives inside the scroller.
       */}
       <div className="flex h-full flex-col px-4 pt-4">
-        <div className="flex shrink-0 items-center gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-            <Icon size={18} className="text-muted-foreground" aria-hidden />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[14px] font-medium">
-              {slashTemplateCategoryLabel(category)}
-            </span>
-            <span className="block truncate text-[12px] text-muted-foreground">
-              {t(
-                ($) => {
-                  return $.chat.composer.slashPanel.templateCount;
-                },
-                { count: previews.length },
-              )}
-            </span>
-          </span>
-        </div>
+        <SlashTemplatePaneHeader
+          icon={Icon}
+          title={slashTemplateCategoryLabel(category)}
+          subtitle={t(
+            ($) => {
+              return $.chat.composer.slashPanel.templateCount;
+            },
+            { count: previews.length },
+          )}
+        />
         {/*
           The scroller reaches the pane's right edge and pads its content back,
           so the overlay scrollbar — which draws inward from the viewport edge —
@@ -432,17 +480,9 @@ export function SlashTemplatePanel({
       className="flex h-[380px] overflow-hidden"
       data-slot="slash-panel"
       onMouseLeave={() => {
-        // A closed pane means the row under the pointer just narrowed the
-        // panel by the cover pane's width. The popover is content-width, so
-        // when the viewport edge has collision-shifted it, that narrowing
-        // re-pins it and the left column slides out from under a pointer that
-        // never moved — which the browser reports here as a leave. Restoring
-        // the keyboard preview would reopen the covers the pointer just
-        // closed and widen the panel back over it, so the row would stay
-        // hovered while another type kept the pane.
-        if (detailCategory === null) {
-          return;
-        }
+        // Hand the preview back to the keyboard once the pointer is gone. The
+        // panel's width no longer depends on the hovered row, so a leave here
+        // is a real leave rather than the panel having moved.
         onPreview(null);
       }}
     >
@@ -531,7 +571,9 @@ export function SlashTemplatePanel({
           </button>
         </div>
       </div>
-      {detailCategory !== null && (
+      {detailCategory === null ? (
+        <SlashTemplateWorkflowPane />
+      ) : (
         <SlashTemplateDetailPane
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}

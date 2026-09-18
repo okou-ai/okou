@@ -1750,7 +1750,9 @@
         "templateCount_one": "{{count}} modèle",
         "templateCount_many": "{{count}} modèles",
         "templateCount_other": "{{count}} modèles",
-        "useTemplate": "Utiliser le modèle {{title}}"
+        "useTemplate": "Utiliser le modèle {{title}}",
+        "workflowHint": "Saisissez /nom pour lancer l’un de vos workflows, ou décrivez-en un nouveau.",
+        "workflowSubtitle": "Automatisez ce que vous répétez"
       },
       "temporarilySwitchTo": "Passer temporairement à",
       "threadSuggestions": "Conversations",

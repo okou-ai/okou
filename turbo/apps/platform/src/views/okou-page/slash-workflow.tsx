@@ -207,7 +207,12 @@ export function SlashWorkflowMenu({
       className={cn(
         "flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0",
         panel
-          ? "h-[min(380px,var(--available-height))] w-auto"
+          ? // The panel's own width, spelled here rather than left to its
+            // content: 260px index + 320px pane. A content-width popover that
+            // the viewport edge has collision-shifted is re-pinned by every
+            // width change, and the index is narrower than the pane it would
+            // lose, so the rows would land clear of where the pointer is.
+            "h-[min(380px,var(--available-height))] w-[580px]"
           : "h-[min(16rem,var(--available-height))] w-[300px] md:h-[min(20rem,var(--available-height))]",
       )}
       data-testid="slash-workflow-menu"

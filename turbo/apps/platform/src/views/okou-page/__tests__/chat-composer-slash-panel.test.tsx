@@ -99,6 +99,10 @@ function detailPane(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-detail"]');
 }
 
+function workflowPane(): HTMLElement | null {
+  return document.querySelector('[data-slot="slash-template-workflow-pane"]');
+}
+
 function querySlashButton(name: string): HTMLElement | null {
   const menu = screen.getByTestId("slash-workflow-menu");
   return (
@@ -243,45 +247,60 @@ test("Hovering a website row previews the website catalog", async () => {
   ).toBeInTheDocument();
 });
 
-test("Hovering a workflow closes the preview pane", async () => {
+test("Hovering a workflow swaps the covers for the workflow pane", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
   expect(detailPane()).not.toBeNull();
   await user.hover(slashButton(`/${WORKFLOW_NAME}`));
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(workflowPane()).not.toBeNull();
   });
+  expect(detailPane()).toBeNull();
 });
 
-test("Hovering the Workflow type closes the preview pane", async () => {
+test("Hovering the Workflow type swaps the covers for the workflow pane", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
   expect(detailPane()).not.toBeNull();
   await user.hover(slashButton("Workflow"));
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(workflowPane()).not.toBeNull();
   });
+  expect(detailPane()).toBeNull();
 });
 
-test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
+// The panel's width is what the popover is measured by, and the popover is
+// collision-shifted here, so a row that left the index without a pane beside it
+// would move every row out from under the pointer.
+test.each(["Presentation", "Illustration", "Website", "Workflow"])(
+  "The %s row keeps a pane beside the index",
+  async (row) => {
+    const user = userEvent.setup();
+    await openSlashMenu();
+    await user.hover(slashButton(row));
+    await waitFor(() => {
+      expect(detailPane() ?? workflowPane()).not.toBeNull();
+    });
+  },
+);
+
+test("Leaving the panel hands the preview back to the keyboard selection", async () => {
   await openSlashMenu();
   const workflow = slashButton("Workflow");
-  // The popover is content-width, so closing the pane narrows it. When the
-  // popover has been collision-shifted against a boundary, that narrowing
-  // re-pins it and the left column slides away from a pointer that never
-  // moved, which the browser reports as a leave at the move's own
-  // coordinates. Replayed here because jsdom has no layout to shift.
-  const still = { clientX: 300, clientY: 470 };
-  fireEvent.mouseOver(workflow, still);
-  fireEvent.mouseMove(workflow, still);
+  const pointer = { clientX: 300, clientY: 470 };
+  fireEvent.mouseOver(workflow, pointer);
+  fireEvent.mouseMove(workflow, pointer);
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(workflowPane()).not.toBeNull();
   });
-
-  fireEvent.mouseOut(workflow, { ...still, relatedTarget: document.body });
-
-  expect(detailPane()).toBeNull();
   expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
+
+  fireEvent.mouseOut(workflow, { ...pointer, relatedTarget: document.body });
+
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "slides");
+  });
+  expect(slashButton("Presentation")).toHaveAttribute("data-active");
 });
 
 test.each(WORKFLOW_NAVIGATION_CASES)(

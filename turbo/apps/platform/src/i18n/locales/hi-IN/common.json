@@ -1720,7 +1720,9 @@
         "make": "बनाएँ",
         "templateCount_one": "{{count}} टेम्पलेट",
         "templateCount_other": "{{count}} टेम्पलेट",
-        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
+        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें",
+        "workflowHint": "अपना कोई वर्कफ़्लो चलाने के लिए /नाम टाइप करें, या नया वर्कफ़्लो बताएँ।",
+        "workflowSubtitle": "जो काम बार-बार होता है उसे स्वचालित करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
       "threadSuggestions": "चैट थ्रेड",

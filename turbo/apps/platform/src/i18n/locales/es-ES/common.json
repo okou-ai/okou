@@ -1750,7 +1750,9 @@
         "templateCount_one": "{{count}} plantilla",
         "templateCount_many": "{{count}} plantillas",
         "templateCount_other": "{{count}} plantillas",
-        "useTemplate": "Usar la plantilla {{title}}"
+        "useTemplate": "Usar la plantilla {{title}}",
+        "workflowHint": "Escribe /nombre para ejecutar uno de tus flujos de trabajo o describe uno nuevo.",
+        "workflowSubtitle": "Automatiza algo que repites"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
       "threadSuggestions": "Conversaciones",

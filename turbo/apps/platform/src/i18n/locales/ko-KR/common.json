@@ -1716,7 +1716,9 @@
         "browseAll": "모든 템플릿 보기",
         "make": "만들기",
         "templateCount_other": "템플릿 {{count}}개",
-        "useTemplate": "템플릿 {{title}} 사용"
+        "useTemplate": "템플릿 {{title}} 사용",
+        "workflowHint": "/이름 을 입력해 저장된 워크플로를 실행하거나 새 워크플로를 설명하세요.",
+        "workflowSubtitle": "반복하는 작업을 자동화하세요"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
       "threadSuggestions": "채팅 스레드",

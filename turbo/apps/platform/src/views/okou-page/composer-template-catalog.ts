@@ -111,8 +111,8 @@ export type SlashTemplatePreviewCategory =
   | "website";
 
 /**
- * The slash rows that open the detail pane. Workflow templates are text, and a
- * pane sized for covers would be mostly empty for them.
+ * The slash rows whose pane carries covers. Workflow templates are text, so
+ * they take the panel's other pane instead of a grid sized for artwork.
  */
 export type SlashTemplateDetailCategory = Exclude<
   SlashTemplateCategory,

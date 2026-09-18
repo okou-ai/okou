@@ -1716,7 +1716,9 @@
         "browseAll": "すべてのテンプレートを見る",
         "make": "作成",
         "templateCount_other": "{{count}} 件のテンプレート",
-        "useTemplate": "テンプレート {{title}} を使う"
+        "useTemplate": "テンプレート {{title}} を使う",
+        "workflowHint": "/名前 と入力して保存済みのワークフローを実行するか、新しいワークフローを説明してください。",
+        "workflowSubtitle": "繰り返す作業を自動化"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
       "threadSuggestions": "チャットスレッド",
