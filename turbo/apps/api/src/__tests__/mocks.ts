@@ -809,7 +809,10 @@ vi.mock("@aws-sdk/client-s3", () => {
   }
 
   class S3Client {
+    readonly config: unknown;
+
     constructor(config: unknown) {
+      this.config = config;
       apiTestMocks.s3.clientConfig(config);
     }
 

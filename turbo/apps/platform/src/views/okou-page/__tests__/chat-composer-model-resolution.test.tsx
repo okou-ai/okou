@@ -1,4 +1,3 @@
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   getCanonicalModelDisplayName,
   type ModelProviderType,
@@ -6,16 +5,12 @@ import {
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import {
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
-import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
   installRunChat,
@@ -87,22 +82,6 @@ function preference(
   });
 }
 
-function buttonNamed(
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.replace(/\s+/gu, " ").trim() === name
-    );
-  });
-  if (!button) {
-    throw new Error(`Button ${name} was not visible`);
-  }
-  return button;
-}
-
 async function modelPicker(name: string): Promise<HTMLElement> {
   return await composerModelTrigger(name);
 }
@@ -120,31 +99,6 @@ async function chooseModel(
 ): Promise<void> {
   await user.click(await modelPicker(currentLabel));
   await user.click(await screen.findByRole("option", { name: optionName }));
-}
-
-async function sendMessage(text: string): Promise<void> {
-  const user = userEvent.setup({ delay: null });
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fillComposer(composer, text);
-  const mountedComposer = await screen.findByRole("textbox", {
-    name: "Message",
-  });
-  const composerCard = mountedComposer.closest(
-    "[data-slot='chat-composer-card']",
-  );
-  if (!composerCard) {
-    throw new Error("Mounted composer card was not found");
-  }
-  const sendButton = await waitFor(() => {
-    const button = buttonNamed("Send", composerCard);
-    expect(button).toBeEnabled();
-    return button;
-  });
-  await user.click(sendButton);
-  await waitFor(() => {
-    const currentComposer = screen.getByRole("textbox", { name: "Message" });
-    expect(currentComposer).not.toHaveTextContent(text);
-  });
 }
 
 test("Edit only the model for an existing thread", async () => {
@@ -197,45 +151,4 @@ test("Keep an existing thread's explicit model", async () => {
 
   await readyChat();
   await expect(modelPicker("Claude Opus 5")).resolves.toBeVisible();
-});
-
-test("Ignore Fast mode when it is unavailable", async () => {
-  const user = userEvent.setup({ delay: null });
-  const serviceTiers: (CodexServiceTier | undefined)[] = [];
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    codexServiceTier: "fast",
-    onRunCreate: (body) => {
-      serviceTiers.push(body.runOptions?.codexServiceTier);
-    },
-  });
-  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-
-  await setupPage({
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: false,
-    },
-  });
-
-  await readyComposer();
-  const picker = await modelPicker("GPT 5.6 Sol");
-  await user.click(picker);
-  await expect(
-    screen.findByRole("option", { name: /^GPT 5\.6 Sol/iu }),
-  ).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("option", { name: "GPT 5.6 Sol Fast" }),
-  ).not.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-
-  await sendMessage("Run this in standard mode");
-
-  await waitFor(() => {
-    expect(serviceTiers).toStrictEqual([undefined]);
-  });
-  await expect(
-    screen.findByText("Run this in standard mode"),
-  ).resolves.toBeVisible();
 });

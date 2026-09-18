@@ -24,8 +24,20 @@ import { orgMembersMetadata } from "./org-members-metadata";
  */
 export const MORNING_BRIEF_COLLECTION_VERSION = 1;
 
-/** The only source this first executor collects. */
+/** The Slack-only collection the first executor admitted. */
 export const MORNING_BRIEF_COLLECTION_KIND_SLACK = "slack";
+
+/**
+ * The source-independent collection every composed brief is admitted under.
+ *
+ * It is a distinct kind rather than a widened `slack` row because the kind is
+ * part of the occurrence's primary key: an owner can hold one Slack-only
+ * occurrence and one composed occurrence for the same anchor without either
+ * being able to claim the other's slot, and a Slack-only row that may already
+ * have been invoked stays exactly as invocable — or as non-invocable — as it
+ * was before this kind existed.
+ */
+export const MORNING_BRIEF_COLLECTION_KIND_SOURCES = "sources";
 
 /**
  * What a finished attempt observed, for the scope it actually declared.
@@ -104,9 +116,17 @@ export const morningBriefCollectionOccurrences = pgTable(
     workflowId: uuid("workflow_id").notNull(),
     automationId: uuid("automation_id").notNull(),
     agentId: uuid("agent_id").notNull(),
-    /** The exact native Slack binding pinned at admission. */
-    slackWorkspaceId: text("slack_workspace_id").notNull(),
-    slackUserId: text("slack_user_id").notNull(),
+    /**
+     * The exact native Slack binding pinned at admission.
+     *
+     * Present exactly for a `slack` occurrence. A composed occurrence reads
+     * whichever sources its owner actually has, and an owner with no Slack
+     * installation has no Slack binding to pin — so these are null rather than
+     * filled with a placeholder that a later binding comparison would treat as
+     * a real workspace.
+     */
+    slackWorkspaceId: text("slack_workspace_id"),
+    slackUserId: text("slack_user_id"),
 
     status: text("status", {
       enum: MORNING_BRIEF_COLLECTION_STATUSES,
@@ -180,6 +200,15 @@ export const morningBriefCollectionOccurrences = pgTable(
       check(
         "chk_morning_brief_collection_occurrence_outcome",
         sql`(${table.status} = 'running') = (${table.outcome} IS NULL)`,
+      ),
+      // The Slack binding exists exactly for a Slack occurrence. A composed
+      // occurrence may not carry one, so no reader can mistake a placeholder
+      // for a pinned workspace, and a Slack occurrence may not lose one, so
+      // the existing binding comparison keeps comparing real values.
+      check(
+        "chk_morning_brief_collection_occurrence_slack_binding",
+        sql`(${table.collectionKind} = ${sql.raw(`'${MORNING_BRIEF_COLLECTION_KIND_SLACK}'`)}) =
+          (${table.slackWorkspaceId} IS NOT NULL AND ${table.slackUserId} IS NOT NULL)`,
       ),
     ];
   },

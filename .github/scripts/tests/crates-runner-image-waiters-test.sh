@@ -28,8 +28,18 @@ end
     raise "#{name} must retain the full architecture matrix"
   end
 end
-%w[runner-behavior-lane-a runner-behavior-lane-b runner-behavior-lane-c runner-behavior-lane-d guest-rpc-firecracker-test].each do |name|
+%w[runner-behavior-lane-a runner-behavior-lane-b runner-behavior-lane-c runner-behavior-lane-d].each do |name|
   raise "#{name} must depend only on selected target readiness" unless jobs.fetch(name).fetch("needs") == ["runner-build"]
+end
+%w[host-cpu-fairness-build guest-rpc-firecracker-build].each do |name|
+  build = jobs.fetch(name)
+  unless build.fetch("needs") == ["detect", "runner-host-groups"] &&
+      build.dig("env", "TARGET_TRIPLE") == '${{ needs.runner-host-groups.outputs.selected-target }}'
+    raise "#{name} must compile for the planned target without waiting for an image"
+  end
+end
+unless jobs.fetch("guest-rpc-firecracker-test").fetch("needs") == ["runner-build", "guest-rpc-firecracker-build"]
+  raise "native RPC execution must wait for both the selected image and its test binary"
 end
 unless group_step.dig("env", "SELECTION_KEY") == '${{ needs.detect.outputs.runner-image-job-ref }}' &&
     select_step.dig("env", "EXPECTED_TARGET") == '${{ needs.runner-host-groups.outputs.selected-target }}' &&
@@ -44,11 +54,12 @@ def run_step(root, env, step, success: true)
   output + error
 end
 
-def check_gate(root, gate, step, matrix:, needed: "true", release: "false", results: {}, success: true)
+def check_gate(root, gate, step, matrix:, needed: "true", cpu_needed: "true", release: "false", results: {}, success: true)
   values = gate.fetch("needs").to_h { |name| [name, "success"] }.merge(results)
   script = step.fetch("run").gsub(/\$\{\{ needs\.([a-z-]+)\.result \}\}/) { values.fetch(Regexp.last_match(1)) }
   raise "unresolved gate expression" if script.include?("${{")
-  env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed, "IMAGE_VALIDATION_MATRIX" => matrix}
+  env = {"IS_RELEASE" => release, "RUNNER_IMAGE_NEEDED" => needed,
+         "CPU_FAIRNESS_NEEDED" => cpu_needed, "IMAGE_VALIDATION_MATRIX" => matrix}
   run_step(root, env, script, success: success)
 end
 
@@ -101,15 +112,27 @@ Dir.mktmpdir("crates-image-waiters") do |dir|
   raise "host-only tests need both targets" unless JSON.parse(outputs.fetch("matrix")).length == 2
 end
 
-%w[runner-host-groups runner-build runner-image-architecture-manifest].each do |job|
+%w[runner-host-groups runner-build runner-image-architecture-manifest
+   host-cpu-fairness-build host-cpu-fairness-test
+   guest-rpc-firecracker-build guest-rpc-firecracker-test].each do |job|
   %w[failure cancelled skipped].each do |result|
     check_gate(root, gate, gate_step, matrix: '[{"target":"other"}]', results: {job => result}, success: false)
   end
 end
+# A failed producer skips its dependent execution job. Neither may disappear
+# behind an otherwise green image waiter or the gate's optional-job handling.
+{"host-cpu-fairness-build" => "host-cpu-fairness-test",
+ "guest-rpc-firecracker-build" => "guest-rpc-firecracker-test"}.each do |build, execution|
+  check_gate(root, gate, gate_step, matrix: "[]", results: {build => "failure", execution => "skipped"}, success: false)
+end
+optional_cpu = %w[host-cpu-fairness-build host-cpu-fairness-test].to_h { |name| [name, "skipped"] }
+check_gate(root, gate, gate_step, matrix: "[]", cpu_needed: "false", results: optional_cpu)
 check_gate(root, gate, gate_step, matrix: "[]", results: {"runner-build" => "skipped", "runner-image-architecture-manifest" => "skipped"}, success: false)
 check_gate(root, gate, gate_step, matrix: "", results: {"runner-image-architecture-manifest" => "skipped"}, success: false)
-unselected = %w[runner-host-groups runner-build runner-image-architecture-manifest guest-rpc-firecracker-test].to_h { |name| [name, "skipped"] }
-check_gate(root, gate, gate_step, matrix: "", needed: "false", results: unselected)
+unselected = %w[runner-host-groups runner-build runner-image-architecture-manifest
+                host-cpu-fairness-build host-cpu-fairness-test
+                guest-rpc-firecracker-build guest-rpc-firecracker-test].to_h { |name| [name, "skipped"] }
+check_gate(root, gate, gate_step, matrix: "", needed: "false", cpu_needed: "false", results: unselected)
 check_gate(root, gate, gate_step, matrix: "", release: "true", results: gate.fetch("needs").to_h { |name| [name, "skipped"] })
 
 puts "crates-runner-image-waiters-test: ok"

@@ -12,6 +12,11 @@ import {
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
 import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import {
+  mcpSendChatMessageOutputSchema,
+  mcpRevokeQueuedMessageOutputSchema,
+  mcpCancelRunOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
@@ -37,6 +42,7 @@ import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   rejectSearchablePromptFixture,
   setChatSearchEventTimestampPrecisionFixture,
@@ -239,6 +245,27 @@ async function searchMessages(token: string, args: Record<string, unknown>) {
   return mcpSearchChatMessagesOutputSchema.parse(result.structuredContent);
 }
 
+async function sendMessage(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "send_chat_message", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpSendChatMessageOutputSchema.parse(result.structuredContent);
+}
+
+async function revokeMessage(token: string, threadId: string, inputId: string) {
+  const result = await callTool(token, "revoke_queued_message", {
+    threadId,
+    inputId,
+  });
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpRevokeQueuedMessageOutputSchema.parse(result.structuredContent);
+}
+
+async function cancelRun(token: string, runId: string) {
+  const result = await callTool(token, "cancel_run", { runId });
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpCancelRunOutputSchema.parse(result.structuredContent);
+}
+
 async function projectSearchMessages(threadIds: string[]) {
   await accept(
     setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
@@ -318,6 +345,1004 @@ async function chatRunFixture() {
   });
   return { auth, actor, chat, agent, runs };
 }
+
+describe("MCP chat mutations", () => {
+  it("treats UUID letter case as the same submission identity", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const requestId = randomUUID();
+    const token = f.auth.token({ scope: defaultScopes });
+    const text = "Preserve the message while normalizing its identifiers";
+    const accepted = await sendMessage(token, {
+      threadId: thread.id.toUpperCase(),
+      requestId: requestId.toUpperCase(),
+      text,
+    });
+    expect(accepted).toMatchObject({
+      inputRef: { threadId: thread.id, eventId: requestId },
+      replayed: false,
+    });
+    const replay = await sendMessage(token, {
+      threadId: thread.id,
+      requestId,
+      text,
+    });
+    expect(replay).toStrictEqual({ ...accepted, replayed: true });
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toMatchObject([{ text }]);
+  });
+
+  it("preserves exact text and the original input reference when run admission rejects it", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const text = "  Keep my whitespace\n中文 😀  ";
+    const requestId = randomUUID();
+    const token = f.auth.token({ scope: defaultScopes });
+    const result = await sendMessage(token, {
+      threadId: thread.id,
+      text,
+      requestId,
+    });
+    expect(result).toMatchObject({
+      inputRef: { threadId: thread.id, eventId: requestId },
+      replayed: false,
+      disposition: "rejected",
+      runId: null,
+    });
+    expect(Date.parse(result.retryUntil) - Date.parse(result.acceptedAt)).toBe(
+      24 * 60 * 60 * 1000,
+    );
+    expect(new URL(result.url).pathname).toBe(`/chats/${thread.id}`);
+    const events = (await f.chat.listThreadEvents(f.actor, thread.id)).events;
+    const original = events.find((event) => {
+      return event.id === requestId;
+    });
+    expect(original).toMatchObject({
+      seqId: result.inputRef.seqId,
+      eventType: "input.prompt",
+      userMessage: { version: 1, parts: [{ type: "text", text }] },
+    });
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toMatchObject([{ text, eventType: "input.rejected", runId: null }]);
+    const replay = await sendMessage(token, {
+      threadId: thread.id,
+      text,
+      requestId,
+    });
+    expect(replay).toStrictEqual({ ...result, replayed: true });
+    expect(
+      (await f.chat.listThreadEvents(f.actor, thread.id)).events,
+    ).toStrictEqual(events);
+  });
+
+  it("settles concurrent identical sends once and accepts refreshed authorization for the original receipt", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const args = {
+      threadId: thread.id,
+      text: "One accepted message despite concurrent requests",
+      requestId: randomUUID(),
+    };
+    const token = f.auth.token({ scope: defaultScopes });
+    const replies = await Promise.all([
+      sendMessage(token, args),
+      sendMessage(token, args),
+    ]);
+    expect(replies[0]?.inputRef).toStrictEqual(replies[1]?.inputRef);
+    expect(
+      replies.filter((reply) => {
+        return !reply.replayed;
+      }),
+    ).toHaveLength(1);
+    const refreshed = f.auth.token({
+      scope: `${requiredScopes} okou:chat:send`,
+      exp: Math.floor(now() / 1000) + 7200,
+      jti: randomUUID(),
+    });
+    const replay = await sendMessage(refreshed, args);
+    expect(replay.inputRef).toStrictEqual(replies[0]?.inputRef);
+    expect(replay.acceptedAt).toBe(replies[0]?.acceptedAt);
+    expect(replay.retryUntil).toBe(replies[0]?.retryUntil);
+    expect(replay.replayed).toBeTruthy();
+    const messages = await getMessages(token, { threadId: thread.id });
+    expect(messages.messages).toHaveLength(1);
+    expect(messages.messages[0]?.text).toBe(args.text);
+    expect(
+      (await f.chat.listThreadEvents(f.actor, thread.id)).events.filter(
+        (event) => {
+          return event.id === args.requestId;
+        },
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("rejects same-identity changes of exact text or thread without changing either conversation", async () => {
+    const f = await messageFixture();
+    const first = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const second = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const args = {
+      threadId: first.id,
+      text: "Exact input",
+      requestId: randomUUID(),
+    };
+    const token = f.auth.token({ scope: defaultScopes });
+    const receipt = await sendMessage(token, args);
+    for (const threadId of [first.id, second.id]) {
+      await f.chat.patchThread(f.actor, threadId, {
+        draftUserMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "Keep this unsent draft" }],
+        },
+      });
+    }
+    const firstBefore = await f.chat.readThread(f.actor, first.id);
+    const secondBefore = await f.chat.readThread(f.actor, second.id);
+    const before = await f.chat.listThreadEvents(f.actor, first.id);
+    for (const changed of [
+      { ...args, text: "Exact input " },
+      { ...args, threadId: second.id },
+    ]) {
+      const failed = await callTool(token, "send_chat_message", changed);
+      expect(failed.isError).toBeTruthy();
+      expect(failed.structuredContent).toBeUndefined();
+    }
+    await expect(
+      f.chat.listThreadEvents(f.actor, first.id),
+    ).resolves.toStrictEqual(before);
+    expect(
+      (await getMessages(token, { threadId: second.id })).messages,
+    ).toStrictEqual([]);
+    expect((await sendMessage(token, args)).inputRef).toStrictEqual(
+      receipt.inputRef,
+    );
+    await expect(f.chat.readThread(f.actor, first.id)).resolves.toStrictEqual(
+      firstBefore,
+    );
+    await expect(f.chat.readThread(f.actor, second.id)).resolves.toStrictEqual(
+      secondBefore,
+    );
+  });
+
+  it("replays an equivalent owned first-party text input without creating another message", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const requestId = randomUUID();
+    const text = "An existing first-party input";
+    await f.chat.requestSendEvent(
+      f.actor,
+      {
+        agentId: f.agent.agentId,
+        threadId: thread.id,
+        clientEventId: requestId,
+        prompt: text,
+      },
+      [201],
+    );
+    const before = await f.chat.listThreadEvents(f.actor, thread.id);
+    const original = before.events.find((event) => {
+      return event.id === requestId;
+    });
+    if (!original) {
+      throw new Error("Expected the original first-party input");
+    }
+    const token = f.auth.token({ scope: defaultScopes });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const replay = await sendMessage(token, {
+        threadId: thread.id,
+        text,
+        requestId,
+      });
+      expect(replay).toMatchObject({
+        inputRef: {
+          threadId: thread.id,
+          eventId: requestId,
+          seqId: original.seqId,
+        },
+        acceptedAt: original.createdAt,
+        replayed: true,
+        disposition: "rejected",
+        runId: null,
+      });
+    }
+    await expect(
+      f.chat.listThreadEvents(f.actor, thread.id),
+    ).resolves.toStrictEqual(before);
+  });
+
+  it.each(["different text", "additional user context"] as const)(
+    "rejects a first-party input with the same identity but %s",
+    async (difference) => {
+      const f = await messageFixture();
+      const thread = await f.chat.createThread(f.actor, {
+        agentId: f.agent.agentId,
+      });
+      const requestId = randomUUID();
+      const text = "An existing first-party input";
+      await f.chat.requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agent.agentId,
+          threadId: thread.id,
+          clientEventId: requestId,
+          prompt: text,
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text },
+              ...(difference === "additional user context"
+                ? [
+                    {
+                      type: "additional_info" as const,
+                      text: "Original context",
+                    },
+                  ]
+                : []),
+            ],
+          },
+        },
+        [201],
+      );
+      const before = await f.chat.listThreadEvents(f.actor, thread.id);
+      const failed = await callTool(
+        f.auth.token({ scope: defaultScopes }),
+        "send_chat_message",
+        {
+          threadId: thread.id,
+          text: difference === "different text" ? `${text} changed` : text,
+          requestId,
+        },
+      );
+      expect(failed.isError).toBeTruthy();
+      expect(failed.structuredContent).toBeUndefined();
+      await expect(
+        f.chat.listThreadEvents(f.actor, thread.id),
+      ).resolves.toStrictEqual(before);
+    },
+  );
+
+  it("admits only one payload when concurrent requests reuse an identity with conflicting text", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const requestId = randomUUID();
+    const token = f.auth.token({ scope: defaultScopes });
+    const results = await Promise.all(
+      ["First conflicting payload", "Second conflicting payload"].map(
+        (text) => {
+          return callTool(token, "send_chat_message", {
+            threadId: thread.id,
+            requestId,
+            text,
+          });
+        },
+      ),
+    );
+    expect(
+      results.filter((result) => {
+        return result.isError;
+      }),
+    ).toHaveLength(1);
+    const successful = results.find((result) => {
+      return !result.isError;
+    });
+    const receipt = mcpSendChatMessageOutputSchema.parse(
+      successful?.structuredContent,
+    );
+    expect(receipt).toMatchObject({
+      inputRef: { eventId: requestId },
+      replayed: false,
+    });
+    const messages = (await getMessages(token, { threadId: thread.id }))
+      .messages;
+    expect(messages).toHaveLength(1);
+    expect([
+      "First conflicting payload",
+      "Second conflicting payload",
+    ]).toContain(messages[0]?.text);
+    expect(
+      (await f.chat.listThreadEvents(f.actor, thread.id)).events.filter(
+        (event) => {
+          return event.id === requestId;
+        },
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("finishes an admitted send after its HTTP caller disconnects and recovers the original receipt", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const args = {
+      threadId: thread.id,
+      text: "Recover this interrupted response",
+      requestId: randomUUID(),
+    };
+    const token = f.auth.token({ scope: defaultScopes });
+    // Infrastructure exception: an HTTP caller cannot pause a database lock.
+    // Hold only this owned thread to disconnect after admission but before its
+    // write commits, then verify the resulting conversation through real APIs.
+    const lock = await holdChatThreadRowLockFixture({
+      threadId: thread.id,
+      signal: context.signal,
+    });
+    const controller = new AbortController();
+    const app = createAppWithRoutes({
+      routes: mcpServerRoutes,
+      signal: context.signal,
+    });
+    const pending = settleIncludingAbort(
+      (async () => {
+        const response = await app.request(
+          new Request(resource, {
+            method: "POST",
+            headers: {
+              ...protocolHeaders(
+                token,
+                "tools/call",
+                true,
+                "send_chat_message",
+              ),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(
+              requestBody("tools/call", true, {
+                name: "send_chat_message",
+                arguments: args,
+              }),
+            ),
+            signal: controller.signal,
+          }),
+        );
+        return { status: response.status, body: await response.text() };
+      })(),
+    );
+    onTestFinished(async () => {
+      controller.abort();
+      lock.release();
+      await lock.done;
+      await pending;
+    });
+    await expect.poll(lock.blockedWaiterCount).toBeGreaterThan(0);
+    controller.abort();
+    lock.release();
+    await lock.done;
+    await pending;
+    await flushWaitUntilForTest();
+    const recovered = await sendMessage(token, args);
+    expect(recovered).toMatchObject({
+      inputRef: { threadId: thread.id, eventId: args.requestId },
+      replayed: true,
+      disposition: "rejected",
+      runId: null,
+    });
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toMatchObject([{ text: args.text }]);
+    expect(
+      (await f.chat.listThreadEvents(f.actor, thread.id)).events.filter(
+        (event) => {
+          return event.id === args.requestId;
+        },
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("rolls back the losing thread when two conversations concurrently reuse one request identity", async () => {
+    const f = await messageFixture();
+    const threads = await Promise.all([
+      f.chat.createThread(f.actor, { agentId: f.agent.agentId }),
+      f.chat.createThread(f.actor, { agentId: f.agent.agentId }),
+    ]);
+    for (const thread of threads) {
+      await f.chat.patchThread(f.actor, thread.id, {
+        draftUserMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Preserve the losing conversation draft" },
+          ],
+        },
+      });
+    }
+    const before = await Promise.all(
+      threads.map((thread) => {
+        return f.chat.readThread(f.actor, thread.id);
+      }),
+    );
+    // Infrastructure exception: separate requests cannot choose where their
+    // transactions pause. Owned row locks make both senders reach the write
+    // boundary before either identity can commit, without changing any rows.
+    const locks = await Promise.all(
+      threads.map((thread) => {
+        return holdChatThreadRowLockFixture({
+          threadId: thread.id,
+          signal: context.signal,
+        });
+      }),
+    );
+    const requestId = randomUUID();
+    const token = f.auth.token({ scope: defaultScopes });
+    const pending = threads.map((thread) => {
+      return settleIncludingAbort(
+        callTool(token, "send_chat_message", {
+          threadId: thread.id,
+          text: "Exactly one conversation may accept this identity",
+          requestId,
+        }),
+      );
+    });
+    onTestFinished(async () => {
+      for (const lock of locks) {
+        lock.release();
+      }
+      await Promise.all(
+        locks.map((lock) => {
+          return lock.done;
+        }),
+      );
+      await Promise.allSettled(pending);
+    });
+    for (const lock of locks) {
+      await expect.poll(lock.blockedWaiterCount).toBeGreaterThan(0);
+    }
+    for (const lock of locks) {
+      lock.release();
+    }
+    await Promise.all(
+      locks.map((lock) => {
+        return lock.done;
+      }),
+    );
+    const results = (await Promise.all(pending)).map((result) => {
+      if (!result.ok) {
+        throw result.error;
+      }
+      return result.value;
+    });
+    expect(
+      results.filter((result) => {
+        return result.isError;
+      }),
+    ).toHaveLength(1);
+    for (const [index, result] of results.entries()) {
+      const thread = threads[index];
+      if (!thread) {
+        throw new Error("Expected one request per conversation");
+      }
+      if (result.isError) {
+        await expect(
+          f.chat.readThread(f.actor, thread.id),
+        ).resolves.toStrictEqual(before[index]);
+        expect(
+          (await getMessages(token, { threadId: thread.id })).messages,
+        ).toStrictEqual([]);
+      } else {
+        const receipt = mcpSendChatMessageOutputSchema.parse(
+          result.structuredContent,
+        );
+        expect(receipt).toMatchObject({
+          inputRef: { threadId: thread.id, eventId: requestId },
+          replayed: false,
+        });
+        expect(
+          (await getMessages(token, { threadId: thread.id })).messages,
+        ).toHaveLength(1);
+      }
+    }
+  });
+
+  it("expires an accepted identity after its absolute retry window without admitting another input", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const args = {
+      threadId: thread.id,
+      text: "Absolute retry window",
+      requestId: randomUUID(),
+    };
+    const receipt = await sendMessage(
+      f.auth.token({ scope: defaultScopes }),
+      args,
+    );
+    // Clerk validates real wall time while the receipt uses scoped app time.
+    // Keep this credential valid across both clocks to isolate receipt expiry.
+    const expiryToken = f.auth.token({
+      scope: defaultScopes,
+      exp: Math.floor((Date.parse(receipt.retryUntil) + 60_000) / 1000),
+    });
+    const before = await f.chat.listThreadEvents(f.actor, thread.id);
+    await withMockNowForTest(Date.parse(receipt.retryUntil) - 1, async () => {
+      const replay = await sendMessage(expiryToken, args);
+      expect(replay).toStrictEqual({ ...receipt, replayed: true });
+    });
+    await withMockNowForTest(Date.parse(receipt.retryUntil) + 1, async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const expired = await callTool(expiryToken, "send_chat_message", args);
+        expect(expired.isError).toBeTruthy();
+        expect(expired.structuredContent).toBeUndefined();
+        expect(expired.content[0]?.text).toContain("expired");
+      }
+    });
+    await expect(
+      f.chat.listThreadEvents(f.actor, thread.id),
+    ).resolves.toStrictEqual(before);
+  });
+
+  it("rechecks current thread authorization before disclosing an accepted receipt", async () => {
+    const f = await messageFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const args = {
+      threadId: thread.id,
+      text: "PRIVATE_MCP_RECEIPT",
+      requestId: randomUUID(),
+    };
+    const token = f.auth.token({ scope: defaultScopes });
+    await sendMessage(token, args);
+    const strangers = [
+      f.bdd.user({ orgId: f.auth.orgId }),
+      f.bdd.user({ userId: f.auth.userId }),
+    ];
+    for (const actor of strangers) {
+      if (!actor.orgId) {
+        throw new Error("Expected an organization for an OAuth peer");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        {
+          userId: actor.userId,
+          orgId: actor.orgId,
+        },
+        { [FeatureSwitchKey.McpServer]: true },
+      );
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [f.auth.orgId, actor.orgId].map((orgId) => {
+            return {
+              id: randomUUID(),
+              role: "org:member",
+              organization: { id: orgId },
+            };
+          }),
+          totalCount: 2,
+        },
+      );
+      const foreignToken = f.auth.token({
+        sub: actor.userId,
+        org_id: actor.orgId,
+        scope: defaultScopes,
+      });
+      const failure = await callTool(foreignToken, "send_chat_message", args);
+      const missing = await callTool(foreignToken, "send_chat_message", {
+        ...args,
+        threadId: randomUUID(),
+      });
+      expect(failure).toStrictEqual(missing);
+      expect(failure.isError).toBeTruthy();
+      expect(JSON.stringify(failure)).not.toContain("PRIVATE_MCP_RECEIPT");
+      await expect(
+        revokeMessage(foreignToken, thread.id, args.requestId),
+      ).resolves.toMatchObject({ outcome: "unavailable", runId: null });
+    }
+    await f.chat.deleteThread(f.actor, thread.id);
+    expect(
+      (await callTool(token, "send_chat_message", args)).isError,
+    ).toBeTruthy();
+  });
+
+  it.each([
+    {
+      name: "send_chat_message",
+      scope: "okou:chat:send",
+      args: {
+        threadId: randomUUID(),
+        text: "No grant",
+        requestId: randomUUID(),
+      },
+    },
+    {
+      name: "revoke_queued_message",
+      scope: "okou:run:cancel",
+      args: { threadId: randomUUID(), inputId: randomUUID() },
+    },
+    {
+      name: "cancel_run",
+      scope: "okou:run:cancel",
+      args: { runId: randomUUID() },
+    },
+  ])(
+    "requires $scope for manual $name invocation",
+    async ({ name, scope, args }) => {
+      const auth = await fixture();
+      const token = auth.token({
+        scope: defaultScopes
+          .split(" ")
+          .filter((value) => {
+            return value !== scope;
+          })
+          .join(" "),
+      });
+      const listed = await accept(
+        client().request({
+          extraHeaders: protocolHeaders(token, "tools/list"),
+          body: requestBody("tools/list"),
+        }),
+        [200],
+      );
+      const tools = z
+        .object({
+          result: z.object({ tools: z.array(z.object({ name: z.string() })) }),
+        })
+        .parse(rpc(listed.body)).result.tools;
+      expect(
+        tools.some((tool) => {
+          return tool.name === name;
+        }),
+      ).toBeFalsy();
+      expect(
+        tools.some((tool) => {
+          return tool.name === "get_chat_messages";
+        }),
+      ).toBeTruthy();
+      const response = await accept(
+        client().request({
+          extraHeaders: protocolHeaders(token, "tools/call", true, name),
+          body: requestBody("tools/call", true, { name, arguments: args }),
+        }),
+        [200],
+      );
+      expect(rpc(response.body)).toMatchObject({
+        error: { message: expect.any(String) },
+      });
+    },
+  );
+
+  it("rejects unsupported send controls and invalid text before enqueueing", async () => {
+    const f = await threadFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const token = f.auth.token({ scope: defaultScopes });
+    const base = {
+      threadId: thread.id,
+      text: "Only ordinary user input",
+      requestId: randomUUID(),
+    };
+    for (const args of [
+      { ...base, text: " \n\t " },
+      { ...base, text: "x".repeat(32_001) },
+      { ...base, requestId: "not-a-uuid" },
+      { ...base, model: "claude-sonnet-5" },
+      { ...base, agentId: f.agent.agentId },
+    ]) {
+      const failed = await callTool(token, "send_chat_message", args);
+      expect(failed.isError).toBeTruthy();
+      expect(failed.structuredContent).toBeUndefined();
+    }
+    expect(
+      (await getMessages(token, { threadId: thread.id })).messages,
+    ).toStrictEqual([]);
+  });
+
+  it.each(["lowercase", "uppercase"] as const)(
+    "withdraws pending input exactly once without cancelling its active run (%s UUIDs)",
+    async (letterCase) => {
+      const f = await chatRunFixture();
+      const active = await f.chat.requestSendEvent(
+        f.actor,
+        { agentId: f.agent.agentId, prompt: "Keep this run active" },
+        [201],
+      );
+      if (active.status !== 201 || !active.body.runId) {
+        throw new Error("Expected an active run");
+      }
+      const runId = active.body.runId;
+      onTestFinished(async () => {
+        await f.runs.requestCancelRun(f.actor, runId, [200]);
+      });
+      const token = f.auth.token({ scope: defaultScopes });
+      const args = {
+        threadId: active.body.threadId,
+        text: "Withdraw only this pending input",
+        requestId: randomUUID(),
+      };
+      const sent = await sendMessage(token, args);
+      expect(sent).toMatchObject({ disposition: "queued", runId: null });
+      const revoked = await revokeMessage(
+        token,
+        letterCase === "uppercase"
+          ? args.threadId.toUpperCase()
+          : args.threadId,
+        letterCase === "uppercase"
+          ? args.requestId.toUpperCase()
+          : args.requestId,
+      );
+      expect(revoked).toMatchObject({
+        threadId: args.threadId,
+        inputId: args.requestId,
+        outcome: "revoked",
+      });
+      await expect(
+        revokeMessage(token, args.threadId, args.requestId),
+      ).resolves.toMatchObject({ outcome: "already_revoked" });
+      await expect(sendMessage(token, args)).resolves.toMatchObject({
+        inputRef: sent.inputRef,
+        replayed: true,
+        disposition: "revoked",
+        runId: null,
+      });
+      expect(
+        (await getMessages(token, { threadId: args.threadId })).messages.map(
+          (message) => {
+            return message.text;
+          },
+        ),
+      ).toStrictEqual(["Keep this run active"]);
+      await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
+        status: "pending",
+      });
+      expect(
+        (await f.chat.listThreadEvents(f.actor, args.threadId)).events.filter(
+          (event) => {
+            return (
+              event.eventType === "control.revoke" &&
+              event.revokesEventId === args.requestId
+            );
+          },
+        ),
+      ).toHaveLength(1);
+      const before = await f.chat.listThreadEvents(f.actor, args.threadId);
+      await expect(
+        revokeMessage(token, args.threadId, randomUUID()),
+      ).resolves.toMatchObject({ outcome: "unavailable" });
+      await expect(
+        f.chat.listThreadEvents(f.actor, args.threadId),
+      ).resolves.toStrictEqual(before);
+    },
+  );
+
+  it("starts an ordinary run and denies cancellation by another user or organization", async () => {
+    const f = await chatRunFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const token = f.auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      text: "Start through the normal run scheduler",
+      requestId: randomUUID(),
+    });
+    if (!sent.runId) {
+      throw new Error(
+        "Expected the MCP submission to be associated with a run",
+      );
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      await f.runs.requestCancelRun(f.actor, runId, [200]);
+    });
+    expect(sent.disposition).toBe("associated");
+    await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
+      status: "pending",
+    });
+    const bdd = createBddApi(context);
+    for (const actor of [
+      bdd.user({ orgId: f.auth.orgId }),
+      bdd.user({ userId: f.auth.userId }),
+    ]) {
+      if (!actor.orgId) {
+        throw new Error("Expected organization for cancellation authorization");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: actor.userId, orgId: actor.orgId },
+        { [FeatureSwitchKey.McpServer]: true },
+      );
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [f.auth.orgId, actor.orgId].map((orgId) => {
+            return {
+              id: randomUUID(),
+              role: "org:member",
+              organization: { id: orgId },
+            };
+          }),
+          totalCount: 2,
+        },
+      );
+      const failure = await callTool(
+        f.auth.token({
+          scope: defaultScopes,
+          sub: actor.userId,
+          org_id: actor.orgId,
+        }),
+        "cancel_run",
+        { runId },
+      );
+      expect(failure.isError).toBeTruthy();
+      expect(failure.structuredContent).toBeUndefined();
+      expect(failure.content[0]?.text).toContain("No such run");
+    }
+    await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
+      status: "pending",
+    });
+  });
+
+  it("does not withdraw reserved input and reports its later association with the same active run", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const active = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Active steer target",
+    });
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, active.runId);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
+    const token = auth.token({ scope: defaultScopes });
+    const args = {
+      threadId: active.threadId,
+      text: "Steer the current run",
+      requestId: randomUUID(),
+    };
+    const sent = await sendMessage(token, args);
+    expect(sent).toMatchObject({ disposition: "queued", runId: null });
+    const reserved = await f.api.reserveRunnerActiveInputs(
+      claimed.claim.sandboxToken,
+      active.runId,
+    );
+    if (reserved.outcome !== "reserved") {
+      throw new Error("Expected the runner to reserve MCP input");
+    }
+    expect(reserved.eventIds).toStrictEqual([args.requestId]);
+    const recall = await revokeMessage(token, args.threadId, args.requestId);
+    expect(recall).toMatchObject({
+      outcome: "not_revocable",
+      reason: "reserved_or_associated",
+    });
+    await expect(sendMessage(token, args)).resolves.toMatchObject({
+      inputRef: sent.inputRef,
+      replayed: true,
+      disposition: "reserved",
+      runId: active.runId,
+    });
+    await expect(
+      f.api.recordRunnerActiveInputDelivery(
+        claimed.claim.sandboxToken,
+        active.runId,
+        reserved.deliveryId,
+      ),
+    ).resolves.toStrictEqual({ outcome: "delivered" });
+    await expect(sendMessage(token, args)).resolves.toMatchObject({
+      inputRef: sent.inputRef,
+      replayed: true,
+      disposition: "associated",
+      runId: active.runId,
+    });
+    await expect(
+      revokeMessage(token, args.threadId, args.requestId),
+    ).resolves.toMatchObject({
+      outcome: "not_revocable",
+      reason: "reserved_or_associated",
+      runId: active.runId,
+    });
+    expect(
+      (await getMessages(token, { threadId: args.threadId })).messages,
+    ).toMatchObject([
+      { text: "Active steer target", runId: active.runId },
+      { text: args.text, runId: active.runId },
+    ]);
+    await expect(
+      f.api.readRun(actor.actor, active.runId),
+    ).resolves.toMatchObject({
+      status: "running",
+    });
+  });
+
+  it.each(["lowercase", "uppercase"] as const)(
+    "cancels an owned run cooperatively and keeps repeated cancellation idempotent (%s UUIDs)",
+    async (letterCase) => {
+      const auth = await fixture();
+      const f = createChatEventsFixture(context);
+      const actor = await f.entitledChatActor({
+        userId: auth.userId,
+        orgId: auth.orgId,
+      });
+      const active = await f.sendChatRun(actor.actor, {
+        agentId: actor.agentId,
+        prompt: "Cancel this whole run",
+      });
+      const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
+      const token = auth.token({ scope: defaultScopes });
+      const result = await cancelRun(
+        token,
+        letterCase === "uppercase" ? active.runId.toUpperCase() : active.runId,
+      );
+      expect(result).toMatchObject({
+        runId: active.runId,
+        status: "cancelled",
+        alreadyCancelled: false,
+      });
+      await flushWaitUntilForTest();
+      await expect(
+        f.api.readRun(actor.actor, active.runId),
+      ).resolves.toMatchObject({
+        status: "cancelled",
+      });
+      await expect(
+        f.api.readRunnerCancellation(
+          claimed.claim.sandboxToken,
+          active.runId,
+          actor.runnerGroup,
+        ),
+      ).resolves.toMatchObject({ state: "present", mode: "cooperative" });
+      await expect(cancelRun(token, active.runId)).resolves.toMatchObject({
+        runId: active.runId,
+        status: "cancelled",
+        alreadyCancelled: true,
+      });
+      await flushWaitUntilForTest();
+      expect(
+        (
+          await f.chat.listThreadEvents(actor.actor, active.threadId)
+        ).events.filter((event) => {
+          return (
+            event.eventType === "run.cancelled" && event.runId === active.runId
+          );
+        }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("rejects cancellation of a completed run without rewriting its terminal state", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const active = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Complete normally",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
+    await f.completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    const result = await callTool(
+      auth.token({ scope: defaultScopes }),
+      "cancel_run",
+      { runId: active.runId },
+    );
+    expect(result.isError).toBeTruthy();
+    expect(result.structuredContent).toBeUndefined();
+    await expect(
+      f.api.readRun(actor.actor, active.runId),
+    ).resolves.toMatchObject({
+      status: "completed",
+    });
+  });
+});
 
 describe("MCP canonical message reads", () => {
   it("pages latest and earlier messages with genuine references and the original input time after rejection", async () => {
@@ -2405,6 +3430,30 @@ describe("external MCP entry", () => {
             },
             { name: "list_chat_threads", annotations: { readOnlyHint: true } },
             { name: "get_chat_thread", annotations: { readOnlyHint: true } },
+            ...(scopes === defaultScopes
+              ? [
+                  {
+                    name: "send_chat_message",
+                    annotations: { readOnlyHint: false, idempotentHint: true },
+                  },
+                  {
+                    name: "revoke_queued_message",
+                    annotations: {
+                      readOnlyHint: false,
+                      destructiveHint: true,
+                      idempotentHint: true,
+                    },
+                  },
+                  {
+                    name: "cancel_run",
+                    annotations: {
+                      readOnlyHint: false,
+                      destructiveHint: true,
+                      idempotentHint: true,
+                    },
+                  },
+                ]
+              : []),
           ],
         },
       });
@@ -2450,7 +3499,7 @@ describe("external MCP entry", () => {
       const transport = new StreamableHTTPClientTransport(new URL(resource), {
         authProvider: {
           token: () => {
-            return Promise.resolve(auth.token());
+            return Promise.resolve(auth.token({ scope: defaultScopes }));
           },
         },
         fetch: async (input, init) => {
@@ -2480,6 +3529,9 @@ describe("external MCP entry", () => {
         "search_chat_messages",
         "list_chat_threads",
         "get_chat_thread",
+        "send_chat_message",
+        "revoke_queued_message",
+        "cancel_run",
       ]);
       const result = await sdk.callTool({
         name: "list_chat_threads",
@@ -2517,6 +3569,25 @@ describe("external MCP entry", () => {
             { ref: match.ref, text: "sdksearchneedle context handoff" },
           ],
         },
+      });
+      const requestId = randomUUID();
+      const submitted = await sdk.callTool({
+        name: "send_chat_message",
+        arguments: {
+          threadId: sent.threadId,
+          text: "Submitted by a generic MCP client",
+          requestId,
+        },
+      });
+      expect(submitted.isError).not.toBeTruthy();
+      const receipt = mcpSendChatMessageOutputSchema.parse(
+        submitted.structuredContent,
+      );
+      expect(receipt).toMatchObject({
+        inputRef: { threadId: sent.threadId, eventId: requestId },
+        replayed: false,
+        disposition: "rejected",
+        runId: null,
       });
       const missing = await sdk.callTool({
         name: "get_chat_thread",

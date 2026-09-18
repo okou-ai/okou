@@ -1002,11 +1002,16 @@ export function generateHostedSitesPresignedGetUrl(
   bucket: string,
   key: string,
   usePublicEndpoint = false,
+  options?: {
+    readonly filename?: string;
+    readonly signingDate?: Date;
+  },
 ): Computed<Promise<string>> {
   return generatePresignedGetUrlWithClient(
     usePublicEndpoint ? hostedSitesPublicS3Client$ : hostedSitesS3Client$,
     bucket,
     key,
+    options,
   );
 }
 

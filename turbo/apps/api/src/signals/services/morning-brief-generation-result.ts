@@ -7,6 +7,11 @@ import {
   type MorningBriefCoverageFacts,
 } from "./morning-brief-coverage-note";
 import type { GenerationSource } from "./morning-brief-generation-prompt";
+import {
+  validateReportedLanguage,
+  type MorningBriefOutputLanguage,
+} from "./morning-brief-language-policy";
+import type { MorningBriefDisplayLink } from "./morning-brief-source-item";
 
 /**
  * The only shape a Morning Brief generation may return, and how it is rendered.
@@ -273,6 +278,194 @@ export function interpretGenerationOutput(args: {
       title: escapeMarkdown(result.title),
       markdown,
       bytes,
+    },
+  };
+}
+
+/**
+ * The composed contract: the same strictness, over opaque citations.
+ *
+ * It differs from the Slack-only shape in exactly two ways, and both are
+ * load-bearing. Citations are opaque ids assigned by the request builder rather
+ * than provider message ids, so an accepted citation can only ever resolve to
+ * an item that actually travelled. And the answer states the language it wrote
+ * itself in, which is recorded as provenance — never as proof.
+ */
+const composedResultSchema = z.discriminatedUnion("decision", [
+  z
+    .object({
+      decision: z.literal("deliver"),
+      language: z.string().trim().min(1).max(35),
+      title: proseSchema(MAX_TITLE_LENGTH),
+      sections: z
+        .array(
+          z
+            .object({
+              heading: proseSchema(MAX_HEADING_LENGTH),
+              items: z
+                .array(
+                  z
+                    .object({
+                      text: proseSchema(MAX_ITEM_LENGTH),
+                      citations: z
+                        .array(z.string().min(1).max(16))
+                        .min(1)
+                        .max(MAX_SOURCE_IDS),
+                    })
+                    .strict(),
+                )
+                .min(1)
+                .max(MAX_ITEMS_PER_SECTION),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_SECTIONS),
+    })
+    .strict(),
+  z
+    .object({
+      decision: z.literal("skip"),
+      language: z.string().trim().min(1).max(35),
+      reason: z.literal("nothing_actionable"),
+    })
+    .strict(),
+]);
+
+/** An accepted composed result, plus the language the answer claimed. */
+type AcceptedComposedResult = AcceptedGenerationResult & {
+  readonly reportedLanguage: MorningBriefOutputLanguage | null;
+};
+
+type ComposedResultOutcome =
+  | { readonly kind: "accepted"; readonly result: AcceptedComposedResult }
+  | Extract<GenerationResultOutcome, { kind: "rejected" }>;
+
+/**
+ * Render the links an item cited, deduplicated by url and in input order.
+ *
+ * A citation that resolves to an item with no program-owned link renders no
+ * link at all. Chat is exactly that case: it has no addressable url, and
+ * inventing one would publish a link nothing observed.
+ */
+function renderComposedCitations(
+  citations: readonly string[],
+  links: ReadonlyMap<string, MorningBriefDisplayLink | null>,
+): string {
+  const seen = new Set<string>();
+  const rendered: string[] = [];
+  for (const id of citations) {
+    const link = links.get(id);
+    if (!link || seen.has(link.url)) {
+      continue;
+    }
+    seen.add(link.url);
+    rendered.push(`[${escapeMarkdown(link.label)}](${link.url})`);
+  }
+  return rendered.length === 0 ? "" : ` (${rendered.join(", ")})`;
+}
+
+function renderComposedMarkdown(
+  result: Extract<
+    z.infer<typeof composedResultSchema>,
+    { decision: "deliver" }
+  >,
+  links: ReadonlyMap<string, MorningBriefDisplayLink | null>,
+  coverageNote: string | null,
+): string {
+  const lines = [`# ${escapeMarkdown(result.title)}`];
+  for (const section of result.sections) {
+    lines.push("", `## ${escapeMarkdown(section.heading)}`, "");
+    for (const item of section.items) {
+      lines.push(
+        `- ${escapeMarkdown(item.text)}${renderComposedCitations(item.citations, links)}`,
+      );
+    }
+  }
+  if (coverageNote !== null) {
+    lines.push("", `_${escapeMarkdown(coverageNote)}_`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Turn raw composed model content into an accepted result or a named rejection.
+ *
+ * Validation is strict and terminal exactly as the Slack-only path is: there is
+ * no repair request, no second model and no lenient parse. A citation the
+ * request never issued is an unknown reference and fails the whole answer, so a
+ * model cannot attach a claim to evidence it was not given.
+ */
+export function interpretComposedGenerationOutput(args: {
+  readonly content: string;
+  readonly citations: ReadonlyMap<string, MorningBriefDisplayLink | null>;
+  readonly coverage: MorningBriefCoverageFacts;
+  /** The language the request asked for, for the program-owned coverage note. */
+  readonly language: string;
+}): ComposedResultOutcome {
+  const parsed = safeJsonParse(args.content.trim());
+  if (parsed === undefined) {
+    return { kind: "rejected", reason: "invalid_json" };
+  }
+  const validated = composedResultSchema.safeParse(parsed);
+  if (!validated.success) {
+    return { kind: "rejected", reason: "invalid_shape" };
+  }
+  const reportedLanguage = validateReportedLanguage(validated.data.language);
+  if (validated.data.decision === "skip") {
+    return {
+      kind: "accepted",
+      result: {
+        decision: "skip",
+        reason: "nothing_actionable",
+        reportedLanguage,
+      },
+    };
+  }
+
+  const result = validated.data;
+  const unknownReference = result.sections.some((section) => {
+    return section.items.some((item) => {
+      return item.citations.some((id) => {
+        return !args.citations.has(id);
+      });
+    });
+  });
+  if (unknownReference) {
+    return { kind: "rejected", reason: "unknown_source_reference" };
+  }
+
+  const emptyAfterEscaping =
+    escapeMarkdown(result.title).length === 0 ||
+    result.sections.some((section) => {
+      return (
+        escapeMarkdown(section.heading).length === 0 ||
+        section.items.some((item) => {
+          return escapeMarkdown(item.text).length === 0;
+        })
+      );
+    });
+  if (emptyAfterEscaping) {
+    return { kind: "rejected", reason: "empty_deliver" };
+  }
+
+  const markdown = renderComposedMarkdown(
+    result,
+    args.citations,
+    morningBriefCoverageNote(args.coverage, args.language),
+  );
+  const bytes = Buffer.byteLength(markdown, "utf8");
+  if (bytes > GENERATION_RESULT_MAX_BYTES) {
+    return { kind: "rejected", reason: "result_too_large" };
+  }
+  return {
+    kind: "accepted",
+    result: {
+      decision: "deliver",
+      title: escapeMarkdown(result.title),
+      markdown,
+      bytes,
+      reportedLanguage,
     },
   };
 }

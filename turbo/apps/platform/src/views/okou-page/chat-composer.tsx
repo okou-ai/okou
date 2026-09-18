@@ -43,6 +43,7 @@ import { i18n } from "../../i18n/index.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
+import { PaidToolNotice, TemplatePaidToolNotice } from "./paid-tool-notice.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
@@ -306,10 +307,7 @@ import {
   updateUserModelPreference$,
   userModelPreference$,
 } from "../../signals/external/user-model-preference.ts";
-import {
-  codexFastModeEnabled$,
-  featureSwitch$,
-} from "../../signals/external/feature-switch.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   selectedComputerUseHostId,
@@ -6483,6 +6481,7 @@ function TemplatePickerDialog({
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                <TemplatePaidToolNotice category={selectedCategory} />
                 {selectedCategory === "intro-video" ? (
                   <IntroVideoPicker
                     signals={signals.template.introVideo}
@@ -9834,14 +9833,12 @@ function ComposerRunModelPickerControl({
   signals,
   value,
   onChange,
-  codexFastModeEnabled,
   desktopLayout,
   mediaModelPanel,
 }: {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  codexFastModeEnabled: boolean;
   desktopLayout: boolean;
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
@@ -9875,7 +9872,6 @@ function ComposerRunModelPickerControl({
         onOpenChange={(open) => {
           setModelPickerOpen(open);
         }}
-        codexFastModeEnabled={codexFastModeEnabled}
         {...(mediaModelPanel ? { mediaModelPanel } : {})}
       />
     </div>
@@ -9946,14 +9942,12 @@ function ComposerModelPickerControls({
   signals,
   value,
   onChange,
-  codexFastModeEnabled,
   imageModel,
   videoModel,
 }: {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  codexFastModeEnabled: boolean;
   imageModel: ComposerResolvedImageModelPickerState | undefined;
   videoModel: ComposerResolvedVideoModelPickerState | undefined;
 }) {
@@ -10027,7 +10021,6 @@ function ComposerModelPickerControls({
           signals={signals}
           value={value}
           onChange={onChange}
-          codexFastModeEnabled={codexFastModeEnabled}
           desktopLayout={desktopLayout}
           mediaModelPanel={mediaModelPanel}
         />
@@ -10041,14 +10034,12 @@ function ComposerMediaModelPickerControls({
   signals,
   value,
   onChange,
-  codexFastModeEnabled,
   imageModel,
   videoModel,
 }: {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  codexFastModeEnabled: boolean;
   imageModel: ComposerImageModelPickerState | undefined;
   videoModel: ComposerVideoModelPickerState | undefined;
 }) {
@@ -10076,7 +10067,6 @@ function ComposerMediaModelPickerControls({
       signals={signals}
       value={value}
       onChange={onChange}
-      codexFastModeEnabled={codexFastModeEnabled}
       imageModel={resolvedImageModel}
       videoModel={resolvedVideoModel}
     />
@@ -10092,7 +10082,6 @@ function ComposerModelPickerSlotBase({
   imageModel: ComposerImageModelPickerState | undefined;
   videoModel: ComposerVideoModelPickerState | undefined;
 }) {
-  const codexFastModeEnabled = useGet(codexFastModeEnabled$);
   const modelSelection = useLastLoadable(signals.model.modelSelection$);
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
@@ -10119,7 +10108,6 @@ function ComposerModelPickerSlotBase({
           signals={signals}
           value={value}
           onChange={onModelPickerChange}
-          codexFastModeEnabled={codexFastModeEnabled}
           imageModel={imageModel}
           videoModel={videoModel}
         />
@@ -10128,7 +10116,6 @@ function ComposerModelPickerSlotBase({
           signals={signals}
           value={value}
           onChange={onModelPickerChange}
-          codexFastModeEnabled={codexFastModeEnabled}
           imageModel={undefined}
           videoModel={undefined}
         />
@@ -10320,12 +10307,10 @@ function ComposerTemporaryModelNotice({
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateUserModelPreference$,
   );
-  const codexFastModeEnabled = useGet(codexFastModeEnabled$);
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveModelFirstUserDefaultSelection({
     userPreference,
     policies,
-    codexFastModeEnabled,
   });
   const selectionServiceTier =
     selection?.codexServiceTier === "fast" ? "priority" : null;
@@ -11129,6 +11114,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
+  const paidToolHints = useGet(signals.paidToolHints$);
   const dragOver = useGet(signals.draft.dragOver$);
   const setDragOver = useSet(signals.draft.setDragOver$);
   const uploadFile = useComposerFileUpload(signals);
@@ -11179,6 +11165,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
           />
+          <PaidToolNotice tools={paidToolHints} />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
           <ComposerFooter

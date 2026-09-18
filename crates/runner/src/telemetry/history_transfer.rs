@@ -7,11 +7,10 @@ use crate::duration::duration_ms;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum HistoryCodecReason {
+pub(crate) enum HistoryCodecDecision {
     NativeZstd,
     BelowThreshold,
-    SampleRejected,
-    SampleAccepted,
+    AboveThreshold,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -26,7 +25,7 @@ pub(crate) enum HistoryTransferSource {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct HistoryTransferMeasurements {
     session_history_wire_codec: &'static str,
-    session_history_codec_reason: HistoryCodecReason,
+    session_history_codec_decision: HistoryCodecDecision,
     session_history_selection_ms: u64,
     session_history_transfer_bytes: u64,
     session_history_restore_representation: &'static str,
@@ -37,7 +36,7 @@ pub(crate) struct HistoryTransferMeasurements {
 impl HistoryTransferMeasurements {
     pub(crate) fn new(
         codec: FileCompression,
-        reason: HistoryCodecReason,
+        decision: HistoryCodecDecision,
         selection: Duration,
         logical_bytes: usize,
         native_zstd: bool,
@@ -48,7 +47,7 @@ impl HistoryTransferMeasurements {
                 FileCompression::None => "none",
                 FileCompression::Zstd => "zstd",
             },
-            session_history_codec_reason: reason,
+            session_history_codec_decision: decision,
             session_history_selection_ms: duration_ms(selection),
             session_history_transfer_bytes: logical_bytes as u64,
             session_history_restore_representation: if native_zstd { "codex_zstd" } else { "raw" },

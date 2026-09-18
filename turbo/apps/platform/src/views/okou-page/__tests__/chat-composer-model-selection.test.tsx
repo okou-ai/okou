@@ -220,7 +220,6 @@ async function openCodexExecutionChat(): Promise<void> {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -241,7 +240,6 @@ async function openMixedProviderChat(): Promise<void> {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -321,7 +319,6 @@ test.each([
       context,
       path: NEW_CHAT_PATH,
       featureSwitches: {
-        [FeatureSwitchKey.CodexFastMode]: true,
         [FeatureSwitchKey.ChatPreference]: true,
       },
     });
@@ -345,7 +342,6 @@ test("Localize fractional Fast speed guidance on hover", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -395,7 +391,6 @@ test("Make a temporary Codex speed the default", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -605,13 +600,9 @@ test("Explain model availability by plan and provider", async () => {
     return respond(200, limitedFreeBillingStatus());
   });
 
-  // One row per model: a Fast row would make the option names ambiguous.
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: false,
-    },
   });
 
   await readyComposer();
@@ -619,6 +610,8 @@ test("Explain model availability by plan and provider", async () => {
   await expect(
     screen.findByRole("option", { name: /^DeepSeek V4 Flash/iu }),
   ).resolves.toBeVisible();
+  // A row carries its cost glyphs and plan badge beside the model name, so it
+  // is addressed by that name as a prefix.
   expect(
     screen.getByRole("option", { name: /^GPT 5\.6 Luna/iu }),
   ).toBeVisible();
@@ -680,13 +673,13 @@ test("Let an existing thread send while model availability is reconciling", asyn
     });
   });
 
-  // Sending during reconciliation is the subject.
+  // Sending during reconciliation is the subject: the composer keeps the
+  // draft, raises no availability error and creates exactly one run. Fast now
+  // belongs to every run's model selection, so that run lands with the policy
+  // list rather than ahead of it.
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: false,
-    },
   });
 
   await readyChat();
@@ -701,11 +694,11 @@ test("Let an existing thread send while model availability is reconciling", asyn
   ).not.toBeInTheDocument();
 
   click(await findButton("Send"));
+  policyGate.resolve(undefined);
   await waitFor(() => {
     expect(sentPrompts).toStrictEqual(["Continue the saved analysis"]);
   });
 
-  policyGate.resolve(undefined);
   await expect(
     screen.findByText("Continue the saved analysis"),
   ).resolves.toBeVisible();
@@ -720,7 +713,6 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -769,9 +761,6 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
-    },
   });
   await readyComposer();
   await openEffortPanel();
@@ -857,9 +846,6 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
-    },
   });
   const composer = await readyComposer();
   click(await findButton("GPT 5.6 Sol"));
@@ -896,9 +882,6 @@ test("Choose a model from the flyout without leaving the type list", async () =>
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: false,
-    },
   });
   await readyComposer();
   click(await findButton("GPT 5.6 Sol"));
@@ -928,7 +911,6 @@ test("Offer Fast beside effort on the composer for a Fast-capable model", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -963,7 +945,6 @@ test("Adjust effort from the composer without opening the model picker", async (
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -996,7 +977,6 @@ test("Name the ends of the effort scale beside the bar", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -1040,7 +1020,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -1098,7 +1077,6 @@ test("Select the default effort on an existing thread without changing Fast", as
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
     },
   });
@@ -1376,7 +1354,6 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },

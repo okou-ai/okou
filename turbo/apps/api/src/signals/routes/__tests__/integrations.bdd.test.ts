@@ -368,11 +368,6 @@ async function configureFastCodexPreference(
     },
   ]);
   await bdd.readOnboardingStatus(actor);
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.CodexFastMode]: true },
-  );
   await integrations.updateUserModelPreference(
     actor,
     "gpt-5.6-sol",
@@ -5446,10 +5441,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("keeps the Slack Fast footer bound to the originating run", async () => {
     const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected the Slack fast-mode actor to have an org");
-    }
-    const actorWithOrg = { ...actor, orgId: actor.orgId };
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     integrations.configureSlackAppMocks();
@@ -5475,9 +5466,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       },
     ]);
     await bdd.readOnboardingStatus(actor);
-    await updateFeatureSwitchesForUser(context, actorWithOrg, {
-      [FeatureSwitchKey.CodexFastMode]: true,
-    });
     const slackUserId = uniqueSlackUserId();
     const { teamId } = await integrations.installSlackWorkspace(actor, {
       installerSlackUserId: slackUserId,

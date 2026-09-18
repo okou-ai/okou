@@ -79,7 +79,6 @@ export function isPiExecutionRoute(args: {
   readonly runtimeProviderType: string | null | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly piEnabled: boolean;
-  readonly codexFastModeEnabled: boolean;
 }): boolean {
   if (!args.piEnabled) return false;
   if (isPiNativeRoute(args.modelProviderType, args.selectedModel)) return true;
@@ -100,11 +99,10 @@ export function isPiExecutionRoute(args: {
   if (!builtIn && !custom && !direct) return false;
   return (
     args.codexServiceTier === undefined ||
-    (args.codexFastModeEnabled &&
-      (custom ||
-        direct ||
-        (builtIn &&
-          (args.runtimeProviderType === "openai-api-key" ||
-            args.runtimeProviderType === "openrouter-codex"))))
+    custom ||
+    direct ||
+    (builtIn &&
+      (args.runtimeProviderType === "openai-api-key" ||
+        args.runtimeProviderType === "openrouter-codex"))
   );
 }

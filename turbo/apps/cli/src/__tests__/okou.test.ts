@@ -56,6 +56,7 @@ describe("Okou CLI program", () => {
       "connector",
       "mcp",
       "ssh",
+      "vnc",
       "mail",
       "credit",
       "upgrade",
@@ -129,8 +130,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__intro-video-voice");
   });
 
-  it("should have exactly 43 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(43);
+  it("should have exactly 44 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(44);
   });
 });
 

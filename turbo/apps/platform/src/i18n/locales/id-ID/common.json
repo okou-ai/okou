@@ -5805,8 +5805,10 @@
     },
     "paidTools": {
       "description": "Pilih alat bawaan berbayar yang dapat Anda gunakan.",
+      "disabledForCreation": "{{tool}} dinonaktifkan di pengaturan alat berbayar Anda.",
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
+      "openSettings": "Buka pengaturan alat berbayar",
       "retry": "Coba lagi",
       "saveError": "Perubahan Anda tidak tersimpan.",
       "saving": "Menyimpan…",
@@ -5814,9 +5816,17 @@
       "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
       "title": "Alat berbayar",
       "tools": {
+        "avatar-video-generation": {
+          "description": "Buat video avatar berbicara.",
+          "name": "Pembuatan video avatar"
+        },
         "finance": {
           "description": "Cari perusahaan, harga, dan data pasar.",
           "name": "Data keuangan"
+        },
+        "image-generation": {
+          "description": "Buat gambar dengan model bawaan.",
+          "name": "Pembuatan gambar"
         },
         "image-recognition": {
           "description": "Baca dan analisis gambar.",
@@ -5841,6 +5851,18 @@
         "social": {
           "description": "Teliti postingan sosial publik dan kumpulkan media.",
           "name": "Riset sosial"
+        },
+        "video-generation": {
+          "description": "Buat video dengan model bawaan.",
+          "name": "Pembuatan video"
+        },
+        "video-rendering": {
+          "description": "Render komposisi video di cloud.",
+          "name": "Rendering video"
+        },
+        "voice-generation": {
+          "description": "Buat ucapan dengan suara bawaan.",
+          "name": "Pembuatan suara"
         },
         "web-search": {
           "description": "Temukan informasi terkini di web.",

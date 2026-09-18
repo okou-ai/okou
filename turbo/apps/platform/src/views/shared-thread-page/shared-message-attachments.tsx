@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
 import { FilePreviewIcon } from "../okou-page/file-preview-icon.tsx";
 import type { SharedDisplayAttachment } from "./shared-thread-page.tsx";
+import { SharedThreadArtifactCard } from "../components/rich-markdown.tsx";
 
 function SharedImageAttachment({
   attachment,
@@ -52,6 +53,16 @@ export function SharedMessageAttachments({
   return (
     <div className="flex flex-wrap gap-2">
       {[...files.values()].map((attachment) => {
+        if (attachment.artifact) {
+          return (
+            <SharedThreadArtifactCard
+              key={attachment.url}
+              signals={attachment.artifact}
+              label={attachment.filename}
+              compact
+            />
+          );
+        }
         const isImage = /^image\/(?:png|jpeg|gif|webp|avif|heic|bmp)$/iu.test(
           attachment.contentType,
         );

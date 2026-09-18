@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,6 +79,7 @@ describe("okou generate avatar-video command", () => {
   afterEach(() => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
+    vi.unstubAllEnvs();
   });
 
   it("publishes the generated avatar video with the requested visibility", async () => {
@@ -173,6 +175,7 @@ describe("okou generate avatar-video command", () => {
   });
 
   it("lists filtered public avatars as JSON", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["avatar-video-generation"]');
     server.use(
       http.get(AVATARS_URL, ({ request }) => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
@@ -227,6 +230,7 @@ describe("okou generate avatar-video command", () => {
   });
 
   it("lists voices in a human-readable form", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["avatar-video-generation"]');
     server.use(
       http.get(VOICES_URL, ({ request }) => {
         const url = new URL(request.url);

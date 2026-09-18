@@ -94,7 +94,7 @@ jobs:
           BASE_REF=$(.github/scripts/changed-base-ref.sh)
           echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
           # Check if the workflow file or ansible playbooks changed
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "ci-changed=false" >> "$GITHUB_OUTPUT"
@@ -1045,9 +1045,63 @@ jobs:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
         run: .github/scripts/runner-behavior-upgrade-local.sh
 
-  # Keep this parallel to the elapsed-time-balanced behavior lanes: recent
-  # successful runs spend 70-149s compiling and 37-39s on the native proof.
-  # Durable result collection must not serialize this work behind a lane.
+  # Compilation only needs the selected target; overlap it with image preparation.
+  host-cpu-fairness-build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+    needs:
+      - detect
+      - runner-host-groups
+    if: |
+      !cancelled() &&
+      needs.runner-host-groups.result == 'success' &&
+      needs.detect.outputs.metal-job-ref != '' &&
+      needs.detect.outputs.crates-runner-consumer-needed == 'true' && (
+        needs.detect.outputs.sandbox-firecracker-changed == 'true' ||
+        needs.detect.outputs.ci-changed == 'true'
+      )
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      producer-attempt: ${{ steps.build.outputs.producer-attempt }}
+    env:
+      TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
+      TEST_NAME: host_cpu_fairness
+      ARTIFACT_DIR: native-test-artifact
+      PRODUCER_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cross-compile host CPU fairness test
+        id: build
+        run: bash .github/scripts/runner-native-test-artifact.sh build
+
+      - name: Install AWS CLI
+        uses: ./.github/actions/setup-aws-cli
+
+      - name: Publish native test to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: bash .github/scripts/runner-native-test-artifact.sh publish
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
   host-cpu-fairness-test:
     runs-on: ubuntu-latest
     container:
@@ -1055,15 +1109,23 @@ jobs:
     needs:
       - detect
       - runner-build
+      - host-cpu-fairness-build
     if: |
       !cancelled() &&
-      needs.runner-build.result == 'success' && (
+      needs.runner-build.result == 'success' &&
+      needs.host-cpu-fairness-build.result == 'success' && (
         needs.detect.outputs.sandbox-firecracker-changed == 'true' ||
         needs.detect.outputs.ci-changed == 'true'
       )
     timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
     env:
       TARGET_TRIPLE: ${{ needs.runner-build.outputs.target }}
+      TEST_NAME: host_cpu_fairness
+      ARTIFACT_DIR: native-test-artifact
+      PRODUCER_ATTEMPT: ${{ needs.host-cpu-fairness-build.outputs.producer-attempt }}
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
       HOST: ${{ needs.runner-build.outputs.host }}
       JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
@@ -1071,24 +1133,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
-        with:
-          workspaces: crates -> target
-          shared-key: ${{ needs.runner-build.outputs.target }}-host-cpu-fairness
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install AWS CLI
+        uses: ./.github/actions/setup-aws-cli
 
-      - name: Cross-compile host CPU fairness test
-        run: |
-          cd crates
-          cargo test --no-run --release --target "$TARGET_TRIPLE" \
-            -p sandbox-firecracker --test host_cpu_fairness
-          TEST_BIN=$(find "target/$TARGET_TRIPLE/release/deps" \
-            -name 'host_cpu_fairness-*' -executable -type f | head -1)
-          if [ -z "$TEST_BIN" ]; then
-            echo "::error::host CPU fairness test binary not found"
-            exit 1
-          fi
-          echo "TEST_BIN=crates/$TEST_BIN" >> "$GITHUB_ENV"
+      - name: Download native test from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: bash .github/scripts/runner-native-test-artifact.sh download
+
+      - name: Validate native test
+        run: bash .github/scripts/runner-native-test-artifact.sh validate
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -1102,6 +1160,48 @@ jobs:
       - name: Verify weighted host CPU service with real Firecracker Guests
         run: .github/scripts/runner-behavior-host-cpu-fairness.sh
 
+  guest-rpc-firecracker-build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+    needs: [detect, runner-host-groups]
+    if: needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true'
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      producer-attempt: ${{ steps.build.outputs.producer-attempt }}
+    env:
+      TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
+      TEST_NAME: guest_rpc
+      ARTIFACT_DIR: native-test-artifact
+      PRODUCER_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-guest-rpc
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Cross-compile native guest RPC test
+        id: build
+        run: bash .github/scripts/runner-native-test-artifact.sh build
+
+      - name: Install AWS CLI
+        uses: ./.github/actions/setup-aws-cli
+
+      - name: Publish native test to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: bash .github/scripts/runner-native-test-artifact.sh publish
+
       - name: Report peak memory
         if: always()
         continue-on-error: true
@@ -1111,13 +1211,16 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
-    needs: [runner-build]
+    needs: [runner-build, guest-rpc-firecracker-build]
     timeout-minutes: 15
     defaults:
       run:
         shell: bash
     env:
       TARGET_TRIPLE: ${{ needs.runner-build.outputs.target }}
+      TEST_NAME: guest_rpc
+      ARTIFACT_DIR: native-test-artifact
+      PRODUCER_ATTEMPT: ${{ needs.guest-rpc-firecracker-build.outputs.producer-attempt }}
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
       HOST: ${{ needs.runner-build.outputs.host }}
       JOB_REF: ${{ needs.runner-build.outputs.job-ref }}
@@ -1126,20 +1229,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
-        with:
-          workspaces: crates -> target
-          shared-key: ${{ needs.runner-build.outputs.target }}-guest-rpc
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install AWS CLI
+        uses: ./.github/actions/setup-aws-cli
 
-      - name: Cross-compile native guest RPC test
-        run: |
-          cd crates
-          TEST_BIN=$(cargo test --no-run --profile ci --target "$TARGET_TRIPLE" \
-            -p sandbox-firecracker --test guest_rpc --message-format=json \
-            | jq -r 'select(.reason == "compiler-artifact" and .target.name == "guest_rpc" and .profile.test) | .executable // empty')
-          test -x "$TEST_BIN"
-          echo "TEST_BIN=$TEST_BIN" >> "$GITHUB_ENV"
+      - name: Download native test from R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: bash .github/scripts/runner-native-test-artifact.sh download
+
+      - name: Validate native test
+        run: bash .github/scripts/runner-native-test-artifact.sh validate
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -1173,7 +1276,9 @@ jobs:
       - runner-behavior-lane-c
       - runner-behavior-lane-d
       - host-cpu-fairness-test
+      - host-cpu-fairness-build
       - guest-rpc-firecracker-test
+      - guest-rpc-firecracker-build
       - nbd-cow-test
       - runner-rootfs-process-test
     # Always run so the gate reports an explicit result (not "skipped").
@@ -1183,6 +1288,7 @@ jobs:
         env:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RUNNER_IMAGE_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}
+          CPU_FAIRNESS_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' && (needs.detect.outputs.sandbox-firecracker-changed == 'true' || needs.detect.outputs.ci-changed == 'true') }}
           IMAGE_VALIDATION_MATRIX: ${{ needs.runner-host-groups.outputs.validation-matrix }}
         run: |
           # Auto-pass for release-please PRs, commits, and merge queue entries
@@ -1237,13 +1343,15 @@ jobs:
           check_result "runner-behavior-lane-b" "${{ needs.runner-behavior-lane-b.result }}" "true"
           check_result "runner-behavior-lane-c" "${{ needs.runner-behavior-lane-c.result }}" "true"
           check_result "runner-behavior-lane-d" "${{ needs.runner-behavior-lane-d.result }}" "true"
-          check_result "host-cpu-fairness-test" "${{ needs.host-cpu-fairness-test.result }}" "true"
-          # A selected Runner image must execute the native RPC regression.
-          RPC_ALLOW_SKIP=true
-          if [ "${{ needs.runner-build.result }}" = "success" ]; then
-            RPC_ALLOW_SKIP=""
+          # Selected native tests require both compilation and real execution.
+          CPU_FAIRNESS_ALLOW_SKIP=true
+          if [ "$CPU_FAIRNESS_NEEDED" = "true" ]; then
+            CPU_FAIRNESS_ALLOW_SKIP=""
           fi
-          check_result "guest-rpc-firecracker-test" "${{ needs.guest-rpc-firecracker-test.result }}" "$RPC_ALLOW_SKIP"
+          check_result "host-cpu-fairness-build" "${{ needs.host-cpu-fairness-build.result }}" "$CPU_FAIRNESS_ALLOW_SKIP"
+          check_result "host-cpu-fairness-test" "${{ needs.host-cpu-fairness-test.result }}" "$CPU_FAIRNESS_ALLOW_SKIP"
+          check_result "guest-rpc-firecracker-build" "${{ needs.guest-rpc-firecracker-build.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
+          check_result "guest-rpc-firecracker-test" "${{ needs.guest-rpc-firecracker-test.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
           check_result "nbd-cow-test" "${{ needs.nbd-cow-test.result }}" "true"
           check_result "runner-rootfs-process-test" "${{ needs.runner-rootfs-process-test.result }}" "true"
 

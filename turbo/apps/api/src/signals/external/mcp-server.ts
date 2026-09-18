@@ -1,5 +1,20 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import {
+  mcpSendChatMessageInputSchema,
+  mcpSendChatMessageOutputSchema,
+  mcpRevokeQueuedMessageInputSchema,
+  mcpRevokeQueuedMessageOutputSchema,
+  mcpCancelRunInputSchema,
+  mcpCancelRunOutputSchema,
+  type McpSendChatMessageInput,
+  type McpSendChatMessageOutput,
+  type McpRevokeQueuedMessageInput,
+  type McpRevokeQueuedMessageOutput,
+  type McpCancelRunInput,
+  type McpCancelRunOutput,
+  type McpChatMutationResult,
+} from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import {
   mcpSearchChatMessagesInputSchema,
   mcpSearchChatMessagesOutputSchema,
   type McpSearchChatMessagesInput,
@@ -27,6 +42,18 @@ import { onRejection, settle, settleIncludingAbort } from "../utils";
 interface McpChatAccess {
   readonly readScope: string;
   readonly scopes: readonly string[];
+  readonly sendMessage: (
+    input: McpSendChatMessageInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatMutationResult<McpSendChatMessageOutput>>;
+  readonly revokeQueuedMessage: (
+    input: McpRevokeQueuedMessageInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatMutationResult<McpRevokeQueuedMessageOutput>>;
+  readonly cancelRun: (
+    input: McpCancelRunInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatMutationResult<McpCancelRunOutput>>;
   readonly searchMessages: (
     input: McpSearchChatMessagesInput,
     signal: AbortSignal,
@@ -122,7 +149,120 @@ function registerMessageTool(
   );
 }
 
-function createReadServer(
+async function mutationTool<T extends Record<string, unknown>>(
+  access: McpChatAccess,
+  scope: string,
+  operation: (signal: AbortSignal) => Promise<McpChatMutationResult<T>>,
+  requestSignal: AbortSignal,
+) {
+  if (!access.scopes.includes(scope)) {
+    return toolError("Insufficient scope");
+  }
+  requestSignal.throwIfAborted();
+  const result = await settle(operation(requestSignal), requestSignal);
+  if (!result.ok) {
+    return toolError(
+      "The operation result is unavailable. For sends, retry the identical requestId, threadId and text within 24 hours; otherwise inspect the current state before retrying.",
+    );
+  }
+  if (result.value.kind === "error") {
+    return toolError(result.value.message);
+  }
+  return {
+    structuredContent: result.value.data,
+    content: [
+      { type: "text" as const, text: JSON.stringify(result.value.data) },
+    ],
+  };
+}
+
+function registerMutationTools(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  if (access.scopes.includes("okou:chat:send")) {
+    server.registerTool(
+      "send_chat_message",
+      {
+        description:
+          "Submit text to your existing conversation in the authorized organization. The server may start a run, queue the input, or steer an active run. Generate a new UUID requestId for each intended message; retry only with identical threadId and exact text using that same requestId within 24 hours of acceptance. Deduplication is not guaranteed after that window; inspect history before intentionally submitting new work, and never automatically retry an uncertain old request. inputRef identifies the original submitted input, which can be replaced in visible history. disposition is the current observation, not proof of delivery or run success; runId may be null. Use get_chat_messages to inspect subsequent activity.",
+        inputSchema: mcpSendChatMessageInputSchema,
+        outputSchema: mcpSendChatMessageOutputSchema,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      (input, context) => {
+        return mutationTool(
+          access,
+          "okou:chat:send",
+          (signal) => {
+            return access.sendMessage(input, signal);
+          },
+          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        );
+      },
+    );
+  }
+  if (access.scopes.includes("okou:run:cancel")) {
+    server.registerTool(
+      "revoke_queued_message",
+      {
+        description:
+          "Withdraw an unclaimed queued input from your conversation using threadId and its original inputId (send_chat_message inputRef.eventId). Duplicate revocation is safe. Reserved or associated input cannot be withdrawn here; this never cancels a run. not_revocable does not prove delivery. Use cancel_run with the reported runId to stop execution when appropriate.",
+        inputSchema: mcpRevokeQueuedMessageInputSchema,
+        outputSchema: mcpRevokeQueuedMessageOutputSchema,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      (input, context) => {
+        return mutationTool(
+          access,
+          "okou:run:cancel",
+          (signal) => {
+            return access.revokeQueuedMessage(input, signal);
+          },
+          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        );
+      },
+    );
+    server.registerTool(
+      "cancel_run",
+      {
+        description:
+          "Cooperatively cancel your active run in the authorized organization. Duplicate cancellation is safe. The result records cancellation; worker interruption and cleanup may finish afterward. This does not revoke separate queued inputs or undo effects already performed. Completed or failed runs cannot be cancelled.",
+        inputSchema: mcpCancelRunInputSchema,
+        outputSchema: mcpCancelRunOutputSchema,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
+      },
+      (input, context) => {
+        return mutationTool(
+          access,
+          "okou:run:cancel",
+          (signal) => {
+            return access.cancelRun(input, signal);
+          },
+          AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        );
+      },
+    );
+  }
+}
+
+function createChatServer(
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): McpServer {
@@ -213,6 +353,7 @@ function createReadServer(
       },
     );
   }
+  registerMutationTools(server, access, requestSignal);
   return server;
 }
 
@@ -224,7 +365,7 @@ export async function serveMcpRequest(
 ): Promise<Response> {
   const handler = createMcpHandler(
     () => {
-      return createReadServer(access, requestSignal);
+      return createChatServer(access, requestSignal);
     },
     {
       legacy: "stateless",

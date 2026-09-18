@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { generateWebImage } from "../../lib/api/domains/web";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { createArtifactPresentation } from "./artifact-return";
 import {
   applyArtifactVisibility,
@@ -475,6 +476,7 @@ ${formatRegistryListing(styles, "image styles")}`;
           return;
         }
 
+        await assertPaidToolEnabled("image-generation");
         const compression = parseCompression(options.compression);
         const inputFidelity = parseInputFidelity(options.inputFidelity);
         const imagePromptStrength = parseImagePromptStrength(

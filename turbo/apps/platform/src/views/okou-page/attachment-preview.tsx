@@ -388,31 +388,48 @@ function HtmlSitePreviewCard({
       )}
       title={title}
     >
-      {previewImageUrl && previewImageLoad ? (
-        <ArtifactThumbnailImage
-          src={previewImageUrl}
-          load={previewImageLoad}
-          testId="attachment-preview-thumbnail"
-          className="absolute inset-0 h-full w-full object-cover"
-          fallback={
-            <HtmlSitePreviewViewport
-              resourceUrl$={preview.resourceUrl$}
-              title={title}
-            />
-          }
-        />
-      ) : previewImagePending ? (
-        <span
-          className="absolute inset-0 bg-muted/30"
-          data-testid="attachment-preview-thumbnail-pending"
-        />
-      ) : (
-        <HtmlSitePreviewViewport
-          resourceUrl$={preview.resourceUrl$}
-          title={title}
-        />
-      )}
+      <SitePreviewContent
+        resourceUrl$={preview.resourceUrl$}
+        title={title}
+        previewImageLoad={previewImageLoad}
+        previewImagePending={previewImagePending}
+        previewImageUrl={previewImageUrl}
+      />
     </SitePreviewCard>
+  );
+}
+
+/** Shared visual content; the enclosing surface owns navigation and actions. */
+export function SitePreviewContent({
+  resourceUrl$,
+  title,
+  previewImageLoad,
+  previewImagePending,
+  previewImageUrl,
+}: {
+  resourceUrl$: AttachmentPreviewSignals["resourceUrl$"];
+  title: string;
+  previewImageLoad?: ImageLoadSignals;
+  previewImagePending?: boolean;
+  previewImageUrl?: string;
+}) {
+  return previewImageUrl && previewImageLoad ? (
+    <ArtifactThumbnailImage
+      src={previewImageUrl}
+      load={previewImageLoad}
+      testId="attachment-preview-thumbnail"
+      className="absolute inset-0 h-full w-full object-cover"
+      fallback={
+        <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
+      }
+    />
+  ) : previewImagePending ? (
+    <span
+      className="absolute inset-0 bg-muted/30"
+      data-testid="attachment-preview-thumbnail-pending"
+    />
+  ) : (
+    <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
   );
 }
 

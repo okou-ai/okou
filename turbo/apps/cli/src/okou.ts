@@ -37,6 +37,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   connector: ["connector:read", "connector:write"],
   mcp: "connector:read",
   ssh: ["ssh:read", "ssh:write"],
+  vnc: ["vnc:read", "vnc:write"],
   mail: "connector:read",
   doctor: null,
   credit: ["billing:read", "billing:write"],
@@ -81,7 +82,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   banking: "banking:read",
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "image-recognition"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "image-recognition"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -97,6 +98,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "List authorized SSH hosts and execute remote commands",
     load: async () => {
       return (await import("./commands/ssh")).sshCommand;
+    },
+  },
+  {
+    name: "vnc",
+    description: "Access authorized VNC hosts, capture desktops and send input",
+    load: async () => {
+      return (await import("./commands/vnc")).vncCommand;
     },
   },
   {

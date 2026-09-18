@@ -12,6 +12,7 @@ import {
   getWebIntroVideoAgent,
 } from "../lib/api/domains/web";
 import { withErrorHandler } from "../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../lib/command/paid-tools";
 import { createArtifactPresentation } from "./shared/artifact-return";
 
 interface IntroVideoAgentCommandOptions {
@@ -100,6 +101,7 @@ function printResult(result: IntroVideoAgentResponse, json?: boolean): void {
 async function runIntroVideoAgentCommand(
   options: IntroVideoAgentCommandOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("video-generation");
   if (options.prompt === undefined && options.promptFile === undefined) {
     throw new Error("Provide --prompt or --prompt-file.");
   }

@@ -111,6 +111,47 @@ test("lets an ordinary member disable and re-enable a tool idempotently", async 
   await expect(listFor(identity)).resolves.toStrictEqual(["social"]);
 });
 
+test.each([
+  "image-generation",
+  "video-generation",
+  "voice-generation",
+  "avatar-video-generation",
+  "video-rendering",
+] as const)("saves and re-enables the %s preference", async (toolId) => {
+  const identity = await owner();
+  await accept(
+    client().update({
+      headers,
+      params: { toolId: "web-search" },
+      body: { disabled: true },
+    }),
+    [200],
+  );
+  const disabled = await accept(
+    client().update({
+      headers,
+      params: { toolId },
+      body: { disabled: true },
+    }),
+    [200],
+  );
+  expect(disabled.body).toStrictEqual({ toolId, disabled: true });
+  await expect(listFor(identity)).resolves.toStrictEqual([
+    toolId,
+    "web-search",
+  ]);
+  const enabled = await accept(
+    client().update({
+      headers,
+      params: { toolId },
+      body: { disabled: false },
+    }),
+    [200],
+  );
+  expect(enabled.body).toStrictEqual({ toolId, disabled: false });
+  await expect(listFor(identity)).resolves.toStrictEqual(["web-search"]);
+});
+
 test("isolates preferences across members and workspaces", async () => {
   const current = await owner();
   await accept(

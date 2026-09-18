@@ -19,7 +19,6 @@ describe("FeatureSwitchKey", () => {
       "_sidebarSubscriptionUsage",
     );
     expect(FeatureSwitchKey.FeishuIntegration).toBe("_feishuIntegration");
-    expect(FeatureSwitchKey.CodexFastMode).toBe("_fastModel");
     expect(FeatureSwitchKey.ChatPreference).toBe("chatPreference");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
@@ -404,19 +403,6 @@ describe("getAllFeatureStates", () => {
       orgId: "org_nonexistent",
     });
     expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
-  });
-
-  it("releases the composer run controls to every org and keeps the off lever", () => {
-    const states = getAllFeatureStates({ orgId: "org_nonexistent" });
-    expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
-
-    const reverted = getAllFeatureStates({
-      orgId: "org_nonexistent",
-      overrides: {
-        [FeatureSwitchKey.CodexFastMode]: false,
-      },
-    });
-    expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.82...host-worker-v1.5.0) (2026-09-18)
+
+
+### Features
+
+* publish immutable sites and reuse private previews ([#35244](https://github.com/vm0-ai/okou/issues/35244)) ([899075c](https://github.com/vm0-ai/okou/commit/899075caeca519ac9202fa17bc9177e18258a58c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.472.0
+
 ## [1.4.82](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.81...host-worker-v1.4.82) (2026-09-18)
 
 

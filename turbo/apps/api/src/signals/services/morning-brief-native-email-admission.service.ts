@@ -82,8 +82,12 @@ export interface NativeMorningBriefOwnerPreflight {
   readonly outboxId: string;
   readonly orgId: string;
   readonly userId: string;
+  readonly resultAttemptId: string;
+  readonly purpose: "preview" | "production";
   /** The member's current Clerk membership, or null when they are not one. */
   readonly membershipId: string | null;
+  /** A retained-source refusal resolved outside the claim transaction. */
+  readonly sourceRefusal?: string;
   /** True when the remote lookup itself could not be completed. */
   readonly unavailable?: boolean;
 }
@@ -140,6 +144,8 @@ export async function peekNativeMorningBriefEmailOwner(
       outboxId: emailOutbox.id,
       orgId: morningBriefDeliveries.orgId,
       userId: morningBriefDeliveries.userId,
+      resultAttemptId: morningBriefDeliveries.resultAttemptId,
+      purpose: morningBriefDeliveries.executionPurpose,
     })
     .from(emailOutbox)
     .innerJoin(
@@ -264,6 +270,11 @@ function checkPreflight(
       kind: "deferred",
       reason: "Morning Brief email has no live-owner evidence for this pass",
     };
+  }
+  if (preflight.sourceRefusal !== undefined) {
+    return rejected(
+      `Morning Brief retained source authority was revoked: ${preflight.sourceRefusal}`,
+    );
   }
   if (preflight.membershipId === null) {
     return rejected(
@@ -580,7 +591,9 @@ export async function lockNativeMorningBriefEmailAdmission(
   admission ??= await lockNativeAuthority(tx, delivery);
   admission ??= await lockOccurrence(tx, delivery);
   admission ??= await lockInstallationAgent(tx, delivery);
-  admission ??= await lockOwnerBinding(tx, delivery);
+  if (!admission && delivery.executionPurpose !== "production") {
+    admission = await lockOwnerBinding(tx, delivery);
+  }
   admission ??= await lockSubscription(tx, delivery.userId);
 
   return {

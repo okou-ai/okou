@@ -1106,6 +1106,10 @@ const sandboxOperationSchema = z.object({
     .enum(["workspace_cache", "downloaded", "inline"])
     .optional(),
   session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
+  session_history_codec_decision: z
+    .enum(["native_zstd", "below_threshold", "above_threshold"])
+    .optional(),
+  // Draining Runners retain the previous sampling policy and reason field.
   session_history_codec_reason: z
     .enum([
       "native_zstd",

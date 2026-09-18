@@ -151,8 +151,6 @@ interface ModelProviderPickerProps {
   modal?: boolean;
   // When true, picker is read-only for the current caller state.
   disabled?: boolean;
-  /** Enables the inline Codex Fast choices in the model list. */
-  codexFastModeEnabled?: boolean;
   /** Lets settings callers clear a personal choice and inherit workspace default. */
   showInheritOption?: boolean;
   /** Media-model category panel state for composer callers. */
@@ -313,13 +311,11 @@ function selectionAllowedValue(
 function selectionLabel({
   selection,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   /** See `ModelProviderPickerProps.fastShownByCaller`. */
   fastShownByCaller?: boolean;
@@ -328,9 +324,7 @@ function selectionLabel({
     return placeholder;
   }
   const modelLabel = getCanonicalModelDisplayName(selection.selectedModel);
-  return codexFastModeEnabled &&
-    !fastShownByCaller &&
-    selection.codexServiceTier === "fast"
+  return !fastShownByCaller && selection.codexServiceTier === "fast"
     ? `${modelLabel} ${fastLabel}`
     : modelLabel;
 }
@@ -339,14 +333,12 @@ function ModelFirstTriggerLabel({
   selection,
   placeholder,
   mobileIcon,
-  codexFastModeEnabled,
   fastLabel,
   fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
   mobileIcon: boolean;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   fastShownByCaller?: boolean;
 }) {
@@ -369,7 +361,6 @@ function ModelFirstTriggerLabel({
           {selectionLabel({
             selection,
             placeholder,
-            codexFastModeEnabled,
             fastLabel,
             fastShownByCaller,
           })}
@@ -384,7 +375,6 @@ function ModelFirstDisabledPickerLabel({
   placeholder,
   mobileIconTrigger,
   triggerClassName,
-  codexFastModeEnabled,
   fastLabel,
 }: Pick<
   ModelProviderPickerProps,
@@ -392,13 +382,11 @@ function ModelFirstDisabledPickerLabel({
 > & {
   placeholder: string;
   mobileIconTrigger: boolean;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
 }) {
   const label = selectionLabel({
     selection: value,
     placeholder,
-    codexFastModeEnabled,
     fastLabel,
   });
   return (
@@ -413,7 +401,6 @@ function ModelFirstDisabledPickerLabel({
         selection={value}
         placeholder={placeholder}
         mobileIcon={mobileIconTrigger}
-        codexFastModeEnabled={codexFastModeEnabled}
         fastLabel={fastLabel}
       />
     </span>
@@ -422,7 +409,6 @@ function ModelFirstDisabledPickerLabel({
 
 function modelFirstSelectionFromRaw(
   raw: string,
-  codexFastModeEnabled: boolean,
 ): ModelProviderSelection | null {
   if (raw === INHERIT_SENTINEL) {
     return null;
@@ -430,7 +416,6 @@ function modelFirstSelectionFromRaw(
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_FAST_OPTION_PREFIX.length);
     if (
-      codexFastModeEnabled &&
       isSupportedRunModel(selectedModel) &&
       isCodexFastModeModel(selectedModel)
     ) {
@@ -464,9 +449,8 @@ function codexFastOptionValue(model: string): string {
 function modelFirstSelectionFromInteraction(
   raw: string,
   currentSelection: ModelProviderSelection | null,
-  codexFastModeEnabled: boolean,
 ): ModelProviderSelection | null | undefined {
-  if (codexFastModeEnabled && currentSelection?.codexServiceTier === "fast") {
+  if (currentSelection?.codexServiceTier === "fast") {
     if (raw === currentSelection.selectedModel) {
       return undefined;
     }
@@ -474,7 +458,7 @@ function modelFirstSelectionFromInteraction(
       return { selectedModel: currentSelection.selectedModel };
     }
   }
-  return modelFirstSelectionFromRaw(raw, codexFastModeEnabled);
+  return modelFirstSelectionFromRaw(raw);
 }
 
 function isHiddenModelFirstSelectValue(value: string): boolean {
@@ -535,16 +519,13 @@ function ModelFirstPolicyRow({
   policy,
   modelCapabilities,
   selection,
-  codexFastModeEnabled,
 }: {
   policy: OrgModelPolicy;
   modelCapabilities: ModelPlanCapabilities;
   selection: ModelProviderSelection | null;
-  codexFastModeEnabled: boolean;
 }) {
   const { t } = useTranslation();
   const fastAvailable =
-    codexFastModeEnabled &&
     isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);
   if (fastAvailable) {
@@ -633,7 +614,6 @@ function ModelFirstPolicyItems({
   policies,
   selection,
   modelCapabilities,
-  codexFastModeEnabled,
   placeholder,
   showInheritOption,
   showSeparator = true,
@@ -641,7 +621,6 @@ function ModelFirstPolicyItems({
   policies: OrgModelPolicy[];
   selection: ModelProviderSelection | null;
   modelCapabilities: ModelPlanCapabilities;
-  codexFastModeEnabled: boolean;
   placeholder: string;
   showInheritOption: boolean;
   showSeparator?: boolean;
@@ -691,7 +670,6 @@ function ModelFirstPolicyItems({
                 policy={policy}
                 modelCapabilities={modelCapabilities}
                 selection={selection}
-                codexFastModeEnabled={codexFastModeEnabled}
               />
             );
           })}
@@ -1002,7 +980,6 @@ interface ModelFirstModelPickerContentBaseProps {
   policies: OrgModelPolicy[];
   selection: ModelProviderSelection | null;
   modelCapabilities: ModelPlanCapabilities;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   showInheritOption: boolean;
 }
@@ -1013,7 +990,6 @@ function ModelFirstModelPickerContentLayout({
   policies,
   selection,
   modelCapabilities,
-  codexFastModeEnabled,
   fastLabel,
   showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
@@ -1030,7 +1006,6 @@ function ModelFirstModelPickerContentLayout({
             {selectionLabel({
               selection,
               placeholder,
-              codexFastModeEnabled,
               fastLabel,
             })}
           </SelectItem>
@@ -1039,7 +1014,6 @@ function ModelFirstModelPickerContentLayout({
         policies={policies}
         selection={selection}
         modelCapabilities={modelCapabilities}
-        codexFastModeEnabled={codexFastModeEnabled}
         placeholder={placeholder}
         showInheritOption={showInheritOption}
         showSeparator={showInheritOption}
@@ -1060,7 +1034,6 @@ function resolveModelFirstModelPickerState({
   policyResponse,
   modelCapabilities,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   excludedModel,
 }: {
@@ -1068,7 +1041,6 @@ function resolveModelFirstModelPickerState({
   policyResponse: { policies: OrgModelPolicy[] } | null | undefined;
   modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   excludedModel: SupportedRunModel | undefined;
 }): ModelFirstModelPickerState {
@@ -1083,7 +1055,6 @@ function resolveModelFirstModelPickerState({
     triggerAriaLabel: selectionLabel({
       selection,
       placeholder,
-      codexFastModeEnabled,
       fastLabel,
     }),
   };
@@ -1095,7 +1066,6 @@ function ModelFirstSelectPicker({
   placeholder,
   triggerClassName,
   mobileIconTrigger,
-  codexFastModeEnabled,
   fastLabel,
   fastShownByCaller,
   open,
@@ -1108,7 +1078,6 @@ function ModelFirstSelectPicker({
   placeholder: string;
   triggerClassName: string | undefined;
   mobileIconTrigger: boolean;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   fastShownByCaller: boolean;
   open: boolean | undefined;
@@ -1138,7 +1107,6 @@ function ModelFirstSelectPicker({
             selection={state.selection}
             placeholder={placeholder}
             mobileIcon={mobileIconTrigger}
-            codexFastModeEnabled={codexFastModeEnabled}
             fastLabel={fastLabel}
             fastShownByCaller={fastShownByCaller}
           />
@@ -1152,12 +1120,10 @@ function ModelFirstSelectPicker({
 function resolveExplicitModelFirstModelPickerState({
   value,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
 }): ModelFirstModelPickerState {
   return {
@@ -1167,7 +1133,6 @@ function resolveExplicitModelFirstModelPickerState({
     triggerAriaLabel: selectionLabel({
       selection: value,
       placeholder,
-      codexFastModeEnabled,
       fastLabel,
     }),
   };
@@ -1176,13 +1141,11 @@ function resolveExplicitModelFirstModelPickerState({
 function ModelFirstModelPickerMessageContent({
   value,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   message,
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   message: string;
 }) {
@@ -1197,7 +1160,6 @@ function ModelFirstModelPickerMessageContent({
         {selectionLabel({
           selection: value,
           placeholder,
-          codexFastModeEnabled,
           fastLabel,
         })}
       </SelectItem>
@@ -1209,7 +1171,6 @@ function ModelFirstModelPickerMessageContent({
 function SubscribedExplicitModelFirstModelPickerContent({
   value,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   mediaModelPanel,
   excludedModel,
@@ -1221,7 +1182,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   mediaModelPanel: MediaModelPanelState | undefined;
   excludedModel: SupportedRunModel | undefined;
@@ -1254,7 +1214,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
       <ModelFirstModelPickerMessageContent
         value={value}
         placeholder={placeholder}
-        codexFastModeEnabled={codexFastModeEnabled}
         fastLabel={fastLabel}
         message={
           policiesLoadable.state === "loading"
@@ -1273,7 +1232,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
     policyResponse,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
-    codexFastModeEnabled,
     fastLabel,
     excludedModel,
   });
@@ -1302,7 +1260,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
             ),
             disabled: !isMemberModelPolicyConfigurable(policy),
             fastAvailable:
-              codexFastModeEnabled &&
               isMemberModelPolicyConfigurable(policy) &&
               isCodexFastModeModel(policy.model),
             fastImpact: <ModelFastImpact policy={policy} />,
@@ -1318,7 +1275,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
       policies={state.policies}
       selection={state.selection}
       modelCapabilities={modelCapabilities}
-      codexFastModeEnabled={codexFastModeEnabled}
       fastLabel={fastLabel}
       showInheritOption={showInheritOption}
     />
@@ -1365,15 +1321,10 @@ function EnabledExplicitModelFirstModelPicker(
   const state = resolveExplicitModelFirstModelPickerState({
     value: props.value,
     placeholder: props.placeholder,
-    codexFastModeEnabled: props.codexFastModeEnabled ?? false,
     fastLabel: props.fastLabel,
   });
   const handleRawValueChange = (raw: string) => {
-    const selection = modelFirstSelectionFromInteraction(
-      raw,
-      state.selection,
-      props.codexFastModeEnabled ?? false,
-    );
+    const selection = modelFirstSelectionFromInteraction(raw, state.selection);
     if (selection !== undefined) {
       handleSelectionChange(selection);
     }
@@ -1382,7 +1333,6 @@ function EnabledExplicitModelFirstModelPicker(
     <SubscribedExplicitModelFirstModelPickerContent
       value={props.value}
       placeholder={props.placeholder}
-      codexFastModeEnabled={props.codexFastModeEnabled ?? false}
       fastLabel={props.fastLabel}
       mediaModelPanel={props.mediaModelPanel}
       excludedModel={props.excludedModel}
@@ -1414,7 +1364,6 @@ function EnabledExplicitModelFirstModelPicker(
                 selection={state.selection}
                 placeholder={props.placeholder}
                 mobileIcon={props.mobileIconTrigger}
-                codexFastModeEnabled={props.codexFastModeEnabled ?? false}
                 fastLabel={props.fastLabel}
                 fastShownByCaller={props.fastShownByCaller ?? false}
               />
@@ -1453,7 +1402,6 @@ function EnabledExplicitModelFirstModelPicker(
       placeholder={props.placeholder}
       triggerClassName={props.triggerClassName}
       mobileIconTrigger={props.mobileIconTrigger}
-      codexFastModeEnabled={props.codexFastModeEnabled ?? false}
       fastShownByCaller={props.fastShownByCaller ?? false}
       fastLabel={props.fastLabel}
       open={props.open}
@@ -1474,7 +1422,6 @@ export function ModelProviderPicker({
   onOpenChange,
   modal,
   disabled = false,
-  codexFastModeEnabled = false,
   showInheritOption = false,
   mediaModelPanel,
   menuSignals,
@@ -1499,7 +1446,6 @@ export function ModelProviderPicker({
         placeholder={resolvedPlaceholder}
         mobileIconTrigger={mobileIconTrigger}
         triggerClassName={triggerClassName}
-        codexFastModeEnabled={codexFastModeEnabled}
         fastLabel={fastLabel}
       />
     );
@@ -1514,7 +1460,6 @@ export function ModelProviderPicker({
       open={open}
       onOpenChange={onOpenChange}
       modal={modal}
-      codexFastModeEnabled={codexFastModeEnabled}
       showInheritOption={showInheritOption}
       fastLabel={fastLabel}
       excludedModel={excludedModel}

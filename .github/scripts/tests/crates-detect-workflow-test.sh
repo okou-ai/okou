@@ -26,6 +26,7 @@ jq -e '
   .jobs["runner-behavior-lane-b"] as $lane_b |
   .jobs["runner-behavior-lane-c"] as $lane_c |
   .jobs["runner-behavior-lane-d"] as $lane_d |
+  .jobs["host-cpu-fairness-build"] as $host_cpu_build |
   .jobs["host-cpu-fairness-test"] as $host_cpu |
   .jobs["runner-rootfs-process-test"] as $rootfs_process |
   .jobs["ci-gate-crates"] as $gate |
@@ -81,9 +82,16 @@ jq -e '
   ) and
   ($host_cpu.needs | sort) == ([
     "detect",
-    "runner-build"
+    "runner-build",
+    "host-cpu-fairness-build"
   ] | sort) and
+  $host_cpu_build.needs == ["detect", "runner-host-groups"] and
+  $host_cpu_build.env.TARGET_TRIPLE == "${{ needs.runner-host-groups.outputs.selected-target }}" and
+  $host_cpu_build.env.TEST_NAME == "host_cpu_fairness" and
+  ($host_cpu_build.if | contains("needs.detect.outputs.sandbox-firecracker-changed")) and
+  ($host_cpu_build.if | contains("needs.detect.outputs.ci-changed")) and
   ($host_cpu.if | contains("needs.runner-build.result")) and
+  ($host_cpu.if | contains("needs.host-cpu-fairness-build.result")) and
   ($host_cpu.if | contains("needs.runner-behavior-lane-") | not) and
   ($host_cpu.if | contains("needs.detect.outputs.sandbox-firecracker-changed")) and
   ($host_cpu.if | contains("needs.detect.outputs.ci-changed")) and
@@ -108,15 +116,15 @@ jq -e '
     ".github/scripts/runner-behavior-upgrade-local.sh"
   ] and
   $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-build.outputs.target }}" and
-  any($host_cpu.steps[]?;
-    .name == "Cross-compile host CPU fairness test" and
-    (.run | contains("--test host_cpu_fairness"))
+  any($host_cpu_build.steps[]?;
+    .run == "bash .github/scripts/runner-native-test-artifact.sh build"
   ) and
   any($host_cpu.steps[]?;
     .name == "Verify weighted host CPU service with real Firecracker Guests" and
     .run == ".github/scripts/runner-behavior-host-cpu-fairness.sh"
   ) and
   ($gate.needs | index("host-cpu-fairness-test")) != null and
+  ($gate.needs | index("host-cpu-fairness-build")) != null and
   ($gate.needs | index("runner-behavior-lane-d")) != null and
   $rootfs_process.needs == ["detect", "runner-host-groups"] and
   $rootfs_process.defaults.run.shell == "bash" and

@@ -13315,16 +13315,18 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       [FeatureSwitchKey.PaidToolControls]: true,
     });
     await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, actor, "image-generation", true);
     const queued = await api.createRun(actor, {
       agentId,
       prompt: "capture my paid tool preferences",
       modelProvider: "anthropic-api-key",
     });
     await setPaidToolDisabled(context, actor, "web-search", false);
+    await setPaidToolDisabled(context, actor, "image-generation", false);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(queued.runId);
     expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
-      '["web-search"]',
+      '["image-generation","web-search"]',
     );
     expect(claim.environment).not.toHaveProperty(DISABLED_PAID_TOOLS_ENV_VAR);
     await api.requestCancelRun(actor, queued.runId, [200]);
@@ -13341,6 +13343,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, enabled.runId, [200]);
 
     await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, actor, "video-rendering", true);
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PaidToolControls]: false,
     });
@@ -13352,7 +13355,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const rolloutOffClaim = await api.claimRunnerJob(rolloutOff.runId);
     expect(
       rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
-    ).toBe('["web-search"]');
+    ).toBe('["video-rendering","web-search"]');
     await api.requestCancelRun(actor, rolloutOff.runId, [200]);
   });
 
@@ -13499,6 +13502,57 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     expect(capabilities).toContain("ssh:write");
     await api.requestCancelRun(actor, run.runId, [200]);
   });
+
+  it.each([false, true])(
+    "advertises VNC instructions and Run capabilities only while its feature is enabled (%s)",
+    async (enabled) => {
+      const api = createRunsApi(context);
+      const connectors = createConnectorBddApi(context);
+      const webhooks = createWebhookCallbackApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.VncAccess]: enabled,
+      });
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "inspect my remote VNC desktop",
+        modelProvider: "anthropic-api-key",
+      });
+      expect(run.status).toBe("pending");
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const prompt = claim.appendSystemPrompt ?? "";
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a minted Run token");
+      }
+      const capabilities = verifyOkouToken(token)?.capabilities;
+      expect(capabilities).toBeDefined();
+      if (enabled) {
+        expect(capabilities).toContain("vnc:read");
+        expect(capabilities).toContain("vnc:write");
+        expect(prompt).toContain("okou vnc host list --json");
+        expect(prompt).toContain("okou vnc session start");
+        expect(prompt).toContain("explicit shared/exclusive mode");
+        expect(prompt).toContain("okou vnc screenshot");
+        expect(prompt).toContain("geometry for coordinate input");
+        expect(prompt).toContain("never replay uncertain input automatically");
+        expect(prompt).toContain("okou vnc session close");
+        expect(prompt).toContain("okou vnc --help");
+      } else {
+        expect(capabilities).not.toContain("vnc:read");
+        expect(capabilities).not.toContain("vnc:write");
+        expect(prompt).not.toContain("okou vnc");
+      }
+      await api.requestCancelRun(actor, run.runId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+    },
+  );
 
   it("advertises connector account switching", async () => {
     const api = createRunsApi(context);

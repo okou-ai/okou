@@ -183,7 +183,6 @@ function newThreadSendBody({
   clientEventId,
   prepared,
   modelSelection,
-  codexFastModeEnabled,
   realAgentInPreviewEnabled,
   userMessage,
   computerUseHostId,
@@ -196,7 +195,6 @@ function newThreadSendBody({
   clientEventId: string;
   prepared: PreparedNewThreadPayload;
   modelSelection: ModelProviderSelection;
-  codexFastModeEnabled: boolean;
   realAgentInPreviewEnabled: boolean;
   userMessage: UserMessageDocument;
   computerUseHostId?: string | null;
@@ -206,7 +204,6 @@ function newThreadSendBody({
 }) {
   const runOptions = runOptionsFromModelProviderSelection(
     modelSelection,
-    codexFastModeEnabled,
     videoRunOptions,
   );
   return {
@@ -224,18 +221,11 @@ function newThreadSendBody({
   };
 }
 
-function codexFastModeSwitchEnabled(
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
-): boolean {
-  return switches[FeatureSwitchKey.CodexFastMode] ?? false;
-}
-
 function resolveNewThreadModelSelection(
   modelSelection: ModelProviderSelection | null,
   args: {
     readonly policies: OrgModelPoliciesResponse | null | undefined;
     readonly userPreference: UserModelPreferenceResponse | null | undefined;
-    readonly codexFastModeEnabled: boolean;
   },
 ): ModelProviderSelection | null {
   if (modelSelection) {
@@ -243,7 +233,6 @@ function resolveNewThreadModelSelection(
       !isCodexFastModeAvailableForSelection({
         policies: args.policies,
         selectedModel: modelSelection.selectedModel,
-        codexFastModeEnabled: args.codexFastModeEnabled,
       })
       ? { ...modelSelection, codexServiceTier: undefined }
       : modelSelection;
@@ -251,7 +240,6 @@ function resolveNewThreadModelSelection(
   return resolveModelFirstUserDefaultSelection({
     userPreference: args.userPreference,
     policies: args.policies,
-    codexFastModeEnabled: args.codexFastModeEnabled,
   });
 }
 
@@ -263,12 +251,9 @@ const resolveCurrentNewThreadModelSelection$ = command(
       get(userModelPreference$),
     ]);
     signal.throwIfAborted();
-    const featureSwitches = get(featureSwitch$);
     const resolved = resolveNewThreadModelSelection(modelSelection, {
       policies,
       userPreference,
-      codexFastModeEnabled:
-        featureSwitches[FeatureSwitchKey.CodexFastMode] ?? false,
     });
     if (
       resolved &&
@@ -437,12 +422,9 @@ const startNewChatThreadCreate$ = command(
     signal.throwIfAborted();
     const userPreference = await get(userModelPreference$);
     signal.throwIfAborted();
-    const featureSwitches = get(featureSwitch$);
     const modelSelection = resolveNewThreadModelSelection(null, {
       policies,
       userPreference,
-      codexFastModeEnabled:
-        featureSwitches[FeatureSwitchKey.CodexFastMode] ?? false,
     });
     if (!modelSelection) {
       throw new Error("A model selection is required");
@@ -624,7 +606,6 @@ const sendNewThreadMessage$ = command(
       clientEventId,
       prepared,
       modelSelection: resolvedModelSelection,
-      codexFastModeEnabled: codexFastModeSwitchEnabled(features),
       realAgentInPreviewEnabled:
         features[FeatureSwitchKey.RealAgentInPreview] ?? false,
       userMessage: annotatedUserMessage,

@@ -77,18 +77,6 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
-  it("defaults the composer run controls to every organization", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const userId = `user_${randomUUID()}`;
-
-    clerk.session(userId, `org_${randomUUID()}`, "org:member");
-    const ordinary = await accept(client().get({ headers }), [200]);
-    expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.CodexFastMode],
-    ).toBeTruthy();
-  });
-
   it.each([true, false])(
     "echoes and persists a stored override as %s for a non-staff org",
     async (enabled) => {
