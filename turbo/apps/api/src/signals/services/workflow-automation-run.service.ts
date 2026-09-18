@@ -63,10 +63,18 @@ export const runWorkflowAutomationNow$ = command(
           triggerBrief: args.triggerBrief,
           coalescePendingScheduleRun: args.coalescePendingScheduleRun !== false,
           persistSourceTransition: args.persistSourceTransition,
+          scheduleClaim: args.scheduleClaim,
         });
       },
     );
     signal.throwIfAborted();
+
+    // An unconsumed occurrence starts no run and adds no queue item, exactly
+    // like a coalesced tick. The claim plan's owner records why, so the
+    // scheduler accounts for it without widening this shared result type.
+    if (admission.kind === "schedule_unavailable") {
+      return { kind: "enqueued" };
+    }
 
     if (admission.kind === "inserted") {
       await publishChatThreadMessageCreatedSafely({

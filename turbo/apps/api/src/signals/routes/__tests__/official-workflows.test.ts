@@ -1,5 +1,7 @@
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { createHash, randomUUID } from "node:crypto";
+
+import { Cron } from "croner";
 import { gunzipSync } from "node:zlib";
 
 import {
@@ -58,7 +60,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -70,7 +72,14 @@ import { verifyOkouToken } from "../../auth/tokens";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
+import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
+import { readMorningBriefScheduleClaimsFixture } from "../../../test-fixtures/morning-brief-schedule-claim";
+import {
+  admitWorkflowAutomationEventFixture,
+  holdWorkflowAutomationRowFixture,
+} from "../../../test-fixtures/workflow-queue";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -1739,6 +1748,26 @@ async function deliverClerkOrganizationCreated(
   await flushWaitUntilForTest();
 }
 
+async function deliverClerkOrganizationMembershipDeleted(
+  actor: ApiTestUser,
+): Promise<void> {
+  if (!actor.orgId || !actor.orgRole) {
+    throw new Error("Expected organization-scoped Clerk member");
+  }
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organizationMembership.deleted",
+    data: {
+      id: `membership-${actor.userId}-${actor.orgId}`,
+      organization: { id: actor.orgId },
+      publicUserData: { userId: actor.userId },
+      role: actor.orgRole,
+    },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
 async function deliverClerkOrganizationMembershipCreated(
   actor: ApiTestUser,
   createdAt: Date,
@@ -1756,22 +1785,6 @@ async function deliverClerkOrganizationMembershipCreated(
       public_user_data: { user_id: actor.userId },
       role: actor.orgRole,
       created_at: createdAt.getTime(),
-    },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-}
-
-async function deliverClerkOrganizationMembershipDeleted(
-  actor: ApiTestUser,
-): Promise<void> {
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organizationMembership.deleted",
-    data: {
-      id: `membership-${actor.userId}-${actor.orgId}`,
-      organization: { id: actor.orgId },
-      public_user_data: { user_id: actor.userId },
     },
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
@@ -12417,5 +12430,641 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toStrictEqual(beforeRace);
     await runs.requestCancelRun(firstActor, firstRun.runId, [200, 400]);
     await runs.requestCancelRun(secondActor, secondRun.runId, [200, 400]);
+  });
+});
+
+describe("Morning Brief legacy schedule claim journal", () => {
+  /** The published Morning Brief cadence, evaluated independently of the API. */
+  function briefOccurrenceAfter(
+    cronExpression: string,
+    timezone: string,
+    from: Date,
+  ): Date | null {
+    return new Cron(cronExpression, { timezone }).nextRun(from);
+  }
+
+  interface JournaledBrief {
+    readonly actor: ApiTestUser;
+    readonly runnerGroup: string;
+    readonly workflowId: string;
+    readonly automationId: string;
+    readonly anchor: number;
+  }
+
+  async function installJournaledBrief(
+    timezone = "Asia/Shanghai",
+  ): Promise<JournaledBrief> {
+    // A subscribed org, so the legacy Run and its credit checks stay real.
+    const { actor } = await workflowBdd.setupWorkflowOrg({ tier: "pro" });
+    await prepareBriefMember({ actor });
+    await selectBuiltInDefaultModel(actor);
+    await initializeBriefMember(actor, timezone);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected one Morning Brief installation");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation) {
+      throw new Error("Expected the Morning Brief automation");
+    }
+    const preference = await readBriefPreference(actor);
+    if (!preference.body.nextRunAt) {
+      throw new Error("Expected an enabled Morning Brief schedule");
+    }
+    // Configured last so installation setup cannot replace the runner group
+    // the fired brief's job is enqueued into, and registered before the tick
+    // so the job it enqueues is claimable.
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.heartbeatRunner(runnerGroup);
+    return {
+      actor,
+      runnerGroup,
+      workflowId: installation.id,
+      automationId: automation.id,
+      anchor: Date.parse(preference.body.nextRunAt),
+    };
+  }
+
+  /**
+   * Fire the cron at a chosen instant and keep the clock there, so the runner
+   * claim and completion that follow observe the same time as the tick.
+   */
+  async function pollAt(automationId: string, at: number): Promise<void> {
+    mockNow(at);
+    await accept(
+      automationExecutionClient().execute({
+        body: { automation_id: automationId },
+      }),
+      [200],
+    );
+  }
+
+  async function briefThreadId(
+    actor: ApiTestUser,
+    workflowId: string,
+  ): Promise<string> {
+    const [automation] = await readMorningBriefAutomations(actor, workflowId);
+    if (!automation?.chatThreadId) {
+      throw new Error("Expected the fired brief to bind its chat thread");
+    }
+    return automation.chatThreadId;
+  }
+
+  /**
+   * Deliver the run's terminal internal callbacks through the production
+   * dispatcher. `dispatchCount` above one runs concurrent initial dispatches,
+   * which is what actually reaches the handler more than once: the dispatcher
+   * only selects pending or failed callbacks, so a sequential redelivery after
+   * a successful one selects nothing. The returned counts are the arrival
+   * evidence tests assert on.
+   */
+  async function deliverBriefCallback(
+    runId: string,
+    dispatchCount = 1,
+  ): Promise<{
+    readonly callbackResults: number;
+    readonly successfulCallbacks: number;
+  }> {
+    const response = await accept(
+      automationExecutionClient().dispatchCallbacks({
+        body: {
+          run_id: runId,
+          status: "completed",
+          dispatch_count: dispatchCount,
+        },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    return {
+      callbackResults: response.body.callback_results,
+      successfulCallbacks: response.body.successful_callbacks,
+    };
+  }
+
+  async function briefRunIds(threadId: string): Promise<readonly string[]> {
+    const events = await workflowBdd.readThreadEvents(threadId);
+    return events.flatMap((event) => {
+      return event.eventType === "input.prompt" && event.runId
+        ? [event.runId]
+        : [];
+    });
+  }
+
+  async function briefAutomationEventCount(threadId: string): Promise<number> {
+    const events = await workflowBdd.readThreadEvents(threadId);
+    return events.filter((event) => {
+      return event.eventType === "input.automation";
+    }).length;
+  }
+
+  it("records the original due instant when the poll is late and keeps one occurrence across a retried tick", async () => {
+    const brief = await installJournaledBrief();
+    const polledAt = brief.anchor + 47 * 60 * 1000;
+
+    await pollAt(brief.automationId, polledAt);
+
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(1);
+    const [claim] = claims;
+    expect(claim?.scheduledAnchorAt.getTime()).toBe(brief.anchor);
+    // The poll clock stays the real fire time; only the anchor is the schedule.
+    expect(claim?.claimedAt.getTime()).toBe(polledAt);
+    expect(claim?.claimSequence).toBe(1);
+    expect(claim?.queueEventId).not.toBeNull();
+    expect(claim?.settlement).toBe("unsettled");
+
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const runIds = await briefRunIds(threadId);
+    expect(runIds).toHaveLength(1);
+    // The Run is bound in the launch transaction, before the post-return
+    // last-run write, so it is already authoritative here.
+    expect(claim?.runId).toBe(runIds[0]);
+    expect(claim?.queueDisposition).toBe("claimed");
+
+    // A retried tick for the same occurrence produces no second identity.
+    await pollAt(brief.automationId, polledAt + 60_000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(1);
+    await expect(briefRunIds(threadId)).resolves.toStrictEqual(runIds);
+  });
+
+  it("yields one occurrence when two ticks compete at the queue admission lock", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [firstRunId] = await briefRunIds(threadId);
+    if (!firstRunId) {
+      throw new Error("Expected the first occurrence to start a run");
+    }
+    await deliverBriefCallback(firstRunId);
+
+    const advanced = await readBriefPreference(brief.actor);
+    if (!advanced.body.nextRunAt) {
+      throw new Error("Expected the completion to publish the next occurrence");
+    }
+    const secondAnchor = Date.parse(advanced.body.nextRunAt);
+
+    // Both ticks reach the shared thread admission lock before either can
+    // consume the schedule, so the race is observed rather than assumed.
+    const barrier = await holdChatEventQueueAdmissionLockFixture({
+      threadId,
+      signal: context.signal,
+    });
+    mockNow(secondAnchor + 60_000);
+    const ticks = Promise.all([
+      accept(
+        automationExecutionClient().execute({
+          body: { automation_id: brief.automationId },
+        }),
+        [200],
+      ),
+      accept(
+        automationExecutionClient().execute({
+          body: { automation_id: brief.automationId },
+        }),
+        [200],
+      ),
+    ]);
+    await expect
+      .poll(async () => {
+        return await barrier.directWaiterCount();
+      })
+      .toBe(2);
+    barrier.release();
+    await barrier.done;
+    await ticks;
+
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(2);
+    expect(claims[1]?.scheduledAnchorAt.getTime()).toBe(secondAnchor);
+    expect(claims[1]?.claimSequence).toBe(2);
+    expect(claims[0]?.settlement).toBe("completed");
+    expect(claims[1]?.settlement).toBe("unsettled");
+    // Exactly one canonical queue event belongs to the new occurrence, and it
+    // is not the event the first occurrence already consumed.
+    expect(claims[1]?.queueEventId).toStrictEqual(expect.any(String));
+    expect(claims[1]?.queueEventId).not.toBe(claims[0]?.queueEventId);
+    // One canonical queue event per occurrence: the losing tick added none.
+    await expect(briefAutomationEventCount(threadId)).resolves.toBe(
+      claims.length,
+    );
+  });
+
+  it("settles once when concurrent first deliveries of the same completion arrive", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the occurrence to start a run");
+    }
+
+    // Four concurrent initial dispatches: none has been marked delivered yet,
+    // so more than one really selects the callback and enters settlement.
+    const delivery = await deliverBriefCallback(runId, 4);
+    expect(delivery.callbackResults).toBeGreaterThan(1);
+    expect(delivery.successfulCallbacks).toBeGreaterThan(1);
+
+    const settled = await readBriefPreference(brief.actor);
+    const successor = settled.body.nextRunAt;
+    expect(successor).toStrictEqual(expect.any(String));
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.settlement).toBe("completed");
+    expect(claims[0]?.settledAt).not.toBeNull();
+
+    // Exactly one recurrence step: a second settlement would have advanced
+    // past this successor rather than republishing it.
+    const expectedSuccessor = briefOccurrenceAfter(
+      "0 7 * * *",
+      "Asia/Shanghai",
+      new Date(brief.anchor + 60_000),
+    );
+    expect(successor).toBe(expectedSuccessor?.toISOString());
+  });
+
+  it("settles an active claim with the timezone edited while it was running", async () => {
+    const brief = await installJournaledBrief("Asia/Shanghai");
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the occurrence to start a run");
+    }
+
+    // The claim is active, so the timezone edit deliberately leaves the
+    // schedule NULL and its owning completion applies the new zone.
+    await accept(
+      setupApp({ context, routes: userPreferencesRoutes })(
+        userPreferencesContract,
+      ).update({
+        headers: authHeaders(brief.actor),
+        body: { timezone: "America/New_York" },
+      }),
+      [200],
+    );
+    const duringClaim = await readBriefPreference(brief.actor);
+    expect(duringClaim.body).toMatchObject({
+      timezone: "America/New_York",
+      nextRunAt: null,
+    });
+
+    await deliverBriefCallback(runId);
+    const settled = await readBriefPreference(brief.actor);
+    expect(settled.body.timezone).toBe("America/New_York");
+    if (!settled.body.nextRunAt) {
+      throw new Error("Expected the completion to publish the next occurrence");
+    }
+    expect(
+      new Date(settled.body.nextRunAt).toLocaleString("en-US", {
+        timeZone: "America/New_York",
+        hour: "2-digit",
+        hour12: false,
+      }),
+    ).toBe("07");
+  });
+
+  it("leaves the schedule due when the only pending event belongs to no recorded occurrence", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the occurrence to start a run");
+    }
+    await deliverBriefCallback(runId);
+    const advanced = await readBriefPreference(brief.actor);
+    if (!advanced.body.nextRunAt) {
+      throw new Error("Expected the completion to publish the next occurrence");
+    }
+    const secondAnchor = Date.parse(advanced.body.nextRunAt);
+
+    // An untracked pending event, as an older API version would have left it.
+    await admitWorkflowAutomationEventFixture({
+      automationId: brief.automationId,
+      chatThreadId: threadId,
+      triggerBrief: "untracked-legacy-tick",
+    });
+
+    await pollAt(brief.automationId, secondAnchor + 60_000);
+    // No invented identity, and the occurrence is still due for the next tick.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(1);
+    const preserved = await readBriefPreference(brief.actor);
+    expect(preserved.body.nextRunAt).toBe(advanced.body.nextRunAt);
+    await expect(
+      briefAutomationEventCount(threadId),
+    ).resolves.toBeGreaterThanOrEqual(1);
+  });
+
+  /** Publish a new occurrence through the real preference writer. */
+  async function republishBriefSchedule(actor: ApiTestUser): Promise<number> {
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    if (!enabled.body.nextRunAt) {
+      throw new Error("Expected the preference writer to publish a successor");
+    }
+    return Date.parse(enabled.body.nextRunAt);
+  }
+
+  it("ignores a still-unsettled older occurrence's callback once a newer claim exists", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [olderRunId] = await briefRunIds(threadId);
+    if (!olderRunId) {
+      throw new Error("Expected the first occurrence to start a run");
+    }
+
+    // The first occurrence is deliberately left unsettled, so only the current
+    // claim fence can stop its callback.
+    const nextAnchor = await republishBriefSchedule(brief.actor);
+    await pollAt(brief.automationId, nextAnchor + 60_000);
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(2);
+    expect(claims[0]?.settlement).toBe("unsettled");
+    expect(claims[1]?.claimSequence).toBe(2);
+    expect(claims[1]?.settlement).toBe("unsettled");
+    await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
+      body: { nextRunAt: null },
+    });
+
+    // First delivery of the older callback, so it genuinely reaches settlement.
+    const delivery = await deliverBriefCallback(olderRunId);
+    expect(delivery.callbackResults).toBeGreaterThan(0);
+
+    const settled = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(settled[0]?.settlement).toBe("unsettled");
+    expect(settled[1]?.settlement).toBe("unsettled");
+    await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
+      body: { nextRunAt: null },
+    });
+  });
+
+  it("revokes schedule occurrences when a member leaves, before and after a later tick", async () => {
+    const kept = await installJournaledBrief();
+    await pollAt(kept.automationId, kept.anchor + 60_000);
+    const departing = await installJournaledBrief();
+    await pollAt(departing.automationId, departing.anchor + 60_000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(1);
+
+    await deliverClerkOrganizationMembershipDeleted(departing.actor);
+
+    // The departing member's occurrences are gone. Revocation deliberately
+    // changes nothing else, so the automation itself is untouched.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(0);
+    await pollAt(departing.automationId, departing.anchor + 2 * 60 * 60 * 1000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(0);
+
+    // The other owner keeps its occurrence and its schedule.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(kept.automationId),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("revokes a departing member's occurrences recorded by an earlier tick", async () => {
+    const kept = await installJournaledBrief();
+    await pollAt(kept.automationId, kept.anchor + 60_000);
+    const departing = await installJournaledBrief();
+
+    // Reverse interleaving: revocation first, then a tick that must not
+    // recreate journal state for the removed member.
+    await deliverClerkOrganizationMembershipDeleted(departing.actor);
+    await pollAt(departing.automationId, departing.anchor + 60_000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(0);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(kept.automationId),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("keeps a published successor when a tick fails before acquiring any claim", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the first occurrence to start a run");
+    }
+    await deliverBriefCallback(runId);
+    const secondAnchor = Date.parse(
+      (await readBriefPreference(brief.actor)).body.nextRunAt ?? "",
+    );
+
+    // The tick blocks at the queue admission lock, which is before it can
+    // acquire any claim, and then observes a real database failure there.
+    const barrier = await holdChatEventQueueAdmissionLockFixture({
+      threadId,
+      signal: context.signal,
+    });
+    mockNow(secondAnchor + 60_000);
+    // The cancelled admission surfaces through the tick's own failure path, so
+    // the cron route still completes normally.
+    const failingTick = accept(
+      automationExecutionClient().execute({
+        body: { automation_id: brief.automationId },
+      }),
+      [200],
+    );
+    await expect
+      .poll(async () => {
+        return await barrier.directWaiterCount();
+      })
+      .toBe(1);
+
+    // Meanwhile the occurrence this tick resolved stops being current: a real
+    // timezone write republishes the schedule in a different zone, so the
+    // recurrence a stale loser would compute from its own snapshot differs
+    // from the value that is actually published.
+    await accept(
+      setupApp({ context, routes: userPreferencesRoutes })(
+        userPreferencesContract,
+      ).update({
+        headers: authHeaders(brief.actor),
+        body: { timezone: "America/New_York" },
+      }),
+      [200],
+    );
+    const published = await readBriefPreference(brief.actor);
+    if (!published.body.nextRunAt) {
+      throw new Error("Expected the timezone write to republish the schedule");
+    }
+    const publishedSuccessor = Date.parse(published.body.nextRunAt);
+    expect(publishedSuccessor).not.toBe(secondAnchor);
+    expect(publishedSuccessor).not.toBe(
+      briefOccurrenceAfter(
+        "0 7 * * *",
+        "Asia/Shanghai",
+        new Date(secondAnchor + 60_000),
+      )?.getTime(),
+    );
+    await expect(barrier.cancelBlockedWaiters()).resolves.toBeGreaterThan(0);
+    barrier.release();
+    await barrier.done;
+    await failingTick;
+
+    // The loser recorded no occurrence and did not touch the published
+    // schedule, the failure count or the enabled state.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(1);
+    const preserved = await readBriefPreference(brief.actor);
+    expect(preserved.body).toMatchObject({
+      enabled: true,
+      timezone: "America/New_York",
+      nextRunAt: new Date(publishedSuccessor).toISOString(),
+    });
+    await expect(briefRunIds(threadId)).resolves.toStrictEqual([runId]);
+  });
+
+  it("publishes a future successor when settlement waits across a recurrence boundary", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the occurrence to start a run");
+    }
+    const boundary = briefOccurrenceAfter(
+      "0 7 * * *",
+      "Asia/Shanghai",
+      new Date(brief.anchor + 60_000),
+    );
+    if (!boundary) {
+      throw new Error("Expected a next Morning Brief occurrence");
+    }
+
+    // The callback arrives just before the boundary and then waits on a real
+    // automation row lock until after it has passed.
+    const held = await holdWorkflowAutomationRowFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+    });
+    mockNow(boundary.getTime() - 60_000);
+    const settlement = deliverBriefCallback(runId);
+    await expect
+      .poll(async () => {
+        return await held.blockedWaiterCount();
+      })
+      .toBeGreaterThan(0);
+    mockNow(boundary.getTime() + 60_000);
+    held.release();
+    await held.done;
+    const delivery = await settlement;
+    expect(delivery.callbackResults).toBeGreaterThan(0);
+
+    // The recurrence is computed after the wait, so the published successor is
+    // still ahead of the clock instead of the boundary that already passed.
+    const settled = await readBriefPreference(brief.actor);
+    if (!settled.body.nextRunAt) {
+      throw new Error("Expected the settlement to publish a successor");
+    }
+    expect(Date.parse(settled.body.nextRunAt)).toBeGreaterThan(
+      boundary.getTime() + 60_000,
+    );
+  });
+
+  it("settles a consumed occurrence through the outer pre-run failure path and recovers the schedule", async () => {
+    const brief = await installJournaledBrief();
+    // The launch fails after the occurrence was claimed and queued, which is
+    // the outer pre-run failure the poller owns.
+    await withBuiltInModelRuntimeRouteUnavailableForTest(
+      "claude-sonnet-5",
+      async () => {
+        await pollAt(brief.automationId, brief.anchor + 60_000);
+      },
+    );
+    await flushWaitUntilForTest();
+
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.scheduledAnchorAt.getTime()).toBe(brief.anchor);
+    expect(claims[0]?.queueEventId).toStrictEqual(expect.any(String));
+    // No run was created, so nothing bound one.
+    expect(claims[0]?.runId).toBeNull();
+    expect(claims[0]?.queueDisposition).toBe("queued");
+    expect(claims[0]?.settlement).toBe("pre_run_failure");
+    expect(claims[0]?.settledAt).not.toBeNull();
+
+    // The consumed occurrence recovered its schedule instead of leaving a
+    // permanently NULL hole.
+    const recovered = await readBriefPreference(brief.actor);
+    expect(recovered.body).toMatchObject({
+      enabled: true,
+      nextRunAt: expect.any(String),
+    });
+    expect(Date.parse(recovered.body.nextRunAt ?? "")).toBeGreaterThan(
+      brief.anchor,
+    );
+  });
+
+  it("removes an uninstalled brief's journal without touching another owner's occurrences", async () => {
+    const kept = await installJournaledBrief();
+    await pollAt(kept.automationId, kept.anchor + 60_000);
+    const removed = await installJournaledBrief();
+    await pollAt(removed.automationId, removed.anchor + 60_000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(removed.automationId),
+    ).resolves.toHaveLength(1);
+
+    await accept(
+      installationClient().uninstall({
+        headers: authHeaders(removed.actor),
+        params: { workflowId: removed.workflowId },
+      }),
+      [204],
+    );
+
+    await expect(
+      readMorningBriefScheduleClaimsFixture(removed.automationId),
+    ).resolves.toHaveLength(0);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(kept.automationId),
+    ).resolves.toHaveLength(1);
   });
 });

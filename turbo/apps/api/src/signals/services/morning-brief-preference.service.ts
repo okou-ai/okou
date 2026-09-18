@@ -45,6 +45,11 @@ import {
   refreshMorningBriefPreferenceProjection,
 } from "./morning-brief-preference-projection.service";
 import { executeRawRows } from "../../lib/db-raw-rows";
+import {
+  applyMorningBriefLogicalChoice,
+  readMorningBriefNativeSchedule,
+  type MorningBriefNativeScheduleRow,
+} from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   installOfficialWorkflow$,
@@ -241,14 +246,48 @@ async function projectInstalledPreference(
   };
 }
 
+/**
+ * Project the durable native choice onto the Settings response.
+ *
+ * Once a member's execution ownership has left `legacy`, that row is the
+ * authority for what Settings shows: the legacy automation's enabled bit and
+ * `next_run_at` belong to a scheduler that no longer admits this member's work,
+ * and during a rollback drain they are deliberately not the user's choice
+ * either. Reading them would let a disabled native brief still look enabled.
+ *
+ * Nothing here writes, and a member still on `legacy` is not affected at all.
+ */
+function projectNativePreference(
+  row: MorningBriefNativeScheduleRow,
+): MorningBriefPreferenceResult & { readonly workflowId?: string } {
+  return {
+    kind: "ok",
+    ...(row.legacyWorkflowId === null
+      ? {}
+      : { workflowId: row.legacyWorkflowId }),
+    preference: {
+      enabled: row.enabled,
+      status: row.enabled ? "enabled" : "paused",
+      nextRunAt: row.nextRunAt?.toISOString() ?? null,
+      timezone: row.timezone,
+      unavailableReason: null,
+    },
+  };
+}
+
 async function loadInstalledPreference(
   db: ReadonlyDb,
   args: MorningBriefPreferenceArgs,
 ): Promise<MorningBriefPreferenceResult & { readonly workflowId?: string }> {
+  const owner = morningBriefOwner(args);
+  const native = await readMorningBriefNativeSchedule(db, owner);
+  if (native !== undefined && native.phase !== "legacy") {
+    return projectNativePreference(native);
+  }
   return await projectInstalledPreference(
     db,
     args,
-    await loadMorningBriefMigrationState(db, morningBriefOwner(args)),
+    await loadMorningBriefMigrationState(db, owner),
   );
 }
 
@@ -810,6 +849,41 @@ const updateMorningBriefWhileLocked$ = command(
       }
     }
 
+    // A member whose execution ownership has left `legacy` is decided by the
+    // durable row alone. Its legacy automation no longer admits work, so the
+    // toggle commits once, in one transaction, and never depends on a second
+    // commit landing afterwards. This is what removes the window where a
+    // failure between the two left Settings disabled while native execution
+    // stayed enabled.
+    const nativeRow = await readMorningBriefNativeSchedule(db, identity);
+    signal.throwIfAborted();
+    if (nativeRow !== undefined && nativeRow.phase !== "legacy") {
+      const applied = await db.transaction(async (tx) => {
+        return await applyMorningBriefLogicalChoice(
+          tx,
+          identity,
+          { enabled: args.enabled, expectedEpoch: nativeRow.ownerEpoch },
+          nowDate(),
+        );
+      });
+      signal.throwIfAborted();
+      if (applied.kind === "stale") {
+        return conflict(
+          "MORNING_BRIEF_STATE_CONFLICT",
+          "Morning Brief ownership changed during this update. Retry the preference update.",
+        );
+      }
+      if (args.enabled && nativeRow.legacyWorkflowId !== null) {
+        await completeMorningBriefEnrollment(
+          db,
+          identity,
+          nativeRow.legacyWorkflowId,
+        );
+        signal.throwIfAborted();
+      }
+      return await loadInstalledPreference(db, args);
+    }
+
     const current = await loadInstalledPreference(db, args);
     signal.throwIfAborted();
     if (current.kind !== "ok" || current.workflowId === undefined) {
@@ -854,6 +928,21 @@ const updateMorningBriefWhileLocked$ = command(
       await completeMorningBriefEnrollment(db, identity, current.workflowId);
       signal.throwIfAborted();
     }
+    // The durable native choice is the authority once a member has one, so the
+    // same toggle that moved the legacy automation moves it too. Disabling
+    // revokes the admitted epoch and clears the obligation; re-enabling bumps
+    // the epoch again and schedules the next *future* occurrence, so the
+    // revoked slot is never replayed. Both commit under the member's preference
+    // advisory lock, which is the first lock in the documented order.
+    await db.transaction(async (tx) => {
+      await applyMorningBriefLogicalChoice(
+        tx,
+        identity,
+        { enabled: args.enabled },
+        nowDate(),
+      );
+    });
+    signal.throwIfAborted();
     return await loadInstalledPreference(db, args);
   },
 );
@@ -916,6 +1005,11 @@ async function synchronizeTimezoneWhileLocked(
         ),
       )
       .for("update");
+    // A timezone-only edit is deliberately **not** a revocation: the durable
+    // native row keeps its epoch, and an occurrence that already holds the
+    // obligation keeps its frozen anchor and window. Its one settlement then
+    // computes the next occurrence from the schedule as edited here.
+    await applyMorningBriefLogicalChoice(tx, identity, { timezone }, nowDate());
     for (const row of rows) {
       if (
         row.scheduleType !== "cron" ||

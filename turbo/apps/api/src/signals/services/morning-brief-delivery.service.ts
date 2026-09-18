@@ -12,6 +12,7 @@ import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-bri
 import {
   morningBriefDeliveries,
   type MorningBriefDeliveryEmailResolution,
+  type MorningBriefDeliveryPurpose,
 } from "@okouai/db/schema/morning-brief-delivery";
 import { morningBriefGenerations } from "@okouai/db/schema/morning-brief-generation";
 import { userCache } from "@okouai/db/schema/user-cache";
@@ -123,11 +124,28 @@ function rejectionOf(reason: string): MorningBriefDeliveryRejection {
     : "morning-brief-unavailable";
 }
 
+/**
+ * The validated native execution authority a production delivery must present.
+ *
+ * It is the epoch and membership generation the occurrence was *claimed* under,
+ * not whatever the row holds now: a disable and re-enable, a destination
+ * replacement or a transfer all bump the epoch, and an occurrence admitted
+ * before that must not deliver.
+ */
+interface MorningBriefNativeDeliveryAuthority {
+  readonly ownerEpoch: number;
+  readonly membershipId: string;
+}
+
 interface MorningBriefDeliveryRequest {
   readonly orgId: string;
   readonly userId: string;
-  /** The opaque attempt the generation preview returned. Never an owner. */
+  /** The opaque attempt the generation returned. Never an owner. */
   readonly resultAttemptId: string;
+  /** Which purpose's result this call may consume. Defaults to `preview`. */
+  readonly purpose?: MorningBriefDeliveryPurpose;
+  /** Required for `production`; rejected when absent or stale. */
+  readonly nativeAuthority?: MorningBriefNativeDeliveryAuthority;
 }
 
 function resultDigest(markdown: string): string {
@@ -293,12 +311,13 @@ function generationReferenceCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly resultAttemptId: string;
+  readonly purpose: MorningBriefDeliveryPurpose;
 }) {
   return and(
     eq(morningBriefGenerations.orgId, args.orgId),
     eq(morningBriefGenerations.userId, args.userId),
     eq(morningBriefGenerations.attemptId, args.resultAttemptId),
-    eq(morningBriefGenerations.executionPurpose, "preview"),
+    eq(morningBriefGenerations.executionPurpose, args.purpose),
   );
 }
 
@@ -316,6 +335,7 @@ async function loadResultAnchor(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
   },
 ): Promise<ResultAnchor | undefined> {
   const [row] = await db
@@ -345,6 +365,7 @@ async function loadDeliverableResult(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly at: Date;
   },
 ): Promise<DeliverableResult> {
@@ -394,6 +415,7 @@ async function loadDeliveryByAttempt(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
   },
 ) {
   const [row] = await db
@@ -408,7 +430,7 @@ async function loadDeliveryByAttempt(
       and(
         eq(morningBriefDeliveries.orgId, args.orgId),
         eq(morningBriefDeliveries.userId, args.userId),
-        eq(morningBriefDeliveries.executionPurpose, "preview"),
+        eq(morningBriefDeliveries.executionPurpose, args.purpose),
         eq(morningBriefDeliveries.resultAttemptId, args.resultAttemptId),
       ),
     )
@@ -677,6 +699,7 @@ async function admitDelivery(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
   },
@@ -725,6 +748,7 @@ async function admitDelivery(
   await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: nowDate(),
   });
 
@@ -783,6 +807,7 @@ async function deliverInTransaction(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
   },
@@ -834,6 +859,7 @@ async function deliverInTransaction(
   const result = await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: acceptedAt,
   });
   if (result.membershipId !== current.membershipId) {
@@ -871,6 +897,7 @@ async function deliverInTransaction(
   await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: nowDate(),
   });
 
@@ -890,7 +917,7 @@ async function deliverInTransaction(
     scheduledFor: anchor.scheduledFor,
     collectionKind: anchor.collectionKind,
     collectionVersion: anchor.collectionVersion,
-    executionPurpose: "preview",
+    executionPurpose: args.purpose,
     resultAttemptId: request.resultAttemptId,
     membershipId: current.membershipId,
     workflowId: current.workflowId,
@@ -922,6 +949,7 @@ export const deliverMorningBriefResult$ = command(
   ): Promise<MorningBriefDeliveryResult> => {
     const db = set(writeDb$);
     const owner = { orgId: request.orgId, userId: request.userId };
+    const purpose: MorningBriefDeliveryPurpose = request.purpose ?? "preview";
 
     // A delivery that already committed is recoverable from the reference the
     // caller still holds, even after the generation row has been swept. This
@@ -931,6 +959,7 @@ export const deliverMorningBriefResult$ = command(
     const recovered = await loadDeliveryByAttempt(db, {
       ...owner,
       resultAttemptId: request.resultAttemptId,
+      purpose,
     });
     signal.throwIfAborted();
     if (recovered) {
@@ -948,6 +977,7 @@ export const deliverMorningBriefResult$ = command(
     const anchor = await loadResultAnchor(db, {
       ...owner,
       resultAttemptId: request.resultAttemptId,
+      purpose,
     });
     signal.throwIfAborted();
     if (!anchor) {
@@ -974,7 +1004,7 @@ export const deliverMorningBriefResult$ = command(
       db.transaction(async (tx) => {
         return await deliverInTransaction(
           tx,
-          { request, anchor, current: authority.admission },
+          { request, purpose, anchor, current: authority.admission },
           signal,
         );
       }),

@@ -934,7 +934,8 @@ export const deleteChatThread$ = command(
         // Acquire the user/org event sequence only after all cleanup and
         // cascading deletes. A blocked child row must not hold this shared
         // lock and stall events for other threads. Keep the tombstone in this
-        // transaction so deletion and its ordered event become visible together.
+        // transaction so deletion and its ordered event become visible
+        // together.
         await appendChatThreadEvent(tx, {
           kind: "deleted",
           userId: args.userId,

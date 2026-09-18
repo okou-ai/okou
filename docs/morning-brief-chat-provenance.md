@@ -247,6 +247,7 @@ HTTP answers are doubled. The limits worth stating:
 
 ## Migration and rollout
 
+`1152_chat_thread_morning_brief_provenance` adds one nullable `varchar(32)`
 `1153_chat_thread_morning_brief_provenance` adds one nullable `varchar(32)`
 column with no default. Live production metadata at 2026-09-17 04:04:51 UTC
 counted 158,927 `chat_threads` rows, including internal owners; that is total

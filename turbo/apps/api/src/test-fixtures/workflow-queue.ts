@@ -1,8 +1,11 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, count, eq, isNotNull, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { db } from "../lib/db";
+import { executeRawRows } from "../lib/db-raw-rows";
+import { createDeferredPromise } from "../signals/utils";
 import { admitWorkflowAutomationEvent } from "../signals/services/workflow-chat-event-queue.service";
 import {
   persistedWorkflowAutomationEventPayload,
@@ -71,4 +74,74 @@ export async function admitWorkflowAutomationEventFixture(
     );
   }
   return admission.eventId;
+}
+
+const automationPidRowSchema = z.object({ pid: z.int() });
+const automationWaiterRowSchema = z.object({ waiterCount: z.int() });
+
+interface HeldWorkflowAutomationRow {
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly blockedWaiterCount: () => Promise<number>;
+}
+
+/**
+ * Hold one automation row lock open.
+ *
+ * No production API can keep this row locked while another caller waits, so
+ * this fixture creates the real wait that a settlement has to cross before it
+ * may sample its recurrence clock.
+ */
+export async function holdWorkflowAutomationRowFixture(args: {
+  readonly automationId: string;
+  readonly signal: AbortSignal;
+}): Promise<HeldWorkflowAutomationRow> {
+  const started = createDeferredPromise<number>(args.signal);
+  const released = createDeferredPromise<void>(args.signal);
+  const done = db().transaction(async (tx) => {
+    const rows = await tx
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(eq(workflowAutomations.id, args.automationId))
+      .for("update");
+    if (rows.length !== 1) {
+      throw new Error("Expected one workflow automation fixture row");
+    }
+    const pids = await executeRawRows(
+      tx,
+      sql`SELECT pg_backend_pid() AS "pid"`,
+      automationPidRowSchema,
+    );
+    const pid = pids[0]?.pid;
+    if (!pid) {
+      throw new Error("Expected the automation lock holder pid");
+    }
+    started.resolve(pid);
+    await released.promise;
+  });
+  const holderPid = await started.promise;
+  return {
+    release: () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+    },
+    done,
+    blockedWaiterCount: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT ${count()}::int AS "waiterCount"
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        automationWaiterRowSchema,
+      );
+      const [row] = rows;
+      if (!row || rows.length !== 1) {
+        throw new Error("Expected one automation waiter count row");
+      }
+      return row.waiterCount;
+    },
+  };
 }

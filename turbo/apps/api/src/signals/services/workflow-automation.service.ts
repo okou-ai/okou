@@ -1,3 +1,4 @@
+import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isDeepStrictEqual } from "node:util";
 
 import { command } from "ccstate";
@@ -69,6 +70,10 @@ import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
 
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
+import {
+  applyMorningBriefLogicalChoice,
+  lockMorningBriefNativeSchedule,
+} from "./morning-brief-native-schedule.service";
 import { nowDate } from "../../lib/time";
 import type { Tx } from "../../lib/db-types";
 import {
@@ -5966,6 +5971,52 @@ const validateStripeFeature$ = command(
   },
 );
 
+/**
+ * Mirror a generic automation toggle onto the member's durable Morning Brief
+ * choice, when that automation is the one their brief is bound to.
+ *
+ * The generic automations API can enable or disable the same schedule Settings
+ * owns. Once execution ownership has left `legacy` the durable row is the
+ * authority, so a toggle that only moved the legacy automation would leave the
+ * native scheduler running against a choice the user just changed. Anything
+ * that is not a Morning Brief automation, and any member still on `legacy`, is
+ * untouched.
+ */
+async function mirrorMorningBriefChoice(
+  db: Db,
+  automation: {
+    readonly id: string;
+    readonly orgId: string;
+    readonly ownerUserId: string | null;
+    readonly officialBlueprintKey: string | null;
+  },
+  enabled: boolean,
+): Promise<void> {
+  if (
+    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    automation.ownerUserId === null
+  ) {
+    return;
+  }
+  const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
+  await db.transaction(async (tx) => {
+    const native = await lockMorningBriefNativeSchedule(tx, owner);
+    if (
+      native === undefined ||
+      native.phase === "legacy" ||
+      native.legacyAutomationId !== automation.id
+    ) {
+      return;
+    }
+    await applyMorningBriefLogicalChoice(
+      tx,
+      owner,
+      { enabled, expectedEpoch: native.ownerEpoch },
+      nowDate(),
+    );
+  });
+}
+
 export const enableWorkflowAutomation$ = command(
   async (
     { set },
@@ -6049,7 +6100,7 @@ export const enableWorkflowAutomation$ = command(
         return failure;
       }
     }
-    return await persistAndReconcileEnabledWorkflowAutomation(
+    const enabled = await persistAndReconcileEnabledWorkflowAutomation(
       writeDb,
       {
         automation,
@@ -6061,6 +6112,12 @@ export const enableWorkflowAutomation$ = command(
       },
       signal,
     );
+    signal.throwIfAborted();
+    if (enabled.kind === "ok") {
+      await mirrorMorningBriefChoice(writeDb, automation, true);
+      signal.throwIfAborted();
+    }
+    return enabled;
   },
 );
 
@@ -6107,6 +6164,8 @@ export const disableWorkflowAutomation$ = command(
       }
       throw new Error("Failed to disable workflow automation");
     }
+    await mirrorMorningBriefChoice(writeDb, owned.automation, row.enabled);
+    signal.throwIfAborted();
     if (supportedNotionEventType(row.eventType)) {
       await invalidateNotionPendingEventsForAutomation(writeDb, row.id);
       signal.throwIfAborted();
