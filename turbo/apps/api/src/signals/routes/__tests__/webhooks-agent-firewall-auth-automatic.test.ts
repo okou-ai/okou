@@ -1,11 +1,12 @@
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { delay } from "signal-timers";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -303,4 +304,182 @@ describe("builtin Automatic firewall credential destinations", () => {
       }
     },
   );
+
+  it("classifies Automatic refresh timeouts as upstream without marking reconnect", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
+    mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", "25");
+    onTestFinished(() => {
+      mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
+    });
+    const catalog = await installAutomaticMcpCatalog();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      initialExpiresIn: 3600,
+      refreshResponse: async (attempt) => {
+        if (attempt === 1) {
+          await delay(300, { signal: context.signal });
+        }
+        return HttpResponse.json({
+          access_token:
+            attempt === 1
+              ? "too-late-automatic-token"
+              : "recovered-automatic-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+        });
+      },
+    });
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const firewall = createFirewallApi(context);
+    const connectors = createConnectorBddApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "MCP refresh timeout",
+    });
+    const automatic = setupApp({
+      context,
+      routes: builtinConnectorsAutomaticRoutes,
+    })(builtinConnectorAutomaticContract);
+    const accounts = setupApp({ context, routes: connectorAccountRoutes })(
+      connectorAccountsContract,
+    );
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const started = await accept(
+      automatic.start({
+        headers,
+        params: { connectorSlug: catalog.slug },
+        body: {
+          authMethod: catalog.methodId,
+          account: { intent: "add" },
+          agentId: agent.agentId,
+          authorizeAgent: true,
+        },
+      }),
+      [200],
+    );
+    if (started.body.result !== "authorization") {
+      throw new Error("Expected Automatic OAuth authorization");
+    }
+    const state = new URL(started.body.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Expected OAuth state");
+    }
+    const callback = await accept(
+      automatic.callback({
+        query: {
+          state,
+          code: "authorized-code",
+          iss: provider.issuer,
+          responseMode: "json",
+        },
+      }),
+      [200],
+    );
+    expect(callback.body.status).toBe("success");
+    const receipt = await accept(
+      accounts.oauthCompletion({
+        headers,
+        params: { attemptId: started.body.oauthAttemptId },
+        query: catalog.target,
+      }),
+      [200],
+    );
+    const connectionId = receipt.body.connectionId;
+    const run = await runs.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "Use the selected MCP account",
+      modelProvider: "anthropic-api-key",
+    });
+    const outcome = await settleIncludingAbort(
+      (async () => {
+        await runs.heartbeatRunner(runnerGroup);
+        const claim = await runs.claimRunnerJob(run.runId);
+        const inline = claim.firewalls?.find((entry) => {
+          return (
+            entry.kind === "inline" && entry.firewall.name === catalog.slug
+          );
+        });
+        if (inline?.kind !== "inline" || !inline.firewall.apis[0]) {
+          throw new Error("Expected the builtin Automatic inline firewall");
+        }
+        const api = inline.firewall.apis[0];
+        const authHeaders = {
+          authorization: `Bearer ${claim.sandboxToken}`,
+        };
+        const body = {
+          encryptedSecrets:
+            claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+          authHeaders: api.auth.headers ?? {},
+          forceRefresh: true,
+          matchedFirewall: {
+            name: catalog.slug,
+            apiId: api.id ?? `${catalog.slug}:0`,
+            base: api.base,
+            connectorSlug: catalog.slug,
+            sourceId: connectionId,
+            routingVariables: {},
+          },
+        };
+        const timedOut = await firewall.requestFirewallAuth(
+          authHeaders,
+          body,
+          [502],
+        );
+        if (timedOut.status !== 502) {
+          throw new Error("Expected the refresh timeout to fail with 502");
+        }
+        expect(timedOut.body.error).toMatchObject({
+          code: "TOKEN_REFRESH_FAILED",
+          failureReason: "upstream_provider",
+          connectors: [catalog.slug],
+        });
+        const account = await accept(
+          accounts.connection({
+            headers,
+            params: { connectionId },
+            query: catalog.target,
+          }),
+          [200],
+        );
+        expect(account.body).toMatchObject({
+          connectionStatus: "connected",
+          reconnectReason: null,
+        });
+
+        mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
+        const recovered = await firewall.requestFirewallAuth(
+          authHeaders,
+          body,
+          [200],
+        );
+        if (recovered.status !== 200) {
+          throw new Error("Expected the refresh after the timeout to succeed");
+        }
+        expect(recovered.body.headers.Authorization).toBe(
+          "Bearer recovered-automatic-token",
+        );
+      })(),
+    );
+    await runs.requestCancelRun(actor, run.runId, [200]);
+    await connectors.deleteBuiltinConnectorAccount(
+      actor,
+      catalog.slug,
+      connectionId,
+    );
+    await bdd.deleteAgent(actor, agent.agentId);
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+  });
 });

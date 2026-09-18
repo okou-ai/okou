@@ -219,87 +219,113 @@ async function pinnedRequest(
 ): Promise<Response> {
   const address = await resolvePublicAddress(url, signal);
   signal.throwIfAborted();
-  const deferred = createDeferredPromise<PinnedRequestOutcome>(signal);
-  const request = httpsRequest(
-    url,
-    {
-      agent: false,
-      family: address.family,
-      method: requestData.method,
-      headers: outgoingRequestHeaders(requestData.headers),
-      lookup: (_hostname, _options, callback) => {
-        callback(null, address.address, address.family);
-      },
-      maxHeaderSize: MCP_OAUTH_MAX_HEADER_BYTES,
-      signal,
-    },
-    (response) => {
-      const chunks: Buffer[] = [];
-      let responseBytes = 0;
-      response.on("data", (chunk: Buffer) => {
-        if (deferred.settled()) {
-          return;
-        }
-        responseBytes += chunk.byteLength;
-        if (responseBytes > MCP_OAUTH_MAX_RESPONSE_BYTES) {
-          const error = new Error("MCP OAuth response is too large");
-          deferred.resolve({ ok: false, error });
-          response.destroy(error);
-          return;
-        }
-        chunks.push(Buffer.from(chunk));
-      });
-      response.on("error", (error) => {
-        if (!deferred.settled()) {
-          deferred.resolve({ ok: false, error });
-        }
-      });
-      response.on("aborted", () => {
-        if (!deferred.settled()) {
-          deferred.resolve({
-            ok: false,
-            error: new Error("MCP OAuth response was aborted"),
-          });
-        }
-      });
-      response.on("end", () => {
-        if (deferred.settled()) {
-          return;
-        }
-        const status = response.statusCode ?? 502;
-        if (status < 200 || status > 599) {
-          deferred.resolve({
-            ok: false,
-            error: new Error("MCP OAuth response status is invalid"),
-          });
-          return;
-        }
-        const body = Buffer.concat(chunks);
-        deferred.resolve({
-          ok: true,
-          response: new Response(
-            responseCanHaveBody(requestData.method, status) ? body : null,
-            {
-              status,
-              statusText: response.statusMessage,
-              headers: responseHeaders(response.headers),
-            },
-          ),
-        });
-      });
-    },
+  // The caller owns the original abort reason (including TimeoutError).
+  // Resolve that reason as an observed request outcome so the request-local
+  // deferred never reports an expected timeout as an unhandled background
+  // failure, while upstream classification still receives the original error.
+  const deferredOwner = new AbortController();
+  const deferred = createDeferredPromise<PinnedRequestOutcome>(
+    deferredOwner.signal,
   );
-  request.on("error", (error) => {
+  const settleDeferredFromAbort = () => {
     if (!deferred.settled()) {
-      deferred.resolve({ ok: false, error });
+      deferred.resolve({ ok: false, error: signal.reason });
+    }
+  };
+  if (signal.aborted) {
+    settleDeferredFromAbort();
+  } else {
+    signal.addEventListener("abort", settleDeferredFromAbort, { once: true });
+  }
+  return await (async () => {
+    const request = httpsRequest(
+      url,
+      {
+        agent: false,
+        family: address.family,
+        method: requestData.method,
+        headers: outgoingRequestHeaders(requestData.headers),
+        lookup: (_hostname, _options, callback) => {
+          callback(null, address.address, address.family);
+        },
+        maxHeaderSize: MCP_OAUTH_MAX_HEADER_BYTES,
+        signal,
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        let responseBytes = 0;
+        response.on("data", (chunk: Buffer) => {
+          if (deferred.settled()) {
+            return;
+          }
+          responseBytes += chunk.byteLength;
+          if (responseBytes > MCP_OAUTH_MAX_RESPONSE_BYTES) {
+            const error = new Error("MCP OAuth response is too large");
+            deferred.resolve({ ok: false, error });
+            response.destroy(error);
+            return;
+          }
+          chunks.push(Buffer.from(chunk));
+        });
+        response.on("error", (error) => {
+          if (!deferred.settled()) {
+            deferred.resolve({ ok: false, error });
+          }
+        });
+        response.on("aborted", () => {
+          if (!deferred.settled()) {
+            deferred.resolve({
+              ok: false,
+              error: new Error("MCP OAuth response was aborted"),
+            });
+          }
+        });
+        response.on("end", () => {
+          if (deferred.settled()) {
+            return;
+          }
+          const status = response.statusCode ?? 502;
+          if (status < 200 || status > 599) {
+            deferred.resolve({
+              ok: false,
+              error: new Error("MCP OAuth response status is invalid"),
+            });
+            return;
+          }
+          const body = Buffer.concat(chunks);
+          deferred.resolve({
+            ok: true,
+            response: new Response(
+              responseCanHaveBody(requestData.method, status) ? body : null,
+              {
+                status,
+                statusText: response.statusMessage,
+                headers: responseHeaders(response.headers),
+              },
+            ),
+          });
+        });
+      },
+    );
+    request.on("error", (error) => {
+      if (!deferred.settled()) {
+        deferred.resolve({ ok: false, error });
+      }
+    });
+    request.end(requestData.body);
+    const outcome = await deferred.promise;
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+    return outcome.response;
+  })().finally(() => {
+    signal.removeEventListener("abort", settleDeferredFromAbort);
+    if (!deferred.settled()) {
+      deferredOwner.abort(
+        new DOMException("MCP OAuth request aborted", "AbortError"),
+      );
     }
   });
-  request.end(requestData.body);
-  const outcome = await deferred.promise;
-  if (!outcome.ok) {
-    throw outcome.error;
-  }
-  return outcome.response;
 }
 
 function redirectLocation(response: Response): string | null {

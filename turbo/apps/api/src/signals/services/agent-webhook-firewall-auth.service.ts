@@ -86,7 +86,7 @@ import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import type { Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { safeSync, settle, tapError } from "../utils";
+import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
 import {
   decryptPersistentSecretsMap,
   decryptStoredSecretValue,
@@ -6097,19 +6097,35 @@ async function resolveFirewallAuthMaterial(args: {
   readonly prepared: PreparedFirewallAuth;
 }): Promise<FirewallAuthMaterialResolution> {
   if (args.prepared.kind === "connector-automatic") {
-    const credential = await resolveBuiltinConnectorAutomaticMcpCredential(
-      {
-        db: args.db,
-        orgId: args.auth.orgId,
-        userId: args.auth.userId,
-        connectorId: args.prepared.connectorId,
-        connectorSlug: args.prepared.connectorSlug,
-        authMethodId: args.prepared.authMethodId,
-        expectedEndpoint: args.body.matchedFirewall?.base,
-        forceRefresh: args.body.forceRefresh,
-      },
-      AbortSignal.timeout(30_000),
+    const refreshSignal = firewallAuthRefreshTimeoutSignal();
+    const resolved = await settleIncludingAbort(
+      resolveBuiltinConnectorAutomaticMcpCredential(
+        {
+          db: args.db,
+          orgId: args.auth.orgId,
+          userId: args.auth.userId,
+          connectorId: args.prepared.connectorId,
+          connectorSlug: args.prepared.connectorSlug,
+          authMethodId: args.prepared.authMethodId,
+          expectedEndpoint: args.body.matchedFirewall?.base,
+          forceRefresh: args.body.forceRefresh,
+        },
+        refreshSignal,
+      ),
     );
+    if (!resolved.ok) {
+      if (isRefreshTimeoutError(resolved.error, refreshSignal)) {
+        return {
+          ok: false,
+          response: tokenRefreshFailed(
+            [args.prepared.connectorSlug],
+            "upstream_provider",
+          ),
+        };
+      }
+      throw resolved.error;
+    }
+    const credential = resolved.value;
     if (credential.kind === "unavailable") {
       return {
         ok: false,
