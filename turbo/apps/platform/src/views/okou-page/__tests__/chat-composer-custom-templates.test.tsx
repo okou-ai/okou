@@ -361,9 +361,6 @@ test("Opening a deck shows its pages and management controls", async () => {
   const page = await screen.findByAltText("Page 1");
   expect(page).toHaveAttribute("src", "https://example.test/page-1.png");
   const preview = previewDialogAround(page);
-  expect(
-    within(preview).getByText("18 pages · from q3-board-final-v4.pptx"),
-  ).toBeInTheDocument();
   expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   expect(
@@ -458,10 +455,9 @@ test("Opening a Word template hands the source file to the Office viewer", async
   );
   expect(viewerUrl.searchParams.get("src")).toBe(DOCUMENT_SOURCE_URL);
 
-  // The dialog carries the management column the panel shows for a deck, so
-  // what a member can do to a template does not depend on its kind.
+  // The dialog carries the management column a deck shows, so what a member
+  // can do to a template does not depend on its kind.
   const preview = previewDialogAround(frame);
-  expect(within(preview).getByText("From brand-report.docx")).toBeVisible();
   expect(within(preview).getByLabelText("Rename template")).toBeVisible();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by

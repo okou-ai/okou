@@ -1,4 +1,4 @@
-import { Lock, User, Users } from "lucide-react";
+import { ChevronDown, Lock, Trash2, User, Users } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -26,10 +26,9 @@ import { detach, Reason } from "../../signals/utils.ts";
 /**
  * Everything an open custom template can be managed by, in one column.
  *
- * It lives here rather than beside the panel that first rendered it because
- * the two kinds are opened by different surfaces — a deck takes over the
- * panel, a document opens a dialog — and both have to offer the same
- * controls. Importing it back from the panel would close a cycle.
+ * It lives here rather than beside the panel that lists the catalog because the
+ * dialog that opens a template is what renders it, and importing it back from
+ * the panel would close a cycle.
  */
 
 /** Two levels only, ordered least to most reachable. */
@@ -129,7 +128,7 @@ function UseCustomTemplateButton({
   return (
     <Button
       type="button"
-      className="mb-3 w-full"
+      className="w-full"
       onClick={() => {
         onSelect(detail);
       }}
@@ -219,88 +218,97 @@ export function CustomTemplateDetailSidebar({
   const deleteTemplate = useSet(deleteCustomTemplate$);
   return (
     <aside className="w-full shrink-0 lg:w-[300px]">
-      <div className="rounded-xl border border-border bg-background p-4">
-        <UseCustomTemplateButton detail={detail} onSelect={onSelect} />
-        {detail.canManage ? (
-          <CustomTemplateTitleInput detail={detail} />
-        ) : (
-          <h3 className="text-lg font-semibold text-foreground">
-            {detail.title}
-          </h3>
-        )}
-        {/*
-         * The source line drops the page count for a kind that has none, so a
-         * document is described by the file it came from rather than by an
-         * emptiness it does not have.
-         */}
-        <p className="mt-2 text-xs text-muted-foreground">
-          {detail.pageCount === null
-            ? t(
-                ($) => {
-                  return $.templates.detail.sourceFile;
-                },
-                { filename: detail.sourceFilename },
-              )
-            : t(
-                ($) => {
-                  return $.templates.detail.source;
-                },
-                { count: detail.pageCount, filename: detail.sourceFilename },
-              )}
-        </p>
-        <div className="my-4 border-t border-t-gray-400" />
-        {detail.canManage ? (
-          <Popover>
-            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-              <VisibilityLabel visibility={detail.visibility} />
-              <span aria-hidden>·</span>
-              <PopoverTrigger className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground">
-                {t(($) => {
-                  return $.templates.visibility.change;
-                })}
+      {/*
+       * Three bands, largest decision first: what this template is called, what
+       * to do with it, and the settings that outlive this visit. The file it
+       * was compiled from is not repeated here — the catalog tile names it, and
+       * the preview beside this column is that file.
+       */}
+      <div className="flex flex-col gap-4 rounded-xl border border-border bg-background p-4">
+        <div className="flex flex-col gap-3">
+          {detail.canManage ? (
+            <CustomTemplateTitleInput detail={detail} />
+          ) : (
+            <h3 className="text-base font-semibold leading-6 text-foreground">
+              {detail.title}
+            </h3>
+          )}
+          <UseCustomTemplateButton detail={detail} onSelect={onSelect} />
+        </div>
+        <div className="flex flex-col gap-2 border-t border-border pt-4">
+          {detail.canManage ? (
+            <Popover>
+              {/*
+               * The whole row is the control. Reading the current level and
+               * changing it were a label and an underlined word beside it, which
+               * left the thing being clicked smaller than the sentence naming
+               * it.
+               */}
+              <PopoverTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="neutral"
+                    size="sm"
+                    className="h-9 w-full justify-between px-3 font-normal"
+                    aria-label={t(($) => {
+                      return $.templates.visibility.change;
+                    })}
+                  />
+                }
+              >
+                <VisibilityLabel visibility={detail.visibility} />
+                <ChevronDown className="text-muted-foreground" />
               </PopoverTrigger>
+              <PopoverContent align="start" className="w-[268px] p-1.5">
+                <VisibilityOptionList
+                  visibility={detail.visibility}
+                  onChange={(visibility) => {
+                    detach(
+                      updateTemplate(
+                        { templateId: detail.id, body: { visibility } },
+                        pageSignal,
+                      ),
+                      Reason.DomCallback,
+                    );
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+          ) : (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <User size={13} aria-hidden />
+              {t(
+                ($) => {
+                  return $.templates.sharedBy;
+                },
+                { owner: detail.ownerUserId },
+              )}
             </p>
-            <PopoverContent align="start" className="w-72 p-1.5">
-              <VisibilityOptionList
-                visibility={detail.visibility}
-                onChange={(visibility) => {
-                  detach(
-                    updateTemplate(
-                      { templateId: detail.id, body: { visibility } },
-                      pageSignal,
-                    ),
-                    Reason.DomCallback,
-                  );
-                }}
-              />
-            </PopoverContent>
-          </Popover>
-        ) : (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <User size={13} aria-hidden />
-            {t(
-              ($) => {
-                return $.templates.sharedBy;
-              },
-              { owner: detail.ownerUserId },
-            )}
-          </p>
-        )}
-        {detail.canManage ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="sm"
-            className="mt-2 w-full text-destructive hover:text-destructive"
-            onClick={() => {
-              detach(deleteTemplate(detail.id, pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.templates.actions.delete;
-            })}
-          </Button>
-        ) : null}
+          )}
+          {detail.canManage ? (
+            // Carries a surface like the control above it, so the row that
+            // destroys the template is not the one thing here that looks like
+            // loose text.
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 w-full gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => {
+                detach(
+                  deleteTemplate(detail.id, pageSignal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              <Trash2 />
+              {t(($) => {
+                return $.templates.actions.delete;
+              })}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </aside>
   );

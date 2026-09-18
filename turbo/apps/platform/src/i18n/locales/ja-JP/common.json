@@ -6342,9 +6342,7 @@
     "custom": "カスタム",
     "detail": {
       "back": "カスタムテンプレート",
-      "page": "{{number}} ページ目",
-      "source_other": "{{count}} ページ · {{filename}} から",
-      "sourceFile": "{{filename}} から"
+      "page": "{{number}} ページ目"
     },
     "empty": {
       "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"

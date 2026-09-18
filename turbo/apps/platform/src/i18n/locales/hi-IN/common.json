@@ -6362,10 +6362,7 @@
     "custom": "कस्टम",
     "detail": {
       "back": "कस्टम टेम्पलेट",
-      "page": "पृष्ठ {{number}}",
-      "source_one": "{{count}} पृष्ठ · {{filename}} से",
-      "source_other": "{{count}} पृष्ठ · {{filename}} से",
-      "sourceFile": "{{filename}} से"
+      "page": "पृष्ठ {{number}}"
     },
     "empty": {
       "description": "Okou आपकी फ़ाइल के डिज़ाइन को ऐसे टेम्पलेट में बदल देता है जिसे आप दोबारा इस्तेमाल कर सकते हैं।"

@@ -6354,10 +6354,7 @@
     "custom": "Custom",
     "detail": {
       "back": "Custom templates",
-      "page": "Page {{number}}",
-      "source_one": "{{count}} page · from {{filename}}",
-      "source_other": "{{count}} pages · from {{filename}}",
-      "sourceFile": "From {{filename}}"
+      "page": "Page {{number}}"
     },
     "empty": {
       "description": "Okou turns your file's design into a template you can reuse."

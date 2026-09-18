@@ -6342,9 +6342,7 @@
     "custom": "Kustom",
     "detail": {
       "back": "Templat kustom",
-      "page": "Halaman {{number}}",
-      "source_other": "{{count}} halaman · dari {{filename}}",
-      "sourceFile": "Dari {{filename}}"
+      "page": "Halaman {{number}}"
     },
     "empty": {
       "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."
