@@ -84,107 +84,180 @@ const resolveFileReference$ = command(
   },
 );
 
-const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(authContext$);
-  const { kind: ownerKind } = get(queryOf(artifactReferencesContract.resolve));
-  const { reference } = get(pathParamsOf(artifactReferencesContract.resolve));
-  const parsed = parseArtifactReference(`/artifacts/${reference}`);
-  if (!parsed) {
-    return notFound("Artifact unavailable");
-  }
-  let id = parsed.id;
-  let targetKind: "file" | "html" | undefined;
-  if (id === null) {
-    const record = await get(artifactReferenceRecord(parsed.hash, signal));
+const resolveReference$ = command(
+  async (
+    { get, set },
+    reference: string,
+    ownerKind: "file" | "html" | "artifact" | undefined,
+    signal: AbortSignal,
+  ) => {
+    const auth = get(authContext$);
+    const parsed = parseArtifactReference(`/artifacts/${reference}`);
+    if (!parsed) {
+      return notFound("Artifact unavailable");
+    }
+    let id = parsed.id;
+    let targetKind: "file" | "html" | undefined;
+    if (id === null) {
+      const record = await get(artifactReferenceRecord(parsed.hash, signal));
+      signal.throwIfAborted();
+      if (!record) {
+        return notFound("Artifact unavailable");
+      }
+      if (record.version === 1) {
+        if (ownerKind) {
+          return notFound("Artifact unavailable");
+        }
+        const shared = await set(
+          resolveArtifactShare$,
+          { id: record.shareId, userId: auth.userId, allowPrivateOwner: true },
+          signal,
+        );
+        return shared
+          ? { status: 200 as const, body: shared }
+          : notFound("Artifact unavailable");
+      }
+      id = record.target.id;
+      targetKind = record.target.kind;
+    }
+    if (targetKind !== "html") {
+      const file = await set(resolveFileReference$, { id, ownerKind }, signal);
+      if (file) {
+        return file;
+      }
+    }
+    if (targetKind === "file") {
+      return notFound("Artifact unavailable");
+    }
+    const [site] = await get(db$)
+      .select({ deployment: privateHostedDeployments })
+      .from(privateHostedDeployments)
+      .innerJoin(
+        hostedSites,
+        eq(hostedSites.id, privateHostedDeployments.siteId),
+      )
+      .where(
+        and(eq(privateHostedDeployments.id, id), isNull(hostedSites.deletedAt)),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    if (!record) {
-      return notFound("Artifact unavailable");
-    }
-    if (record.version === 1) {
-      if (ownerKind) {
+    if (site) {
+      if (ownerKind === "file") {
         return notFound("Artifact unavailable");
       }
-      const shared = await set(
-        resolveArtifactShare$,
-        { id: record.shareId, userId: auth.userId, allowPrivateOwner: true },
+      const deployment = site.deployment;
+      if (
+        deployment.userId !== auth.userId ||
+        deployment.orgId !== auth.orgId
+      ) {
+        if (ownerKind) {
+          return notFound("Artifact unavailable");
+        }
+        const shared = await set(
+          resolveArtifactTargetShare$,
+          {
+            target: { kind: "html", id },
+            targetId: deployment.siteId,
+            userId: auth.userId,
+          },
+          signal,
+        );
+        return shared
+          ? { status: 200 as const, body: shared }
+          : notFound("Artifact unavailable");
+      }
+      const preview = await set(
+        createPrivateHostedPreview$,
+        { deploymentId: id, userId: auth.userId, orgId: deployment.orgId },
         signal,
       );
-      return shared
-        ? { status: 200 as const, body: shared }
+      return preview
+        ? {
+            status: 200 as const,
+            body: {
+              ...preview,
+              filename: "index.html",
+              contentType: "text/html",
+              target: { kind: "html" as const, id },
+            },
+          }
         : notFound("Artifact unavailable");
     }
-    id = record.target.id;
-    targetKind = record.target.kind;
-  }
-  if (targetKind !== "html") {
-    const file = await set(resolveFileReference$, { id, ownerKind }, signal);
-    if (file) {
-      return file;
-    }
-  }
-  if (targetKind === "file") {
-    return notFound("Artifact unavailable");
-  }
-  const [site] = await get(db$)
-    .select({ deployment: privateHostedDeployments })
-    .from(privateHostedDeployments)
-    .innerJoin(hostedSites, eq(hostedSites.id, privateHostedDeployments.siteId))
-    .where(
-      and(eq(privateHostedDeployments.id, id), isNull(hostedSites.deletedAt)),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (site) {
-    if (ownerKind === "file") {
+    if (targetKind || ownerKind) {
       return notFound("Artifact unavailable");
     }
-    const deployment = site.deployment;
-    if (deployment.userId !== auth.userId || deployment.orgId !== auth.orgId) {
-      if (ownerKind) {
-        return notFound("Artifact unavailable");
-      }
-      const shared = await set(
-        resolveArtifactTargetShare$,
-        {
-          target: { kind: "html", id },
-          targetId: deployment.siteId,
-          userId: auth.userId,
-        },
-        signal,
-      );
-      return shared
-        ? { status: 200 as const, body: shared }
-        : notFound("Artifact unavailable");
-    }
-    const preview = await set(
-      createPrivateHostedPreview$,
-      { deploymentId: id, userId: auth.userId, orgId: deployment.orgId },
+    const shared = await set(
+      resolveArtifactShare$,
+      { id, userId: auth.userId, allowPrivateOwner: true },
       signal,
     );
-    return preview
-      ? {
-          status: 200 as const,
-          body: {
-            ...preview,
-            filename: "index.html",
-            contentType: "text/html",
-            target: { kind: "html" as const, id },
-          },
-        }
+    return shared
+      ? { status: 200 as const, body: shared }
       : notFound("Artifact unavailable");
-  }
-  if (targetKind || ownerKind) {
-    return notFound("Artifact unavailable");
-  }
-  const shared = await set(
-    resolveArtifactShare$,
-    { id, userId: auth.userId, allowPrivateOwner: true },
-    signal,
-  );
-  return shared
-    ? { status: 200 as const, body: shared }
-    : notFound("Artifact unavailable");
+  },
+);
+
+const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const { kind } = get(queryOf(artifactReferencesContract.resolve));
+  const { reference } = get(pathParamsOf(artifactReferencesContract.resolve));
+  return await set(resolveReference$, reference, kind, signal);
 });
+
+const resolvePublicReference$ = command(
+  async ({ get, set }, reference: string, signal: AbortSignal) => {
+    const parsed = parseArtifactReference(`/artifacts/${reference}`);
+    if (!parsed) {
+      return notFound("Artifact unavailable");
+    }
+    const record =
+      parsed.id === null
+        ? await get(artifactReferenceRecord(parsed.hash, signal))
+        : null;
+    signal.throwIfAborted();
+    const target =
+      parsed.id !== null
+        ? { id: parsed.id }
+        : record?.version === 1
+          ? { id: record.shareId, kind: "share" as const }
+          : record?.target;
+    if (!target) {
+      return notFound("Artifact unavailable");
+    }
+    const result = await set(resolvePublicArtifactUrl$, target, signal);
+    return result
+      ? { status: 200 as const, body: result }
+      : notFound("Artifact unavailable");
+  },
+);
+
+const read$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const { reference } = get(pathParamsOf(artifactReferencesContract.read));
+  const result = await set(resolveReference$, reference, undefined, signal);
+  if (result.status === 200) {
+    return {
+      status: 200 as const,
+      body: {
+        url: result.body.url,
+        filename: result.body.filename,
+        contentType: result.body.contentType,
+      },
+    };
+  }
+  // Public content remains readable outside its originating organization,
+  // just as it is in the artifact viewer.
+  const published = await set(resolvePublicReference$, reference, signal);
+  return published.status === 200
+    ? {
+        status: 200 as const,
+        body: { url: published.body.url, ...published.body.preview },
+      }
+    : published;
+});
+
+const authorizedRead$ = authRoute(
+  { requiredCapability: "artifact:read" },
+  read$,
+);
 
 const authorizedResolve$ = authRoute({}, resolve$);
 const authorizedFileResolve$ = authRoute(
@@ -202,6 +275,14 @@ const authorizedArtifactResolve$ = authRoute(
 
 export const artifactReferenceRoutes: readonly RouteEntry[] = [
   {
+    route: artifactReferencesContract.read,
+    handler: command(async ({ set }, signal: AbortSignal) => {
+      set(setResHeader$, "Cache-Control", "private, no-store");
+      set(setResHeader$, "Referrer-Policy", "no-referrer");
+      return await set(authorizedRead$, signal);
+    }),
+  },
+  {
     route: artifactReferencesContract.publicUrl,
     handler: command(async ({ get, set }, signal: AbortSignal) => {
       set(setResHeader$, "Cache-Control", "private, no-store");
@@ -209,28 +290,7 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
       const { reference } = get(
         pathParamsOf(artifactReferencesContract.publicUrl),
       );
-      const parsed = parseArtifactReference(`/artifacts/${reference}`);
-      if (!parsed) {
-        return notFound("Artifact unavailable");
-      }
-      const record =
-        parsed.id === null
-          ? await get(artifactReferenceRecord(parsed.hash, signal))
-          : null;
-      signal.throwIfAborted();
-      const target =
-        parsed.id !== null
-          ? { id: parsed.id }
-          : record?.version === 1
-            ? { id: record.shareId, kind: "share" as const }
-            : record?.target;
-      if (!target) {
-        return notFound("Artifact unavailable");
-      }
-      const result = await set(resolvePublicArtifactUrl$, target, signal);
-      return result
-        ? { status: 200 as const, body: result }
-        : notFound("Artifact unavailable");
+      return await set(resolvePublicReference$, reference, signal);
     }),
   },
   {

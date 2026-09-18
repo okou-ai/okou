@@ -166,7 +166,9 @@ export async function revalidateMorningBriefRetainedSources(
   if (
     current.membershipId !== scope.membershipId ||
     current.agentId !== scope.agentId ||
-    current.installationId !== scope.installationId
+    current.installationId !== scope.installationId ||
+    current.automationId !== scope.automationId ||
+    current.chatThreadId !== scope.chatThreadId
   ) {
     return { kind: "owner-lost", reason: "owner-changed" };
   }
