@@ -2333,7 +2333,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         await expect(contentState(f)).resolves.toStrictEqual(before);
       });
 
-      it("omits body provenance when a disconnected transaction replaces the body error", async () => {
+      it("retains body provenance when a disconnected transaction cannot roll back", async () => {
         const f = await outputFixture();
         const before = await contentState(f);
         const diagnostics = new RunOutputDiagnostics();
@@ -2374,11 +2374,10 @@ describe("actual compute transactions versus the B1 projector", () => {
           ),
         );
         if (result.ok) {
-          throw new Error("Expected rollback rejection");
+          throw new Error("Expected projection failure");
         }
-        expect(result.error).not.toBe(original);
-        expect(diagnostics.takeFailure(result.error)).toBeUndefined();
-        expect(diagnostics.takeFailure(original)).toBeUndefined();
+        expect(result.error).toBe(original);
+        expectReceipt(diagnostics, result.error, "projection_write");
         await expect(contentState(f)).resolves.toStrictEqual(before);
       });
 
