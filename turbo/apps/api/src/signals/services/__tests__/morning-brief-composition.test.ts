@@ -18,6 +18,7 @@ import {
   MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
   MORNING_BRIEF_MANIFEST_MAX_BYTES,
   morningBriefStoragePhaseExpired,
+  morningBriefStoragePhaseExpiresAt,
   morningBriefStoragePhaseRemainingMs,
   MORNING_BRIEF_STORAGE_PHASE_MS,
 } from "../morning-brief-language-bounds";
@@ -858,6 +859,11 @@ describe("declared bounds", () => {
   it("admits only positive language-storage time before creating a timer", () => {
     const expiresAt = 5000;
 
+    expect(morningBriefStoragePhaseExpiresAt(0, 45_000)).toBe(5000);
+    expect(morningBriefStoragePhaseExpiresAt(44_000, 45_000)).toBe(45_000);
+    expect(morningBriefStoragePhaseRemainingMs(45_000, 44_000)).toBe(1000);
+    expect(morningBriefStoragePhaseExpiresAt(45_000, 45_000)).toBe(45_000);
+    expect(morningBriefStoragePhaseRemainingMs(45_000, 45_000)).toBeNull();
     expect(morningBriefStoragePhaseExpired(expiresAt, 4999)).toBeFalsy();
     expect(morningBriefStoragePhaseRemainingMs(expiresAt, 4999)).toBe(1);
     expect(morningBriefStoragePhaseExpired(expiresAt, 5000)).toBeTruthy();

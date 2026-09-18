@@ -23,6 +23,17 @@ export const MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES = 64 * 1024;
 /** The absolute storage phase, inside the collection budget. */
 export const MORNING_BRIEF_STORAGE_PHASE_MS = 5000;
 
+/** The one phase end: five seconds or the earlier collection deadline. */
+export function morningBriefStoragePhaseExpiresAt(
+  startedAt: number,
+  collectionDeadlineAt: number,
+): number {
+  return Math.min(
+    startedAt + MORNING_BRIEF_STORAGE_PHASE_MS,
+    collectionDeadlineAt,
+  );
+}
+
 /** Equality is expired for every admission against the absolute phase clock. */
 export function morningBriefStoragePhaseExpired(
   expiresAt: number,

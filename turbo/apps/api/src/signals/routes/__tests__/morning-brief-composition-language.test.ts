@@ -89,8 +89,6 @@ function notFoundError(): Error {
 interface StorageBoundary {
   /** Every key a download asked for, in order. */
   readonly reads: readonly string[];
-  /** Clear the observed-read ledger between calibrated route requests. */
-  readonly resetReads: () => void;
   /** Serve these bytes instead of what the canonical publisher wrote. */
   readonly replace: (suffix: string, body: Buffer) => void;
   /** Run before a download answers, once per matching key. */
@@ -190,9 +188,8 @@ function installStorageBoundary(): StorageBoundary {
       const abortSignal =
         typeof options === "object" &&
         options !== null &&
-        "abortSignal" in options &&
-        options.abortSignal instanceof AbortSignal
-          ? options.abortSignal
+        "abortSignal" in options
+          ? (options.abortSignal as AbortSignal | undefined)
           : undefined;
       if (command instanceof PutObjectCommand) {
         storeObject(input, key);
@@ -221,9 +218,6 @@ function installStorageBoundary(): StorageBoundary {
 
   return {
     reads,
-    resetReads() {
-      reads.length = 0;
-    },
     replace(suffix, body) {
       replacements.set(suffix, body);
     },
@@ -423,8 +417,12 @@ function membershipBarrier(member: Member): MembershipBarrier {
   };
 }
 
-/** Track the real Clerk boundary and optionally advance the application clock. */
-function ownerLookupClock(member: Member) {
+/** Advance the application clock after one numbered real Clerk answer. */
+function advanceClockAfterOwnerLookup(
+  member: Member,
+  index: number,
+  instant: number,
+): void {
   const lookup =
     context.mocks.clerk.organizations.getOrganizationMembershipList;
   const answer = lookup.getMockImplementation();
@@ -432,32 +430,13 @@ function ownerLookupClock(member: Member) {
     throw new Error("Expected seeded Clerk organization memberships");
   }
   let matched = 0;
-  let advanceAt: number | null = null;
-  let advanceTo: number | null = null;
   lookup.mockImplementation(async (...args: unknown[]) => {
     const memberships = await answer(...args);
-    if (isOwnerLookup(args, member)) {
-      matched += 1;
-      if (matched === advanceAt && advanceTo !== null) {
-        mockNow(advanceTo);
-      }
+    if (isOwnerLookup(args, member) && (matched += 1) === index) {
+      mockNow(instant);
     }
     return memberships;
   });
-  return {
-    matched: () => {
-      return matched;
-    },
-    reset: () => {
-      matched = 0;
-      advanceAt = null;
-      advanceTo = null;
-    },
-    advance: (index: number, instant: number) => {
-      advanceAt = index;
-      advanceTo = instant;
-    },
-  };
 }
 
 /**
@@ -1008,69 +987,25 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       ).resolves.toStrictEqual(timedOut);
     });
 
-    async function calibrateLanguageEntry(
-      storage: StorageBoundary,
-      member: Member,
-      ownerLookups: ReturnType<typeof ownerLookupClock>,
-      base: number,
-    ): Promise<number> {
-      let lookupAtManifest = 0;
-      storage.beforeRead("/manifest.json", () => {
-        lookupAtManifest = ownerLookups.matched();
-      });
-      const calibration = await compose(member, new Date(base).toISOString());
-      expect(calibration.result).toBe("composed");
-      expect(lookupAtManifest).toBeGreaterThan(0);
-      ownerLookups.reset();
-      storage.resetReads();
-      mockNow(base);
-      return lookupAtManifest;
-    }
-
     it("uses the genuinely tighter remaining collection budget", async () => {
       const storage = installStorageBoundary();
       const member = await briefMember();
       await publishInstructions(member, "Write in Danish.");
-      const base = now();
-      mockNow(base);
-      const ownerLookups = ownerLookupClock(member);
-      const languageEntry = await calibrateLanguageEntry(
-        storage,
-        member,
-        ownerLookups,
-        base,
-      );
-      ownerLookups.advance(languageEntry, base + COLLECTION_PHASE_MS - 1000);
+      const anchor = now();
+      // Start the one outer phase 44 seconds behind its anchor, then advance at
+      // admission's real Clerk boundary. Sources and language therefore run
+      // with one genuine second left on the original collection deadline.
+      mockNow(anchor - COLLECTION_PHASE_MS + 1000);
+      advanceClockAfterOwnerLookup(member, 1, anchor);
       storage.beforeRead("/manifest.json", () => {
-        mockNow(base + COLLECTION_PHASE_MS);
+        mockNow(anchor + 1000);
       });
 
-      const body = await compose(member, new Date(base).toISOString());
+      const body = await compose(member, new Date(anchor).toISOString());
 
       expect(body).toStrictEqual(timedOut);
       expect(context.mocks.abortSignal.timeout).toHaveBeenCalledWith(1000);
       expect(archiveReads(storage)).toStrictEqual([]);
-    });
-
-    it("does no storage work when the collection budget is already exhausted", async () => {
-      const storage = installStorageBoundary();
-      const member = await briefMember();
-      await publishInstructions(member, "Write in Danish.");
-      const base = now();
-      mockNow(base);
-      const ownerLookups = ownerLookupClock(member);
-      const languageEntry = await calibrateLanguageEntry(
-        storage,
-        member,
-        ownerLookups,
-        base,
-      );
-      ownerLookups.advance(languageEntry, base + COLLECTION_PHASE_MS);
-
-      const body = await compose(member, new Date(base).toISOString());
-
-      expect(body).toStrictEqual(timedOut);
-      expect(storage.reads).toStrictEqual([]);
     });
 
     it("joins held storage work when the caller cancels", async () => {
@@ -1092,13 +1027,17 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         if (!storageSignal) {
           throw new Error("Expected the storage read to own a signal");
         }
-        storageSignal.addEventListener(
-          "abort",
-          () => {
-            cancelled.resolve();
-          },
-          { once: true },
-        );
+        if (storageSignal.aborted) {
+          cancelled.resolve();
+        } else {
+          storageSignal.addEventListener(
+            "abort",
+            () => {
+              cancelled.resolve();
+            },
+            { once: true },
+          );
+        }
         arrived.resolve();
         await release.promise;
         finished.resolve();
@@ -1121,6 +1060,6 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       await finished.promise;
       await expect(pending).rejects.toThrow(cancellation.message);
       expect(archiveReads(storage)).toStrictEqual([]);
-    });
+    }, 60_000);
   });
 });

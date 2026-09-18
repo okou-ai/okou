@@ -49,8 +49,8 @@ import {
   MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
   MORNING_BRIEF_MANIFEST_MAX_BYTES,
   morningBriefStoragePhaseExpired,
+  morningBriefStoragePhaseExpiresAt,
   morningBriefStoragePhaseRemainingMs,
-  MORNING_BRIEF_STORAGE_PHASE_MS,
 } from "./morning-brief-language-bounds";
 import type { MorningBriefCollectionOwner } from "./morning-brief-collection-occurrence.service";
 
@@ -318,8 +318,8 @@ function startMorningBriefLanguageStoragePhase(
   deadlineAt: Date,
   signal: AbortSignal,
 ): ActiveMorningBriefLanguageStoragePhase | null {
-  const expiresAt = Math.min(
-    now() + MORNING_BRIEF_STORAGE_PHASE_MS,
+  const expiresAt = morningBriefStoragePhaseExpiresAt(
+    now(),
     deadlineAt.getTime(),
   );
   const expired = (): boolean => {
