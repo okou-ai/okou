@@ -201,7 +201,6 @@ export function OnboardingSkillsPage() {
       })}
       onSecondary={flow.goNext}
       onBack={flow.goBack}
-      contentWidth="single"
     >
       <SkillDropCard imported={imported} />
       <input
@@ -286,7 +285,6 @@ export function OnboardingSlackPage() {
       })}
       onSecondary={flow.goNext}
       onBack={flow.goBack}
-      contentWidth="single"
     >
       <OnboardingPanel
         title={t(($) => {

@@ -43,14 +43,13 @@ export function OnboardingIndustryPage() {
       onPrimary={flow.goNext}
       primaryDisabled={flow.draft.industry === null}
       onBack={flow.goBack}
-      contentWidth="grid"
     >
       <RadioGroup
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
           updateDraft({ industry: value as IndustryId });
         }}
-        className="grid gap-4 sm:grid-cols-2"
+        className="grid gap-3 sm:grid-cols-2"
       >
         {INDUSTRY_IDS.map((id) => {
           return (
@@ -166,7 +165,6 @@ export function OnboardingTeamPage() {
       })}
       onSecondary={flow.goNext}
       onBack={flow.goBack}
-      contentWidth="single"
     >
       <OnboardingPanel
         title={t(($) => {

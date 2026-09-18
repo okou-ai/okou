@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, cn } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import { useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -7,18 +7,6 @@ import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
 import { SettingsDialogMount } from "../okou-page/components/settings/settings-dialog.tsx";
 import { handleAccountAction$ } from "../../signals/okou-page/nav.ts";
-
-/**
- * The step's own width. The content column stays centred, so a two-card step
- * does not stretch a single card across the whole canvas.
- */
-const CONTENT_WIDTHS = {
-  grid: "max-w-[900px]",
-  pair: "max-w-[760px]",
-  single: "max-w-[620px]",
-} as const;
-
-type OnboardingContentWidth = keyof typeof CONTENT_WIDTHS;
 
 /** One track that fills with the flow, rather than a segment per step. */
 function OnboardingStepProgress({
@@ -76,7 +64,6 @@ export function OnboardingStepLayout({
   onSecondary,
   onBack,
   footnote,
-  contentWidth = "pair",
   children,
 }: {
   readonly currentStep: number;
@@ -92,7 +79,6 @@ export function OnboardingStepLayout({
   readonly onBack?: () => void;
   /** A line under the action, for a step that carries an offer or a note. */
   readonly footnote?: ReactNode;
-  readonly contentWidth?: OnboardingContentWidth;
   readonly children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -116,7 +102,7 @@ export function OnboardingStepLayout({
             while it fits and grows downward when it does not, so a centred flex
             child never clips its own top. */}
         <div className="flex min-h-full flex-col justify-center">
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-16">
+          <div className="mx-auto flex w-full max-w-[1140px] flex-col gap-10 lg:flex-row lg:items-start lg:justify-center lg:gap-16">
             <div className="w-full shrink-0 lg:w-[340px]">
               <div className="lg:min-h-[430px]">
                 <OnboardingStepProgress
@@ -136,16 +122,12 @@ export function OnboardingStepLayout({
                 ) : null}
               </div>
             </div>
-            <div
-              className={cn(
-                "w-full min-w-0 lg:flex-1",
-                CONTENT_WIDTHS[contentWidth],
-              )}
-            >
-              {/* One card holds the step: its answers above the rule, the way
-                  back and the way on below it. */}
+            <div className="w-full min-w-0 lg:w-[720px] lg:shrink-0">
+              {/* One card of one size on every step: its answers above the
+                  rule, the way back and the way on below it. Content that
+                  outgrows the card scrolls inside it. */}
               <div className="flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-background shadow-surface">
-                <div className="flex flex-col justify-center p-6 lg:min-h-[430px]">
+                <div className="flex flex-col justify-center overflow-y-auto p-6 lg:h-[440px]">
                   {children}
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t border-border/60 px-6 py-4">
@@ -180,7 +162,7 @@ export function OnboardingStepLayout({
                       onClick={onPrimary}
                       disabled={primaryDisabled || primaryBusy}
                       aria-busy={primaryBusy}
-                      className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
+                      className="w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
                     >
                       {primaryBusy ? (
                         <Loader2

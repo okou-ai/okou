@@ -132,7 +132,6 @@ export function OnboardingSourcesPage() {
       onPrimary={flow.goNext}
       // At least one connected source is the one hard requirement.
       primaryDisabled={connectedSlugs.length === 0}
-      contentWidth="grid"
     >
       <OnboardingConnectorSetup
         connectorSlugs={[...FEATURED_SOURCE_SLUGS, ...extraConnectedSlugs]}
