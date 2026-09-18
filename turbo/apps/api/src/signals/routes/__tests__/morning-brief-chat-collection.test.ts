@@ -7,11 +7,16 @@ import {
 } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
+import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
+import {
+  closeErasureSubjectFixture,
+  removeErasureSubjectsFixture,
+} from "../../../test-fixtures/account-erasure-subject";
 import {
   bindMorningBriefThreadFixture,
   clearChatThreadProvenanceFixture,
@@ -23,6 +28,7 @@ import {
   holdMorningBriefChatMembershipLookupFixture,
   markChatThreadReadFixture,
   renameChatThreadFixture,
+  replaceMorningBriefAutomationFixture,
   replaceMorningBriefInstallationFixture,
   restrictAgentAccessFixture,
   seedFinishedChatRunFixture$,
@@ -148,6 +154,19 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     const member = await seedMember(options);
     await enableSimpleMorningBrief(member);
     return member;
+  }
+
+  /** Project one dormant lifecycle closure and retire only that owned row. */
+  function closeSubject(subject: {
+    readonly subjectKind: "organization" | "user";
+    readonly subjectId: string;
+  }) {
+    const closing = closeErasureSubjectFixture(subject);
+    onTestFinished(async () => {
+      const { jobId } = await closing;
+      await removeErasureSubjectsFixture([jobId]);
+    });
+    return closing;
   }
 
   async function seedUnreadThread(
@@ -633,6 +652,98 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       ).toStrictEqual([neighbourThread.threadId]);
     }, 60_000);
 
+    it("rejects an automation-only replacement and admits a fresh request under it", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        title: "Automation-only secret",
+        prompt: "prompt the old automation read",
+        reply: "reply the old automation read",
+      });
+      const barrier = await holdChatThreadReadBarrierFixture(
+        threadId,
+        context.signal,
+      );
+
+      const pending = collectRequest(member);
+      await barrier.waitForBlocked();
+      const replacement = await replaceMorningBriefAutomationFixture(member);
+      await barrier.release();
+      const refused = await accept(pending, [403]);
+
+      expect(replacement.automationId).not.toBe(member.automationId);
+      const serialized = JSON.stringify(refused.body);
+      expect(serialized).not.toContain(threadId);
+      expect(serialized).not.toContain("old automation");
+      expect(serialized).not.toContain("Automation-only secret");
+
+      // The replacement is itself canonical and enabled; only the stale scope
+      // is refused. A request admitted afterwards still collects normally.
+      const fresh = await collect(member);
+      expect(
+        fresh.items.map((item) => {
+          return item.threadId;
+        }),
+      ).toStrictEqual([threadId]);
+    }, 60_000);
+
+    it.each([
+      { name: "null to non-null", initiallyBound: false },
+      { name: "non-null to null", initiallyBound: true },
+    ])(
+      "rejects a $name destination rebind while preserving fresh collection",
+      async ({ initiallyBound }) => {
+        const member = await briefMember();
+        const destination = await store.set(
+          seedOrdinaryChatThreadFixture$,
+          { member, title: "Destination only" },
+          context.signal,
+        );
+        if (initiallyBound) {
+          await bindMorningBriefThreadFixture({
+            orgId: member.orgId,
+            userId: member.userId,
+            workflowId: member.workflowId,
+            chatThreadId: destination,
+          });
+        }
+        const { threadId } = await seedUnreadThread(member, {
+          title: "Rebinding secret",
+          prompt: "prompt the old destination read",
+          reply: "reply the old destination read",
+        });
+        const barrier = await holdChatThreadReadBarrierFixture(
+          threadId,
+          context.signal,
+        );
+
+        const pending = collectRequest(member);
+        await barrier.waitForBlocked();
+        await bindMorningBriefThreadFixture({
+          orgId: member.orgId,
+          userId: member.userId,
+          workflowId: member.workflowId,
+          chatThreadId: initiallyBound ? null : destination,
+        });
+        await barrier.release();
+        const refused = await accept(pending, [403]);
+
+        const serialized = JSON.stringify(refused.body);
+        expect(serialized).not.toContain(threadId);
+        expect(serialized).not.toContain("old destination");
+        expect(serialized).not.toContain("Rebinding secret");
+
+        // The same source thread remains eligible under the newly admitted
+        // binding, whether the new destination is null or non-null.
+        const fresh = await collect(member);
+        expect(
+          fresh.items.map((item) => {
+            return item.threadId;
+          }),
+        ).toStrictEqual([threadId]);
+      },
+      60_000,
+    );
+
     it("releases nothing once the canonical installation is replaced mid-request", async () => {
       const member = await briefMember();
       const { threadId } = await seedUnreadThread(member, {
@@ -654,6 +765,42 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
       expect(replacement.workflowId).not.toBe(member.workflowId);
       expect(JSON.stringify(response.body)).not.toContain(threadId);
+    }, 60_000);
+
+    it("rechecks local erasure after the final external membership answer", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        title: "Erasure-window secret",
+        prompt: "prompt collected before closure",
+        reply: "reply collected before closure",
+      });
+      // Positive control: the same real route, database state and authorizer
+      // release the data while the owner remains open.
+      await expect(collect(member)).resolves.toMatchObject({
+        result: "collected",
+      });
+      // Admission resolves membership once, and the pre-collection owner fence
+      // once. Holding the third answer suspends the final external wait after
+      // its earlier local work has already completed.
+      const held = holdMorningBriefChatMembershipLookupFixture(
+        { owner: member, skip: 2 },
+        context.signal,
+      );
+
+      const pending = collectRequest(member);
+      await held.waitForArrival();
+      expect(held.lookupsBefore()).toBe(2);
+      // B1 has no public closure ingress. This is its actual lifecycle writer,
+      // projected for the uniquely owned test subject while Clerk is held.
+      await closeSubject({ subjectKind: "user", subjectId: member.userId });
+      held.release();
+      const response = await accept(pending, [403]);
+
+      expect(response.body.error.code).toBe("FORBIDDEN");
+      const serialized = JSON.stringify(response.body);
+      expect(serialized).not.toContain(threadId);
+      expect(serialized).not.toContain("before closure");
+      expect(serialized).not.toContain("Erasure-window secret");
     }, 60_000);
 
     it("releases nothing once the brief's own Agent becomes inaccessible", async () => {

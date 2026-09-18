@@ -40,17 +40,20 @@ exact implementation and adds no second authorization engine:
   the preview gate: the default-off `simpleMorningBrief` switch, a canonical
   installed and enabled Morning Brief, the member's current Clerk membership
   generation, and erasure-subject admission. It returns the frozen
-  `MorningBriefCollectionScope` — owner, installation, pinned Agent, canonical
-  thread, anchor, timezone and `membershipId`. None of it can be supplied by a
-  caller; a removal and rejoin issues a new `membershipId`, so a new membership
+  `MorningBriefCollectionScope` — owner, installation, exact automation,
+  pinned Agent, nullable canonical thread, anchor, timezone and `membershipId`.
+  None of it can be supplied by a caller; a removal and rejoin issues a new
+  `membershipId`, so a new membership
   cannot release what the previous one collected.
 - `withMorningBriefConnectorReader(args, collect, signal)` takes the shared
   `clerk` client alongside `db` and a separate final `AbortSignal`, and owns one
   absolute deadline covering admission, credentials, every request and body, and
   the release fence. It re-derives live authority before the credential is
   resolved, before every request, and again before the payload is released:
-  canonical ownership, membership, the pinned connector account, the Agent's
-  grants, accepted catalog visibility and effective URL policy. Holding a
+  complete canonical ownership, membership, the pinned connector account, the
+  Agent's grants, accepted catalog visibility and effective URL policy. The
+  external membership answer precedes the final local erasure/binding/Agent
+  transaction; no network call runs under those locks. Holding a
   credential is not permission; every gate must produce an unambiguous `allow`.
 - An explicit account selection that no longer resolves fails closed
   (`not-connected`); it never falls back to the member's default account.

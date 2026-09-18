@@ -75,6 +75,7 @@ export interface MorningBriefCollectionScope {
   readonly orgId: string;
   readonly userId: string;
   readonly installationId: string;
+  readonly automationId: string;
   readonly agentId: string;
   readonly chatThreadId: string | null;
   readonly anchor: Date;
@@ -401,8 +402,9 @@ async function subjectIsWritable(
 }
 
 /**
- * The canonical brief must still be installed, enabled and the same
- * installation on the same Agent that this collection was scoped to.
+ * The canonical brief must still be the complete binding this collection was
+ * admitted under. A replacement automation or destination is a new authority,
+ * even when the installation stays enabled on the same Agent.
  */
 async function ownershipIsUnchanged(
   db: ReadonlyDb,
@@ -416,8 +418,44 @@ async function ownershipIsUnchanged(
     state.kind === "installed" &&
     state.automation.enabled &&
     state.installation.id === scope.installationId &&
-    state.installation.agentId === scope.agentId
+    state.automation.id === scope.automationId &&
+    state.installation.agentId === scope.agentId &&
+    state.chatThreadId === scope.chatThreadId
   );
+}
+
+/**
+ * The final local decision after the external membership observation.
+ *
+ * Erasure admission is taken first and held through the canonical binding and
+ * Brief-Agent reads. A closure that committed while Clerk was answering is
+ * therefore visible before either local authority check, while a closure that
+ * arrives after admission waits for this short transaction to finish. No
+ * network operation runs while these local locks are held.
+ */
+async function localScopeIsCurrent(
+  db: Db,
+  scope: MorningBriefCollectionScope,
+): Promise<boolean> {
+  const settled = await settle(
+    db.transaction(async (tx: Tx) => {
+      await tx.execute(
+        sql`SELECT set_config('lock_timeout', ${ADMISSION_LOCK_TIMEOUT}, true)`,
+      );
+      await tx.execute(
+        sql`SELECT set_config('statement_timeout', ${ADMISSION_STATEMENT_TIMEOUT}, true)`,
+      );
+      await assertErasureSubjectWritable(tx, [
+        { subjectKind: "organization", subjectId: scope.orgId },
+        { subjectKind: "user", subjectId: scope.userId },
+      ]);
+      if (!(await ownershipIsUnchanged(tx, scope))) {
+        return false;
+      }
+      return await agentIsVisible(tx, scope);
+    }),
+  );
+  return settled.ok && settled.value;
 }
 
 /**
@@ -611,12 +649,13 @@ async function urlPermission(args: {
 /**
  * Is this frozen scope still the authority it was admitted as?
  *
- * Four facts, none of which a cached request identity answers: the subjects are
- * still open, the member still holds the *same* immutable Clerk membership
- * generation, the canonical brief is still the same installed and enabled
- * installation on the same Agent, and that Agent is still visible to them. A
- * removal and rejoin issues a new membership id, and an unrelated enabled
- * installation is not a substitute for the one this scope names.
+ * Four facts, none of which a cached request identity answers: the member still
+ * holds the *same* immutable Clerk membership generation; after that external
+ * answer, the subjects are still open; the complete canonical binding is still
+ * the same installed and enabled installation, automation, Agent and nullable
+ * destination; and that Agent is still visible to them. A removal and rejoin
+ * issues a new membership id, and an unrelated enabled binding is not a
+ * substitute for the one this scope names.
  *
  * Connector-free on purpose: the unread Chat collection has no credential and
  * no endpoint, but it decides exactly the same question, so both it and this
@@ -632,25 +671,18 @@ export async function morningBriefScopeIsCurrent(
   signal: AbortSignal,
 ): Promise<boolean> {
   const { db, scope } = args;
-  if (!(await subjectIsWritable(db, scope))) {
-    return false;
-  }
-  signal.throwIfAborted();
 
   // The member's current Clerk membership generation, not a cache row's
   // presence. A removal, and a removal followed by a rejoin under a new id,
-  // both fail here.
+  // both fail here. This network read deliberately precedes the final local
+  // transaction: no database lock is held while Clerk answers.
   const membershipId = await loadCurrentMembershipId(args.clerk, scope, signal);
   signal.throwIfAborted();
   if (membershipId === null || membershipId !== scope.membershipId) {
     return false;
   }
 
-  if (!(await ownershipIsUnchanged(db, scope))) {
-    return false;
-  }
-  signal.throwIfAborted();
-  return await agentIsVisible(db, scope);
+  return await localScopeIsCurrent(db, scope);
 }
 
 /**
@@ -1557,6 +1589,7 @@ async function admitWithinDeadline(
       orgId: args.orgId,
       userId: args.userId,
       installationId: state.installation.id,
+      automationId: state.automation.id,
       agentId: state.installation.agentId,
       chatThreadId: state.chatThreadId,
       anchor: args.anchor,
