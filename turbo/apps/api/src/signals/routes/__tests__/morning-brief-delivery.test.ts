@@ -1191,6 +1191,12 @@ describe("Morning Brief native delivery", () => {
     // item. Prose contains multibyte text, raw HTML and Markdown structure, but
     // no model-supplied link; S5 resolves the only links from source `m1`.
     const markers: string[] = [];
+    // The one-byte `|` occupies one model-prose code unit and renders as `\|`,
+    // so each allocated character adds exactly one byte to the accepted
+    // Markdown without changing any field limit. The measured maximum-shape
+    // baseline is 24,362 bytes; 8,406 escaped fillers reach 32 KiB exactly.
+    const expandedFillerCharacters = 8406;
+    let expandedFillerRemaining = expandedFillerCharacters;
     const sections: GenerationSection[] = Array.from(
       { length: 6 },
       (_, sectionIndex) => {
@@ -1200,17 +1206,24 @@ describe("Morning Brief native delivery", () => {
           items: Array.from({ length: 8 }, (_, itemIndex) => {
             const marker = `S${section}I${itemIndex + 1}`;
             markers.push(marker);
+            const prefix = `${marker} café 漢 <script>alert(1)</script> <img src=x onerror=alert(1)> & **bold** [label]`;
+            const paddingLength = 400 - prefix.length;
+            const expandedLength = Math.min(
+              paddingLength,
+              expandedFillerRemaining,
+            );
+            expandedFillerRemaining -= expandedLength;
             return {
-              text: `${marker} café 漢 <script>alert(1)</script> <img src=x onerror=alert(1)> & **bold** [label]`.padEnd(
-                400,
-                "x",
-              ),
+              text: `${prefix}${"|".repeat(expandedLength)}${"x".repeat(paddingLength - expandedLength)}`,
               sourceIds: ["m1", "m1", "m1", "m1"],
             };
           }),
         };
       },
     );
+    if (expandedFillerRemaining !== 0) {
+      throw new Error("Maximum-shape fixture cannot reach the 32 KiB boundary");
+    }
     const title = "Maximum Morning Brief café 漢 <title>".padEnd(120, "t");
     const { calls } = scriptProviders({ deliverTitle: title, sections });
     const generated = await accept(
@@ -1229,14 +1242,16 @@ describe("Morning Brief native delivery", () => {
     }
     const acceptedResult = generated.body.generation.result;
     expect(calls.generation).toHaveLength(1);
-    // This is the maximum structurally reachable S5 fixture, not the separate
-    // renderer ceiling: 24,197 UTF-16 code units and 24,362 UTF-8 bytes.
-    expect(acceptedResult.markdown).toHaveLength(24_197);
+    // Every structural dimension is full and the accepted result reaches its
+    // exact byte ceiling: 32,603 UTF-16 code units / 32,768 UTF-8 bytes.
+    expect(acceptedResult.markdown).toHaveLength(32_603);
     expect(acceptedResult.bytes).toBe(
       Buffer.byteLength(acceptedResult.markdown, "utf8"),
     );
-    expect(acceptedResult.bytes).toBe(24_362);
-    expect(acceptedResult.bytes).toBeLessThanOrEqual(32 * 1024);
+    expect(acceptedResult.bytes).toBe(32 * 1024);
+    expect(acceptedResult.markdown.split(String.raw`\|`)).toHaveLength(
+      expandedFillerCharacters + 1,
+    );
 
     const response = await accept(
       deliver(f, generated.body.generation.attemptId),
@@ -1301,6 +1316,8 @@ describe("Morning Brief native delivery", () => {
       markers.length + 1,
     );
     expect(text.split(citationUrl)).toHaveLength(markers.length + 1);
+    expect(html.split("|")).toHaveLength(expandedFillerCharacters + 1);
+    expect(text.split("|")).toHaveLength(expandedFillerCharacters + 1);
     for (const marker of markers) {
       expect(html.split(marker)).toHaveLength(2);
       expect(text.split(marker)).toHaveLength(2);

@@ -1,4 +1,4 @@
-/* eslint-disable no-restricted-syntax -- #35074 must prove the exact 32 KiB native renderer boundary and first over-bound rejection independently because S5's maximum valid structured result reaches only 24,362 UTF-8 bytes. The production S5 -> delivery -> outbox -> renderer path remains covered through the real preview routes in morning-brief-delivery.test.ts. */
+/* eslint-disable no-restricted-syntax -- #35074 independently proves the renderer's exact 32 KiB input/output behavior and first over-bound rejection. The production S5 -> delivery -> outbox -> renderer route reaches the same admitted ceiling in morning-brief-delivery.test.ts. */
 import { describe, expect, it } from "vitest";
 
 import {
