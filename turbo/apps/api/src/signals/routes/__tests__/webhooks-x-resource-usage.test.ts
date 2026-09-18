@@ -33,6 +33,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {
   generatedStripeCustomerId,
   postUsageAllowanceInvoicePaid,
@@ -68,6 +69,7 @@ beforeEach(() => {
 async function createRun(
   actor = bdd.user(),
   deduplicationEnabled = true,
+  modelProvider: "anthropic-api-key" | "built-in" = "anthropic-api-key",
 ): Promise<RunFixture> {
   if (!actor.orgId) {
     throw new Error("X resource test requires an organization");
@@ -88,7 +90,7 @@ async function createRun(
   const run = await runs.createRun(actor, {
     agentId: agent.agentId,
     prompt: "Read X resources",
-    modelProvider: "anthropic-api-key",
+    modelProvider,
   });
   return {
     actor,
@@ -156,6 +158,13 @@ async function pricing(): Promise<UsagePricingFixture> {
         unitPrice: 1,
         unitSize: 1,
       },
+      {
+        kind: "image",
+        provider: "x-resource-test-image",
+        category: "output_tokens",
+        unitPrice: 1,
+        unitSize: 1,
+      },
     ],
   });
   onTestFinished(fixture.cleanup);
@@ -176,6 +185,51 @@ async function chargedUnits(
 }
 
 describe("X daily resource usage webhook", () => {
+  it.each([false, true])(
+    "discards zero quantities for every usage kind (mixed=%s)",
+    async (mixed) => {
+      const configuredPricing = await pricing();
+      // Built-in credentials are operator configuration with no product write
+      // endpoint. The fixture owns its key and scopes selection to this test.
+      await seedBuiltInDefaultModelKey(context);
+      const fixture = await createRun(bdd.user(), false, "built-in");
+      const zeroEvents = (
+        [
+          { kind: "connector", provider: "x", category: "posts.read" },
+          {
+            kind: "model",
+            provider: "x-resource-test-model",
+            category: "tokens.input",
+          },
+          {
+            kind: "image",
+            provider: "x-resource-test-image",
+            category: "output_tokens",
+          },
+        ] satisfies Pick<UsageEvent, "kind" | "provider" | "category">[]
+      ).map((event) => {
+        return { ...event, idempotencyKey: randomUUID(), quantity: 0 };
+      });
+      const events = mixed ? [...zeroEvents, observation([])] : zeroEvents;
+      await accept(submit(fixture, events), [200]);
+      await accept(submit(fixture, events), [200]);
+      await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(0);
+      expect(
+        (await billing.readUsageRecord(fixture.actor)).body.rows,
+      ).toStrictEqual([]);
+
+      // Empty events reserve no source identity for any usage kind. Later
+      // positive observations with those UUIDs are accepted exactly once.
+      const positive = zeroEvents.map((event) => {
+        return { ...event, quantity: 2 };
+      });
+      const positiveBatch = mixed ? [...positive, observation([])] : positive;
+      await accept(submit(fixture, positiveBatch), [200]);
+      await accept(submit(fixture, positiveBatch), [200]);
+      await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(6);
+    },
+  );
+
   it("shares an allowance-funded first read with another organization", async () => {
     const configuredPricing = await pricing();
     const first = await createRun();
@@ -207,6 +261,9 @@ describe("X daily resource usage webhook", () => {
     );
     await accept(submit(second, [observation([id])]), [200]);
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
+    expect(
+      (await billing.readUsageRecord(second.actor)).body.rows,
+    ).toStrictEqual([]);
   });
 
   it("charges distinct identities and remainder across organizations and namespaces", async () => {
@@ -325,7 +382,7 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(2);
   });
 
-  it("persists zero-charge ownership and retries unknown-only events once", async () => {
+  it("discards zero usage while charging unknown-only retries once", async () => {
     const configuredPricing = await pricing();
     const first = await createRun();
     const second = await createRun();
@@ -337,10 +394,20 @@ describe("X daily resource usage webhook", () => {
     });
     await accept(submit(first, [observation([id])]), [200]);
     const duplicate = observation([id]);
-    await accept(submit(second, [duplicate, zero, unknown]), [200]);
-    await accept(submit(second, [duplicate, zero, unknown]), [200]);
-    await accept(submit(first, [zero]), [409]);
-    await accept(submit(first, [duplicate]), [409]);
+    await accept(submit(second, [duplicate, zero]), [200]);
+    await Promise.all([
+      accept(submit(second, [duplicate, zero]), [200]),
+      accept(submit(second, [duplicate, zero]), [200]),
+    ]);
+    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
+    expect(
+      (await billing.readUsageRecord(second.actor)).body.rows,
+    ).toStrictEqual([]);
+    await accept(submit(first, [zero, duplicate]), [200]);
+
+    await accept(submit(second, [unknown]), [200]);
+    await accept(submit(second, [unknown]), [200]);
+    await accept(submit(first, [unknown]), [409]);
 
     await expect(chargedUnits(first, configuredPricing)).resolves.toBe(1);
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(3);
@@ -666,7 +733,7 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(enabled, configuredPricing)).resolves.toBe(0);
   });
 
-  it("applies switch changes to new sources without repricing accepted retries", async () => {
+  it("re-evaluates discarded zero usage after switch changes and preserves charged retries", async () => {
     const configuredPricing = await pricing();
     const fixture = await createRun(bdd.user(), false);
     if (!fixture.actor.orgId) {
@@ -696,7 +763,8 @@ describe("X daily resource usage webhook", () => {
       remainder: [{ reason: "missing_id", quantity: 1 }],
     });
     await accept(submit(fixture, [whileOff, whileOn, disabledAgain]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(7);
+    await accept(submit(fixture, [whileOff, whileOn, disabledAgain]), [200]);
+    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(8);
   });
 
   it("keeps time admission and atomic validation while deduplication is off", async () => {

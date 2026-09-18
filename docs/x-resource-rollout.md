@@ -64,9 +64,11 @@ Record the tested commit, exact commands and results in the PR. A passing CI
 run proves only the checks and commit that it actually executed.
 
 The switch tests cover both states, transitions and source replay. Disabled
-observations still reach the usage ledger at quantity Q and record their resource
-IDs; enabled observations use N + R against the same shared records. A source
-accepted in either state retains its amount when replayed after a switch change.
+observations record their resource IDs and reach the usage ledger at positive
+quantity Q; enabled observations use N + R against the same shared records.
+Zero quantities are discarded without source receipts. Persisted positive
+sources retain their amount when replayed after a switch change; discarded zero
+observations are evaluated again under the current switch.
 Claim capability, validation, lifecycle admission and two-date cleanup remain
 active in both states.
 
@@ -124,8 +126,9 @@ enable deduplication; there is no future UTC activation date to configure. Resou
 records collected while disabled are already available for the same-day switch
 to N + R billing. Resource identity is global even when switch rollout is scoped.
 Disabling the switch charges Q for newly accepted observations while continuing
-all other processing. Neither direction changes amounts already accepted under
-a source UUID.
+all other processing. Neither direction changes persisted positive amounts under
+a source UUID. A previously discarded zero observation can be billed at Q when
+retried after the switch is disabled.
 
 Use actual process/Run completion and delivery outcomes. Promotion's soft-drain
 acknowledgement is not completion. Proxy quiescence means no outstanding work;
