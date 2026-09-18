@@ -244,7 +244,7 @@ HTTP answers are doubled. The limits worth stating:
   the Agent lock and the final active-Run query. Each arrives and is released in
   order. Their cumulative controlled-clock cost reaches the candidate boundary,
   and a query-level observer proves the body SELECT did not start. A fresh
-  request then reaches that exact SELECT and exposes `1s` lock, `5s` statement
+  request then reaches that exact SELECT and exposes `2s` lock, `5s` statement
   and `12s` transaction settings, so the absence check is not vacuous.
 - A separate case starts the per-thread transaction with 100 ms remaining and
   leaves its Agent query blocked. PostgreSQL's `transaction_timeout` ends that
