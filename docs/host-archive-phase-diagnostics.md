@@ -37,11 +37,43 @@ record, sleep or awaited telemetry upload to startup. This is a bounded overhead
 budget, not a claim of zero runtime cost. Admission, HTTP reuse, the 30-second
 request timeout, 8 MiB limit, cache flock and permits through staging are unchanged.
 
-New records contain only fixed action names and bounded reasons. They include
-no archive URL, query, headers, object identity, mount path or content. There is
-no per-archive correlation field: phase records from parallel archives cannot
-be paired by order. Do not add phase maxima or percentiles as one request's
-latency, or add overlapping early fetch time to storage-apply time.
+Records contain fixed action names and bounded reasons. A failed `headers`
+phase with `response-size-mismatch` also includes the optional
+`archive_size_mismatch` object described below. Records include no archive URL,
+query, raw headers, object identity, mount path or content. Phase records from
+parallel archives cannot be paired by order. Do not add phase maxima or
+percentiles as one request's latency, or add overlapping early fetch time to
+storage-apply time.
+
+## Declared-size disagreement
+
+When a known manifest length differs from the response's declared body length,
+the existing headers failure carries these fields:
+
+| Field inside `archive_size_mismatch` | Meaning                                                                                                  |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `expected_bytes`                     | Reconciled positive manifest archive length, as exact decimal text.                                      |
+| `response_bytes`                     | The HTTP library's declared response length, as exact decimal text; no body bytes have been consumed.    |
+| `source_kind`                        | `storage` or `artifact` for the grouped request's first target.                                          |
+| `source_index`                       | That representative target's zero-based index in the normalized prepared plan's collection for its kind. |
+| `content_encoding`                   | `absent`, one trimmed case-insensitive `identity` or `gzip`, or `other`.                                 |
+
+The API forwards each field under the `archive_size_mismatch_` prefix in Axiom.
+Byte strings contain at most 20 decimal digits and retain arbitrary u64 declared
+lengths without JavaScript rounding. A source index can exceed the four-request
+admission limit: it refers to the prepared plan, not admission order. Duplicate
+targets can share a request and its expected length; the first handle is only
+a representative, not a unique object identity or a stable index across retries.
+Multiple, empty, invalid, encoding-list and unrecognized Content-Encoding values
+become `other`; their raw values are never retained.
+
+The metadata belongs to the existing failed phase, preserving its completion
+timestamp and explicit drain semantics. It adds no event or network request.
+It is absent on status failures, body-size failures, successful headers and
+interrupted requests without a completed mismatch observation. Rejection still
+precedes body consumption, cache publication and Guest staging, with no second
+download owner. These measurements can distinguish candidate representations;
+they do not establish an overwrite, corruption, or a production repair.
 
 For follow-up analysis, freeze exact Runner/API artifacts, UTC window, hosts,
 startup route, manifest/content and cache shape; report success, failure, retry
@@ -49,5 +81,10 @@ and missing-join denominators. Compare the measured phase with complete storage
 apply, executor-to-spawn and API-to-spawn separately. Exclude team-concurrency
 queue time but retain durable Runner claim waiting. A correctly measured phase
 does not establish a production performance improvement or resolve Guest/proxy
-connection attribution. These additive operation names change no API schema,
-persisted state, Guest protocol or deployment ordering.
+connection attribution. The optional mismatch object extends the API telemetry
+schema without changing persisted state or the Guest protocol. New APIs accept
+old Runner operations that omit it. Older APIs strip the unknown object and
+retain the existing failed operation, so either deployment order remains
+functional. Complete diagnostic availability requires both updated API and
+Runner artifacts. Missing metadata from an older receiver is not a zero size
+or evidence that no mismatch occurred.

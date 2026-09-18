@@ -750,6 +750,14 @@ it is upgraded (potentially causing a cache miss, not exposing an active build).
 Runner and guest binaries are deployed as one runner artifact. Compatibility is
 not required between a runner binary and a guest binary from a different version.
 
+Runner archive-size mismatch diagnostics add an optional object to an existing
+failed headers operation. New APIs accept old operations without it; older APIs
+strip the unknown object while retaining the failed operation. Either deployment
+order remains functional, but observing exact byte/source fields requires both
+updated artifacts. Byte counts use bounded decimal strings to preserve u64
+response lengths through JavaScript. No storage schema, Guest protocol, archive
+acceptance or retry policy changes; see [host archive diagnostics](host-archive-phase-diagnostics.md).
+
 The extracted storage cache is a separate, host-local cross-version boundary.
 New readers use `storages/<name-hash>/decoded-v1-<version-hash>/` containing an
 identity/content index and real files. Existing compressed readers continue to
