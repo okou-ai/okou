@@ -110,10 +110,12 @@ export function OnboardingStepLayout({
         {/* The block centres as a whole, but its two columns start on the same
             line: the stepper sits level with the first card. */}
         <div className="flex w-full flex-1 items-center py-8">
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14">
+          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14 lg:pl-10">
             <div className="w-full shrink-0 lg:w-[380px]">
-              {/* How far along you are, and the way back one step. */}
-              <div className="flex h-8 items-center gap-2">
+              {/* How far along you are, and the way back one step. The back
+                  control sits in the gutter every step reserves for it, so the
+                  track keeps the column's left edge on all of them. */}
+              <div className="relative flex h-8 items-center">
                 {onBack ? (
                   <Button
                     type="button"
@@ -121,7 +123,7 @@ export function OnboardingStepLayout({
                     variant="quiet"
                     showTooltip
                     onClick={onBack}
-                    className="-ml-2 shrink-0"
+                    className="absolute -left-10 shrink-0"
                     aria-label={t(($) => {
                       return $.onboarding.sourcesFirst.common.back;
                     })}
