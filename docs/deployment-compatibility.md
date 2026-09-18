@@ -44,8 +44,12 @@ Mixed-version API operation is safe by construction. A new reader with no
 generation/head treats the exact variant as missing and uses canonical
 exact-version discovery. An old writer that does not publish demand likewise
 causes a later read-time repair; this is compatibility and recovery, not the
-normal invalidation path. Current writers recapture the exact post-write
-semantic source and dynamic skill mounts for a bounded set of known variants;
+normal invalidation path. Current writers lock the complete existing
+affected-head set in canonical UUID order and update only that exact snapshot in
+batches of 256. The 16-head worker
+batch bounds post-write demand recapture, not lock coverage; a concurrent new
+head is excluded from the frozen update set. Writers recapture the exact
+post-write semantic source and dynamic skill mounts for that bounded demand set;
 they leave a head missing when a referenced immutable artifact is not yet
 published. A pending multi-stage source generation is never read as ready.
 Source-keyed publication obligations allow independent Workflow writers to

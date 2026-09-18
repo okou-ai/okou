@@ -22,6 +22,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -34,6 +35,9 @@ import { recapturePiStableContextInput } from "./pi-stable-context-recapture.ser
 export const PI_STABLE_CONTEXT_AGENT_SUBJECT = "@agent";
 export const PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY =
   "agent-instructions";
+
+const HEAD_DEMAND_CAPTURE_LIMIT = 16;
+const HEAD_INVALIDATION_BATCH_SIZE = 256;
 
 export function piStableContextWorkflowPublicationKey(
   workflowId: string,
@@ -184,14 +188,17 @@ function publicationScopeCondition(fence: PiStableContextPublicationFence) {
   );
 }
 
-function headScopeCondition(scope: PiStableContextScope) {
+function headScopeCondition(scope: PiStableContextScope): SQL {
   const base = and(
     eq(piStableContextHeads.orgId, scope.orgId),
     eq(piStableContextHeads.agentId, scope.agentId),
   );
-  return scope.userId
-    ? and(base, eq(piStableContextHeads.userId, scope.userId))
-    : base;
+  return requireCondition(
+    scope.userId
+      ? and(base, eq(piStableContextHeads.userId, scope.userId))
+      : base,
+    "stable-context head scope",
+  );
 }
 
 export interface PiStableContextInvalidationOptions {
@@ -262,12 +269,39 @@ export async function invalidatePiStableContext(
   return await advanceGeneration(db, scope, { kind: "ready" }, options);
 }
 
-async function invalidateHeadSet(
-  db: Db,
-  condition: ReturnType<typeof eq> | ReturnType<typeof and>,
-  options?: PiStableContextInvalidationOptions,
-): Promise<void> {
-  const captured = await db
+async function lockHeadSet(db: Db, condition: SQL) {
+  const locked = await db
+    .select({
+      id: piStableContextHeads.id,
+      demandEligible: sql`${piStableContextHeads.input} IS NOT NULL
+        AND ${piStableContextHeads.inputDigest} IS NOT NULL`.mapWith(
+        pgBooleanDecoder,
+      ),
+    })
+    .from(piStableContextHeads)
+    .where(condition)
+    .orderBy(asc(piStableContextHeads.id))
+    .for("update");
+  return {
+    ids: locked.map((head) => {
+      return head.id;
+    }),
+    demandIds: locked
+      .filter((head) => {
+        return head.demandEligible;
+      })
+      .slice(0, HEAD_DEMAND_CAPTURE_LIMIT)
+      .map((head) => {
+        return head.id;
+      }),
+  };
+}
+
+async function readCapturedHeadDemands(db: Db, ids: readonly string[]) {
+  if (ids.length === 0) {
+    return [];
+  }
+  return await db
     .select({
       id: piStableContextHeads.id,
       generation: piStableContextHeads.generation,
@@ -277,34 +311,55 @@ async function invalidateHeadSet(
       input: piStableContextHeads.input,
     })
     .from(piStableContextHeads)
-    .where(
-      and(
-        condition,
-        isNotNull(piStableContextHeads.input),
-        isNotNull(piStableContextHeads.inputDigest),
-      ),
-    )
-    .orderBy(asc(piStableContextHeads.id))
-    .limit(16)
-    .for("update");
+    .where(inArray(piStableContextHeads.id, ids))
+    .orderBy(asc(piStableContextHeads.id));
+}
+
+async function resetLockedHeadSet(
+  db: Db,
+  ids: readonly string[],
+  invalidatedAt: Date,
+): Promise<void> {
+  // Only exact rows from the ordered lock snapshot may enter a later UPDATE.
+  for (
+    let offset = 0;
+    offset < ids.length;
+    offset += HEAD_INVALIDATION_BATCH_SIZE
+  ) {
+    await db
+      .update(piStableContextHeads)
+      .set({
+        generation: sql`${piStableContextHeads.generation} + 1`,
+        status: "missing",
+        input: null,
+        inputDigest: null,
+        artifactDigest: null,
+        validityHorizon: null,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt: invalidatedAt,
+        attemptCount: 0,
+        lastErrorClass: null,
+        updatedAt: invalidatedAt,
+      })
+      .where(
+        inArray(
+          piStableContextHeads.id,
+          ids.slice(offset, offset + HEAD_INVALIDATION_BATCH_SIZE),
+        ),
+      );
+  }
+}
+
+async function invalidateHeadSet(
+  db: Db,
+  condition: SQL,
+  options?: PiStableContextInvalidationOptions,
+): Promise<void> {
+  const locked = await lockHeadSet(db, condition);
+  const captured = await readCapturedHeadDemands(db, locked.demandIds);
   const invalidatedAt = nowDate();
-  await db
-    .update(piStableContextHeads)
-    .set({
-      generation: sql`${piStableContextHeads.generation} + 1`,
-      status: "missing",
-      input: null,
-      inputDigest: null,
-      artifactDigest: null,
-      validityHorizon: null,
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt: invalidatedAt,
-      attemptCount: 0,
-      lastErrorClass: null,
-      updatedAt: invalidatedAt,
-    })
-    .where(condition);
+  await resetLockedHeadSet(db, locked.ids, invalidatedAt);
   // Preserve at most one worker batch of exact captured variants as durable
   // write-time demand. Larger scopes remain bounded and recover canonically.
   for (const head of captured) {
@@ -442,9 +497,12 @@ export async function invalidatePiStableContextsForUser(
   );
   await invalidateHeadSet(
     db,
-    and(
-      eq(piStableContextHeads.orgId, args.orgId),
-      eq(piStableContextHeads.userId, args.userId),
+    requireCondition(
+      and(
+        eq(piStableContextHeads.orgId, args.orgId),
+        eq(piStableContextHeads.userId, args.userId),
+      ),
+      "user stable-context heads",
     ),
   );
 }
@@ -646,41 +704,13 @@ export async function enqueuePiStableContextStorageDemands(
       storageMounts: [{ storageId: resource.storageId }],
     })}::jsonb`,
   );
-  const heads = await db
-    .select({
-      id: piStableContextHeads.id,
-      generation: piStableContextHeads.generation,
-      input: piStableContextHeads.input,
-    })
-    .from(piStableContextHeads)
-    .where(
-      and(
-        dependent,
-        isNotNull(piStableContextHeads.input),
-        isNotNull(piStableContextHeads.inputDigest),
-      ),
-    )
-    .orderBy(asc(piStableContextHeads.id))
-    .limit(16)
-    .for("update");
+  const locked = await lockHeadSet(
+    db,
+    requireCondition(dependent, "Storage-dependent stable-context heads"),
+  );
+  const heads = await readCapturedHeadDemands(db, locked.demandIds);
   const availableAt = nowDate();
-  await db
-    .update(piStableContextHeads)
-    .set({
-      generation: sql`${piStableContextHeads.generation} + 1`,
-      status: "missing",
-      input: null,
-      inputDigest: null,
-      artifactDigest: null,
-      validityHorizon: null,
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt,
-      attemptCount: 0,
-      lastErrorClass: null,
-      updatedAt: availableAt,
-    })
-    .where(dependent);
+  await resetLockedHeadSet(db, locked.ids, availableAt);
   for (const head of heads) {
     if (!head.input) {
       continue;

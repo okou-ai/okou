@@ -1579,194 +1579,278 @@ describe("Pi stable context generation fences", () => {
     },
   );
 
-  it("orders same-version repair heads with concurrent catalog invalidation", async () => {
-    const fixture = await seed();
-    const storageId = randomUUID();
-    const versionId = randomUUID().replaceAll("-", "").repeat(2);
-    storageIds.push(storageId);
-    await db.insert(storages).values({
-      id: storageId,
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      name: `encoding-lock-${storageId}`,
-      s3Prefix: `test/pi-stable-context/${storageId}`,
-    });
-    await db.insert(storageVersions).values({
-      id: versionId,
-      storageId,
-      s3Key: `test/pi-stable-context/${storageId}/${versionId}`,
-      archiveSize: 1,
-      fileCount: 1,
-      createdBy: fixture.userId,
-    });
-    await db.insert(piResourceVersionIndexes).values({
-      storageVersionId: versionId,
-      extractorVersion: 1,
-      sourceArchiveSize: 1,
-    });
-    const mount = {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      name: `encoding-lock-${storageId}`,
-      storageId,
-      versionId,
-      mountPath: "/home/user/workspace",
-      archiveSize: 1,
-    };
-    const input: PiStableContextBuildInput = {
-      ...fixture.input,
-      storageMounts: [mount],
-      persistedStorageMounts: [
+  it.each(["catalog", "storage-demand"] as const)(
+    "orders %s head invalidation beyond the demand-capture bound",
+    async (writer) => {
+      const fixture = await seed();
+      const storageId = randomUUID();
+      const oldVersionId = randomUUID().replaceAll("-", "").repeat(2);
+      const repairedVersionId = randomUUID().replaceAll("-", "").repeat(2);
+      storageIds.push(storageId);
+      await db.insert(storages).values({
+        id: storageId,
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        name: `encoding-bulk-lock-${storageId}`,
+        s3Prefix: `test/pi-stable-context/${storageId}`,
+      });
+      await db.insert(storageVersions).values([
         {
-          orgId: mount.orgId,
-          userId: mount.userId,
-          name: mount.name,
-          storageId: mount.storageId,
-          version: mount.versionId,
-          mountPath: mount.mountPath,
+          id: oldVersionId,
+          storageId,
+          s3Key: `test/pi-stable-context/${storageId}/${oldVersionId}`,
+          archiveSize: 1,
+          fileCount: 1,
+          createdBy: fixture.userId,
         },
-      ],
-    };
-    await db
-      .delete(piStableContextHeads)
-      .where(eq(piStableContextHeads.id, fixture.headId));
-    const [lowHeadId, highHeadId] = [randomUUID(), randomUUID()].sort();
-    if (!lowHeadId || !highHeadId) {
-      throw new Error("Expected ordered stable-context head IDs");
-    }
-    // Reverse heap order makes the old predicate-wide UPDATE take the higher
-    // UUID before blocking on the lower UUID held by the catalog path.
-    await db.insert(piStableContextHeads).values([
-      {
-        id: highHeadId,
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        agentId: fixture.agentId,
-        variantDigest: "c".repeat(64),
-        agentGeneration: 1,
-        userGeneration: 1,
-        status: "pending",
-        input,
-        inputDigest: "d".repeat(64),
-      },
-      {
-        id: lowHeadId,
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        agentId: fixture.agentId,
-        variantDigest: "e".repeat(64),
-        agentGeneration: 1,
-        userGeneration: 1,
-        status: "pending",
-        input,
-        inputDigest: "f".repeat(64),
-      },
-    ]);
-    await db
-      .update(storageVersions)
-      .set({ archiveSize: 2 })
-      .where(eq(storageVersions.id, versionId));
-
-    const signal = AbortSignal.timeout(10_000);
-    const holderStarted = createDeferredPromise<number>(signal);
-    const releaseHolder = createDeferredPromise<void>(signal);
-    const holder = db.transaction(async (tx) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      const pid = Number(result.rows[0]?.pid);
-      if (!Number.isInteger(pid)) {
-        throw new Error("Expected low-head holder pid");
+        {
+          id: repairedVersionId,
+          storageId,
+          s3Key: `test/pi-stable-context/${storageId}/${repairedVersionId}`,
+          archiveSize: 1,
+          fileCount: 1,
+          createdBy: fixture.userId,
+        },
+      ]);
+      await db.insert(piResourceVersionIndexes).values({
+        storageVersionId: repairedVersionId,
+        extractorVersion: 1,
+        sourceArchiveSize: 1,
+      });
+      const inputForVersion = (
+        versionId: string,
+      ): PiStableContextBuildInput => {
+        const mount = {
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+          name: `encoding-bulk-lock-${storageId}`,
+          storageId,
+          versionId,
+          mountPath: "/home/user/workspace",
+          archiveSize: 1,
+        };
+        return {
+          ...fixture.input,
+          storageMounts: [mount],
+          persistedStorageMounts: [
+            {
+              orgId: mount.orgId,
+              userId: mount.userId,
+              name: mount.name,
+              storageId: mount.storageId,
+              version: mount.versionId,
+              mountPath: mount.mountPath,
+            },
+          ],
+        };
+      };
+      const prefixInput = inputForVersion(oldVersionId);
+      const repairedInput = inputForVersion(repairedVersionId);
+      await db
+        .delete(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, fixture.headId));
+      const headIds = Array.from({ length: 18 }, () => {
+        return randomUUID();
+      }).sort();
+      const prefixHeadIds = headIds.slice(0, 16);
+      const lowHeadId = headIds.at(-2);
+      const highHeadId = headIds.at(-1);
+      if (!lowHeadId || !highHeadId) {
+        throw new Error("Expected ordered bulk stable-context head IDs");
       }
-      await tx
-        .select({ id: piStableContextHeads.id })
-        .from(piStableContextHeads)
-        .where(eq(piStableContextHeads.id, lowHeadId))
-        .for("update");
-      holderStarted.resolve(pid);
-      await releaseHolder.promise;
-    });
-    const holderPid = await holderStarted.promise;
-    const isBlockedBy = async (pid: number, blockerPid?: number) => {
-      const result = await pool.query<{ blocked: boolean }>(
-        blockerPid === undefined
-          ? `SELECT cardinality(pg_blocking_pids($1::int)) > 0 AS blocked`
-          : `SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS blocked`,
-        blockerPid === undefined ? [pid] : [pid, blockerPid],
+      await db.insert(piStableContextHeads).values(
+        prefixHeadIds.map((id) => {
+          return {
+            id,
+            orgId: fixture.orgId,
+            userId: fixture.userId,
+            agentId: fixture.agentId,
+            variantDigest: randomUUID().replaceAll("-", "").repeat(2),
+            agentGeneration: 1,
+            userGeneration: 1,
+            status: "pending" as const,
+            input: prefixInput,
+            inputDigest: randomUUID().replaceAll("-", "").repeat(2),
+          };
+        }),
       );
-      return result.rows[0]?.blocked ?? false;
-    };
+      // Keep the two shared rows beyond the 16-row capture prefix and reverse
+      // their heap order. The historical wider UPDATE reached high before low.
+      await db.insert(piStableContextHeads).values([
+        {
+          id: highHeadId,
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+          agentId: fixture.agentId,
+          variantDigest: randomUUID().replaceAll("-", "").repeat(2),
+          agentGeneration: 1,
+          userGeneration: 1,
+          status: "pending",
+          input: repairedInput,
+          inputDigest: randomUUID().replaceAll("-", "").repeat(2),
+        },
+        {
+          id: lowHeadId,
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+          agentId: fixture.agentId,
+          variantDigest: randomUUID().replaceAll("-", "").repeat(2),
+          agentGeneration: 1,
+          userGeneration: 1,
+          status: "pending",
+          input: repairedInput,
+          inputDigest: randomUUID().replaceAll("-", "").repeat(2),
+        },
+      ]);
+      await db
+        .update(storageVersions)
+        .set({ archiveSize: 2 })
+        .where(eq(storageVersions.id, repairedVersionId));
 
-    const catalogStarted = createDeferredPromise<number>(signal);
-    const catalog = withOwnedPiStableContextGlobalInvalidationFixture(
-      [{ orgId: fixture.orgId, agentId: fixture.agentId }],
-      async () => {
+      const signal = AbortSignal.timeout(15_000);
+      const holderStarted = createDeferredPromise<number>(signal);
+      const releaseHolder = createDeferredPromise<void>(signal);
+      const holder = db.transaction(async (tx) => {
+        const result = await tx.execute(
+          sql`SELECT pg_backend_pid()::int AS "pid"`,
+        );
+        const pid = Number(result.rows[0]?.pid);
+        if (!Number.isInteger(pid)) {
+          throw new Error("Expected bulk low-head holder pid");
+        }
+        await tx
+          .select({ id: piStableContextHeads.id })
+          .from(piStableContextHeads)
+          .where(eq(piStableContextHeads.id, lowHeadId))
+          .for("update");
+        holderStarted.resolve(pid);
+        await releaseHolder.promise;
+      });
+      const holderPid = await holderStarted.promise;
+      const blockedBy = async (pid: number, blockerPid?: number) => {
+        const result = await pool.query<{ blocked: boolean }>(
+          blockerPid === undefined
+            ? `SELECT cardinality(pg_blocking_pids($1::int)) > 0 AS blocked`
+            : `SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS blocked`,
+          blockerPid === undefined ? [pid] : [pid, blockerPid],
+        );
+        return result.rows[0]?.blocked ?? false;
+      };
+      const repairStarted = createDeferredPromise<number>(signal);
+      const repair = db.transaction(async (tx) => {
+        const result = await tx.execute(
+          sql`SELECT pg_backend_pid()::int AS "pid"`,
+        );
+        const pid = Number(result.rows[0]?.pid);
+        if (!Number.isInteger(pid)) {
+          throw new Error("Expected bulk encoding repair pid");
+        }
+        repairStarted.resolve(pid);
+        await enqueuePiResourceVersionIndexes(tx, [repairedVersionId], signal);
+      });
+      const operations = [holder, repair];
+      onTestFinished(async () => {
+        if (!releaseHolder.settled()) {
+          releaseHolder.resolve();
+        }
+        await Promise.allSettled(operations);
+      });
+      const repairPid = await repairStarted.promise;
+      await expect
+        .poll(() => {
+          return blockedBy(repairPid, holderPid);
+        })
+        .toBeTruthy();
+
+      const invalidationStarted = createDeferredPromise<number>(signal);
+      const runInvalidation = async () => {
         await db.transaction(async (tx) => {
           const result = await tx.execute(
             sql`SELECT pg_backend_pid()::int AS "pid"`,
           );
           const pid = Number(result.rows[0]?.pid);
           if (!Number.isInteger(pid)) {
-            throw new Error("Expected catalog invalidator pid");
+            throw new Error("Expected bulk head invalidator pid");
           }
-          catalogStarted.resolve(pid);
-          await invalidateAllPiStableContexts(tx);
+          invalidationStarted.resolve(pid);
+          if (writer === "catalog") {
+            await invalidateAllPiStableContexts(tx);
+          } else {
+            await enqueuePiStableContextStorageDemands(tx, {
+              storageId,
+              versionId: repairedVersionId,
+              archiveSize: 2,
+              fileCount: 1,
+            });
+          }
         });
-      },
-    );
-    const repairStarted = createDeferredPromise<number>(signal);
-    const operations = [holder, catalog];
-    onTestFinished(async () => {
-      if (!releaseHolder.settled()) {
-        releaseHolder.resolve();
+      };
+      const invalidation =
+        writer === "catalog"
+          ? withOwnedPiStableContextGlobalInvalidationFixture(
+              [{ orgId: fixture.orgId, agentId: fixture.agentId }],
+              runInvalidation,
+            )
+          : runInvalidation();
+      operations.push(invalidation);
+      const invalidationPid = await invalidationStarted.promise;
+      await expect
+        .poll(() => {
+          return blockedBy(invalidationPid);
+        })
+        .toBeTruthy();
+      await expect(
+        db.transaction(async (tx) => {
+          await tx
+            .select({ id: piStableContextHeads.id })
+            .from(piStableContextHeads)
+            .where(eq(piStableContextHeads.id, highHeadId))
+            .for("update", { noWait: true });
+        }),
+      ).resolves.toBeUndefined();
+
+      const [lateHead] = await db
+        .insert(piStableContextHeads)
+        .values({
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+          agentId: fixture.agentId,
+          variantDigest: randomUUID().replaceAll("-", "").repeat(2),
+          agentGeneration: 1,
+          userGeneration: 1,
+          status: "pending",
+          input: repairedInput,
+          inputDigest: randomUUID().replaceAll("-", "").repeat(2),
+        })
+        .returning({ id: piStableContextHeads.id });
+      if (!lateHead) {
+        throw new Error("Expected late stable-context head");
       }
-      await Promise.allSettled(operations);
-    });
-    const catalogPid = await catalogStarted.promise;
-    await expect
-      .poll(() => {
-        return isBlockedBy(catalogPid, holderPid);
-      })
-      .toBeTruthy();
-    const repair = db.transaction(async (tx) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      const pid = Number(result.rows[0]?.pid);
-      if (!Number.isInteger(pid)) {
-        throw new Error("Expected encoding repair pid");
-      }
-      repairStarted.resolve(pid);
-      await enqueuePiResourceVersionIndexes(tx, [versionId], signal);
-    });
-    operations.push(repair);
-    const repairPid = await repairStarted.promise;
-    await expect
-      .poll(() => {
-        return isBlockedBy(repairPid);
-      })
-      .toBeTruthy();
-    await expect(
-      db.transaction(async (tx) => {
-        await tx
-          .select({ id: piStableContextHeads.id })
+      releaseHolder.resolve();
+      await expect(
+        Promise.all([holder, repair, invalidation]),
+      ).resolves.toHaveLength(3);
+      await expect(
+        db
+          .select({ status: piStableContextHeads.status })
           .from(piStableContextHeads)
-          .where(eq(piStableContextHeads.id, highHeadId))
-          .for("update", { noWait: true });
-      }),
-    ).resolves.toBeUndefined();
-    releaseHolder.resolve();
-    await expect(Promise.all([holder, catalog, repair])).resolves.toHaveLength(
-      3,
-    );
-    await expect(
-      db
-        .select({ status: piStableContextHeads.status })
-        .from(piStableContextHeads)
-        .where(inArray(piStableContextHeads.id, [lowHeadId, highHeadId]))
-        .orderBy(asc(piStableContextHeads.id)),
-    ).resolves.toStrictEqual([{ status: "missing" }, { status: "missing" }]);
-  });
+          .where(inArray(piStableContextHeads.id, [lowHeadId, highHeadId]))
+          .orderBy(asc(piStableContextHeads.id)),
+      ).resolves.toStrictEqual([{ status: "missing" }, { status: "missing" }]);
+      await expect(
+        db
+          .select({
+            generation: piStableContextHeads.generation,
+            status: piStableContextHeads.status,
+            input: piStableContextHeads.input,
+          })
+          .from(piStableContextHeads)
+          .where(eq(piStableContextHeads.id, lateHead.id)),
+      ).resolves.toStrictEqual([
+        { generation: 1, status: "pending", input: repairedInput },
+      ]);
+    },
+  );
 
   it("fences a worker that read the old encoding before same-version repair", async () => {
     const fixture = await seed();
