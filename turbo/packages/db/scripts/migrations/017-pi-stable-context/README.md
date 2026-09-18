@@ -17,7 +17,7 @@ five attempts. It does not create owner/variant combinations, synthesize
 credentials, read archives, compose prompts, change feature switches, deploy,
 or activate Pi.
 
-Run from `turbo/packages/db` only after migration 1163 is present:
+Run from `turbo/packages/db` only after migration 1164 is present:
 
 ```bash
 # Bounded dry-run/report (default).

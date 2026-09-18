@@ -40,7 +40,7 @@ the same check. A refresh admitted before closure either finishes first and is
 subsequently cleaned up, or waits and observes the fence. The table is
 feature-local deletion finality: it does not register the dormant account-
 erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1163
+other product data. Keep stable-context activation on hold until migration 1164
 and this API writer are present on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
@@ -211,16 +211,43 @@ It returns `{ url, filename, contentType }` for the authorized delivery. The
 existing typed owner resolver and sharing-management endpoints retain their
 owner checks.
 
-`okou artifact download` and `okou web download-file` use this endpoint for
-short and long artifact references, including same-origin App URLs. They fetch
-the returned delivery URL without forwarding the agent token. Hosted HTML
-downloads contain the entry document; complete owned-site source downloads
-remain the responsibility of `okou host clone`. Raw file IDs and authenticated
-web download URLs keep their existing `file:read` path.
+The additive `GET /api/artifact-references/:reference/download` uses the same
+`artifact:read` and visibility boundary. It returns either
+`{ kind: "file", url, filename, contentType }` or
+`{ kind: "html", site: HostedSiteFilesResponse }`. The latter includes the full
+authorized deployment manifest and per-file delivery URLs. Shared sites use
+the selected version's immutable snapshot, rather than the owner's latest
+deployment. Standalone HTML uploads remain file downloads.
+Conversation references selecting a non-HTML hosted file also retain their
+single-file bytes and MIME type; HTML/page references return the full site.
+
+`okou artifact download` and `okou web download-file` use the download endpoint
+for short and long artifact references, including same-origin App URLs. For
+sites, `--out` now names a new or empty directory and the JSON result adds
+`fileCount` and `entrypoint` to `{ path, mimetype, size }`; `path` denotes that
+directory and `size` totals all downloaded files. They fetch delivery URLs
+without forwarding the agent token. Raw file IDs and authenticated web download
+URLs keep their existing `file:read` path and output shape.
+
+`okou host clone` uses the additive
+`GET /api/artifact-references/:reference/files` for artifact references. This
+returns `HostedSiteFilesResponse` through the same visibility resolver and
+retains the existing `host:read` capability; it rejects standalone files.
+Hosted URLs and slugs continue to use the existing `host:read` files endpoint,
+whose authorization now follows current site visibility rather than requiring
+ownership. An optional `hostname` query disambiguates public aliases against
+the configured hosted domains. The existing files response remains compatible
+with older clients. Version requests never bypass the selected shared version.
+Public conversation resources follow their live shared-thread policy and
+independent snapshot, including after the original artifact changes.
+Bare canonical slugs preserve owner/latest-version cloning; explicit public
+URLs follow the selected publication, including for owners and after revocation.
+Owner-only management and version-listing endpoints remain unchanged.
 
 Deploy the additive API endpoint before selecting the matching CLI artifact.
-Older pinned CLIs keep their existing owner-only behavior against the new API;
-the new CLI needs the new endpoint and the existing `artifact:read` capability,
+Older pinned CLIs retain their existing download behavior against the new API;
+the existing read endpoint continues to return entry-page delivery metadata.
+The new CLI needs the download endpoint and the existing `artifact:read` capability,
 issued under `privateArtifacts`. No tolerant reader for an older API, new
 capability, database migration, visibility change, or Worker protocol is added.
 Keep the endpoint in serving and supported rollback APIs while runs pinned to
@@ -2384,7 +2411,8 @@ There is no ten-second deadline, local attempt marker, deferred onboarding
 handoff, retry, or fallback. Each actual POST is preceded by one Axiom
 `marketing.event.send` record with tag, userId, and orgId; `outcome: started`
 means a send attempt, not server acceptance. No browser request ID header is
-introduced. Existing legacy gtag/PostHog event and account routing is unchanged.
+introduced. PostHog product and funnel events remain in the App; advertising
+account selection and delivery belong to Marketing.
 
 Marketing deduplicates onboarding by user/org and checkout by user/org/event
 UUID. These counts differ intentionally from the legacy gtag browser-session/
@@ -2433,3 +2461,35 @@ schedule, Run, credit, Chat or email behavior, and it does not activate the
 still-unregistered Clerk erasure bridge. It is a local serialization boundary
 for one owner's collection authority; durable membership and materialization
 ownership and global deletion finality remain S7 gates.
+
+## Marketing attribution cutover (#33886)
+
+The App no longer loads gtag, sends Google Ads conversions, looks up an Ads
+account, or polls attribution milestones. Marketing owns the unified business
+events and provider delivery. The API removes the old signup, account and
+milestone attribution routes without aliases, as explicitly requested for this
+prelaunch cutover. Existing pages may lose those retired telemetry calls during
+the API-before-App promotion window; the replacement App removes their callers.
+
+Billing remains operational across that window. Checkout request schemas use
+Zod's default unknown-key stripping, so an older App's extra `adAttribution` is
+ignored rather than rejecting a purchase. The removed `googleAdsConversion`
+response property was optional in the preceding App contract. Both Apps still
+use `completed` and the original purchase response statuses. The retained
+`completePaidCheckout$` polls actual payment reconciliation before continuing
+onboarding or showing billing success. No payment endpoint or fulfillment is
+removed.
+
+The API stops writing Clerk signup attribution and org acquisition columns and
+stops attaching acquisition snapshots to new Stripe billing objects. New
+customers keep `orgId`; sessions and subscriptions retain financial identity,
+tier, price, purchase timestamps and preview routing. Existing metadata copied
+through plan or schedule changes is filtered to avoid reintroducing marketing
+fields, including old privacy receipts; Marketing retains authoritative
+withdrawal state. Historical rows and external objects are not erased in this
+change.
+
+Coordinate the Marketing single-sender cutover with this App/API deployment.
+Verify the replacement App is live before setting a later client floor; an
+already-open old bundle can otherwise continue sending browser conversions.
+This PR does not select a floor or change production provider settings.

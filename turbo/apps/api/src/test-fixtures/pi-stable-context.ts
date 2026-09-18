@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 
-import type { PiStableContextBuildInput } from "@okouai/db/jsonb-contracts/pi-stable-context";
+import type {
+  PiStableContextBuildInput,
+  PiStableContextProjection,
+} from "@okouai/db/jsonb-contracts/pi-stable-context";
 import {
+  piStableContextArtifactResources,
   piStableContextArtifacts,
   piStableContextGenerations,
   piStableContextHeads,
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
@@ -14,7 +19,7 @@ import { onTestFinished } from "vitest";
 import { z } from "zod";
 
 import { executeRawRows } from "../lib/db-raw-rows";
-import { writeDb$ } from "../signals/external/db";
+import { writeDb$, type Db } from "../signals/external/db";
 import { createDeferredPromise } from "../signals/utils";
 import {
   clearStableAgentPromptBuildHookForTest,
@@ -248,6 +253,62 @@ export async function assertUserStableContextGenerationUnlockedFixture(args: {
   });
 }
 
+async function seedReadyStorageArtifact(
+  db: Db,
+  args: {
+    readonly ready: boolean | undefined;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly agentId: string;
+    readonly storageId: string;
+    readonly versionId: string;
+    readonly input: PiStableContextBuildInput;
+  },
+): Promise<string | null> {
+  if (!args.ready) {
+    return null;
+  }
+  const digest = randomUUID().replaceAll("-", "").repeat(2);
+  const projection: PiStableContextProjection = {
+    ...args.input,
+    resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+  };
+  await db.insert(piStableContextArtifacts).values({
+    digest,
+    orgId: args.orgId,
+    userId: args.userId,
+    agentId: args.agentId,
+    projection,
+  });
+  await db.insert(piStableContextArtifactResources).values({
+    artifactDigest: digest,
+    ordinal: 0,
+    storageId: args.storageId,
+    storageVersionId: args.versionId,
+  });
+  return digest;
+}
+
+function registerStableContextStorageDemandCleanup(
+  db: Db,
+  agentId: string,
+): void {
+  onTestFinished(async () => {
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.agentId, agentId));
+    await db
+      .delete(piStableContextArtifacts)
+      .where(eq(piStableContextArtifacts.agentId, agentId));
+    await db
+      .delete(piStableContextPublications)
+      .where(eq(piStableContextPublications.agentId, agentId));
+    await db
+      .delete(piStableContextGenerations)
+      .where(eq(piStableContextGenerations.agentId, agentId));
+  });
+}
+
 export async function seedPiStableContextStorageDemandFixture(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -255,8 +316,15 @@ export async function seedPiStableContextStorageDemandFixture(args: {
   readonly storageName: string;
   readonly versionId: string;
   readonly archiveSize: number;
+  readonly resourceOrgId?: string;
+  readonly resourceUserId?: string;
+  readonly ready?: boolean;
 }): Promise<string> {
   const db = store.set(writeDb$);
+  await db
+    .insert(orgMembersCache)
+    .values({ orgId: args.orgId, userId: args.userId, role: "member" })
+    .onConflictDoNothing();
   const agentGeneration = await invalidatePiStableContext(db, {
     orgId: args.orgId,
     agentId: args.agentId,
@@ -271,8 +339,8 @@ export async function seedPiStableContextStorageDemandFixture(args: {
     .from(storages)
     .where(
       and(
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
+        eq(storages.orgId, args.resourceOrgId ?? args.orgId),
+        eq(storages.userId, args.resourceUserId ?? args.userId),
         eq(storages.name, args.storageName),
       ),
     )
@@ -281,8 +349,8 @@ export async function seedPiStableContextStorageDemandFixture(args: {
     throw new Error("Expected stable-context Storage fixture authority");
   }
   const mount = {
-    orgId: args.orgId,
-    userId: args.userId,
+    orgId: args.resourceOrgId ?? args.orgId,
+    userId: args.resourceUserId ?? args.userId,
     name: args.storageName,
     storageId: storage.id,
     versionId: args.versionId,
@@ -328,6 +396,15 @@ export async function seedPiStableContextStorageDemandFixture(args: {
       },
     ],
   };
+  const artifactDigest = await seedReadyStorageArtifact(db, {
+    ready: args.ready,
+    orgId: args.orgId,
+    userId: args.userId,
+    agentId: args.agentId,
+    storageId: storage.id,
+    versionId: args.versionId,
+    input,
+  });
   const [head] = await db
     .insert(piStableContextHeads)
     .values({
@@ -337,28 +414,16 @@ export async function seedPiStableContextStorageDemandFixture(args: {
       variantDigest: randomUUID().replaceAll("-", "").repeat(2),
       agentGeneration,
       userGeneration,
-      status: "pending",
+      status: artifactDigest ? "ready" : "pending",
       input,
       inputDigest: piStableContextInputDigest(input),
+      artifactDigest,
     })
     .returning({ id: piStableContextHeads.id });
   if (!head) {
     throw new Error("Expected stable-context Storage demand fixture");
   }
-  onTestFinished(async () => {
-    await db
-      .delete(piStableContextHeads)
-      .where(eq(piStableContextHeads.agentId, args.agentId));
-    await db
-      .delete(piStableContextArtifacts)
-      .where(eq(piStableContextArtifacts.agentId, args.agentId));
-    await db
-      .delete(piStableContextPublications)
-      .where(eq(piStableContextPublications.agentId, args.agentId));
-    await db
-      .delete(piStableContextGenerations)
-      .where(eq(piStableContextGenerations.agentId, args.agentId));
-  });
+  registerStableContextStorageDemandCleanup(db, args.agentId);
   return head.id;
 }
 

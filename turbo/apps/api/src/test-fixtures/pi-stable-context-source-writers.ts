@@ -52,6 +52,15 @@ export function holdWorkflowUpdateBeforeErasureAdmissionFixture(
   });
 }
 
+export function holdWorkflowUpdateAfterMetadataMutationFixture(
+  hold: () => Promise<void>,
+): void {
+  setWorkflowUpdateHooksForTest({ afterMetadataMutation: hold });
+  onTestFinished(() => {
+    clearWorkflowUpdateHooksForTest();
+  });
+}
+
 export function holdWorkflowDeleteBeforeErasureAdmissionFixture(
   hold: () => Promise<void>,
 ): void {

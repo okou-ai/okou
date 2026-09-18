@@ -116,6 +116,7 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
+import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
 import { admitPiStableContextSubjects } from "../services/pi-stable-context-erasure.service";
 import {
   invalidatePiStableContext,
@@ -2015,6 +2016,7 @@ async function applyVisibilityUpdate(
     ) {
       return false;
     }
+    await lockCanonicalAgentMutation(tx, args.workflow.agentId);
     const workflowCondition = and(
       eq(workflows.id, args.workflow.id),
       eq(workflows.orgId, args.workflow.orgId),

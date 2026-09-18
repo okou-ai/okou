@@ -4,11 +4,12 @@ import {
   piStableContextHeads,
 } from "@okouai/db/schema/pi-stable-context";
 import { command } from "ccstate";
-import { and, eq, lt, notExists } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, notExists } from "drizzle-orm";
 
+import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   deleteS3Objects,
   listS3ObjectsUnderPrefix,
@@ -20,6 +21,7 @@ const PI_API_FIRST_TURN_PREFIX = "pi-api-first-turn";
 const PI_API_FIRST_TURN_STAGING_RETENTION_MS =
   PI_API_FIRST_TURN_URL_TTL_SECONDS * 1000;
 const PI_RESOURCE_SNAPSHOT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const PI_STABLE_CONTEXT_ARTIFACT_GC_BATCH_SIZE = 256;
 
 interface PiApiFirstTurnCleanupResult {
   readonly stagingObjectsDeleted: number;
@@ -39,6 +41,56 @@ function expiredPiApiFirstTurnObjectKeys(
 
 function piResourceSnapshotExpirationCutoff(at: number): Date {
   return new Date(at - PI_RESOURCE_SNAPSHOT_RETENTION_MS);
+}
+
+export async function deleteExpiredPiStableContextArtifacts(
+  db: Db,
+  cutoff: Date,
+  hooks?: { readonly afterCandidatesLocked?: (tx: Tx) => Promise<void> },
+): Promise<readonly { readonly digest: string }[]> {
+  return await db.transaction(async (tx) => {
+    // Coordinate with exact-digest re-publication. Publisher conflict updates
+    // retain a row lock through head attachment; SKIP LOCKED leaves those live
+    // artifacts for a later sweep. If GC owns the row first, the publisher
+    // waits, observes the committed deletion, and inserts the artifact anew.
+    const candidates = await tx
+      .select({ digest: piStableContextArtifacts.digest })
+      .from(piStableContextArtifacts)
+      .where(
+        and(
+          lt(piStableContextArtifacts.createdAt, cutoff),
+          notExists(
+            tx
+              .select({ id: piStableContextHeads.id })
+              .from(piStableContextHeads)
+              .where(
+                eq(
+                  piStableContextHeads.artifactDigest,
+                  piStableContextArtifacts.digest,
+                ),
+              ),
+          ),
+        ),
+      )
+      .orderBy(asc(piStableContextArtifacts.digest))
+      .limit(PI_STABLE_CONTEXT_ARTIFACT_GC_BATCH_SIZE)
+      .for("update", { skipLocked: true });
+    if (candidates.length === 0) {
+      return [];
+    }
+    await hooks?.afterCandidatesLocked?.(tx);
+    return await tx
+      .delete(piStableContextArtifacts)
+      .where(
+        inArray(
+          piStableContextArtifacts.digest,
+          candidates.map((candidate) => {
+            return candidate.digest;
+          }),
+        ),
+      )
+      .returning({ digest: piStableContextArtifacts.digest });
+  });
 }
 
 /**
@@ -75,29 +127,10 @@ export const cleanupExpiredPiApiFirstTurnData$ = command(
       )
       .returning({ digest: piResourceSnapshots.digest });
     signal.throwIfAborted();
-    const writeDb = set(writeDb$);
-    const deletedStableArtifacts = await writeDb
-      .delete(piStableContextArtifacts)
-      .where(
-        and(
-          lt(
-            piStableContextArtifacts.createdAt,
-            piResourceSnapshotExpirationCutoff(currentTime),
-          ),
-          notExists(
-            writeDb
-              .select({ id: piStableContextHeads.id })
-              .from(piStableContextHeads)
-              .where(
-                eq(
-                  piStableContextHeads.artifactDigest,
-                  piStableContextArtifacts.digest,
-                ),
-              ),
-          ),
-        ),
-      )
-      .returning({ digest: piStableContextArtifacts.digest });
+    const deletedStableArtifacts = await deleteExpiredPiStableContextArtifacts(
+      set(writeDb$),
+      piResourceSnapshotExpirationCutoff(currentTime),
+    );
     signal.throwIfAborted();
     return {
       stagingObjectsDeleted: expiredKeys.length,

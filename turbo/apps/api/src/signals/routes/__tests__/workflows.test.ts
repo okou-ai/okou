@@ -1280,7 +1280,7 @@ describe("workflows", () => {
     });
   });
 
-  it("sweeps a generation initialized after Agent deletion's first lifecycle scan", async () => {
+  it("prevents a generation after Agent deletion's first lifecycle scan", async () => {
     const actor = user();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
@@ -1322,18 +1322,22 @@ describe("workflows", () => {
       }),
     ).resolves.toBe(0);
 
-    await updateWorkflow(actor, workflow.body.id, {
-      instruction: "# published after the initial lifecycle scan",
-    });
+    const update = requestUpdateWorkflow(
+      actor,
+      workflow.body.id,
+      { instruction: "# must wait behind Agent deletion" },
+      [404, 409],
+    );
     await expect(
       countUserStableContextGenerationsFixture({
         agentId: agent.agentId,
         userId: actor.userId,
       }),
-    ).resolves.toBe(1);
+    ).resolves.toBe(0);
 
     release.resolve();
     await deletion;
+    await update;
     await expect(
       countUserStableContextGenerationsFixture({
         agentId: agent.agentId,

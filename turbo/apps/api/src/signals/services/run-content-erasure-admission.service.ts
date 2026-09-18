@@ -24,7 +24,6 @@ type RunOutputPhase =
   | "ownership_snapshot"
   | "subject_admission"
   | "resource_identity_locks"
-  | "output_advisory_lock"
   | "thread_lock"
   | "run_lock"
   | "session_lock"
@@ -398,11 +397,6 @@ async function lockOwnership(
       .where(eq(storages.id, snapshot.memory.storage.id))
       .for("key share");
   }
-  diagnostics?.enter("output_advisory_lock");
-  const lockKey = `run_output_projection:${snapshot.runId}`;
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
-  );
   if (snapshot.thread) {
     diagnostics?.enter("thread_lock");
     await lockChatQueueThread(tx, snapshot.thread.chatThreadId);
@@ -437,8 +431,9 @@ async function lockOwnership(
   };
 }
 
-/** Owns the actual transaction: subjects -> resources -> output -> thread ->
- * run -> session, with revalidation and the barrier retained through COMMIT.
+/** Owns the actual transaction: subjects -> resources -> thread -> run ->
+ * session, with the run row serializing same-run writes and every barrier
+ * retained through COMMIT.
  */
 export async function withRunContentWrite<T>(
   db: Db,

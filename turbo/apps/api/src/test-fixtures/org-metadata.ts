@@ -70,44 +70,6 @@ export async function expireAtomGrantFixture(values: {
     .where(eq(creditExpiresRecord.orgId, values.orgId));
 }
 
-interface OrgAcquisitionAttributionRow {
-  readonly acquisitionSourceType: string | null;
-  readonly acquisitionFirstPartySource: string | null;
-  readonly acquisitionCampaignId: string | null;
-  readonly acquisitionAdGroupId: string | null;
-  readonly acquisitionCampaign: string | null;
-  readonly acquisitionUtmSource: string | null;
-  readonly acquisitionUtmMedium: string | null;
-  readonly acquisitionUtmContent: string | null;
-  readonly acquisitionUtmTerm: string | null;
-  readonly acquisitionGclid: string | null;
-  readonly acquisitionRecordedAt: Date | null;
-}
-
-export async function readOrgAcquisitionAttributionFixture(
-  orgId: string,
-): Promise<OrgAcquisitionAttributionRow | undefined> {
-  const [row] = await createStore()
-    .set(writeDb$)
-    .select({
-      acquisitionSourceType: orgMetadata.acquisitionSourceType,
-      acquisitionFirstPartySource: orgMetadata.acquisitionFirstPartySource,
-      acquisitionCampaignId: orgMetadata.acquisitionCampaignId,
-      acquisitionAdGroupId: orgMetadata.acquisitionAdGroupId,
-      acquisitionCampaign: orgMetadata.acquisitionCampaign,
-      acquisitionUtmSource: orgMetadata.acquisitionUtmSource,
-      acquisitionUtmMedium: orgMetadata.acquisitionUtmMedium,
-      acquisitionUtmContent: orgMetadata.acquisitionUtmContent,
-      acquisitionUtmTerm: orgMetadata.acquisitionUtmTerm,
-      acquisitionGclid: orgMetadata.acquisitionGclid,
-      acquisitionRecordedAt: orgMetadata.acquisitionRecordedAt,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return row;
-}
-
 /**
  * Repoint the org default Agent.
  *

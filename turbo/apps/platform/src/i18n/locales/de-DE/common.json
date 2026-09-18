@@ -5816,6 +5816,51 @@
         "resetTimePassedTitle": "Die Rücksetzzeit ist abgelaufen"
       }
     },
+    "paidTools": {
+      "description": "Wähle, welche kostenpflichtigen integrierten Tools du verwenden kannst.",
+      "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
+      "loading": "Deine Tool-Einstellungen werden geladen…",
+      "retry": "Erneut versuchen",
+      "saveError": "Deine Änderung wurde nicht gespeichert.",
+      "saving": "Wird gespeichert…",
+      "scope": "Diese Einstellungen gelten nur für dich in {{workspace}}.",
+      "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
+      "title": "Kostenpflichtige Tools",
+      "tools": {
+        "finance": {
+          "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
+          "name": "Finanzdaten"
+        },
+        "image-recognition": {
+          "description": "Lies und analysiere Bilder.",
+          "name": "Bilderkennung"
+        },
+        "maps": {
+          "description": "Finde Orte, Adressen und Wegbeschreibungen.",
+          "name": "Karten und Orte"
+        },
+        "people-search": {
+          "description": "Finde öffentliche berufliche Profile.",
+          "name": "Personensuche"
+        },
+        "scrape": {
+          "description": "Lies und extrahiere Inhalte von Webseiten.",
+          "name": "Seitenextraktion"
+        },
+        "seo": {
+          "description": "Recherchiere Suchrankings, Keywords und Backlinks.",
+          "name": "SEO-Recherche"
+        },
+        "social": {
+          "description": "Recherchiere öffentliche Beiträge und sammle Medien.",
+          "name": "Social-Media-Recherche"
+        },
+        "web-search": {
+          "description": "Finde aktuelle Informationen im Web.",
+          "name": "Websuche"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Verwalten",

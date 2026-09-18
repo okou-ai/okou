@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
+import { readDisabledPaidTools } from "./paid-tools.service";
 import {
   resolveAgentRunStorage,
   materializeAgentRunStorage,
@@ -7866,6 +7868,22 @@ function runnerStoragePlan(
       });
 }
 
+async function withPaidToolPlatformEnvironment(
+  db: Db,
+  owner: Pick<BuildRunnerJobPayloadInput, "orgId" | "userId">,
+  platformEnvironment: Record<string, string> | undefined,
+): Promise<Record<string, string>> {
+  const disabledTools = await readDisabledPaidTools(
+    db,
+    owner.orgId,
+    owner.userId,
+  );
+  return {
+    ...platformEnvironment,
+    [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
+  };
+}
+
 function buildRunnerJobPayload(
   db: Db,
   args: BuildRunnerJobPayloadInput,
@@ -7909,10 +7927,16 @@ function buildRunnerJobPayload(
       "api_dispatch_build_stored_execution_context",
       "nested",
       async () => {
+        const paidToolEnvironment = await withPaidToolPlatformEnvironment(
+          db,
+          args,
+          platformEnvironment,
+        );
+        signal.throwIfAborted();
         return await buildStoredExecutionContextDraft({
           ...args,
           body,
-          platformEnvironment,
+          platformEnvironment: paidToolEnvironment,
           runId: args.run.id,
         });
       },

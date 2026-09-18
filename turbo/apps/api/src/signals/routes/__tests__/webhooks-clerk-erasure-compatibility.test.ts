@@ -27,6 +27,7 @@ import {
   holdWorkflowCopyBeforeErasureAdmissionFixture,
   holdWorkflowCreationBeforeErasureAdmissionFixture,
   holdWorkflowDeleteBeforeErasureAdmissionFixture,
+  holdWorkflowUpdateAfterMetadataMutationFixture,
   holdWorkflowUpdateBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
@@ -86,6 +87,7 @@ async function createPublicAgentThread(args: {
 async function deleteUserWithSignedWebhook(
   userId: string,
   secretLabel: string,
+  options?: { readonly flush?: boolean },
 ): Promise<void> {
   const sdk = await vi.importActual<typeof import("@clerk/backend/webhooks")>(
     "@clerk/backend/webhooks",
@@ -120,7 +122,9 @@ async function deleteUserWithSignedWebhook(
     }),
     [200],
   );
-  await flushWaitUntilForTest();
+  if (options?.flush !== false) {
+    await flushWaitUntilForTest();
+  }
 }
 
 test("keeps the current signed Clerk deletion ACK and preserves another owner's agent without bridge configuration", async () => {
@@ -582,6 +586,82 @@ test("does not recreate erased generation metadata when clearing a thread connec
       userId: deletedUserId,
     }),
   ).resolves.toBe(0);
+});
+
+test("completes signed Agent-owner erasure behind a surviving Workflow update", async () => {
+  const orgId = `synthetic_org_${randomUUID()}`;
+  const ownerUserId = `synthetic_owner_${randomUUID()}`;
+  const survivingUserId = `synthetic_survivor_${randomUUID()}`;
+  const headers = { authorization: "Bearer clerk-session" };
+  context.mocks.s3.send.mockResolvedValue({});
+
+  mocks.clerk.session(ownerUserId, orgId, "org:admin");
+  const agent = await accept(
+    setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
+      headers,
+      body: { displayName: "Erased public owner", visibility: "public" },
+    }),
+    [201],
+  );
+  mocks.clerk.session(survivingUserId, orgId, "org:member");
+  const workflow = await accept(
+    setupApp({ context, routes: workflowsRoutes })(
+      workflowsCollectionContract,
+    ).create({
+      headers,
+      body: {
+        agentId: agent.body.agentId,
+        name: `surviving-private-${randomUUID().slice(0, 8)}`,
+        visibility: "private",
+        instruction: "# existing generation",
+      },
+    }),
+    [201],
+  );
+  await expect(
+    countUserStableContextGenerationsFixture({
+      agentId: agent.body.agentId,
+      userId: survivingUserId,
+    }),
+  ).resolves.toBeGreaterThan(0);
+
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  holdWorkflowUpdateAfterMetadataMutationFixture(async () => {
+    entered.resolve();
+    await release.promise;
+  });
+  const client = setupApp({ context, routes: workflowsRoutes })(
+    workflowsDetailContract,
+  );
+  const update = client.update({
+    headers,
+    params: { workflowId: workflow.body.id },
+    body: { instruction: "# commits before owner erasure" },
+  });
+  await entered.promise;
+  await deleteUserWithSignedWebhook(
+    ownerUserId,
+    "workflow-update-agent-owner-erasure",
+    { flush: false },
+  );
+  release.resolve();
+  await accept(update, [200]);
+  await flushWaitUntilForTest();
+
+  await expect(
+    countUserStableContextGenerationsFixture({
+      agentId: agent.body.agentId,
+      userId: survivingUserId,
+    }),
+  ).resolves.toBe(0);
+  await expect(
+    countAgentStableContextPublicationsFixture(agent.body.agentId),
+  ).resolves.toBe(0);
+  await accept(
+    client.get({ headers, params: { workflowId: workflow.body.id } }),
+    [404],
+  );
 });
 
 test("does not recreate stable state after the public Agent owner is erased", async () => {

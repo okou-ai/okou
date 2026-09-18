@@ -162,10 +162,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  isChatEffortEnabled,
-  isCodexFastModeEnabled,
-} from "@okouai/core/model-feature-switch";
+import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { buildVideoRunOptionsPrompt } from "@okouai/core/video-run-options-prompt";
 import {
@@ -485,7 +482,6 @@ function shouldTouchThreadSortFromNormalSend(
 }
 
 interface NormalSendFeatureSwitches {
-  readonly reasoningEffortEnabled: boolean;
   readonly codexFastModeEnabled: boolean;
   readonly introVideoEnabled: boolean;
   /**
@@ -1046,7 +1042,6 @@ async function resolveExplicitRunConfiguration(params: {
   readonly userId: string;
   readonly body: NormalSendBody;
   readonly codexFastModeEnabled: boolean;
-  readonly reasoningEffortEnabled: boolean;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedRunConfiguration | NormalSendFailure | undefined> {
@@ -1078,7 +1073,6 @@ async function resolveExplicitRunConfiguration(params: {
     selectedModel: modelPin.selectedModel,
     modelSettings,
     requested: params.body.runOptions?.reasoningEffort,
-    enabled: params.reasoningEffortEnabled,
   });
   if ("status" in effort) {
     return effort;
@@ -1142,7 +1136,6 @@ async function resolveNormalSendFeatureSwitches(
   const context = await loadUserFeatureSwitchContext(db, orgId, userId);
   return {
     codexFastModeEnabled: isCodexFastModeEnabled(context),
-    reasoningEffortEnabled: isChatEffortEnabled(context),
     introVideoEnabled: loadIntroVideoTemplateAccess(templates, context),
     featureSwitchContext: context,
   };
@@ -1757,7 +1750,6 @@ function resolveExplicitThreadRunConfiguration(
     selectedModel: configuration.modelPin.selectedModel,
     modelSettings: thread.modelSettings,
     requested: settings.requestedReasoningEffort,
-    enabled: settings.featureSwitches.reasoningEffortEnabled,
   });
   if ("status" in effort) {
     return effort;
@@ -1857,7 +1849,6 @@ async function resolveThread(params: {
           threadId: thread.id,
           threadSnapshot: thread,
           requestedReasoningEffort: params.requestedReasoningEffort,
-          reasoningEffortEnabled: params.featureSwitches.reasoningEffortEnabled,
           requestedCodexServiceTier: params.requestedCodexServiceTier,
           persistRequestedCodexServiceTier:
             params.persistRequestedCodexServiceTier,
@@ -2688,7 +2679,6 @@ function resolveTimedExplicitRunConfiguration(
         userId: args.userId,
         body: args.body,
         codexFastModeEnabled: featureSwitches.codexFastModeEnabled,
-        reasoningEffortEnabled: featureSwitches.reasoningEffortEnabled,
         featureSwitchContext: featureSwitches.featureSwitchContext,
         timing: args.timing,
       });
@@ -2747,12 +2737,6 @@ function resolveTimedThread(
     "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_resolve_thread",
     "nested",
     async () => {
-      if (
-        args.body.runOptions?.reasoningEffort !== undefined &&
-        !featureSwitches.reasoningEffortEnabled
-      ) {
-        return badRequestMessage("Reasoning effort selection is not enabled");
-      }
       const resolved = await resolveThread({
         db,
         orgId: args.orgId,

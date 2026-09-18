@@ -19,6 +19,7 @@ import { setDaemon } from "../utils.ts";
 
 const postEvent$ = command(
   async ({ get }, tag: MarketingEventRequest["tag"], signal: AbortSignal) => {
+    const baseUrl = resolveApiBaseForTarget("www");
     const eventId = crypto.randomUUID();
     const clerk = await get(clerk$);
     signal.throwIfAborted();
@@ -38,7 +39,7 @@ const postEvent$ = command(
       throw new DOMException("Marketing event identity changed", "AbortError");
     }
     const client = initClient(marketingEventsContract, {
-      baseUrl: resolveApiBaseForTarget("www"),
+      baseUrl,
       api: (args) => {
         return trpcRestFetchApi(args, { parseResponseBody: false });
       },

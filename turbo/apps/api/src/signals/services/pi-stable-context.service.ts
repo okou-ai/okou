@@ -665,6 +665,7 @@ async function publishProjection(
   > & { readonly leaseId?: string },
   projection: PiStableContextProjection,
   afterResourceLock?: (tx: Tx) => Promise<void>,
+  afterArtifactLock?: (tx: Tx) => Promise<void>,
 ): Promise<boolean> {
   const artifactDigest = piStableContextArtifactDigest(projection);
   const condition = and(
@@ -744,7 +745,13 @@ async function publishProjection(
         agentId: projection.owner.agentId,
         projection,
       })
-      .onConflictDoNothing();
+      .onConflictDoUpdate({
+        target: piStableContextArtifacts.digest,
+        // Exact digest means exact immutable projection identity. A no-op
+        // update deliberately retains the artifact row lock through head
+        // attachment so GC cannot delete a reused artifact in between.
+        set: { digest: artifactDigest },
+      });
     if (resources.length > 0) {
       await tx
         .insert(piStableContextArtifactResources)
@@ -755,6 +762,7 @@ async function publishProjection(
         )
         .onConflictDoNothing();
     }
+    await afterArtifactLock?.(tx);
     const [published] = await tx
       .update(piStableContextHeads)
       .set({
@@ -1071,6 +1079,7 @@ function errorClass(error: unknown): string {
 interface StableContextWorkHooks {
   readonly beforePublish?: () => Promise<void>;
   readonly afterResourceLock?: (tx: Tx) => Promise<void>;
+  readonly afterArtifactLock?: (tx: Tx) => Promise<void>;
 }
 
 async function buildStableContextWorkItem(
@@ -1111,6 +1120,7 @@ async function buildStableContextWorkItem(
     work,
     projection,
     hooks?.afterResourceLock,
+    hooks?.afterArtifactLock,
   ))
     ? "ready"
     : "stale";

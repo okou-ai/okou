@@ -107,8 +107,12 @@ pub(crate) fn configure_guest_agent_command_environment(
 
 #[cfg(any(test, not(any(debug_assertions, feature = "test-support"))))]
 fn sandbox_user_path(home: &std::path::Path) -> String {
+    // Keep system and existing language-tool precedence, while also finding
+    // user tools installed after the agent starts without sourcing profiles.
     format!(
-        "{SANDBOX_USER_BASE_PATH}:{}/go/bin:{}/.cargo/bin",
+        "{SANDBOX_USER_BASE_PATH}:{}/go/bin:{}/.cargo/bin:{}/.local/bin:{}/bin",
+        home.display(),
+        home.display(),
         home.display(),
         home.display()
     )
@@ -309,14 +313,68 @@ fn parse_required_u32(value: Option<&str>, field: &str) -> io::Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
+    fn write_executable(path: &Path, output: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, format!("#!/bin/sh\nprintf '%s' '{output}'\n")).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
     #[test]
-    fn sandbox_user_path_matches_trusted_rootfs_profile() {
-        assert_eq!(
-            sandbox_user_path(Path::new("/home/user")),
-            "/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:/home/user/go/bin:/home/user/.cargo/bin"
-        );
+    fn sandbox_user_path_finds_tools_installed_after_launch() {
+        for relative_dir in [".local/bin", "bin"] {
+            let home = tempfile::tempdir().unwrap();
+            let path = sandbox_user_path(home.path());
+            write_executable(
+                &home.path().join(relative_dir).join("okou-user-path-test"),
+                "user tool found",
+            );
+
+            let output = Command::new("okou-user-path-test")
+                .env_clear()
+                .env("PATH", path)
+                .output()
+                .unwrap_or_else(|error| panic!("tool in {relative_dir} was not found: {error}"));
+            assert!(output.status.success());
+            assert_eq!(output.stdout, b"user tool found");
+        }
+    }
+
+    #[test]
+    fn sandbox_user_path_preserves_command_precedence() {
+        let home = tempfile::tempdir().unwrap();
+        let path = sandbox_user_path(home.path());
+        let user_dirs = ["go/bin", ".cargo/bin", ".local/bin", "bin"];
+        for relative_dir in user_dirs {
+            let dir = home.path().join(relative_dir);
+            write_executable(&dir.join("okou-user-path-test"), relative_dir);
+            write_executable(&dir.join("cat"), "shadowed system command");
+        }
+
+        let input = home.path().join("input");
+        std::fs::write(&input, "system command found").unwrap();
+        let output = Command::new("cat")
+            .arg(&input)
+            .env_clear()
+            .env("PATH", &path)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"system command found");
+
+        for relative_dir in user_dirs {
+            let output = Command::new("okou-user-path-test")
+                .env_clear()
+                .env("PATH", &path)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            assert_eq!(output.stdout, relative_dir.as_bytes());
+            std::fs::remove_file(home.path().join(relative_dir).join("okou-user-path-test"))
+                .unwrap();
+        }
     }
 
     #[test]

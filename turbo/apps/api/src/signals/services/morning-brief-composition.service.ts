@@ -28,6 +28,7 @@
  */
 
 import type { MorningBriefChatCollection } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
+import type { MorningBriefSourceFailure } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 import { MORNING_BRIEF_COLLECTION_VERSION } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { command } from "ccstate";
 
@@ -37,17 +38,17 @@ import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
   freezeMorningBriefSourceSelection,
-  startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefSourceAuthorityLedger,
   type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
 import {
   allocateMorningBriefRequest,
+  morningBriefCompositionDeadline,
   morningBriefSourceBudget,
   morningBriefSourceWaves,
-  MORNING_BRIEF_COLLECTION_PHASE_MS,
   MORNING_BRIEF_REQUEST_MAX_BYTES,
+  type MorningBriefCompositionDeadline,
 } from "./morning-brief-collection-plan";
 import { collectMorningBriefCalendar } from "./morning-brief-calendar-collection.service";
 import {
@@ -143,15 +144,21 @@ interface MorningBriefTimeSemanticsCount {
   readonly outstanding: number;
 }
 
+/** How a source finished, including the ways it never ran. */
+type MorningBriefCompositionCoverage =
+  | MorningBriefSourceCollection["coverage"]
+  | "not-started";
+
 /** What one source contributed, with no evidence text in it. */
 interface MorningBriefSourceReport {
   readonly source: MorningBriefSourceKind;
-  readonly coverage: string;
+  readonly coverage: MorningBriefCompositionCoverage;
   /** Normalized items that survived the combined ceiling. */
   readonly items: number;
   /** Of those, the ones the request could actually carry. */
   readonly includedInRequest: number;
-  readonly requests: number;
+  /** Null when a rejected source could not return collector accounting. */
+  readonly requests: number | null;
   readonly timeSemantics: MorningBriefTimeSemanticsCount;
   readonly omitted: MorningBriefSourceOmissions;
   readonly provenance: MorningBriefSourceProvenance;
@@ -159,9 +166,22 @@ interface MorningBriefSourceReport {
   readonly evidenceDigest: string;
 }
 
+function settledCoverage(coverage: MorningBriefCompositionCoverage): boolean {
+  return (
+    coverage === "unconfigured" ||
+    coverage === "empty" ||
+    coverage === "complete"
+  );
+}
+
 /** What one composition attempt produced, with no provider payload in it. */
 interface MorningBriefCompositionResult {
   readonly sources: readonly MorningBriefSourceReport[];
+  readonly deadline: {
+    readonly startedAt: string;
+    readonly deadlineAt: string;
+    readonly source: MorningBriefCompositionDeadline["source"];
+  };
   readonly waves: readonly (readonly MorningBriefSourceKind[])[];
   readonly normalizedBytes: number;
   readonly normalizedMaxBytes: number;
@@ -193,20 +213,18 @@ type MorningBriefCompositionOutcome =
       readonly kind: "empty";
       readonly result: MorningBriefCompositionResult;
     }
-  /**
-   * Usable evidence existed but no request could be made.
-   *
-   * This is never a healthy empty: the owner had material and the pipeline
-   * could not act on it, which has to stay distinguishable so a configuration
-   * problem is recovered rather than reported as a quiet morning.
-   */
   | {
       readonly kind: "incomplete";
       readonly reason:
         | "language-context-unavailable"
         | "retained-authority-unbounded"
-        | "no-item-fits";
+        | "no-item-fits"
+        | "deadline-exceeded"
+        | "all-sources-failed"
+        | "incomplete-coverage";
       readonly detail: string;
+      /** Empty only when the source plan did not yet exist. */
+      readonly sources: readonly MorningBriefSourceReport[];
     }
   | {
       readonly kind: "denied";
@@ -218,7 +236,9 @@ type MorningBriefCompositionOutcome =
 /**
  * Run one bounded, source-independent composition.
  *
- * The phase deadline covers everything from here to the final authority check.
+ * One absolute deadline covers admission, collection, language, retained-source
+ * revalidation and the final instruction-version fence. A tighter caller budget
+ * can only shorten that deadline.
  */
 export const composeMorningBrief$ = command(
   async (
@@ -227,34 +247,39 @@ export const composeMorningBrief$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly anchor: Date;
+      readonly deadlineAt?: Date | null;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefCompositionOutcome> => {
     const db: Db = set(writeDb$);
     const clerk = get(clerk$);
-    const phaseStartedAt = nowDate();
-    // One phase deadline, started before the admission that reads canonical
-    // state and this member's live membership, so the preflight spends the same
-    // budget the sources are allocated out of instead of running outside it.
-    const phaseDeadline = startMorningBriefSourceDeadline(
-      MORNING_BRIEF_COLLECTION_PHASE_MS,
+    const deadline = morningBriefCompositionDeadline(
+      nowDate(),
+      args.deadlineAt ?? null,
     );
-    const phaseDeadlineAt = new Date(phaseDeadline.at);
+    const phaseStartedAt = deadline.startedAt;
+    const phaseDeadlineAt = deadline.deadlineAt;
+    const phaseDeadline: MorningBriefSourceDeadline = {
+      // Keep the shared authorizers on the exact resolved instant. Starting a
+      // duration helper here would sample the clock again and move this fence.
+      at: phaseDeadlineAt.getTime(),
+      signal: AbortSignal.timeout(
+        Math.max(0, phaseDeadlineAt.getTime() - nowDate().getTime()),
+      ),
+    };
+    const expired = (
+      step: string,
+      sources: readonly MorningBriefSourceReport[] = [],
+    ): MorningBriefDeadlineExceeded | null => {
+      return morningBriefExpired(phaseDeadlineAt, step, sources);
+    };
 
-    const admitted = await admitMorningBriefCollection(
-      {
-        db,
-        clerk,
-        orgId: args.orgId,
-        userId: args.userId,
-        anchor: args.anchor,
-        deadline: phaseDeadline,
-      },
+    const admitted = await admitMorningBriefAttempt(
+      { db, clerk, args, phaseDeadlineAt, phaseDeadline },
       signal,
     );
-    signal.throwIfAborted();
-    if (admitted.kind !== "ok") {
-      return { kind: "denied", reason: admitted.reason };
+    if (admitted.kind !== "admitted") {
+      return admitted;
     }
     const { scope } = admitted;
 
@@ -262,14 +287,17 @@ export const composeMorningBrief$ = command(
       slackUserInstallation({ orgId: scope.orgId, userId: scope.userId }),
     );
     signal.throwIfAborted();
+    const afterBinding = expired("Slack binding discovery");
+    if (afterBinding) {
+      return afterBinding;
+    }
     const { configured, slackBinding } = configuredSources(installation);
-    // Every account choice is frozen here, before any source reads. Resolving
-    // each one when its own reader happens to start lets an account selected
-    // after admission decide what a later source reads, so the attempt would
-    // not be the attempt that was admitted.
     const selections = await freezeMorningBriefSelections(db, scope);
     signal.throwIfAborted();
-    // Bound once, inside the command scope Chat's collector requires.
+    const afterSelections = expired("source selection");
+    if (afterSelections) {
+      return afterSelections;
+    }
     const readChat: ChatReader = async (chatSignal) => {
       const collected = await set(
         collectMorningBriefChat$,
@@ -280,112 +308,309 @@ export const composeMorningBrief$ = command(
     };
     const waves = morningBriefSourceWaves(configured);
 
-    const { collections, descriptors } = await collectMorningBriefWaves(
-      {
-        waves,
-        db,
-        clerk,
-        scope,
-        slack: slackBinding,
-        selections,
-        phaseStartedAt,
-        phaseDeadlineAt,
-        readChat,
-      },
-      signal,
-    );
-    const { bounded, candidates, base } = normalizeCollected(
-      collections,
-      waves,
-    );
-
-    if (!candidates) {
-      // Healthy empty: settle with no language I/O, no request and no delivery.
-      // Nothing was supplied, so nothing is marked contributing.
-      const retained = boundMorningBriefDescriptors(descriptors);
-      if (retained.kind === "rejected") {
-        return unbounded(retained.reason);
-      }
-      return {
-        kind: "empty",
-        result: {
-          ...base,
-          sources: sourceReports(bounded.collections, {
-            stages: {
-              byNormalizedCap: bounded.omittedBySource,
-              byRequest: {},
-            },
-            accepted: [],
-          }),
-          descriptors: retained.descriptors,
-          descriptorBytes: retained.bytes,
-          request: null,
-          language: null,
+    const { collections, descriptors, notStarted, unknownRequests } =
+      await collectMorningBriefWaves(
+        {
+          waves,
+          db,
+          clerk,
+          scope,
+          slack: slackBinding,
+          selections,
+          phaseStartedAt,
+          phaseDeadlineAt,
+          readChat,
         },
-      };
+        signal,
+      );
+    // Promise.allSettled has joined every started source before cancellation is
+    // allowed to escape from this public command.
+    signal.throwIfAborted();
+    const reduced = reduceMorningBriefCollections({
+      waves,
+      collections,
+      notStarted,
+      unknownRequests,
+    });
+    const afterSources = expired("source collection", reduced.reports);
+    if (afterSources) {
+      return afterSources;
     }
+    const base: MorningBriefCompositionBase = {
+      deadline: {
+        startedAt: phaseStartedAt.toISOString(),
+        deadlineAt: phaseDeadlineAt.toISOString(),
+        source: deadline.source,
+      },
+      waves,
+      normalizedBytes: reduced.bounded.bytes,
+      normalizedMaxBytes: MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
+      omittedByNormalizedCap: reduced.bounded.omitted,
+    };
+
+    const empty = finishEmptyComposition(reduced, descriptors, base);
+    if (empty !== null) {
+      return empty;
+    }
+
     const planned = await set(
       planMorningBriefRequest$,
       {
         scope,
-        collections: bounded.collections,
-        omittedByNormalizedCap: bounded.omittedBySource,
+        collections: reduced.bounded.collections,
+        omittedByNormalizedCap: reduced.bounded.omittedBySource,
         descriptors,
         slack: slackBinding,
+        phaseDeadlineAt,
         phaseDeadline,
       },
       signal,
     );
+    signal.throwIfAborted();
+    if (planned.kind === "incomplete") {
+      return { ...planned, sources: reduced.reports };
+    }
     if (planned.kind !== "planned") {
       return planned;
     }
-    const retained = retainSuppliedAuthority(descriptors, planned);
-    if (retained.kind === "rejected") {
-      return unbounded(retained.reason);
-    }
-    return {
-      kind: "composed",
-      result: {
-        ...base,
-        sources: sourceReports(planned.collections, {
-          stages: {
-            byNormalizedCap: bounded.omittedBySource,
-            byRequest: planned.allocation.omittedBySource,
-          },
-          accepted: planned.allocation.items,
-        }),
-        descriptors: retained.descriptors,
-        descriptorBytes: retained.bytes,
-        language: planned.language,
-        request: requestReport(planned),
-      },
-    };
+    return finishPlannedComposition(planned, descriptors, reduced, base);
   },
 );
 
-function normalizeCollected(
-  collections: readonly MorningBriefSourceCollection[],
-  waves: readonly (readonly MorningBriefSourceKind[])[],
-) {
-  const deduped = collections.map((collection) => {
-    return {
-      ...collection,
-      items: dedupeMorningBriefItems(collection.items),
-    };
-  });
-  const bounded = boundCombinedNormalizedItems(deduped);
+type MorningBriefCompositionBase = Omit<
+  MorningBriefCompositionResult,
+  "descriptorBytes" | "descriptors" | "language" | "request" | "sources"
+>;
+
+type ReducedMorningBriefCollections = ReturnType<
+  typeof reduceMorningBriefCollections
+>;
+
+interface PlannedMorningBriefRequest {
+  readonly language: MorningBriefLanguagePlan;
+  readonly envelopeBytes: number;
+  readonly totalBytes: number;
+  readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+  readonly collections: readonly MorningBriefSourceCollection[];
+  readonly revoked: ReadonlySet<MorningBriefSourceKind>;
+}
+
+/** Settle the no-candidate branch without hiding partial source work. */
+function finishEmptyComposition(
+  reduced: ReducedMorningBriefCollections,
+  descriptors: readonly MorningBriefRetainedSourceDescriptor[],
+  base: MorningBriefCompositionBase,
+): MorningBriefCompositionOutcome | null {
+  if (reduced.contributed.size > 0) {
+    return null;
+  }
+  const unsettled = unsettledSources(reduced.reports);
+  if (unsettled !== null) {
+    return unsettled;
+  }
+  const retained = boundMorningBriefDescriptors(descriptors);
+  if (retained.kind === "rejected") {
+    return incomplete(
+      "retained-authority-unbounded",
+      retained.reason,
+      reduced.reports,
+    );
+  }
   return {
-    bounded,
-    candidates: bounded.collections.some((collection) => {
-      return collection.items.length > 0;
-    }),
-    base: {
-      waves,
-      normalizedBytes: bounded.bytes,
-      normalizedMaxBytes: MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
-      omittedByNormalizedCap: bounded.omitted,
+    kind: "empty",
+    result: {
+      ...base,
+      sources: reduced.reports,
+      descriptors: retained.descriptors,
+      descriptorBytes: retained.bytes,
+      request: null,
+      language: null,
     },
   };
+}
+
+/** Preserve the final source facts while converting a proved plan to output. */
+function finishPlannedComposition(
+  planned: PlannedMorningBriefRequest,
+  descriptors: readonly MorningBriefRetainedSourceDescriptor[],
+  reduced: ReducedMorningBriefCollections,
+  base: MorningBriefCompositionBase,
+): MorningBriefCompositionOutcome {
+  const sources = sourceReports(reduced.waves, planned.collections, {
+    stages: {
+      byNormalizedCap: reduced.bounded.omittedBySource,
+      byRequest: planned.allocation.omittedBySource,
+    },
+    accepted: planned.allocation.items,
+    notStarted: reduced.notStarted,
+    unknownRequests: reduced.unknownRequests,
+  });
+  const retained = retainSuppliedAuthority(descriptors, planned);
+  if (retained.kind === "rejected") {
+    return incomplete("retained-authority-unbounded", retained.reason, sources);
+  }
+  return {
+    kind: "composed",
+    result: {
+      ...base,
+      sources,
+      descriptors: retained.descriptors,
+      descriptorBytes: retained.bytes,
+      language: planned.language,
+      request: requestReport(planned),
+    },
+  };
+}
+
+interface MorningBriefDeadlineExceeded {
+  readonly kind: "incomplete";
+  readonly reason: "deadline-exceeded";
+  readonly detail: string;
+  readonly sources: readonly MorningBriefSourceReport[];
+}
+
+function incomplete(
+  reason: Extract<
+    MorningBriefCompositionOutcome,
+    { kind: "incomplete" }
+  >["reason"],
+  detail: string,
+  sources: readonly MorningBriefSourceReport[],
+): Extract<MorningBriefCompositionOutcome, { kind: "incomplete" }> {
+  return { kind: "incomplete", reason, detail, sources };
+}
+
+function morningBriefExpired(
+  deadlineAt: Date,
+  step: string,
+  sources: readonly MorningBriefSourceReport[] = [],
+): MorningBriefDeadlineExceeded | null {
+  if (nowDate().getTime() < deadlineAt.getTime()) {
+    return null;
+  }
+  return incomplete(
+    "deadline-exceeded",
+    `${step} reached ${deadlineAt.toISOString()}`,
+    sources,
+  ) as MorningBriefDeadlineExceeded;
+}
+
+function morningBriefPhaseSignal(
+  signal: AbortSignal,
+  deadlineAt: Date,
+): AbortSignal {
+  return AbortSignal.any([
+    signal,
+    AbortSignal.timeout(
+      Math.max(0, deadlineAt.getTime() - nowDate().getTime()),
+    ),
+  ]);
+}
+
+async function admitMorningBriefAttempt(
+  input: {
+    readonly db: Db;
+    readonly clerk: ClerkClient;
+    readonly args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly anchor: Date;
+    };
+    readonly phaseDeadlineAt: Date;
+    readonly phaseDeadline: MorningBriefSourceDeadline;
+  },
+  signal: AbortSignal,
+): Promise<
+  | { readonly kind: "admitted"; readonly scope: MorningBriefCollectionScope }
+  | MorningBriefDeadlineExceeded
+  | { readonly kind: "denied"; readonly reason: string }
+> {
+  const before = morningBriefExpired(input.phaseDeadlineAt, "before admission");
+  if (before) {
+    return before;
+  }
+  const admitted = await admitMorningBriefCollection(
+    {
+      db: input.db,
+      clerk: input.clerk,
+      orgId: input.args.orgId,
+      userId: input.args.userId,
+      anchor: input.args.anchor,
+      deadline: input.phaseDeadline,
+    },
+    morningBriefPhaseSignal(signal, input.phaseDeadlineAt),
+  );
+  signal.throwIfAborted();
+  const after = morningBriefExpired(input.phaseDeadlineAt, "admission");
+  if (after) {
+    return after;
+  }
+  if (admitted.kind !== "ok") {
+    return { kind: "denied", reason: admitted.reason };
+  }
+  return { kind: "admitted", scope: admitted.scope };
+}
+
+function reduceMorningBriefCollections(input: {
+  readonly waves: readonly (readonly MorningBriefSourceKind[])[];
+  readonly collections: readonly MorningBriefSourceCollection[];
+  readonly notStarted: ReadonlySet<MorningBriefSourceKind>;
+  readonly unknownRequests: ReadonlySet<MorningBriefSourceKind>;
+}) {
+  const deduped = input.collections.map((collection) => {
+    return { ...collection, items: dedupeMorningBriefItems(collection.items) };
+  });
+  const bounded = boundCombinedNormalizedItems(deduped);
+  const reports = sourceReports(input.waves, bounded.collections, {
+    stages: { byNormalizedCap: bounded.omittedBySource, byRequest: {} },
+    accepted: [],
+    notStarted: input.notStarted,
+    unknownRequests: input.unknownRequests,
+  });
+  return {
+    bounded,
+    reports,
+    waves: input.waves,
+    notStarted: input.notStarted,
+    unknownRequests: input.unknownRequests,
+    contributed: new Set(
+      bounded.collections
+        .filter((collection) => {
+          return collection.items.length > 0;
+        })
+        .map((collection) => {
+          return collection.source;
+        }),
+    ),
+  };
+}
+
+function unsettledSources(
+  sources: readonly MorningBriefSourceReport[],
+): Extract<MorningBriefCompositionOutcome, { kind: "incomplete" }> | null {
+  const answerable = sources.filter((entry) => {
+    return entry.coverage !== "unconfigured";
+  });
+  const unsettled = answerable.filter((entry) => {
+    return !settledCoverage(entry.coverage);
+  });
+  if (unsettled.length === 0) {
+    return null;
+  }
+  const detail = unsettled
+    .map((entry) => {
+      return `${entry.source}=${entry.coverage}`;
+    })
+    .join(", ");
+  return incomplete(
+    unsettled.every((entry) => {
+      return entry.coverage === "failed";
+    }) && unsettled.length === answerable.length
+      ? "all-sources-failed"
+      : "incomplete-coverage",
+    detail,
+    sources,
+  );
 }
 
 /** The measured request one model call would receive, with no evidence in it. */
@@ -447,14 +672,6 @@ function retainSuppliedAuthority(
  * check pass by having nothing to check, while the evidence it was meant to
  * cover went out anyway.
  */
-function unbounded(detail: string): MorningBriefCompositionOutcome {
-  return {
-    kind: "incomplete",
-    reason: "retained-authority-unbounded",
-    detail,
-  };
-}
-
 /** The OAuth-backed sources whose account choice is frozen for the attempt. */
 const MORNING_BRIEF_SELECTED_SOURCES = [
   { source: "calendar", connectorSlug: "google-calendar" },
@@ -527,11 +744,40 @@ type CollectedSource = {
   readonly descriptor: MorningBriefRetainedSourceDescriptor | null;
 } | null;
 
+type MorningBriefSourceAttempt =
+  | { readonly kind: "read"; readonly collected: CollectedSource }
+  | { readonly kind: "not-started" };
+
+function withConfiguredCoverage(
+  normalized: MorningBriefSourceCollection,
+  failure: MorningBriefSourceFailure | null,
+): MorningBriefSourceCollection {
+  if (normalized.coverage !== "failed" || failure !== "not-connected") {
+    return normalized;
+  }
+  return { ...normalized, coverage: "unconfigured" };
+}
+
+function failedCollection(
+  source: MorningBriefSourceKind,
+): MorningBriefSourceCollection {
+  return {
+    source,
+    coverage: "failed",
+    items: [],
+    // Internal request assembly does not serialize this count. Public source
+    // outcomes override it with null when a rejection made spend unknowable.
+    requests: 0,
+    provenance: MORNING_BRIEF_NO_PROVENANCE,
+    omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
+  };
+}
+
 /**
  * Read one source inside the budget the plan allows it.
  *
- * A source whose budget has already run out returns null rather than a failed
- * read: it was never started, which is a different fact from a read that failed.
+ * A source whose budget has already run out is explicitly not started, which is
+ * a different fact from a read that failed.
  */
 async function readMorningBriefSource(
   args: {
@@ -547,7 +793,7 @@ async function readMorningBriefSource(
     readonly readChat: ChatReader;
   },
   signal: AbortSignal,
-): Promise<CollectedSource> {
+): Promise<MorningBriefSourceAttempt> {
   const { source, db, clerk, scope, capturedAt } = args;
   const budget = morningBriefSourceBudget(
     source,
@@ -559,8 +805,8 @@ async function readMorningBriefSource(
     0,
     budget.deadlineAt.getTime() - nowDate().getTime(),
   );
-  if (budgetMs === 0) {
-    return null;
+  if (budgetMs === 0 || (source === "slack" && args.slack === null)) {
+    return { kind: "not-started" };
   }
   // The composition already allocated this source's absolute deadline, so the
   // reader is handed that exact instant rather than starting a second budget of
@@ -570,58 +816,61 @@ async function readMorningBriefSource(
     signal: AbortSignal.timeout(budgetMs),
   };
   const sourceSignal = AbortSignal.any([signal, sourceDeadline.signal]);
-  if (source === "calendar") {
-    return await readCalendarSource(
-      {
-        db,
-        clerk,
-        scope,
-        capturedAt,
-        authority: ledgerFor(args.selections, "calendar"),
-        deadline: sourceDeadline,
-      },
+  const read = async (): Promise<CollectedSource> => {
+    if (source === "calendar") {
+      return await readCalendarSource(
+        {
+          db,
+          clerk,
+          scope,
+          capturedAt,
+          authority: ledgerFor(args.selections, "calendar"),
+          deadline: sourceDeadline,
+        },
+        sourceSignal,
+      );
+    }
+    if (source === "github") {
+      return await readGithubSource(
+        {
+          db,
+          clerk,
+          scope,
+          capturedAt,
+          authority: ledgerFor(args.selections, "github"),
+          deadline: sourceDeadline,
+        },
+        sourceSignal,
+      );
+    }
+    if (source === "chat") {
+      return await readChatSource(
+        { scope, capturedAt, readChat: args.readChat },
+        sourceSignal,
+      );
+    }
+    if (source === "gmail") {
+      return await readGmailSource(
+        {
+          db,
+          clerk,
+          scope,
+          capturedAt,
+          authority: ledgerFor(args.selections, "gmail"),
+          deadline: sourceDeadline,
+        },
+        sourceSignal,
+      );
+    }
+    if (args.slack === null) {
+      return null;
+    }
+    return await readSlackSource(
+      { scope, capturedAt, slack: args.slack, budgetMs },
       sourceSignal,
     );
-  }
-  if (source === "github") {
-    return await readGithubSource(
-      {
-        db,
-        clerk,
-        scope,
-        capturedAt,
-        authority: ledgerFor(args.selections, "github"),
-        deadline: sourceDeadline,
-      },
-      sourceSignal,
-    );
-  }
-  if (source === "chat") {
-    return await readChatSource(
-      { scope, capturedAt, readChat: args.readChat },
-      sourceSignal,
-    );
-  }
-  if (source === "gmail") {
-    return await readGmailSource(
-      {
-        db,
-        clerk,
-        scope,
-        capturedAt,
-        authority: ledgerFor(args.selections, "gmail"),
-        deadline: sourceDeadline,
-      },
-      sourceSignal,
-    );
-  }
-  if (args.slack === null) {
-    return null;
-  }
-  return await readSlackSource(
-    { scope, capturedAt, slack: args.slack, budgetMs },
-    sourceSignal,
-  );
+  };
+  return { kind: "read", collected: await read() };
 }
 
 /**
@@ -640,6 +889,7 @@ const planMorningBriefRequest$ = command(
       readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
       readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
       readonly slack: SlackBinding | null;
+      readonly phaseDeadlineAt: Date;
       readonly phaseDeadline: MorningBriefSourceDeadline;
     },
     signal: AbortSignal,
@@ -654,35 +904,36 @@ const planMorningBriefRequest$ = command(
         readonly collections: readonly MorningBriefSourceCollection[];
         readonly revoked: ReadonlySet<MorningBriefSourceKind>;
       }
-    | {
-        readonly kind: "incomplete";
-        readonly reason: "language-context-unavailable" | "no-item-fits";
-        readonly detail: string;
-      }
+    | Extract<MorningBriefCompositionOutcome, { kind: "incomplete" }>
     | { readonly kind: "authority-changed" }
   > => {
     const db = set(writeDb$);
     const clerk = get(clerk$);
-    const { scope, phaseDeadline } = input;
-    const phaseDeadlineAt = new Date(phaseDeadline.at);
+    const { scope, phaseDeadline, phaseDeadlineAt } = input;
     const bounded = { collections: input.collections };
-
+    const expired = (step: string): MorningBriefDeadlineExceeded | null => {
+      return morningBriefExpired(phaseDeadlineAt, step);
+    };
     const context = await set(
       readMorningBriefLanguageContext$,
       { owner: scope, agentId: scope.agentId, deadlineAt: phaseDeadlineAt },
       signal,
     );
     signal.throwIfAborted();
+    const afterContext = expired("language context");
+    if (afterContext) {
+      return afterContext;
+    }
     if (context.kind === "unavailable") {
       // An owner whose instructions cannot be read has not asked for English.
-      return {
-        kind: "incomplete",
-        reason: "language-context-unavailable",
-        detail: context.reason,
-      };
+      return incomplete("language-context-unavailable", context.reason, []);
     }
     const memberLocale = await loadMorningBriefMemberLocale(db, scope);
     signal.throwIfAborted();
+    const afterLocale = expired("member locale");
+    if (afterLocale) {
+      return afterLocale;
+    }
     const language = planMorningBriefLanguage({
       instructions: morningBriefInstructionsProvenance(context),
       memberLocale,
@@ -700,11 +951,11 @@ const planMorningBriefRequest$ = command(
       // Evidence existed and none of it fits beside the fixed context. That is
       // an explicit incomplete outcome with zero model calls, never a brief
       // claiming the owner had a quiet morning.
-      return {
-        kind: "incomplete",
-        reason: "no-item-fits",
-        detail: `envelope ${first.envelopeBytes.toString()} of ${MORNING_BRIEF_REQUEST_MAX_BYTES.toString()} bytes`,
-      };
+      return incomplete(
+        "no-item-fits",
+        `envelope ${first.envelopeBytes.toString()} of ${MORNING_BRIEF_REQUEST_MAX_BYTES.toString()} bytes`,
+        [],
+      );
     }
 
     const proved = await proveRetainedAuthority(
@@ -724,6 +975,9 @@ const planMorningBriefRequest$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (proved.kind === "incomplete") {
+      return proved;
+    }
     if (proved.kind !== "proved") {
       return { kind: "authority-changed" };
     }
@@ -742,8 +996,16 @@ const planMorningBriefRequest$ = command(
       context,
     );
     signal.throwIfAborted();
+    const afterInstructions = expired("instruction version check");
+    if (afterInstructions) {
+      return afterInstructions;
+    }
     if (!unchanged) {
       return { kind: "authority-changed" };
+    }
+    const beforeCommit = expired("request admission");
+    if (beforeCommit) {
+      return beforeCommit;
     }
     return {
       kind: "planned",
@@ -759,12 +1021,28 @@ const planMorningBriefRequest$ = command(
 
 type RetainedAuthorityOutcome =
   | { readonly kind: "withdrawn" }
+  | MorningBriefDeadlineExceeded
   | {
       readonly kind: "proved";
       readonly collections: readonly MorningBriefSourceCollection[];
       readonly revoked: ReadonlySet<MorningBriefSourceKind>;
       readonly replanned: MorningBriefAllocated;
     };
+
+/** Outer expiry owns the public result when both retained clocks meet. */
+function retainedAuthorityExpired(
+  outerDeadlineAt: Date,
+  retainedDeadlineAt: number,
+  retainedSignal: AbortSignal,
+): MorningBriefDeadlineExceeded | { readonly kind: "withdrawn" } | null {
+  const outer = morningBriefExpired(outerDeadlineAt, "final authority check");
+  if (outer) {
+    return outer;
+  }
+  return morningBriefRetainedCheckExpired(retainedDeadlineAt, retainedSignal)
+    ? { kind: "withdrawn" }
+    : null;
+}
 
 /**
  * Re-ask the authorizers about every supplied source, then plan what survives.
@@ -793,13 +1071,23 @@ async function proveRetainedAuthority(
   },
   signal: AbortSignal,
 ): Promise<RetainedAuthorityOutcome> {
+  const outerDeadlineAt = new Date(input.deadline.at);
+  const before = morningBriefExpired(outerDeadlineAt, "final authority check");
+  if (before) {
+    return before;
+  }
   const reservation = input.deadline;
   const deadline = startMorningBriefRetainedCheckDeadline(
     reservation.at,
     reservation.signal,
   );
-  if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
-    return { kind: "withdrawn" };
+  const initialExpiry = retainedAuthorityExpired(
+    outerDeadlineAt,
+    deadline.at,
+    deadline.signal,
+  );
+  if (initialExpiry) {
+    return initialExpiry;
   }
   const descriptors = new Map(
     input.descriptors.map((descriptor) => {
@@ -814,10 +1102,15 @@ async function proveRetainedAuthority(
   // allocation, the next pass re-proves every input in the new final request,
   // not only the source that entered during reallocation. Each changed pass
   // removes at least one source, so at most five sources make this finite; all
-  // passes spend the one absolute deadline created above.
+  // passes spend the one retained deadline and the outer composition deadline.
   for (let pass = 0; pass <= input.descriptors.length; pass += 1) {
-    if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
-      return { kind: "withdrawn" };
+    const beforePass = retainedAuthorityExpired(
+      outerDeadlineAt,
+      deadline.at,
+      deadline.signal,
+    );
+    if (beforePass) {
+      return beforePass;
     }
     const supplied = allocatedSourceKinds(replanned);
     let removed = false;
@@ -850,10 +1143,15 @@ async function proveRetainedAuthority(
         signal,
       );
       signal.throwIfAborted();
-      if (
-        revalidation.kind === "owner-lost" ||
-        morningBriefRetainedCheckExpired(deadline.at, deadline.signal)
-      ) {
+      const afterRevalidation = retainedAuthorityExpired(
+        outerDeadlineAt,
+        deadline.at,
+        deadline.signal,
+      );
+      if (afterRevalidation) {
+        return afterRevalidation;
+      }
+      if (revalidation.kind === "owner-lost") {
         return { kind: "withdrawn" };
       }
       for (const refused of revalidation.revoked) {
@@ -862,7 +1160,14 @@ async function proveRetainedAuthority(
       }
     }
     if (!removed) {
-      return { kind: "proved", collections, revoked, replanned };
+      const beforeRelease = retainedAuthorityExpired(
+        outerDeadlineAt,
+        deadline.at,
+        deadline.signal,
+      );
+      return (
+        beforeRelease ?? { kind: "proved", collections, revoked, replanned }
+      );
     }
     collections = withdrawRevokedSources(input.collections, revoked);
     replanned = allocateForCollections(collections, {
@@ -957,25 +1262,50 @@ function timeSemanticsCount(
   };
 }
 
-/** What each source contributed, with no evidence in it. */
+/** What each applicable source contributed, with no evidence in it. */
 function sourceReports(
+  waves: readonly (readonly MorningBriefSourceKind[])[],
   collections: readonly MorningBriefSourceCollection[],
   input: {
     readonly stages: MorningBriefOmissionStages;
     readonly accepted: readonly MorningBriefSourceItem[];
+    readonly notStarted: ReadonlySet<MorningBriefSourceKind>;
+    readonly unknownRequests: ReadonlySet<MorningBriefSourceKind>;
   },
 ): readonly MorningBriefSourceReport[] {
-  return collections.map((collection) => {
+  return waves.flat().map((source) => {
+    const collection = collections.find((candidate) => {
+      return candidate.source === source;
+    });
+    if (collection === undefined) {
+      return {
+        source,
+        coverage: input.notStarted.has(source)
+          ? ("not-started" as const)
+          : ("unconfigured" as const),
+        items: 0,
+        includedInRequest: 0,
+        requests: 0,
+        timeSemantics: timeSemanticsCount([]),
+        omitted: morningBriefSourceOmissions({
+          bySource: MORNING_BRIEF_NO_OMISSIONS,
+          byNormalizedCap: 0,
+          byRequest: 0,
+        }),
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
+        evidenceDigest: morningBriefEvidenceDigest([]),
+      };
+    }
     const accepted = input.accepted.filter((item) => {
       return item.identity.source === collection.source;
     });
     const byRequest = input.stages.byRequest[collection.source] ?? 0;
     return {
-      source: collection.source,
+      source,
       coverage: collection.coverage,
       items: collection.items.length,
       includedInRequest: accepted.length,
-      requests: collection.requests,
+      requests: input.unknownRequests.has(source) ? null : collection.requests,
       timeSemantics: timeSemanticsCount(collection.items),
       omitted: morningBriefSourceOmissions({
         bySource: collection.omittedBySource,
@@ -987,7 +1317,6 @@ function sourceReports(
     };
   });
 }
-
 /**
  * Run the waves in order, joining each before the next one starts.
  *
@@ -1010,17 +1339,31 @@ async function collectMorningBriefWaves(
 ): Promise<{
   readonly collections: readonly MorningBriefSourceCollection[];
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+  readonly notStarted: ReadonlySet<MorningBriefSourceKind>;
+  readonly unknownRequests: ReadonlySet<MorningBriefSourceKind>;
 }> {
   const { waves, db, clerk, scope, phaseStartedAt, phaseDeadlineAt } = input;
   const slackBinding = input.slack;
   const capturedAt = nowDate();
   const collections: MorningBriefSourceCollection[] = [];
   const descriptors: MorningBriefRetainedSourceDescriptor[] = [];
+  const notStarted = new Set<MorningBriefSourceKind>();
+  const unknownRequests = new Set<MorningBriefSourceKind>();
+  const phaseSignal = morningBriefPhaseSignal(signal, phaseDeadlineAt);
 
-  // Waves are joined one after another, so at most three provider reads are
-  // ever in flight and every started read has an owner waiting on it.
-  for (const wave of waves) {
-    const finished = await Promise.all(
+  for (const [waveIndex, wave] of waves.entries()) {
+    if (signal.aborted || nowDate().getTime() >= phaseDeadlineAt.getTime()) {
+      for (const laterWave of waves.slice(waveIndex)) {
+        for (const source of laterWave) {
+          notStarted.add(source);
+        }
+      }
+      break;
+    }
+    // allSettled is the lifecycle fence. Promise.all would return on the first
+    // rejection and abandon still-running siblings even though the wave shape
+    // continued to look bounded in a unit assertion.
+    const finished = await Promise.allSettled(
       wave.map(async (source) => {
         return await readMorningBriefSource(
           {
@@ -1035,13 +1378,27 @@ async function collectMorningBriefWaves(
             capturedAt,
             readChat: input.readChat,
           },
-          signal,
+          phaseSignal,
         );
       }),
     );
-    signal.throwIfAborted();
-    for (const entry of finished) {
+    for (const [index, settled] of finished.entries()) {
+      const source = wave[index];
+      if (source === undefined) {
+        continue;
+      }
+      if (settled.status === "rejected") {
+        collections.push(failedCollection(source));
+        unknownRequests.add(source);
+        continue;
+      }
+      if (settled.value.kind === "not-started") {
+        notStarted.add(source);
+        continue;
+      }
+      const entry = settled.value.collected;
       if (entry === null) {
+        collections.push(failedCollection(source));
         continue;
       }
       collections.push(entry.normalized);
@@ -1050,7 +1407,7 @@ async function collectMorningBriefWaves(
       }
     }
   }
-  return { collections, descriptors };
+  return { collections, descriptors, notStarted, unknownRequests };
 }
 
 /**
@@ -1126,9 +1483,12 @@ async function readCalendarSource(
   // The shared reader resolved and proved the exact Google account this read
   // was pinned to, so the normalized identity is that account rather than the
   // member's own user id.
-  const normalized = normalizeMorningBriefCalendar(
-    collection,
-    args.authority.proof?.accountRef ?? args.scope.userId,
+  const normalized = withConfiguredCoverage(
+    normalizeMorningBriefCalendar(
+      collection,
+      args.authority.proof?.accountRef ?? args.scope.userId,
+    ),
+    collection.failure,
   );
   return {
     normalized,
@@ -1229,9 +1589,12 @@ async function readGmailSource(
   // The exact mailbox the shared reader resolved for this member's selected
   // connection. Null means the reader never resolved one, which a later check
   // treats as unproven rather than as any mailbox.
-  const normalized = normalizeMorningBriefGmail(
-    collection,
-    collection.accountEmail ?? args.scope.userId,
+  const normalized = withConfiguredCoverage(
+    normalizeMorningBriefGmail(
+      collection,
+      collection.accountEmail ?? args.scope.userId,
+    ),
+    collection.failure,
   );
   return {
     normalized,

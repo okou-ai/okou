@@ -31,6 +31,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { onRejection, safeSync, settle } from "../utils";
 import { deleteWorkflow$ } from "./workflow-delete.service";
+import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
   readAcceptedOfficialWorkflowCatalog,
@@ -979,6 +980,7 @@ async function completeInstallation(
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtext(${args.installation.orgId}))`,
     );
+    await lockCanonicalAgentMutation(tx, args.installation.agentId);
     signal.throwIfAborted();
     const currentCatalog = await readAcceptedOfficialWorkflowCatalog(
       tx,

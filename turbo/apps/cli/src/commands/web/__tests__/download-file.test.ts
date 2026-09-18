@@ -14,7 +14,7 @@ import chalk from "chalk";
 
 const API = "http://localhost:3000";
 const DOWNLOAD_URL = `${API}/api/web/download-file`;
-const READ_URL = `${API}/api/artifact-references/:reference/read`;
+const READ_URL = `${API}/api/artifact-references/:reference/download`;
 const DELIVERY_URL = "https://delivery.example.com/content?signature=temporary";
 const FILE_ID = "00000000-0000-4000-8000-000000000023";
 
@@ -76,25 +76,32 @@ describe.each([
       contentType: "text/plain",
     },
     {
-      name: "owned HTML with a long reference and fragment",
+      name: "owned standalone HTML file with a long reference and fragment",
       input: "/artifacts/00000000000040008000000000000002.html#slide-2",
       reference: "00000000000040008000000000000002.html",
       filename: "index.html",
       contentType: "text/html",
     },
     {
-      name: "organization HTML with an absolute short reference and fragment",
+      name: "organization standalone HTML file with an absolute short reference and fragment",
       input: "https://app.okou.ai/artifacts/htmlread01.html#slide-2",
       reference: "htmlread01.html",
       filename: "index.html",
       contentType: "text/html",
     },
     {
-      name: "public HTML with a short reference",
+      name: "public standalone HTML file with a short reference",
       input: "/artifacts/abc123def4.html",
       reference: "abc123def4.html",
       filename: "index.html",
       contentType: "text/html",
+    },
+    {
+      name: "a shared CSV file selected from a hosted site",
+      input: "/artifacts/csvchild01.csv",
+      reference: "csvchild01.csv",
+      filename: "results.csv",
+      contentType: "text/csv",
     },
   ])(
     "downloads authorized $name",
@@ -114,6 +121,7 @@ describe.each([
             "Bearer test-token",
           );
           return HttpResponse.json({
+            kind: "file",
             url: DELIVERY_URL,
             filename,
             contentType,
@@ -158,6 +166,7 @@ describe.each([
     server.use(
       http.get(READ_URL, () => {
         return HttpResponse.json({
+          kind: "file",
           url: DELIVERY_URL,
           filename: "index.html",
           contentType: "text/html",
@@ -377,6 +386,7 @@ describe.each([
       server.use(
         http.get(READ_URL, () => {
           return HttpResponse.json({
+            kind: "file",
             url: DELIVERY_URL,
             filename: "index.html",
             contentType: "text/html",

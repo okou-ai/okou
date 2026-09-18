@@ -537,7 +537,6 @@ async function openLimitedModelAvailability() {
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: false,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
   });

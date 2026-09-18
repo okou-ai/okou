@@ -6,6 +6,7 @@ import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
 } from "@okouai/core/storage-names";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
@@ -35,6 +36,7 @@ import { runnersRoutes } from "../runners";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
@@ -56,6 +58,7 @@ import {
   removePiInferenceFixture,
   removePiInferenceFixtures,
 } from "../../../test-fixtures/pi-inference-lifecycle";
+import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import {
   captureApiTestConnectorCatalogCleanup,
   installApiTestConnectorCatalog,
@@ -219,9 +222,11 @@ async function expirePiInference(runId: string, deadlineAt = new Date(0)) {
 }
 
 async function withPiTestLock<T>(
-  kind: "org-sandbox-capacity" | "run-output-projection",
+  kind: "org-sandbox-capacity" | "agent-run-row",
   key: string,
-  operation: () => Promise<T>,
+  operation: (lock: {
+    readonly waitForBlocked: (minimum?: number) => Promise<number>;
+  }) => Promise<T>,
 ): Promise<T> {
   const lockId = randomUUID();
   const holding = requestStateAction({
@@ -230,16 +235,33 @@ async function withPiTestLock<T>(
     lock_kind: kind,
     key,
   });
+  let holderPid: number | undefined;
   await expect
     .poll(async () => {
-      const state = await requestStateAction({
-        action: "get-pi-inference-test-lock",
-        lock_id: lockId,
-      });
-      return z.object({ held: z.boolean() }).parse(state).held;
+      const state = z
+        .object({ held: z.boolean(), pid: z.number().nullable() })
+        .parse(
+          await requestStateAction({
+            action: "get-pi-inference-test-lock",
+            lock_id: lockId,
+          }),
+        );
+      holderPid = state.pid ?? undefined;
+      return state.held;
     })
     .toBe(true);
-  const result = await settle(operation(), context.signal);
+  if (holderPid === undefined) {
+    throw new Error("Expected Pi test lock backend pid");
+  }
+  const blockerPid = holderPid;
+  const result = await settle(
+    operation({
+      waitForBlocked: async (minimum) => {
+        return await waitForDeferredBlocker(blockerPid, minimum);
+      },
+    }),
+    context.signal,
+  );
   await requestStateAction({
     action: "release-pi-inference-test-lock",
     lock_id: lockId,
@@ -1426,22 +1448,29 @@ describe("durable Pi API producer", () => {
     );
     await providerEntered.promise;
 
-    await withPiTestLock("run-output-projection", run.runId, async () => {
-      releaseProvider.resolve(undefined);
-      await expect
-        .poll(async () => {
-          await billing.processOrgUsageEvents(actor, usagePricingResolution);
-          return (await billing.readUsageRecord(actor)).body.pagination.total;
-        })
-        .toBeGreaterThan(0);
-      await api.requestCancelRun(
-        actor,
-        run.runId,
-        [200],
-        usagePricingResolution,
-      );
-      await waitForRunStatus(actor, run.runId, "cancelled", 10_000);
-    });
+    const queued = await withPiTestLock(
+      "agent-run-row",
+      run.runId,
+      async (lock) => {
+        const cancellation = api.requestCancelRun(
+          actor,
+          run.runId,
+          [200],
+          usagePricingResolution,
+        );
+        await lock.waitForBlocked();
+        releaseProvider.resolve(undefined);
+        return { cancellation };
+      },
+    );
+    await queued.cancellation;
+    await waitForRunStatus(actor, run.runId, "cancelled", 10_000);
+    await expect
+      .poll(async () => {
+        await billing.processOrgUsageEvents(actor, usagePricingResolution);
+        return (await billing.readUsageRecord(actor)).body.pagination.total;
+      })
+      .toBeGreaterThan(0);
     await flushWaitUntilForTest();
 
     expect(calls).toBe(1);
@@ -1461,6 +1490,10 @@ describe("durable Pi API producer", () => {
     await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
+    // Cancellation deliberately keeps the technical reservation until its
+    // bounded grace expires. Move that clock past the deadline so this test's
+    // completed ownership proof cannot consume the next test's global slot.
+    await expirePiInference(run.runId);
   }, 90_000);
 
   it("rejects fleet-wide org overload before a second provider attempt", async () => {
@@ -2268,6 +2301,11 @@ describe("durable Pi API producer", () => {
     configureNativeCliArtifact();
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PaidToolControls]: false },
+    );
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -2307,6 +2345,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     expect(calls).toBe(1);
 
+    // The API first turn is already prepared. The Sandbox should capture the
+    // owner's latest preference when it is materialized by the runner claim.
+    await setPaidToolDisabled(context, actor, "web-search", true);
     await expect(
       cleanupRun(run.runId, orgId, usagePricingResolution),
     ).resolves.toMatchObject({
@@ -2315,6 +2356,9 @@ describe("durable Pi API producer", () => {
     const { claim, runnerId } = await claimDeferredPiRun(
       run.runId,
       runnerGroup,
+    );
+    expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["web-search"]',
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,

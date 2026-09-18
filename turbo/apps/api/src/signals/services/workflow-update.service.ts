@@ -8,13 +8,14 @@ import { and, eq, isNull } from "drizzle-orm";
 import { testOverride } from "../../lib/singleton";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 import {
   loadWorkflowVolumeFiles,
   SKILL_FILENAME,
 } from "./workflow-volume.service";
 import type { WorkflowRow } from "./workflow-data.service";
+import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import {
   beginPiStableContextPublication,
@@ -24,6 +25,7 @@ import {
 
 interface WorkflowUpdateHooks {
   readonly beforeAdmission?: () => Promise<void>;
+  readonly afterMetadataMutation?: (tx: Tx) => Promise<void>;
 }
 
 const workflowUpdateHooks = testOverride<WorkflowUpdateHooks>(() => {
@@ -56,6 +58,73 @@ async function admitWorkflowUpdate(
   ]);
 }
 
+async function commitWorkflowMetadata(
+  db: Db,
+  args: UpdateWorkflowInput,
+  derived: { readonly volumeChanged: boolean; readonly nextName: string },
+) {
+  const { workflow, body } = args;
+  return await db.transaction(async (tx) => {
+    if (!(await admitWorkflowUpdate(tx, workflow))) {
+      return { updated: false as const };
+    }
+    await lockCanonicalAgentMutation(tx, workflow.agentId);
+    const [updated] = await tx
+      .update(workflows)
+      .set({
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.displayName !== undefined && {
+          displayName: body.displayName,
+        }),
+        ...(body.description !== undefined && {
+          description: body.description,
+        }),
+        ...(body.instruction !== undefined && {
+          instruction: body.instruction,
+        }),
+        updatedBy: args.updatedByUserId,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(workflows.id, workflow.id),
+          eq(workflows.orgId, workflow.orgId),
+          eq(workflows.agentId, workflow.agentId),
+          eq(workflows.ownerUserId, workflow.ownerUserId),
+          eq(workflows.visibility, workflow.visibility),
+          isNull(workflows.officialDefinitionName),
+        ),
+      )
+      .returning({ id: workflows.id });
+    if (!updated) {
+      return { updated: false as const };
+    }
+    await workflowUpdateHooks.get().afterMetadataMutation?.(tx);
+    const stableContextPublication = derived.volumeChanged
+      ? await beginPiStableContextPublication(
+          tx,
+          {
+            orgId: workflow.orgId,
+            agentId: workflow.agentId,
+            ...(workflow.visibility === "private"
+              ? { userId: workflow.ownerUserId }
+              : {}),
+          },
+          piStableContextWorkflowPublicationKey(workflow.id),
+          piStableContextWorkflowInvalidationOptions({
+            kind: "upsert",
+            workflow: {
+              workflowId: workflow.id,
+              name: derived.nextName,
+              officialDefinitionName: workflow.officialDefinitionName,
+            },
+          }),
+        )
+      : undefined;
+    return { updated: true as const, stableContextPublication };
+  });
+}
+
 export const updateWorkflow$ = command(
   async (
     { get, set },
@@ -74,8 +143,6 @@ export const updateWorkflow$ = command(
     const nextDescription =
       body.description !== undefined ? body.description : workflow.description;
 
-    // Rebuild the volume whenever the synthesized SKILL.md or the attached
-    // files change. The volume is fully derived: SKILL.md + attached files.
     const skillChanged =
       body.name !== undefined ||
       body.instruction !== undefined ||
@@ -85,64 +152,9 @@ export const updateWorkflow$ = command(
     // transaction may make only this exact generation ready.
     await workflowUpdateHooks.get().beforeAdmission?.();
     signal.throwIfAborted();
-    const metadata = await writeDb.transaction(async (tx) => {
-      if (!(await admitWorkflowUpdate(tx, workflow))) {
-        return { updated: false as const };
-      }
-      const [updated] = await tx
-        .update(workflows)
-        .set({
-          ...(body.name !== undefined && {
-            name: body.name,
-          }),
-          ...(body.displayName !== undefined && {
-            displayName: body.displayName,
-          }),
-          ...(body.description !== undefined && {
-            description: body.description,
-          }),
-          ...(body.instruction !== undefined && {
-            instruction: body.instruction,
-          }),
-          updatedBy: args.updatedByUserId,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(workflows.id, workflow.id),
-            eq(workflows.orgId, workflow.orgId),
-            eq(workflows.agentId, workflow.agentId),
-            eq(workflows.ownerUserId, workflow.ownerUserId),
-            eq(workflows.visibility, workflow.visibility),
-            isNull(workflows.officialDefinitionName),
-          ),
-        )
-        .returning({ id: workflows.id });
-      if (!updated) {
-        return { updated: false as const };
-      }
-      const stableContextPublication = volumeChanged
-        ? await beginPiStableContextPublication(
-            tx,
-            {
-              orgId: workflow.orgId,
-              agentId: workflow.agentId,
-              ...(workflow.visibility === "private"
-                ? { userId: workflow.ownerUserId }
-                : {}),
-            },
-            piStableContextWorkflowPublicationKey(workflow.id),
-            piStableContextWorkflowInvalidationOptions({
-              kind: "upsert",
-              workflow: {
-                workflowId: workflow.id,
-                name: nextName,
-                officialDefinitionName: workflow.officialDefinitionName,
-              },
-            }),
-          )
-        : undefined;
-      return { updated: true as const, stableContextPublication };
+    const metadata = await commitWorkflowMetadata(writeDb, args, {
+      volumeChanged,
+      nextName,
     });
     signal.throwIfAborted();
     if (!metadata.updated) {

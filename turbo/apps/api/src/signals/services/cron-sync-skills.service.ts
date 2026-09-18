@@ -38,6 +38,7 @@ import {
   putS3Object,
 } from "../external/s3";
 import { createDeferredPromise, safeSync, tapError } from "../utils";
+import { enqueuePiStableContextStorageDemands } from "./pi-stable-context-generation.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
 import { preparePiResourceIndex } from "../../lib/pi-resource-index";
@@ -618,6 +619,12 @@ function syncSingleSkill(
         },
         signal,
       );
+      await enqueuePiStableContextStorageDemands(tx, {
+        storageId,
+        versionId: context.versionHash,
+        archiveSize: upload.archiveBuffer.length,
+        fileCount: context.files.length,
+      });
     });
 
     log.debug("Synced skill", {

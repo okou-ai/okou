@@ -5808,6 +5808,51 @@
         "resetTimePassedTitle": "Reset time passed"
       }
     },
+    "paidTools": {
+      "description": "Choose which paid built-in tools you can use.",
+      "loadError": "Your tool settings could not be loaded.",
+      "loading": "Loading your tool settings…",
+      "retry": "Retry",
+      "saveError": "Your change was not saved.",
+      "saving": "Saving…",
+      "scope": "These settings apply only to you in {{workspace}}.",
+      "timing": "Changes apply to future runs. Running tasks and tasks already prepared may keep their previous settings.",
+      "title": "Paid tools",
+      "tools": {
+        "finance": {
+          "description": "Look up companies, quotes, and market data.",
+          "name": "Financial data"
+        },
+        "image-recognition": {
+          "description": "Read and analyze images.",
+          "name": "Image recognition"
+        },
+        "maps": {
+          "description": "Find places, addresses, and directions.",
+          "name": "Maps and places"
+        },
+        "people-search": {
+          "description": "Find public professional profiles.",
+          "name": "People search"
+        },
+        "scrape": {
+          "description": "Read and extract content from web pages.",
+          "name": "Page extraction"
+        },
+        "seo": {
+          "description": "Research search rankings, keywords, and backlinks.",
+          "name": "SEO research"
+        },
+        "social": {
+          "description": "Research public social posts and collect media.",
+          "name": "Social research"
+        },
+        "web-search": {
+          "description": "Find current information on the web.",
+          "name": "Web search"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Manage",

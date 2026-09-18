@@ -41,7 +41,7 @@ const AD_ATTRIBUTION_PARAMS = [
   "lp_variant",
 ] as const;
 
-const STRIPE_METADATA_PARAMS = [
+const ATTRIBUTION_METADATA_PARAMS = [
   "referrer_domain",
   "landing_host",
   "landing_path",
@@ -58,7 +58,7 @@ const STRIPE_METADATA_PARAMS = [
   "lp_variant",
 ] as const;
 
-const STRIPE_CLICK_ID_PRESENT_PARAMS = [
+const CLICK_ID_PRESENT_PARAMS = [
   ["gclid", "gclid_present"],
   ["gbraid", "gbraid_present"],
   ["wbraid", "wbraid_present"],
@@ -188,26 +188,6 @@ export const recordAdAttribution$ = command(
   },
 );
 
-export const applyStoredAdAttribution$ = command(({ get }, url: URL): void => {
-  const storedAttribution = get(storedAdAttributionStorage.get$);
-  if (!storedAttribution) {
-    return;
-  }
-
-  const attributionParams = collectAttributionParams(
-    new URLSearchParams(storedAttribution),
-  );
-  url.searchParams.delete("vm0_campaign_id");
-  url.searchParams.delete("vm0_ad_group_id");
-  for (const param of AD_ATTRIBUTION_PARAMS) {
-    url.searchParams.delete(param);
-
-    for (const value of attributionParams.getAll(param)) {
-      url.searchParams.append(param, value);
-    }
-  }
-});
-
 function adAttributionMetadataFromStoredValue(
   storedAttribution: string | null,
   cookieString: string,
@@ -222,14 +202,14 @@ function adAttributionMetadataFromStoredValue(
     metadata.source_type = sourceType;
   }
 
-  for (const param of STRIPE_METADATA_PARAMS) {
+  for (const param of ATTRIBUTION_METADATA_PARAMS) {
     const value = attributionParams.get(param);
     if (value) {
       metadata[param] = value;
     }
   }
 
-  for (const [clickIdParam, metadataParam] of STRIPE_CLICK_ID_PRESENT_PARAMS) {
+  for (const [clickIdParam, metadataParam] of CLICK_ID_PRESENT_PARAMS) {
     const value = attributionParams.get(clickIdParam);
     if (value) {
       metadata[clickIdParam] = value;

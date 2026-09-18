@@ -11,6 +11,7 @@ import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { testOverride } from "../../lib/singleton";
 import { writeDb$ } from "../external/db";
+import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
@@ -25,6 +26,7 @@ import {
 
 interface WorkflowDeleteHooks {
   readonly beforeAdmission?: () => Promise<void>;
+  readonly beforeAgentLock?: (tx: Tx) => Promise<void>;
   readonly beforeStorageDelete?: (tx: Tx) => Promise<void>;
 }
 
@@ -61,10 +63,18 @@ async function admitWorkflowDeletion(
   tx: Tx,
   args: DeleteWorkflowInput,
 ): Promise<
-  { readonly ownerUserId: string; readonly admitted: boolean } | undefined
+  | {
+      readonly ownerUserId: string;
+      readonly agentId: string;
+      readonly admitted: boolean;
+    }
+  | undefined
 > {
   const [observed] = await tx
-    .select({ ownerUserId: workflows.ownerUserId })
+    .select({
+      ownerUserId: workflows.ownerUserId,
+      agentId: workflows.agentId,
+    })
     .from(workflows)
     .where(
       and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
@@ -91,7 +101,11 @@ async function admitWorkflowDeletion(
       "Closed-owner Workflow cleanup requires an installing Official Workflow",
     );
   }
-  return { ownerUserId: observed.ownerUserId, admitted };
+  return {
+    ownerUserId: observed.ownerUserId,
+    agentId: observed.agentId,
+    admitted,
+  };
 }
 
 async function retireDeletedWorkflowStableContext(
@@ -235,6 +249,8 @@ export const deleteWorkflow$ = command(
           sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
         );
       }
+      await workflowDeleteHooks.get().beforeAgentLock?.(tx);
+      await lockCanonicalAgentMutation(tx, admission.agentId);
       const [workflow] = await tx
         .select({
           id: workflows.id,

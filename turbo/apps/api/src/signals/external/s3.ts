@@ -1516,13 +1516,14 @@ export type S3ObjectHead =
       readonly metadata: Readonly<Record<string, string>>;
     };
 
-function isS3NotFoundError(error: unknown): boolean {
+export function isS3NotFoundError(error: unknown): boolean {
   const candidate = error as {
     readonly name?: string;
     readonly $metadata?: { readonly httpStatusCode?: number };
   };
   return (
     candidate.name === "NotFound" ||
+    candidate.name === "NoSuchKey" ||
     candidate.name === "NoSuchUpload" ||
     candidate.$metadata?.httpStatusCode === 404
   );

@@ -33,6 +33,7 @@ import { createStore } from "ccstate";
 
 import type { Tx } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { piResourceIndexHash } from "../../../lib/pi-resource-index";
 import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
 import { createDeferredPromise, settle } from "../../utils";
@@ -55,6 +56,7 @@ import {
   deleteClerkAgentLifecycleData,
   deleteClerkStableContextLifecycleData,
 } from "../agent-lifecycle.service";
+import { deleteExpiredPiStableContextArtifacts } from "../pi-api-first-turn-cleanup.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
 import { piStableContextErasureSubjectDigest } from "../pi-stable-context-erasure.service";
 import { lockCanonicalAgentMutation } from "../agent-mutation-lock.service";
@@ -230,6 +232,7 @@ describe("Pi stable context generation fences", () => {
     hooks?: {
       readonly beforePublish?: () => Promise<void>;
       readonly afterResourceLock?: (tx: Tx) => Promise<void>;
+      readonly afterArtifactLock?: (tx: Tx) => Promise<void>;
     },
   ) {
     const heads = await db
@@ -262,6 +265,185 @@ describe("Pi stable context generation fences", () => {
         return mount.id;
       }),
     ).toStrictEqual(["root", "builtin-slack", "workflow-github", "tail"]);
+  });
+
+  it("coordinates exact-digest artifact reuse with GC in both lock orders", async () => {
+    const fixture = await seed();
+    const storageId = randomUUID();
+    const versionId = randomUUID().replaceAll("-", "").repeat(2);
+    storageIds.push(storageId);
+    await db.insert(storages).values({
+      id: storageId,
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      name: `artifact-reuse-${storageId}`,
+      s3Prefix: `test/pi-stable-context/${storageId}`,
+    });
+    await db.insert(storageVersions).values({
+      id: versionId,
+      storageId,
+      s3Key: `test/pi-stable-context/${storageId}/${versionId}`,
+      archiveSize: 1,
+      fileCount: 1,
+      createdBy: fixture.userId,
+    });
+    await db
+      .update(storages)
+      .set({ headVersionId: versionId })
+      .where(eq(storages.id, storageId));
+    const indexProjection = { schemaVersion: 1 as const, files: [] };
+    await db.insert(piResourceVersionIndexes).values({
+      storageVersionId: versionId,
+      extractorVersion: 1,
+      status: "ready",
+      projection: indexProjection,
+      projectionHash: piResourceIndexHash(indexProjection),
+      sourceArchiveSize: 1,
+    });
+    const mount = {
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      name: `artifact-reuse-${storageId}`,
+      storageId,
+      versionId,
+      mountPath: "/home/user/workspace",
+      archiveSize: 1,
+    };
+    const input: PiStableContextBuildInput = {
+      ...fixture.input,
+      storageMounts: [mount],
+      persistedStorageMounts: [
+        {
+          orgId: mount.orgId,
+          userId: mount.userId,
+          name: mount.name,
+          storageId,
+          version: versionId,
+          mountPath: mount.mountPath,
+        },
+      ],
+    };
+    const projection = piStableContextProjectionFromInput(input, {
+      schemaVersion: 1,
+      agentsFiles: [],
+      skills: [],
+    });
+    const artifactDigest = piStableContextArtifactDigest(projection);
+    const expiredAt = new Date("2026-01-01T00:00:00.000Z");
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    await db.insert(piStableContextArtifacts).values({
+      digest: artifactDigest,
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      agentId: fixture.agentId,
+      projection,
+      createdAt: expiredAt,
+    });
+    await db.insert(piStableContextArtifactResources).values({
+      artifactDigest,
+      ordinal: 0,
+      storageId,
+      storageVersionId: versionId,
+    });
+    const [head] = await db
+      .insert(piStableContextHeads)
+      .values({
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        variantDigest: randomUUID().replaceAll("-", "").repeat(2),
+        agentGeneration: 1,
+        userGeneration: 1,
+        status: "pending",
+        input,
+        inputDigest: randomUUID().replaceAll("-", "").repeat(2),
+      })
+      .returning({ id: piStableContextHeads.id });
+    if (!head) {
+      throw new Error("Expected artifact reuse head");
+    }
+    const cutoff = new Date("2026-02-01T00:00:00.000Z");
+
+    const signal = AbortSignal.timeout(15_000);
+    const publisherLocked = createDeferredPromise<void>(signal);
+    const releasePublisher = createDeferredPromise<void>(signal);
+    const publisherFirst = executeFixtureWork(fixture.agentId, signal, {
+      afterArtifactLock: async () => {
+        publisherLocked.resolve();
+        await releasePublisher.promise;
+      },
+    });
+    await publisherLocked.promise;
+    await expect(
+      deleteExpiredPiStableContextArtifacts(db, cutoff),
+    ).resolves.toStrictEqual([]);
+    releasePublisher.resolve();
+    await expect(publisherFirst).resolves.toMatchObject({
+      ready: 1,
+      failed: 0,
+    });
+
+    await db
+      .update(piStableContextHeads)
+      .set({
+        status: "pending",
+        artifactDigest: null,
+        attemptCount: 0,
+        availableAt: nowDate(),
+      })
+      .where(eq(piStableContextHeads.id, head.id));
+    await db
+      .update(piStableContextArtifacts)
+      .set({ createdAt: expiredAt })
+      .where(eq(piStableContextArtifacts.digest, artifactDigest));
+    const gcLocked = createDeferredPromise<number>(signal);
+    const releaseGc = createDeferredPromise<void>(signal);
+    const gcFirst = deleteExpiredPiStableContextArtifacts(db, cutoff, {
+      afterCandidatesLocked: async (tx) => {
+        const result = await tx.execute(
+          sql`SELECT pg_backend_pid()::int AS "pid"`,
+        );
+        gcLocked.resolve(Number(result.rows[0]?.pid));
+        await releaseGc.promise;
+      },
+    });
+    const gcPid = await gcLocked.promise;
+    const publisherStarted = createDeferredPromise<number>(signal);
+    const publisherSecond = executeFixtureWork(fixture.agentId, signal, {
+      afterResourceLock: async (tx) => {
+        const result = await tx.execute(
+          sql`SELECT pg_backend_pid()::int AS "pid"`,
+        );
+        publisherStarted.resolve(Number(result.rows[0]?.pid));
+      },
+    });
+    const publisherPid = await publisherStarted.promise;
+    await expect
+      .poll(async () => {
+        const result = await pool.query<{ blocked: boolean }>(
+          `SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS blocked`,
+          [publisherPid, gcPid],
+        );
+        return result.rows[0]?.blocked ?? false;
+      })
+      .toBeTruthy();
+    releaseGc.resolve();
+    await expect(gcFirst).resolves.toStrictEqual([{ digest: artifactDigest }]);
+    await expect(publisherSecond).resolves.toMatchObject({
+      ready: 1,
+      failed: 0,
+    });
+    await expect(
+      db
+        .select({
+          status: piStableContextHeads.status,
+          artifactDigest: piStableContextHeads.artifactDigest,
+        })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, head.id)),
+    ).resolves.toStrictEqual([{ status: "ready", artifactDigest }]);
   });
 
   it("rolls invalidation back and fences stale multi-stage completion", async () => {
@@ -2409,13 +2591,13 @@ describe("Pi stable context generation fences", () => {
     });
     const publisherPid = await resourceLocked.promise;
     setWorkflowDeleteHooksForTest({
-      async beforeStorageDelete(tx) {
+      async beforeAgentLock(tx) {
         const result = await tx.execute(
           sql`SELECT pg_backend_pid()::int AS "pid"`,
         );
         const pid = Number(result.rows[0]?.pid);
         if (!Number.isInteger(pid)) {
-          throw new Error("Expected Workflow deletion backend pid");
+          throw new Error("Expected Workflow deletion Agent-lock backend pid");
         }
         deletionStarted.resolve(pid);
       },
@@ -2433,14 +2615,13 @@ describe("Pi stable context generation fences", () => {
       .poll(
         async () => {
           const result = await pool.query<{
-            waiting_on_owned_storage: boolean;
+            waiting_on_agent: boolean;
             holds_head_relation_lock: boolean;
           }>(
             `SELECT
                a.wait_event_type = 'Lock'
-                 AND a.query LIKE 'delete from "storages"%'
                  AND $2::int = ANY(pg_blocking_pids(a.pid))
-                 AS waiting_on_owned_storage,
+                 AS waiting_on_agent,
                EXISTS (
                  SELECT 1
                  FROM pg_locks l
@@ -2458,7 +2639,7 @@ describe("Pi stable context generation fences", () => {
         { timeout: 5000 },
       )
       .toStrictEqual({
-        waiting_on_owned_storage: true,
+        waiting_on_agent: true,
         holds_head_relation_lock: false,
       });
     releasePublisher.resolve();
