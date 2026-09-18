@@ -18,7 +18,7 @@ function defaultOutPath(fileId: string): string {
 export function createDownloadFileCommand(name: string, invocation: string) {
   return new Command(name)
     .description(
-      "Download a file by ID, artifact URL, or /artifacts/<hash> reference",
+      "Download a file or hosted HTML page by ID or authorized artifact reference",
     )
     .argument(
       "<file-id>",
@@ -35,6 +35,7 @@ Examples:
   Download to default temp path: ${invocation} /artifacts/abc123def4.pdf
   Download to explicit path:     ${invocation} /artifacts/abc123def4.pdf -o /tmp/report.pdf
   Download from an artifact URL: ${invocation} https://app.okou.ai/artifacts/abc123def4.pdf
+  Download a hosted HTML page:   ${invocation} /artifacts/abc123def4.html -o /tmp/index.html
 
 Output:
   Prints a JSON object to stdout on success:
@@ -49,9 +50,12 @@ How to read the downloaded file:
   - PDF/text/csv/json/markdown: read the file directly
 
 Notes:
-  - Use this command for the ID in a [Web file] block, a private artifact URL, or a /artifacts/<hash> reference
+  - Use this command for the ID in a [Web file] block, an artifact URL, or a /artifacts/<hash> reference
+  - Artifact references require artifact:read and allow owned, organization-shared, or public artifacts under their current access policy
+  - Raw file IDs and /api/web/download-file URLs require file:read and retain their existing file access checks
+  - Hosted HTML downloads only the entry page; use okou host clone for all files of an owned site
   - The output path is local to this runtime; users cannot open it directly
-  - Authenticates via OKOU_TOKEN
+  - Authenticates access via OKOU_TOKEN; delivery URLs do not receive the token
   - Streams the file bytes directly to disk`,
     )
     .action(
