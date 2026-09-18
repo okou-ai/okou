@@ -16,6 +16,7 @@ import {
   gt,
   isNotNull,
   isNull,
+  lt,
   lte,
   notInArray,
   or,
@@ -612,7 +613,7 @@ export async function sweepExpiredMorningBriefGenerations(
         eq(morningBriefGenerations.orgId, owner.orgId),
         eq(morningBriefGenerations.userId, owner.userId),
         lte(morningBriefGenerations.expiresAt, at),
-        lte(morningBriefGenerations.scheduledFor, replayCutoff),
+        lt(morningBriefGenerations.scheduledFor, replayCutoff),
       ),
     )
     .returning({ attemptId: morningBriefGenerations.attemptId });
@@ -674,7 +675,7 @@ export async function purgeExpiredMorningBriefGenerations(
         FROM ${morningBriefGenerations} generation
         WHERE generation.expires_at <= ${cutoff}::timestamp${ownerScope}
           AND (
-            generation.scheduled_for <= ${replayCutoff}::timestamp
+            generation.scheduled_for < ${replayCutoff}::timestamp
             OR (generation.decision = 'deliver'
               AND generation.content_purged_at IS NULL)
             OR (generation.retained_until <= ${cutoff}::timestamp
@@ -708,7 +709,7 @@ export async function purgeExpiredMorningBriefGenerations(
           AND generation.scheduled_for = candidates.scheduled_for
           AND generation.collection_kind = candidates.collection_kind
           AND generation.collection_version = candidates.collection_version
-          AND generation.scheduled_for > ${replayCutoff}::timestamp
+          AND generation.scheduled_for >= ${replayCutoff}::timestamp
         RETURNING generation.attempt_id
       ),
       purged AS (
@@ -719,7 +720,7 @@ export async function purgeExpiredMorningBriefGenerations(
           AND generation.scheduled_for = candidates.scheduled_for
           AND generation.collection_kind = candidates.collection_kind
           AND generation.collection_version = candidates.collection_version
-          AND generation.scheduled_for <= ${replayCutoff}::timestamp
+          AND generation.scheduled_for < ${replayCutoff}::timestamp
         RETURNING generation.attempt_id
       ),
       affected AS (

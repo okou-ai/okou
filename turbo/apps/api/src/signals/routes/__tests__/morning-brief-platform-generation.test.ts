@@ -3792,6 +3792,21 @@ describe("Morning Brief platform-funded generation readback admission", () => {
     return generation.attemptId;
   }
 
+  it("keeps the replay fence through the inclusive seven-day anchor boundary", async () => {
+    const f = await fixture();
+    const attemptId = await storedGeneration(f);
+    mockNow(ANCHOR_MS + 7 * 24 * 60 * 60 * 1000);
+
+    // The anchor validator rejects only instants older than seven days. At this
+    // exact boundary maintenance may purge content, but not the cross-kind and
+    // cross-version proof that a provider request already happened.
+    await expect(runRetentionMaintenance([f])).resolves.toBe(1);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.attemptId).toBe(attemptId);
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.contentPurgedAt).not.toBeNull();
+  });
+
   it("releases no cached markdown when retention is reached after the row lock wins", async () => {
     const f = await fixture();
     const attemptId = await storedGeneration(f);

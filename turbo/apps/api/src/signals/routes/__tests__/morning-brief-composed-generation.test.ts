@@ -477,9 +477,14 @@ describe("composed Morning Brief generation", () => {
       [200],
     );
     expect(bodies).toHaveLength(1);
+    // Exactly seven days is still an admissible anchor (`>`, not `>=`, is
+    // rejected), so the content-free cross-kind fence must survive this sweep.
     await expireAndSweepMorningBriefGeneration(
       { orgId: fixture.orgId, userId: fixture.userId },
-      { expiresAt: new Date(now() - 1000), sweptAt: new Date(now()) },
+      {
+        expiresAt: new Date(now() - 1000),
+        sweptAt: new Date(ANCHOR_MS + 7 * 24 * 60 * 60 * 1000),
+      },
     );
     const [fence] = await readMorningBriefGenerations({
       orgId: fixture.orgId,
