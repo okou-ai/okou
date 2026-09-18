@@ -6,8 +6,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "node:test";
-import { setTimeout } from "node:timers/promises";
+import { test, type TestContext } from "node:test";
 import { Client } from "pg";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
@@ -66,18 +65,21 @@ function fresh(policy = authority()) {
 }
 const f = fresh();
 const childPath = fileURLToPath(new URL("./child.ts", import.meta.url));
-async function child(input: Record<string, unknown>) {
+async function child(context: TestContext, input: Record<string, unknown>) {
   const path = join(temp, `${randomUUID()}.json`);
+  const name = `b2a_child_${randomUUID()}`;
+  const childUrl = new URL(applicationUrl);
+  childUrl.searchParams.set("application_name", name);
   await writeFile(
     path,
     JSON.stringify({
-      applicationUrl,
       controlUrl,
       authorityId,
       subjectId: `synthetic_${randomUUID()}`,
       eventId: randomUUID(),
       boundary: "resume",
       ...input,
+      applicationUrl: childUrl.toString(),
     }),
   );
   const process = spawn("node", ["--import", "tsx", childPath, path], {
@@ -85,6 +87,18 @@ async function child(input: Record<string, unknown>) {
   });
   let output = "";
   let errors = "";
+  // Resolve on both the barrier and process termination. A child that fails
+  // before reaching the trigger must report its outcome, not leave a waiter.
+  const paused = new Promise<boolean>((resolve) => {
+    process.on("message", (message: unknown) => {
+      if (message === "b2a_database_pause") {
+        resolve(true);
+      }
+    });
+    process.once("close", () => {
+      resolve(false);
+    });
+  });
   assert.ok(process.stdout);
   assert.ok(process.stderr);
   process.stdout.on("data", (value: Buffer) => {
@@ -95,24 +109,113 @@ async function child(input: Record<string, unknown>) {
   });
   const done = new Promise<{
     code: number | null;
+    signal: NodeJS.Signals | null;
     output: string;
     errors: string;
-  }>((resolve, reject) => {
-    process.once("error", reject);
-    process.once("close", (code) => {
-      resolve({ code, output, errors });
+  }>((resolve) => {
+    process.once("error", (error) => {
+      errors += error.message;
+    });
+    process.once("close", (code, signal) => {
+      resolve({ code, signal, output, errors });
     });
   });
-  await new Promise<void>((resolve, reject) => {
-    process.once("message", () => {
-      resolve();
-    });
-    process.once("error", reject);
-    process.once("exit", (code) => {
-      reject(new Error(`child exited before handshake: ${code}: ${errors}`));
-    });
+  let stopped: Promise<Awaited<typeof done>> | undefined;
+  function stop() {
+    stopped ??= (async () => {
+      if (process.exitCode === null && process.signalCode === null) {
+        process.kill("SIGKILL");
+      }
+      const result = await done;
+      await admin.query(
+        "SELECT pg_terminate_backend(pid, 10000) FROM pg_stat_activity WHERE datname=$1 AND application_name=$2",
+        [applicationName, name],
+      );
+      // A backend can exit between observation and termination. Verify absence
+      // rather than requiring that our termination signal caused its exit.
+      const remaining = await admin.query(
+        "SELECT pid FROM pg_stat_activity WHERE datname=$1 AND application_name=$2",
+        [applicationName, name],
+      );
+      assert.equal(
+        remaining.rowCount,
+        0,
+        "child database backend still running",
+      );
+      return result;
+    })();
+    return stopped;
+  }
+  context.after(async () => {
+    await stop();
   });
-  return { process, done };
+  return {
+    done,
+    stop,
+    waitForPause: async () => {
+      if (!(await paused)) {
+        assert.fail(
+          `child exited before the database barrier: ${JSON.stringify(await done)}`,
+        );
+      }
+    },
+  };
+}
+
+async function pausedChild(
+  context: TestContext,
+  input: Record<string, unknown>,
+  pause: {
+    table: "account_erasure_ingress" | "account_erasure_replay";
+    condition: string;
+    lock: number;
+  },
+) {
+  const blocker = new Client({ connectionString: applicationUrl });
+  let running: Awaited<ReturnType<typeof child>> | null = null;
+  let closed: Promise<void> | undefined;
+  function close() {
+    closed ??= (async () => {
+      const failures: unknown[] = [];
+      // Reap the child/backend before releasing the lock so cleanup cannot
+      // commit the transaction whose crash recovery this test exercises.
+      for (const cleanup of [
+        async () => {
+          await running?.stop();
+        },
+        async () => {
+          await blocker.end();
+        },
+        async () => {
+          await f.pool.query(
+            `DROP TRIGGER IF EXISTS b2a_pause ON ${pause.table}; DROP FUNCTION IF EXISTS b2a_pause()`,
+          );
+        },
+      ]) {
+        try {
+          await cleanup();
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length) {
+        throw new AggregateError(failures, "database pause cleanup failed");
+      }
+    })();
+    return closed;
+  }
+  context.after(close);
+  await blocker.connect();
+  await blocker.query("SELECT pg_advisory_lock($1)", [pause.lock]);
+  // NOTICE is delivered before the lock is acquired, even though the update
+  // cannot commit. Keep statement_timeout as the bound on a stuck child;
+  // lock_timeout must not race the parent's assertions and intentional kill.
+  await f.pool.query(
+    `CREATE FUNCTION b2a_pause() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF ${pause.condition} THEN PERFORM set_config('lock_timeout', '0', true); RAISE NOTICE 'b2a_database_pause'; PERFORM pg_advisory_xact_lock(${pause.lock}); END IF; RETURN NEW; END $$; CREATE TRIGGER b2a_pause BEFORE UPDATE ON ${pause.table} FOR EACH ROW EXECUTE FUNCTION b2a_pause()`,
+  );
+  running = await child(context, input);
+  await running.waitForPause();
+  return { ...running, close };
 }
 async function captures(eventId: string) {
   return await f.db.select().from(ingress).where(eq(ingress.eventId, eventId));
@@ -129,19 +232,6 @@ async function state() {
     jobs: await f.db.select().from(jobs),
     watermark: await f.journal.readWatermark(),
   };
-}
-async function lockObserved(applicationName: string) {
-  for (let attempt = 0; attempt < 200; attempt++) {
-    const result = await admin.query(
-      "SELECT 1 FROM pg_stat_activity WHERE application_name=$1 AND wait_event_type='Lock'",
-      [applicationName],
-    );
-    if (result.rowCount) {
-      return;
-    }
-    await setTimeout(5);
-  }
-  assert.fail("child did not reach the real database lock");
 }
 try {
   await admin.query(`CREATE DATABASE "${applicationName}"`);
@@ -284,11 +374,11 @@ try {
     );
   });
 
-  await test("new process resumes durable capture and unknown external commit without regeneration", async () => {
+  await test("new process resumes durable capture and unknown external commit without regeneration", async (context) => {
     for (const boundary of ["capture", "unknown_commit"]) {
       const eventId = randomUUID();
       const subjectId = `synthetic_${randomUUID()}`;
-      const killed = await child({ eventId, subjectId, boundary });
+      const killed = await child(context, { eventId, subjectId, boundary });
       const exited = await killed.done;
       assert.equal(exited.code, 71, exited.errors + exited.output);
       const [row] = await captures(eventId);
@@ -307,7 +397,7 @@ try {
         0,
       );
       await ready(row.confirmationRef);
-      const restarted = await child({
+      const restarted = await child(context, {
         eventId,
         subjectId,
         confirmationRef: row.confirmationRef,
@@ -327,66 +417,47 @@ try {
     }
   });
 
-  await test("real transaction rollback and process death at receipt/projection commit boundaries", async () => {
-    const blocker = new Client({ connectionString: applicationUrl });
-    await blocker.connect();
-    try {
-      for (const boundary of ["external_committed", "projection_committed"]) {
-        const lock = boundary === "external_committed" ? 3_427_401 : 3_427_402;
-        await blocker.query("SELECT pg_advisory_lock($1)", [lock]);
-        await f.pool.query(
-          `CREATE FUNCTION b2a_pause() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='${boundary}' THEN PERFORM pg_advisory_xact_lock(${lock}); END IF; RETURN NEW; END $$`,
-        );
-        await f.pool.query(
-          "CREATE TRIGGER b2a_pause BEFORE UPDATE ON account_erasure_ingress FOR EACH ROW EXECUTE FUNCTION b2a_pause()",
-        );
-        const eventId = randomUUID();
-        const name = `b2a_${randomUUID()}`;
-        const childUrl = new URL(applicationUrl);
-        childUrl.searchParams.set("application_name", name);
-        const running = await child({
-          eventId,
-          boundary: "database_pause",
-          applicationUrl: childUrl.toString(),
-        });
-        await lockObserved(name);
-        const [row] = await captures(eventId);
-        assert.ok(row);
-        const stored = await f.journal.readDecisionByConfirmationRef(
-          row.confirmationRef,
-        );
-        assert.ok(stored);
-        assert.equal(
-          (
-            await f.db
-              .select()
-              .from(jobs)
-              .where(eq(jobs.decisionRef, row.decisionRef))
-          ).length,
-          boundary === "projection_committed" ? 1 : 0,
-        );
-        running.process.kill("SIGKILL");
-        await running.done;
-        await admin.query(
-          "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name=$1",
-          [name],
-        );
-        await blocker.query("SELECT pg_advisory_unlock($1)", [lock]);
-        await f.pool.query(
-          "DROP TRIGGER b2a_pause ON account_erasure_ingress; DROP FUNCTION b2a_pause()",
-        );
-        await ready(row.confirmationRef);
-        const restarted = await child({ confirmationRef: row.confirmationRef });
-        const result = await restarted.done;
-        assert.equal(result.code, 0, result.errors);
-        assert.equal(JSON.parse(result.output).status, "projection_committed");
-        assert.deepEqual(
-          await f.journal.readDecisionByConfirmationRef(row.confirmationRef),
-          stored,
-        );
-      }
-    } finally {
-      await blocker.end();
+  await test("real transaction rollback and process death at receipt/projection commit boundaries", async (context) => {
+    for (const boundary of ["external_committed", "projection_committed"]) {
+      const lock = boundary === "external_committed" ? 3_427_401 : 3_427_402;
+      const eventId = randomUUID();
+      const running = await pausedChild(
+        context,
+        { eventId, boundary: "database_pause" },
+        {
+          table: "account_erasure_ingress",
+          condition: `NEW.state='${boundary}'`,
+          lock,
+        },
+      );
+      const [row] = await captures(eventId);
+      assert.ok(row);
+      const stored = await f.journal.readDecisionByConfirmationRef(
+        row.confirmationRef,
+      );
+      assert.ok(stored);
+      assert.equal(
+        (
+          await f.db
+            .select()
+            .from(jobs)
+            .where(eq(jobs.decisionRef, row.decisionRef))
+        ).length,
+        boundary === "projection_committed" ? 1 : 0,
+      );
+      assert.equal((await running.stop()).signal, "SIGKILL");
+      await running.close();
+      await ready(row.confirmationRef);
+      const restarted = await child(context, {
+        confirmationRef: row.confirmationRef,
+      });
+      const result = await restarted.done;
+      assert.equal(result.code, 0, result.errors);
+      assert.equal(JSON.parse(result.output).status, "projection_committed");
+      assert.deepEqual(
+        await f.journal.readDecisionByConfirmationRef(row.confirmationRef),
+        stored,
+      );
     }
   });
 
@@ -446,7 +517,7 @@ try {
     );
   });
 
-  await test("current applicability rejects committed and captured-only recovered/transferred/retired identities", async () => {
+  await test("current applicability rejects committed and captured-only recovered/transferred/retired identities", async (context) => {
     for (const reason of [
       "recovered",
       "transferred",
@@ -459,7 +530,7 @@ try {
         if (committed) {
           await f.bridge.handle(request(body, eventId), signal);
         } else {
-          const stopped = await child({
+          const stopped = await child(context, {
             eventId,
             subjectId: body.data.id,
             boundary: "capture",
@@ -530,7 +601,7 @@ try {
     assert.deepEqual(await f.db.select().from(jobs), priorJobs);
   });
 
-  await test("unavailable stores, aborted callers and exhausted retry leave explicit non-success", async () => {
+  await test("unavailable stores, aborted callers and exhausted retry leave explicit non-success", async (context) => {
     const aborted = new AbortController();
     aborted.abort();
     const before = await state();
@@ -554,7 +625,7 @@ try {
       "projection_committed",
     );
     const eventId = randomUUID();
-    const stopped = await child({ eventId, boundary: "capture" });
+    const stopped = await child(context, { eventId, boundary: "capture" });
     await stopped.done;
     const [row] = await captures(eventId);
     assert.ok(row);
@@ -572,7 +643,7 @@ try {
     );
   });
 
-  await test("post-commit abort retains exact work and completed retry detail can retire", async () => {
+  await test("post-commit abort retains exact work and completed retry detail can retire", async (context) => {
     const controller = new AbortController();
     const wrapped = createClerkErasureBridge({
       db: f.db,
@@ -625,7 +696,10 @@ try {
       true,
     );
     assert.equal((await captures(eventId)).length, 0);
-    const restarted = await child({ eventId, subjectId: body.data.id });
+    const restarted = await child(context, {
+      eventId,
+      subjectId: body.data.id,
+    });
     const receipt = await restarted.done;
     assert.equal(receipt.code, 0, receipt.errors);
     assert.equal(JSON.parse(receipt.output).status, "projection_committed");
@@ -635,9 +709,9 @@ try {
     );
   });
 
-  await test("five actual failed control-store attempts exhaust without losing captured input", async () => {
+  await test("five actual failed control-store attempts exhaust without losing captured input", async (context) => {
     const eventId = randomUUID();
-    const stopped = await child({ eventId, boundary: "capture" });
+    const stopped = await child(context, { eventId, boundary: "capture" });
     assert.equal((await stopped.done).code, 71);
     const [row] = await captures(eventId);
     assert.ok(row);
@@ -747,7 +821,7 @@ try {
   await control.end();
   const identity = { targetId: randomUUID(), replayGeneration: randomUUID() };
 
-  await test("203 decisions pin 100/100/3 pages; new process repeats committed page after death before checkpoint", async () => {
+  await test("203 decisions pin 100/100/3 pages; new process repeats committed page after death before checkpoint", async (context) => {
     const watermark = await f.journal.readWatermark();
     assert.equal(watermark.sequence, high + 203n);
     const sizes = [];
@@ -765,20 +839,11 @@ try {
       }
     }
     assert.deepEqual(sizes, [100, 100, 3]);
-    const blocker = new Client({ connectionString: applicationUrl });
-    await blocker.connect();
-    await blocker.query("SELECT pg_advisory_lock(3427403)");
-    await f.pool.query(
-      "CREATE FUNCTION b2a_pause_replay() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.cursor > OLD.cursor THEN PERFORM pg_advisory_xact_lock(3427403); END IF; RETURN NEW; END $$; CREATE TRIGGER b2a_pause_replay BEFORE UPDATE ON account_erasure_replay FOR EACH ROW EXECUTE FUNCTION b2a_pause_replay()",
-    );
-    const name = `b2a_replay_${randomUUID()}`;
-    const childUrl = new URL(applicationUrl);
-    childUrl.searchParams.set("application_name", name);
-    const running = await child({
-      ...identity,
-      applicationUrl: childUrl.toString(),
+    const running = await pausedChild(context, identity, {
+      table: "account_erasure_replay",
+      condition: "NEW.cursor > OLD.cursor",
+      lock: 3_427_403,
     });
-    await lockObserved(name);
     const [before] = await f.db.select().from(replay);
     assert.ok(before);
     assert.equal(before.cursor, 0n);
@@ -791,18 +856,15 @@ try {
       confirmationRef: randomUUID(),
     });
     assert.equal(extra.decisionSequence, high + 204n);
-    running.process.kill("SIGKILL");
-    await running.done;
-    await admin.query(
-      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name=$1",
-      [name],
-    );
-    await blocker.query("SELECT pg_advisory_unlock(3427403)");
-    await blocker.end();
+    assert.equal((await running.stop()).signal, "SIGKILL");
+    await running.close();
+    const [crashed] = await f.db.select().from(replay);
+    assert.equal(crashed?.cursor, 0n);
     await f.pool.query(
-      "DROP TRIGGER b2a_pause_replay ON account_erasure_replay; DROP FUNCTION b2a_pause_replay(); UPDATE account_erasure_replay SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE lease_id IS NOT NULL",
+      "UPDATE account_erasure_replay SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE replay_generation=$1",
+      [identity.replayGeneration],
     );
-    const restarted = await child(identity);
+    const restarted = await child(context, identity);
     const result = await restarted.done;
     assert.equal(result.code, 0, result.errors);
     assert.equal(JSON.parse(result.output).cursor, (high + 100n).toString());
@@ -830,7 +892,8 @@ try {
       audience,
       authorityId,
     };
-    const pass = await beginErasureReplay(f.db, id, high + 204n);
+    const watermark = await f.journal.readWatermark();
+    const pass = await beginErasureReplay(f.db, id, watermark.sequence);
     const [a, b] = await Promise.all([
       claimErasureReplay(f.db, pass),
       claimErasureReplay(f.db, pass),
@@ -857,11 +920,17 @@ try {
   });
 
   await test("a completed cursor needs a fresh zero-start reconciliation to rebuild missing jobs", async () => {
+    const completed = { ...identity, replayGeneration: randomUUID() };
+    let page;
+    do {
+      page = await f.bridge.replayPage(completed, signal);
+    } while (page.status === "pending");
+    assert.equal(page.status, "complete");
     const missing = decisions[0];
     assert.ok(missing);
     await f.db.delete(jobs).where(eq(jobs.decisionRef, missing.decisionRef));
     assert.equal(
-      (await f.bridge.replayPage(identity, signal)).status,
+      (await f.bridge.replayPage(completed, signal)).status,
       "complete",
     );
     assert.equal(
@@ -874,7 +943,6 @@ try {
       0,
     );
     const next = { ...identity, replayGeneration: randomUUID() };
-    let page;
     do {
       page = await f.bridge.replayPage(next, signal);
     } while (page.status === "pending");
