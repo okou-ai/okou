@@ -162,14 +162,12 @@ function PermissionChoices({
 }
 
 function ShareFooter({
-  saving,
   failed,
   copying,
   ready,
   onRetry,
   onCopy,
 }: {
-  readonly saving: boolean;
   readonly failed: boolean;
   readonly copying: boolean;
   readonly ready: boolean;
@@ -178,20 +176,19 @@ function ShareFooter({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="mt-2 flex items-center justify-between gap-3 border-t border-divider px-3 pb-2 pt-4">
-      <span className="text-xs text-muted-foreground" role="status">
-        {saving
-          ? t(($) => {
-              return $.artifacts.sharing.saving;
-            })
-          : failed
-            ? t(($) => {
-                return $.artifacts.sharing.loadFailed;
-              })
-            : t(($) => {
-                return $.artifacts.sharing.savedAutomatically;
-              })}
-      </span>
+    <div
+      className={cn(
+        "mt-2 flex items-center gap-3 border-t border-divider px-3 pb-2 pt-4",
+        failed ? "justify-between" : "justify-end",
+      )}
+    >
+      {failed && (
+        <span className="text-xs text-muted-foreground" role="status">
+          {t(($) => {
+            return $.artifacts.sharing.loadFailed;
+          })}
+        </span>
+      )}
       {failed ? (
         <Button
           size="sm"
@@ -332,7 +329,6 @@ function ShareSessionMenu({
               />
             )}
             <ShareFooter
-              saving={draft !== null}
               failed={loadable.state === "hasError"}
               copying={copying.state === "loading"}
               ready={Boolean(details?.status)}

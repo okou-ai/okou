@@ -378,6 +378,9 @@ test("saving marks only the selected choice and reports success after the write"
   });
   await openArtifact();
   await openShareMenu();
+  expect(
+    screen.queryByText("Changes saved automatically"),
+  ).not.toBeInTheDocument();
   click(permission("Public access"));
   await waitFor(() => {
     return expect(permission("Public access")).toHaveAttribute(
@@ -385,6 +388,7 @@ test("saving marks only the selected choice and reports success after the write"
       "true",
     );
   });
+  expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
   expect(permission("Public access")).toHaveAttribute("aria-checked", "true");
   for (const choice of queryAllByRoleFast("radio")) {
     expect(choice).not.toBeDisabled();

@@ -605,9 +605,7 @@
       "permissionsUpdated": "पहुँच अपडेट हो गई",
       "publicAccess": "सार्वजनिक ऐक्सेस",
       "publicDescription": "लिंक वाला कोई भी व्यक्ति देख सकता है",
-      "retry": "फिर से कोशिश करें",
-      "savedAutomatically": "बदलाव अपने-आप सेव होते हैं",
-      "saving": "सेव हो रहा है…"
+      "retry": "फिर से कोशिश करें"
     },
     "sidebar": {
       "openSharedConversation": "साझा बातचीत खोलें",

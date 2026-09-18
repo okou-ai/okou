@@ -623,9 +623,7 @@
       "permissionsUpdated": "Accesso aggiornato",
       "publicAccess": "Accesso pubblico",
       "publicDescription": "Chiunque abbia il link può visualizzarlo",
-      "retry": "Riprova",
-      "savedAutomatically": "Le modifiche vengono salvate automaticamente",
-      "saving": "Salvataggio…"
+      "retry": "Riprova"
     },
     "sidebar": {
       "openSharedConversation": "Apri la conversazione condivisa",

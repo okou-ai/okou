@@ -605,9 +605,7 @@
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
       "publicDescription": "Anyone with the link can view",
-      "retry": "Retry",
-      "savedAutomatically": "Changes saved automatically",
-      "saving": "Saving…"
+      "retry": "Retry"
     },
     "sidebar": {
       "openSharedConversation": "Open shared conversation",
