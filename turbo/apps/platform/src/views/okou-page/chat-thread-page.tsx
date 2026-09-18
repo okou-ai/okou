@@ -5967,6 +5967,7 @@ function MessageAttachment({
         filename={a.filename}
         url={a.url}
         kind={a.kind}
+        preview={a.kind === "html" ? a.signals : undefined}
         text$={a.signals.text$}
       />
     );
@@ -6488,6 +6489,7 @@ function UserMessageFileReference({
         filename={part.filenameSnapshot}
         url={signals.url}
         kind={signals.kind}
+        preview={signals.kind === "html" ? signals : undefined}
       />
     );
   } else if (signals.kind === "audio") {

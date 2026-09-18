@@ -135,6 +135,55 @@ protocol change is required. Previously copied URLs remain valid under their
 existing policy. Owner resolution of an old organization alias continues after
 switching it to Only me; recipients lose access.
 
+#### Hosted-site publication identity
+
+Each new hosted-site publication reserves a new slug in its existing organization
+and chat scope. Preparing another deployment for an existing or deleted site
+returns `409 CONFLICT`; callers must publish changes under a new `--site` value.
+Concurrent requests cannot reuse the winning reservation. Completion retries for
+the same deployment remain idempotent, and historical deployment URLs, version
+listings, clone requests and share policies remain readable.
+
+Older pinned CLIs receive the actionable conflict response from the new API.
+The request and response shapes are unchanged; the CLI retains the legacy
+`--slug-suffix` request field for older API servers, but a suffix does not enable
+redeployment on the new API. Older API instances must finish serving before the
+new publication restriction is universal. No database migration or
+historical data rewrite runs here. Issue
+[#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
+site-version model after preserving existing links and metadata.
+
+New prepares bind each upload URL to its declared SHA-256 through the signed
+`x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
+`Content-Type`; identical-byte retries work, while different bytes fail R2's
+checksum validation. The root `/manifest.json` path is reserved for the server's
+delivery manifest. New database manifests carry `immutableContent: true`, which
+the API copies into its server-issued preview grants. The Worker trusts the grant
+for cache eligibility because old uploads could target `/manifest.json`. Completion of
+older drafts does not add that marker because their outstanding upload URLs
+were not checksum-bound.
+
+The host Worker uses the shared `PRIVATE_ARTIFACT_CACHE_CONTROL` for successful
+private previews of marked deployments and immutable organization snapshots.
+It retains `private, no-store` for unmarked deployments, authorization errors,
+and standalone publication responses that must recheck the current share policy.
+New APIs with older Workers remain conservatively uncached; new Workers with
+older API grants likewise retain `no-store`. The optional manifest field is
+preserved by older completion readers without a schema migration. Immutable
+delivery derives HTTP headers from the manifest, so replayed upload credentials
+cannot change presentation through unsigned object metadata.
+
+Retiring the unmarked-deployment path belongs to #35240: legacy content must
+first become immutable through migration or sealing after its last upload
+credential expires, older writers must leave serving and supported rollback
+targets, and old preview grants must finish their lifetime.
+
+Thread HTML cards, links and attachment viewers reuse the existing preview
+signals as images do. No expiry-driven re-resolution or retry is added. A
+48-hour credential controls new network access; the browser may keep already
+cached bytes for the configured cache lifetime. Iframe remounting still restarts
+the document, and catalog reload behavior is unchanged.
+
 #### CLI artifact content reads
 
 `GET /api/artifact-references/:reference/read` requires `artifact:read` and

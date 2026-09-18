@@ -9,7 +9,7 @@ const origin = `https://pv-${token}.okou.app`;
 const prefix = `private-sites/okou/${deploymentId}`;
 const grantKey = `private-previews/okou/${token}.json`;
 
-function fixture() {
+function fixture(immutableContent = true) {
   const files = {
     "/index.html": ["<h1>Private report</h1>", "text/html"],
     "/assets/site.css": ["h1 { color: green }", "text/css"],
@@ -23,6 +23,7 @@ function fixture() {
   };
   const manifest = {
     version: 1,
+    ...(immutableContent ? { immutableContent: true } : {}),
     publicBrand: "okou",
     access: "owner-private-v1",
     siteId: "site",
@@ -46,6 +47,7 @@ function fixture() {
   };
   const grant = {
     version: 1,
+    ...(immutableContent ? { immutableContent: true } : {}),
     publicBrand: "okou",
     deploymentId,
     expiresAt: "2099-01-01T00:00:00.000Z",
@@ -58,6 +60,7 @@ function fixture() {
     }),
   ]);
   const reads: string[] = [];
+  const objectHeaders = new Headers();
   const env: WorkerEnv = {
     HOST_DOMAIN: "sites.vm0.io",
     OKOU_HOST_DOMAIN: "okou.app",
@@ -82,12 +85,15 @@ function fixture() {
               httpEtag: '"private-test"',
               writeHttpMetadata(headers) {
                 headers.set("Content-Type", "application/octet-stream");
+                objectHeaders.forEach((value, name) => {
+                  headers.set(name, value);
+                });
               },
             };
       },
     },
   };
-  return { env, objects, reads, grant, manifest, files };
+  return { env, objects, reads, grant, manifest, files, objectHeaders };
 }
 
 describe("private HTML preview gateway", () => {
@@ -97,7 +103,9 @@ describe("private HTML preview gateway", () => {
       const response = await fetchWorker(new Request(`${origin}${path}`), env);
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe(contentType);
-      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(response.headers.get("Cache-Control")).toBe(
+        "private, max-age=31536000, must-revalidate",
+      );
       expect(response.headers.get("Referrer-Policy")).toBe("same-origin");
       expect(response.headers.get("Content-Security-Policy")).toContain(
         "worker-src 'none'",
@@ -125,10 +133,62 @@ describe("private HTML preview gateway", () => {
       env,
     );
     expect(head.status).toBe(200);
+    expect(head.headers.get("Cache-Control")).toBe(
+      "private, max-age=31536000, must-revalidate",
+    );
     expect(await head.text()).toBe("");
   });
 
-  it("rechecks an expired credential before bytes even after a successful request", async () => {
+  it("keeps legacy deployment content uncacheable", async () => {
+    const { env, files } = fixture(false);
+    for (const path of Object.keys(files)) {
+      const response = await fetchWorker(new Request(`${origin}${path}`), env);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+  });
+
+  it("does not trust a legacy upload's manifest to enable browser caching", async () => {
+    const { env, objects, manifest } = fixture(false);
+    // Legacy uploads could target /manifest.json; only the server-issued
+    // grant can attest that all upload credentials were checksum-bound.
+    objects.set(
+      `${prefix}/manifest.json`,
+      JSON.stringify({ ...manifest, immutableContent: true }),
+    );
+    const response = await fetchWorker(new Request(`${origin}/`), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("does not let upload metadata change immutable content delivery", async () => {
+    const { env, files, objectHeaders } = fixture();
+    objectHeaders.set("Content-Encoding", "gzip");
+    objectHeaders.set("Content-Disposition", "attachment");
+    objectHeaders.set("Cache-Control", "public, max-age=31536000");
+    const response = await fetchWorker(new Request(`${origin}/`), env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("text/html");
+    expect(response.headers.has("Content-Encoding")).toBe(false);
+    expect(response.headers.has("Content-Disposition")).toBe(false);
+    expect(response.headers.get("Cache-Control")).toBe(
+      "private, max-age=31536000, must-revalidate",
+    );
+    expect(await response.text()).toBe(files["/index.html"][0]);
+  });
+
+  it("does not cache a missing object from an immutable manifest", async () => {
+    const { env, objects } = fixture();
+    objects.delete(`${prefix}/assets/site.css`);
+    const response = await fetchWorker(
+      new Request(`${origin}/assets/site.css`),
+      env,
+    );
+    expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("rechecks an expired credential on network requests after a successful request", async () => {
     const { env, objects, reads, grant } = fixture();
     const first = await fetchWorker(
       new Request(`${origin}/assets/site.css`),

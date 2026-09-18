@@ -395,26 +395,28 @@ async function resolveHostedDeploymentForCompletion(
 async function findScopedHostedSite(
   db: Db,
   args: ScopedPrepareDeploymentArgs,
-  lock: boolean,
 ): Promise<HostedSiteRow | undefined> {
   const scopeCondition =
     args.chatThreadId === null
       ? isNull(hostedSites.chatThreadId)
       : eq(hostedSites.chatThreadId, args.chatThreadId);
-  const query = db
+  const [site] = await db
     .select()
     .from(hostedSites)
     .where(
       and(
         eq(hostedSites.orgId, args.orgId),
-        eq(hostedSites.requestedSlug, args.body.site),
+        or(
+          eq(hostedSites.requestedSlug, args.body.site),
+          and(
+            isNull(hostedSites.requestedSlug),
+            eq(hostedSites.slug, args.body.site),
+          ),
+        ),
         scopeCondition,
-        isNull(hostedSites.deletedAt),
       ),
-    );
-  const [site] = lock
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
+    )
+    .limit(1);
   return site;
 }
 
@@ -425,7 +427,7 @@ async function hasUnscopedHostedSiteConflict(
   if (args.chatThreadId === null) {
     return false;
   }
-  const scopedSite = await findScopedHostedSite(db, args, false);
+  const scopedSite = await findScopedHostedSite(db, args);
   if (scopedSite) {
     return false;
   }
@@ -443,7 +445,6 @@ async function hasUnscopedHostedSiteConflict(
             eq(hostedSites.slug, args.body.site),
           ),
         ),
-        isNull(hostedSites.deletedAt),
       ),
     )
     .limit(1);
@@ -515,6 +516,9 @@ function validateFiles(
     if (!isSafeSitePath(file.path)) {
       return `Invalid hosted-site path: ${file.path}`;
     }
+    if (file.path === "/manifest.json") {
+      return "Hosted-site path is reserved: /manifest.json";
+    }
     if (seen.has(file.path)) {
       return `Duplicate hosted-site path: ${file.path}`;
     }
@@ -557,6 +561,7 @@ function buildManifest(args: {
   }
   return {
     version: 1,
+    immutableContent: true,
     publicBrand: args.publicBrand,
     deploymentId: args.deploymentId,
     siteId: args.siteId,
@@ -618,16 +623,14 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
   };
 }
 
-async function findOrCreateHostedSite(
+async function createHostedSite(
   db: Tx,
   args: ScopedPrepareDeploymentArgs,
   now: Date,
 ): Promise<HostedSiteRow | null> {
-  const existingSite = await findScopedHostedSite(db, args, true);
+  const existingSite = await findScopedHostedSite(db, args);
   if (existingSite) {
-    return args.privateArtifacts && existingSite.userId !== args.userId
-      ? null
-      : existingSite;
+    return null;
   }
 
   const scopeKey = hostedSiteScopeKey(args);
@@ -663,11 +666,9 @@ async function findOrCreateHostedSite(
       return createdSite;
     }
 
-    const concurrentSite = await findScopedHostedSite(db, args, true);
+    const concurrentSite = await findScopedHostedSite(db, args);
     if (concurrentSite) {
-      return args.privateArtifacts && concurrentSite.userId !== args.userId
-        ? null
-        : concurrentSite;
+      return null;
     }
   }
   return null;
@@ -678,7 +679,7 @@ async function allocateHostedSite(
   args: ScopedPrepareDeploymentArgs,
   now: Date,
 ): Promise<HostedSiteAllocation | null> {
-  const site = await findOrCreateHostedSite(db, args, now);
+  const site = await createHostedSite(db, args, now);
   if (!site) {
     return null;
   }
@@ -860,7 +861,7 @@ export const prepareHostedSiteDeployment$ = command(
     if (siteAndDeployment.kind === "slug_conflict") {
       return {
         status: "conflict",
-        message: "Unable to allocate a unique hosted site slug",
+        message: `Hosted site slug "${args.body.site}" is already reserved. Sites cannot be redeployed. Choose a new --site value and publish again.`,
       };
     }
     const publicSlug = siteAndDeployment.site.publicSlug;
@@ -874,6 +875,7 @@ export const prepareHostedSiteDeployment$ = command(
               hostedR2.config.bucket,
               fileKey(siteAndDeployment.deployment.r2Prefix, file.path),
               file.contentType,
+              file.sha256,
               true,
             ),
           );

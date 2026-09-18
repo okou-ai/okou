@@ -807,15 +807,15 @@ describe("artifact upload provenance", () => {
 });
 
 describe("GET /api/chat-threads/:threadId/artifacts", () => {
-  it("keeps every hosted-site version as a separate immutable artifact", async () => {
+  it("keeps each hosted-site publication as a separate immutable artifact", async () => {
     const actor = bdd.user();
     const owner = await artifactActor(
-      "Artifacts API hosted versions agent",
+      "Artifacts API hosted publications agent",
       actor,
     );
     const run = await sendChatRun(actor, {
       agentId: owner.agentId,
-      prompt: "publish two hosted-site versions",
+      prompt: "publish two hosted sites",
     });
     const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
     const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
@@ -830,7 +830,10 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
     };
     const first = await chat.prepareHostedSiteWithBearer(bearer, body);
     await chat.completeHostedSiteWithBearer(bearer, first.deploymentId);
-    const second = await chat.prepareHostedSiteWithBearer(bearer, body);
+    const second = await chat.prepareHostedSiteWithBearer(bearer, {
+      ...body,
+      site: `${site}-updated`,
+    });
     await chat.completeHostedSiteWithBearer(bearer, second.deploymentId);
 
     expect(first).toMatchObject({
@@ -839,11 +842,11 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       aliasUrl: first.url,
     });
     expect(second).toMatchObject({
-      siteId: first.siteId,
-      publicSlug: site,
-      deploymentVersion: 2,
-      aliasUrl: first.url,
+      publicSlug: `${site}-updated`,
+      deploymentVersion: 1,
+      aliasUrl: second.url,
     });
+    expect(second.siteId).not.toBe(first.siteId);
     expect(second.artifactUrl).not.toBe(first.artifactUrl);
 
     const threadArtifacts = await chat.listThreadArtifacts(actor, run.threadId);
@@ -856,7 +859,7 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
         }),
         expect.objectContaining({
           url: second.artifactUrl,
-          aliasUrl: first.url,
+          aliasUrl: second.url,
         }),
       ]),
     );

@@ -23,6 +23,8 @@ const ARTIFACT_URL =
   "https://dpl-00000000-0000-4000-8000-000000000002.sites.example.com";
 const CHAT_SCOPE_CONFLICT_MESSAGE =
   'Hosted site slug "demo-site" is owned outside this chat. Choose a different --site value and rerun the same okou host command.';
+const REDEPLOY_CONFLICT_MESSAGE =
+  'Hosted site slug "demo-site" is already reserved. Sites cannot be redeployed. Choose a new --site value and publish again.';
 
 function sha256(bytes: string): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -299,11 +301,33 @@ describe("okou host publish command", () => {
   });
 
   it.each([
-    { label: "TTY", isTty: true, extraArgs: [] },
-    { label: "non-TTY JSON", isTty: false, extraArgs: ["--json"] },
+    {
+      label: "chat-scope conflict in TTY",
+      isTty: true,
+      extraArgs: [],
+      message: CHAT_SCOPE_CONFLICT_MESSAGE,
+    },
+    {
+      label: "chat-scope conflict in non-TTY JSON",
+      isTty: false,
+      extraArgs: ["--json"],
+      message: CHAT_SCOPE_CONFLICT_MESSAGE,
+    },
+    {
+      label: "redeployment conflict in TTY",
+      isTty: true,
+      extraArgs: [],
+      message: REDEPLOY_CONFLICT_MESSAGE,
+    },
+    {
+      label: "redeployment conflict in non-TTY JSON",
+      isTty: false,
+      extraArgs: ["--json"],
+      message: REDEPLOY_CONFLICT_MESSAGE,
+    },
   ])(
-    "prints actionable chat-scope conflicts in $label mode",
-    async ({ isTty, extraArgs }) => {
+    "prints actionable guidance for $label mode",
+    async ({ isTty, extraArgs, message }) => {
       writeFileSync(
         join(tempDir, "index.html"),
         "<!doctype html><main>Hosted site</main>",
@@ -318,7 +342,7 @@ describe("okou host publish command", () => {
             {
               error: {
                 code: "CONFLICT",
-                message: CHAT_SCOPE_CONFLICT_MESSAGE,
+                message,
               },
             },
             { status: 409 },
@@ -338,7 +362,7 @@ describe("okou host publish command", () => {
       ).rejects.toThrow("process.exit called");
 
       expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-        `409: ${CHAT_SCOPE_CONFLICT_MESSAGE}`,
+        `409: ${message}`,
       );
       expect(mockExit).toHaveBeenCalledWith(1);
     },
