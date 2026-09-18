@@ -110,11 +110,11 @@ export function OnboardingStepLayout({
         key={`${String(currentStep)}-${title}`}
         className="min-h-0 flex-1 overflow-y-auto px-6 py-6"
       >
-        {/* Centred while the step fits, scrollable from the top when it does
-            not: a centred flex child would otherwise clip its own top. */}
         {/* One grid for every step: the track, the title and the action line
-            sit at the same height on all of them, and the step's own content
-            is centred inside a band of fixed height. */}
+            sit at the same height on all of them, and the step's own content is
+            centred inside a band of fixed height. The wrapper centres the step
+            while it fits and grows downward when it does not, so a centred flex
+            child never clips its own top. */}
         <div className="flex min-h-full flex-col justify-center">
           <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-16">
             <div className="w-full shrink-0 lg:w-[340px]">
@@ -135,24 +135,6 @@ export function OnboardingStepLayout({
                   </p>
                 ) : null}
               </div>
-              {/* Back keeps the action line's height even when it is absent. */}
-              <div className="mt-9 flex h-10 items-center">
-                {onBack ? (
-                  <Button
-                    type="button"
-                    size="icon-lg"
-                    variant="quiet"
-                    showTooltip
-                    onClick={onBack}
-                    className="-ml-2.5"
-                    aria-label={t(($) => {
-                      return $.onboarding.sourcesFirst.common.back;
-                    })}
-                  >
-                    <ChevronLeft size={18} aria-hidden="true" />
-                  </Button>
-                ) : null}
-              </div>
             </div>
             <div
               className={cn(
@@ -165,36 +147,56 @@ export function OnboardingStepLayout({
               <div className="flex flex-col justify-center lg:min-h-[430px]">
                 {children}
               </div>
-              {/* The step's one filled action, with its opt-out beside it. */}
-              <div className="mt-9 flex h-10 items-center justify-end gap-2">
-                {secondaryLabel && onSecondary ? (
-                  <Button
-                    type="button"
-                    size="lg"
-                    variant="ghost"
-                    onClick={onSecondary}
-                  >
-                    {secondaryLabel}
-                  </Button>
-                ) : null}
+            </div>
+          </div>
+          {/* One action line under the step: the way back on the left, the way
+              on at the right, the same on every page. */}
+          <div className="mx-auto mt-8 flex w-full max-w-[1180px] items-center justify-between gap-3 border-t border-border/60 pt-8">
+            {onBack ? (
+              <Button
+                type="button"
+                size="icon-lg"
+                variant="quiet"
+                showTooltip
+                onClick={onBack}
+                className="-ml-2.5"
+                aria-label={t(($) => {
+                  return $.onboarding.sourcesFirst.common.back;
+                })}
+              >
+                <ChevronLeft size={18} aria-hidden="true" />
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex items-center gap-2">
+              {secondaryLabel && onSecondary ? (
                 <Button
                   type="button"
                   size="lg"
-                  onClick={onPrimary}
-                  disabled={primaryDisabled || primaryBusy}
-                  aria-busy={primaryBusy}
-                  className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
+                  variant="ghost"
+                  onClick={onSecondary}
                 >
-                  {primaryBusy ? (
-                    <Loader2
-                      size={16}
-                      className="animate-spin"
-                      aria-hidden="true"
-                    />
-                  ) : null}
-                  {primaryLabel}
+                  {secondaryLabel}
                 </Button>
-              </div>
+              ) : null}
+              <Button
+                type="button"
+                size="lg"
+                onClick={onPrimary}
+                disabled={primaryDisabled || primaryBusy}
+                aria-busy={primaryBusy}
+                className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
+              >
+                {primaryBusy ? (
+                  <Loader2
+                    size={16}
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {primaryLabel}
+              </Button>
             </div>
           </div>
         </div>
