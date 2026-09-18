@@ -30,7 +30,8 @@ the shared credential itself does not identify a machine.
 
 Every call joins the current same-owner Run/session/visible Agent/grant/connection
 and credential. Requests contain saved IDs, not endpoint or owner overrides.
-Every response sets `Cache-Control: no-store`, including denied requests.
+Private handlers set `Cache-Control: no-store` before authentication and body
+validation. Malformed path parameters return a generic 400 before the handler.
 Unavailable authority returns the opaque `unavailable` outcome. Invalid input is
 400, missing/invalid authentication is 401, and authenticated local Runners are 403. DB/KMS failures remain server errors instead of fabricated absence.
 
