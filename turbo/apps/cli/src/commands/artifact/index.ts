@@ -89,6 +89,7 @@ Examples:
   Organization:       okou artifact /artifacts/abc123def4.pdf --visibility org
   Public:             okou artifact /artifacts/abc123def4.html --visibility public
   Download a file:    okou artifact download /artifacts/abc123def4.pdf -o /tmp/report.pdf
+  Download HTML:      okou artifact download /artifacts/abc123def4.html -o /tmp/index.html
   Use a file ID:      okou artifact <file-id> --kind file --visibility org
   Use a deployment:   okou artifact <deployment-id> --kind html --visibility public
 
@@ -98,7 +99,9 @@ Notes:
   - org requires current membership in the artifact's original organization
   - public allows anyone with the returned link to access the selected version
   - Uses OKOU_TOKEN; reading visibility requires artifact:read and setting it also requires artifact:write
-  - Downloads use file:read and the same parameters and owner checks as okou web download-file; see okou artifact download -h
+  - Downloads use artifact:read for owned, organization-shared, or public references under their current access policy; raw file IDs use file:read
+  - HTML downloads return the entry page; use okou host clone for all files of an owned site
+  - Download parameters match okou web download-file; see okou artifact download -h
   - Visibility capabilities are issued to new runs with privateArtifacts enabled
   - Only the owner in the original organization can manage an artifact's visibility
   - Change visibility only when the user requests it; uploads, generation, and hosting retain their existing privacy

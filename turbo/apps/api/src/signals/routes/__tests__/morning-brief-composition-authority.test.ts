@@ -15,6 +15,10 @@ import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
+  bindMorningBriefThreadFixture as rebindMorningBriefThreadFixture,
+  replaceMorningBriefAutomationFixture,
+} from "../../../test-fixtures/morning-brief-chat-collection";
+import {
   bindMorningBriefThreadFixture,
   installMorningBriefFixture,
   reselectThreadGmailAccountFixture,
@@ -169,6 +173,7 @@ interface Fixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
   readonly agentId: string;
   readonly workflowId: string;
+  readonly automationId: string;
   readonly chatThreadId: string;
   readonly gmailAccountId: string;
   readonly botToken: string;
@@ -421,6 +426,7 @@ async function setupOwner(
     actor: { ...actor, orgId: actor.orgId },
     agentId,
     workflowId: installation.workflowId,
+    automationId: installation.automationId,
     chatThreadId,
     gmailAccountId,
     botToken,
@@ -841,6 +847,55 @@ describe("Morning Brief exact source selection and retained authority", () => {
 
       const response = await pending;
       expect(response.body.result).toBe(expected);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it.each([
+    [
+      "automation replacement",
+      async (fixture: Fixture) => {
+        await replaceMorningBriefAutomationFixture({
+          orgId: fixture.actor.orgId,
+          userId: fixture.actor.userId,
+          workflowId: fixture.workflowId,
+          automationId: fixture.automationId,
+        });
+      },
+    ],
+    [
+      "destination rebind",
+      async (fixture: Fixture) => {
+        await rebindMorningBriefThreadFixture({
+          orgId: fixture.actor.orgId,
+          userId: fixture.actor.userId,
+          workflowId: fixture.workflowId,
+          chatThreadId: null,
+        });
+      },
+    ],
+  ] as const)(
+    "rejects a %s committed during retained provider work",
+    async (_name, changeBinding) => {
+      const fixture = await setupOwner(objectStorage);
+      const reproofArrived = createDeferredPromise<void>(context.signal);
+      const releaseReproof = createDeferredPromise<void>(context.signal);
+      stubProviders({
+        onSlackEnumeration: async (call) => {
+          if (call === 4) {
+            reproofArrived.resolve();
+            await releaseReproof.promise;
+          }
+        },
+      });
+
+      const pending = compose(fixture);
+      await reproofArrived.promise;
+      await changeBinding(fixture);
+      releaseReproof.resolve();
+
+      const response = await pending;
+      expect(response.body).toStrictEqual({ result: "authority-changed" });
     },
     TEST_TIMEOUT_MS,
   );

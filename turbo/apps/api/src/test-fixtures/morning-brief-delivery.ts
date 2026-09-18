@@ -123,6 +123,7 @@ interface EmailOutboxRow {
   readonly lastError: string | null;
   readonly resendId: string | null;
   readonly providerIdempotencyKey: string | null;
+  readonly providerRequest: unknown;
   readonly toAddresses: unknown;
   readonly template: unknown;
 }
@@ -138,6 +139,7 @@ export async function readEmailOutboxRow(
       lastError: emailOutbox.lastError,
       resendId: emailOutbox.resendId,
       providerIdempotencyKey: emailOutbox.providerIdempotencyKey,
+      providerRequest: emailOutbox.providerRequest,
       toAddresses: emailOutbox.toAddresses,
       template: emailOutbox.template,
     })
@@ -259,6 +261,38 @@ export async function elapseEmailOutboxRecoveryLease(
   await db()
     .update(emailOutbox)
     .set({ nextRetryAt: new Date(nowDate().getTime() - 1000) })
+    .where(eq(emailOutbox.id, itemId));
+}
+
+/**
+ * Age one queued intent, which is what fixes its position in the drain's FIFO
+ * order and, far enough back, its original 15-minute lifetime.
+ *
+ * `created_at` is the only input to both, and no producer endpoint can choose
+ * it: a real backlog is made by waiting. Only the row id the caller owns is
+ * touched.
+ */
+export async function ageEmailOutboxItem(
+  itemId: string,
+  ageMs: number,
+): Promise<void> {
+  await db()
+    .update(emailOutbox)
+    .set({ createdAt: new Date(nowDate().getTime() - ageMs) })
+    .where(eq(emailOutbox.id, itemId));
+}
+
+/**
+ * Leave one queued intent with its delivery attempts already spent, the state a
+ * row reaches after the drain has failed it as many times as it allows.
+ */
+export async function spendEmailOutboxAttempts(
+  itemId: string,
+  attempts: number,
+): Promise<void> {
+  await db()
+    .update(emailOutbox)
+    .set({ attempts })
     .where(eq(emailOutbox.id, itemId));
 }
 

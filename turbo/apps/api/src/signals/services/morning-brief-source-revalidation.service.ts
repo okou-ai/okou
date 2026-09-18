@@ -244,7 +244,9 @@ async function retainedOwnerLossReason(
   const current = admitted.value.scope;
   return current.membershipId !== input.scope.membershipId ||
     current.agentId !== input.scope.agentId ||
-    current.installationId !== input.scope.installationId
+    current.installationId !== input.scope.installationId ||
+    current.automationId !== input.scope.automationId ||
+    current.chatThreadId !== input.scope.chatThreadId
     ? "owner-changed"
     : null;
 }
@@ -383,10 +385,15 @@ async function slackBindingMatchesDescriptor(args: {
   readonly slack: MorningBriefSlackAuthority;
   readonly descriptor: MorningBriefRetainedSourceDescriptor;
 }): Promise<boolean> {
-  const binding = await loadSlackUserBinding(args.db, {
-    orgId: args.scope.orgId,
-    userId: args.scope.userId,
-  });
+  const binding = await args.db.transaction(
+    async (tx) => {
+      return await loadSlackUserBinding(tx, {
+        orgId: args.scope.orgId,
+        userId: args.scope.userId,
+      });
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
   if (binding.kind !== "connected") {
     return false;
   }

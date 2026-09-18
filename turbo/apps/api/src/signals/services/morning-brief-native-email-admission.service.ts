@@ -5,7 +5,18 @@ import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-bri
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { users } from "@okouai/db/schema/user";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  notInArray,
+  or,
+} from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { ClerkClient } from "../external/clerk";
@@ -44,21 +55,51 @@ export interface NativeMorningBriefOwnerPreflight {
 }
 
 /**
+ * The bounds the claim admits a due item against, restated for the preflight.
+ *
+ * Every field here exists because the claim already applies it. Selecting a
+ * candidate the claim cannot admit spends this pass's one remote lookup on a
+ * row that will be resolved locally anyway, and — worse — leaves the row the
+ * claim does take without evidence of its own.
+ */
+interface NativeMorningBriefCandidateBounds {
+  /** The fixed batch clock the claim uses for retry eligibility. */
+  readonly dueAt: Date;
+  /** A fresh clock sample for the row's original finite lifetime. */
+  readonly observedAt: Date;
+  /** The row lifetime the claim derives from `created_at`. */
+  readonly outboxTtlMs: number;
+  /** The attempt ceiling the claim admits against. */
+  readonly maxAttempts: number;
+  /** Items this pass already deferred. The claim skips exactly these too. */
+  readonly excludedIds: ReadonlySet<string>;
+  /** The explicitly scoped items, when the drain was given a subset. */
+  readonly itemIds?: readonly string[];
+}
+
+/**
  * The owner of the next due native intent, without claiming or locking it.
  *
  * The drain has to reach Clerk for that owner before it opens the claim
- * transaction, and the outbox row itself carries no owner. This read uses the
- * same due-item ordering the claim uses, so it normally names the row the claim
- * will take. When a concurrent worker takes a different one, the mismatch is
- * detected inside the transaction and that row is simply left for the next
- * pass rather than sent on stale evidence.
+ * transaction, and the outbox row itself carries no owner. This read therefore
+ * has to name the row the claim will take, or the claim admits a row whose
+ * live evidence belongs to somebody else and defers it.
+ *
+ * Naming it means applying the claim's own admissibility, not just its
+ * ordering: the items this pass already deferred, the row's original lifetime
+ * and its attempt ceiling. A candidate excluded here still reaches the claim,
+ * which resolves it locally — expiry and attempt exhaustion must never need a
+ * successful remote read first.
+ *
+ * The one divergence left is deliberate. This read takes no lock, so a row a
+ * concurrent worker is holding can still be named here and skipped by the
+ * claim. That mismatch rolls the selected sibling back, excludes the stale or
+ * locked candidate for the rest of this pass, and retries the sibling with its
+ * own evidence. Evidence is never transferred between owners.
  */
 export async function peekNativeMorningBriefEmailOwner(
   db: Pick<Db, "select">,
-  currentTime: Date,
-  outboxTtlMs: number,
-  excludedIds: ReadonlySet<string>,
-  itemIds?: readonly string[],
+  bounds: NativeMorningBriefCandidateBounds,
 ): Promise<NativeMorningBriefOwnerPreflight | null> {
   const [row] = await db
     .select({
@@ -73,13 +114,26 @@ export async function peekNativeMorningBriefEmailOwner(
     )
     .where(
       and(
-        itemIds === undefined
+        bounds.itemIds === undefined
           ? undefined
-          : inArray(emailOutbox.id, [...itemIds]),
+          : inArray(emailOutbox.id, [...bounds.itemIds]),
+        bounds.excludedIds.size === 0
+          ? undefined
+          : notInArray(emailOutbox.id, [...bounds.excludedIds]),
         inArray(emailOutbox.status, ["pending", "sending"]),
+        // Past its own lifetime the claim fails the row without a provider
+        // request, so resolving live evidence for it would be wasted work that
+        // also starves an eligible sibling.
+        gt(
+          emailOutbox.createdAt,
+          new Date(bounds.observedAt.getTime() - bounds.outboxTtlMs),
+        ),
+        // The claim counts this attempt as `attempts + 1`, so a row already at
+        // the ceiling can only be resolved as exhausted.
+        lt(emailOutbox.attempts, bounds.maxAttempts),
         or(
           isNull(emailOutbox.nextRetryAt),
-          lte(emailOutbox.nextRetryAt, currentTime),
+          lte(emailOutbox.nextRetryAt, bounds.dueAt),
         ),
       ),
     )
