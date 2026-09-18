@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.343.0](https://github.com/vm0-ai/okou/compare/cli-v9.342.1...cli-v9.343.0) (2026-09-18)
+
+
+### Features
+
+* extend personal paid-tool controls to media generation ([#35264](https://github.com/vm0-ai/okou/issues/35264)) ([a686e46](https://github.com/vm0-ai/okou/commit/a686e46b0f2a149b0519582e066ec2d752f798de))
+* publish immutable sites and reuse private previews ([#35244](https://github.com/vm0-ai/okou/issues/35244)) ([899075c](https://github.com/vm0-ai/okou/commit/899075caeca519ac9202fa17bc9177e18258a58c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.472.0
+    * @okouai/core bumped to 8.681.2
+    * @okouai/pi-agent-runtime bumped to 1.33.19
+
 ## [9.342.1](https://github.com/vm0-ai/okou/compare/cli-v9.342.0...cli-v9.342.1) (2026-09-18)
 
 

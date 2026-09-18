@@ -8,6 +8,41 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.635.0](https://github.com/vm0-ai/okou/compare/api-v1.634.0...api-v1.635.0) (2026-09-18)
+
+
+### Features
+
+* **api:** force app.okou.ai clients to upgrade to v0.918.0 ([#35267](https://github.com/vm0-ai/okou/issues/35267)) ([dd30985](https://github.com/vm0-ai/okou/commit/dd309851b86ed5c158a86d5e596e0de395efd9c0))
+* extend personal paid-tool controls to media generation ([#35264](https://github.com/vm0-ai/okou/issues/35264)) ([a686e46](https://github.com/vm0-ai/okou/commit/a686e46b0f2a149b0519582e066ec2d752f798de))
+* **mcp:** support safe message submission and cancellation ([#35252](https://github.com/vm0-ai/okou/issues/35252)) ([dbeca23](https://github.com/vm0-ai/okou/commit/dbeca2349dfc1762fcf0c680e1c0be099f3731d2))
+* publish immutable sites and reuse private previews ([#35244](https://github.com/vm0-ai/okou/issues/35244)) ([899075c](https://github.com/vm0-ai/okou/commit/899075caeca519ac9202fa17bc9177e18258a58c))
+
+
+### Bug Fixes
+
+* **api:** preserve Slack failure request counts ([#35272](https://github.com/vm0-ai/okou/issues/35272)) ([462af61](https://github.com/vm0-ai/okou/commit/462af6145bfcde26ed1db8f597a21b1fed7d9014))
+
+
+### Refactoring
+
+* remove _fastModel feature switch ([#35221](https://github.com/vm0-ai/okou/issues/35221)) ([132088c](https://github.com/vm0-ai/okou/commit/132088c059db14747a82313b1f7a842ca63dd55e))
+
+
+### Performance Improvements
+
+* **runner:** compress large raw histories without sampling ([#35279](https://github.com/vm0-ai/okou/issues/35279)) ([294edd0](https://github.com/vm0-ai/okou/commit/294edd0a8f6c29dc07ebf558437a6d71c046b88e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.472.0
+    * @okouai/core bumped to 8.681.2
+    * @okouai/db bumped to 1.276.0
+    * @okouai/pi-agent-runtime bumped to 1.33.19
+
 ## [1.634.0](https://github.com/vm0-ai/okou/compare/api-v1.633.0...api-v1.634.0) (2026-09-18)
 
 

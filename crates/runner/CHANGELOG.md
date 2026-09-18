@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.200.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.2...runner-rs-v0.200.3) (2026-09-18)
+
+
+### Performance Improvements
+
+* **runner:** compress large raw histories without sampling ([#35279](https://github.com/vm0-ai/okou/issues/35279)) ([294edd0](https://github.com/vm0-ai/okou/commit/294edd0a8f6c29dc07ebf558437a6d71c046b88e))
+
 ## [0.200.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.1...runner-rs-v0.200.2) (2026-09-18)
 
 
