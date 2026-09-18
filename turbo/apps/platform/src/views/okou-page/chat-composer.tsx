@@ -10321,7 +10321,6 @@ function ComposerTemporaryModelNotice({
     updateUserModelPreference$,
   );
   const codexFastModeEnabled = useGet(codexFastModeEnabled$);
-  const featureSwitches = useGet(featureSwitch$);
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveModelFirstUserDefaultSelection({
     userPreference,
@@ -10335,11 +10334,8 @@ function ComposerTemporaryModelNotice({
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
-  const effort = preferredChatReasoningEffort(selection, featureSwitches);
-  const defaultEffort = preferredChatReasoningEffort(
-    defaultSelection,
-    featureSwitches,
-  );
+  const effort = preferredChatReasoningEffort(selection);
+  const defaultEffort = preferredChatReasoningEffort(defaultSelection);
   const effortChanged = effort !== defaultEffort;
   if (
     !selection ||

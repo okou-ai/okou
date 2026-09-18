@@ -408,17 +408,14 @@ describe("getAllFeatureStates", () => {
 
   it("releases the composer run controls to every org and keeps the off lever", () => {
     const states = getAllFeatureStates({ orgId: "org_nonexistent" });
-    expect(states[FeatureSwitchKey.Effort]).toBe(true);
     expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
 
     const reverted = getAllFeatureStates({
       orgId: "org_nonexistent",
       overrides: {
-        [FeatureSwitchKey.Effort]: false,
         [FeatureSwitchKey.CodexFastMode]: false,
       },
     });
-    expect(reverted[FeatureSwitchKey.Effort]).toBe(false);
     expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
   });
 

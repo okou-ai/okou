@@ -487,8 +487,6 @@ test("Temporarily choose a model for a new chat", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
-      // Scoping the choice is the subject; effort would add its own patch.
-      [FeatureSwitchKey.Effort]: false,
     },
   });
 
@@ -508,6 +506,7 @@ test("Temporarily choose a model for a new chat", async () => {
     expect(update).toStrictEqual({
       selectedModel: "claude-sonnet-4-6",
       serviceTier: null,
+      modelSettingsPatch: { model: "claude-sonnet-4-6", effort: "high" },
     });
     expect(futureChats).toHaveAttribute("aria-busy", "true");
   });
@@ -611,7 +610,6 @@ test("Explain model availability by plan and provider", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: false,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
@@ -682,13 +680,11 @@ test("Let an existing thread send while model availability is reconciling", asyn
     });
   });
 
-  // Sending during reconciliation is the subject; the run controls would
-  // otherwise wait on the same policy list.
+  // Sending during reconciliation is the subject.
   await setupPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: false,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
@@ -724,8 +720,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
+      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -775,8 +770,7 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
+      [FeatureSwitchKey.CodexFastMode]: true,
     },
   });
   await readyComposer();
@@ -835,9 +829,6 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
-    },
   });
   await readyComposer();
   click(await findButton("DeepSeek V4 Flash"));
@@ -867,8 +858,7 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
+      [FeatureSwitchKey.CodexFastMode]: true,
     },
   });
   const composer = await readyComposer();
@@ -938,7 +928,6 @@ test("Offer Fast beside effort on the composer for a Fast-capable model", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -974,7 +963,6 @@ test("Adjust effort from the composer without opening the model picker", async (
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -1008,7 +996,6 @@ test("Name the ends of the effort scale beside the bar", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -1053,7 +1040,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -1112,7 +1098,6 @@ test("Select the default effort on an existing thread without changing Fast", as
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
     },
@@ -1155,7 +1140,6 @@ test("Keep independent effort selections when changing models", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -1259,7 +1243,6 @@ test("Show the Pi fallback without overwriting a saved native preference", async
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });
@@ -1294,7 +1277,6 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });
@@ -1345,9 +1327,6 @@ test("Follow model-scoped effort changes made in another session", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
-    },
   });
   await readyChat();
   click(await findButton("Claude Sonnet 5"));
@@ -1397,7 +1376,6 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -1492,7 +1470,6 @@ test.each([
       context,
       path: RUN_PATH,
       featureSwitches: {
-        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: true,
       },
     });

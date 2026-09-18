@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
@@ -28,6 +29,7 @@ import { createDeferredPromise, settle } from "../../utils";
 import { runnersRoutes } from "../runners";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
@@ -1702,6 +1704,11 @@ describe("durable Pi API producer", () => {
     configureNativeCliArtifact();
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PaidToolControls]: false },
+    );
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -1741,6 +1748,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     expect(calls).toBe(1);
 
+    // The API first turn is already prepared. The Sandbox should capture the
+    // owner's latest preference when it is materialized by the runner claim.
+    await setPaidToolDisabled(context, actor, "web-search", true);
     await expect(
       cleanupRun(run.runId, orgId, usagePricingResolution),
     ).resolves.toMatchObject({
@@ -1749,6 +1759,9 @@ describe("durable Pi API producer", () => {
     const { claim, runnerId } = await claimDeferredPiRun(
       run.runId,
       runnerGroup,
+    );
+    expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["web-search"]',
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
