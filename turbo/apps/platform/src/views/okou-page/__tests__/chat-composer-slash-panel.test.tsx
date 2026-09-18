@@ -133,19 +133,22 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   expect(within(pane).getByText(first.title)).toBeInTheDocument();
 });
 
-test("The pane carries more than one row of covers, so later templates are reachable", async () => {
+test("The pane carries the whole category, so its covers match the count it heads", async () => {
   await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
   }
-  // A template past the first row proves the pane scrolls its covers rather
-  // than showing the single row a fixed-height pane could hold.
-  const later = PRESENTATION_TEMPLATE_PICKER_ITEMS[7];
-  if (!later) {
-    throw new Error("Expected an eighth presentation template");
+  // The pane scrolls, so every template in the category is reachable — the
+  // header's count and the covers under it describe the same set.
+  expect(
+    pane.querySelectorAll("[data-slot='slash-template-cover']"),
+  ).toHaveLength(PRESENTATION_TEMPLATE_PICKER_ITEMS.length);
+  const last = PRESENTATION_TEMPLATE_PICKER_ITEMS.at(-1);
+  if (!last) {
+    throw new Error("Expected a presentation template");
   }
-  expect(within(pane).getByText(later.title)).toBeInTheDocument();
+  expect(within(pane).getByText(last.title)).toBeInTheDocument();
 });
 
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {

@@ -149,14 +149,6 @@ export function isSlashTemplateNativeAspectCategory(
   });
 }
 
-/**
- * The pane scrolls, so it carries several screens of covers rather than the one
- * row a fixed pane could hold. This is catalog order, which is the same
- * curated order the picker dialog leads with; the client has no usage signal to
- * rank by. The remainder still lives behind "Browse all templates".
- */
-const SLASH_TEMPLATE_PREVIEW_COUNT = 12;
-
 export interface SlashTemplatePreview {
   readonly slug: string;
   readonly title: string;
@@ -168,13 +160,6 @@ export interface SlashTemplatePreview {
   readonly aspect?: { readonly width: number; readonly height: number };
   readonly template: GenerationTemplateRequest;
   readonly attachment: ComposerTemplateAttachment;
-}
-
-interface SlashTemplatePreviewGroup {
-  readonly category: SlashTemplatePreviewCategory;
-  /** Every template in the category, not just the previewed ones. */
-  readonly total: number;
-  readonly previews: readonly SlashTemplatePreview[];
 }
 
 function coverUrl(source: string): string {
@@ -254,58 +239,28 @@ function websitePreview(item: WebsiteTemplateItem): SlashTemplatePreview {
   };
 }
 
-function previewsFor(
+/**
+ * The whole category, in catalog order — the same curated order the picker
+ * dialog leads with, since the client has no usage signal to rank by. Both
+ * surfaces that render these scroll, and the slash pane heads them with the
+ * category's size, so carrying only the first screenful left the covers
+ * disagreeing with the count they sit under.
+ */
+export function slashTemplatePreviews(
   category: SlashTemplatePreviewCategory,
 ): readonly SlashTemplatePreview[] {
   switch (category) {
     case "slides": {
-      return PRESENTATION_TEMPLATE_PICKER_ITEMS.slice(
-        0,
-        SLASH_TEMPLATE_PREVIEW_COUNT,
-      ).map(presentationPreview);
+      return PRESENTATION_TEMPLATE_PICKER_ITEMS.map(presentationPreview);
     }
     case "illustration": {
-      return ILLUSTRATION_TEMPLATE_ITEMS.slice(
-        0,
-        SLASH_TEMPLATE_PREVIEW_COUNT,
-      ).map(illustrationPreview);
+      return ILLUSTRATION_TEMPLATE_ITEMS.map(illustrationPreview);
     }
     case "video": {
-      return VIDEO_TEMPLATE_ITEMS.slice(0, SLASH_TEMPLATE_PREVIEW_COUNT).map(
-        videoPreview,
-      );
+      return VIDEO_TEMPLATE_ITEMS.map(videoPreview);
     }
     case "website": {
-      return WEBSITE_TEMPLATE_ITEMS.slice(0, SLASH_TEMPLATE_PREVIEW_COUNT).map(
-        websitePreview,
-      );
+      return WEBSITE_TEMPLATE_ITEMS.map(websitePreview);
     }
   }
-}
-
-function totalFor(category: SlashTemplatePreviewCategory): number {
-  switch (category) {
-    case "slides": {
-      return PRESENTATION_TEMPLATE_PICKER_ITEMS.length;
-    }
-    case "illustration": {
-      return ILLUSTRATION_TEMPLATE_ITEMS.length;
-    }
-    case "video": {
-      return VIDEO_TEMPLATE_ITEMS.length;
-    }
-    case "website": {
-      return WEBSITE_TEMPLATE_ITEMS.length;
-    }
-  }
-}
-
-export function slashTemplatePreviewGroup(
-  category: SlashTemplatePreviewCategory,
-): SlashTemplatePreviewGroup {
-  return {
-    category,
-    total: totalFor(category),
-    previews: previewsFor(category),
-  };
 }

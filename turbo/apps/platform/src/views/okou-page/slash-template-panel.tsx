@@ -20,7 +20,7 @@ import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflo
 import {
   isSlashTemplateNativeAspectCategory,
   isSlashTemplatePreviewCategory,
-  slashTemplatePreviewGroup,
+  slashTemplatePreviews,
   type SlashTemplateCategory,
   type SlashTemplatePreview,
   type SlashTemplatePreviewCategory,
@@ -176,6 +176,7 @@ function SlashTemplateCover({
   return (
     <button
       type="button"
+      data-slot="slash-template-cover"
       className={cn(
         "group min-w-0 text-left",
         aspect && "mb-2.5 block w-full break-inside-avoid",
@@ -232,7 +233,7 @@ function SlashTemplateDetailPane({
   readonly onImportDeck: (file: File) => void;
 }) {
   const { t } = useTranslation();
-  const group = slashTemplatePreviewGroup(category);
+  const previews = slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
   return (
@@ -260,7 +261,7 @@ function SlashTemplateDetailPane({
                 ($) => {
                   return $.chat.composer.slashPanel.templateCount;
                 },
-                { count: group.total },
+                { count: previews.length },
               )}
             </span>
           </span>
@@ -299,7 +300,7 @@ function SlashTemplateDetailPane({
             {category === "slides" && (
               <SlashTemplateImportCard onImportDeck={onImportDeck} />
             )}
-            {group.previews.map((preview) => {
+            {previews.map((preview) => {
               return (
                 <SlashTemplateCover
                   key={preview.slug}
