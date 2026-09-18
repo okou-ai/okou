@@ -6256,6 +6256,52 @@ function sourceMessageLinkText(
   return { opensChat, openLabel };
 }
 
+function sourceMessageLabel(
+  t: TFunction<"common">,
+  kind: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"]["kind"],
+): string {
+  switch (kind) {
+    case "slack": {
+      return t(($) => {
+        return $.chat.origins.slack;
+      });
+    }
+    case "feishu": {
+      return t(($) => {
+        return $.chat.origins.feishu;
+      });
+    }
+    case "lark": {
+      return t(($) => {
+        return $.chat.origins.lark;
+      });
+    }
+    case "teams": {
+      return t(($) => {
+        return $.chat.origins.teams;
+      });
+    }
+    case "telegram": {
+      return t(($) => {
+        return $.chat.origins.telegram;
+      });
+    }
+    case "github": {
+      return t(($) => {
+        return $.chat.origins.github;
+      });
+    }
+    case "agentphone": {
+      return t(($) => {
+        return $.chat.origins.agentphone;
+      });
+    }
+  }
+}
+
 function SourceMessageAnnotation({
   renderPart,
   className,
@@ -6281,9 +6327,7 @@ function SourceMessageAnnotation({
     part.href?.startsWith("https://applink.larksuite.com/") === true
       ? "lark"
       : part.kind;
-  const sourceLabel = t(($) => {
-    return $.chat.origins[sourceKind];
-  });
+  const sourceLabel = sourceMessageLabel(t, sourceKind);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
     opensChat && sourceKind !== "feishu" && sourceKind !== "lark"
