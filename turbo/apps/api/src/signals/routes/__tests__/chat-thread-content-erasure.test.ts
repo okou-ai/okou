@@ -12,6 +12,7 @@ import {
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   holdChatThreadEventIdFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -119,6 +120,18 @@ async function readThreadTitle(
     fixture.threadId,
   );
   return metadata.title;
+}
+
+async function readClosedThreadTitle(
+  fixture: ContentFixture,
+): Promise<string | null> {
+  const response = await chat.requestReadThreadMetadata(
+    fixture.actor,
+    fixture.threadId,
+    [404],
+  );
+  expect(response.status).toBe(404);
+  return (await readStoredChatThreadMetadataFixture(fixture.threadId)).title;
 }
 
 describe("account erasure fences direct chat-thread content writes", () => {
@@ -254,7 +267,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       [404],
     );
 
-    await expect(readThreadTitle(fixture)).resolves.toBe("First title");
+    await expect(readClosedThreadTitle(fixture)).resolves.toBe("First title");
     await expect(sidebarRenames(fixture)).resolves.toStrictEqual(before);
 
     // The denied attempt left the durable sequence untouched, so the next
@@ -284,7 +297,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       "Closed org title",
       [404],
     );
-    await expect(readThreadTitle(fixture)).resolves.toBe("Org title");
+    await expect(readClosedThreadTitle(fixture)).resolves.toBe("Org title");
   });
 
   it("makes a closure wait for an admitted writer and fences the next write", async () => {
@@ -351,7 +364,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       "Closed shared owner title",
       [404],
     );
-    await expect(readThreadTitle(fixture)).resolves.toBe("Shared title");
+    await expect(readClosedThreadTitle(fixture)).resolves.toBe("Shared title");
     await expect(sidebarRenames(fixture)).resolves.toStrictEqual([
       { seqId: expect.any(Number), title: "Shared title" },
     ]);
@@ -408,7 +421,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       await removeErasureSubjectsFixture([closed.jobId]);
     });
 
-    await expect(readThreadTitle(fixture)).resolves.toBe("Barrier title");
+    await expect(readClosedThreadTitle(fixture)).resolves.toBe("Barrier title");
     const admitted = await sidebarRenames(fixture);
     expect(admitted.map(renameTitle)).toStrictEqual([
       "Admitted title",
@@ -422,7 +435,7 @@ describe("account erasure fences direct chat-thread content writes", () => {
       "Post closure title",
       [404],
     );
-    await expect(readThreadTitle(fixture)).resolves.toBe("Barrier title");
+    await expect(readClosedThreadTitle(fixture)).resolves.toBe("Barrier title");
   });
 
   it("rolls the title, sidebar event and sequence back when the rename fails after writing them", async () => {

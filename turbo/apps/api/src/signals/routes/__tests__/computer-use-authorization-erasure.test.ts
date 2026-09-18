@@ -28,6 +28,7 @@ import {
 } from "../../../test-fixtures/computer-use-authorization";
 import {
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   setChatThreadUserFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -260,6 +261,17 @@ async function readSelection(fixture: AuthorizationRunFixture): Promise<{
   };
 }
 
+async function readStoredSelection(fixture: AuthorizationRunFixture): Promise<{
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+}> {
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    computerUseHostId: metadata.computerUseHostId,
+    cloudBrowserEnabled: metadata.cloudBrowserEnabled,
+  };
+}
+
 function clearPublications(): void {
   context.mocks.ably.channelGet.mockClear();
   context.mocks.ably.publish.mockClear();
@@ -311,7 +323,7 @@ async function readCreationState(
     requestCount: await countComputerUseAuthorizationRequestsFixture(
       fixture.runId,
     ),
-    selection: await readSelection(fixture),
+    selection: await readStoredSelection(fixture),
     events: await sidebarHostEvents(fixture),
     lastSeqId: await lastSidebarSeqId(fixture),
     threadState: await readChatThreadTitleStateFixture(fixture.threadId),

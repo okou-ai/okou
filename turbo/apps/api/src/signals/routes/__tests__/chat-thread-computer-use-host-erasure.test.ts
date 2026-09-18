@@ -12,6 +12,7 @@ import {
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   holdChatThreadEventIdFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -122,6 +123,23 @@ async function readSelection(fixture: HostSelectionFixture): Promise<{
   };
 }
 
+async function readClosedSelection(fixture: HostSelectionFixture): Promise<{
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+}> {
+  const response = await chat.requestReadThreadMetadata(
+    fixture.actor,
+    fixture.threadId,
+    [404],
+  );
+  expect(response.status).toBe(404);
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    computerUseHostId: metadata.computerUseHostId,
+    cloudBrowserEnabled: metadata.cloudBrowserEnabled,
+  };
+}
+
 /** The `threadListChanged` invalidations this request published, counted from
  * a cleared mock so an earlier setup write is never attributed to it. */
 function countThreadListInvalidations(): number {
@@ -198,7 +216,9 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
     });
     await requestEveryDeniedSelection(fixture, otherHost.hostId);
 
-    await expect(readSelection(fixture)).resolves.toStrictEqual(selection);
+    await expect(readClosedSelection(fixture)).resolves.toStrictEqual(
+      selection,
+    );
     await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(before);
 
     // The four denied attempts left the durable sequence untouched, so the
@@ -244,7 +264,9 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
 
     await requestEveryDeniedSelection(fixture, otherHost.hostId);
 
-    await expect(readSelection(fixture)).resolves.toStrictEqual(selection);
+    await expect(readClosedSelection(fixture)).resolves.toStrictEqual(
+      selection,
+    );
     await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(before);
   });
 
@@ -265,7 +287,9 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
     });
     await requestEveryDeniedSelection(fixture, otherHost.hostId);
 
-    await expect(readSelection(fixture)).resolves.toStrictEqual(selection);
+    await expect(readClosedSelection(fixture)).resolves.toStrictEqual(
+      selection,
+    );
     await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(before);
   });
 
@@ -310,7 +334,7 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
       closed.hostId,
       [404],
     );
-    await expect(readSelection(closed)).resolves.toStrictEqual({
+    await expect(readClosedSelection(closed)).resolves.toStrictEqual({
       computerUseHostId: null,
       cloudBrowserEnabled: false,
     });
@@ -381,7 +405,7 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
     const admitted = await sidebarHostEvents(fixture);
     expect(admitted).toHaveLength(1);
     expect(admitted.at(-1)?.computerUseHostId).toBe(fixture.hostId);
-    const selection = await readSelection(fixture);
+    const selection = await readClosedSelection(fixture);
     expect(selection.computerUseHostId).toBe(fixture.hostId);
 
     // The closure landed behind the admitted write, so the next selection is
@@ -392,7 +416,9 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
       null,
       [404],
     );
-    await expect(readSelection(fixture)).resolves.toStrictEqual(selection);
+    await expect(readClosedSelection(fixture)).resolves.toStrictEqual(
+      selection,
+    );
     await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(admitted);
   });
 
@@ -424,7 +450,7 @@ describe("account erasure fences chat-thread Computer Use selection", () => {
       context.signal,
     );
 
-    await expect(readSelection(fixture)).resolves.toStrictEqual({
+    await expect(readClosedSelection(fixture)).resolves.toStrictEqual({
       computerUseHostId: null,
       cloudBrowserEnabled: false,
     });

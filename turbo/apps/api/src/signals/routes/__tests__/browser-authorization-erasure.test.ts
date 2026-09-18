@@ -34,6 +34,7 @@ import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events
 import {
   holdChatThreadEventIdFixture,
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   setChatThreadUserFixture,
   withChatThreadContentBarrierFixture,
@@ -357,6 +358,17 @@ async function readSelection(fixture: AuthorizationRunFixture): Promise<{
   };
 }
 
+async function readStoredSelection(fixture: AuthorizationRunFixture): Promise<{
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+}> {
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    computerUseHostId: metadata.computerUseHostId,
+    cloudBrowserEnabled: metadata.cloudBrowserEnabled,
+  };
+}
+
 /**
  * Start this case's publication evidence from an empty paired view, so an
  * earlier setup write is never attributed to the request under test. Both spies
@@ -445,7 +457,7 @@ async function readDurableAuthorization(
 async function readApplyState(
   fixture: AuthorizationFixture,
 ): Promise<ApplyState> {
-  const selection = await readSelection(fixture);
+  const selection = await readStoredSelection(fixture);
   return {
     selection,
     authorization: await readDurableAuthorization(fixture, selection),
@@ -514,7 +526,7 @@ async function readCreationState(
 ): Promise<CreationState> {
   return {
     requestCount: await countBrowserAuthorizationRequestsFixture(fixture.runId),
-    selection: await readSelection(fixture),
+    selection: await readStoredSelection(fixture),
     events: await sidebarHostEvents(fixture),
     lastSeqId: await lastSidebarSeqId(fixture),
     threadState: await readChatThreadTitleStateFixture(fixture.threadId),

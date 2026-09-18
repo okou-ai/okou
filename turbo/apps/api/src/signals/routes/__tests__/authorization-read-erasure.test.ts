@@ -38,6 +38,7 @@ import {
 } from "../../../test-fixtures/computer-use-authorization";
 import {
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   setChatThreadUserFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -355,7 +356,10 @@ async function sidebarSequence(fixture: AuthorizationReadFixture) {
   };
 }
 
-async function durableReadState(fixture: AuthorizationReadFixture) {
+async function durableReadState(
+  fixture: AuthorizationReadFixture,
+  metadataSource: "http" | "stored" = "http",
+) {
   const request =
     fixture.kind === "browser"
       ? await readBrowserAuthorizationRequestFixture(fixture.requestToken)
@@ -363,10 +367,10 @@ async function durableReadState(fixture: AuthorizationReadFixture) {
   if (!request) {
     throw new Error("Expected the authorization request durable state");
   }
-  const metadata = await chat.readThreadMetadata(
-    fixture.actor,
-    fixture.threadId,
-  );
+  const metadata =
+    metadataSource === "http"
+      ? await chat.readThreadMetadata(fixture.actor, fixture.threadId)
+      : await readStoredChatThreadMetadataFixture(fixture.threadId);
   return {
     request,
     thread: await readChatThreadTitleStateFixture(fixture.threadId),
@@ -552,9 +556,16 @@ describe.each(["browser", "computer-use"] as const)(
         const denied = await readAuthorization(fixture, [404]);
         expect(denied.status).toBe(404);
         expectDeniedBody(denied.body, fixture);
-        await expect(durableReadState(fixture)).resolves.toStrictEqual(
-          baseline,
-        );
+        await expect(
+          chat.requestReadThreadMetadata(
+            fixture.actor,
+            fixture.threadId,
+            [404],
+          ),
+        ).resolves.toMatchObject({ status: 404 });
+        await expect(
+          durableReadState(fixture, "stored"),
+        ).resolves.toStrictEqual(baseline);
         expectNoPublications();
 
         await removeErasureSubjectsFixture([closed.jobId]);

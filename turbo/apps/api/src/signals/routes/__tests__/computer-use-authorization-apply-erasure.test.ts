@@ -30,6 +30,7 @@ import {
 } from "../../../test-fixtures/computer-use-authorization";
 import {
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   setChatThreadUserFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -367,6 +368,17 @@ async function readSelection(fixture: AuthorizationRunFixture): Promise<{
   };
 }
 
+async function readStoredSelection(fixture: AuthorizationRunFixture): Promise<{
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+}> {
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    computerUseHostId: metadata.computerUseHostId,
+    cloudBrowserEnabled: metadata.cloudBrowserEnabled,
+  };
+}
+
 async function readAuthorization(fixture: AuthorizationFixture): Promise<{
   readonly completedAt: string | null;
   readonly computerUseHostId: string | null;
@@ -417,7 +429,7 @@ async function readApplyState(
   if (!request) {
     throw new Error("Expected the authorization request row");
   }
-  const selection = await readSelection(fixture);
+  const selection = await readStoredSelection(fixture);
   return {
     selection,
     authorization: durableAuthorization(request, selection),

@@ -15,6 +15,7 @@ import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { nowDate } from "../lib/time";
 import {
+  acknowledgeDetachedForTest,
   createDeferredPromise,
   detach,
   Mechanism,
@@ -195,6 +196,23 @@ interface TransactionBarrierEntryDeferred {
   readonly settled: () => boolean;
 }
 
+function settleOwnedBarrierEntry<T>(promise: Promise<T>) {
+  acknowledgeDetachedForTest(promise);
+  return settleIncludingAbort(promise);
+}
+
+function selectedBarrierQuery(
+  args: {
+    readonly select: (queryArgs: unknown[]) => boolean;
+    readonly observe?: (queryArgs: unknown[], receiver: unknown) => void;
+  },
+  queryArgs: unknown[],
+  receiver: unknown,
+): boolean {
+  args.observe?.(queryArgs, receiver);
+  return args.select(queryArgs);
+}
+
 const transactionBarrierSettingsSchema = z.object({
   rows: z
     .array(
@@ -265,6 +283,19 @@ async function deliverPausedCallbackQuery(args: {
   Reflect.apply(args.completion, args.receiver, args.callbackArgs);
 }
 
+interface DatabaseTransactionBarrierFixtureArgs<T> {
+  readonly select: (queryArgs: unknown[]) => boolean;
+  readonly stopAt: (
+    queryArgs: unknown[],
+    selectingStatement: boolean,
+    transaction: SelectedTransaction,
+  ) => boolean;
+  readonly pauseAfter?: boolean;
+  /** Observes unchanged driver calls for focused SQL/control accounting. */
+  readonly observe?: (queryArgs: unknown[], receiver: unknown) => void;
+  readonly work: (barrier: TransactionBarrier) => Promise<T>;
+}
+
 /**
  * Infrastructure exception: no API can suspend a real transaction between its
  * statements, and a fenced writer's own transaction is the only place its
@@ -299,16 +330,7 @@ async function deliverPausedCallbackQuery(args: {
  * waits forever for a stop it will never reach.
  */
 export async function withDatabaseTransactionBarrierFixture<T>(
-  args: {
-    readonly select: (queryArgs: unknown[]) => boolean;
-    readonly stopAt: (
-      queryArgs: unknown[],
-      selectingStatement: boolean,
-      transaction: SelectedTransaction,
-    ) => boolean;
-    readonly pauseAfter?: boolean;
-    readonly work: (barrier: TransactionBarrier) => Promise<T>;
-  },
+  args: DatabaseTransactionBarrierFixtureArgs<T>,
   signal: AbortSignal,
 ): Promise<T> {
   await closeDbPool();
@@ -322,7 +344,7 @@ export async function withDatabaseTransactionBarrierFixture<T>(
   }>(signal);
   // Own the entry promise even for negative observations where the selected
   // statement correctly never starts before `work` returns.
-  const enteredSettlement = settleIncludingAbort(entered.promise);
+  const enteredSettlement = settleOwnedBarrierEntry(entered.promise);
   const blocked = async () => {
     return await blockedWaiterCount((await entered.promise).pid);
   };
@@ -338,7 +360,11 @@ export async function withDatabaseTransactionBarrierFixture<T>(
   let paused = false;
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
-      const selectingStatement = args.select(queryArgs);
+      const selectingStatement = selectedBarrierQuery(
+        args,
+        queryArgs,
+        receiver,
+      );
       if (!paused && selectingStatement && selected === undefined) {
         selected = receiver;
         statements = [];
