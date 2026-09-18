@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { isAbsolute } from "node:path";
 import { DownloadDestination, fileReason } from "../ssh/file-local";
 import {
   VNC_LIMITS,
@@ -87,12 +87,9 @@ async function closeDestination(
 export async function invokeVncRpc(
   method: VncMethod,
   params: Record<string, unknown>,
-  capture?: CaptureDestination,
+  captureOptions?: CaptureDestination,
 ): Promise<VncOutcome> {
-  // Reuse the existing descriptor-pinned private sink, not SSH RPC semantics.
-  const destination = capture
-    ? new DownloadDestination(capture.path, capture.overwrite)
-    : undefined;
+  let destination: DownloadDestination | undefined;
   const controller = new AbortController();
   const { signal } = controller;
   const cancel = () => {
@@ -106,8 +103,19 @@ export async function invokeVncRpc(
   let spawnFailed = false;
   let outcome: VncOutcome;
   try {
-    if ((method === "vnc.capture") !== Boolean(capture))
+    if ((method === "vnc.capture") !== Boolean(captureOptions))
       throw new VncError("invalid_input");
+    // Keep filesystem path semantics: resolving .. lexically can skip a symlink.
+    const capture = captureOptions && {
+      ...captureOptions,
+      path: isAbsolute(captureOptions.path)
+        ? captureOptions.path
+        : `${process.cwd()}/${captureOptions.path}`,
+    };
+    // Reuse the existing descriptor-pinned private sink, not SSH RPC semantics.
+    destination = capture
+      ? new DownloadDestination(capture.path, capture.overwrite)
+      : undefined;
     await destination?.init();
     signal.throwIfAborted();
     const frames = new VncFrames(method, params);
@@ -198,7 +206,7 @@ export async function invokeVncRpc(
         outcome = {
           ...frames.metadata,
           outcome: "captured",
-          path: resolve(capture.path),
+          path: capture.path,
           sha256,
         };
       } else outcome = terminal.data;

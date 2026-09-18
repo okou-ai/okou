@@ -1,16 +1,18 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
   rm,
+  rmdir,
   stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createVncCommand } from "../index";
 
@@ -673,6 +675,57 @@ describe("VNC screenshots", () => {
       expect(process.exitCode).toBe(0);
     },
   );
+
+  it.each([false, true])(
+    "returns the published path through symlink parents with relative=%s",
+    async (useRelativePath) => {
+      const actualParent = join(directory, "actual");
+      const nested = join(actualParent, "nested");
+      await mkdir(nested, { recursive: true });
+      await symlink(nested, join(directory, "alias"));
+      const base = useRelativePath
+        ? relative(process.cwd(), directory)
+        : directory;
+      // Preserve the components: the filesystem resolves .. after the symlink.
+      const requestedPath = `${base}/alias/../screen.png`;
+
+      const result = await invoke(
+        "screenshot",
+        sessionId,
+        "--output",
+        requestedPath,
+      );
+
+      expect(result.outcome).toBe("captured");
+      expect(await readFile(requestedPath)).toEqual(screenshotBytes);
+      expect(isAbsolute(result.path)).toBe(true);
+      expect(await readFile(result.path)).toEqual(screenshotBytes);
+      expect(await readdir(actualParent)).toEqual(["nested", "screen.png"]);
+      expect(process.exitCode).toBe(0);
+    },
+  );
+
+  it("reports a removed working directory before dispatching a capture", async () => {
+    const previousCwd = process.cwd();
+    const removedDirectory = join(directory, "removed");
+    await mkdir(removedDirectory);
+    try {
+      process.chdir(removedDirectory);
+      await rmdir(removedDirectory);
+
+      expect(
+        await invoke("screenshot", sessionId, "--output", "screen.png"),
+      ).toEqual({
+        outcome: "failed",
+        reason: "path_not_found",
+        delivery: "not_dispatched",
+      });
+      expect(spawn).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.chdir(previousCwd);
+    }
+  });
 
   it("refuses existing files and symlinks before contacting the helper", async () => {
     const path = join(directory, "existing.png");
