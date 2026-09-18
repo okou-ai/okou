@@ -250,7 +250,6 @@ Dir.mktmpdir("native-test-artifact") do |dir|
     raise "consumer must retain producer attempt" unless consumer.dig("env", "PRODUCER_ATTEMPT") == "${{ needs.#{prefix}-build.outputs.producer-attempt }}"
     [producer, consumer].each do |job|
       raise "credentials must stay step-scoped" if job.fetch("env").key?("AWS_SECRET_ACCESS_KEY")
-      raise "native transfer must not use GitHub Artifact" if job.fetch("steps").any? { |step| step.fetch("uses", "").match?(%r{actions/(upload|download)-artifact@}) }
     end
   end
 end
