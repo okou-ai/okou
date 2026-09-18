@@ -1,4 +1,7 @@
 ALTER TABLE "morning_brief_generations" DROP CONSTRAINT "chk_morning_brief_generation_decision";--> statement-breakpoint
+ALTER TABLE "morning_brief_generations" ADD COLUMN "installation_id" uuid;--> statement-breakpoint
+ALTER TABLE "morning_brief_generations" ADD COLUMN "automation_id" uuid;--> statement-breakpoint
+ALTER TABLE "morning_brief_generations" ADD COLUMN "chat_thread_id" uuid;--> statement-breakpoint
 ALTER TABLE "morning_brief_generations" ADD COLUMN "content_purged_at" timestamp;--> statement-breakpoint
 ALTER TABLE "morning_brief_generations" ADD CONSTRAINT "chk_morning_brief_generation_decision" CHECK (("morning_brief_generations"."state" = 'succeeded') = ("morning_brief_generations"."decision" IS NOT NULL)
           AND ("morning_brief_generations"."decision" = 'deliver') =

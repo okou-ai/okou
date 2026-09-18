@@ -295,6 +295,7 @@ async function retainedSourcesStillAuthorized(
 
 function generationAdmissionOf(args: {
   readonly admission: MorningBriefCollectionAdmission;
+  readonly scope: MorningBriefCollectionScope;
   readonly transport: MorningBriefCompositionTransport;
   readonly language: MorningBriefLanguagePlan;
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
@@ -315,6 +316,9 @@ function generationAdmissionOf(args: {
     attemptId: randomUUID(),
     membershipId: admission.membershipId,
     agentId: admission.agentId,
+    installationId: args.scope.installationId,
+    automationId: args.scope.automationId,
+    chatThreadId: args.scope.chatThreadId,
     model: MORNING_BRIEF_GENERATION_MODEL,
     language: args.language.fallbackLanguage,
     languageSource: args.language.authority,
@@ -557,6 +561,7 @@ async function admitComposedGeneration(
   args: {
     readonly db: Db;
     readonly admission: MorningBriefCollectionAdmission;
+    readonly scope: MorningBriefCollectionScope;
     readonly claim: MorningBriefCollectionClaim;
     readonly completion: MorningBriefCollectionCompletion;
     readonly composed: Extract<
@@ -606,6 +611,7 @@ async function admitComposedGeneration(
     const language = args.composed.result.language;
     const pending = generationAdmissionOf({
       admission,
+      scope: args.scope,
       transport: transport ?? {
         body: "",
         bodyBytes: 0,
@@ -795,6 +801,7 @@ const reserveAndInvoke$ = command(
         {
           db,
           admission,
+          scope: input.scope,
           claim,
           completion,
           composed,

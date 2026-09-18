@@ -2333,3 +2333,47 @@ schedule, Run, credit, Chat or email behavior, and it does not activate the
 still-unregistered Clerk erasure bridge. It is a local serialization boundary
 for one owner's collection authority; durable membership and materialization
 ownership and global deletion finality remain S7 gates.
+
+## Morning Brief retained generation authority (#35054)
+
+Migration 1162 adds nullable `installation_id`, `automation_id`,
+`chat_thread_id`, and `content_purged_at` columns to
+`morning_brief_generations`. It also replaces that table's decision constraint
+so an expired successful delivery may retain a content-free invocation fence.
+The binding columns are nullable only for rows written by the older Slack-only
+writer; every all-source reservation writes the complete canonical binding.
+The migration has no backfill, but replacing the check constraint inspects the
+existing table and takes the migration wrapper's ordinary bounded table lock.
+
+The API and migration therefore have these mixed-version rules:
+
+- **Old code after migration** keeps writing null binding columns and a null
+  purge stamp. Those rows still satisfy the expanded constraint and retain the
+  existing Slack authority checks. Old code ignores binding proof written by a
+  newer API.
+- **New code before migration** must not be promoted. Reservation, stored-result
+  revalidation, and expiry sanitation name the new columns directly; without
+  migration 1162 they fail with `42703`. The default-off feature switch and
+  protected preview route contain provider use, but they are not a substitute
+  for the repository's migration-before-API ordering.
+- **New readers of old rows** preserve only the Slack-only contract. A row whose
+  `collection_kind` is `sources` must have retained source proof and complete
+  installation/automation provenance or its content is withheld. A historical
+  non-`sources` row may use its existing live Slack authority gate during the
+  rollback overlap; this compatibility branch can be removed after the old API
+  rollback window closes and the 24-hour result lifetime has elapsed. The
+  generation-time null destination may become the exact thread recorded by its
+  first S6 delivery receipt; only that receipt-first transition is accepted,
+  and any later destination change is withheld.
+- **Rollback after new writes** ignores the additive binding metadata. Content
+  sanitation starts only at the row's existing `expires_at`, when the old
+  generation contract already refuses the result. The row remains solely as a
+  cross-kind/version invocation fence through the seven-day anchor admission
+  window, and the separate immutable email outbox retains any already committed
+  email body.
+
+Retained descriptors identify every source that supplied model input, including
+uncited material, and survive only through the original result or email
+obligation deadline. They contain no source body, prompt, instruction text, or
+credential. Platform usage receipts remain anonymous and are neither purged nor
+reattributed to a user or organization.

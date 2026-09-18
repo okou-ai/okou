@@ -115,6 +115,10 @@ export interface MorningBriefGenerationAdmission {
   readonly attemptId: string;
   readonly membershipId: string;
   readonly agentId: string;
+  /** Complete canonical binding; null only for historical Slack-only writers. */
+  readonly installationId: string | null;
+  readonly automationId: string | null;
+  readonly chatThreadId: string | null;
   readonly model: string;
   readonly language: string;
   readonly languageSource: (typeof morningBriefGenerations.$inferInsert)["languageSource"];
@@ -151,6 +155,9 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
     attemptId: admission.attemptId,
     membershipId: admission.membershipId,
     agentId: admission.agentId,
+    installationId: admission.installationId,
+    automationId: admission.automationId,
+    chatThreadId: admission.chatThreadId,
     model: admission.model,
     promptVersion: MORNING_BRIEF_GENERATION_PROMPT_VERSION,
     resultSchemaVersion: MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,

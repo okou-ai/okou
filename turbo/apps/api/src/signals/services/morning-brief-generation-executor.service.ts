@@ -252,6 +252,10 @@ function admissionOf(args: {
     attemptId: randomUUID(),
     membershipId: context.admission.membershipId,
     agentId: context.admission.agentId,
+    // The Slack-only compatibility writer predates retained all-source proof.
+    installationId: null,
+    automationId: null,
+    chatThreadId: null,
     model: MORNING_BRIEF_GENERATION_MODEL,
     language: language.language,
     languageSource: language.source,

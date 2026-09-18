@@ -18,7 +18,9 @@ import {
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
 import {
+  bindMorningBriefThreadFixture,
   markChatThreadReadFixture,
+  replaceMorningBriefAutomationFixture,
   seedFinishedChatRunFixture$,
   seedOrdinaryChatThreadFixture$,
 } from "../../../test-fixtures/morning-brief-chat-collection";
@@ -604,6 +606,8 @@ describe("composed Morning Brief generation", () => {
     expect(row?.reportedLanguage).toBe("zh-Hans");
     // Retained proof exists and outlives the body it was collected for.
     expect(row?.retainedSources).not.toBeNull();
+    expect(row?.installationId).toBe(fixture.workflowId);
+    expect(row?.automationId).toBe(fixture.automationId);
     expect(row?.retainedUntil).not.toBeNull();
     expect(row?.retainedUntil?.getTime() ?? 0).toBeGreaterThanOrEqual(
       row?.expiresAt.getTime() ?? 0,
@@ -713,6 +717,61 @@ describe("composed Morning Brief generation", () => {
       [200],
     );
     expect(readback.body.result).toBe("authority-changed");
+    expect(provider.bodies).toHaveLength(1);
+
+    const delivery = await accept(
+      deliveryClient().preview({
+        headers: fixture.headers,
+        body: { resultAttemptId: generated.body.generation.attemptId },
+      }),
+      [409],
+    );
+    expect(delivery.body.error.code).toBe("MORNING_BRIEF_OWNER_REVOKED");
+  });
+
+  it("withholds persisted content after the canonical automation is replaced", async () => {
+    const fixture = await seedOwnerWithoutConnectors();
+    await withSlack(fixture);
+    slackWithMessages(["ship the release"]);
+    const provider = scriptProvider(
+      JSON.stringify({
+        decision: "deliver",
+        language: "en-US",
+        title: "Today",
+        sections: [
+          {
+            heading: "Decisions",
+            items: [{ text: "Release is going out", citations: ["c1"] }],
+          },
+        ],
+      }),
+    );
+    const generated = await accept(
+      client().generate({
+        headers: fixture.headers,
+        body: { anchor: ANCHOR },
+      }),
+      [200],
+    );
+    if (generated.body.result !== "generated") {
+      throw new Error("expected a generated brief");
+    }
+
+    await replaceMorningBriefAutomationFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      workflowId: fixture.workflowId,
+      automationId: fixture.automationId,
+    });
+
+    const readback = await accept(
+      client().generate({
+        headers: fixture.headers,
+        body: { anchor: ANCHOR },
+      }),
+      [409],
+    );
+    expect(readback.body.error.code).toBe("MORNING_BRIEF_GENERATION_CONFLICT");
     expect(provider.bodies).toHaveLength(1);
 
     const delivery = await accept(
@@ -1005,7 +1064,7 @@ describe("composed Morning Brief generation", () => {
     const fixture = await seedOwnerWithoutConnectors();
     await withSlack(fixture);
     slackWithMessages(["ship the release"]);
-    scriptProvider(
+    const provider = scriptProvider(
       JSON.stringify({
         decision: "deliver",
         language: "en-US",
@@ -1060,5 +1119,36 @@ describe("composed Morning Brief generation", () => {
     expect(repeated.body.delivery.chatEventId).toBe(
       delivered.body.delivery.chatEventId,
     );
+
+    // S6's receipt is the only valid null → destination transition. Rebinding
+    // the same installation and automation to another real thread withholds
+    // the persisted source content without making another provider request.
+    const replacementThreadId = await store.set(
+      seedOrdinaryChatThreadFixture$,
+      {
+        member: {
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+          agentId: fixture.agentId,
+        },
+        title: "Replacement destination",
+      },
+      context.signal,
+    );
+    await bindMorningBriefThreadFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      workflowId: fixture.workflowId,
+      chatThreadId: replacementThreadId,
+    });
+    const rebound = await accept(
+      client().generate({
+        headers: fixture.headers,
+        body: { anchor: ANCHOR },
+      }),
+      [200],
+    );
+    expect(rebound.body.result).toBe("authority-changed");
+    expect(provider.bodies).toHaveLength(1);
   });
 });

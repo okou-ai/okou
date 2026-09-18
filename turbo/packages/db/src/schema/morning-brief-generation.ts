@@ -202,6 +202,16 @@ export const morningBriefGenerations = pgTable(
     membershipId: text("membership_id").notNull(),
     /** The installation Agent pinned at admission, for provenance. */
     agentId: uuid("agent_id").notNull(),
+    /**
+     * The complete canonical binding that authorized an all-source request.
+     *
+     * Nullable only for historical Slack-only rows written before retained
+     * source proof existed. A current all-source writer always sets both ids;
+     * `chat_thread_id` itself remains nullable because email-only is valid.
+     */
+    installationId: uuid("installation_id"),
+    automationId: uuid("automation_id"),
+    chatThreadId: uuid("chat_thread_id"),
 
     /** The exact model this slot requested. Never a generic default. */
     model: text("model").notNull(),

@@ -1,5 +1,5 @@
 {
-  "id": "117a42b0-6539-428f-9bec-e1fc2db1808c",
+  "id": "2738fb44-2e14-4b3f-9500-625dcd0b45b8",
   "prevId": "0382ef21-f8eb-436f-be5f-16f53bbe0d12",
   "version": "7",
   "dialect": "postgresql",
@@ -19278,6 +19278,24 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "automation_id": {
+          "name": "automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "model": {
           "name": "model",
