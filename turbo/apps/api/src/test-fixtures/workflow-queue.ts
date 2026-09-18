@@ -1,11 +1,14 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { createStore } from "ccstate";
 import { and, count, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { createDeferredPromise } from "../signals/utils";
+import { dispatchFailedRunCallbacks } from "../signals/services/agent-run-callback.service";
+import { drainChatThreadQueueForThread$ } from "../signals/services/chat-thread-queue-drain.service";
 import { admitWorkflowAutomationEvent } from "../signals/services/workflow-chat-event-queue.service";
 import {
   persistedWorkflowAutomationEventPayload,
@@ -31,6 +34,20 @@ export async function readWorkflowRunTriggerSourceFixture(
 }
 
 /** Admit a complete generic-webhook context through the production queue path. */
+export async function drainWorkflowAutomationQueueFixture(args: {
+  readonly chatThreadId: string;
+  readonly signal: AbortSignal;
+}): Promise<void> {
+  await createStore().set(
+    drainChatThreadQueueForThread$,
+    {
+      chatThreadId: args.chatThreadId,
+      dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    },
+    args.signal,
+  );
+}
+
 export async function admitWorkflowAutomationEventFixture(
   args: WorkflowAutomationEventFixtureArgs,
 ): Promise<string> {
@@ -78,11 +95,13 @@ export async function admitWorkflowAutomationEventFixture(
 
 const automationPidRowSchema = z.object({ pid: z.int() });
 const automationWaiterRowSchema = z.object({ waiterCount: z.int() });
+const automationCancelRowSchema = z.object({ cancelled: z.boolean() });
 
 interface HeldWorkflowAutomationRow {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly blockedWaiterCount: () => Promise<number>;
+  readonly cancelBlockedWaiters: () => Promise<number>;
 }
 
 /**
@@ -142,6 +161,22 @@ export async function holdWorkflowAutomationRowFixture(args: {
         throw new Error("Expected one automation waiter count row");
       }
       return row.waiterCount;
+    },
+    // No production API can fail a claim transaction at this exact point. Only
+    // queries blocked on this fixture's own row lock are cancelled.
+    cancelBlockedWaiters: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT pg_cancel_backend(activity.pid) AS "cancelled"
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        automationCancelRowSchema,
+      );
+      return rows.filter((row) => {
+        return row.cancelled;
+      }).length;
     },
   };
 }

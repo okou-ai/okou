@@ -45,13 +45,27 @@ import {
 } from "./morning-brief-collection-occurrence.service";
 import { MORNING_BRIEF_RESULT_EMAIL_TEMPLATE } from "./morning-brief-native-email-admission.service";
 import {
+  bindMorningBriefNativeThread,
+  lockMorningBriefNativeSchedule,
+  type MorningBriefNativeScheduleRow,
+} from "./morning-brief-native-schedule.service";
+import {
+  appendChatThreadEvent,
+  chatThreadServiceTierFromCodex,
+} from "./chat-thread-event.service";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  excludeMorningBriefChatThread,
+  ORDINARY_CHAT_THREAD_PROVENANCE,
+} from "./morning-brief-thread-provenance.service";
+import {
   MORNING_BRIEF_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
   MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
   MorningBriefResultEmailRenderError,
   renderMorningBriefResultEmail,
 } from "./morning-brief-result-email-renderer";
 import { morningBriefDescriptorRetainUntil } from "./morning-brief-source-authority";
-import { excludeMorningBriefChatThread } from "./morning-brief-thread-provenance.service";
 import {
   ensureWorkflowUserAutomationThread,
   loadWorkflowUserAutomationThreadId,
@@ -714,6 +728,13 @@ async function lockSubscription(
  * Returns the committed delivery when this occurrence already has one, so the
  * caller can answer a repeat request without preparing a destination.
  */
+type DeliveryAdmission =
+  | CommittedDelivery
+  | {
+      readonly kind: "admitted";
+      readonly native: MorningBriefNativeScheduleRow | null;
+    };
+
 async function admitDelivery(
   tx: Tx,
   args: {
@@ -723,7 +744,7 @@ async function admitDelivery(
     readonly current: MorningBriefCollectionAdmission;
   },
   signal: AbortSignal,
-): Promise<CommittedDelivery | null> {
+): Promise<DeliveryAdmission> {
   const { request, anchor, current } = args;
   const owner = { orgId: request.orgId, userId: request.userId };
 
@@ -731,6 +752,24 @@ async function admitDelivery(
   // collection and generation take them.
   if (!(await lockCollectionOwner(tx, owner))) {
     throw new DeliveryRejected("owner-revoked");
+  }
+
+  let native: MorningBriefNativeScheduleRow | null = null;
+  if (args.purpose === "production") {
+    const presented = request.nativeAuthority;
+    const locked = await lockMorningBriefNativeSchedule(tx, owner);
+    if (
+      presented === undefined ||
+      locked === undefined ||
+      (locked.phase !== "native" && locked.phase !== "rollback-draining") ||
+      !locked.enabled ||
+      locked.ownerEpoch !== presented.ownerEpoch ||
+      locked.membershipId !== presented.membershipId ||
+      locked.agentId !== current.agentId
+    ) {
+      throw new DeliveryRejected("owner-revoked");
+    }
+    native = locked;
   }
 
   // The occurrence row is this delivery's serialization point. Two callers for
@@ -773,7 +812,7 @@ async function admitDelivery(
 
   await lockUsableAgent(tx, owner, current.agentId);
   throwIfCancelled(signal);
-  return null;
+  return { kind: "admitted", native };
 }
 
 /** The installation name the canonical thread binding is created under. */
@@ -822,6 +861,90 @@ async function lockEnabledAutomation(
   }
 }
 
+async function createNativeDestinationThread(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  schedule: MorningBriefNativeScheduleRow,
+): Promise<string> {
+  const modelSettings = await loadNewChatThreadModelSettings(tx, owner);
+  const [thread] = await tx
+    .insert(chatThreads)
+    .values({
+      userId: owner.userId,
+      agentId: schedule.agentId,
+      title: "Morning Brief",
+      provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
+      lastReadAt: sql`NOW()`,
+      modelProviderId: null,
+      modelProviderType: null,
+      modelProviderCredentialScope: null,
+      selectedModel: null,
+      modelSettings,
+      codexServiceTier: null,
+      selectedVideoModel: null,
+      selectedImageModel: null,
+    })
+    .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
+  if (thread === undefined) {
+    throw new DeliveryRejected("destination-unavailable");
+  }
+  await appendChatThreadEvent(tx, {
+    kind: "created",
+    userId: owner.userId,
+    orgId: owner.orgId,
+    chatThreadId: thread.id,
+    agentId: schedule.agentId,
+    eventId: undefined,
+    title: "Morning Brief",
+    selectedModel: null,
+    modelSettings,
+    serviceTier: chatThreadServiceTierFromCodex(null),
+    computerUseHostId: null,
+    cloudBrowserEnabled: false,
+    selectedVideoModel: null,
+    selectedImageModel: null,
+    createdAt: thread.createdAt,
+  });
+  if (
+    !(await bindMorningBriefNativeThread(tx, owner, {
+      expectedEpoch: schedule.ownerEpoch,
+      agentId: schedule.agentId,
+      chatThreadId: thread.id,
+      at: nowDate(),
+    }))
+  ) {
+    throw new DeliveryRejected("owner-revoked");
+  }
+  return thread.id;
+}
+
+async function resolveNativeDestinationThread(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  schedule: MorningBriefNativeScheduleRow,
+): Promise<string> {
+  if (schedule.chatThreadId === null) {
+    return await createNativeDestinationThread(tx, owner, schedule);
+  }
+  const [thread] = await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, schedule.chatThreadId),
+        eq(chatThreads.userId, owner.userId),
+        eq(chatThreads.agentId, schedule.agentId),
+        chatThreadOrganizationCondition(tx, owner.orgId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (thread === undefined) {
+    throw new DeliveryRejected("destination-unavailable");
+  }
+  return thread.id;
+}
+
 async function deliverInTransaction(
   tx: Tx,
   args: {
@@ -836,34 +959,43 @@ async function deliverInTransaction(
   const owner = { orgId: request.orgId, userId: request.userId };
 
   const admitted = await admitDelivery(tx, args, signal);
-  if (admitted) {
+  if (admitted.kind !== "admitted") {
     return admitted;
   }
 
-  const workflowName = await loadInstallationName(tx, {
-    orgId: request.orgId,
-    workflowId: current.workflowId,
-  });
+  let chatThreadId: string;
+  if (admitted.native !== null) {
+    chatThreadId = await resolveNativeDestinationThread(
+      tx,
+      owner,
+      admitted.native,
+    );
+  } else {
+    const workflowName = await loadInstallationName(tx, {
+      orgId: request.orgId,
+      workflowId: current.workflowId,
+    });
 
-  // Thread, then binding, then automation: the exact order thread deletion
-  // takes across the same rows. Delivery must never hold the automation while
-  // waiting for a thread that a deletion holds.
-  const chatThreadId = await resolveDestinationThread(tx, {
-    orgId: request.orgId,
-    userId: request.userId,
-    workflowId: current.workflowId,
-    agentId: current.agentId,
-    workflowName,
-    at: nowDate(),
-  });
+    // Thread, then binding, then automation: the exact order thread deletion
+    // takes across the same rows. Delivery must never hold the automation while
+    // waiting for a thread that a deletion holds.
+    chatThreadId = await resolveDestinationThread(tx, {
+      orgId: request.orgId,
+      userId: request.userId,
+      workflowId: current.workflowId,
+      agentId: current.agentId,
+      workflowName,
+      at: nowDate(),
+    });
 
-  await lockEnabledAutomation(tx, {
-    orgId: request.orgId,
-    userId: request.userId,
-    workflowId: current.workflowId,
-    automationId: current.automationId,
-  });
-  throwIfCancelled(signal);
+    await lockEnabledAutomation(tx, {
+      orgId: request.orgId,
+      userId: request.userId,
+      workflowId: current.workflowId,
+      automationId: current.automationId,
+    });
+    throwIfCancelled(signal);
+  }
 
   // The last admission wait. Everything after it is local work only.
   const subscription = await lockSubscription(tx, request.userId);
@@ -952,6 +1084,7 @@ async function deliverInTransaction(
     executionPurpose: args.purpose,
     resultAttemptId: request.resultAttemptId,
     membershipId: current.membershipId,
+    nativeOwnerEpoch: request.nativeAuthority?.ownerEpoch ?? null,
     workflowId: current.workflowId,
     automationId: current.automationId,
     agentId: current.agentId,

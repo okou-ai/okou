@@ -110,6 +110,8 @@ export const morningBriefDeliveries = pgTable(
     resultAttemptId: uuid("result_attempt_id").notNull(),
     /** The membership generation this delivery was committed under. */
     membershipId: text("membership_id").notNull(),
+    /** Native owner epoch presented at commit; null only for preview lineage. */
+    nativeOwnerEpoch: integer("native_owner_epoch"),
     /**
      * The exact installation and schedule this delivery acted under.
      *

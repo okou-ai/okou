@@ -670,6 +670,7 @@ async function admitComposedGeneration(
         scheduledFor: admission.scheduledFor,
         generationAttemptId: pending.attemptId,
         expectedEpoch: args.nativeAuthority.ownerEpoch,
+        expectedMembershipId: args.nativeAuthority.membershipId,
         leaseToken: args.nativeAuthority.leaseToken,
         at: result.at,
       });

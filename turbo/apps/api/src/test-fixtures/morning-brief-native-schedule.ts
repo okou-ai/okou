@@ -11,7 +11,7 @@ import {
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, eq, sql } from "drizzle-orm";
 
 import {
@@ -51,6 +51,12 @@ export async function readNativeSchedule(owner: MorningBriefNativeOwner) {
     )
     .limit(1);
   return row;
+}
+
+export async function deleteLegacyMorningBriefInstallation(
+  workflowId: string,
+): Promise<void> {
+  await db().delete(workflows).where(eq(workflows.id, workflowId));
 }
 
 export async function readNativeOccurrences(owner: MorningBriefNativeOwner) {

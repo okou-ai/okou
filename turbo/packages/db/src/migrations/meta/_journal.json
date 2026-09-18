@@ -579,22 +579,8 @@
     {
       "idx": 1160,
       "version": "7",
-      "when": 1789702967275,
-      "tag": "1160_tan_pete_wisdom",
-      "breakpoints": true
-    },
-    {
-      "idx": 1161,
-      "version": "7",
-      "when": 1789703106809,
-      "tag": "1161_giant_callisto",
-      "breakpoints": true
-    },
-    {
-      "idx": 1162,
-      "version": "7",
-      "when": 1789706850755,
-      "tag": "1162_motionless_queen_noir",
+      "when": 1789709698764,
+      "tag": "1160_third_ma_gnuci",
       "breakpoints": true
     }
   ]

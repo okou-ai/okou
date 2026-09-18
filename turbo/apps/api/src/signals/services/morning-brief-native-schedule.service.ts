@@ -96,6 +96,13 @@ function scheduleWhere(owner: MorningBriefMemberIdentity) {
   );
 }
 
+function occurrenceOwnerWhere(owner: MorningBriefMemberIdentity) {
+  return and(
+    eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+    eq(morningBriefNativeOccurrences.userId, owner.userId),
+  );
+}
+
 /**
  * Read the native row without locking it.
  *
@@ -154,6 +161,87 @@ function computeNativeNextRunAt(args: {
   return calculateNextRun(args.cronExpression, args.timezone, args.from);
 }
 
+async function replaceMorningBriefMembershipGeneration(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+  existing: MorningBriefNativeScheduleRow,
+  args: {
+    readonly membershipId: string;
+    readonly at: Date;
+    readonly installed: Extract<
+      MorningBriefMigrationState,
+      { kind: "installed" }
+    >;
+  },
+): Promise<MorningBriefMaterializationResult> {
+  // A remove/rejoin creates a new immutable Clerk membership id. Replace the
+  // whole owner generation under the schedule lock: old work becomes terminal.
+  await tx
+    .update(morningBriefNativeOccurrences)
+    .set({
+      state: "settled",
+      outcome: "revoked",
+      settledAt: args.at,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      deferredUntil: null,
+      deliveryPending: false,
+      updatedAt: args.at,
+    })
+    .where(
+      and(
+        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+        eq(morningBriefNativeOccurrences.userId, owner.userId),
+        eq(morningBriefNativeOccurrences.membershipId, existing.membershipId),
+        isNull(morningBriefNativeOccurrences.settledAt),
+      ),
+    );
+  const nextRunAt = computeNativeNextRunAt({
+    enabled: args.installed.automation.enabled,
+    cronExpression: args.installed.automation.cronExpression,
+    timezone: args.installed.automation.timezone,
+    from: args.at,
+  });
+  await restoreLegacyMorningBriefAdmission(
+    tx,
+    args.installed.automation.id,
+    nextRunAt,
+  );
+  const [replaced] = await tx
+    .update(morningBriefNativeSchedules)
+    .set({
+      enabled: args.installed.automation.enabled,
+      cronExpression: args.installed.automation.cronExpression,
+      timezone: args.installed.automation.timezone,
+      nextRunAt,
+      scheduleOwner: nextRunAt === null ? null : "legacy",
+      phase: "legacy",
+      target: "legacy",
+      ownerEpoch: existing.ownerEpoch + 1,
+      membershipId: args.membershipId,
+      agentId: args.installed.installation.agentId,
+      chatThreadId: args.installed.chatThreadId,
+      legacyWorkflowId: args.installed.installation.id,
+      legacyAutomationId: args.installed.automation.id,
+      materializedAt: args.at,
+      drainingEpoch: null,
+      drainDeadlineAt: null,
+      drainUnresolvedReason: null,
+      updatedAt: args.at,
+    })
+    .where(
+      and(
+        scheduleWhere(owner),
+        eq(morningBriefNativeSchedules.ownerEpoch, existing.ownerEpoch),
+        eq(morningBriefNativeSchedules.membershipId, existing.membershipId),
+      ),
+    )
+    .returning();
+  return replaced === undefined
+    ? { kind: "refused", reason: "not-installed" }
+    : { kind: "materialized", row: replaced };
+}
+
 /**
  * Materialize the durable native row from the member's installed legacy state.
  *
@@ -178,7 +266,7 @@ export async function materializeMorningBriefNativeSchedule(
 ): Promise<MorningBriefMaterializationResult> {
   const { membershipId, at } = args;
   const existing = await lockMorningBriefNativeSchedule(tx, owner);
-  if (existing !== undefined) {
+  if (existing?.membershipId === membershipId) {
     return { kind: "materialized", row: existing };
   }
 
@@ -199,6 +287,14 @@ export async function materializeMorningBriefNativeSchedule(
   }
   if (!isValidTimeZone(installed.automation.timezone)) {
     return { kind: "refused", reason: "missing-timezone" };
+  }
+
+  if (existing !== undefined) {
+    return await replaceMorningBriefMembershipGeneration(tx, owner, existing, {
+      membershipId,
+      at,
+      installed,
+    });
   }
 
   // The first row keeps the legacy owner: materialization is bootstrap, never
@@ -299,7 +395,7 @@ interface MorningBriefLogicalChoicePatch {
   readonly expectedEpoch?: number;
 }
 
-type MorningBriefChoiceApplication =
+export type MorningBriefChoiceApplication =
   | { readonly kind: "applied"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "stale"; readonly row: MorningBriefNativeScheduleRow }
   | { readonly kind: "absent" };
@@ -393,6 +489,32 @@ export async function applyMorningBriefLogicalChoice(
       ),
     )
     .returning();
+  if (row !== undefined && revokes) {
+    // Disable/re-enable and destination replacement revoke the old occurrence
+    // immediately. A provider call that already escaped may still finish, but
+    // its pinned attempt remains only deduplication evidence: it cannot deliver,
+    // settle again or be resumed under the new epoch.
+    await tx
+      .update(morningBriefNativeOccurrences)
+      .set({
+        state: "settled",
+        outcome: "revoked",
+        settledAt: at,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        deferredUntil: null,
+        deliveryPending: false,
+        updatedAt: at,
+      })
+      .where(
+        and(
+          eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+          eq(morningBriefNativeOccurrences.userId, owner.userId),
+          eq(morningBriefNativeOccurrences.ownerEpoch, current.ownerEpoch),
+          isNull(morningBriefNativeOccurrences.settledAt),
+        ),
+      );
+  }
   return row === undefined ? { kind: "absent" } : { kind: "applied", row };
 }
 
@@ -525,6 +647,7 @@ export async function revokeMorningBriefNativeAuthority(
   const [row] = await tx
     .update(morningBriefNativeSchedules)
     .set({
+      enabled: false,
       nextRunAt: null,
       scheduleOwner: null,
       ownerEpoch: current.ownerEpoch + 1,
@@ -549,7 +672,101 @@ export async function revokeMorningBriefNativeAuthority(
       ),
     )
     .returning();
+  if (row !== undefined) {
+    // A lifecycle deletion has no destination to which old work may deliver.
+    // Terminally suppress every recorded obligation from the revoked epoch in
+    // the same schedule → occurrence transaction. Attempt ids and anchors stay
+    // durable deduplication evidence, so a late provider result cannot reopen
+    // the slot or trigger a second POST.
+    await tx
+      .update(morningBriefNativeOccurrences)
+      .set({
+        state: "settled",
+        outcome: "revoked",
+        settledAt: at,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        deferredUntil: null,
+        deliveryPending: false,
+        updatedAt: at,
+      })
+      .where(
+        and(
+          eq(morningBriefNativeOccurrences.orgId, owner.orgId),
+          eq(morningBriefNativeOccurrences.userId, owner.userId),
+          eq(morningBriefNativeOccurrences.ownerEpoch, current.ownerEpoch),
+          isNull(morningBriefNativeOccurrences.settledAt),
+        ),
+      );
+  }
   return row;
+}
+
+/** Persist the first canonical native destination without changing its epoch. */
+export async function bindMorningBriefNativeThread(
+  tx: MorningBriefNativeWriter,
+  owner: MorningBriefMemberIdentity,
+  args: {
+    readonly expectedEpoch: number;
+    readonly agentId: string;
+    readonly chatThreadId: string;
+    readonly at: Date;
+  },
+): Promise<boolean> {
+  const [bound] = await tx
+    .update(morningBriefNativeSchedules)
+    .set({ chatThreadId: args.chatThreadId, updatedAt: args.at })
+    .where(
+      and(
+        scheduleWhere(owner),
+        eq(morningBriefNativeSchedules.ownerEpoch, args.expectedEpoch),
+        eq(morningBriefNativeSchedules.agentId, args.agentId),
+        isNull(morningBriefNativeSchedules.chatThreadId),
+      ),
+    )
+    .returning({ chatThreadId: morningBriefNativeSchedules.chatThreadId });
+  return bound !== undefined;
+}
+
+/** Revoke the exact canonical thread before its deletion can cascade content. */
+export async function revokeMorningBriefNativeThreadAuthority(
+  tx: MorningBriefNativeWriter,
+  args: MorningBriefMemberIdentity & { readonly chatThreadId: string },
+  at: Date,
+): Promise<MorningBriefNativeScheduleRow | undefined> {
+  const owner = { orgId: args.orgId, userId: args.userId };
+  const current = await lockMorningBriefNativeSchedule(tx, owner);
+  if (current?.chatThreadId !== args.chatThreadId) {
+    return undefined;
+  }
+  return await revokeMorningBriefNativeAuthority(tx, owner, at);
+}
+
+/**
+ * Revoke every native owner whose canonical Agent is being deleted.
+ *
+ * Rows are locked in the same stable owner order used by cleanup, before the
+ * Agent lifecycle lock. This prevents an Agent delete from racing a native
+ * delivery that has already validated its epoch and destination.
+ */
+export async function lockMorningBriefNativeAgentAuthorities(
+  tx: MorningBriefNativeWriter,
+  args: { readonly orgId: string; readonly agentId: string },
+): Promise<readonly MorningBriefNativeScheduleRow[]> {
+  return await tx
+    .select()
+    .from(morningBriefNativeSchedules)
+    .where(
+      and(
+        eq(morningBriefNativeSchedules.orgId, args.orgId),
+        eq(morningBriefNativeSchedules.agentId, args.agentId),
+      ),
+    )
+    .orderBy(
+      morningBriefNativeSchedules.orgId,
+      morningBriefNativeSchedules.userId,
+    )
+    .for("update");
 }
 
 type MorningBriefTransitionResult =
@@ -869,6 +1086,7 @@ export async function bindNativeGenerationAttempt(
     readonly scheduledFor: Date;
     readonly generationAttemptId: string;
     readonly expectedEpoch: number;
+    readonly expectedMembershipId: string;
     readonly leaseToken: string;
     readonly at: Date;
   },
@@ -883,6 +1101,7 @@ export async function bindNativeGenerationAttempt(
   if (
     schedule === undefined ||
     schedule.ownerEpoch !== args.expectedEpoch ||
+    schedule.membershipId !== args.expectedMembershipId ||
     !schedule.enabled ||
     schedule.phase !== "native"
   ) {
@@ -902,6 +1121,10 @@ export async function bindNativeGenerationAttempt(
         eq(morningBriefNativeOccurrences.userId, owner.userId),
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         eq(morningBriefNativeOccurrences.ownerEpoch, args.expectedEpoch),
+        eq(
+          morningBriefNativeOccurrences.membershipId,
+          args.expectedMembershipId,
+        ),
         eq(morningBriefNativeOccurrences.leaseToken, args.leaseToken),
         isNull(morningBriefNativeOccurrences.settledAt),
       ),
@@ -1238,13 +1461,18 @@ export async function resumeMorningBriefNativeOccurrence(
  */
 export async function loadResumableOccurrences(
   db: MorningBriefNativeReader,
-  args: { readonly now: Date; readonly limit: number },
+  args: {
+    readonly now: Date;
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
   return await db
     .select()
     .from(morningBriefNativeOccurrences)
     .where(
       and(
+        args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
         isNull(morningBriefNativeOccurrences.settledAt),
         // Receipt-first is a per-occurrence invariant, not a property of one
         // scan happening to fit in one batch. A slot that already bound an
@@ -1292,7 +1520,10 @@ export async function loadResumableOccurrences(
  */
 export async function loadBootstrapCandidates(
   db: MorningBriefNativeReader,
-  args: { readonly limit: number },
+  args: {
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefMemberIdentity[]> {
   const rows = await db
     .select({
@@ -1314,6 +1545,12 @@ export async function loadBootstrapCandidates(
           MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
         ),
         eq(workflowAutomations.kind, "schedule"),
+        args.owner === undefined
+          ? undefined
+          : and(
+              eq(workflowAutomations.orgId, args.owner.orgId),
+              eq(workflowAutomations.ownerUserId, args.owner.userId),
+            ),
         isNull(morningBriefNativeSchedules.orgId),
       ),
     )
@@ -1368,13 +1605,18 @@ async function restoreLegacyMorningBriefAdmission(
  */
 export async function loadDueNativeOwners(
   db: MorningBriefNativeReader,
-  args: { readonly now: Date; readonly limit: number },
+  args: {
+    readonly now: Date;
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeScheduleRow[]> {
   return await db
     .select()
     .from(morningBriefNativeSchedules)
     .where(
       and(
+        args.owner === undefined ? undefined : scheduleWhere(args.owner),
         eq(morningBriefNativeSchedules.scheduleOwner, "native"),
         eq(morningBriefNativeSchedules.enabled, true),
         eq(morningBriefNativeSchedules.phase, "native"),
@@ -1394,7 +1636,10 @@ export async function loadDueNativeOwners(
  */
 export async function loadPendingDeliveryOccurrences(
   db: MorningBriefNativeReader,
-  args: { readonly limit: number },
+  args: {
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeOccurrenceRow[]> {
   return await db
     .select()
@@ -1407,6 +1652,7 @@ export async function loadPendingDeliveryOccurrences(
       // would go to S5 first and mistake a swept result for a healthy empty
       // day.
       and(
+        args.owner === undefined ? undefined : occurrenceOwnerWhere(args.owner),
         eq(morningBriefNativeOccurrences.deliveryPending, true),
         isNotNull(morningBriefNativeOccurrences.generationAttemptId),
       ),
@@ -1487,7 +1733,11 @@ export async function closeRecoveredMorningBriefDelivery(
  */
 export async function loadTransitionCandidates(
   db: MorningBriefNativeReader,
-  args: { readonly now: Date; readonly limit: number },
+  args: {
+    readonly now: Date;
+    readonly limit: number;
+    readonly owner?: MorningBriefMemberIdentity;
+  },
 ): Promise<readonly MorningBriefNativeScheduleRow[]> {
   return await db
     .select()
@@ -1496,7 +1746,7 @@ export async function loadTransitionCandidates(
     // target and a steady `legacy`/`legacy` row is exactly where a first
     // cutover has to start. The bounded limit and the ordering keep one tick's
     // work finite; a row already at its target costs one no-op comparison.
-    .where(sql`true`)
+    .where(args.owner === undefined ? sql`true` : scheduleWhere(args.owner))
     .orderBy(morningBriefNativeSchedules.updatedAt)
     .limit(args.limit);
 }

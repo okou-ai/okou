@@ -442,9 +442,11 @@ export function productionNativeTickDependencies(args: {
   readonly db: ReadonlyDb;
   readonly executor: NativeSlotExecutor;
   readonly delivery: NativeDeliveryRecovery;
+  readonly scope?: MorningBriefMemberIdentity;
 }): NativeTickDependencies {
   const { db } = args;
   return {
+    scope: args.scope,
     executor: args.executor,
     delivery: args.delivery,
     legacyDrain: async (owner) => {

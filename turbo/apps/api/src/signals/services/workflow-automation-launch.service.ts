@@ -10,6 +10,7 @@ import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
+import { testOverride } from "../../lib/singleton";
 import { now, nowDate } from "../../lib/time";
 import {
   isQueueFirstRunClaimLost,
@@ -35,6 +36,7 @@ import {
 import { createQueueFirstAgentRun$ } from "./agent-runs-create.service";
 import {
   bindMorningBriefScheduleClaimRun,
+  morningBriefScheduleClaimBound,
   morningBriefScheduleClaimSuperseded,
 } from "./morning-brief-schedule-claim.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
@@ -49,6 +51,48 @@ import {
 } from "./built-in-model-runtime-route.service";
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
+
+export interface WorkflowAutomationCommittedRunSnapshot {
+  readonly automationId: string;
+  readonly runId: string;
+  readonly runStatus: string;
+}
+
+type WorkflowAutomationCommittedRunHook = (
+  snapshot: WorkflowAutomationCommittedRunSnapshot,
+) => Promise<void>;
+
+const workflowAutomationCommittedRunHook = testOverride<
+  WorkflowAutomationCommittedRunHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setWorkflowAutomationCommittedRunHookForTest(
+  hook: WorkflowAutomationCommittedRunHook,
+): void {
+  workflowAutomationCommittedRunHook.set(hook);
+}
+
+export function clearWorkflowAutomationCommittedRunHookForTest(): void {
+  workflowAutomationCommittedRunHook.clear();
+}
+
+/**
+ * The Run and queue claim are committed while the legacy last-run fields have
+ * not been written. Tests suspend this production boundary to prove callback
+ * authority does not depend on that late write.
+ */
+async function awaitCommittedRunTestHook(
+  automationId: string,
+  run: { readonly runId: string; readonly status: string },
+): Promise<void> {
+  await workflowAutomationCommittedRunHook.get()?.({
+    automationId,
+    runId: run.runId,
+    runStatus: run.status,
+  });
+}
 
 export interface DueWorkflowAutomation {
   readonly automation: AutomationRow;
@@ -556,13 +600,15 @@ async function recordWorkflowAutomationRunStart(
   input: {
     readonly db: Db;
     readonly args: WorkflowAutomationLaunchArgs;
-    readonly runId: string;
-    readonly runStatus: string;
-    readonly claimedEventCreatedAt: Date;
+    readonly run: {
+      readonly body: { readonly runId: string; readonly status: string };
+      readonly queueFirstClaim: { readonly createdAt: Date };
+    };
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const { db, args, runId } = input;
+  const { db, args } = input;
+  const runId = input.run.body.runId;
   const { automation, chatThreadId } = args.due;
   await finalizeClaimedRunUserMessage({
     db,
@@ -570,40 +616,80 @@ async function recordWorkflowAutomationRunStart(
     threadId: chatThreadId,
     userId: automation.ownerUserId,
     runId,
-    runStatus: input.runStatus,
-    createdAt: input.claimedEventCreatedAt,
+    runStatus: input.run.body.status,
+    createdAt: input.run.queueFirstClaim.createdAt,
   });
   signal.throwIfAborted();
 
-  // The automation row lock is the serialization boundary for this late write.
-  // Taking it first, then re-reading the journal in later statements, is what
-  // makes a claim that committed while this transaction waited visible here.
+  await recordWorkflowAutomationLastRun(db, {
+    automationId: automation.id,
+    runId,
+    recordLastRunId: args.recordLastRunId !== false,
+    recordLastRunAt: args.recordLastRunAt,
+    disableClaimedOnceSchedule:
+      args.due.allowClaimedOnceScheduleAutomation === true,
+  });
+  signal.throwIfAborted();
+}
+
+/**
+ * The late last-run write that follows the launch transaction.
+ *
+ * The automation row lock is the serialization boundary. Taking it first, then
+ * re-reading the journal in later statements, is what makes a claim that
+ * committed while this transaction waited visible here; folding that read into
+ * the UPDATE as a subquery would evaluate it against the pre-wait snapshot.
+ */
+export async function recordWorkflowAutomationLastRun(
+  db: Db,
+  args: {
+    readonly automationId: string;
+    readonly runId: string;
+    readonly recordLastRunId: boolean;
+    readonly recordLastRunAt: boolean;
+    readonly disableClaimedOnceSchedule: boolean;
+  },
+): Promise<void> {
+  const lastRunFields = () => {
+    return {
+      ...(args.recordLastRunId ? { lastRunId: args.runId } : {}),
+      ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
+      ...(args.disableClaimedOnceSchedule ? { enabled: false } : {}),
+      updatedAt: nowDate(),
+    };
+  };
+
+  // Only a journaled occurrence needs the serialized path. The binding is
+  // written in the launch transaction that created this Run and has already
+  // committed, so a Run without one can never acquire one later and keeps the
+  // original single-statement write, adding no row-lock contention to every
+  // other automation.
+  if (!(await morningBriefScheduleClaimBound(db, args.runId))) {
+    await db
+      .update(workflowAutomations)
+      .set(lastRunFields())
+      .where(eq(workflowAutomations.id, args.automationId));
+    return;
+  }
+
   await db.transaction(async (tx) => {
     const [locked] = await tx
       .select({ id: workflowAutomations.id })
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, automation.id))
+      .where(eq(workflowAutomations.id, args.automationId))
       .limit(1)
       .for("update");
     if (!locked) {
       return;
     }
-    if (await morningBriefScheduleClaimSuperseded(tx, runId)) {
+    if (await morningBriefScheduleClaimSuperseded(tx, args.runId)) {
       return;
     }
     await tx
       .update(workflowAutomations)
-      .set({
-        ...(args.recordLastRunId === false ? {} : { lastRunId: runId }),
-        ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
-        ...(args.due.allowClaimedOnceScheduleAutomation
-          ? { enabled: false }
-          : {}),
-        updatedAt: nowDate(),
-      })
-      .where(eq(workflowAutomations.id, automation.id));
+      .set(lastRunFields())
+      .where(eq(workflowAutomations.id, args.automationId));
   });
-  signal.throwIfAborted();
 }
 
 async function checkQueuedWorkflowLaunchReadiness(
@@ -678,7 +764,6 @@ export const launchQueuedWorkflowAutomation$ = command(
     const db = set(writeDb$);
     const { automation, agentId, chatThreadId } = args.due;
     const timing = workflowAutomationTiming(args);
-
     const readinessFailure = await checkQueuedWorkflowLaunchReadiness(
       { db, args, timing },
       signal,
@@ -686,7 +771,6 @@ export const launchQueuedWorkflowAutomation$ = command(
     if (readinessFailure) {
       return readinessFailure;
     }
-
     const modelContext = await resolveTimedWorkflowModelContext(
       {
         db,
@@ -788,16 +872,9 @@ export const launchQueuedWorkflowAutomation$ = command(
       signal.throwIfAborted();
       return { kind: "run_error", response: result };
     }
-    await recordWorkflowAutomationRunStart(
-      {
-        db,
-        args,
-        runId: result.body.runId,
-        runStatus: result.body.status,
-        claimedEventCreatedAt: result.queueFirstClaim.createdAt,
-      },
-      signal,
-    );
+    await awaitCommittedRunTestHook(automation.id, result.body);
+    signal.throwIfAborted();
+    await recordWorkflowAutomationRunStart({ db, args, run: result }, signal);
 
     return {
       kind: "ok",

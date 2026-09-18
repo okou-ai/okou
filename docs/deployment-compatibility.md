@@ -2336,14 +2336,18 @@ ownership and global deletion finality remain S7 gates.
 
 ## Morning Brief retained generation authority (#35054)
 
-Migration 1162 adds nullable `installation_id`, `automation_id`,
-`chat_thread_id`, and `content_purged_at` columns to
-`morning_brief_generations`. It also replaces that table's decision constraint
-so an expired successful delivery may retain a content-free invocation fence.
-The binding columns are nullable only for rows written by the older Slack-only
-writer; every all-source reservation writes the complete canonical binding.
-The migration has no backfill, but replacing the check constraint inspects the
-existing table and takes the migration wrapper's ordinary bounded table lock.
+Migration 1160 generalizes collection occurrences from Slack-only to an exact
+kind-specific binding and adds the all-source generation provenance:
+instruction version/digest, reported language, retained source descriptors and
+deadline, complete installation/automation/destination ids, and
+`content_purged_at`. Its anchor-wide partial unique index prevents another kind
+or contract version from invoking the same logical morning. The replacement
+decision constraint lets an expired successful delivery retain a content-free
+invocation fence. Binding columns stay nullable only for rows written by the
+older Slack-only writer; every all-source reservation writes the complete
+canonical binding. The migration has no backfill, but its index and replacement
+constraints inspect the existing table under the migration wrapper's ordinary
+bounded lock.
 
 The API and migration therefore have these mixed-version rules:
 
@@ -2353,7 +2357,7 @@ The API and migration therefore have these mixed-version rules:
   newer API.
 - **New code before migration** must not be promoted. Reservation, stored-result
   revalidation, and expiry sanitation name the new columns directly; without
-  migration 1162 they fail with `42703`. The default-off feature switch and
+  migration 1160 they fail with `42703`. The default-off feature switch and
   protected preview route contain provider use, but they are not a substitute
   for the repository's migration-before-API ordering.
 - **New readers of old rows** preserve only the Slack-only contract. A row whose

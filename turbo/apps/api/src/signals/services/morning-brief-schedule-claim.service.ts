@@ -9,6 +9,7 @@ import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
+import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -21,6 +22,31 @@ import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
 const log = logger("MorningBriefScheduleClaim");
+
+interface MorningBriefSettlementAttemptSnapshot {
+  readonly automationId: string;
+  readonly subjectKind: "run" | "claim";
+}
+
+type MorningBriefSettlementAttemptHook = (
+  snapshot: MorningBriefSettlementAttemptSnapshot,
+) => Promise<void>;
+
+const morningBriefSettlementAttemptHook = testOverride<
+  MorningBriefSettlementAttemptHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setMorningBriefSettlementAttemptHookForTest(
+  hook: MorningBriefSettlementAttemptHook,
+): void {
+  morningBriefSettlementAttemptHook.set(hook);
+}
+
+export function clearMorningBriefSettlementAttemptHookForTest(): void {
+  morningBriefSettlementAttemptHook.clear();
+}
 
 /** Mirrors the legacy poller and callback policy; they share one constant. */
 const MAX_CONSECUTIVE_FAILURES = 3;
@@ -215,6 +241,19 @@ export async function bindMorningBriefScheduleClaimRun(
     );
 }
 
+/** Whether this Run belongs to a recorded occurrence at all. */
+export async function morningBriefScheduleClaimBound(
+  db: Pick<Db, "select">,
+  runId: string,
+): Promise<boolean> {
+  const [bound] = await db
+    .select({ id: morningBriefScheduleClaims.id })
+    .from(morningBriefScheduleClaims)
+    .where(eq(morningBriefScheduleClaims.runId, runId))
+    .limit(1);
+  return bound !== undefined;
+}
+
 /**
  * Whether a newer journaled claim already superseded the occurrence this Run
  * belongs to.
@@ -276,30 +315,37 @@ function revocationWhere(scope: MorningBriefScheduleRevocationScope): SQL {
 }
 
 /**
- * Drop this scope's legacy schedule occurrences inside a cleanup transaction.
+ * Revoke this scope's legacy schedule occurrences inside a cleanup transaction.
  *
  * `workflows.owner_user_id` and `workflow_automations.owner_user_id` are plain
- * text with no users foreign key, and user cleanup only cascades Agents the
- * departing user owns. A member whose Morning Brief runs on a colleague's
- * shared or default Agent therefore keeps both automation and journal when the
- * automation cascade alone is relied on, so this is called from the same
- * owner, organization and membership revocation points the rest of Morning
- * Brief already uses.
+ * text with no users foreign key, and user cleanup only cascades the Agents the
+ * departing user owns, so a member whose Morning Brief runs on a colleague's
+ * shared or default Agent would keep this journal if the automation cascade
+ * were the only path. This runs at the same owner, organization and membership
+ * revocation points the rest of Morning Brief already uses.
  *
- * Scope limit: this deletes only this scope's occurrences. It deliberately
- * does not change any automation, workflow or other owner's rows. A callback
- * that arrives after revocation therefore no longer matches a recorded
- * occurrence and falls back to the unjournaled legacy branch, exactly as it
- * would for any execution this table never recorded. Closing that residual
- * replay window needs the owner and revocation epoch S7b owns; it is recorded
- * as a limit rather than papered over here.
+ * It scrubs owner identity rather than deleting the row. Deleting would make a
+ * callback that is still in flight look like an execution this table never
+ * recorded, which is exactly the untracked legacy branch that may advance a
+ * schedule. What remains is content-free: automation, workflow, occurrence
+ * identity and timestamps, with a terminal `revoked` settlement that makes any
+ * later callback a no-op. Only this scope's own occurrences change; no
+ * automation, workflow or other owner is touched.
  */
 export async function revokeMorningBriefScheduleOwnership(
-  executor: Pick<Db, "delete"> | Tx,
+  executor: Pick<Db, "update"> | Tx,
   scope: MorningBriefScheduleRevocationScope,
 ): Promise<void> {
+  const revokedAt = nowDate();
   await executor
-    .delete(morningBriefScheduleClaims)
+    .update(morningBriefScheduleClaims)
+    .set({
+      orgId: null,
+      ownerUserId: null,
+      settlement: "revoked",
+      settledAt: revokedAt,
+      updatedAt: revokedAt,
+    })
     .where(revocationWhere(scope));
 }
 
@@ -375,6 +421,10 @@ async function settleMorningBriefSchedule(
   tx: Tx,
   args: SettleMorningBriefScheduleArgs,
 ): Promise<MorningBriefScheduleSettlementOutcome> {
+  await morningBriefSettlementAttemptHook.get()?.({
+    automationId: args.automationId,
+    subjectKind: args.subject.kind,
+  });
   const [automation] = await tx
     .select(workflowAutomationColumns())
     .from(workflowAutomations)

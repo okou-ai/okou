@@ -47,6 +47,7 @@ import {
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   applyMorningBriefLogicalChoice,
+  materializeMorningBriefNativeSchedule,
   readMorningBriefNativeSchedule,
   type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
@@ -60,6 +61,7 @@ import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reco
 import {
   disableWorkflowAutomation$,
   enableWorkflowAutomation$,
+  persistNativeMorningBriefPreferenceChoice,
 } from "./workflow-automation.service";
 import type { WorkflowMember } from "./workflow-data.service";
 
@@ -327,11 +329,11 @@ async function withMorningBriefPreferenceLock<T>(
 /**
  * Read the member's Morning Brief preference.
  *
- * The live canonical legacy state is loaded and answered from first. While the
- * implementation switch is on, the native projection may hand back its own
- * stored copy instead — but only one that still matches that state in every
- * copied field. Missing, stale or unsupported native data simply keeps the
- * legacy answer, and nothing on this path writes, installs or repairs.
+ * Once execution ownership has left `legacy`, the durable native choice is the
+ * Settings authority even if the implementation switch rolls back or the old
+ * installation/catalog disappears. A legacy-phase member still reads the live
+ * legacy state (with the disposable projection only as a compatibility check).
+ * This path never writes, installs or repairs.
  */
 export const morningBriefPreference$ = command(
   async (
@@ -341,10 +343,13 @@ export const morningBriefPreference$ = command(
   ): Promise<MorningBriefPreferenceResult> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    const state = await loadMorningBriefMigrationState(
-      db,
-      morningBriefOwner(args),
-    );
+    const owner = morningBriefOwner(args);
+    const native = await readMorningBriefNativeSchedule(db, owner);
+    signal.throwIfAborted();
+    if (native !== undefined && native.phase !== "legacy") {
+      return projectNativePreference(native);
+    }
+    const state = await loadMorningBriefMigrationState(db, owner);
     signal.throwIfAborted();
     const legacy = await projectInstalledPreference(db, args, state);
     signal.throwIfAborted();
@@ -490,7 +495,11 @@ const installMorningBriefEnrollment$ = command(
         }
         return { outcome: "skipped", reason: "membership-unavailable" };
       }
-      await completeMorningBriefEnrollment(db, identity, installed.workflowId);
+      await completeAndMaterializeMorningBriefEnrollment(
+        db,
+        identity,
+        installed.workflowId,
+      );
       signal.throwIfAborted();
       await publishMorningBriefChangedSafely(identity);
       signal.throwIfAborted();
@@ -500,7 +509,11 @@ const installMorningBriefEnrollment$ = command(
     const raced = await loadMorningBriefOwnership(db, identity);
     signal.throwIfAborted();
     if (raced.installation?.installationState === "installed") {
-      await completeMorningBriefEnrollment(db, identity, raced.installation.id);
+      await completeAndMaterializeMorningBriefEnrollment(
+        db,
+        identity,
+        raced.installation.id,
+      );
       signal.throwIfAborted();
       return {
         outcome: "unchanged",
@@ -636,7 +649,11 @@ const ensureMorningBriefWhileLocked$ = command(
     );
     signal.throwIfAborted();
     if (installation?.installationState === "installed") {
-      await completeMorningBriefEnrollment(db, identity, installation.id);
+      await completeAndMaterializeMorningBriefEnrollment(
+        db,
+        identity,
+        installation.id,
+      );
       signal.throwIfAborted();
       return {
         outcome: "unchanged",
@@ -735,6 +752,29 @@ export const ensureMorningBriefDefaultEnabled$ = command(
   },
 );
 
+async function completeAndMaterializeMorningBriefEnrollment(
+  db: Db,
+  identity: MorningBriefMemberIdentity,
+  workflowId: string,
+): Promise<void> {
+  await completeMorningBriefEnrollment(db, identity, workflowId);
+  const enrollment = await loadMorningBriefEnrollment(db, identity);
+  if (
+    enrollment?.state !== "completed" ||
+    enrollment.membershipId === null ||
+    enrollment.workflowId !== workflowId
+  ) {
+    return;
+  }
+  const membershipId = enrollment.membershipId;
+  await db.transaction(async (tx) => {
+    await materializeMorningBriefNativeSchedule(tx, identity, {
+      membershipId,
+      at: nowDate(),
+    });
+  });
+}
+
 async function loadMorningBriefAutomationId(
   db: ReadonlyDb,
   workflowId: string,
@@ -803,7 +843,11 @@ const createMorningBriefFromPreference$ = command(
             "Morning Brief could not be installed. Retry the preference update.",
           );
     }
-    await completeMorningBriefEnrollment(db, identity, installed.workflowId);
+    await completeAndMaterializeMorningBriefEnrollment(
+      db,
+      identity,
+      installed.workflowId,
+    );
     signal.throwIfAborted();
     return await loadInstalledPreference(db, args);
   },
@@ -820,13 +864,15 @@ const updateMorningBriefWhileLocked$ = command(
     const { installation } = await loadMorningBriefOwnership(db, identity);
     signal.throwIfAborted();
 
-    await recordMorningBriefChoice(db, identity, args.enabled);
-    signal.throwIfAborted();
     if (!installation) {
+      await recordMorningBriefChoice(db, identity, args.enabled);
+      signal.throwIfAborted();
       return await set(createMorningBriefFromPreference$, args, signal);
     }
 
     if (installation.installationState !== "installed") {
+      await recordMorningBriefChoice(db, identity, args.enabled);
+      signal.throwIfAborted();
       return await loadInstalledPreference(db, args);
     }
 
@@ -858,13 +904,12 @@ const updateMorningBriefWhileLocked$ = command(
     const nativeRow = await readMorningBriefNativeSchedule(db, identity);
     signal.throwIfAborted();
     if (nativeRow !== undefined && nativeRow.phase !== "legacy") {
-      const applied = await db.transaction(async (tx) => {
-        return await applyMorningBriefLogicalChoice(
-          tx,
-          identity,
-          { enabled: args.enabled, expectedEpoch: nativeRow.ownerEpoch },
-          nowDate(),
-        );
+      const applied = await persistNativeMorningBriefPreferenceChoice(db, {
+        ...identity,
+        automationId: nativeRow.legacyAutomationId,
+        enabled: args.enabled,
+        expectedEpoch: nativeRow.ownerEpoch,
+        at: nowDate(),
       });
       signal.throwIfAborted();
       if (applied.kind === "stale") {
@@ -874,7 +919,7 @@ const updateMorningBriefWhileLocked$ = command(
         );
       }
       if (args.enabled && nativeRow.legacyWorkflowId !== null) {
-        await completeMorningBriefEnrollment(
+        await completeAndMaterializeMorningBriefEnrollment(
           db,
           identity,
           nativeRow.legacyWorkflowId,
@@ -884,6 +929,8 @@ const updateMorningBriefWhileLocked$ = command(
       return await loadInstalledPreference(db, args);
     }
 
+    await recordMorningBriefChoice(db, identity, args.enabled);
+    signal.throwIfAborted();
     const current = await loadInstalledPreference(db, args);
     signal.throwIfAborted();
     if (current.kind !== "ok" || current.workflowId === undefined) {
@@ -891,7 +938,11 @@ const updateMorningBriefWhileLocked$ = command(
     }
     if (current.preference.enabled === args.enabled) {
       if (args.enabled) {
-        await completeMorningBriefEnrollment(db, identity, current.workflowId);
+        await completeAndMaterializeMorningBriefEnrollment(
+          db,
+          identity,
+          current.workflowId,
+        );
         signal.throwIfAborted();
       }
       return current;
@@ -925,24 +976,17 @@ const updateMorningBriefWhileLocked$ = command(
       );
     }
     if (args.enabled) {
-      await completeMorningBriefEnrollment(db, identity, current.workflowId);
+      await completeAndMaterializeMorningBriefEnrollment(
+        db,
+        identity,
+        current.workflowId,
+      );
       signal.throwIfAborted();
     }
-    // The durable native choice is the authority once a member has one, so the
-    // same toggle that moved the legacy automation moves it too. Disabling
-    // revokes the admitted epoch and clears the obligation; re-enabling bumps
-    // the epoch again and schedules the next *future* occurrence, so the
-    // revoked slot is never replayed. Both commit under the member's preference
-    // advisory lock, which is the first lock in the documented order.
-    await db.transaction(async (tx) => {
-      await applyMorningBriefLogicalChoice(
-        tx,
-        identity,
-        { enabled: args.enabled },
-        nowDate(),
-      );
-    });
-    signal.throwIfAborted();
+    // The generic automation writer recognizes the selected Morning Brief and
+    // commits the legacy bit and durable choice in one transaction. The
+    // preference advisory lock held by this caller is the first lock in that
+    // writer's documented schedule → automation → occurrence order.
     return await loadInstalledPreference(db, args);
   },
 );
@@ -960,10 +1004,6 @@ export const updateMorningBriefPreference$ = command(
       signal,
       async () => {
         const outcome = await set(updateMorningBriefWhileLocked$, args, signal);
-        // The legacy mutation above runs on the outer `Db` and has already
-        // committed; holding the preference advisory lock does not make the
-        // two writes atomic. A failed copy is reported operationally and the
-        // real legacy outcome is still returned to the caller.
         await refreshMorningBriefPreferenceProjection(
           db,
           morningBriefOwner(args),

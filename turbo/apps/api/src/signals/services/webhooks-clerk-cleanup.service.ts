@@ -81,8 +81,8 @@ import {
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
-import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
