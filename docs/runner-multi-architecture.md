@@ -97,7 +97,7 @@ binaries are not re-uploaded as a combined GitHub artifact.
 Targets without an available cache reference use the normal compile job, which
 uploads the binary directly to the existing content-addressed R2 cache. Only
 after verifying that object does it publish a small R2 manifest scoped to the
-repository, workflow run, target, and input digest. Image-build and cache-index
+workflow run and input digest. Image-build and cache-index
 jobs download the fresh binary from R2; neither transfers binary payloads through
 GitHub artifacts or uploads the binary again. The cache-index job retains the
 existing shadow comparison and optional small GitHub manifest publication.
@@ -141,8 +141,12 @@ and [Botocore transport exceptions](https://github.com/boto/botocore/blob/develo
 
 Fresh reference keys omit the attempt number so a consumer-only rerun can read
 an earlier successful producer. The manifest retains the producer attempt.
-References live under `runner-binaries/transports/` and contain only metadata;
-binary objects keep their existing keys and cache schema. This workflow does not
+References use `runner-binaries/transports/<run_id>/<binary_input_digest>.json`
+and contain only metadata. This prefix serves this repository, and the input
+digest already includes the target. The manifest still validates the repository,
+run ID, target, and input digest. Producer and consumer jobs use the same checked-out
+scripts, so older runs and their reruns keep using their original key format.
+Binary objects keep their existing keys and cache schema. This workflow does not
 delete the small run references or configure bucket expiration. Cache-Control is
 not an object-retention policy. Small image manifests also continue to use GitHub
 artifacts; this is a binary-transport change, not complete artifact-service removal.
