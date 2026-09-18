@@ -112,8 +112,8 @@ interface OpenCustomTemplate {
 const internalOpenTemplate$ = state<OpenCustomTemplate | null>(null);
 
 /** Which template is open, for the request that loads it and the guards that
- * clear it. The dialog reads the kind instead: the id alone cannot say what
- * looking at an open template draws. */
+ * clear it. It stays in this module: the dialog asks whether anything is open
+ * through the kind beside it, and what to draw through the detail it loads. */
 const openCustomTemplateId$ = computed((get) => {
   return get(internalOpenTemplate$)?.templateId ?? null;
 });

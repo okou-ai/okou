@@ -589,6 +589,37 @@ test("Opening an illustration template shows the source picture itself", async (
   expect(within(dialog).getByText("Market day")).toBeInTheDocument();
 });
 
+test("A template whose detail will not load can be asked for again", async () => {
+  mockCustomTemplateStore([customTemplate()], {
+    // A 500 is transient, so the detail load spends its two further attempts
+    // before it settles as an error. The click is requests one through three;
+    // the retry is the fourth.
+    detail: (call) => {
+      return call <= 3 ? "fail" : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Preview Q3 board review", dialog)!);
+
+  // A detail that will not load says so and offers the way out. Without this
+  // the dialog keeps its spinner for as long as it stays open, which is the
+  // defect: nothing tells the member the request is never coming back.
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Couldn't load templates.");
+  const preview = previewDialogAround(alert);
+
+  click(buttonByName("Retry", preview)!);
+
+  // Asking again is the same request, so the template arrives on the surface
+  // the failure was shown on rather than in a second dialog.
+  const page = await screen.findByAltText("Page 1");
+  expect(previewDialogAround(page)).toBe(preview);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 async function openDetail(
   dialog: HTMLElement,
   title: string,
