@@ -1289,6 +1289,34 @@ async function rejectEmptyConvertedDeck(
   );
 }
 
+type SlidesTargetResolution =
+  | { readonly kind: "target"; readonly mimeType: string | undefined }
+  | { readonly kind: "rejected"; readonly response: BadRequestResponse };
+
+/** Decide whether this sync asks Drive for a Slides deck, and whether it can. */
+function resolveSlidesTarget(
+  content: ResolvedArtifactContent,
+  featureSwitchContext: FeatureSwitchContext,
+): SlidesTargetResolution {
+  const converts =
+    isFeatureEnabled(
+      FeatureSwitchKey.GoogleSlidesConversion,
+      featureSwitchContext,
+    ) && convertsToGoogleSlides(content.filename);
+  if (!converts) {
+    return { kind: "target", mimeType: undefined };
+  }
+  if (content.file.byteLength > GOOGLE_SLIDES_MAX_SOURCE_BYTES) {
+    return {
+      kind: "rejected",
+      response: badRequestMessage(
+        "This presentation is too large to convert to Google Slides",
+      ),
+    };
+  }
+  return { kind: "target", mimeType: GOOGLE_SLIDES_MIME_TYPE };
+}
+
 interface SyncArtifactArgs {
   readonly orgId: string;
   readonly userId: string;
@@ -1450,21 +1478,11 @@ export const syncArtifactToGoogleDrive$ = command(
       );
     }
 
-    const targetMimeType =
-      isFeatureEnabled(
-        FeatureSwitchKey.GoogleSlidesConversion,
-        featureSwitchContext,
-      ) && convertsToGoogleSlides(content.filename)
-        ? GOOGLE_SLIDES_MIME_TYPE
-        : undefined;
-    if (
-      targetMimeType !== undefined &&
-      content.file.byteLength > GOOGLE_SLIDES_MAX_SOURCE_BYTES
-    ) {
-      return badRequestMessage(
-        "This presentation is too large to convert to Google Slides",
-      );
+    const target = resolveSlidesTarget(content, featureSwitchContext);
+    if (target.kind === "rejected") {
+      return target.response;
     }
+    const targetMimeType = target.mimeType;
 
     const upload = await uploadArtifactRefreshingToken(
       {
