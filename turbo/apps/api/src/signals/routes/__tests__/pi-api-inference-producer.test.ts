@@ -1676,7 +1676,7 @@ describe("durable Pi API producer", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
-      { [FeatureSwitchKey.PaidToolControls]: true },
+      { [FeatureSwitchKey.PaidToolControls]: false },
     );
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =

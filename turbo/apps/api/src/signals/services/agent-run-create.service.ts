@@ -7839,20 +7839,9 @@ function runnerStoragePlan(
 
 async function withPaidToolPlatformEnvironment(
   db: Db,
-  owner: Pick<
-    BuildRunnerJobPayloadInput,
-    "orgId" | "userId" | "featureSwitchContext"
-  >,
+  owner: Pick<BuildRunnerJobPayloadInput, "orgId" | "userId">,
   platformEnvironment: Record<string, string> | undefined,
-): Promise<Record<string, string> | undefined> {
-  if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PaidToolControls,
-      owner.featureSwitchContext,
-    )
-  ) {
-    return platformEnvironment;
-  }
+): Promise<Record<string, string>> {
   const disabledTools = await readDisabledPaidTools(
     db,
     owner.orgId,

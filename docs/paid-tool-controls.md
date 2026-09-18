@@ -2,7 +2,8 @@
 
 Paid-tool controls are personal preferences within one workspace. They do not
 change connector authorization, organization permissions, or billing policy.
-The `paidToolControls` feature switch is disabled by default.
+The `paidToolControls` feature switch is disabled by default and controls only
+the settings UI. Saved preferences and CLI enforcement are independent of it.
 
 ## Storage and API
 
@@ -11,7 +12,7 @@ tool_id)` tuple. No row means enabled. The authenticated member can read their
 own list with `GET /api/paid-tools` and change one tool with
 `PATCH /api/paid-tools/:toolId` using `{ "disabled": true | false }`.
 Independent tool updates do not replace the entire list. Both endpoints require
-a user session and the feature switch; agent and sandbox credentials cannot
+a user session; agent and sandbox credentials cannot
 change preferences. Membership removal deletes only that member's workspace
 rows; user and organization deletion remove their respective rows.
 
@@ -26,12 +27,13 @@ switch immediately. `?settings=paid-tools` opens the same page on desktop and
 mobile. A failed load shows a retry state rather than implying every tool is
 enabled; a failed write retains the last confirmed value.
 
-Run preparation reads the actual run owner's preferences and resolved feature
-switch context, then captures a JSON string array in the trusted platform
+Run preparation reads the actual run owner's preferences regardless of the UI
+feature switch, then captures a JSON string array in the trusted platform
 environment as `OKOU_DISABLED_PAID_TOOLS`. A prepared queued run retains its
 snapshot. Deferred Pi runs capture the preferences when their sandbox is
-materialized. Existing sandbox environments do not change in place. With the
-feature disabled, preparation does not read this table or emit the variable.
+materialized. Existing sandbox environments do not change in place. With no
+disabled tools, preparation emits an empty array. Hiding the settings UI does
+not stop preference reads or change the captured policy.
 
 The CLI checks the policy before a paid command's action, including before
 uploads, output-file creation, or network calls. Help remains usable and
@@ -48,17 +50,18 @@ Do not enable it while an old serving API can prepare runs without the policy.
 Runner job schemas are unchanged: the existing platform environment carries
 the variable, and prepared jobs retain their commit-addressed CLI package.
 
-An absent or empty variable means no disabled tools, including when the feature
-is off. Unknown string IDs are ignored by older CLIs, allowing later catalog
+An absent or empty variable means no disabled tools for contexts without this
+policy. Unknown string IDs are ignored by older CLIs, allowing later catalog
 additions. Invalid JSON or a non-string-array value rejects paid operations;
 free operations and help remain usable. API read lists likewise allow unknown
 string IDs, while writes validate the current catalog. These are the optional
 input and additive catalog contracts, not recovery from database failures.
 Preference query failures fail run preparation rather than silently enabling
-tools. Turning the feature off retains saved rows for a later re-enable.
+tools. Turning the feature off only hides the settings UI; saved rows remain
+effective for newly prepared runs and accessible through the authenticated API.
 After preferences have been saved, keep an API version that includes their
-membership/user/organization cleanup; switch rollback does not remove that
-cleanup requirement.
+snapshot production and membership/user/organization cleanup; hiding the UI
+does not provide a backend rollback mechanism.
 
 Local verification covers authenticated preference isolation and cleanup,
 queued and deferred snapshots, real CLI dispatch without paid side effects,

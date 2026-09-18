@@ -34,9 +34,6 @@ async function owner(overrides: { orgId?: string; userId?: string } = {}) {
     orgRole: "org:member" as const,
   };
   await store.set(seedOrgMembership$, identity, context.signal);
-  await updateFeatureSwitchesForUser(context, identity, {
-    [FeatureSwitchKey.PaidToolControls]: true,
-  });
   mocks.clerk.session(identity.userId, identity.orgId, identity.orgRole);
   mocks.s3.listObjects([]);
   return identity;
@@ -47,25 +44,31 @@ async function listFor(identity: { orgId: string; userId: string }) {
   return (await accept(client().get({ headers }), [200])).body.disabledTools;
 }
 
-test("requires rollout access for reading and changing paid tool preferences", async () => {
-  const identity = {
-    orgId: `org_paid_tools_hidden_${randomUUID()}`,
-    userId: `user_paid_tools_hidden_${randomUUID()}`,
-    orgRole: "org:member" as const,
-  };
-  mocks.clerk.session(identity.userId, identity.orgId, identity.orgRole);
-  await accept(client().get({ headers }), [403]);
+test("keeps preferences readable and writable when the settings UI is hidden", async () => {
+  const identity = await owner();
+  await updateFeatureSwitchesForUser(context, identity, {
+    [FeatureSwitchKey.PaidToolControls]: true,
+  });
   await accept(
     client().update({
       headers,
       params: { toolId: "web-search" },
       body: { disabled: true },
     }),
-    [403],
+    [200],
   );
   await updateFeatureSwitchesForUser(context, identity, {
-    [FeatureSwitchKey.PaidToolControls]: true,
+    [FeatureSwitchKey.PaidToolControls]: false,
   });
+  await expect(listFor(identity)).resolves.toStrictEqual(["web-search"]);
+  await accept(
+    client().update({
+      headers,
+      params: { toolId: "web-search" },
+      body: { disabled: false },
+    }),
+    [200],
+  );
   await expect(listFor(identity)).resolves.toStrictEqual([]);
 });
 
@@ -252,13 +255,6 @@ test.each(["membership", "user", "organization"] as const)(
     );
     await flushWaitUntilForTest();
 
-    // Keep external fixture identities readable to inspect the settings after
-    // cleanup. Restoring visibility cannot restore deleted preferences.
-    for (const identity of [current, peer, elsewhere]) {
-      await updateFeatureSwitchesForUser(context, identity, {
-        [FeatureSwitchKey.PaidToolControls]: true,
-      });
-    }
     await expect(listFor(current)).resolves.toStrictEqual([]);
     await expect(listFor(peer)).resolves.toStrictEqual(
       scope === "organization" ? [] : ["web-search"],

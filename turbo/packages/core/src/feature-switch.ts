@@ -53,7 +53,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
-    description: "Personal controls for paid built-in tools in each workspace",
+    description: "Show personal paid-tool controls in Settings",
     enabled: false,
   },
   [FeatureSwitchKey.WelcomeThread]: {

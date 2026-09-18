@@ -13339,36 +13339,31 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     );
     await api.requestCancelRun(actor, enabled.runId, [200]);
 
+    await setPaidToolDisabled(context, actor, "web-search", true);
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PaidToolControls]: false,
     });
     const rolloutOff = await api.createRun(actor, {
       agentId,
-      prompt: "use the rollout-disabled behavior",
+      prompt: "preserve paid tool preferences while the settings UI is hidden",
       modelProvider: "anthropic-api-key",
     });
     const rolloutOffClaim = await api.claimRunnerJob(rolloutOff.runId);
-    expect(rolloutOffClaim.platformEnvironment).not.toHaveProperty(
-      DISABLED_PAID_TOOLS_ENV_VAR,
-    );
+    expect(
+      rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
+    ).toBe('["web-search"]');
     await api.requestCancelRun(actor, rolloutOff.runId, [200]);
   });
 
   it("uses the executing member's paid tool preferences for a shared agent", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
     const { actor, runnerGroup } = await entitledRunActor();
     const agent = await bdd.createAgent(actor, {
       displayName: "Shared paid tool preferences agent",
       visibility: "public",
     });
     const member = bdd.user({ orgId: actor.orgId });
-    for (const owner of [actor, member]) {
-      await connectors.updateFeatureSwitches(owner, {
-        [FeatureSwitchKey.PaidToolControls]: true,
-      });
-    }
     await setPaidToolDisabled(context, actor, "web-search", true);
     await setPaidToolDisabled(context, member, "scrape", true);
     const run = await api.createRun(member, {
