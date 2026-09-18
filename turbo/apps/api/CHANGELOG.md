@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.636.0](https://github.com/vm0-ai/okou/compare/api-v1.635.0...api-v1.636.0) (2026-09-18)
+
+
+### Features
+
+* **api:** generate one morning brief from every configured source ([#35067](https://github.com/vm0-ai/okou/issues/35067)) ([2b13c26](https://github.com/vm0-ai/okou/commit/2b13c26bda2e476e1a1afa74e495c37764894f0a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.473.0
+    * @okouai/core bumped to 8.681.3
+    * @okouai/db bumped to 1.277.0
+    * @okouai/pi-agent-runtime bumped to 1.33.20
+
 ## [1.635.0](https://github.com/vm0-ai/okou/compare/api-v1.634.0...api-v1.635.0) (2026-09-18)
 
 
