@@ -94,38 +94,76 @@ function SkillImportDialog() {
   );
 }
 
-/** The drop target, or the workflow the import already produced. */
+/** The file the import produced, as the row a workflow list would show. */
+function ImportedSkillRow({ name }: { readonly name: string }) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex w-full max-w-[420px] items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
+      <OnboardingIllustration name="workflow-default" alt="" size="header" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">
+          {name}
+        </span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.skills.importedCopy;
+          })}
+        </span>
+      </span>
+      <Check size={16} className="shrink-0 text-emerald-600" />
+    </div>
+  );
+}
+
+/**
+ * The drop target and the imported workflow share one card of the same height,
+ * so importing a file does not resize the step.
+ */
 function SkillDropCard({ imported }: { readonly imported: string | null }) {
   const { t } = useTranslation();
 
   return (
-    <Card className="flex flex-col items-center px-6 pb-8 pt-8 text-center">
-      <OnboardingIllustration name="workflow-default" alt="" size="header" />
-      <p className="mt-4 text-sm font-medium text-foreground">
-        {imported ??
-          t(($) => {
-            return $.onboarding.sourcesFirst.skills.panelTitle;
-          })}
-      </p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {imported
-          ? t(($) => {
-              return $.onboarding.sourcesFirst.skills.importedCopy;
-            })
-          : t(($) => {
-              return $.onboarding.sourcesFirst.skills.panelCopy;
+    <Card className="flex min-h-[236px] flex-col items-center justify-center gap-4 px-6 py-8 text-center">
+      {imported ? (
+        <>
+          <ImportedSkillRow name={imported} />
+          {/* A label opens the file picker without reaching for the DOM. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
+          >
+            {t(($) => {
+              return $.onboarding.sourcesFirst.skills.replace;
             })}
-      </p>
-      {imported ? null : (
-        // A label opens the file picker without reaching for the DOM.
-        <Button
-          className="mt-4"
-          render={<label htmlFor={SKILL_FILE_INPUT_ID} />}
-        >
-          {t(($) => {
-            return $.onboarding.sourcesFirst.skills.import;
-          })}
-        </Button>
+          </Button>
+        </>
+      ) : (
+        <>
+          <OnboardingIllustration
+            name="workflow-default"
+            alt=""
+            size="header"
+          />
+          <span>
+            <span className="block text-sm font-medium text-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.skills.panelTitle;
+              })}
+            </span>
+            <span className="mt-1 block text-sm text-muted-foreground">
+              {t(($) => {
+                return $.onboarding.sourcesFirst.skills.panelCopy;
+              })}
+            </span>
+          </span>
+          <Button render={<label htmlFor={SKILL_FILE_INPUT_ID} />}>
+            {t(($) => {
+              return $.onboarding.sourcesFirst.skills.import;
+            })}
+          </Button>
+        </>
       )}
     </Card>
   );

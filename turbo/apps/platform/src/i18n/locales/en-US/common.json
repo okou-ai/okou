@@ -4215,6 +4215,7 @@
         "panelTitle": "Drop a SKILL.md here",
         "previewCopy": "Imported as an Okou workflow. Only you can use it until you share it.",
         "previewTitle": "Review your skill",
+        "replace": "Choose another file",
         "title": "Bring the skills you already wrote."
       },
       "slack": {

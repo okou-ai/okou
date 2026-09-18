@@ -107,9 +107,9 @@ export function OnboardingStepLayout({
         key={`${String(currentStep)}-${title}`}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6"
       >
-        {/* The block centres as a whole, but its two columns start on the same
-            line: the stepper sits level with the first card. */}
-        <div className="flex w-full flex-1 items-center py-8">
+        {/* Every step starts on the same line, so the stepper and the cards
+            never move between steps. */}
+        <div className="flex w-full flex-1 items-start py-8">
           <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14 lg:pl-10">
             <div className="w-full shrink-0 lg:w-[380px]">
               {/* How far along you are, and the way back one step. The back
