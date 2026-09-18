@@ -677,6 +677,84 @@ test.each(["owner", "navigation"] as const)(
   },
 );
 
+test("Replacing a session during token acquisition retains the draft and retries only with the new session", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.create,
+    ({ body, request, respond }) => {
+      requests.push({
+        body,
+        authorization: request.headers.get("authorization"),
+      });
+      return respond(201, host);
+    },
+  );
+  await page();
+  await screen.findByText("Add a VNC host to get started.");
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Retained login",
+  );
+  const secret = within(dialog).getByLabelText("VNC password");
+  await fill(secret, "old-pass");
+  const token = context.mocks.deferred<string>();
+  const started = context.mocks.deferred<void>();
+  mockedClerk.sessionGetToken.mockImplementationOnce(() => {
+    started.resolve();
+    return token.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await started.promise;
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.user(auth.user, {
+      id: "replacement-session",
+      token: "replacement-token",
+    });
+    clerk.stateChanged();
+  });
+  await act(async () => {
+    token.resolve("old-session-token");
+    await token.promise;
+  });
+  await waitFor(() => {
+    expect(getAction("button", "Retry", dialog)).toBeEnabled();
+  });
+  expect(requests).toStrictEqual([]);
+  expect(dialog).toBeInTheDocument();
+  expect(secret).toHaveValue("old-pass");
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Second desktop",
+  );
+  click(getAction("button", "Retry", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      body: {
+        id: expect.any(String),
+        displayName: "Second desktop",
+        host: "second.example.com",
+        port: 5900,
+        credential: {
+          create: {
+            name: "Retained login",
+            authentication: { method: "vnc_password", password: "old-pass" },
+          },
+        },
+        security: { type: "x509_vnc", trust: { mode: "system" } },
+      },
+      authorization: "Bearer replacement-token",
+    },
+  ]);
+  expect(secret).toHaveValue("");
+});
+
 test.each(["Hosts", "Credentials"] as const)(
   "A failed %s request remains retryable and recovery preserves the selected tab",
   async (tab) => {
