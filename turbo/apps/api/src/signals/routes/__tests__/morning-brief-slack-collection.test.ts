@@ -2506,13 +2506,18 @@ describe("Morning Brief Slack final release proof", () => {
       headers: f.headers,
       body: { scheduledFor: ANCHOR },
     });
+    const requestOutcome = settleIncludingAbort(pending);
     await arrived.promise;
     controller.abort(cancellation);
     // Awaiting the provider request's own abort both proves the cancellation
     // arrived there and joins the held handler before the attempt is judged.
     await cancelled.promise;
 
-    await expect(pending).rejects.toThrow(cancellation.message);
+    const outcome = await requestOutcome;
+    expect(outcome.ok).toBeFalsy();
+    if (!outcome.ok) {
+      expect(outcome.error).toBe(cancellation);
+    }
     expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(1);
     // The attempt published no bundle and never finalized, so the occurrence it
     // claimed is still held rather than completed: the next explicit
