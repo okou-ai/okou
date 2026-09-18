@@ -6,6 +6,12 @@ import {
   type McpCreateChatThreadOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import {
+  mcpUpdateChatThreadInputSchema,
+  mcpUpdateChatThreadOutputSchema,
+  type McpUpdateChatThreadInput,
+  type McpUpdateChatThreadOutput,
+} from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
+import {
   mcpListAgentsInputSchema,
   mcpListAgentsOutputSchema,
   mcpListModelsInputSchema,
@@ -75,6 +81,10 @@ interface McpChatAccess {
     input: McpCreateChatThreadInput,
     signal: AbortSignal,
   ) => Promise<McpChatMutationResult<McpCreateChatThreadOutput>>;
+  readonly updateThread: (
+    input: McpUpdateChatThreadInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatMutationResult<McpUpdateChatThreadOutput>>;
   readonly getStatus: (
     input: McpGetChatStatusInput,
     signal: AbortSignal,
@@ -212,38 +222,72 @@ async function mutationTool<T extends Record<string, unknown>>(
   };
 }
 
+function registerManageTools(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  server.registerTool(
+    "create_chat_thread",
+    {
+      description:
+        "Create an empty conversation in the authorized organization, without sending a message or starting a run. First use list_agents and list_models; supply an explicit visible agentId, nonblank title and selectable model. Generate one UUID requestId per intended conversation; retry with that same requestId and identical Agent, exact title and model within 24 hours of acceptance. Retry returns current settings without overwriting later edits. Deleted, expired or conflicting requests fail. Deduplication is not guaranteed beyond retained identity; never automatically retry an uncertain old request. The threadId is the requestId. Follow nextAction to send a message separately; actual run admission is checked on send.",
+      inputSchema: mcpCreateChatThreadInputSchema,
+      outputSchema: mcpCreateChatThreadOutputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    (input, context) => {
+      return mutationTool(
+        access,
+        "okou:chat:manage",
+        (signal) => {
+          return access.createThread(input, signal);
+        },
+        AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        "Creation result is unavailable. Retry the identical requestId, Agent, exact title and model within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
+      );
+    },
+  );
+  server.registerTool(
+    "update_chat_thread",
+    {
+      description:
+        "Atomically update your conversation title and/or future-run model in the authorized organization. patch must contain title and/or model; omitted fields and unrelated service-tier, reasoning, media and browser settings stay unchanged. model:null clears the thread pin. A title update is manual and suppresses later automatic title generation. Model changes affect later runs only; steering an existing run keeps that run's model. Generate one UUID requestId per intended patch and retry only the identical threadId and exact field presence/values within 24 hours. Exact replay returns current state without restoring older settings. Conflicting or expired reuse fails; inspect get_chat_thread before making a new intended change, and never automatically retry an uncertain old request.",
+      inputSchema: mcpUpdateChatThreadInputSchema,
+      outputSchema: mcpUpdateChatThreadOutputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    (input, context) => {
+      return mutationTool(
+        access,
+        "okou:chat:manage",
+        (signal) => {
+          return access.updateThread(input, signal);
+        },
+        AbortSignal.any([requestSignal, context.mcpReq.signal]),
+        "Update result is unavailable. Retry the identical requestId, threadId and exact patch within 24 hours; otherwise inspect get_chat_thread before making a new intended change.",
+      );
+    },
+  );
+}
+
 function registerMutationTools(
   server: McpServer,
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
   if (access.scopes.includes("okou:chat:manage")) {
-    server.registerTool(
-      "create_chat_thread",
-      {
-        description:
-          "Create an empty conversation in the authorized organization, without sending a message or starting a run. First use list_agents and list_models; supply an explicit visible agentId, nonblank title and selectable model. Generate one UUID requestId per intended conversation; retry with that same requestId and identical Agent, exact title and model within 24 hours of acceptance. Retry returns current settings without overwriting later edits. Deleted, expired or conflicting requests fail. Deduplication is not guaranteed beyond retained identity; never automatically retry an uncertain old request. The threadId is the requestId. Follow nextAction to send a message separately; actual run admission is checked on send.",
-        inputSchema: mcpCreateChatThreadInputSchema,
-        outputSchema: mcpCreateChatThreadOutputSchema,
-        annotations: {
-          readOnlyHint: false,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
-      },
-      (input, context) => {
-        return mutationTool(
-          access,
-          "okou:chat:manage",
-          (signal) => {
-            return access.createThread(input, signal);
-          },
-          AbortSignal.any([requestSignal, context.mcpReq.signal]),
-          "Creation result is unavailable. Retry the identical requestId, Agent, exact title and model within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
-        );
-      },
-    );
+    registerManageTools(server, access, requestSignal);
   }
   if (access.scopes.includes("okou:chat:send")) {
     server.registerTool(
