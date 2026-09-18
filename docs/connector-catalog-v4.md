@@ -109,7 +109,9 @@ resolution validates the stored binding and serializes refresh and token rotatio
 Automatic connection commits, token resolution and shared DCR client retirement
 lock the organization and connector before account rows, including reconnects
 across authentication methods. Registration ownership remains specific to the
-method and catalog contract.
+method and catalog contract. Refresh takes the existing account-owner target lock
+before the account row; retirement takes each linked owner's target lock before
+their rows so ordinary account deletion and default changes cannot invert that order.
 Providers without refresh tokens work until the access token expires. A no-auth
 account bypasses credential validity, storage-version and refresh checks. Each
 Run receives an account-specific inline firewall; runtime sync updates it when
@@ -120,6 +122,11 @@ Accepted catalog changes wake affected builtin MCP Runs to refresh their endpoin
 and auth template. The proxy also treats builtin-owned inline firewalls as catalog
 consumers: removing their catalog entry removes that owner from request matching,
 without selecting another connector's credentials at the same destination.
+OAuth auth requests carry the matched inline endpoint. The API checks it against
+the accepted catalog and account binding before returning credentials, including
+after waiting for account locks. A stale or missing destination is rejected without
+invalidating a newly reconnected account. This check does not depend on successful
+runtime-sync notification delivery and does not apply to no-auth accounts.
 
 The existing auth-method discovery switch `plaudConnector` defaults off and
 controls only `plaud-mcp / automatic`. It does not gate existing account

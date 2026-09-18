@@ -317,6 +317,8 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly initialExpiresIn?: number;
   readonly initialRefreshToken?: string;
   readonly omitRefreshToken?: boolean;
+  readonly endpoint?: string;
+  readonly initialAccessToken?: string;
   readonly resource?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
@@ -342,9 +344,10 @@ export function mockAutomaticMcpOAuthProvider(
   context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
 ): AutomaticMcpOAuthProviderRecorder {
-  const endpoint = "https://automatic-mcp.example.test/server";
-  const resourceMetadataUrl =
-    "https://automatic-mcp.example.test/oauth-resource";
+  const endpoint =
+    options.endpoint ?? "https://automatic-mcp.example.test/server";
+  const endpointUrl = new URL(endpoint);
+  const resourceMetadataUrl = new URL("/oauth-resource", endpoint).href;
   const issuer = "https://automatic-issuer.example.test";
   const authorizationUrl = `${issuer}/authorize`;
   const tokenUrl = `${issuer}/token`;
@@ -377,7 +380,7 @@ export function mockAutomaticMcpOAuthProvider(
       : {}),
   };
   for (const hostname of [
-    "automatic-mcp.example.test",
+    endpointUrl.hostname,
     "automatic-issuer.example.test",
   ]) {
     context.mocks.dns.lookupOverrides.set(hostname, [
@@ -477,13 +480,16 @@ export function mockAutomaticMcpOAuthProvider(
           });
     }),
     http.get(
-      "https://automatic-mcp.example.test/.well-known/oauth-protected-resource/server",
+      new URL(
+        `/.well-known/oauth-protected-resource${endpointUrl.pathname}`,
+        endpoint,
+      ).href,
       () => {
         return new HttpResponse(null, { status: 404 });
       },
     ),
     http.get(
-      "https://automatic-mcp.example.test/.well-known/oauth-protected-resource",
+      new URL("/.well-known/oauth-protected-resource", endpoint).href,
       () => {
         return options.resourceMetadataStatus
           ? HttpResponse.json(
@@ -581,7 +587,7 @@ export function mockAutomaticMcpOAuthProvider(
       return HttpResponse.json({
         access_token: refresh
           ? "automatic-refreshed-access-token"
-          : "automatic-initial-access-token",
+          : (options.initialAccessToken ?? "automatic-initial-access-token"),
         ...(!refresh && !options.omitRefreshToken
           ? {
               refresh_token:

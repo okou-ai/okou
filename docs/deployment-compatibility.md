@@ -2251,6 +2251,11 @@ that firewall so same-account reconnect changes take effect without preserving
 obsolete auth headers. Use the current API and Runner for this behavior; there
 is no MCP-specific client or Runner capability negotiation. A rollback after
 Automatic accounts exist must retain their schema and credential readers.
+The addon sends `matchedFirewall.base` when resolving builtin credentials.
+Automatic OAuth resolution requires this destination to match the current
+catalog and the locked account binding. Missing or stale destinations fail closed;
+HTTP/custom and no-auth resolution do not require this field. Best-effort runtime
+sync cannot authorize credentials for a changed endpoint.
 
 The v3 catalog read bridge and its cleanup under
 [#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.

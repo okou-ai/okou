@@ -17,13 +17,13 @@ _CUSTOM_ID = "550e8400-e29b-41d4-a716-446655440000"
 _BASE = "https://shared.example.com/server"
 
 
-def _firewall(name: str, *, oauth: bool) -> dict:
+def _firewall(name: str, *, oauth: bool, base: str = _BASE) -> dict:
     return {
         "name": name,
         "apis": [
             {
                 "id": f"{name}:0",
-                "base": _BASE,
+                "base": base,
                 "auth": (
                     {"headers": {"Authorization": "Bearer ${{ secrets.MCP_TOKEN }}"}}
                     if oauth
@@ -35,9 +35,9 @@ def _firewall(name: str, *, oauth: bool) -> dict:
     }
 
 
-def _replace_catalog(cache_path, *, present: bool) -> None:
+def _replace_catalog(cache_path, *, present: bool, base: str = _BASE) -> None:
     next_path = cache_path.with_name("catalog.next.json")
-    builtin = _firewall(_BUILTIN, oauth=False)
+    builtin = _firewall(_BUILTIN, oauth=False, base=base)
     builtin["apis"][0].pop("id")
     other = _firewall("other-service", oauth=False)
     other["apis"][0].pop("id")
@@ -154,3 +154,70 @@ async def test_inline_builtin_catalog_removal_and_reinsertion_keep_selected_owne
         assert isinstance(matched, dict)
         assert matched["sourceId"] == _SOURCE_ID
         assert matched["connectorSlug"] == _BUILTIN
+        assert matched["base"] == _BASE
+
+
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+async def test_stale_inline_builtin_auth_reports_actual_destination_without_runtime_sync(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first
+):
+    registry_path = tmp_path / "registry.json"
+    cache_path = tmp_path / "catalog.json"
+    sandbox = {
+        "runId": "stale-inline-builtin-destination",
+        "cliAgentType": "codex",
+        "sandboxToken": "sandbox-token",
+        "encryptedSecrets": "iv:tag:data",
+        "networkLogPath": str(tmp_path / "network.jsonl"),
+        "proxyLogPath": str(tmp_path / "proxy.jsonl"),
+        "billableFirewalls": [],
+        "firewalls": [
+            {
+                "kind": "inline",
+                "sourceId": _SOURCE_ID,
+                "firewall": _firewall(_BUILTIN, oauth=True),
+            }
+        ],
+        "connectorRuntimeTargets": [{"kind": "builtin", "connectorSlug": _BUILTIN}],
+        "connectorRoutingVariables": {f"builtin:{_BUILTIN}": {}},
+        "networkPolicies": {
+            _BUILTIN: {"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"}
+        },
+    }
+    write_multi_sandbox_registry(registry_path, {_CLIENT_IP: sandbox})
+    _replace_catalog(cache_path, present=True, base="https://replacement.example.com/server")
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(
+        {"error": {"code": "CONNECTOR_NOT_CONFIGURED", "message": "Connector not configured"}},
+        status=424,
+    )
+    with (
+        endpoint.run(),
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url=endpoint.api_url,
+        ),
+    ):
+        flow = real_flow(
+            with_response=False,
+            client_ip=_CLIENT_IP,
+            host="shared.example.com",
+            path="/server",
+            method="POST",
+        )
+        flow.request.headers["X-Okou-Connector-Intent"] = _BUILTIN
+        if requestheaders_first:
+            flow.request.headers["Content-Length"] = str(mitm_addon.STREAM_BUFFER_LIMIT + 1)
+            result = mitm_addon.requestheaders(flow)
+            if result is not None:
+                await await_requestheaders_result(result)
+        await mitm_addon.request(flow)
+
+    assert flow.response is not None
+    assert "Authorization" not in flow.request.headers
+    assert endpoint.request_count == 1
+    matched = endpoint.requests[0].json_body()["matchedFirewall"]
+    assert isinstance(matched, dict)
+    assert matched["base"] == _BASE
+    assert matched["sourceId"] == _SOURCE_ID

@@ -65,6 +65,7 @@ import {
 } from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
+import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 
 const httpsUrl = z.url({ protocol: /^https$/u });
 const contextBase = z.object({
@@ -861,6 +862,7 @@ interface ResolveBuiltinAutomaticCredentialArgs {
   readonly connectorId: string;
   readonly connectorSlug: string;
   readonly authMethodId: string;
+  readonly expectedEndpoint: string | undefined;
   readonly forceRefresh?: boolean;
 }
 
@@ -989,6 +991,24 @@ function accessTokenRemainsValid(
   );
 }
 
+async function credentialDestinationMatches(
+  db: Db,
+  contract: BuiltinContract,
+  expectedEndpoint: string | undefined,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (expectedEndpoint !== contract.endpoint) {
+    return false;
+  }
+  const current = await currentContract(
+    db,
+    contract.connectorSlug,
+    contract.authMethodId,
+  );
+  signal.throwIfAborted();
+  return current?.contractHash === contract.contractHash;
+}
+
 async function resolveLockedBuiltinAutomatic(
   tx: Tx,
   args: ResolveBuiltinAutomaticCredentialArgs,
@@ -998,6 +1018,11 @@ async function resolveLockedBuiltinAutomatic(
   const { contract, accessName, initialAccessEncrypted, accountIdentity } =
     context;
   await lockBuiltinAutomaticLifecycle(tx, contractOwner(args.orgId, contract));
+  await lockConnectorAccountTarget(tx, {
+    orgId: args.orgId,
+    userId: args.userId,
+    target: { kind: "builtin", connectorSlug: args.connectorSlug },
+  });
   const [account] = await tx
     .select()
     .from(connectors)
@@ -1010,6 +1035,18 @@ async function resolveLockedBuiltinAutomatic(
   }
   if (account.automaticAuthType === "none") {
     return { kind: "none" };
+  }
+  // Runtime sync is best-effort: a stale inline firewall must never receive
+  // credentials for the endpoint accepted by a newer account connection.
+  if (
+    !(await credentialDestinationMatches(
+      tx,
+      contract,
+      args.expectedEndpoint,
+      signal,
+    ))
+  ) {
+    return { kind: "unavailable", reason: "stale-contract" };
   }
   if (
     account.automaticAuthType !== "oauth" ||
@@ -1145,17 +1182,27 @@ export async function resolveBuiltinAutomaticMcpCredential(
     )
     .limit(1);
   signal.throwIfAborted();
-  return await args.db.transaction(async (tx) => {
-    return await resolveLockedBuiltinAutomatic(
-      tx,
-      args,
-      {
-        contract,
-        accessName,
-        initialAccessEncrypted: initialAccess?.encryptedValue,
-        accountIdentity,
-      },
-      signal,
-    );
-  });
+  const resolved = await settle(
+    args.db.transaction(async (tx) => {
+      return await resolveLockedBuiltinAutomatic(
+        tx,
+        args,
+        {
+          contract,
+          accessName,
+          initialAccessEncrypted: initialAccess?.encryptedValue,
+          accountIdentity,
+        },
+        signal,
+      );
+    }),
+    signal,
+  );
+  if (!resolved.ok) {
+    if (resolved.error instanceof StaleBuiltinContractError) {
+      return { kind: "unavailable", reason: "stale-contract" };
+    }
+    throw resolved.error;
+  }
+  return resolved.value;
 }

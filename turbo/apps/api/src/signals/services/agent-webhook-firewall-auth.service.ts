@@ -180,6 +180,7 @@ interface FirewallAuthBody {
   readonly matchedFirewall?: {
     readonly name: string;
     readonly apiId: string;
+    readonly base?: string;
     readonly connectorSlug?: ConnectorSlug;
     readonly customConnectorId?: string;
     readonly sourceId?: string;
@@ -6046,6 +6047,7 @@ async function resolveFirewallAuthMaterial(args: {
         connectorId: args.prepared.connectorId,
         connectorSlug: args.prepared.connectorSlug,
         authMethodId: args.prepared.authMethodId,
+        expectedEndpoint: args.body.matchedFirewall?.base,
         forceRefresh: args.body.forceRefresh,
       },
       AbortSignal.timeout(30_000),

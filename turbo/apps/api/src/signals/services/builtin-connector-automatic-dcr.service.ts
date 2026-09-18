@@ -4,6 +4,7 @@ import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/builtin-
 import { connectors } from "@okouai/db/schema/connector";
 import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -45,7 +46,7 @@ function registration(
   return { ...row, hasClientSecret: row.encryptedClientSecret !== null };
 }
 
-/** The lifecycle lock serializes refresh/retirement; ordinary account writers never acquire it. */
+/** Lifecycle coordination precedes owner target locks, which precede their account rows. */
 async function retireRegistration(
   db: Db,
   owner: BuiltinAutomaticContractOwner,
@@ -60,6 +61,21 @@ async function retireRegistration(
     .limit(1);
   if (!owned) {
     return;
+  }
+  // Ordinary delete/default operations lock a user's target before sibling
+  // rows. Join that order for every linked owner before locking their accounts.
+  // The lifecycle lock prevents new Automatic bindings while these locks wait.
+  const accountOwners = await db
+    .selectDistinct({ userId: builtinConnectorAccountOauthBindings.userId })
+    .from(builtinConnectorAccountOauthBindings)
+    .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
+    .orderBy(builtinConnectorAccountOauthBindings.userId);
+  for (const accountOwner of accountOwners) {
+    await lockConnectorAccountTarget(db, {
+      orgId: owner.orgId,
+      userId: accountOwner.userId,
+      target: { kind: "builtin", connectorSlug: owner.connectorSlug },
+    });
   }
   const accounts = await db
     .select({ id: connectors.id })

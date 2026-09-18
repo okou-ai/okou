@@ -59,7 +59,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { generateOkouToken, verifyOkouToken } from "../../auth/tokens";
 import {
   deleteUsagePricingRows,
@@ -72,6 +72,8 @@ import {
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { holdBuiltinConnectorAccountFixture } from "../../../test-fixtures/builtin-connector-account-lock";
+import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
@@ -10861,6 +10863,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
+          base: firewallApi.base,
           connectorSlug: catalog.slug,
           sourceId: connectionId,
           routingVariables: {},
@@ -11099,6 +11102,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
+        base: apiEntry.base,
         connectorSlug: catalog.slug,
         sourceId: connectionId,
         routingVariables: {},
@@ -11186,6 +11190,210 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
   });
 
+  it.each([
+    { owner: "same user", mutation: "delete" },
+    { owner: "same user", mutation: "change default" },
+    { owner: "another user", mutation: "delete" },
+    { owner: "another user", mutation: "change default" },
+  ] as const)(
+    "settles builtin Automatic DCR retirement racing $owner account $mutation",
+    async ({ owner, mutation }) => {
+      const catalog = await installBuiltinAutomaticMcpCatalog();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "dcr",
+        initialExpiresIn: 3600,
+        refreshError: "invalid_client",
+      });
+      const api = createRunsApi(context);
+      const bdd = createBddApi(context);
+      const connectors = createConnectorBddApi(context);
+      const fw = createFirewallApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      if (!actor.orgId) {
+        throw new Error("Expected an organization for builtin MCP accounts");
+      }
+      const mutationActor =
+        owner === "same user" ? actor : bdd.user({ orgId: actor.orgId });
+      const mutationAgentId =
+        owner === "same user"
+          ? agentId
+          : (
+              await bdd.createAgent(mutationActor, {
+                displayName: "BDD sibling account owner",
+                visibility: "private",
+              })
+            ).agentId;
+      const siblingIds: string[] = [];
+      for (let index = 0; index < 2; index += 1) {
+        siblingIds.push(
+          await connectBuiltinAutomaticRuntime({
+            actor: mutationActor,
+            agentId: mutationAgentId,
+            ...catalog,
+            issuer: provider.issuer,
+          }),
+        );
+      }
+      // Choose the first locked sibling from the returned IDs so the race is
+      // deterministic regardless of UUID generation or creation order.
+      const [heldConnectionId, mutationConnectionId] = siblingIds.sort();
+      if (!heldConnectionId || !mutationConnectionId) {
+        throw new Error("Expected two distinct builtin MCP accounts");
+      }
+      await connectors.setDefaultBuiltinConnectorAccount(
+        mutationActor,
+        catalog.slug,
+        heldConnectionId,
+      );
+      const refreshConnectionId =
+        owner === "same user"
+          ? heldConnectionId
+          : await connectBuiltinAutomaticRuntime({
+              actor,
+              agentId,
+              ...catalog,
+              issuer: provider.issuer,
+            });
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt:
+          "retire rejected builtin MCP credentials during account changes",
+        modelProvider: "anthropic-api-key",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
+      expect(target.sourceId).toBe(refreshConnectionId);
+      const apiEntry = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
+      if (!apiEntry) {
+        throw new Error("Expected builtin Automatic firewall");
+      }
+      const held = await holdBuiltinConnectorAccountFixture(
+        {
+          orgId: actor.orgId,
+          userId: mutationActor.userId,
+          connectorId: heldConnectionId,
+        },
+        context.signal,
+      );
+      const pending: Promise<unknown>[] = [];
+      const outcome = await settleIncludingAbort(async () => {
+        const refreshing = settleIncludingAbort(
+          fw.requestFirewallAuth(
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            {
+              forceRefresh: true,
+              encryptedSecrets:
+                claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+              authHeaders: apiEntry.auth.headers ?? {},
+              matchedFirewall: {
+                name: catalog.slug,
+                apiId: `${catalog.slug}:0`,
+                base: apiEntry.base,
+                connectorSlug: catalog.slug,
+                sourceId: refreshConnectionId,
+                routingVariables: {},
+              },
+            },
+            [502],
+          ),
+        );
+        pending.push(refreshing);
+        const refreshingBackend = await held.waitForBlocked();
+        const mutating = settleIncludingAbort(async () => {
+          if (mutation === "delete") {
+            await connectors.deleteBuiltinConnectorAccount(
+              mutationActor,
+              catalog.slug,
+              mutationConnectionId,
+            );
+          } else {
+            await connectors.setDefaultBuiltinConnectorAccount(
+              mutationActor,
+              catalog.slug,
+              mutationConnectionId,
+            );
+          }
+        });
+        pending.push(mutating);
+        // Observe both requests reaching their conflicting lock before release.
+        // The fixed path waits on account ownership before taking sibling rows.
+        await waitForDeferredBlocker(refreshingBackend);
+        await held.release();
+        const [refreshed, mutated] = await Promise.all([refreshing, mutating]);
+        expect(refreshed).toMatchObject({
+          ok: true,
+          value: {
+            body: {
+              error: {
+                code: "TOKEN_REFRESH_FAILED",
+                failureReason: "reconnect_required",
+              },
+            },
+          },
+        });
+        expect(mutated).toMatchObject({ ok: true });
+        const retained = await connectors.listBuiltinConnectorAccounts(
+          mutationActor,
+          catalog.slug,
+        );
+        expect(
+          retained
+            .map((account) => {
+              return account.id;
+            })
+            .sort(),
+        ).toStrictEqual(
+          mutation === "delete"
+            ? [heldConnectionId]
+            : [heldConnectionId, mutationConnectionId].sort(),
+        );
+        for (const account of retained) {
+          expect(account).toMatchObject({
+            authMethod: catalog.methodId,
+            connectionStatus: "reconnect-required",
+            reconnectReason: "authorization_expired_or_revoked",
+            isDefault:
+              account.id ===
+              (mutation === "delete" ? heldConnectionId : mutationConnectionId),
+          });
+        }
+        if (owner === "another user") {
+          await expect(
+            connectors.listBuiltinConnectorAccounts(actor, catalog.slug),
+          ).resolves.toMatchObject([
+            {
+              id: refreshConnectionId,
+              authMethod: catalog.methodId,
+              connectionStatus: "reconnect-required",
+            },
+          ]);
+        }
+      });
+      await held.release();
+      await Promise.all(pending);
+      await api.requestCancelRun(actor, run.runId, [200]);
+      for (const accountOwner of owner === "same user"
+        ? [actor]
+        : [actor, mutationActor]) {
+        const accounts = await connectors.listBuiltinConnectorAccounts(
+          accountOwner,
+          catalog.slug,
+        );
+        for (const account of accounts) {
+          await connectors.deleteBuiltinConnectorAccount(
+            accountOwner,
+            catalog.slug,
+            account.id,
+          );
+        }
+      }
+      if (!outcome.ok) {
+        throw outcome.error;
+      }
+    },
+  );
+
   it("uses a builtin Automatic access token without optional refresh until it expires", async () => {
     const catalog = await installBuiltinAutomaticMcpCatalog();
     const provider = mockAutomaticMcpOAuthProvider(context, {
@@ -11221,6 +11429,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
+        base: apiEntry.base,
         connectorSlug: catalog.slug,
         sourceId: connectionId,
         routingVariables: {},
