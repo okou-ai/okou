@@ -1442,50 +1442,51 @@
         "intro": {
           "checkin": {
             "confirm": "확인",
-            "description": "+{{amount}} 크레딧. 내일 또 오세요.",
-            "title": "체크인 완료"
+            "description": "{{amount}} 크레딧이 적립됐습니다. 내일 또 오세요.",
+            "title": "출석 완료"
           },
           "connector": {
             "confirm": "모든 커넥터 보기",
-            "description": "연결하면 받은편지함, 문서, 캘린더를 바로 다룹니다.",
+            "description": "하나만 연결하면 메일과 문서, 대시보드를 직접 읽습니다. 어딘가에 붙여넣을 답변이 아니라 완성된 결과물이 돌아옵니다.",
             "pickerFailed": "커넥터를 불러오지 못했습니다. 커넥터 페이지에서 다시 시도하세요.",
             "pickerLoading": "커넥터 불러오는 중…",
-            "scopeCredentials": "인증 정보는 {{assistantName}}에 전달되지 않습니다.",
-            "scopeRevoke": "최소 권한만 쓰고, 언제든 해제할 수 있습니다.",
-            "title": "{{assistantName}}이(가) 내 도구에서 일하게 하기"
+            "scopeAction": "권한은 동작 단위로 부여합니다. 메일 초안은 쓰되 발송은 할 수 없습니다.",
+            "scopeCredentials": "로그인은 해당 서비스에서 진행합니다. {{assistantName}}는 비밀번호를 보지 않고, API 키를 붙여넣을 필요도 없습니다.",
+            "scopeRevoke": "언제든 연결을 해제할 수 있습니다. 권한은 자동화가 아니라 사람을 따라갑니다.",
+            "title": "{{assistantName}}는 이미 쓰고 있는 도구 안에서 일합니다"
           },
           "invite": {
-            "confirm": "팀원 초대",
-            "description": "새 동료가 첫날부터 당신이 만든 것을 실행할 수 있습니다.",
-            "scopeShared": "워크플로는 공유되고, 커넥터는 개인별입니다.",
-            "title": "한 사람이 익힌 것을 팀 전체가 실행합니다"
+            "confirm": "팀원 초대하기",
+            "description": "워크플로는 만든 사람이 아니라 워크스페이스의 것입니다. 새 팀원도 첫날부터 설정을 다시 하지 않고 실행할 수 있습니다.",
+            "scopeShared": "팀원마다 자신의 권한과 자신이 연결한 계정으로 실행합니다.",
+            "title": "한 사람이 아는 것을 모두가 실행합니다"
           },
           "later": "나중에",
           "slack": {
             "appBadge": "APP",
             "confirm": "Slack에 추가",
-            "description": "Slack에서는 {{assistantName}}이(가) 누구나 @로 부를 수 있는 동료입니다.",
+            "description": "채널에서 멘션하면 그 스레드에 답이 옵니다. Slack을 벗어나지 않고도 팀 전체가 작업을 따라갈 수 있습니다.",
             "sampleChannel": "# growth",
             "scopeChannels": "초대한 채널만 볼 수 있습니다.",
-            "scopeOrganization": "계정이 팀 계정이 되고, 워크플로가 공유됩니다.",
-            "scopeReward": "보상은 팀 잔액으로 들어갑니다.",
-            "title": "팀이 이미 일하는 곳에 두기"
+            "scopeOrganization": "설치하면 내 워크스페이스가 팀의 것이 됩니다. 에이전트와 워크플로, 크레딧이 함께 공유됩니다.",
+            "scopeReward": "크레딧은 팀 잔액으로 들어갑니다.",
+            "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
           },
           "workflow": {
             "browse": "템플릿 둘러보기",
-            "confirm": "첫 번째 보기",
-            "description": "새로 배울 것은 없습니다.",
+            "confirm": "하나 해보기",
+            "description": "먼저 설정할 것은 없습니다. 한 번 해보고, 그대로 남기면 됩니다.",
             "prompt": "매주 월요일 아침에 경쟁사가 지난주에 공개한 내용을 확인하고 주제별로 묶어 비교표로 만들어 주세요.",
             "promptConfirm": "{{assistantName}}에게 보내기",
-            "promptDescription": "그대로 보내도 되고, 문장을 바꿔도 됩니다.",
-            "promptTitle": "{{assistantName}}에게 보낼 문장입니다",
-            "stepRun": "한 번 실행",
-            "stepRunDescription": "설정하기 전에 결과부터 확인하세요.",
-            "stepSave": "저장",
-            "stepSaveDescription": "언제 실행할지, 결과를 어디로 보낼지 정하세요.",
-            "stepTemplate": "템플릿 선택",
-            "stepTemplateDescription": "하려는 일과 가까운 것으로 시작하세요.",
-            "title": "{{assistantName}}에게 일을 맡기는 3단계"
+            "promptDescription": "단계를 일일이 적지 않아도 됩니다. {{assistantName}}가 방법을 찾고 도구를 고르고 완성된 결과를 가져옵니다.",
+            "promptTitle": "동료에게 부탁하듯 말하세요",
+            "stepRun": "한 번 실행해 보기",
+            "stepRunDescription": "무엇을 정하기 전에 완성된 결과물을 먼저 봅니다.",
+            "stepSave": "저장하고 일정을 정하기",
+            "stepSaveDescription": "아무도 시키지 않아도 실행되고, 팀원 누구나 실행할 수 있습니다.",
+            "stepTemplate": "템플릿에서 시작하기",
+            "stepTemplateDescription": "빈 화면 대신 내 업무에 가까운 것을 고르세요.",
+            "title": "잘된 실행 한 번이 팀의 자산이 됩니다"
           }
         },
         "invite": {

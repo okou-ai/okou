@@ -1467,50 +1467,51 @@
         "intro": {
           "checkin": {
             "confirm": "Ho capito",
-            "description": "+{{amount}} crediti. Torna domani per i prossimi.",
-            "title": "Check-in effettuato"
+            "description": "{{amount}} crediti aggiunti. Torna domani per i prossimi.",
+            "title": "Check-in fatto"
           },
           "connector": {
             "confirm": "Vedi tutti i connettori",
-            "description": "Poi lavora sulla tua posta, sui tuoi documenti e sul tuo calendario.",
+            "description": "Collegane uno e leggerà da solo la posta, i documenti e le dashboard: quello che torna è lavoro finito, non una risposta da incollare altrove.",
             "pickerFailed": "Impossibile caricare i connettori. Apri la pagina dei connettori per riprovare.",
             "pickerLoading": "Caricamento dei connettori…",
-            "scopeCredentials": "Le tue credenziali non arrivano mai a {{assistantName}}.",
-            "scopeRevoke": "Permessi minimi e puoi scollegarlo quando vuoi.",
-            "title": "Fai lavorare {{assistantName}} sui tuoi strumenti"
+            "scopeAction": "L'accesso si concede un'azione alla volta: può scrivere la bozza della mail senza poterla inviare.",
+            "scopeCredentials": "Accedi presso il fornitore. {{assistantName}} non vede mai la tua password e non c'è nessuna chiave API da incollare.",
+            "scopeRevoke": "Puoi scollegarlo quando vuoi. I permessi seguono te, non l'automazione.",
+            "title": "{{assistantName}} lavora dentro gli strumenti che già usi"
           },
           "invite": {
             "confirm": "Invita il team",
-            "description": "Un collega può eseguire quello che hai creato dal primo giorno.",
-            "scopeShared": "I workflow sono condivisi; i connettori restano personali.",
-            "title": "Quello che impara una persona lo può eseguire tutto il team"
+            "description": "Un workflow appartiene allo spazio di lavoro, non a chi l'ha creato: un collega lo esegue dal primo giorno senza rifare la configurazione.",
+            "scopeShared": "Ognuno lo esegue con i propri permessi e i propri account collegati.",
+            "title": "Quello che sa una persona, può eseguirlo tutto il team"
           },
           "later": "Più tardi",
           "slack": {
             "appBadge": "APP",
             "confirm": "Aggiungi a Slack",
-            "description": "Su Slack {{assistantName}} è un collega che chiunque può richiamare con @.",
+            "description": "Menzionalo in un canale e la risposta arriva in quel thread: il team segue il lavoro senza uscire da Slack.",
             "sampleChannel": "# growth",
             "scopeChannels": "Vede solo i canali in cui lo inviti.",
-            "scopeOrganization": "Il tuo account diventa del team e i workflow sono condivisi.",
-            "scopeReward": "La ricompensa va sul saldo del team.",
-            "title": "Tienilo dove il tuo team lavora già"
+            "scopeOrganization": "Installandolo il tuo spazio diventa quello del team: agenti, workflow e crediti restano condivisi.",
+            "scopeReward": "I crediti vanno sul saldo del team.",
+            "title": "Lavora con {{assistantName}} dove il team già parla"
           },
           "workflow": {
             "browse": "Sfoglia i modelli",
-            "confirm": "Mostrami il primo",
-            "description": "Niente di nuovo da imparare.",
+            "confirm": "Mostramene uno",
+            "description": "Non c'è niente da configurare prima. Fai il lavoro una volta e tienitelo.",
             "prompt": "Ogni lunedì mattina controlla cosa hanno pubblicato i miei concorrenti la settimana scorsa, raggruppalo per tema e preparami una tabella di confronto.",
-            "promptConfirm": "Invia a {{assistantName}}",
-            "promptDescription": "Invialo così com'è oppure riscrivilo.",
-            "promptTitle": "Questo è ciò che invii a {{assistantName}}",
+            "promptConfirm": "Invialo a {{assistantName}}",
+            "promptDescription": "Non devi elencare i passaggi. {{assistantName}} capisce come muoversi, sceglie gli strumenti e riporta il risultato finito.",
+            "promptTitle": "Chiedilo come lo chiederesti a un collega",
             "stepRun": "Eseguilo una volta",
-            "stepRunDescription": "Guarda il risultato prima di configurare qualcosa.",
-            "stepSave": "Salvalo",
-            "stepSaveDescription": "Scegli quando viene eseguito e dove finiscono i risultati.",
-            "stepTemplate": "Scegli un modello",
-            "stepTemplateDescription": "Parti da uno vicino a quello che ti serve.",
-            "title": "Tre passi per affidare un lavoro a {{assistantName}}"
+            "stepRunDescription": "Vedi il lavoro finito prima di impegnarti in qualcosa.",
+            "stepSave": "Salvalo e dagli una pianificazione",
+            "stepSaveDescription": "Parte senza che nessuno lo chieda e può eseguirlo qualunque collega.",
+            "stepTemplate": "Parti da un modello",
+            "stepTemplateDescription": "Scegline uno vicino al tuo lavoro invece di una pagina bianca.",
+            "title": "Una buona esecuzione diventa qualcosa che resta al team"
           }
         },
         "invite": {

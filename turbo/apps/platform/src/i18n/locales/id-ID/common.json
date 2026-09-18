@@ -1442,50 +1442,51 @@
         "intro": {
           "checkin": {
             "confirm": "Oke",
-            "description": "+{{amount}} kredit. Kembali lagi besok.",
+            "description": "{{amount}} kredit ditambahkan. Datang lagi besok untuk berikutnya.",
             "title": "Sudah check-in"
           },
           "connector": {
             "confirm": "Lihat semua konektor",
-            "description": "Setelah itu ia bekerja di kotak masuk, dokumen, dan kalender Anda.",
+            "description": "Hubungkan satu saja dan ia membaca sendiri email, dokumen, dan dasbor Anda, sehingga yang kembali adalah pekerjaan jadi, bukan jawaban untuk ditempel di tempat lain.",
             "pickerFailed": "Konektor gagal dimuat. Buka halaman konektor untuk mencoba lagi.",
             "pickerLoading": "Memuat konektor…",
-            "scopeCredentials": "Kredensial Anda tidak pernah sampai ke {{assistantName}}.",
-            "scopeRevoke": "Izin seminimal mungkin, dan bisa diputus kapan saja.",
-            "title": "Biarkan {{assistantName}} bekerja di perkakas Anda sendiri"
+            "scopeAction": "Akses diberikan satu tindakan sekali: ia bisa menyusun draf email tanpa bisa mengirimnya.",
+            "scopeCredentials": "Anda masuk lewat penyedianya sendiri. {{assistantName}} tidak pernah melihat kata sandi Anda, dan tidak ada API key yang perlu ditempel.",
+            "scopeRevoke": "Putuskan kapan pun Anda mau. Izin mengikuti orangnya, bukan otomasinya.",
+            "title": "{{assistantName}} bekerja di dalam alat yang sudah Anda pakai"
           },
           "invite": {
             "confirm": "Undang tim",
-            "description": "Rekan baru bisa menjalankan buatan Anda di hari pertama.",
-            "scopeShared": "Workflow dibagikan; konektor tetap pribadi.",
-            "title": "Yang dipelajari satu orang bisa dijalankan seluruh tim"
+            "description": "Alur kerja milik ruang kerja, bukan milik pembuatnya, jadi rekan baru bisa menjalankannya di hari pertama tanpa menyiapkan ulang apa pun.",
+            "scopeShared": "Setiap orang menjalankannya dengan izin dan akun terhubung miliknya sendiri.",
+            "title": "Yang diketahui satu orang bisa dijalankan semua orang"
           },
           "later": "Nanti saja",
           "slack": {
             "appBadge": "APP",
             "confirm": "Tambahkan ke Slack",
-            "description": "Di Slack, {{assistantName}} jadi rekan kerja yang bisa di-@ siapa saja.",
+            "description": "Sebut namanya di sebuah kanal dan jawabannya masuk ke thread itu, jadi tim bisa mengikuti pekerjaannya tanpa keluar dari Slack.",
             "sampleChannel": "# growth",
             "scopeChannels": "Ia hanya melihat kanal tempat Anda mengundangnya.",
-            "scopeOrganization": "Akun Anda menjadi akun tim, sehingga workflow ikut dibagikan.",
-            "scopeReward": "Hadiahnya masuk ke saldo tim.",
-            "title": "Taruh di tempat tim Anda sudah bekerja"
+            "scopeOrganization": "Memasangnya membuat ruang kerja Anda menjadi milik tim: agen, alur kerja, dan kredit jadi dipakai bersama.",
+            "scopeReward": "Kreditnya masuk ke saldo tim.",
+            "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
           },
           "workflow": {
             "browse": "Lihat templat",
-            "confirm": "Tunjukkan yang pertama",
-            "description": "Tidak ada yang baru untuk dipelajari.",
+            "confirm": "Tunjukkan satu",
+            "description": "Tidak ada yang perlu disiapkan dulu. Kerjakan sekali, lalu simpan.",
             "prompt": "Setiap Senin pagi, periksa apa yang dipublikasikan kompetitor saya minggu lalu, kelompokkan menurut tema, dan buatkan tabel perbandingan.",
             "promptConfirm": "Kirim ke {{assistantName}}",
-            "promptDescription": "Kirim apa adanya, atau ubah kalimatnya.",
-            "promptTitle": "Ini yang Anda kirim ke {{assistantName}}",
+            "promptDescription": "Anda tidak perlu merinci langkahnya. {{assistantName}} yang menentukan caranya, memilih alatnya, dan membawa hasil jadinya.",
+            "promptTitle": "Minta seperti Anda meminta kepada rekan kerja",
             "stepRun": "Jalankan sekali",
-            "stepRunDescription": "Lihat hasilnya sebelum mengatur apa pun.",
-            "stepSave": "Simpan",
-            "stepSaveDescription": "Tentukan kapan ia berjalan dan ke mana hasilnya.",
-            "stepTemplate": "Pilih templat",
-            "stepTemplateDescription": "Mulai dari yang dekat dengan pekerjaan Anda.",
-            "title": "Tiga langkah menyerahkan satu pekerjaan ke {{assistantName}}"
+            "stepRunDescription": "Anda melihat hasil jadinya sebelum memutuskan apa pun.",
+            "stepSave": "Simpan, lalu beri jadwal",
+            "stepSaveDescription": "Ia jalan tanpa diminta, dan rekan mana pun bisa menjalankannya.",
+            "stepTemplate": "Mulai dari templat",
+            "stepTemplateDescription": "Pilih yang dekat dengan pekerjaan Anda daripada mulai dari halaman kosong.",
+            "title": "Satu jalan yang berhasil menjadi milik tim seterusnya"
           }
         },
         "invite": {

@@ -721,14 +721,18 @@ test("The connector step says what it costs the user before it hands them off", 
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-connector"));
   const dialog = await screen.findByRole("dialog", {
-    name: "Let Okou work on your own tools",
+    name: "Okou works inside the tools you already use",
   });
   // The refusal this answers is about custody, not value.
   expect(
-    within(dialog).getByText("Your credentials never reach Okou."),
+    within(dialog).getByText(
+      "You sign in with the provider. Okou never sees your password, and there is no API key to paste.",
+    ),
   ).toBeInTheDocument();
   expect(
-    within(dialog).getByText("Least access, and you can disconnect anytime."),
+    within(dialog).getByText(
+      "Disconnect whenever you want. Permissions follow you, not the automation.",
+    ),
   ).toBeInTheDocument();
   // Explaining is all it does: the destination is still the connector list.
   expect(pathname()).toBe(questChatPath());
@@ -792,12 +796,14 @@ test("Declining an introduced step costs the user nothing", async () => {
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-invite"));
   const dialog = await screen.findByRole("dialog", {
-    name: "What one person learns, the whole team can run",
+    name: "What one person knows, everyone can run",
   });
   // The reason to invite is what a teammate inherits, not the per-member
   // reward the row already states.
   expect(
-    within(dialog).getByText("Workflows are shared; connectors stay personal."),
+    within(dialog).getByText(
+      "Each teammate runs it with their own permissions and their own connected accounts.",
+    ),
   ).toBeInTheDocument();
 
   click(buttonNamed("Later", dialog));
@@ -822,16 +828,18 @@ test("The workflow step ends by handing over the prompt itself", async () => {
   click(screen.getByTestId("get-started-quest-workflow"));
 
   const steps = await screen.findByRole("dialog", {
-    name: "Three steps to hand a job to Okou",
+    name: "One good run becomes something the team keeps",
   });
-  expect(within(steps).getByText("Pick a template")).toBeInTheDocument();
+  expect(
+    within(steps).getByText("Start from a template"),
+  ).toBeInTheDocument();
   expect(within(steps).getByText("Run it once")).toBeInTheDocument();
-  expect(within(steps).getByText("Save it")).toBeInTheDocument();
+  expect(within(steps).getByText("Save it, then give it a schedule")).toBeInTheDocument();
 
-  click(buttonNamed("Show me the first one", steps));
+  click(buttonNamed("Give me one to try", steps));
 
   const handover = await screen.findByRole("dialog", {
-    name: "This is what you send Okou",
+    name: "Ask the way you would ask a colleague",
   });
   // The prompt is readable before it is sent, not hidden behind the button.
   expect(
@@ -864,7 +872,7 @@ test("Checking in confirms the reward instead of closing silently", async () => 
   const dialog = await screen.findByRole("dialog", { name: "Checked in" });
   expect(
     within(dialog).getByText(
-      "+100 credits. Come back tomorrow for the next one.",
+      "100 credits added. Come back tomorrow for the next one.",
     ),
   ).toBeInTheDocument();
 });

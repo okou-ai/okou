@@ -1466,51 +1466,52 @@
         "inReviewDescription": "Envoyé, en attente d'examen",
         "intro": {
           "checkin": {
-            "confirm": "C'est noté",
-            "description": "+{{amount}} crédits. Revenez demain pour les suivants.",
-            "title": "Pointage effectué"
+            "confirm": "Compris",
+            "description": "{{amount}} crédits ajoutés. Revenez demain pour les suivants.",
+            "title": "Présence enregistrée"
           },
           "connector": {
             "confirm": "Voir tous les connecteurs",
-            "description": "Il travaille alors sur votre boîte de réception, vos documents et votre agenda.",
+            "description": "Connectez-en un et il lira lui-même vos mails, vos documents et vos tableaux de bord : ce qui revient est un travail terminé, pas une réponse à recopier ailleurs.",
             "pickerFailed": "Impossible de charger les connecteurs. Ouvrez la page des connecteurs pour réessayer.",
             "pickerLoading": "Chargement des connecteurs…",
-            "scopeCredentials": "Vos identifiants n'arrivent jamais jusqu'à {{assistantName}}.",
-            "scopeRevoke": "Accès minimal, déconnectable à tout moment.",
-            "title": "Laisser {{assistantName}} travailler sur vos propres outils"
+            "scopeAction": "L'accès est accordé action par action : il peut rédiger le mail sans pouvoir l'envoyer.",
+            "scopeCredentials": "Vous vous connectez chez le fournisseur. {{assistantName}} ne voit jamais votre mot de passe, et il n'y a aucune clé d'API à coller.",
+            "scopeRevoke": "Déconnectez quand vous voulez. Les droits suivent la personne, pas l'automatisation.",
+            "title": "{{assistantName}} travaille dans les outils que vous utilisez déjà"
           },
           "invite": {
             "confirm": "Inviter l'équipe",
-            "description": "Un collègue peut lancer ce que vous avez créé dès son premier jour.",
-            "scopeShared": "Les workflows sont partagés ; les connecteurs restent personnels.",
-            "title": "Ce qu'une personne apprend, toute l'équipe peut l'exécuter"
+            "description": "Un workflow appartient à l'espace de travail, pas à celui qui l'a créé : un collègue l'exécute dès son premier jour sans refaire la configuration.",
+            "scopeShared": "Chacun l'exécute avec ses propres droits et ses propres comptes connectés.",
+            "title": "Ce qu'une personne sait, toute l'équipe peut l'exécuter"
           },
           "later": "Plus tard",
           "slack": {
             "appBadge": "APP",
             "confirm": "Ajouter à Slack",
-            "description": "Dans Slack, {{assistantName}} est un collègue que chacun peut mentionner avec @.",
+            "description": "Mentionnez-le dans un canal et la réponse arrive dans ce fil : l'équipe suit le travail sans quitter Slack.",
             "sampleChannel": "# growth",
             "scopeChannels": "Il ne voit que les canaux où vous l'invitez.",
-            "scopeOrganization": "Votre compte devient celui de l'équipe, les workflows sont partagés.",
-            "scopeReward": "La récompense va sur le solde de l'équipe.",
-            "title": "Le garder là où votre équipe travaille déjà"
+            "scopeOrganization": "L'installation fait de votre espace celui de l'équipe : agents, workflows et crédits deviennent partagés.",
+            "scopeReward": "Les crédits vont sur le solde de l'équipe.",
+            "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
           },
           "workflow": {
-            "browse": "Parcourir les modèles",
-            "confirm": "Montrez-moi le premier",
-            "description": "Rien de nouveau à apprendre.",
+            "browse": "Voir les modèles",
+            "confirm": "Montrez-m'en un",
+            "description": "Rien à configurer d'abord. Faites le travail une fois, puis gardez-le.",
             "prompt": "Chaque lundi matin, regarde ce que mes concurrents ont publié la semaine dernière, regroupe-le par thème et donne-moi un tableau comparatif.",
-            "promptConfirm": "Envoyer à {{assistantName}}",
-            "promptDescription": "Envoyez-le tel quel ou reformulez-le.",
-            "promptTitle": "Voici ce que vous envoyez à {{assistantName}}",
-            "stepRun": "L'exécuter une fois",
-            "stepRunDescription": "Voyez le résultat avant de configurer quoi que ce soit.",
-            "stepSave": "L'enregistrer",
-            "stepSaveDescription": "Choisissez quand il tourne et où vont les résultats.",
-            "stepTemplate": "Choisir un modèle",
-            "stepTemplateDescription": "Partez d'un modèle proche de votre besoin.",
-            "title": "Trois étapes pour confier une tâche à {{assistantName}}"
+            "promptConfirm": "L'envoyer à {{assistantName}}",
+            "promptDescription": "Vous ne détaillez pas les étapes. {{assistantName}} trouve l'angle, choisit les outils et rapporte le résultat fini.",
+            "promptTitle": "Demandez comme vous le demanderiez à un collègue",
+            "stepRun": "Lancez-le une fois",
+            "stepRunDescription": "Vous voyez le travail terminé avant de vous engager.",
+            "stepSave": "Enregistrez-le, puis donnez-lui un horaire",
+            "stepSaveDescription": "Il tourne sans que personne le demande, et n'importe quel collègue peut le lancer.",
+            "stepTemplate": "Partez d'un modèle",
+            "stepTemplateDescription": "Prenez-en un proche de votre métier plutôt qu'une page blanche.",
+            "title": "Une bonne exécution devient un acquis pour l'équipe"
           }
         },
         "invite": {

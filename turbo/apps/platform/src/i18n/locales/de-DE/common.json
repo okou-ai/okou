@@ -1442,51 +1442,52 @@
         "inReviewDescription": "Eingereicht, wartet auf Prüfung",
         "intro": {
           "checkin": {
-            "confirm": "Alles klar",
-            "description": "+{{amount}} Credits. Komm morgen für die nächsten wieder.",
+            "confirm": "Verstanden",
+            "description": "{{amount}} Credits gutgeschrieben. Kommen Sie morgen für die nächsten wieder.",
             "title": "Eingecheckt"
           },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
-            "description": "Danach arbeitet es mit deinem Postfach, deinen Dokumenten und deinem Kalender.",
+            "description": "Verbinden Sie eines, und es liest Ihre Mails, Dokumente und Dashboards selbst. Zurück kommt fertige Arbeit statt einer Antwort, die Sie irgendwo einfügen müssen.",
             "pickerFailed": "Konnektoren konnten nicht geladen werden. Bitte auf der Konnektoren-Seite erneut versuchen.",
             "pickerLoading": "Konnektoren werden geladen …",
-            "scopeCredentials": "Deine Zugangsdaten erreichen {{assistantName}} nie.",
-            "scopeRevoke": "Minimale Rechte, jederzeit trennbar.",
-            "title": "{{assistantName}} mit deinen eigenen Tools arbeiten lassen"
+            "scopeAction": "Zugriff wird einzeln je Aktion erteilt: Die Mail darf entworfen, aber nicht gesendet werden.",
+            "scopeCredentials": "Sie melden sich beim Anbieter an. {{assistantName}} sieht Ihr Passwort nie, und es gibt keinen API-Schlüssel einzufügen.",
+            "scopeRevoke": "Trennen Sie die Verbindung jederzeit. Rechte hängen an Ihnen, nicht an der Automatisierung.",
+            "title": "{{assistantName}} arbeitet in den Tools, die Sie ohnehin nutzen"
           },
           "invite": {
             "confirm": "Team einladen",
-            "description": "Neue Kolleginnen und Kollegen führen deine Workflows am ersten Tag aus.",
-            "scopeShared": "Workflows werden geteilt, Connectors bleiben persönlich.",
-            "title": "Was eine Person lernt, kann das ganze Team ausführen"
+            "description": "Ein Workflow gehört dem Workspace, nicht der Person, die ihn gebaut hat. Neue Kolleginnen führen ihn am ersten Tag aus, ohne etwas neu einzurichten.",
+            "scopeShared": "Jede Person führt ihn mit den eigenen Rechten und den eigenen verbundenen Konten aus.",
+            "title": "Was einer weiß, können alle ausführen"
           },
           "later": "Später",
           "slack": {
             "appBadge": "APP",
             "confirm": "Zu Slack hinzufügen",
-            "description": "In Slack ist {{assistantName}} eine Kollegin, die jede und jeder mit @ ansprechen kann.",
+            "description": "Erwähnen Sie es in einem Channel, und die Antwort landet in genau diesem Thread – das Team verfolgt die Arbeit, ohne Slack zu verlassen.",
             "sampleChannel": "# growth",
-            "scopeChannels": "Es sieht nur Kanäle, in die du es einlädst.",
-            "scopeOrganization": "Dein Konto wird das des Teams, Workflows werden geteilt.",
-            "scopeReward": "Die Belohnung geht auf das Team-Guthaben.",
-            "title": "Dort lassen, wo dein Team schon arbeitet"
+            "scopeChannels": "Es sieht nur die Channels, in die Sie es einladen.",
+            "scopeOrganization": "Mit der Installation wird Ihr Workspace der des Teams: Agenten, Workflows und Guthaben sind ab dann geteilt.",
+            "scopeReward": "Die Credits gehen auf das Team-Guthaben.",
+            "title": "Arbeiten Sie mit {{assistantName}} dort, wo Ihr Team schon spricht"
           },
           "workflow": {
             "browse": "Vorlagen ansehen",
-            "confirm": "Zeig mir den ersten",
-            "description": "Nichts Neues zu lernen.",
+            "confirm": "Zeig mir eines",
+            "description": "Vorher ist nichts einzurichten. Machen Sie die Arbeit einmal und behalten Sie sie.",
             "prompt": "Sieh jeden Montagmorgen nach, was meine Wettbewerber letzte Woche veröffentlicht haben, gruppiere es nach Thema und gib mir eine Vergleichstabelle.",
             "promptConfirm": "An {{assistantName}} senden",
-            "promptDescription": "Schick es so, oder formuliere es um.",
-            "promptTitle": "Das schickst du {{assistantName}}",
-            "stepRun": "Einmal ausführen",
-            "stepRunDescription": "Sieh das Ergebnis, bevor du etwas einrichtest.",
-            "stepSave": "Speichern",
-            "stepSaveDescription": "Lege fest, wann er läuft und wohin die Ergebnisse gehen.",
-            "stepTemplate": "Vorlage auswählen",
-            "stepTemplateDescription": "Starte mit einer, die deiner Aufgabe nahekommt.",
-            "title": "In drei Schritten eine Aufgabe an {{assistantName}} übergeben"
+            "promptDescription": "Sie buchstabieren die Schritte nicht aus. {{assistantName}} findet den Weg, wählt die Tools und bringt das fertige Ergebnis.",
+            "promptTitle": "Fragen Sie so, wie Sie eine Kollegin fragen würden",
+            "stepRun": "Einmal laufen lassen",
+            "stepRunDescription": "Sie sehen die fertige Arbeit, bevor Sie sich festlegen.",
+            "stepSave": "Speichern und einen Zeitplan geben",
+            "stepSaveDescription": "Es läuft, ohne dass jemand fragt, und jede Kollegin kann es ebenfalls starten.",
+            "stepTemplate": "Mit einer Vorlage beginnen",
+            "stepTemplateDescription": "Nehmen Sie eine, die Ihrer Arbeit nahekommt, statt eines leeren Blatts.",
+            "title": "Ein guter Durchlauf wird zu etwas, das dem Team bleibt"
           }
         },
         "invite": {

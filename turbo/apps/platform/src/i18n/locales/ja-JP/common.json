@@ -1442,50 +1442,51 @@
         "intro": {
           "checkin": {
             "confirm": "OK",
-            "description": "+{{amount}} クレジット。明日もまた来てください。",
-            "title": "チェックインしました"
+            "description": "{{amount}} クレジットを追加しました。明日もまた来てください。",
+            "title": "チェックイン完了"
           },
           "connector": {
             "confirm": "すべてのコネクターを見る",
-            "description": "つなぐと、受信トレイ・ドキュメント・カレンダーを直接扱えます。",
+            "description": "ひとつつなぐだけで、メールもドキュメントもダッシュボードも自分で読みに行きます。返ってくるのは、どこかに貼り付ける答えではなく仕上がった成果物です。",
             "pickerFailed": "コネクターを読み込めませんでした。コネクターページで再試行してください。",
             "pickerLoading": "コネクターを読み込み中…",
-            "scopeCredentials": "認証情報が {{assistantName}} に渡ることはありません。",
-            "scopeRevoke": "権限は最小限。いつでも解除できます。",
-            "title": "{{assistantName}} をあなたのツールで動かす"
+            "scopeAction": "権限は操作単位で渡します。メールの下書きは作れても、送信はできません。",
+            "scopeCredentials": "認証は提供元のサイトで行います。{{assistantName}} がパスワードを見ることはなく、API キーを貼り付ける必要もありません。",
+            "scopeRevoke": "接続はいつでも解除できます。権限は自動化ではなく、あなたに紐づきます。",
+            "title": "{{assistantName}} は、あなたが普段使っているツールの中で働きます"
           },
           "invite": {
             "confirm": "メンバーを招待",
-            "description": "新しい同僚は初日からあなたの作ったものを実行できます。",
-            "scopeShared": "ワークフローは共有、コネクターは各自のままです。",
-            "title": "1 人が覚えたことを、チーム全員が実行できる"
+            "description": "ワークフローは作った本人ではなくワークスペースのものです。新しいメンバーも初日から、設定をやり直さずに実行できます。",
+            "scopeShared": "各メンバーは自分の権限と自分で接続したアカウントで実行します。",
+            "title": "ひとりが覚えたことを、全員が実行できます"
           },
           "later": "後で",
           "slack": {
             "appBadge": "APP",
             "confirm": "Slack に追加",
-            "description": "Slack なら {{assistantName}} は誰でも @ で呼べる同僚です。",
+            "description": "チャンネルでメンションすると、そのスレッドに返答が届きます。Slack を離れずにチーム全員が作業を追えます。",
             "sampleChannel": "# growth",
             "scopeChannels": "招待したチャンネルしか見えません。",
-            "scopeOrganization": "アカウントがチームのものになり、ワークフローは共有されます。",
-            "scopeReward": "報酬はチームの残高に入ります。",
-            "title": "チームがすでにいる場所に置く"
+            "scopeOrganization": "導入すると、あなたのワークスペースはチームのものになります。エージェント・ワークフロー・クレジットがチームで共有されます。",
+            "scopeReward": "クレジットはチームの残高に入ります。",
+            "title": "チームがすでに会話している場所で {{assistantName}} を使う"
           },
           "workflow": {
             "browse": "テンプレートを見る",
-            "confirm": "最初の 1 つを見る",
-            "description": "新しく覚えることはありません。",
+            "confirm": "ひとつ試してみる",
+            "description": "事前の設定は不要です。まず 1 回やってみて、それを残すだけ。",
             "prompt": "毎週月曜の朝に、競合が先週公開した内容を調べて、テーマごとにまとめて比較表にしてください。",
             "promptConfirm": "{{assistantName}} に送る",
-            "promptDescription": "そのまま送っても、書き換えても構いません。",
-            "promptTitle": "{{assistantName}} に送る文章はこれです",
-            "stepRun": "一度実行する",
-            "stepRunDescription": "設定の前に結果を確認できます。",
-            "stepSave": "保存する",
-            "stepSaveDescription": "実行する時間と結果の送り先を決めます。",
-            "stepTemplate": "テンプレートを選ぶ",
-            "stepTemplateDescription": "やりたいことに近いものから始めます。",
-            "title": "{{assistantName}} に仕事を任せる 3 ステップ"
+            "promptDescription": "手順を細かく書く必要はありません。{{assistantName}} が進め方を考え、ツールを選び、仕上がったものを持ってきます。",
+            "promptTitle": "同僚に頼むように伝えてください",
+            "stepRun": "まず 1 回動かす",
+            "stepRunDescription": "何かを決める前に、仕上がった成果物を確認できます。",
+            "stepSave": "保存して、スケジュールを決める",
+            "stepSaveDescription": "誰も頼まなくても動き、チームの誰でも実行できます。",
+            "stepTemplate": "テンプレートから始める",
+            "stepTemplateDescription": "白紙からではなく、自分の仕事に近いものを選びます。",
+            "title": "うまくいった 1 回が、チームの資産になります"
           }
         },
         "invite": {

@@ -1467,50 +1467,51 @@
         "intro": {
           "checkin": {
             "confirm": "Entendi",
-            "description": "+{{amount}} créditos. Volte amanhã para os próximos.",
+            "description": "{{amount}} créditos adicionados. Volte amanhã para os próximos.",
             "title": "Check-in feito"
           },
           "connector": {
             "confirm": "Ver todos os conectores",
-            "description": "Aí ele trabalha na sua caixa de entrada, nos seus documentos e na sua agenda.",
+            "description": "Conecte uma e ele lê seu e-mail, seus documentos e seus painéis sozinho, então o que volta é trabalho pronto e não uma resposta para colar em outro lugar.",
             "pickerFailed": "Não foi possível carregar os conectores. Abra a página de conectores para tentar de novo.",
             "pickerLoading": "Carregando conectores…",
-            "scopeCredentials": "Suas credenciais nunca chegam ao {{assistantName}}.",
-            "scopeRevoke": "Acesso mínimo e você pode desconectar quando quiser.",
-            "title": "Deixe o {{assistantName}} trabalhar nas suas próprias ferramentas"
+            "scopeAction": "O acesso é concedido uma ação por vez: ele escreve o rascunho do e-mail sem poder enviá-lo.",
+            "scopeCredentials": "Você entra no próprio provedor. O {{assistantName}} nunca vê sua senha e não há chave de API para colar.",
+            "scopeRevoke": "Desconecte quando quiser. As permissões acompanham você, não a automação.",
+            "title": "O {{assistantName}} trabalha dentro das ferramentas que você já usa"
           },
           "invite": {
             "confirm": "Convidar o time",
-            "description": "Um colega executa o que você criou já no primeiro dia.",
-            "scopeShared": "Workflows são compartilhados; conectores continuam pessoais.",
+            "description": "Um fluxo pertence ao espaço de trabalho, não a quem o criou, então um colega executa no primeiro dia sem refazer a configuração.",
+            "scopeShared": "Cada pessoa executa com as próprias permissões e as próprias contas conectadas.",
             "title": "O que uma pessoa aprende, o time inteiro executa"
           },
           "later": "Depois",
           "slack": {
             "appBadge": "APP",
             "confirm": "Adicionar ao Slack",
-            "description": "No Slack, o {{assistantName}} é um colega que qualquer um chama com @.",
+            "description": "Mencione ele num canal e a resposta chega naquela thread, então o time acompanha o trabalho sem sair do Slack.",
             "sampleChannel": "# growth",
             "scopeChannels": "Ele só enxerga os canais para os quais você o convida.",
-            "scopeOrganization": "Sua conta passa a ser do time e os workflows são compartilhados.",
-            "scopeReward": "A recompensa vai para o saldo do time.",
-            "title": "Deixe onde seu time já trabalha"
+            "scopeOrganization": "Ao instalar, seu espaço passa a ser o do time: agentes, fluxos e créditos ficam compartilhados.",
+            "scopeReward": "Os créditos vão para o saldo do time.",
+            "title": "Trabalhe com o {{assistantName}} onde seu time já conversa"
           },
           "workflow": {
             "browse": "Ver modelos",
-            "confirm": "Me mostre o primeiro",
-            "description": "Nada novo para aprender.",
+            "confirm": "Me mostra um",
+            "description": "Não há nada para configurar antes. Faça o trabalho uma vez e guarde.",
             "prompt": "Toda segunda de manhã, veja o que meus concorrentes publicaram na semana passada, agrupe por tema e me dê uma tabela comparativa.",
-            "promptConfirm": "Enviar ao {{assistantName}}",
-            "promptDescription": "Envie do jeito que está ou mude as palavras.",
-            "promptTitle": "É isto que você envia ao {{assistantName}}",
-            "stepRun": "Execute uma vez",
-            "stepRunDescription": "Veja o resultado antes de configurar qualquer coisa.",
-            "stepSave": "Salve",
-            "stepSaveDescription": "Escolha quando ele roda e para onde vão os resultados.",
-            "stepTemplate": "Escolha um modelo",
-            "stepTemplateDescription": "Comece por um parecido com o que você precisa.",
-            "title": "Três passos para passar um trabalho ao {{assistantName}}"
+            "promptConfirm": "Enviar para o {{assistantName}}",
+            "promptDescription": "Você não descreve os passos. O {{assistantName}} descobre o caminho, escolhe as ferramentas e traz o resultado pronto.",
+            "promptTitle": "Peça como pediria a um colega",
+            "stepRun": "Rode uma vez",
+            "stepRunDescription": "Você vê o trabalho pronto antes de se comprometer com qualquer coisa.",
+            "stepSave": "Salve e defina um horário",
+            "stepSaveDescription": "Ele roda sem ninguém pedir, e qualquer colega também pode rodar.",
+            "stepTemplate": "Comece por um modelo",
+            "stepTemplateDescription": "Escolha um próximo do seu trabalho em vez de uma página em branco.",
+            "title": "Uma boa execução vira algo que o time guarda"
           }
         },
         "invite": {

@@ -1443,50 +1443,51 @@
         "intro": {
           "checkin": {
             "confirm": "Got it",
-            "description": "+{{amount}} credits. Come back tomorrow for the next one.",
+            "description": "{{amount}} credits added. Come back tomorrow for the next one.",
             "title": "Checked in"
           },
           "connector": {
             "confirm": "Browse all connectors",
-            "description": "Then it works on your inbox, your docs and your calendar.",
+            "description": "Connect one and it reads your mail, your docs and your dashboards itself, so what comes back is finished work rather than an answer to paste somewhere.",
             "pickerFailed": "Connectors could not be loaded. Open the connectors page to try again.",
             "pickerLoading": "Loading connectors…",
-            "scopeCredentials": "Your credentials never reach {{assistantName}}.",
-            "scopeRevoke": "Least access, and you can disconnect anytime.",
-            "title": "Let {{assistantName}} work on your own tools"
+            "scopeAction": "Access is granted one action at a time: it can draft the mail without being able to send it.",
+            "scopeCredentials": "You sign in with the provider. {{assistantName}} never sees your password, and there is no API key to paste.",
+            "scopeRevoke": "Disconnect whenever you want. Permissions follow you, not the automation.",
+            "title": "{{assistantName}} works inside the tools you already use"
           },
           "invite": {
             "confirm": "Invite teammates",
-            "description": "A teammate can run what you built on their first day.",
-            "scopeShared": "Workflows are shared; connectors stay personal.",
-            "title": "What one person learns, the whole team can run"
+            "description": "A workflow belongs to the workspace, not to whoever built it, so a teammate runs it on their first day without rebuilding any of the setup.",
+            "scopeShared": "Each teammate runs it with their own permissions and their own connected accounts.",
+            "title": "What one person knows, everyone can run"
           },
           "later": "Later",
           "slack": {
             "appBadge": "APP",
             "confirm": "Add to Slack",
-            "description": "In Slack, {{assistantName}} is a colleague anyone can @.",
+            "description": "Mention it in a channel and the answer lands in that thread, so the team can follow the work without anyone leaving Slack.",
             "sampleChannel": "# growth",
-            "scopeChannels": "It only sees channels you invite it into.",
-            "scopeOrganization": "Your account becomes the team's, so workflows are shared.",
-            "scopeReward": "The reward goes to the team balance.",
-            "title": "Keep it where your team already works"
+            "scopeChannels": "It only sees the channels you invite it into.",
+            "scopeOrganization": "Installing it makes your workspace the team's: agents, workflows and credits are shared from then on.",
+            "scopeReward": "The credits go to the team balance.",
+            "title": "Work with {{assistantName}} where your team already talks"
           },
           "workflow": {
             "browse": "Browse templates",
-            "confirm": "Show me the first one",
-            "description": "Nothing new to learn.",
+            "confirm": "Give me one to try",
+            "description": "Nothing to configure first. Do the job once, then keep it.",
             "prompt": "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
             "promptConfirm": "Send it to {{assistantName}}",
-            "promptDescription": "Send it as it is, or change the wording.",
-            "promptTitle": "This is what you send {{assistantName}}",
+            "promptDescription": "You do not spell out the steps. {{assistantName}} works out the angle, picks the tools and brings back the finished thing.",
+            "promptTitle": "Ask the way you would ask a colleague",
             "stepRun": "Run it once",
-            "stepRunDescription": "See the result before you set anything up.",
-            "stepSave": "Save it",
-            "stepSaveDescription": "Choose when it runs and where results go.",
-            "stepTemplate": "Pick a template",
-            "stepTemplateDescription": "Start from one close to your job.",
-            "title": "Three steps to hand a job to {{assistantName}}"
+            "stepRunDescription": "You see the finished work before you commit to anything.",
+            "stepSave": "Save it, then give it a schedule",
+            "stepSaveDescription": "It runs without anyone asking, and any teammate can run it too.",
+            "stepTemplate": "Start from a template",
+            "stepTemplateDescription": "Pick one close to your job instead of starting from a blank page.",
+            "title": "One good run becomes something the team keeps"
           }
         },
         "invite": {

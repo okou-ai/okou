@@ -78,7 +78,7 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
  * reader stops on rather than a card in a row under the composer.
  */
 const TILE_CLASS =
-  "grid size-[88px] shrink-0 place-items-center overflow-hidden rounded-2xl";
+  "grid size-[104px] shrink-0 place-items-center overflow-hidden rounded-2xl";
 
 function Tile({ accent, children }: { accent: string; children: ReactNode }) {
   return (
@@ -98,9 +98,9 @@ function Tile({ accent, children }: { accent: string; children: ReactNode }) {
  */
 function TileRow({ children }: { children: ReactNode }) {
   return (
-    // The band is held to the width of the drawing inside it: stretched to the
-    // full shell, a small figure reads as something lost in a field.
-    <div className="mx-auto flex w-full max-w-[400px] items-center justify-center gap-3 rounded-2xl bg-state-hover px-5 py-7">
+    // The band spans the shell, so the drawing inside it is sized to hold that
+    // width rather than sitting small in the middle of it.
+    <div className="flex w-full items-center justify-center gap-4 rounded-2xl bg-state-hover px-6 py-9">
       {children}
     </div>
   );
@@ -175,30 +175,30 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
   const { t } = useTranslation();
   return (
     <TileRow>
-      <span className="w-[320px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_10px_26px_-18px_rgba(0,0,0,0.45)]">
+      <span className="w-[392px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_10px_26px_-18px_rgba(0,0,0,0.45)]">
         <span className="flex items-center gap-[7px] border-b border-border px-[13px] py-[9px]">
           <WorkflowConnectorIcon connectorSlug="slack" size={14} />
-          <span className="text-[11px] font-semibold leading-none text-foreground">
+          <span className="text-[12px] font-semibold leading-none text-foreground">
             {t(($) => {
               return $.chat.agentPage.getStarted.intro.slack.sampleChannel;
             })}
           </span>
         </span>
         <span className="flex flex-col gap-[11px] px-[13px] py-[12px]">
-          <span className="flex items-center gap-[8px]">
-            <span className="grid size-[20px] shrink-0 place-items-center rounded-full bg-state-hover text-muted-foreground">
-              <User size={11} strokeWidth={2.2} />
+          <span className="flex items-center gap-[9px]">
+            <span className="grid size-[24px] shrink-0 place-items-center rounded-full bg-state-hover text-muted-foreground">
+              <User size={13} strokeWidth={2.2} />
             </span>
             <span className="rounded-[4px] bg-brand-subtle px-[5px] py-[2px] text-[10px] font-semibold leading-none text-brand-text">
               {`@${assistantName.toLowerCase()}`}
             </span>
-            <span className="h-[4px] w-[74px] rounded-full bg-divider" />
+            <span className="h-[5px] w-[96px] rounded-full bg-divider" />
           </span>
           <span className="flex items-start gap-[8px]">
-            <OkouAvatar size={22} />
+            <OkouAvatar size={26} />
             <span className="flex flex-col gap-[6px] pt-[1px]">
               <span className="flex items-center gap-[5px]">
-                <span className="text-[11px] font-semibold leading-none text-foreground">
+                <span className="text-[12px] font-semibold leading-none text-foreground">
                   {assistantName}
                 </span>
                 <span className="rounded-[3px] bg-state-hover px-[4px] py-[2px] text-[8px] font-semibold uppercase leading-none text-muted-foreground">
@@ -208,8 +208,8 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
                 </span>
               </span>
               <span className="flex flex-col gap-[5px]">
-                <span className="h-[4px] w-[148px] rounded-full bg-divider" />
-                <span className="h-[4px] w-[102px] rounded-full bg-divider" />
+                <span className="h-[5px] w-[186px] rounded-full bg-divider" />
+                <span className="h-[5px] w-[132px] rounded-full bg-divider" />
               </span>
             </span>
           </span>
@@ -227,7 +227,7 @@ function InviteFigure() {
     <TileRow>
       <Tile accent={accent}>
         <span
-          className={`flex h-[40px] w-[54px] flex-col justify-center gap-[6px] px-[10px] ${NODE_CLASS}`}
+          className={`flex h-[48px] w-[64px] flex-col justify-center gap-[7px] px-[11px] ${NODE_CLASS}`}
           style={{ borderColor: `${accent}${LINE_ALPHA}` }}
         >
           <span
@@ -244,7 +244,7 @@ function InviteFigure() {
       <Tile accent={accent}>
         <span className="flex items-center gap-[5px]">
           {["a", "b", "c"].map((id) => {
-            return <Person key={id} accent={accent} size={24} />;
+            return <Person key={id} accent={accent} size={28} />;
           })}
         </span>
       </Tile>
@@ -256,7 +256,7 @@ function InviteFigure() {
 function TemplateArt({ accent }: { accent: string }) {
   return (
     <span
-      className={`flex h-[40px] w-[54px] flex-col justify-center gap-[5px] px-[10px] ${NODE_CLASS}`}
+      className={`flex h-[48px] w-[64px] flex-col justify-center gap-[6px] px-[11px] ${NODE_CLASS}`}
       style={{ borderColor: `${accent}${LINE_ALPHA}` }}
     >
       <span
@@ -279,7 +279,7 @@ function TemplateArt({ accent }: { accent: string }) {
 function RunArt({ accent }: { accent: string }) {
   return (
     <span
-      className={`grid h-[40px] w-[54px] place-items-center ${NODE_CLASS}`}
+      className={`grid h-[48px] w-[64px] place-items-center ${NODE_CLASS}`}
       style={{ borderColor: `${accent}${LINE_ALPHA}` }}
     >
       <span
@@ -296,7 +296,7 @@ function RunArt({ accent }: { accent: string }) {
 function SaveArt({ accent }: { accent: string }) {
   return (
     <span
-      className={`grid h-[40px] w-[54px] place-items-center ${NODE_CLASS}`}
+      className={`grid h-[48px] w-[64px] place-items-center ${NODE_CLASS}`}
       style={{ borderColor: `${accent}${LINE_ALPHA}`, color: accent }}
     >
       <Clock size={22} strokeWidth={2} />
@@ -453,6 +453,9 @@ function ConnectorIntro({
             },
             { assistantName },
           ),
+          t(($) => {
+            return $.chat.agentPage.getStarted.intro.connector.scopeAction;
+          }),
           t(($) => {
             return $.chat.agentPage.getStarted.intro.connector.scopeRevoke;
           }),
@@ -726,7 +729,7 @@ export function GetStartedQuestIntroDialog({
         <DialogContent
           // The connector quest carries the whole one-click catalog, so it is
           // given the wider of the two shells.
-          smMaxWidth={introducedKey === "connector" ? 640 : 560}
+          smMaxWidth={introducedKey === "connector" ? 760 : 680}
         >
           {introducedKey === "connector" && (
             <ConnectorIntro {...props} onNeedsChoice={needsChoice} />
@@ -784,7 +787,7 @@ export function GetStartedCheckinDialog({ reward }: { reward: number }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth={480}>
+      <DialogContent smMaxWidth={560}>
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
