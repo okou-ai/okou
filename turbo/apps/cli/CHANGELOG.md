@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.342.0](https://github.com/vm0-ai/okou/compare/cli-v9.341.2...cli-v9.342.0) (2026-09-18)
+
+
+### Features
+
+* **templates:** add the illustration kind to custom templates ([#35248](https://github.com/vm0-ai/okou/issues/35248)) ([ebd7039](https://github.com/vm0-ai/okou/commit/ebd70395f808ff7bd21ddc453789c76d712d7fe6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.470.0
+    * @okouai/core bumped to 8.681.0
+    * @okouai/pi-agent-runtime bumped to 1.33.17
+
 ## [9.341.2](https://github.com/vm0-ai/okou/compare/cli-v9.341.1...cli-v9.341.2) (2026-09-18)
 
 
