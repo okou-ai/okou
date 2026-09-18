@@ -823,7 +823,10 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
             .expect("successor should request direct handoff")
         );
         assert!(matches!(
-            publisher.deliver_exact_handoff(candidate, predecessor_run_id),
+            publisher.deliver_exact_handoff(
+                crate::idle_pool::IdleParkCandidate::Ordinary(candidate),
+                predecessor_run_id,
+            ),
             active_runs::ActiveRunHandoffDeliveryResult::Delivered
         ));
     } else {

@@ -1065,7 +1065,10 @@ mod tests {
             .with_history_generation_run_id(predecessor_run_id)
             .build();
         assert!(matches!(
-            publisher.deliver_exact_handoff(candidate, predecessor_run_id),
+            publisher.deliver_exact_handoff(
+                crate::idle_pool::IdleParkCandidate::Ordinary(candidate),
+                predecessor_run_id,
+            ),
             ActiveRunHandoffDeliveryResult::Delivered
         ));
 

@@ -68,12 +68,19 @@ resource budget. Firecracker pauses vCPUs without requesting aggressive idle
 balloon inflation. Guest quiesce and operation fencing still complete before pause. This avoids a
 large idle-only inflate/deflate cycle when a prepared sandbox is claimed.
 
-Unpark resumes vCPUs, requests target zero, and confirms exact target/actual
-page counts are zero before reopening Guest operations. This returns real
-memory rather than correcting displayed counters. The convergence wait,
+Reusable exact/session park inflates the balloon under the existing bounded
+reclamation policy, then requests target zero and completes deflation before
+pausing vCPUs. Deflation returns capacity to the Guest allocator without eagerly
+repopulating backing discarded by Firecracker; subsequent Guest accesses can
+fault that backing in again. Reclamation diagnostics and severe-retention
+rejection are decided against the original positive target before deflation.
+
+Unpark resumes paused vCPUs, requests target zero, and confirms exact target/actual
+page counts are zero before reopening Guest operations. A completed reusable
+park already reports zero, so this normally only revalidates readiness. The convergence wait,
 including in-flight statistics requests, is bounded at five seconds; failures
 keep operations fenced and use the existing destroy/fresh-create recovery.
-Physical deflation adds latency to reuse. No background balloon controller or
+Interrupted reclamation can still leave deflation work for activation. No background balloon controller or
 Agent-readiness reclamation gate remains. The full profile budget stays reserved
 throughout. Minimum profiles never inflate and skip this balloon recovery.
 
@@ -83,11 +90,16 @@ after an earlier zero sample. Reporting itself also temporarily isolates free
 pages. This policy prevents sustained active inflation; it does not promise
 literally invariant `MemFree`/`MemAvailable` at every instant.
 
-Exact/session idle sandboxes continue requesting ordinary balloon reclamation
-before vCPU pause, retaining at least the supported minimum profile capacity.
-This also applies after a claimed blank completes its first run. Direct
-handoff may still interrupt idle settling; the successor confirms physical
-deflation through the same readiness boundary before starting work.
+An exact successor can take over the still-running sandbox before inflation,
+during reclamation or deflation, or before pause commits. The park owner reverses
+the target to zero, retires the predecessor assignment and transfers the fenced
+resource without pausing it. The successor completes deflation and Guest lifecycle
+resume before opening operations; it does not issue a vCPU resume for this running
+handoff. A request after pause has started receives the completed parked resource.
+Running handoffs remain bound to the exact successor and cannot enter ordinary
+idle inventory. Cancelled or rejected transfers retain their full resource lease
+through destruction. This policy also applies after a claimed blank completes its
+first run; the initial tenant-free blank preparation still skips reclamation.
 
 Pool sizing, full-profile admission, exact-first reuse and blank-first pressure
 eviction are unchanged. Preserving blank memory can increase physical idle

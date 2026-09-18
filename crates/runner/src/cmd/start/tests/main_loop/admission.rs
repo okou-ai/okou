@@ -1567,6 +1567,11 @@ async fn finalizing_immediate_handoff_reuses_matching_sandbox_past_preference_de
     assert_eq!(env.idle_pool.lock().await.len(), 0);
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(
+        overrides.park_call_count(),
+        0,
+        "the immediate successor takes over the running sandbox before physical park"
+    );
+    assert_eq!(
         overrides.completed_final_exec_park_handoff_points(),
         vec![sandbox::SandboxFinalExecParkHandoffPoint::BeforeBalloon],
         "runner integration must exercise the typed immediate-handoff path"

@@ -282,6 +282,16 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
             .await;
         };
         tokio::join!(park, guest);
+        assert_eq!(sandbox.is_parked, !handoff);
+        assert_eq!(
+            sandbox.park_coordinator.state(),
+            if handoff {
+                CoordinatorState::RunningHandoff
+            } else {
+                CoordinatorState::Parked
+            }
+        );
+        assert!(sandbox.park_fence.is_some());
         assert!(!path.exists());
         assert!(sandbox.guest_rpc("run-a").is_none());
         assert!(
@@ -292,15 +302,29 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
         );
 
         sandbox.bind_run_control("run-b").unwrap();
-        let (result, ()) = tokio::join!(
-            sandbox.unpark(),
-            acknowledge_lifecycle(
-                &mut peer,
-                guest_control_proto::MSG_RESUME_OPERATIONS,
-                guest_control_proto::MSG_OPERATIONS_RESUMED
-            ),
-        );
+        let (result, ()) = tokio::join!(sandbox.unpark(), async {
+            let request = read_vsock_message(&mut peer).await;
+            assert_eq!(request.msg_type, guest_control_proto::MSG_RESUME_OPERATIONS);
+            // Running handoff has no VM resume API call at which to check this.
+            // Every variant must bind its fresh private endpoint before Guest resume.
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            peer.write_all(
+                &guest_control_proto::encode(
+                    guest_control_proto::MSG_OPERATIONS_RESUMED,
+                    request.seq,
+                    &[],
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        });
         result.unwrap();
+        assert!(!sandbox.is_parked);
+        assert!(sandbox.park_fence.is_none());
         assert!(stale.accept().await.is_err());
         assert!(sandbox.guest_rpc("run-a").unwrap().accept().await.is_err());
         let mut new_peer = UnixStream::connect(&path).await.unwrap();
@@ -319,9 +343,16 @@ async fn successful_park_variants_replace_the_rpc_epoch_before_guest_resume() {
         drop(stale);
         assert!(path.exists());
         let requests = api.drain_requests();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(mock_request_body_json(&requests[0])["state"], "Paused");
-        assert_eq!(mock_request_body_json(&requests[1])["state"], "Resumed");
+        if handoff {
+            assert!(
+                requests.is_empty(),
+                "running handoff must not pause or resume vCPUs"
+            );
+        } else {
+            assert_eq!(requests.len(), 2);
+            assert_eq!(mock_request_body_json(&requests[0])["state"], "Paused");
+            assert_eq!(mock_request_body_json(&requests[1])["state"], "Resumed");
+        }
     }
 }
 
@@ -335,6 +366,7 @@ async fn blank_park_preserves_memory_then_reclaims_on_used_sandbox_park() {
         std::collections::VecDeque::from([
             MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
             MockBalloonStatsReply::Ok(MockBalloonStats::new(3072, 3072)),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
         ]),
     );
     std::os::unix::fs::symlink(api.socket_path(), sandbox.sock_paths.api_sock()).unwrap();
@@ -391,11 +423,13 @@ async fn blank_park_preserves_memory_then_reclaims_on_used_sandbox_park() {
     park_rpc_sandbox(&mut sandbox, &mut peer).await;
     let requests = api.drain_requests();
     let requests = patches(&requests);
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert_eq!(requests[0].path, "/balloon");
     assert_eq!(mock_request_body_json(requests[0])["amount_mib"], 3072);
-    assert_eq!(requests[1].path, "/vm");
-    assert_eq!(mock_request_body_json(requests[1])["state"], "Paused");
+    assert_eq!(requests[1].path, "/balloon");
+    assert_eq!(mock_request_body_json(requests[1])["amount_mib"], 0);
+    assert_eq!(requests[2].path, "/vm");
+    assert_eq!(mock_request_body_json(requests[2])["state"], "Paused");
 }
 
 #[tokio::test]

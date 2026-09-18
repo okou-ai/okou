@@ -9,11 +9,11 @@ use crate::sandbox::SandboxState;
 
 /// Available-memory pressure boundary for one-shot idle park inflation.
 pub(crate) const PRESSURE_AVAILABLE_MIB: i64 = 192;
-/// Parked Guests retain at least the smallest supported profile's capacity.
+/// Inflation leaves at least the smallest supported profile's Guest capacity.
 pub(crate) const MIN_GUEST_MIB: u32 = guest_contracts::process_containment::MIN_PROFILE_MEMORY_MB;
 /// Bound reuse recovery, including an in-flight API request. On failure the
 /// caller destroys this sandbox; normal Guest operations must remain fenced.
-const UNPARK_DEFLATION_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFLATION_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 const FAST_POLL_INTERVALS: [Duration; 5] = [
     Duration::from_millis(25),
@@ -30,9 +30,23 @@ const FAST_POLL_INTERVALS: [Duration; 5] = [
 /// Guest inflation batch can still be in flight before it updates actual pages.
 pub(crate) async fn wait_for_unpark_deflation(
     client: &ApiClient,
-    mut state_rx: watch::Receiver<SandboxState>,
+    state_rx: watch::Receiver<SandboxState>,
     log_id: &str,
 ) -> sandbox::Result<()> {
+    wait_for_deflation(client, state_rx, log_id, SandboxIdleTransition::Unpark).await
+}
+
+/// Observe the same bounded counter contract while park or activation owns the VM.
+pub(crate) async fn wait_for_deflation(
+    client: &ApiClient,
+    mut state_rx: watch::Receiver<SandboxState>,
+    log_id: &str,
+    transition: SandboxIdleTransition,
+) -> sandbox::Result<()> {
+    let error = |message: String| SandboxError::IdleTransition {
+        transition,
+        message,
+    };
     let started_at = tokio::time::Instant::now();
     let convergence = async {
         let mut intervals = FAST_POLL_INTERVALS.into_iter();
@@ -40,7 +54,7 @@ pub(crate) async fn wait_for_unpark_deflation(
             let stats = client
                 .get_balloon_statistics()
                 .await
-                .map_err(|error| unpark_error(format!("balloon deflation statistics: {error}")))?;
+                .map_err(|source| error(format!("balloon deflation statistics: {source}")))?;
             // MiB values truncate and can conceal hundreds of held pages.
             if stats.target_pages == 0 && stats.actual_pages == 0 {
                 info!(
@@ -56,20 +70,13 @@ pub(crate) async fn wait_for_unpark_deflation(
     tokio::select! {
         biased;
         () = wait_for_crash_or_stop(&mut state_rx) => {
-            Err(unpark_error("sandbox stopped during balloon deflation"))
+            Err(error("sandbox stopped during balloon deflation".into()))
         }
-        result = tokio::time::timeout(UNPARK_DEFLATION_TIMEOUT, convergence) => {
-            result.unwrap_or_else(|_| Err(unpark_error(
-                "balloon deflation did not complete within 5 seconds",
+        result = tokio::time::timeout(DEFLATION_TIMEOUT, convergence) => {
+            result.unwrap_or_else(|_| Err(error(
+                "balloon deflation did not complete within 5 seconds".into(),
             )))
         }
-    }
-}
-
-fn unpark_error(message: impl Into<String>) -> SandboxError {
-    SandboxError::IdleTransition {
-        transition: SandboxIdleTransition::Unpark,
-        message: message.into(),
     }
 }
 
@@ -155,7 +162,7 @@ mod tests {
         });
         api.next_request().await;
         tokio::time::pause();
-        tokio::time::advance(UNPARK_DEFLATION_TIMEOUT).await;
+        tokio::time::advance(DEFLATION_TIMEOUT).await;
         let error = task.await.unwrap().unwrap_err();
         assert!(error.to_string().contains("within 5 seconds"));
     }
