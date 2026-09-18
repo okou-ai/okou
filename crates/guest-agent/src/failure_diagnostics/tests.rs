@@ -1320,6 +1320,59 @@ fn cli_failure_reason_classifies_claude_result_output_token_limit_diagnostic() {
 }
 
 #[test]
+fn codex_output_limit_requires_selected_native_failure_provenance() {
+    let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+    for framework in [
+        AgentFramework::Codex,
+        AgentFramework::ClaudeCode,
+        AgentFramework::Pi,
+    ] {
+        for source in [
+            FailureDetailSource::CodexJsonl,
+            FailureDetailSource::Stderr,
+            FailureDetailSource::ClaudeResult,
+            FailureDetailSource::PiResult,
+        ] {
+            let diagnostic = FailureDiagnostic::new(
+                FailureClass::CliNonzero,
+                framework,
+                PromptMetadata::from_prompt("plain prompt"),
+            )
+            .with_cli_exit_code(1)
+            .with_failure_detail_source(source);
+            let msg = cli_failure_message(1, &[], Some(&cli_diagnostic(message, source)));
+            let diagnostic = with_cli_failure_reason(diagnostic, &msg);
+            let expected = (framework == AgentFramework::Codex
+                && source == FailureDetailSource::CodexJsonl)
+                .then_some(FailureReason::OutputTokenLimit);
+            assert_eq!(
+                diagnostic.failure_reason, expected,
+                "{framework:?}/{source:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn codex_output_limit_text_keeps_selected_structured_reason() {
+    let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+    let mut native = cli_diagnostic(message, FailureDetailSource::CodexJsonl);
+    native.failure_reason = Some(FailureReason::ResponseConnectionLost);
+    let msg = cli_failure_message(1, &[], Some(&native));
+    let diagnostic = FailureDiagnostic::new(
+        FailureClass::CliNonzero,
+        AgentFramework::Codex,
+        PromptMetadata::from_prompt("plain prompt"),
+    )
+    .with_cli_exit_code(1)
+    .with_failure_detail_source(msg.source);
+    assert_eq!(
+        with_cli_failure_reason(diagnostic, &msg).failure_reason,
+        Some(FailureReason::ResponseConnectionLost)
+    );
+}
+
+#[test]
 fn cli_failure_reason_ignores_non_claude_output_token_limit() {
     let reason = classify_cli_failure_reason(
         AgentFramework::Codex,

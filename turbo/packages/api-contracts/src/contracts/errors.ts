@@ -710,6 +710,7 @@ type StructuredRunErrorBehavior =
   | "execution-timeout"
   | "generic"
   | "insufficient-credits"
+  | "output-token-limit"
   | "provider-balance"
   | "overloaded"
   | "usage-limit"
@@ -730,7 +731,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   terms_acceptance_required: "terms",
   context_window_exceeded: "generic",
   input_too_large: "generic",
-  output_token_limit: "generic",
+  output_token_limit: "output-token-limit",
   provider_rate_limited: "generic",
   provider_overloaded: "overloaded",
   provider_stream_timeout: "generic",
@@ -754,6 +755,19 @@ function formatReconnectRunError(
       formatClaudeCodeCredentialRecoveryMessage(recovery) ??
       CHAT_RUN_TRANSIENT_ERROR_MESSAGE
     );
+  }
+  return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
+}
+
+function formatOverloadedRunError(
+  framework: ModelProviderFramework | null | undefined,
+  selectedModel: string | null | undefined,
+): string {
+  if (framework === "claude-code") {
+    return formatClaudeProviderOverloadedMessage(selectedModel);
+  }
+  if (framework === "codex") {
+    return CODEX_PROVIDER_OVERLOADED_MESSAGE;
   }
   return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
 }
@@ -783,6 +797,9 @@ function formatStructuredRunError(params: {
     case "insufficient-credits": {
       return "insufficient_credits";
     }
+    case "output-token-limit": {
+      return "The model reached its output limit before finishing. Ask it to continue from where it stopped.";
+    }
     case "provider-balance": {
       return formatRunBalanceError({
         failureReason: params.failureReason,
@@ -809,13 +826,7 @@ function formatStructuredRunError(params: {
       );
     }
     case "overloaded": {
-      if (params.framework === "claude-code") {
-        return formatClaudeProviderOverloadedMessage(params.selectedModel);
-      }
-      if (params.framework === "codex") {
-        return CODEX_PROVIDER_OVERLOADED_MESSAGE;
-      }
-      return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
+      return formatOverloadedRunError(params.framework, params.selectedModel);
     }
     case "usage-limit": {
       return isActionableRunError(params.errorMessage)
