@@ -820,12 +820,6 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
             return selectingStatement;
           },
           work: async (contentQuery) => {
-            // Observe a rejected deferred explicitly if setup fails before the
-            // control reaches content; the assertion below is about whether it
-            // was reached, not about leaving an unowned promise.
-            void contentQuery.entered.catch(() => {
-              return undefined;
-            });
             const member = await briefMember();
             const { threadId } = await seedUnreadThread(member, {
               prompt: "prompt beyond the cumulative budget",

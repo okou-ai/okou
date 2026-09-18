@@ -320,6 +320,9 @@ export async function withDatabaseTransactionBarrierFixture<T>(
     readonly transactionTimeout: string;
     readonly rowCount: number | null;
   }>(signal);
+  // Own the entry promise even for negative observations where the selected
+  // statement correctly never starts before `work` returns.
+  const enteredSettlement = settleIncludingAbort(entered.promise);
   const blocked = async () => {
     return await blockedWaiterCount((await entered.promise).pid);
   };
@@ -411,7 +414,11 @@ export async function withDatabaseTransactionBarrierFixture<T>(
       release,
     }),
   );
+  if (!entered.settled()) {
+    entered.reject(new Error("Selected transaction statement was not reached"));
+  }
   release();
+  await enteredSettlement;
   const closed = await settleIncludingAbort(closeDbPool());
   Client.prototype.query = original;
   if (!result.ok) {
