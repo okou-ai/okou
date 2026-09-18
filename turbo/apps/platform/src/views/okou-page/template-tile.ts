@@ -40,10 +40,3 @@ export const TEMPLATE_TILE_USE =
 export const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
 export const TEMPLATE_TILE_NAME =
   "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
-
-/**
- * Selected badge, drawn over the artwork's top-left corner. Callers own the
- * `Check` glyph so the icon import stays with the component that renders it.
- */
-export const TEMPLATE_TILE_SELECTED_BADGE =
-  "pointer-events-none absolute left-[7px] top-[7px] z-20 flex size-[22px] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm";

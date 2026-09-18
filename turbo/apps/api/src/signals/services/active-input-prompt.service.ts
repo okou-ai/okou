@@ -27,7 +27,11 @@ type ChatEventContextType = NonNullable<
 >;
 
 type ContextBackedContextType =
-  "slack" | "feishu" | "teams" | "telegram" | "agentphone";
+  | "slack"
+  | "feishu"
+  | "teams"
+  | "telegram"
+  | "agentphone";
 
 interface ActiveInputPromptEvent {
   readonly id: string;

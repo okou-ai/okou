@@ -1,5 +1,8 @@
 export type TemplatePickerEntryCategory =
-  "slides" | "illustration" | "video" | "website";
+  | "slides"
+  | "illustration"
+  | "video"
+  | "website";
 
 export function parseTemplatePickerEntryCategory(
   value: string | null,

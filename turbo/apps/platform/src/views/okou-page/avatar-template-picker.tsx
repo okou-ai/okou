@@ -813,11 +813,7 @@ const VOICE_PREVIEW_CARD_PROPS = {
 
 const VOICE_PREVIEW_CARD_CLASS = "group/voice";
 
-export function VoicePreviewControl({
-  voice,
-}: {
-  readonly voice: VoiceCardVoice;
-}) {
+function VoicePreviewControl({ voice }: { readonly voice: VoiceCardVoice }) {
   const { t } = useTranslation();
   return (
     <>

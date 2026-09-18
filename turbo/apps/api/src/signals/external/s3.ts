@@ -33,7 +33,6 @@ import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presi
 
 const PRIVATE_ARTIFACT_CACHE_CONTROL =
   "private, max-age=31536000, must-revalidate";
-const PRIVATE_NO_STORE_CACHE_CONTROL = "private, no-store";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
 export interface S3Object {
@@ -1020,19 +1019,6 @@ export function generatePresignedGetUrl(
   );
 }
 
-/** Private inputs must not remain cached after their signed access expires. */
-export function generatePrivatePresignedGetUrl(
-  bucket: string,
-  key: string,
-): Computed<Promise<string>> {
-  return generatePresignedGetUrlWithClient(
-    s3ClientForBucket(bucket, true),
-    bucket,
-    key,
-    { responseCacheControl: PRIVATE_NO_STORE_CACHE_CONTROL },
-  );
-}
-
 /** Use the same clock for the signature and its advertised expiration. */
 export function generateArtifactPreviewUrl(
   bucket: string,
@@ -1208,25 +1194,6 @@ export function putImmutableS3Object(
       cacheControl: IMMUTABLE_CACHE_CONTROL,
     },
     writeOptions?.signal,
-  );
-}
-
-export function putPrivateImmutableS3Object(
-  bucket: string,
-  key: string,
-  body: string | Buffer,
-  contentType: string,
-  signal: AbortSignal,
-): Computed<Promise<void>> {
-  return putImmutableS3ObjectWithOptions(
-    {
-      bucket,
-      key,
-      body,
-      contentType,
-      cacheControl: PRIVATE_NO_STORE_CACHE_CONTROL,
-    },
-    signal,
   );
 }
 

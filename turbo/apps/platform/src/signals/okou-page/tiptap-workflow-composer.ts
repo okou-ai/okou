@@ -1824,7 +1824,8 @@ function workflowComposerDocumentForDraft(
   draft: {
     readonly input: string;
     readonly userMessage:
-      Parameters<DraftInputSyncTarget["syncUserMessage"]>[0] | null;
+      | Parameters<DraftInputSyncTarget["syncUserMessage"]>[0]
+      | null;
     readonly editorDocument: EditorDocumentSnapshot | null;
   },
 ): ProseMirrorNode {
