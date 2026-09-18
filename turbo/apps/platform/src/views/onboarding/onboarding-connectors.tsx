@@ -170,9 +170,9 @@ function SourcesConnectorGrid({
 
   return (
     <>
-      {/* Two columns inside the step card: three would leave each
-          source too narrow to read its own description. */}
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {/* The step card now spans the canvas, so a third column only appears
+          once each source still keeps a readable description width. */}
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {validConnectorSlugs.map((connectorSlug) => {
           const item = connectorCatalogItems.find((candidate) => {
             return candidate.slug === connectorSlug;
