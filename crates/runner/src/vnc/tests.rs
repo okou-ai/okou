@@ -2,6 +2,7 @@ mod boundaries;
 mod delivery;
 mod harness;
 mod list;
+mod list_lifecycle;
 mod peer;
 
 use std::{io::Cursor, sync::Arc};

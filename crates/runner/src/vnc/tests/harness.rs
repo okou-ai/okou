@@ -299,11 +299,14 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) async fn new() -> Self {
+        Self::with_authority(Peer::new().await, None).await
+    }
+
+    pub(super) async fn with_authority(peer: Peer, api_url: Option<String>) -> Self {
         let api = MockServer::start_async().await;
-        let peer = Peer::new().await;
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 27).unwrap();
         let http = HttpClient::new(HttpClientConfig {
-            api_url: api.base_url(),
+            api_url: api_url.unwrap_or_else(|| api.base_url()),
             vercel_bypass: None,
             client_session_id: "vnc-dispatch-test".into(),
         })

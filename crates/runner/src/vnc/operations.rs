@@ -122,17 +122,27 @@ impl Run {
                     parse::<protocol::Empty>(raw)?;
                     let mut infos = Vec::<Info>::new();
                     for session in self.snapshot()? {
-                        let scope = session_scope(&scope, &session);
-                        let _engine = lock(&session, &scope).await?;
-                        match self.authorize(&session, &scope).await {
+                        let operation = session_scope(&scope, &session);
+                        let result = async {
+                            let _engine = lock(&session, &operation).await?;
+                            self.authorize(&session, &operation).await
+                        }
+                        .await;
+                        // Closing a snapshot member must not cancel the list,
+                        // but cancellation/deadline of the request still wins.
+                        scope.check()?;
+                        match result {
                             Ok(()) => infos.push(session.info.clone()),
                             // The authority owns saved connections. An expected
                             // removal or change closes only that stale session;
                             // it must not hide independently authorized siblings.
                             Err(Failure::Unavailable | Failure::ConfigurationChanged) => {}
+                            Err(Failure::Cancelled | Failure::Disconnected)
+                                if session.cancel.is_cancelled() => {}
                             Err(error) => return Err(error),
                         }
                     }
+                    scope.check()?;
                     Ok::<_, Failure>(infos)
                 }
                 .await;
