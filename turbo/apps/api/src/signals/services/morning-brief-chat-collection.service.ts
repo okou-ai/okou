@@ -171,7 +171,7 @@ function attemptBudget(signal: AbortSignal): AttemptBudget {
   return {
     deadline,
     candidateDeadline: narrowMorningBriefSourceDeadline(
-      deadlineAt,
+      deadline,
       candidateDeadlineAt,
       deadlineTimer,
     ),
@@ -363,12 +363,11 @@ async function loadUnreadCandidates(
   budget: AttemptBudget,
   signal: AbortSignal,
 ): Promise<readonly CandidateThread[]> {
-  const { at: deadlineAt, signal: deadlineTimer } = budget.candidateDeadline;
-  const bounded = AbortSignal.any([signal, deadlineTimer]);
+  const bounded = AbortSignal.any([signal, budget.candidateDeadline.signal]);
   return await withMorningBriefDatabaseDeadline(
     {
       db,
-      deadlineAt,
+      deadline: budget.candidateDeadline,
       caps: CHAT_DATABASE_CAPS,
     },
     bounded,
@@ -712,12 +711,11 @@ async function collectThread(
   signal: AbortSignal,
 ): Promise<ThreadOutcome> {
   const { owner, candidate, anchor, remainingTextBytes, budget } = args;
-  const { at: deadlineAt, signal: deadlineTimer } = budget.candidateDeadline;
-  const bounded = AbortSignal.any([signal, deadlineTimer]);
+  const bounded = AbortSignal.any([signal, budget.candidateDeadline.signal]);
   return await withMorningBriefDatabaseDeadline(
     {
       db,
-      deadlineAt,
+      deadline: budget.candidateDeadline,
       caps: CHAT_DATABASE_CAPS,
     },
     bounded,

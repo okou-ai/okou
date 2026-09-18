@@ -37,6 +37,7 @@ import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
   freezeMorningBriefSourceSelection,
+  narrowMorningBriefSourceDeadline,
   startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefSourceAuthorityLedger,
@@ -290,6 +291,7 @@ export const composeMorningBrief$ = command(
         selections,
         phaseStartedAt,
         phaseDeadlineAt,
+        phaseDeadline,
         readChat,
       },
       signal,
@@ -543,6 +545,7 @@ async function readMorningBriefSource(
     readonly selections: MorningBriefSelections;
     readonly phaseStartedAt: Date;
     readonly phaseDeadlineAt: Date;
+    readonly phaseDeadline: MorningBriefSourceDeadline;
     readonly capturedAt: Date;
     readonly readChat: ChatReader;
   },
@@ -563,12 +566,13 @@ async function readMorningBriefSource(
     return null;
   }
   // The composition already allocated this source's absolute deadline, so the
-  // reader is handed that exact instant rather than starting a second budget of
-  // its own.
-  const sourceDeadline: MorningBriefSourceDeadline = {
-    at: budget.deadlineAt.getTime(),
-    signal: AbortSignal.timeout(budgetMs),
-  };
+  // reader receives a narrowed view of the phase deadline rather than starting
+  // a second budget of its own.
+  const sourceDeadline = narrowMorningBriefSourceDeadline(
+    { at: args.phaseDeadline.at, ioAt: args.phaseDeadline.ioAt },
+    budget.deadlineAt.getTime(),
+    args.phaseDeadline.signal,
+  );
   const sourceSignal = AbortSignal.any([signal, sourceDeadline.signal]);
   if (source === "calendar") {
     return await readCalendarSource(
@@ -795,7 +799,7 @@ async function proveRetainedAuthority(
 ): Promise<RetainedAuthorityOutcome> {
   const reservation = input.deadline;
   const deadline = startMorningBriefRetainedCheckDeadline(
-    reservation.at,
+    { at: reservation.at, ioAt: reservation.ioAt },
     reservation.signal,
   );
   if (morningBriefRetainedCheckExpired(deadline.at, deadline.signal)) {
@@ -1004,6 +1008,7 @@ async function collectMorningBriefWaves(
     readonly selections: MorningBriefSelections;
     readonly phaseStartedAt: Date;
     readonly phaseDeadlineAt: Date;
+    readonly phaseDeadline: MorningBriefSourceDeadline;
     readonly readChat: ChatReader;
   },
   signal: AbortSignal,
@@ -1032,6 +1037,7 @@ async function collectMorningBriefWaves(
             selections: input.selections,
             phaseStartedAt,
             phaseDeadlineAt,
+            phaseDeadline: input.phaseDeadline,
             capturedAt,
             readChat: input.readChat,
           },

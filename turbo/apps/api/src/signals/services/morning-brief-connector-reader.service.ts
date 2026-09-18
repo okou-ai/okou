@@ -13,11 +13,12 @@ import { assertErasureSubjectWritable } from "@okouai/db/operations/account-eras
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { and, eq, or, sql } from "drizzle-orm";
+import type { PgTransactionConfig } from "drizzle-orm/pg-core";
 import type { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { now } from "../../lib/time";
+import { monotonicNow, now } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
@@ -108,29 +109,48 @@ interface MorningBriefReaderBudget {
  * whole budget leaves no allowance behind, rather than earning a fresh one.
  */
 export interface MorningBriefSourceDeadline {
-  /** Absolute `now()` milliseconds at which the source read expires. */
+  /** Absolute application `now()` at which no later work may start or release. */
   readonly at: number;
-  /** Aborts in-flight provider I/O once the wall clock is spent. */
+  /**
+   * The same allowance on the monotonic clock used for in-flight I/O.
+   *
+   * Production application and monotonic clocks advance together. Keeping the
+   * second representation in the same immutable object also lets controlled-
+   * clock tests move application admission to an exact boundary without
+   * pretending PostgreSQL transaction startup consumed that simulated time.
+   */
+  readonly ioAt: number;
+  /** Aborts in-flight provider I/O once the real allowance is spent. */
   readonly signal: AbortSignal;
 }
 
 export function startMorningBriefSourceDeadline(
   budgetMs: number,
 ): MorningBriefSourceDeadline {
-  return { at: now() + budgetMs, signal: AbortSignal.timeout(budgetMs) };
+  return {
+    at: now() + budgetMs,
+    ioAt: monotonicNow() + budgetMs,
+    signal: AbortSignal.timeout(budgetMs),
+  };
 }
 
 /** A shorter phase bound that still spends the parent attempt's clock. */
 export function narrowMorningBriefSourceDeadline(
-  parentAt: number,
+  parent: Pick<MorningBriefSourceDeadline, "at" | "ioAt">,
   at: number,
   parentSignal: AbortSignal,
 ): MorningBriefSourceDeadline {
-  const narrowedAt = Math.min(parentAt, at);
-  const remainingMs = Math.max(0, narrowedAt - now());
+  const narrowedAt = Math.min(parent.at, at);
+  // Shorten both representations by exactly the same amount. Deriving ioAt
+  // from the current application clock would turn a controlled Date.now jump
+  // into elapsed PostgreSQL time and make sub-millisecond startup accidental
+  // authority at exact-boundary tests.
+  const ioAt = parent.ioAt - Math.max(0, parent.at - narrowedAt);
+  const ioRemainingMs = Math.max(0, Math.floor(ioAt - monotonicNow()));
   return {
     at: narrowedAt,
-    signal: AbortSignal.any([parentSignal, AbortSignal.timeout(remainingMs)]),
+    ioAt,
+    signal: AbortSignal.any([parentSignal, AbortSignal.timeout(ioRemainingMs)]),
   };
 }
 
@@ -189,17 +209,21 @@ export function isMorningBriefDatabaseDeadlineExceeded(
 export async function withMorningBriefDatabaseDeadline<T>(
   args: {
     readonly db: Db;
-    readonly deadlineAt: number;
+    readonly deadline: MorningBriefSourceDeadline;
     readonly caps: MorningBriefDatabaseDeadlineCaps;
+    readonly transactionConfig?: PgTransactionConfig;
   },
   signal: AbortSignal,
   work: (tx: Tx, beforeStatement: () => Promise<void>) => Promise<T>,
 ): Promise<T> {
   signal.throwIfAborted();
-  const remaining = (): number => {
-    return Math.max(0, args.deadlineAt - now());
+  const applicationRemaining = (): number => {
+    return Math.max(0, args.deadline.at - now());
   };
-  if (remaining() === 0) {
+  const ioRemaining = (): number => {
+    return Math.max(0, Math.floor(args.deadline.ioAt - monotonicNow()));
+  };
+  if (applicationRemaining() === 0 || ioRemaining() === 0) {
     throw new MorningBriefDatabaseDeadlineExceededError();
   }
   const callbackFailure: { failed: boolean; error: unknown } = {
@@ -210,27 +234,33 @@ export async function withMorningBriefDatabaseDeadline<T>(
     args.db.transaction((tx: Tx) => {
       const run = async (): Promise<T> => {
         signal.throwIfAborted();
-        const transactionRemaining = remaining();
+        if (applicationRemaining() === 0) {
+          throw new MorningBriefDatabaseDeadlineExceededError();
+        }
+        const transactionRemaining = ioRemaining();
         if (transactionRemaining === 0) {
           throw new MorningBriefDatabaseDeadlineExceededError();
         }
         const transactionTimeout = `${transactionRemaining.toString()}ms`;
         await tx.execute(sql`SELECT
-          set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
-          set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
-          set_config('transaction_timeout', ${transactionTimeout}, true)`);
+            set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
+            set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
+            set_config('transaction_timeout', ${transactionTimeout}, true)`);
 
         const beforeStatement = async (): Promise<void> => {
           signal.throwIfAborted();
-          const statementRemaining = remaining();
+          if (applicationRemaining() === 0) {
+            throw new MorningBriefDatabaseDeadlineExceededError();
+          }
+          const statementRemaining = ioRemaining();
           if (statementRemaining === 0) {
             throw new MorningBriefDatabaseDeadlineExceededError();
           }
           await tx.execute(sql`SELECT
-            set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
-            set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
+              set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
+              set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
           signal.throwIfAborted();
-          if (remaining() === 0) {
+          if (applicationRemaining() === 0 || ioRemaining() === 0) {
             throw new MorningBriefDatabaseDeadlineExceededError();
           }
         };
@@ -246,7 +276,7 @@ export async function withMorningBriefDatabaseDeadline<T>(
         callbackFailure.failed = true;
         callbackFailure.error = error;
       });
-    }),
+    }, args.transactionConfig),
   );
   if (transaction.ok) {
     return transaction.value;
@@ -514,12 +544,12 @@ const ADMISSION_DATABASE_CAPS = {
 async function subjectIsWritable(
   db: Db,
   owner: { readonly orgId: string; readonly userId: string },
-  deadlineAt: number,
+  deadline: MorningBriefSourceDeadline,
   signal: AbortSignal,
 ): Promise<boolean> {
   const settled = await settle(
     withMorningBriefDatabaseDeadline(
-      { db, deadlineAt, caps: ADMISSION_DATABASE_CAPS },
+      { db, deadline, caps: ADMISSION_DATABASE_CAPS },
       signal,
       async (tx) => {
         await assertErasureSubjectWritable(tx, [
@@ -532,7 +562,7 @@ async function subjectIsWritable(
   );
   if (
     !settled.ok &&
-    (deadlineHasPassed(deadlineAt, signal) ||
+    (deadlineHasPassed(deadline.at, signal) ||
       isMorningBriefDatabaseDeadlineExceeded(settled.error))
   ) {
     throw settled.error;
@@ -576,12 +606,12 @@ async function ownershipIsUnchanged(
 async function localScopeIsCurrent(
   db: Db,
   scope: MorningBriefCollectionScope,
-  deadlineAt: number,
+  deadline: MorningBriefSourceDeadline,
   signal: AbortSignal,
 ): Promise<boolean> {
   const settled = await settle(
     withMorningBriefDatabaseDeadline(
-      { db, deadlineAt, caps: ADMISSION_DATABASE_CAPS },
+      { db, deadline, caps: ADMISSION_DATABASE_CAPS },
       signal,
       async (tx, beforeStatement) => {
         await assertErasureSubjectWritable(tx, [
@@ -599,7 +629,7 @@ async function localScopeIsCurrent(
   );
   if (
     !settled.ok &&
-    (deadlineHasPassed(deadlineAt, signal) ||
+    (deadlineHasPassed(deadline.at, signal) ||
       isMorningBriefDatabaseDeadlineExceeded(settled.error))
   ) {
     throw settled.error;
@@ -843,7 +873,7 @@ export async function morningBriefScopeIsCurrent(
     return false;
   }
 
-  return await localScopeIsCurrent(db, scope, deadline.at, signal);
+  return await localScopeIsCurrent(db, scope, deadline, signal);
 }
 
 /**
@@ -1736,7 +1766,7 @@ async function admitWithinDeadline(
   const local = await withMorningBriefDatabaseDeadline(
     {
       db: args.db,
-      deadlineAt: args.deadline.at,
+      deadline: args.deadline,
       caps: ADMISSION_DATABASE_CAPS,
     },
     signal,
@@ -1782,7 +1812,7 @@ async function admitWithinDeadline(
   if (membershipId === null) {
     return { kind: "denied", reason: "no-membership" };
   }
-  if (!(await subjectIsWritable(args.db, args, args.deadline.at, signal))) {
+  if (!(await subjectIsWritable(args.db, args, args.deadline, signal))) {
     return { kind: "denied", reason: "no-membership" };
   }
   if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {

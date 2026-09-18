@@ -12,7 +12,14 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, now, nowDate } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  mockNow,
+  monotonicNow,
+  now,
+  nowDate,
+} from "../../../lib/time";
 import {
   barrierQueryText,
   closeErasureSubjectFixture,
@@ -232,8 +239,19 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
    * to an exact instant instead of waiting for one. `clearMockNow` runs in the
    * shared afterEach.
    */
+  let advanceAttemptIoClock: ((elapsedMs: number) => void) | undefined;
+
   function freezeAttemptClock(): number {
     const startedAt = now() + 1000;
+    const ioStartedAt = monotonicNow();
+    mockMonotonicNow(ioStartedAt);
+    advanceAttemptIoClock = (elapsedMs) => {
+      mockMonotonicNow(ioStartedAt + elapsedMs);
+    };
+    onTestFinished(() => {
+      advanceAttemptIoClock = undefined;
+      clearMockMonotonicNow();
+    });
     mockNow(startedAt);
     return startedAt;
   }
@@ -1010,11 +1028,16 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
             // content statement. The selected transaction exposes all three
             // real server settings, including the whole-transaction bound.
             const healthy = collectRequest(member);
-            await expect(contentQuery.entered).resolves.toMatchObject({
+            const healthyContentQuery = await contentQuery.entered;
+            expect(healthyContentQuery).toMatchObject({
               lockTimeout: "2s",
               statementTimeout: "5s",
-              transactionTimeout: "12s",
             });
+            // PostgreSQL renders the conservatively floored monotonic remainder
+            // in milliseconds when fractional clock origins leave it 1ms shy.
+            expect(["11999ms", "12s"]).toContain(
+              healthyContentQuery.transactionTimeout,
+            );
             contentQuery.release();
             const recovered = await accept(healthy, [200]);
             expect(recovered.body.result).toBe("collected");
@@ -1040,6 +1063,11 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       // The per-thread transaction starts with only 100ms left. Its Agent read
       // then remains genuinely blocked; no test timer releases the lock.
       mockNow(candidateDeadline(startedAt) - 100);
+      advanceAttemptIoClock?.(
+        MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs -
+          MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs -
+          100,
+      );
       await discovery.release();
       await agent.waitForBlocked();
       // Arrival proves the real query is already in flight under the 100 ms

@@ -322,6 +322,7 @@ export async function lockSlackUserBindingRows(
 export async function loadSlackUserBinding(
   db: Pick<ReadonlyDb, "select">,
   args: { readonly orgId: string; readonly userId: string },
+  beforeConnectionRead?: () => Promise<void>,
 ): Promise<SlackUserBinding> {
   const [installation] = await db
     .select()
@@ -332,6 +333,7 @@ export async function loadSlackUserBinding(
     return { kind: "not-installed" };
   }
 
+  await beforeConnectionRead?.();
   const [connection] = await db
     .select({ slackUserId: slackOrgConnections.slackUserId })
     .from(slackOrgConnections)
