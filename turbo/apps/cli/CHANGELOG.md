@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.341.2](https://github.com/vm0-ai/okou/compare/cli-v9.341.1...cli-v9.341.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* download complete sites with visibility-aware cloning ([#35220](https://github.com/vm0-ai/okou/issues/35220)) ([1707f8b](https://github.com/vm0-ai/okou/commit/1707f8b786945a00deb1da9597ba2ab4a3488b71))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.469.1
+    * @okouai/core bumped to 8.680.6
+    * @okouai/pi-agent-runtime bumped to 1.33.16
+
 ## [9.341.1](https://github.com/vm0-ai/okou/compare/cli-v9.341.0...cli-v9.341.1) (2026-09-18)
 
 
