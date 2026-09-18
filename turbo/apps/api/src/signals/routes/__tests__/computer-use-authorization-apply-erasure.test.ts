@@ -284,6 +284,23 @@ interface ApplyState {
   readonly requestUpdatedAt: string;
 }
 
+/**
+ * Projects durable Apply state without invoking the independently fenced GET.
+ * These race tests inspect MVCC state while Apply or closure deliberately owns
+ * a row lock; public GET is now expected to wait or deny at that boundary.
+ */
+function durableAuthorization(
+  request: NonNullable<
+    Awaited<ReturnType<typeof readComputerUseAuthorizationRequestFixture>>
+  >,
+  selection: Awaited<ReturnType<typeof readSelection>>,
+): Awaited<ReturnType<typeof readAuthorization>> {
+  return {
+    completedAt: request.completedAt,
+    computerUseHostId: request.completedAt ? selection.computerUseHostId : null,
+  };
+}
+
 async function readApplyState(
   fixture: AuthorizationFixture,
 ): Promise<ApplyState> {
@@ -294,9 +311,10 @@ async function readApplyState(
   if (!request) {
     throw new Error("Expected the authorization request row");
   }
+  const selection = await readSelection(fixture);
   return {
-    selection: await readSelection(fixture),
-    authorization: await readAuthorization(fixture),
+    selection,
+    authorization: durableAuthorization(request, selection),
     events: await sidebarHostEvents(fixture),
     lastSeqId: await lastSidebarSeqId(fixture),
     threadUpdatedAt: thread.updatedAt,
