@@ -1211,12 +1211,8 @@ async function isUnsupportedConversion(response: Response): Promise<boolean> {
 
 async function parseUploadResponse(
   response: Response,
-  converted: boolean,
 ): Promise<DriveSyncResult> {
   if (!response.ok) {
-    if (converted && (await isUnsupportedConversion(response))) {
-      throw badRequestMessage("Google Slides could not read this presentation");
-    }
     throw badRequestMessage(
       `Google Drive upload failed with HTTP ${String(response.status)}`,
     );
@@ -1263,7 +1259,7 @@ async function rejectEmptyConvertedDeck(
     readonly presentationId: string;
   },
   signal: AbortSignal,
-): Promise<void> {
+): Promise<BadRequestResponse | undefined> {
   const response = await fetch(
     new URL(`${GOOGLE_SLIDES_PRESENTATIONS_URL}/${args.presentationId}`),
     {
@@ -1273,24 +1269,24 @@ async function rejectEmptyConvertedDeck(
   );
   if (!response.ok) {
     // An unreadable check is not evidence of an empty deck; keep the file.
-    return;
+    return undefined;
   }
   const parsed = slidesPresentationSchema.safeParse(await response.json());
   if (!parsed.success) {
-    return;
+    return undefined;
   }
   const slides = parsed.data.slides ?? [];
   const hasContent = slides.some((slide) => {
     return (slide.pageElements ?? []).length > 0;
   });
   if (slides.length === 0 || hasContent) {
-    return;
+    return undefined;
   }
   await trashDriveFile({
     accessToken: args.accessToken,
     fileId: args.presentationId,
   });
-  throw badRequestMessage(
+  return badRequestMessage(
     "Google Slides converted this presentation to an empty deck",
   );
 }
@@ -1459,16 +1455,25 @@ export const syncArtifactToGoogleDrive$ = command(
       return badRequestMessage("Google Drive upload failed with HTTP 401");
     }
 
-    const body = await parseUploadResponse(
-      result.value,
-      targetMimeType !== undefined,
-    );
+    if (
+      targetMimeType !== undefined &&
+      !result.value.ok &&
+      (await isUnsupportedConversion(result.value))
+    ) {
+      return badRequestMessage(
+        "Google Slides could not read this presentation",
+      );
+    }
+    const body = await parseUploadResponse(result.value);
     if (targetMimeType !== undefined) {
-      await rejectEmptyConvertedDeck(
+      const rejected = await rejectEmptyConvertedDeck(
         { accessToken, presentationId: body.id },
         signal,
       );
       signal.throwIfAborted();
+      if (rejected) {
+        return rejected;
+      }
     }
 
     return { status: 200 as const, body };

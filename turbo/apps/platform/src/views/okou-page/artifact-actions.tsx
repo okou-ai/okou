@@ -267,6 +267,18 @@ function useGoogleDriveAvailability(
   };
 }
 
+/**
+ * Whether syncing this artifact produces a Slides deck. The service applies
+ * the same predicate, so the label never promises a conversion it will skip.
+ */
+function useGoogleSlidesTarget(filename: string): boolean {
+  const features = useLastResolved(featureSwitch$);
+  return (
+    (features?.[FeatureSwitchKey.GoogleSlidesConversion] ?? false) &&
+    convertsToGoogleSlides(filename)
+  );
+}
+
 function useGoogleDriveMenuLabels(slides: boolean) {
   const { t } = useTranslation();
   return {
@@ -474,13 +486,8 @@ function GoogleDriveMenuItem({
   const { t } = useTranslation();
   const availability = useGoogleDriveAvailability(syncTarget);
   const connectionPending = useGet(connectorConnectionPending$);
-  const features = useLastResolved(featureSwitch$);
   const syncOrConnect = useGoogleDriveMenuAction(syncTarget, availability);
-  // The service applies the same predicate, so the label never promises a
-  // conversion the sync will not perform.
-  const slides =
-    (features?.[FeatureSwitchKey.GoogleSlidesConversion] ?? false) &&
-    convertsToGoogleSlides(filename);
+  const slides = useGoogleSlidesTarget(filename);
   const labels = useGoogleDriveMenuLabels(slides);
   const {
     connectorListLoaded,
