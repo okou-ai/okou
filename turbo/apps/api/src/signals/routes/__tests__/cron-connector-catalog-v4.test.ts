@@ -3,8 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import {
-  connectorAutomaticContract,
-  connectorNoAuthGrantContract,
+  builtinConnectorAutomaticContract,
+  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -20,8 +20,8 @@ import { corruptApiTestConnectorCatalogActiveSnapshotPayload } from "../../../te
 import { installAcceptedV3ConnectorCatalog } from "../../../test-fixtures/connector-catalog-v3";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorCheckRoutes } from "../connector-check";
-import { connectorsAutomaticRoutes } from "../connectors-automatic";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { builtinConnectorsRoutes } from "../connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { runnersRoutes } from "../runners";
@@ -417,8 +417,8 @@ describe("connector catalog v4 preparation", () => {
             created.connectionId = connected.id;
           } else if (authKind === "none") {
             const connected = await accept(
-              setupApp({ context, routes: connectorsRoutes })(
-                connectorNoAuthGrantContract,
+              setupApp({ context, routes: builtinConnectorsRoutes })(
+                builtinConnectorNoAuthGrantContract,
               ).connect({
                 ...request,
                 body: { ...request.body, authMethod: "public" },
@@ -432,8 +432,8 @@ describe("connector catalog v4 preparation", () => {
               authentication: "none",
             });
             const connected = await accept(
-              setupApp({ context, routes: connectorsAutomaticRoutes })(
-                connectorAutomaticContract,
+              setupApp({ context, routes: builtinConnectorsAutomaticRoutes })(
+                builtinConnectorAutomaticContract,
               ).start({
                 ...request,
                 body: { ...request.body, authMethod: "automatic" },
@@ -592,7 +592,9 @@ describe("connector catalog v4 preparation", () => {
       active: null,
       lastAttempt: { failureCode: "source-unavailable" },
     });
-    await expect(connectorsApi.listConnectors(actor)).resolves.toMatchObject({
+    await expect(
+      connectorsApi.listBuiltinConnectors(actor),
+    ).resolves.toMatchObject({
       connectors: [
         {
           id: connection.id,

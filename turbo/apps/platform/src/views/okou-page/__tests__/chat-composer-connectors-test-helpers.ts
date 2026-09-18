@@ -23,9 +23,9 @@ import type {
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import {
-  connectorManualGrantContract,
-  connectorNoAuthGrantContract,
-  connectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   customConnectorsContract,
@@ -40,7 +40,7 @@ import {
   chatThreadConnectorSelectionContract,
   type ChatThreadServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import {
   context,
@@ -380,14 +380,17 @@ export function installComposerConnectorFixture(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: customConnectors });
   });
-  context.mocks.api(userConnectorsContract.get, async ({ params, respond }) => {
-    await options.authorizationGates?.[params.id];
-    return respond(200, {
-      enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
-    });
-  });
   context.mocks.api(
-    userConnectorsContract.update,
+    userBuiltinConnectorsContract.get,
+    async ({ params, respond }) => {
+      await options.authorizationGates?.[params.id];
+      return respond(200, {
+        enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
+      });
+    },
+  );
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
     ({ body, params, respond }) => {
       const connectorSlugs = [...body.enabledConnectorSlugs];
       builtinAuthorizationUpdates.push({
@@ -565,7 +568,7 @@ export function installComposerConnectorFixture(
     );
   };
   context.mocks.api(
-    connectorManualGrantContract.connect,
+    builtinConnectorManualGrantContract.connect,
     ({ body, params, respond }) => {
       const request = {
         agentId: body.agentId,
@@ -584,7 +587,7 @@ export function installComposerConnectorFixture(
     },
   );
   context.mocks.api(
-    connectorNoAuthGrantContract.connect,
+    builtinConnectorNoAuthGrantContract.connect,
     ({ body, params, respond }) => {
       const request = {
         agentId: body.agentId,
@@ -603,7 +606,7 @@ export function installComposerConnectorFixture(
     },
   );
   context.mocks.api(
-    connectorOauthStartContract.start,
+    builtinConnectorOauthStartContract.start,
     ({ body, params, respond }) => {
       oauthAttemptId = crypto.randomUUID();
       oauthConnectionRequests.push({

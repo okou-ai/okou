@@ -14,8 +14,8 @@ import {
   loadConnectorRuntimeSelection,
   getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
-import { connectorCredentialStatusWithMethod } from "./connector-credential-status.service";
-import { connectorCredentialStorageIsCompatible } from "./connector-credential-access.service";
+import { builtinConnectorCredentialStatusWithMethod } from "./connector-credential-status.service";
+import { builtinConnectorCredentialStorageIsCompatible } from "./builtin-connector-credential-access.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import { loadCurrentCustomConnectorStoredValues } from "./custom-connector-credential-access.service";
 import {
@@ -88,7 +88,7 @@ async function builtinMcpConnectors(args: {
       connector === undefined ||
       mcp === undefined ||
       runtimeMethod?.executable !== true ||
-      !connectorCredentialStorageIsCompatible({
+      !builtinConnectorCredentialStorageIsCompatible({
         runtimeMethod,
         automaticAuthType: row.automaticAuthType,
         storageVersion: row.storageVersion,
@@ -105,7 +105,7 @@ async function builtinMcpConnectors(args: {
         transport: mcp.transport,
         endpoint: mcp.endpoint,
         connected:
-          connectorCredentialStatusWithMethod({
+          builtinConnectorCredentialStatusWithMethod({
             method: runtimeMethod.method,
             automaticAuthType: row.automaticAuthType,
             storedNeedsReconnect: row.needsReconnect,

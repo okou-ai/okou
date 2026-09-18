@@ -286,8 +286,8 @@ import {
   customConnectorValueMarkerKey,
   loadCustomConnectorRuntimeData,
   renderCustomConnectorRuntimePrefix,
-  renderTemplateForRuntime,
-  type StoredValueRow,
+  renderCustomConnectorTemplateForRuntime,
+  type CustomConnectorStoredValueRow,
 } from "./custom-connector.service";
 import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
@@ -342,7 +342,7 @@ import {
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
 import {
-  connectorRuntimeCredentialStatusWithMethod,
+  builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
 } from "./connector-credential-status.service";
 import {
@@ -351,13 +351,13 @@ import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { resolveConnectorMcpRuntimeFirewall } from "./connector-mcp-firewall.service";
+import { resolveBuiltinConnectorMcpRuntimeFirewall } from "./builtin-connector-mcp-firewall.service";
 import {
-  connectorCredentialSecretReadCondition,
-  resolveConnectorCredentialAccess,
-  type ConnectorCredentialAccess,
-  type ConnectorCredentialReadGroup,
-} from "./connector-credential-access.service";
+  builtinConnectorCredentialSecretReadCondition,
+  resolveBuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialReadGroup,
+} from "./builtin-connector-credential-access.service";
 import {
   connectorAccountTargetKey,
   resolveConnectorAccounts,
@@ -1212,7 +1212,7 @@ interface AutomaticMcpAccountContext {
   readonly automaticAuthType: "none" | "oauth" | null;
 }
 
-interface ConnectorRuntimeContext {
+interface BuiltinConnectorRuntimeContext {
   readonly automaticMcpAccounts?: Readonly<
     Record<string, AutomaticMcpAccountContext>
   >;
@@ -3516,7 +3516,7 @@ function filterSecretConnectorMetadataMap(args: {
 
 interface StoredConnectorRuntimeRow {
   readonly automaticAuthType: "none" | "oauth" | null;
-  readonly access: ConnectorCredentialAccess;
+  readonly access: BuiltinConnectorCredentialAccess;
   readonly connectorSlug: ConnectorSlug;
   readonly connectorStateRevision: bigint;
   readonly authMethod: ConnectorAuthMethodId;
@@ -3552,7 +3552,7 @@ const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
 );
 
 interface ConnectorEnvBindingSet {
-  readonly access: ConnectorCredentialAccess;
+  readonly access: BuiltinConnectorCredentialAccess;
   readonly connectorSlug: ConnectorSlug;
   readonly connectorStateRevision: bigint;
   readonly authMethod: ConnectorAuthMethodId;
@@ -3592,7 +3592,7 @@ interface ResolvedStoredConnectorMetadata {
   readonly environment: Record<string, string>;
 }
 
-function emptyConnectorRuntimeContext(): ConnectorRuntimeContext {
+function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
   return {
     secrets: undefined,
     vars: undefined,
@@ -3612,7 +3612,7 @@ function allowedStoredConnectorRows(
   now: Date,
 ): readonly StoredConnectorRuntimeRow[] {
   const validRows = rows.flatMap((row) => {
-    const accessResult = resolveConnectorCredentialAccess({
+    const accessResult = resolveBuiltinConnectorCredentialAccess({
       snapshot,
       stored: {
         automaticAuthType: row.automaticAuthType,
@@ -3656,7 +3656,7 @@ function storedConnectorRuntimeCredentialStatus(
   row: StoredConnectorRuntimeRow,
   now: Date,
 ): ConnectorCredentialStatus {
-  return connectorRuntimeCredentialStatusWithMethod({
+  return builtinConnectorRuntimeCredentialStatusWithMethod({
     method: row.runtimeMethod.method,
     automaticAuthType: row.automaticAuthType,
     storedNeedsReconnect: row.needsReconnect,
@@ -3734,7 +3734,7 @@ function storedConnectorCredentialReadGroups(args: {
   readonly bindingSets: readonly ConnectorEnvBindingSet[];
   readonly kind: "secret" | "variable";
   readonly names?: ReadonlySet<string>;
-}): readonly ConnectorCredentialReadGroup[] {
+}): readonly BuiltinConnectorCredentialReadGroup[] {
   return args.bindingSets.flatMap((bindingSet) => {
     const names = storedConnectorCredentialNames({
       runtimeBindings: bindingSet.runtimeBindings,
@@ -3825,7 +3825,7 @@ async function loadStoredConnectorEncryptedSecretRows(
     })
     .from(secretsTable)
     .where(
-      connectorCredentialSecretReadCondition({
+      builtinConnectorCredentialSecretReadCondition({
         db,
         groups,
       }),
@@ -4012,9 +4012,9 @@ function automaticMcpAccountContexts(
 
 function storedConnectorContextFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
-): ConnectorRuntimeContext {
+): BuiltinConnectorRuntimeContext {
   if (!snapshot) {
-    return emptyConnectorRuntimeContext();
+    return emptyBuiltinConnectorRuntimeContext();
   }
   return {
     automaticMcpAccounts: automaticMcpAccountContexts(
@@ -4081,9 +4081,9 @@ async function materializeStoredConnectorContext(
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
   timing?: ApiDispatchTimingCollector,
-): Promise<ConnectorRuntimeContext> {
+): Promise<BuiltinConnectorRuntimeContext> {
   if (!snapshot) {
-    return emptyConnectorRuntimeContext();
+    return emptyBuiltinConnectorRuntimeContext();
   }
 
   const availableSecretNames = availableStoredConnectorSecretNames(
@@ -4164,7 +4164,7 @@ function eagerStoredConnectorSecretNames(args: {
 async function materializeEagerStoredConnectorSecrets(
   db: Db,
   snapshot: StoredConnectorMaterializationSnapshot | null,
-  context: ConnectorRuntimeContext,
+  context: BuiltinConnectorRuntimeContext,
   args: {
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly eagerStoredEnvironment: Record<string, string> | undefined;
@@ -4176,7 +4176,7 @@ async function materializeEagerStoredConnectorSecrets(
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
   timing?: ApiDispatchTimingCollector,
-): Promise<ConnectorRuntimeContext> {
+): Promise<BuiltinConnectorRuntimeContext> {
   if (!snapshot) {
     return context;
   }
@@ -4221,7 +4221,7 @@ async function materializeEagerStoredConnectorSecrets(
 function eagerStoredConnectorSecretInputs(args: {
   readonly content: AgentExecutionConfig;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
 }): {
   readonly eagerStoredEnvironment: Record<string, string> | undefined;
   readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
@@ -4694,7 +4694,7 @@ function customConnectorRuntimeAuth(args: {
       return { headers: {}, query: {} };
     }
     if (args.row.credentialAccess.resolvedAuthMethod === "oauth") {
-      const authorization = renderTemplateForRuntime({
+      const authorization = renderCustomConnectorTemplateForRuntime({
         template: `Bearer {{oauth.${CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME}}}`,
         connectorId: args.row.connector.id,
         fields: args.row.connector.fields,
@@ -4708,7 +4708,7 @@ function customConnectorRuntimeAuth(args: {
   return {
     headers: Object.fromEntries(
       args.row.connector.headerInjections.flatMap((header) => {
-        const rendered = renderTemplateForRuntime({
+        const rendered = renderCustomConnectorTemplateForRuntime({
           template: header.valueTemplate,
           connectorId: args.row.connector.id,
           fields: args.row.connector.fields,
@@ -4718,7 +4718,7 @@ function customConnectorRuntimeAuth(args: {
     ),
     query: Object.fromEntries(
       args.row.connector.queryInjections.flatMap((queryInjection) => {
-        const rendered = renderTemplateForRuntime({
+        const rendered = renderCustomConnectorTemplateForRuntime({
           template: queryInjection.valueTemplate,
           connectorId: args.row.connector.id,
           fields: args.row.connector.fields,
@@ -4822,7 +4822,10 @@ function resolveCustomConnectorBaseUrlVars(args: {
   const prefixValues = args.row.values.filter(
     (
       value,
-    ): value is Extract<StoredValueRow, { readonly kind: "variable" }> => {
+    ): value is Extract<
+      CustomConnectorStoredValueRow,
+      { readonly kind: "variable" }
+    > => {
       return value.kind === "variable" && variableKeys.includes(value.key);
     },
   );
@@ -5855,7 +5858,7 @@ async function buildPermissionManifest(
           const sourceId = args.connectorSourceIdBySlug?.[connectorSlug];
           const automaticFirewall =
             automaticAccount && sourceId
-              ? resolveConnectorMcpRuntimeFirewall({
+              ? resolveBuiltinConnectorMcpRuntimeFirewall({
                   snapshot,
                   connectorSlug,
                   sourceId,
@@ -6869,7 +6872,7 @@ async function buildStoredExecutionContextDraft(args: {
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -7146,7 +7149,7 @@ export function recordThreadSessionBindingRetryTelemetry(
 }
 
 function buildStoredExecutionSecrets(args: {
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly bodySecrets: Record<string, string> | undefined;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
@@ -7348,7 +7351,7 @@ interface BuildRunnerJobPayloadInput {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -9449,7 +9452,7 @@ interface PreparedRunContext {
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -9734,7 +9737,7 @@ async function loadRunConnectorContexts(
   signal: AbortSignal,
 ): Promise<{
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: ConnectorRuntimeContext;
+  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
 }> {
   const [storedConnectorSnapshot, customConnectorContext] = await Promise.all([
@@ -9875,7 +9878,7 @@ function validateRunEnvironmentReferences(args: {
   readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly validateEnvironmentReferences: boolean | undefined;
@@ -9907,7 +9910,7 @@ async function buildPreparedPermissionManifest(args: {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly body: CreateRunBody;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly storedConnectorMetadataContext: ConnectorRuntimeContext;
+  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly timing: ApiDispatchTimingCollector;
 }): Promise<PermissionManifest | undefined | CreateRunErrorResult> {
@@ -9990,7 +9993,7 @@ interface PreparedRunBodyContext {
 interface PreparedRuntimeContext {
   readonly framework: SupportedFramework;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -10000,7 +10003,7 @@ interface PreparedRuntimeContext {
 }
 
 interface PreparedConnectorContext {
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
 }
 
@@ -10285,7 +10288,8 @@ async function prepareRunConnectorContexts(
             ]);
           return {
             storedConnectorSnapshot,
-            storedConnectorMetadataContext: emptyConnectorRuntimeContext(),
+            storedConnectorMetadataContext:
+              emptyBuiltinConnectorRuntimeContext(),
             customConnectorContext,
           };
         }
@@ -10560,7 +10564,7 @@ async function materializePreparedConnectorContext(args: {
   readonly content: AgentExecutionConfig;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: ConnectorRuntimeContext;
+  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;

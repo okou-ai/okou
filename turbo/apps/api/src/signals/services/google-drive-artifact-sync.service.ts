@@ -28,7 +28,7 @@ import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
 } from "@okouai/db/schema/run-uploaded-file";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { and, eq, exists, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
 import { ZipArchive } from "archiver";
@@ -54,12 +54,12 @@ import {
 } from "./connector-catalog-runtime.service";
 import { resolveConnectorAccount } from "./connector-account-resolution.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-  type ConnectorCredentialConnection,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialConnection,
+} from "./builtin-connector-credential-runtime.service";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import { resolveArtifactFileReference } from "./private-artifact-storage.service";
@@ -107,7 +107,7 @@ type DriveStatusLookup =
 
 interface ConnectorTokens {
   readonly accessToken: string;
-  readonly connection: ConnectorCredentialConnection;
+  readonly connection: BuiltinConnectorCredentialConnection;
 }
 
 type DriveConnectorAccountResolution =
@@ -144,15 +144,15 @@ async function threadAllowsGoogleDriveArtifactSync(
   },
 ): Promise<boolean> {
   const [authorization] = await db
-    .select({ id: userConnectors.id })
+    .select({ id: userBuiltinConnectors.id })
     .from(chatThreads)
     .innerJoin(
-      userConnectors,
+      userBuiltinConnectors,
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, chatThreads.agentId),
-        eq(userConnectors.connectorSlug, "google-drive"),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, chatThreads.agentId),
+        eq(userBuiltinConnectors.connectorSlug, "google-drive"),
       ),
     )
     .where(
@@ -234,7 +234,7 @@ async function loadDriveConnection(args: {
       recovery: { action: resolution.type },
     };
   }
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,
     snapshot: args.snapshot,
     orgId: args.orgId,
@@ -258,7 +258,7 @@ async function loadDriveConnection(args: {
       },
     };
   }
-  const accessTokenValueRef = connectorCredentialRuntimeValueRef(
+  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
     connection,
     GOOGLE_DRIVE_ACCESS_TOKEN_ENVIRONMENT_NAME,
   );
@@ -268,7 +268,7 @@ async function loadDriveConnection(args: {
       recovery: { action: "unavailable" },
     };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db: args.db,
     featureSwitchContext: args.featureSwitchContext,
@@ -292,7 +292,7 @@ async function loadDriveConnection(args: {
 
 async function refreshDriveAccessToken(
   args: {
-    readonly connection: ConnectorCredentialConnection;
+    readonly connection: BuiltinConnectorCredentialConnection;
     readonly db: ReadonlyDb;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly orgId: string;
@@ -301,7 +301,7 @@ async function refreshDriveAccessToken(
   },
   signal: AbortSignal,
 ): Promise<DriveRefreshResult> {
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection: args.connection,
       db: args.db,

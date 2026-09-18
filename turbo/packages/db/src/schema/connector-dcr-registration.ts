@@ -11,7 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 /** Organization-scoped client registration for one exact builtin MCP contract. */
-export const connectorDcrRegistrations = pgTable(
+export const builtinConnectorDcrRegistrations = pgTable(
   "connector_dcr_registrations",
   {
     id: uuid("id").defaultRandom().primaryKey(),

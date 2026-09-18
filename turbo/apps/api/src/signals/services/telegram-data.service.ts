@@ -27,7 +27,7 @@ import {
 import { safeUrlParse, settle } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
-import { connectorList } from "./connector-data.service";
+import { builtinConnectorList } from "./connector-data.service";
 import { userSecrets, userVariables } from "./user-data.service";
 import { userConfiguredAgentEnvironmentRequirements } from "./agent-execution-config";
 
@@ -249,7 +249,7 @@ function telegramEnvironment(args: {
     const [secretList, variableList, connectorState] = await Promise.all([
       get(userSecrets({ orgId: args.orgId, userId: args.userId })),
       get(userVariables({ orgId: args.orgId, userId: args.userId })),
-      get(connectorList({ orgId: args.orgId, userId: args.userId })),
+      get(builtinConnectorList({ orgId: args.orgId, userId: args.userId })),
     ]);
     const existingSecretNames = new Set([
       ...secretList.secrets.map((secret) => {

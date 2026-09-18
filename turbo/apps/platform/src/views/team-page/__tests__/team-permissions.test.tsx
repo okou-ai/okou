@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import {
   userPermissionGrantsContract,
@@ -78,9 +78,12 @@ function mockPermissionSurface(
   testContextValue.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: [] });
   });
-  testContextValue.mocks.api(userConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [] });
-  });
+  testContextValue.mocks.api(
+    userBuiltinConnectorsContract.get,
+    ({ respond }) => {
+      return respond(200, { enabledConnectorSlugs: [] });
+    },
+  );
   testContextValue.mocks.api(
     agentCustomConnectorsContract.get,
     ({ respond }) => {

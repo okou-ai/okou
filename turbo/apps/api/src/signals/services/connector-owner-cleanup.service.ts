@@ -1,8 +1,8 @@
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
-import { connectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
+import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { eq, type SQL } from "drizzle-orm";
 
@@ -23,12 +23,12 @@ function connectorOwnerDeleteConditions(
 ): ConnectorOwnerDeleteConditions {
   return owner.kind === "user"
     ? {
-        builtinGrant: eq(userConnectors.userId, owner.userId),
+        builtinGrant: eq(userBuiltinConnectors.userId, owner.userId),
         customGrant: eq(userCustomConnectors.userId, owner.userId),
         oauthState: eq(connectorOauthStates.userId, owner.userId),
       }
     : {
-        builtinGrant: eq(userConnectors.orgId, owner.orgId),
+        builtinGrant: eq(userBuiltinConnectors.orgId, owner.orgId),
         customGrant: eq(userCustomConnectors.orgId, owner.orgId),
         oauthState: eq(connectorOauthStates.orgId, owner.orgId),
       };
@@ -47,7 +47,7 @@ export async function deleteConnectorOwnerState(
   }
 
   const conditions = connectorOwnerDeleteConditions(owner);
-  await db.delete(userConnectors).where(conditions.builtinGrant);
+  await db.delete(userBuiltinConnectors).where(conditions.builtinGrant);
   signal.throwIfAborted();
   await db.delete(userCustomConnectors).where(conditions.customGrant);
   signal.throwIfAborted();
@@ -58,8 +58,8 @@ export async function deleteConnectorOwnerState(
 
   if (owner.kind === "organization") {
     await db
-      .delete(connectorDcrRegistrations)
-      .where(eq(connectorDcrRegistrations.orgId, owner.orgId));
+      .delete(builtinConnectorDcrRegistrations)
+      .where(eq(builtinConnectorDcrRegistrations.orgId, owner.orgId));
     signal.throwIfAborted();
     await db
       .delete(orgCustomConnectors)

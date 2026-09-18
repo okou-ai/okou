@@ -8,7 +8,9 @@ const OKOU_MCP_OAUTH_CLIENT_METADATA_PATH =
   "/api/oauth/mcp/client-metadata/okou.json";
 const CUSTOM_CONNECTOR_OAUTH_CALLBACK_PATH = "/connectors/custom/callback";
 
-export function connectorAutomaticOAuthRedirectUri(request: Request): string {
+export function builtinConnectorAutomaticOAuthRedirectUri(
+  request: Request,
+): string {
   return new URL(
     "/api/connectors/automatic/callback",
     getOAuthApiOrigin(request),
@@ -29,7 +31,7 @@ export function okouMcpOAuthClientMetadata(
     client_uri: new URL("/", appOrigin).toString(),
     redirect_uris: [
       new URL(CUSTOM_CONNECTOR_OAUTH_CALLBACK_PATH, appOrigin).toString(),
-      connectorAutomaticOAuthRedirectUri(request),
+      builtinConnectorAutomaticOAuthRedirectUri(request),
     ],
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
@@ -49,7 +51,7 @@ export function okouMcpOAuthDynamicClientMetadata(
     client_uri: metadata.client_uri,
     redirect_uris: [
       target === "builtin"
-        ? connectorAutomaticOAuthRedirectUri(request)
+        ? builtinConnectorAutomaticOAuthRedirectUri(request)
         : new URL(
             CUSTOM_CONNECTOR_OAUTH_CALLBACK_PATH,
             env("APP_URL"),

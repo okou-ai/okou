@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { connectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -19,9 +19,9 @@ import { env } from "../../lib/env";
 import { connectorOAuthRedirectResponse } from "../../lib/connector-oauth-state";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
 import {
-  completeConnectorAutomatic$,
-  startConnectorAutomatic$,
-} from "../services/connector-automatic-oauth.service";
+  completeBuiltinConnectorAutomatic$,
+  startBuiltinConnectorAutomatic$,
+} from "../services/builtin-connector-automatic-oauth.service";
 import {
   authorizeConnectedConnector$,
   connectorAgentAuthorizationRequested,
@@ -30,7 +30,7 @@ import {
 import { recordConnectorOAuthCompletion } from "../services/connector-oauth-completion.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "../services/connector-client-invalidation.service";
 import {
-  connectorAutomaticOAuthRedirectUri,
+  builtinConnectorAutomaticOAuthRedirectUri,
   okouMcpOAuthClientMetadata,
   okouMcpOAuthDynamicClientMetadata,
 } from "../services/mcp-oauth-client-metadata.service";
@@ -89,11 +89,13 @@ function failureResponse(reason: AutomaticFailureReason) {
   }
 }
 
-const startAutomaticInner$ = command(
+const startBuiltinAutomaticInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(connectorAutomaticContract.start));
-    const body = await get(bodyResultOf(connectorAutomaticContract.start));
+    const params = get(pathParamsOf(builtinConnectorAutomaticContract.start));
+    const body = await get(
+      bodyResultOf(builtinConnectorAutomaticContract.start),
+    );
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
@@ -132,7 +134,7 @@ const startAutomaticInner$ = command(
     const request = get(request$).raw;
     const authorizeAgent = connectorAgentAuthorizationRequested(body.data);
     const result = await set(
-      startConnectorAutomatic$,
+      startBuiltinConnectorAutomatic$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -140,7 +142,7 @@ const startAutomaticInner$ = command(
         account: body.data.account,
         agentId: body.data.agentId ?? null,
         authorizeAgent,
-        redirectUri: connectorAutomaticOAuthRedirectUri(request),
+        redirectUri: builtinConnectorAutomaticOAuthRedirectUri(request),
         cimdClientId: okouMcpOAuthClientMetadata(request).client_id,
         dcrClientMetadata: okouMcpOAuthDynamicClientMetadata(
           request,
@@ -192,7 +194,7 @@ const startAutomaticInner$ = command(
   },
 );
 
-const completeAutomatic$ = command(
+const completeBuiltinAutomatic$ = command(
   async (
     { get, set },
     signal: AbortSignal,
@@ -200,7 +202,7 @@ const completeAutomatic$ = command(
     readonly connectorSlug: string;
     readonly result: ConnectorOauthCallbackResult;
   }> => {
-    const query = get(queryOf(connectorAutomaticContract.callback));
+    const query = get(queryOf(builtinConnectorAutomaticContract.callback));
     if (!query.state) {
       return {
         connectorSlug: "automatic",
@@ -208,14 +210,16 @@ const completeAutomatic$ = command(
       };
     }
     const completed = await set(
-      completeConnectorAutomatic$,
+      completeBuiltinConnectorAutomatic$,
       {
         state: query.state,
         code: query.code,
         error: query.error,
         errorDescription: query.error_description,
         issuer: query.iss,
-        redirectUri: connectorAutomaticOAuthRedirectUri(get(request$).raw),
+        redirectUri: builtinConnectorAutomaticOAuthRedirectUri(
+          get(request$).raw,
+        ),
       },
       signal,
     );
@@ -265,10 +269,10 @@ const completeAutomatic$ = command(
   },
 );
 
-const callbackAutomatic$ = command(
+const callbackBuiltinAutomatic$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const query = get(queryOf(connectorAutomaticContract.callback));
-    const completed = await set(completeAutomatic$, signal);
+    const query = get(queryOf(builtinConnectorAutomaticContract.callback));
+    const completed = await set(completeBuiltinAutomatic$, signal);
     signal.throwIfAborted();
     set(setResHeader$, "Cache-Control", "no-store");
     if (query.responseMode === "json") {
@@ -285,17 +289,20 @@ const callbackAutomatic$ = command(
   },
 );
 
-export const connectorsAutomaticRoutes: readonly RouteEntry[] = [
+export const builtinConnectorsAutomaticRoutes: readonly RouteEntry[] = [
   {
-    route: connectorAutomaticContract.start,
+    route: builtinConnectorAutomaticContract.start,
     handler: authRoute(
       {
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "connector:write",
       },
-      startAutomaticInner$,
+      startBuiltinAutomaticInner$,
     ),
   },
-  { route: connectorAutomaticContract.callback, handler: callbackAutomatic$ },
+  {
+    route: builtinConnectorAutomaticContract.callback,
+    handler: callbackBuiltinAutomatic$,
+  },
 ];

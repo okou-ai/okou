@@ -17,7 +17,7 @@ import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
@@ -4145,13 +4145,16 @@ function mockCalendarReconnect(
     });
   });
   const submittedAccounts: unknown[] = [];
-  context.mocks.api(connectorOauthStartContract.start, ({ body, respond }) => {
-    submittedAccounts.push(body.account);
-    return respond(200, {
-      authorizationUrl: "https://oauth.test/google-calendar/authorize",
-      oauthAttemptId,
-    });
-  });
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, respond }) => {
+      submittedAccounts.push(body.account);
+      return respond(200, {
+        authorizationUrl: "https://oauth.test/google-calendar/authorize",
+        oauthAttemptId,
+      });
+    },
+  );
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
 

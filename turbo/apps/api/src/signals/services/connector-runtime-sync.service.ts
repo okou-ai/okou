@@ -29,8 +29,8 @@ import {
   resolvedConnectorAccountIdsByTarget,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
-import { resolveConnectorCredentialAccess } from "./connector-credential-access.service";
-import { resolveConnectorMcpRuntimeFirewall } from "./connector-mcp-firewall.service";
+import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
+import { resolveBuiltinConnectorMcpRuntimeFirewall } from "./builtin-connector-mcp-firewall.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -465,7 +465,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
     );
     const credentialAccess =
       accountResolution?.kind === "resolved" && builtinCatalogSelection
-        ? resolveConnectorCredentialAccess({
+        ? resolveBuiltinConnectorCredentialAccess({
             snapshot: builtinCatalogSelection,
             stored: {
               authMethodId: accountResolution.account.authMethod,
@@ -483,7 +483,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
       accountResolution?.kind === "resolved" &&
       builtinCatalogSelection &&
       credentialAccess?.kind === "ok"
-        ? resolveConnectorMcpRuntimeFirewall({
+        ? resolveBuiltinConnectorMcpRuntimeFirewall({
             snapshot: builtinCatalogSelection,
             connectorSlug: registration.connectorSlug,
             authMethodId: accountResolution.account.authMethod,

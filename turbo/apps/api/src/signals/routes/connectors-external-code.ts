@@ -1,4 +1,4 @@
-import { connectorExternalCodeSessionContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorExternalCodeSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -6,23 +6,23 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
-  completeConnectorExternalCodeSession$,
-  startConnectorExternalCodeSession$,
-} from "../services/connector-external-code.service";
+  completeBuiltinConnectorExternalCodeSession$,
+  startBuiltinConnectorExternalCodeSession$,
+} from "../services/builtin-connector-external-code.service";
 
 const connectorWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
 
-const startConnectorExternalCodeSessionInner$ = command(
+const startBuiltinConnectorExternalCodeSessionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(
-      pathParamsOf(connectorExternalCodeSessionContract.create),
+      pathParamsOf(builtinConnectorExternalCodeSessionContract.create),
     );
     const body = await get(
-      bodyResultOf(connectorExternalCodeSessionContract.create),
+      bodyResultOf(builtinConnectorExternalCodeSessionContract.create),
     );
     signal.throwIfAborted();
     if (!body.ok) {
@@ -30,7 +30,7 @@ const startConnectorExternalCodeSessionInner$ = command(
     }
 
     return await set(
-      startConnectorExternalCodeSession$,
+      startBuiltinConnectorExternalCodeSession$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -45,14 +45,14 @@ const startConnectorExternalCodeSessionInner$ = command(
   },
 );
 
-const completeConnectorExternalCodeSessionInner$ = command(
+const completeBuiltinConnectorExternalCodeSessionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(
-      pathParamsOf(connectorExternalCodeSessionContract.complete),
+      pathParamsOf(builtinConnectorExternalCodeSessionContract.complete),
     );
     const body = await get(
-      bodyResultOf(connectorExternalCodeSessionContract.complete),
+      bodyResultOf(builtinConnectorExternalCodeSessionContract.complete),
     );
     signal.throwIfAborted();
     if (!body.ok) {
@@ -60,7 +60,7 @@ const completeConnectorExternalCodeSessionInner$ = command(
     }
 
     return await set(
-      completeConnectorExternalCodeSession$,
+      completeBuiltinConnectorExternalCodeSession$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -74,19 +74,19 @@ const completeConnectorExternalCodeSessionInner$ = command(
   },
 );
 
-export const connectorsExternalCodeRoutes: readonly RouteEntry[] = [
+export const builtinConnectorsExternalCodeRoutes: readonly RouteEntry[] = [
   {
-    route: connectorExternalCodeSessionContract.create,
+    route: builtinConnectorExternalCodeSessionContract.create,
     handler: authRoute(
       connectorWriteAuth,
-      startConnectorExternalCodeSessionInner$,
+      startBuiltinConnectorExternalCodeSessionInner$,
     ),
   },
   {
-    route: connectorExternalCodeSessionContract.complete,
+    route: builtinConnectorExternalCodeSessionContract.complete,
     handler: authRoute(
       connectorWriteAuth,
-      completeConnectorExternalCodeSessionInner$,
+      completeBuiltinConnectorExternalCodeSessionInner$,
     ),
   },
 ];

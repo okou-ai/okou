@@ -3,8 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
-  connectorAutomaticContract,
-  connectorNoAuthGrantContract,
+  builtinConnectorAutomaticContract,
+  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
@@ -186,8 +186,8 @@ import {
 } from "../../../lib/secret-kms-client";
 import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { connectorsAutomaticRoutes } from "../connectors-automatic";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { builtinConnectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
@@ -227,9 +227,10 @@ async function connectAutomaticRuntime(args: {
     args.actor.orgRole,
   );
   const headers = { authorization: "Bearer clerk-session" };
-  const client = setupApp({ context, routes: connectorsAutomaticRoutes })(
-    connectorAutomaticContract,
-  );
+  const client = setupApp({
+    context,
+    routes: builtinConnectorsAutomaticRoutes,
+  })(builtinConnectorAutomaticContract);
   const started = await accept(
     client.start({
       headers,
@@ -10970,8 +10971,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         },
       });
       if (authMode === "none") {
-        const client = setupApp({ context, routes: connectorsRoutes })(
-          connectorNoAuthGrantContract,
+        const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+          builtinConnectorNoAuthGrantContract,
         );
         await accept(
           client.connect({

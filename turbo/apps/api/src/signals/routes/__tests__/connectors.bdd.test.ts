@@ -15,7 +15,7 @@ import {
 import { randomInt, randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
@@ -203,10 +203,10 @@ function manualMcpConnectorBody(args: {
   };
 }
 
-function connectorBySlug(
-  connectors: readonly ConnectorResponse[],
-  connectorSlug: ConnectorResponse["slug"],
-): ConnectorResponse | undefined {
+function builtinConnectorBySlug(
+  connectors: readonly BuiltinConnectorResponse[],
+  connectorSlug: BuiltinConnectorResponse["slug"],
+): BuiltinConnectorResponse | undefined {
   return connectors.find((connector) => {
     return connector.slug === connectorSlug;
   });
@@ -333,7 +333,7 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     expectApiError(missingOrg.body);
     expect(missingOrg.body.error.code).toBe("UNAUTHORIZED");
 
-    const initialList = await connectorsApi.listConnectors(actor);
+    const initialList = await connectorsApi.listBuiltinConnectors(actor);
     expect(initialList.connectors).toStrictEqual([]);
     expect(initialList.connectorProvidedBindings).toStrictEqual([]);
 
@@ -385,10 +385,10 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     expect(readBack.id).toBe(connected.id);
     expectNoVisibleSecret(readBack, "sk-bdd-manual-secret");
 
-    const listAfterConnect = await connectorsApi.listConnectors(actor);
-    expect(connectorBySlug(listAfterConnect.connectors, "openai")?.id).toBe(
-      connected.id,
-    );
+    const listAfterConnect = await connectorsApi.listBuiltinConnectors(actor);
+    expect(
+      builtinConnectorBySlug(listAfterConnect.connectors, "openai")?.id,
+    ).toBe(connected.id);
     expect(listAfterConnect.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
         connectorSlug: "openai",
@@ -943,10 +943,10 @@ describe("CONN-02: OAuth device authorization", () => {
     );
     expect(readBack.id).toBe(poll.connector.id);
 
-    const listed = await connectorsApi.listConnectors(actor);
-    expect(connectorBySlug(listed.connectors, "test-oauth-device")?.id).toBe(
-      poll.connector.id,
-    );
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
+    expect(
+      builtinConnectorBySlug(listed.connectors, "test-oauth-device")?.id,
+    ).toBe(poll.connector.id);
 
     mockTestOAuthDeviceConnectorProvider({ tokenScope: "" });
     const emptyReconnect = await connectorsApi.startDeviceAuth(
@@ -1143,8 +1143,8 @@ describe("CONN-02: OAuth device authorization", () => {
     expect(stripeProvider.pollCount()).toBe(1);
     clearMockNow();
 
-    const listed = await connectorsApi.listConnectors(actor);
-    expect(connectorBySlug(listed.connectors, "stripe")?.id).toBe(
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
+    expect(builtinConnectorBySlug(listed.connectors, "stripe")?.id).toBe(
       poll.connector.id,
     );
     expect(listed.connectorProvidedBindings).toContainEqual(
@@ -1414,10 +1414,10 @@ describe("CONN-02: OAuth device authorization", () => {
       "test-oauth-device",
     );
     expect(readBack.id).toBe(completed.connector.id);
-    const listed = await connectorsApi.listConnectors(actor);
-    expect(connectorBySlug(listed.connectors, "test-oauth-device")?.id).toBe(
-      completed.connector.id,
-    );
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
+    expect(
+      builtinConnectorBySlug(listed.connectors, "test-oauth-device")?.id,
+    ).toBe(completed.connector.id);
 
     const tokenCallsBeforeRePoll = provider.tokenBodies.length;
     const rePoll = await connectorsApi.pollDeviceAuth(
@@ -7742,7 +7742,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       authOrgApi.readEnabledConnectorSlugs(actor, agent.agentId),
     ).resolves.toContain("test-oauth");
 
-    const listed = await connectorsApi.listConnectors(actor);
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(listed.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
         connectorSlug: "test-oauth",
@@ -7808,7 +7808,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     );
     expect(apiConnector.authMethod).toBe("api");
 
-    const apiListed = await connectorsApi.listConnectors(actor);
+    const apiListed = await connectorsApi.listBuiltinConnectors(actor);
     expect(apiListed.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
         connectorSlug: "test-oauth",
@@ -8186,7 +8186,7 @@ describe("CONN-02: device-auth method switching", () => {
     }
     expect(apiPoll.connector.authMethod).toBe("api");
 
-    const apiListed = await connectorsApi.listConnectors(actor);
+    const apiListed = await connectorsApi.listBuiltinConnectors(actor);
     expect(apiListed.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
         connectorSlug: "test-oauth-device",
@@ -8224,7 +8224,7 @@ describe("CONN-02: device-auth method switching", () => {
     expect(readBack.id).toBe(apiPoll.connector.id);
     expect(readBack.authMethod).toBe("oauth");
 
-    const oauthListed = await connectorsApi.listConnectors(actor);
+    const oauthListed = await connectorsApi.listBuiltinConnectors(actor);
     expect(
       oauthListed.connectorProvidedBindings.filter((binding) => {
         return (

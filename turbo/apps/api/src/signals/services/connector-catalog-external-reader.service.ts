@@ -1,7 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { ConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogAuthMethodSummary,
@@ -909,7 +909,7 @@ function categoryMetadataForConnectors(
 }
 
 function connectionForCatalogStatus(
-  connector: ConnectorResponse | null,
+  connector: BuiltinConnectorResponse | null,
 ): PublicConnectorCatalogConnection | null {
   if (!connector) {
     return null;
@@ -940,7 +940,7 @@ function hasRequestedScopes(
 }
 
 function hasCatalogScopeMismatch(args: {
-  readonly connector: ConnectorResponse | null;
+  readonly connector: BuiltinConnectorResponse | null;
   readonly facts: PrivateAuthMethodFacts | undefined;
   readonly storedRequestedScopes: readonly string[] | null;
 }): boolean {
@@ -1244,7 +1244,7 @@ function discoveryEffectiveConnectors(
 
 export async function searchExternalConnectorCatalog(
   args: ExternalCatalogSearchArgs,
-): Promise<ConnectorSearchItem[]> {
+): Promise<BuiltinConnectorSearchItem[]> {
   const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
   const effective = effectiveConnectors({
     catalog,

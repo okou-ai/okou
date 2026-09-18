@@ -49,18 +49,18 @@ import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-acco
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
 import {
-  connectorCredentialStorageIsCompatible,
-  resolveStoredConnectorRuntimeMethod,
-} from "./connector-credential-access.service";
+  builtinConnectorCredentialStorageIsCompatible,
+  resolveStoredBuiltinConnectorRuntimeMethod,
+} from "./builtin-connector-credential-access.service";
 import {
   customConnectorAccountAuthMethodIsCompatible,
   customConnectorAccountHasRequiredCredentialMaterial,
   customConnectorAccountStorageIsCompatible,
 } from "./custom-connector-credential-access.service";
 import {
-  connectorCredentialReconnectReasonWithMethod,
+  builtinConnectorCredentialReconnectReasonWithMethod,
   connectorCredentialStatusForAccess,
-  connectorCredentialStatusWithMethod,
+  builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
 import {
   loadConnectorRuntimeSelection,
@@ -418,7 +418,7 @@ function builtinConnection(
     kind: "builtin" as const,
     connectorSlug: parsedSlug.data,
   };
-  const runtimeMethod = resolveStoredConnectorRuntimeMethod({
+  const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
     snapshot,
     stored: {
       authMethodId: row.authMethod,
@@ -428,13 +428,13 @@ function builtinConnection(
   });
   const storageCompatible =
     runtimeMethod !== undefined &&
-    connectorCredentialStorageIsCompatible({
+    builtinConnectorCredentialStorageIsCompatible({
       runtimeMethod,
       automaticAuthType: row.automaticAuthType,
       storageVersion: row.storageVersion,
     });
   const credentialStatus = runtimeMethod
-    ? connectorCredentialStatusWithMethod({
+    ? builtinConnectorCredentialStatusWithMethod({
         method: runtimeMethod.method,
         automaticAuthType: row.automaticAuthType,
         storedNeedsReconnect: row.needsReconnect,
@@ -470,7 +470,7 @@ function builtinConnection(
         ? null
         : connectionStatus === "reconnect-required"
           ? (parseReconnectReason(row.reconnectReason) ??
-            connectorCredentialReconnectReasonWithMethod({
+            builtinConnectorCredentialReconnectReasonWithMethod({
               method: runtimeMethod.method,
               automaticAuthType: row.automaticAuthType,
               storedNeedsReconnect: row.needsReconnect,
@@ -590,7 +590,7 @@ function projectSummaryGroup(
     if (!parsedSlug.success || !snapshot?.connectors.has(parsedSlug.data)) {
       return null;
     }
-    const runtimeMethod = resolveStoredConnectorRuntimeMethod({
+    const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
       snapshot,
       stored: {
         authMethodId: row.authMethod,
@@ -600,13 +600,13 @@ function projectSummaryGroup(
     });
     const storageCompatible =
       runtimeMethod !== undefined &&
-      connectorCredentialStorageIsCompatible({
+      builtinConnectorCredentialStorageIsCompatible({
         runtimeMethod,
         automaticAuthType: row.automaticAuthType,
         storageVersion: row.storageVersion,
       });
     const credentialStatus = runtimeMethod
-      ? connectorCredentialStatusWithMethod({
+      ? builtinConnectorCredentialStatusWithMethod({
           method: runtimeMethod.method,
           automaticAuthType: row.automaticAuthType,
           storedNeedsReconnect: row.needsReconnect,

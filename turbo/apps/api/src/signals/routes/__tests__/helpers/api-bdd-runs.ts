@@ -45,7 +45,7 @@ import {
   runsByIdContract,
   runsQueueContract,
 } from "@okouai/api-contracts/contracts/run-routes";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import {
@@ -996,7 +996,7 @@ export function createRunsApi(
       connectorSlugs: readonly string[],
     ): Promise<readonly string[]> {
       const response = await accept(
-        runApp(context)(userConnectorsContract).update({
+        runApp(context)(userBuiltinConnectorsContract).update({
           headers: authenticate(context, actor),
           params: { id: agentId },
           body: { enabledConnectorSlugs: [...connectorSlugs] },

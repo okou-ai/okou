@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { connectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { connectorsAutomaticRoutes } from "../connectors-automatic";
-import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
@@ -17,13 +17,13 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes = Object.freeze([
-  ...connectorsAutomaticRoutes,
-  ...connectorsSlugCallbackRoutes,
+  ...builtinConnectorsAutomaticRoutes,
+  ...builtinConnectorsSlugCallbackRoutes,
   ...connectorAccountRoutes,
 ]);
 
 function automatic() {
-  return setupApp({ context, routes })(connectorAutomaticContract);
+  return setupApp({ context, routes })(builtinConnectorAutomaticContract);
 }
 
 function accounts() {

@@ -26,7 +26,7 @@ import {
   parseValidCustomConnectorOAuthState,
   startCustomConnectorOAuth2$,
   storeCustomConnectorOAuth2Connection,
-  type OAuthTokenResult,
+  type CustomConnectorOAuthTokenResult,
 } from "../services/custom-connector-oauth2.service";
 import { exchangeCustomConnectorAutomaticOAuthCode } from "../services/custom-connector-automatic-oauth.service";
 import {
@@ -294,7 +294,7 @@ async function persistCustomConnectorOAuth2Connection(
     readonly userId: string;
     readonly connectorId: string;
     readonly storageVersion: number;
-    readonly token: OAuthTokenResult;
+    readonly token: CustomConnectorOAuthTokenResult;
     readonly featureContext: FeatureSwitchContext;
     readonly account: ConnectorAccountMutationIntent;
     readonly insertConnectionId?: string;

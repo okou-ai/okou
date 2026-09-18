@@ -3,20 +3,20 @@ import type { ExecutionFirewallInlineEntry } from "@okouai/connectors/firewall-t
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 
 /** Proxy-only marker; the API resolves the exact account outside the sandbox. */
-const MCP_AUTOMATIC_AUTH_HEADER = `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`;
+const BUILTIN_MCP_AUTOMATIC_AUTH_HEADER = `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`;
 
-type ConnectorMcpRuntimeFirewall = ExecutionFirewallInlineEntry & {
+type BuiltinConnectorMcpRuntimeFirewall = ExecutionFirewallInlineEntry & {
   readonly sourceId: string;
   readonly customConnectorId?: never;
 };
 
-export function resolveConnectorMcpRuntimeFirewall(args: {
+export function resolveBuiltinConnectorMcpRuntimeFirewall(args: {
   readonly snapshot: ConnectorRuntimeSelection;
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly automaticAuthType: "none" | "oauth" | null;
   readonly sourceId: string;
-}): ConnectorMcpRuntimeFirewall | null {
+}): BuiltinConnectorMcpRuntimeFirewall | null {
   const connector = args.snapshot.connectors.get(args.connectorSlug);
   const method = connector?.methods.get(args.authMethodId);
   if (!connector?.catalogConnector.mcp || !method) {
@@ -59,7 +59,7 @@ export function resolveConnectorMcpRuntimeFirewall(args: {
           auth:
             args.automaticAuthType === "oauth"
               ? {
-                  headers: { Authorization: MCP_AUTOMATIC_AUTH_HEADER },
+                  headers: { Authorization: BUILTIN_MCP_AUTOMATIC_AUTH_HEADER },
                 }
               : {},
           permissions: [],

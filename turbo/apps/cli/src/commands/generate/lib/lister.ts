@@ -4,7 +4,7 @@ import type {
   ConnectorCatalogStatus,
 } from "../../../lib/api/domains/connectors";
 import { getBillingStatus } from "../../../lib/api/domains/billing";
-import { getAgentUserConnectors } from "../../../lib/api/domains/agents";
+import { getAgentUserBuiltinConnectors } from "../../../lib/api/domains/agents";
 import {
   listConnectorCatalog,
   listConnectorCatalogStatus,
@@ -844,7 +844,7 @@ export async function runLister(
     unavailableMessage,
   ] = await Promise.all([
     loadGenerationCatalog(connectorGenerationType, runBound),
-    agentId ? getAgentUserConnectors(agentId) : Promise.resolve(null),
+    agentId ? getAgentUserBuiltinConnectors(agentId) : Promise.resolve(null),
     getPlatformOrigin(),
     (generationType === "video" || generationType === "avatar-video") &&
     currentTokenCanReadBilling()

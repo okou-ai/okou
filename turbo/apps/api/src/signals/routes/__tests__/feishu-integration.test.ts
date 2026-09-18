@@ -1866,15 +1866,15 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       }),
     ).toStrictEqual([200, 200]);
     expect(new Set(archiveKeys).size).toBe(2);
-    const connectorList = await accept(
+    const builtinConnectorList = await accept(
       customConnectorClient.list({
         headers: { authorization: "Bearer clerk-session" },
       }),
       [200],
     );
-    expect(connectorList.body.connectors).toHaveLength(1);
+    expect(builtinConnectorList.body.connectors).toHaveLength(1);
     const managedConnector = requireValue(
-      connectorList.body.connectors[0],
+      builtinConnectorList.body.connectors[0],
       "Expected concurrent retries to converge on one connector",
     );
     await expect(
@@ -2322,15 +2322,15 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       context,
       routes: customConnectorsRoutes,
     })(customConnectorsContract);
-    const connectorList = await accept(
+    const builtinConnectorList = await accept(
       customConnectorClient.list({
         headers: { authorization: "Bearer clerk-session" },
       }),
       [200],
     );
-    expect(connectorList.body.connectors).toHaveLength(1);
+    expect(builtinConnectorList.body.connectors).toHaveLength(1);
     const managedConnector = requireValue(
-      connectorList.body.connectors[0],
+      builtinConnectorList.body.connectors[0],
       "Expected setup to create a managed Feishu custom connector",
     );
     expect(managedConnector).toMatchObject({
@@ -4308,14 +4308,14 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       context,
       routes: customConnectorsRoutes,
     })(customConnectorsContract);
-    const connectorList = await accept(
+    const builtinConnectorList = await accept(
       customConnectorClient.list({
         headers: { authorization: "Bearer clerk-session" },
       }),
       [200],
     );
     const managedConnector = requireValue(
-      connectorList.body.connectors[0],
+      builtinConnectorList.body.connectors[0],
       "Expected connected Feishu custom connector",
     );
     const managedSkill = await storagesApi.downloadStorage(actor, {

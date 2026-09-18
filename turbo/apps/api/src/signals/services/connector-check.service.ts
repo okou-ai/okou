@@ -62,10 +62,10 @@ import {
 } from "./connector-runtime-sync.service";
 import type { FirewallRoutingRouteMetadata } from "./connector-server-firewall-catalog.service";
 import {
-  connectorCredentialVariableReadCondition,
-  resolveConnectorCredentialAccess,
-  type ConnectorCredentialAccess,
-} from "./connector-credential-access.service";
+  builtinConnectorCredentialVariableReadCondition,
+  resolveBuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-access.service";
 
 type FeatureStates = ReturnType<typeof getAllFeatureStates>;
 
@@ -112,7 +112,7 @@ interface StoredConnectorRuntimeCandidate {
 }
 
 interface PendingStoredConnectorRuntime {
-  readonly access: ConnectorCredentialAccess;
+  readonly access: BuiltinConnectorCredentialAccess;
   readonly storageNameByRuntimeName: ReadonlyMap<string, string>;
 }
 
@@ -249,7 +249,7 @@ function pendingStoredConnectorRuntimes(
         `Duplicate stored connector state for ${row.connectorSlug}`,
       );
     }
-    const accessResult = resolveConnectorCredentialAccess({
+    const accessResult = resolveBuiltinConnectorCredentialAccess({
       snapshot: args.snapshot,
       stored: {
         authMethodId: row.authMethod,
@@ -369,7 +369,7 @@ async function loadStoredRuntimeState(
               .select({ name: variables.name, value: variables.value })
               .from(variables)
               .where(
-                connectorCredentialVariableReadCondition({
+                builtinConnectorCredentialVariableReadCondition({
                   db: tx,
                   groups: readGroups,
                 }),

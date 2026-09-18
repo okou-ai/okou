@@ -678,14 +678,13 @@ describe("CLI-TEST: test-enable-connector", () => {
     const updatedAgent = await bdd.readAgent(actor, agent.agentId);
     expect(updatedAgent.visibility).toBe("private");
 
-    const userConnectors = await authDevice.readUserConnectors(
+    const userBuiltinConnectors = await authDevice.readUserConnectors(
       actor,
       agent.agentId,
     );
-    expect([...userConnectors.enabledConnectorSlugs].sort()).toStrictEqual([
-      "github",
-      "slack",
-    ]);
+    expect(
+      [...userBuiltinConnectors.enabledConnectorSlugs].sort(),
+    ).toStrictEqual(["github", "slack"]);
 
     const publicAgent = await bdd.createAgent(actor, {
       displayName: `Public test agent ${actor.userId.slice(-12)}`,

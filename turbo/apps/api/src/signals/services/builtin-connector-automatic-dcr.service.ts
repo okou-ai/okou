@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { connectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
-import { connectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
+import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
+import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
 import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -14,7 +14,7 @@ import type {
   McpAutomaticOAuthDcrStore,
 } from "./mcp-automatic-oauth.service";
 
-export interface ConnectorAutomaticContractOwner {
+export interface BuiltinConnectorAutomaticContractOwner {
   readonly orgId: string;
   readonly connectorSlug: string;
   readonly authMethod: string;
@@ -22,26 +22,29 @@ export interface ConnectorAutomaticContractOwner {
 }
 
 /** Reconnects can cross method contracts, so take this lock before any account row. */
-export async function lockConnectorAutomaticLifecycle(
+export async function lockBuiltinConnectorAutomaticLifecycle(
   db: Db,
-  owner: Pick<ConnectorAutomaticContractOwner, "orgId" | "connectorSlug">,
+  owner: Pick<
+    BuiltinConnectorAutomaticContractOwner,
+    "orgId" | "connectorSlug"
+  >,
 ): Promise<void> {
   await db.execute(
     sql`SELECT pg_advisory_xact_lock(hashtext(${JSON.stringify(["connector-mcp-oauth", owner.orgId, owner.connectorSlug])}))`,
   );
 }
 
-function ownerCondition(owner: ConnectorAutomaticContractOwner) {
+function ownerCondition(owner: BuiltinConnectorAutomaticContractOwner) {
   return and(
-    eq(connectorDcrRegistrations.orgId, owner.orgId),
-    eq(connectorDcrRegistrations.connectorSlug, owner.connectorSlug),
-    eq(connectorDcrRegistrations.authMethod, owner.authMethod),
-    eq(connectorDcrRegistrations.contractHash, owner.contractHash),
+    eq(builtinConnectorDcrRegistrations.orgId, owner.orgId),
+    eq(builtinConnectorDcrRegistrations.connectorSlug, owner.connectorSlug),
+    eq(builtinConnectorDcrRegistrations.authMethod, owner.authMethod),
+    eq(builtinConnectorDcrRegistrations.contractHash, owner.contractHash),
   );
 }
 
 function registration(
-  row: typeof connectorDcrRegistrations.$inferSelect,
+  row: typeof builtinConnectorDcrRegistrations.$inferSelect,
 ): McpAutomaticOAuthDcrRegistration {
   return { ...row, hasClientSecret: row.encryptedClientSecret !== null };
 }
@@ -49,13 +52,15 @@ function registration(
 /** Lifecycle coordination precedes owner target locks, which precede their account rows. */
 async function retireRegistration(
   db: Db,
-  owner: ConnectorAutomaticContractOwner,
+  owner: BuiltinConnectorAutomaticContractOwner,
   id: string,
 ): Promise<void> {
   const [owned] = await db
-    .select({ id: connectorDcrRegistrations.id })
-    .from(connectorDcrRegistrations)
-    .where(and(eq(connectorDcrRegistrations.id, id), ownerCondition(owner)))
+    .select({ id: builtinConnectorDcrRegistrations.id })
+    .from(builtinConnectorDcrRegistrations)
+    .where(
+      and(eq(builtinConnectorDcrRegistrations.id, id), ownerCondition(owner)),
+    )
     .limit(1);
   if (!owned) {
     return;
@@ -64,10 +69,10 @@ async function retireRegistration(
   // rows. Join that order for every linked owner before locking their accounts.
   // The lifecycle lock prevents new Automatic bindings while these locks wait.
   const accountOwners = await db
-    .selectDistinct({ userId: connectorAccountOauthBindings.userId })
-    .from(connectorAccountOauthBindings)
-    .where(eq(connectorAccountOauthBindings.dcrRegistrationId, id))
-    .orderBy(connectorAccountOauthBindings.userId);
+    .selectDistinct({ userId: builtinConnectorAccountOauthBindings.userId })
+    .from(builtinConnectorAccountOauthBindings)
+    .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
+    .orderBy(builtinConnectorAccountOauthBindings.userId);
   for (const accountOwner of accountOwners) {
     await lockConnectorAccountTarget(db, {
       orgId: owner.orgId,
@@ -79,10 +84,13 @@ async function retireRegistration(
     .select({ id: connectors.id })
     .from(connectors)
     .innerJoin(
-      connectorAccountOauthBindings,
-      eq(connectorAccountOauthBindings.connectorAccountId, connectors.id),
+      builtinConnectorAccountOauthBindings,
+      eq(
+        builtinConnectorAccountOauthBindings.connectorAccountId,
+        connectors.id,
+      ),
     )
-    .where(eq(connectorAccountOauthBindings.dcrRegistrationId, id))
+    .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
     .orderBy(connectors.id)
     .for("update", { of: connectors });
   if (accounts.length > 0) {
@@ -107,25 +115,29 @@ async function retireRegistration(
             connectors.id,
             db
               .select({
-                id: connectorAccountOauthBindings.connectorAccountId,
+                id: builtinConnectorAccountOauthBindings.connectorAccountId,
               })
-              .from(connectorAccountOauthBindings)
-              .where(eq(connectorAccountOauthBindings.dcrRegistrationId, id)),
+              .from(builtinConnectorAccountOauthBindings)
+              .where(
+                eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id),
+              ),
           ),
         ),
       );
   }
   await db
-    .delete(connectorAccountOauthBindings)
-    .where(eq(connectorAccountOauthBindings.dcrRegistrationId, id));
+    .delete(builtinConnectorAccountOauthBindings)
+    .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id));
   await db
-    .delete(connectorDcrRegistrations)
-    .where(and(eq(connectorDcrRegistrations.id, id), ownerCondition(owner)));
+    .delete(builtinConnectorDcrRegistrations)
+    .where(
+      and(eq(builtinConnectorDcrRegistrations.id, id), ownerCondition(owner)),
+    );
 }
 
-export function connectorAutomaticDcrStore(args: {
+export function builtinConnectorAutomaticDcrStore(args: {
   readonly db: Db;
-  readonly owner: ConnectorAutomaticContractOwner;
+  readonly owner: BuiltinConnectorAutomaticContractOwner;
   readonly assertCurrentContract: (db: Db) => Promise<void>;
 }): McpAutomaticOAuthDcrStore {
   const { db, owner } = args;
@@ -133,11 +145,11 @@ export function connectorAutomaticDcrStore(args: {
     async readByIssuer(issuer) {
       const [row] = await db
         .select()
-        .from(connectorDcrRegistrations)
+        .from(builtinConnectorDcrRegistrations)
         .where(
           and(
             ownerCondition(owner),
-            eq(connectorDcrRegistrations.issuer, issuer),
+            eq(builtinConnectorDcrRegistrations.issuer, issuer),
           ),
         )
         .limit(1);
@@ -146,8 +158,13 @@ export function connectorAutomaticDcrStore(args: {
     async readBoundClient(id) {
       const [row] = await db
         .select()
-        .from(connectorDcrRegistrations)
-        .where(and(ownerCondition(owner), eq(connectorDcrRegistrations.id, id)))
+        .from(builtinConnectorDcrRegistrations)
+        .where(
+          and(
+            ownerCondition(owner),
+            eq(builtinConnectorDcrRegistrations.id, id),
+          ),
+        )
         .limit(1);
       if (!row) {
         return null;
@@ -162,16 +179,18 @@ export function connectorAutomaticDcrStore(args: {
     },
     async withLock(operation) {
       return await db.transaction(async (tx) => {
-        await lockConnectorAutomaticLifecycle(tx, owner);
+        await lockBuiltinConnectorAutomaticLifecycle(tx, owner);
         await args.assertCurrentContract(tx);
-        return await operation(connectorAutomaticDcrStore({ ...args, db: tx }));
+        return await operation(
+          builtinConnectorAutomaticDcrStore({ ...args, db: tx }),
+        );
       });
     },
     async hasLinkedAccounts(id) {
       const [account] = await db
-        .select({ id: connectorAccountOauthBindings.connectorAccountId })
-        .from(connectorAccountOauthBindings)
-        .where(eq(connectorAccountOauthBindings.dcrRegistrationId, id))
+        .select({ id: builtinConnectorAccountOauthBindings.connectorAccountId })
+        .from(builtinConnectorAccountOauthBindings)
+        .where(eq(builtinConnectorAccountOauthBindings.dcrRegistrationId, id))
         .limit(1);
       return account !== undefined;
     },
@@ -185,7 +204,7 @@ export function connectorAutomaticDcrStore(args: {
           : await encryptStoredSecretValue(value.clientSecret);
       signal.throwIfAborted();
       const [row] = await db
-        .insert(connectorDcrRegistrations)
+        .insert(builtinConnectorDcrRegistrations)
         .values({
           ...owner,
           issuer: value.issuer,

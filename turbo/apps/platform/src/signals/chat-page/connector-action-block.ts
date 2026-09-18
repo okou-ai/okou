@@ -12,11 +12,11 @@ import {
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
 import {
-  connectConnectorNoAuth$,
-  connectConnectorOAuthAuthCode$,
-  connectorCurrentConnectionStatus,
-  getConnectorStatusDirectConnectMethod,
-  resetManualGrantForm$,
+  connectBuiltinConnectorNoAuth$,
+  connectBuiltinConnectorOAuthAuthCode$,
+  builtinConnectorCurrentConnectionStatus,
+  getBuiltinConnectorStatusDirectConnectMethod,
+  resetBuiltinManualGrantForm$,
 } from "../okou-page/settings/connectors.ts";
 import {
   customConnectorAuthorizedAgentsById$,
@@ -215,7 +215,8 @@ function createCatalogConnectorActivation(
       signal.throwIfAborted();
       const reconnectRequired =
         catalogItem !== null &&
-        connectorCurrentConnectionStatus(catalogItem) === "reconnect-required";
+        builtinConnectorCurrentConnectionStatus(catalogItem) ===
+          "reconnect-required";
       if (connected && !reconnectRequired) {
         await set(
           authorizeDirectedConnector$,
@@ -237,9 +238,9 @@ function createCatalogConnectorActivation(
       }
 
       const directConnectMethod =
-        getConnectorStatusDirectConnectMethod(connector);
+        getBuiltinConnectorStatusDirectConnectMethod(connector);
       if (!directConnectMethod) {
-        set(resetManualGrantForm$, connector.slug);
+        set(resetBuiltinManualGrantForm$, connector.slug);
         set(activeChatConnectorActionState$, {
           ...descriptor,
           catalogItem: connector,
@@ -256,14 +257,14 @@ function createCatalogConnectorActivation(
       const connectionCompleted =
         directConnectMethod.kind === "browser-auth"
           ? await set(
-              connectConnectorOAuthAuthCode$,
+              connectBuiltinConnectorOAuthAuthCode$,
               descriptor.connectorSlug,
               directConnectMethod.authMethod,
               connectOptions,
               signal,
             )
           : await set(
-              connectConnectorNoAuth$,
+              connectBuiltinConnectorNoAuth$,
               {
                 connectorSlug: descriptor.connectorSlug,
                 authMethod: directConnectMethod.authMethod,
@@ -316,7 +317,8 @@ function createCatalogConnectorSignals(
       connected &&
       authorized &&
       catalogItem !== null &&
-      connectorCurrentConnectionStatus(catalogItem) !== "reconnect-required"
+      builtinConnectorCurrentConnectionStatus(catalogItem) !==
+        "reconnect-required"
     );
   });
 

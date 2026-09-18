@@ -11,10 +11,10 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { connectors } from "./connector";
-import { connectorDcrRegistrations } from "./connector-dcr-registration";
+import { builtinConnectorDcrRegistrations } from "./connector-dcr-registration";
 
 /** Authority and client frozen at builtin Automatic consent; tokens remain account-owned secrets. */
-export const connectorAccountOauthBindings = pgTable(
+export const builtinConnectorAccountOauthBindings = pgTable(
   "connector_account_oauth_bindings",
   {
     connectorAccountId: uuid("connector_account_id").primaryKey(),
@@ -63,11 +63,11 @@ export const connectorAccountOauthBindings = pgTable(
           table.contractHash,
         ],
         foreignColumns: [
-          connectorDcrRegistrations.id,
-          connectorDcrRegistrations.orgId,
-          connectorDcrRegistrations.connectorSlug,
-          connectorDcrRegistrations.authMethod,
-          connectorDcrRegistrations.contractHash,
+          builtinConnectorDcrRegistrations.id,
+          builtinConnectorDcrRegistrations.orgId,
+          builtinConnectorDcrRegistrations.connectorSlug,
+          builtinConnectorDcrRegistrations.authMethod,
+          builtinConnectorDcrRegistrations.contractHash,
         ],
       }),
       index("idx_connector_oauth_binding_dcr").on(table.dcrRegistrationId),

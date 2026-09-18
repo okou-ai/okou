@@ -40,9 +40,9 @@ import * as variableSchema from "./schema/variable";
 import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
 import * as chatThreadConnectorSelectionSchema from "./schema/chat-thread-connector-selection";
-import * as connectorExternalCodeSessionSchema from "./schema/connector-external-code-session";
+import * as builtinConnectorExternalCodeSessionSchema from "./schema/connector-external-code-session";
 import * as modelProviderAuthSessionSchema from "./schema/model-provider-auth-session";
-import * as connectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
+import * as builtinConnectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
 import * as connectorOauthStateSchema from "./schema/connector-oauth-state";
 import * as usageEventSchema from "./schema/usage-event";
 import * as xResourceUsageSchema from "./schema/x-resource-usage";
@@ -118,8 +118,8 @@ import * as orgCustomConnectorSchema from "./schema/org-custom-connector";
 import * as orgCustomConnectorOauthConfigSchema from "./schema/org-custom-connector-oauth-config";
 import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-connector-dcr-registration";
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
-import * as connectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
-import * as connectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
+import * as builtinConnectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
+import * as builtinConnectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
 import * as hostedSiteSchema from "./schema/hosted-site";
 import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
@@ -211,9 +211,9 @@ export const schema = {
   ...composeJobSchema,
   ...connectorSchema,
   ...chatThreadConnectorSelectionSchema,
-  ...connectorExternalCodeSessionSchema,
+  ...builtinConnectorExternalCodeSessionSchema,
   ...modelProviderAuthSessionSchema,
-  ...connectorOauthDeviceAuthorizationSessionSchema,
+  ...builtinConnectorOauthDeviceAuthorizationSessionSchema,
   ...connectorOauthStateSchema,
   ...billingRunAttributionSchema,
   ...usageEventSchema,
@@ -275,8 +275,8 @@ export const schema = {
   ...orgCustomConnectorOauthConfigSchema,
   ...orgCustomConnectorDcrRegistrationSchema,
   ...customConnectorAccountOauthBindingSchema,
-  ...connectorDcrRegistrationSchema,
-  ...connectorAccountOauthBindingSchema,
+  ...builtinConnectorDcrRegistrationSchema,
+  ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
   ...artifactSchema,
   ...sharedThreadSchema,

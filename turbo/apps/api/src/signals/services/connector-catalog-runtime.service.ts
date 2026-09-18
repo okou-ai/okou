@@ -754,13 +754,13 @@ function runtimeSelectionFromProjectedConnectors(args: {
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
 }): ConnectorRuntimeSelection {
-  const connectorBySlug = new Map(
+  const builtinConnectorBySlug = new Map(
     args.connectors.map((connector) => {
       return [connector.slug, connector] as const;
     }),
   );
   const runtimeArtifacts = selectedArtifacts({
-    connectorBySlug,
+    connectorBySlug: builtinConnectorBySlug,
     connectorSlugs: args.runtimeConnectorSlugs,
   });
   const runtimeConnectors = new Map(
@@ -783,7 +783,7 @@ function runtimeSelectionFromProjectedConnectors(args: {
       },
     });
   const metadataArtifacts = selectedArtifacts({
-    connectorBySlug,
+    connectorBySlug: builtinConnectorBySlug,
     connectorSlugs: uniqueSortedConnectorSlugs([
       ...args.runtimeConnectorSlugs,
       ...args.metadataConnectorSlugs,

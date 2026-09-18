@@ -3,7 +3,7 @@ import { gunzipSync } from "node:zlib";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
-import { connectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { MODEL_PROVIDER_FIREWALL_CONFIGS } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import { runnersBuiltinFirewallsResolveContract } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -11,8 +11,8 @@ import {
   type TestSystemStoragePresignedUrlCacheStateActionBody,
 } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import {
-  connectorOpenIdStartContract,
-  connectorsSearchContract,
+  builtinConnectorOpenIdStartContract,
+  builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorCatalogContract,
@@ -102,25 +102,25 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
-import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { runnersRoutes } from "../runners";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorCheckRoutes } from "../connector-check";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...connectorsSlugCallbackRoutes,
+  ...builtinConnectorsSlugCallbackRoutes,
   ...cronConnectorCatalogRoutes,
   ...runnersRoutes,
   ...testSystemStoragePresignedUrlCacheStateRoutes,
   ...connectorCatalogRoutes,
   ...connectorCheckRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsRoutes,
   ...featureSwitchesRoutes,
   ...userPermissionGrantsRoutes,
   ...workflowAutomationsRoutes,
@@ -1888,8 +1888,8 @@ describe("connector catalog valid lifecycle", () => {
       context,
       routes: connectorCatalogRoutes,
     })(connectorCatalogContract);
-    const searchClient = setupApp({ context, routes: connectorsRoutes })(
-      connectorsSearchContract,
+    const searchClient = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsSearchContract,
     );
     const callsBeforePublicReads = context.mocks.s3.send.mock.calls.length;
 
@@ -2452,7 +2452,7 @@ describe("connector catalog valid lifecycle", () => {
       connectionStatus: "connected",
     });
 
-    const listed = await connectorsApi.listConnectors(actor);
+    const listed = await connectorsApi.listBuiltinConnectors(actor);
     expect(listed.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
         connectorSlug: "agora",
@@ -3890,8 +3890,8 @@ describe("connector catalog valid lifecycle", () => {
     const headers = { authorization: "Bearer clerk-session" };
     const callsBeforeAction = context.mocks.s3.send.mock.calls.length;
     const start = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorOpenIdStartContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorOpenIdStartContract,
       ).start({
         params: { connectorSlug: "steam" },
         headers,
@@ -3904,8 +3904,8 @@ describe("connector catalog valid lifecycle", () => {
     );
     mockSteamOpenIdVerification();
     await accept(
-      setupApp({ context, routes: connectorsSlugCallbackRoutes })(
-        connectorsSlugCallbackContract,
+      setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
+        builtinConnectorsSlugCallbackContract,
       ).callback({
         params: { connectorSlug: "steam" },
         headers: {},
@@ -4547,7 +4547,8 @@ describe("connector catalog valid lifecycle", () => {
       expect(
         new URL(callbackLocation ?? "https://invalid.example").pathname,
       ).toBe("/connector/success");
-      const hiddenConnectedList = await connectorsApi.listConnectors(actor);
+      const hiddenConnectedList =
+        await connectorsApi.listBuiltinConnectors(actor);
       expect(hiddenConnectedList.connectors).toContainEqual(
         expect.objectContaining({ slug: "datadog", authMethod: "oauth" }),
       );
@@ -4716,8 +4717,8 @@ describe("connector catalog valid lifecycle", () => {
       [503],
     );
     const searchResponse = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorsSearchContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsSearchContract,
       ).search({
         headers,
         query: {},

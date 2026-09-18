@@ -1,17 +1,17 @@
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
-  connectorManualGrantContract,
-  connectorNoAuthGrantContract,
-  connectorOpenIdStartContract,
-  connectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOpenIdStartContract,
+  builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -76,7 +76,9 @@ function mockPublicConnectorStatus(
   });
 }
 
-function connectorResponse(connectorSlug: ConnectorSlug): ConnectorResponse {
+function connectorResponse(
+  connectorSlug: ConnectorSlug,
+): BuiltinConnectorResponse {
   return {
     id: crypto.randomUUID(),
     slug: connectorSlug,
@@ -116,7 +118,7 @@ function mockConnectorOauthStart(): { readonly authWindow: Window } {
   });
 
   context.mocks.api(
-    connectorOauthStartContract.start,
+    builtinConnectorOauthStartContract.start,
     ({ body, params, respond }) => {
       expect(body).toStrictEqual({
         account: { intent: "add" },
@@ -149,7 +151,7 @@ function mockConnectorOpenIdStart(args: {
   });
 
   context.mocks.api(
-    connectorOpenIdStartContract.start,
+    builtinConnectorOpenIdStartContract.start,
     ({ body, params, respond }) => {
       expect(body).toStrictEqual({
         account: { intent: "add" },
@@ -164,7 +166,7 @@ function mockConnectorOpenIdStart(args: {
       });
     },
   );
-  context.mocks.api(connectorOauthStartContract.start, ({ never }) => {
+  context.mocks.api(builtinConnectorOauthStartContract.start, ({ never }) => {
     return never();
   });
   context.mocks.browser.open(authWindow);
@@ -174,19 +176,22 @@ function mockConnectorOpenIdStart(args: {
 test("Authorize an agent to use an already connected connector", async () => {
   mockConnectedConnector("gmail");
   let authorized = false;
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, {
       enabledConnectorSlugs: authorized ? ["gmail"] : [],
     });
   });
-  context.mocks.api(userConnectorsContract.update, ({ body, respond }) => {
-    expect(body).toStrictEqual({
-      enabledConnectorSlugs: ["gmail"],
-      operation: "add",
-    });
-    authorized = true;
-    return respond(200, { enabledConnectorSlugs: ["gmail"] });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({
+        enabledConnectorSlugs: ["gmail"],
+        operation: "add",
+      });
+      authorized = true;
+      return respond(200, { enabledConnectorSlugs: ["gmail"] });
+    },
+  );
   const threadId = "00000000-0000-4000-a000-000000000101";
   const callbackPrompt = "Re-check Gmail, then continue";
   let continuationPrompt: string | null = null;
@@ -227,11 +232,11 @@ test("Authorize an agent to use an already connected connector", async () => {
 test("Wait for refreshed authorization state instead of updating optimistically", async () => {
   mockConnectedConnector("gmail");
   const releaseUpdate = context.mocks.deferred<void>();
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [] });
   });
   context.mocks.api(
-    userConnectorsContract.update,
+    userBuiltinConnectorsContract.update,
     async ({ body, respond }) => {
       expect(body).toStrictEqual({
         enabledConnectorSlugs: ["gmail"],
@@ -265,7 +270,7 @@ test("Wait for refreshed authorization state instead of updating optimistically"
 
 test("Recover from an agent authorization lookup failure", async () => {
   mockConnectedConnector("gmail");
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(404, {
       error: { message: "Agent not found", code: "NOT_FOUND" },
     });
@@ -309,13 +314,13 @@ test("Connect a manual-token connector while authorizing an agent", async () => 
   ]);
   let submittedValues: Record<string, string> | null = null;
   let authorized = false;
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, {
       enabledConnectorSlugs: authorized ? ["axiom"] : [],
     });
   });
   context.mocks.api(
-    connectorManualGrantContract.connect,
+    builtinConnectorManualGrantContract.connect,
     ({ body, params, respond }) => {
       expect(params.connectorSlug).toBe("axiom");
       expect(body.agentId).toBe(AGENT_ID);
@@ -399,7 +404,7 @@ test("Connect and authorize an agent through OpenID", async () => {
       ]);
     },
   });
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, {
       enabledConnectorSlugs: authorized ? ["steam"] : [],
     });
@@ -447,7 +452,7 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
   let connectCalls = 0;
   let authorized = false;
   context.mocks.api(
-    connectorNoAuthGrantContract.connect,
+    builtinConnectorNoAuthGrantContract.connect,
     ({ body, params, respond }) => {
       connectCalls += 1;
       expect(params.connectorSlug).toBe("stripe");
@@ -474,7 +479,7 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
       });
     },
   );
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, {
       enabledConnectorSlugs: authorized ? ["stripe"] : [],
     });
@@ -517,17 +522,20 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
 test("Leave an agent unauthorized when OAuth is cancelled", async () => {
   const { authWindow } = mockConnectorOauthStart();
   let updateCalls = 0;
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [] });
   });
-  context.mocks.api(userConnectorsContract.update, ({ body, respond }) => {
-    updateCalls += 1;
-    const enabledConnectorSlugs =
-      body.operation === "remove" ? [] : body.enabledConnectorSlugs;
-    return respond(200, {
-      enabledConnectorSlugs,
-    });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    ({ body, respond }) => {
+      updateCalls += 1;
+      const enabledConnectorSlugs =
+        body.operation === "remove" ? [] : body.enabledConnectorSlugs;
+      return respond(200, {
+        enabledConnectorSlugs,
+      });
+    },
+  );
 
   await setupPage({
     context,

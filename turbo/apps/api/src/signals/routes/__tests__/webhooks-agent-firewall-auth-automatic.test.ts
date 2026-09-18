@@ -1,4 +1,4 @@
-import { connectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -9,7 +9,7 @@ import { mockEnv } from "../../../lib/env";
 import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorsAutomaticRoutes } from "../connectors-automatic";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -72,8 +72,8 @@ describe("builtin Automatic firewall credential destinations", () => {
       });
       const automatic = setupApp({
         context,
-        routes: connectorsAutomaticRoutes,
-      })(connectorAutomaticContract);
+        routes: builtinConnectorsAutomaticRoutes,
+      })(builtinConnectorAutomaticContract);
       const accounts = setupApp({ context, routes: connectorAccountRoutes })(
         connectorAccountsContract,
       );

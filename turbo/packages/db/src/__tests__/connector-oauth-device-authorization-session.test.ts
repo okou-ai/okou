@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { schema } from "../index";
-import { connectorExternalCodeSessions } from "../schema/connector-external-code-session";
-import { connectorOauthDeviceAuthorizationSessions } from "../schema/connector-oauth-device-authorization-session";
+import { builtinConnectorExternalCodeSessions } from "../schema/connector-external-code-session";
+import { builtinConnectorOauthDeviceAuthorizationSessions } from "../schema/connector-oauth-device-authorization-session";
 
 interface ExtraConfigColumn {
   readonly name?: string;
@@ -71,95 +71,103 @@ function getExtraConfigColumnNames(table: object, name: string): string[] {
 
 describe("connector authorization session schemas", () => {
   it("exports the durable authorization session tables", () => {
-    expect(schema.connectorOauthDeviceAuthorizationSessions).toBe(
-      connectorOauthDeviceAuthorizationSessions,
+    expect(schema.builtinConnectorOauthDeviceAuthorizationSessions).toBe(
+      builtinConnectorOauthDeviceAuthorizationSessions,
     );
-    expect(schema.connectorExternalCodeSessions).toBe(
-      connectorExternalCodeSessions,
+    expect(schema.builtinConnectorExternalCodeSessions).toBe(
+      builtinConnectorExternalCodeSessions,
     );
   });
 
   it("keeps the expected column names stable", () => {
-    expect(connectorOauthDeviceAuthorizationSessions.id.name).toBe("id");
-    expect(connectorOauthDeviceAuthorizationSessions.orgId.name).toBe("org_id");
-    expect(connectorOauthDeviceAuthorizationSessions.userId.name).toBe(
+    expect(builtinConnectorOauthDeviceAuthorizationSessions.id.name).toBe("id");
+    expect(builtinConnectorOauthDeviceAuthorizationSessions.orgId.name).toBe(
+      "org_id",
+    );
+    expect(builtinConnectorOauthDeviceAuthorizationSessions.userId.name).toBe(
       "user_id",
     );
-    expect(connectorOauthDeviceAuthorizationSessions.connectorSlug.name).toBe(
-      "connector_slug",
-    );
     expect(
-      connectorOauthDeviceAuthorizationSessions.connectorSlug.notNull,
+      builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug.name,
+    ).toBe("connector_slug");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug.notNull,
     ).toBe(true);
-    expect(connectorOauthDeviceAuthorizationSessions.authMethod.name).toBe(
-      "auth_method",
-    );
-    expect(connectorOauthDeviceAuthorizationSessions.status.name).toBe(
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.authMethod.name,
+    ).toBe("auth_method");
+    expect(builtinConnectorOauthDeviceAuthorizationSessions.status.name).toBe(
       "status",
     );
     expect(
-      connectorOauthDeviceAuthorizationSessions.sessionTokenHash.name,
+      builtinConnectorOauthDeviceAuthorizationSessions.sessionTokenHash.name,
     ).toBe("session_token_hash");
     expect(
-      connectorOauthDeviceAuthorizationSessions.encryptedProviderState.name,
+      builtinConnectorOauthDeviceAuthorizationSessions.encryptedProviderState
+        .name,
     ).toBe("encrypted_provider_state");
-    expect(connectorOauthDeviceAuthorizationSessions.accountMutation.name).toBe(
-      "account_mutation",
-    );
     expect(
-      connectorOauthDeviceAuthorizationSessions.accountMutation.notNull,
+      builtinConnectorOauthDeviceAuthorizationSessions.accountMutation.name,
+    ).toBe("account_mutation");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.accountMutation.notNull,
     ).toBe(true);
-    expect(connectorExternalCodeSessions.accountMutation.name).toBe(
+    expect(builtinConnectorExternalCodeSessions.accountMutation.name).toBe(
       "account_mutation",
     );
-    expect(connectorExternalCodeSessions.accountMutation.notNull).toBe(true);
-    expect(connectorExternalCodeSessions.completedConnectorId.name).toBe(
+    expect(builtinConnectorExternalCodeSessions.accountMutation.notNull).toBe(
+      true,
+    );
+    expect(builtinConnectorExternalCodeSessions.completedConnectorId.name).toBe(
       "completed_connector_id",
     );
-    expect(connectorExternalCodeSessions.completedConnectorId.notNull).toBe(
-      false,
-    );
     expect(
-      connectorOauthDeviceAuthorizationSessions.completedConnectorId.name,
+      builtinConnectorExternalCodeSessions.completedConnectorId.notNull,
+    ).toBe(false);
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.completedConnectorId
+        .name,
     ).toBe("completed_connector_id");
     expect(
-      connectorOauthDeviceAuthorizationSessions.completedConnectorId.notNull,
+      builtinConnectorOauthDeviceAuthorizationSessions.completedConnectorId
+        .notNull,
     ).toBe(false);
-    expect(connectorOauthDeviceAuthorizationSessions.userCode.name).toBe(
+    expect(builtinConnectorOauthDeviceAuthorizationSessions.userCode.name).toBe(
       "user_code",
     );
-    expect(connectorOauthDeviceAuthorizationSessions.verificationUri.name).toBe(
-      "verification_uri",
-    );
     expect(
-      connectorOauthDeviceAuthorizationSessions.verificationUriComplete.name,
+      builtinConnectorOauthDeviceAuthorizationSessions.verificationUri.name,
+    ).toBe("verification_uri");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.verificationUriComplete
+        .name,
     ).toBe("verification_uri_complete");
-    expect(connectorOauthDeviceAuthorizationSessions.intervalSeconds.name).toBe(
-      "interval_seconds",
-    );
-    expect(connectorOauthDeviceAuthorizationSessions.errorCode.name).toBe(
-      "error_code",
-    );
-    expect(connectorOauthDeviceAuthorizationSessions.errorMessage.name).toBe(
-      "error_message",
-    );
-    expect(connectorOauthDeviceAuthorizationSessions.createdAt.name).toBe(
-      "created_at",
-    );
-    expect(connectorOauthDeviceAuthorizationSessions.updatedAt.name).toBe(
-      "updated_at",
-    );
-    expect(connectorOauthDeviceAuthorizationSessions.expiresAt.name).toBe(
-      "expires_at",
-    );
-    expect(connectorOauthDeviceAuthorizationSessions.completedAt.name).toBe(
-      "completed_at",
-    );
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.intervalSeconds.name,
+    ).toBe("interval_seconds");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.errorCode.name,
+    ).toBe("error_code");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.errorMessage.name,
+    ).toBe("error_message");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.createdAt.name,
+    ).toBe("created_at");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.updatedAt.name,
+    ).toBe("updated_at");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.expiresAt.name,
+    ).toBe("expires_at");
+    expect(
+      builtinConnectorOauthDeviceAuthorizationSessions.completedAt.name,
+    ).toBe("completed_at");
   });
 
   it("declares token, owner, and expiration indexes", () => {
     expect(
-      getExtraConfigNames(connectorOauthDeviceAuthorizationSessions),
+      getExtraConfigNames(builtinConnectorOauthDeviceAuthorizationSessions),
     ).toStrictEqual(
       expect.arrayContaining([
         "idx_connector_oauth_device_authorization_sessions_token",
@@ -169,7 +177,7 @@ describe("connector authorization session schemas", () => {
     );
     expect(
       getExtraConfigColumnNames(
-        connectorOauthDeviceAuthorizationSessions,
+        builtinConnectorOauthDeviceAuthorizationSessions,
         "idx_connector_oauth_device_sessions_owner_slug_status",
       ),
     ).toStrictEqual([

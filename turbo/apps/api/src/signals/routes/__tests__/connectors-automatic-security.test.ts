@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
-  connectorAutomaticContract,
-  connectorNoAuthGrantContract,
+  builtinConnectorAutomaticContract,
+  builtinConnectorNoAuthGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -12,8 +12,8 @@ import { mockEnv } from "../../../lib/env";
 import { holdConnectorAccountFixture } from "../../../test-fixtures/connector-account-lock";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { settleIncludingAbort } from "../../utils";
-import { connectorsAutomaticRoutes } from "../connectors-automatic";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { builtinConnectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
@@ -23,13 +23,13 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 const routes = [
-  ...connectorsAutomaticRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsAutomaticRoutes,
+  ...builtinConnectorsRoutes,
   ...connectorAccountRoutes,
 ] as const;
 
 function automatic() {
-  return setupApp({ context, routes })(connectorAutomaticContract);
+  return setupApp({ context, routes })(builtinConnectorAutomaticContract);
 }
 
 function accounts() {
@@ -172,7 +172,9 @@ describe("builtin Automatic account and consent ownership", () => {
     mocks.clerk.session(second.userId, second.orgId);
     const replacementResult = settleIncludingAbort(
       accept(
-        setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
+        setupApp({ context, routes })(
+          builtinConnectorNoAuthGrantContract,
+        ).connect({
           headers,
           params: { connectorSlug: second.slug },
           body: {
