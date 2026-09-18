@@ -97,13 +97,12 @@ export const visibleCustomTemplates$ = computed(
 );
 
 /**
- * The open template, with the kind that decides where it opens.
+ * The open template, with the kind that decides what looking at it shows.
  *
- * The kind travels with the id rather than being read back from the catalog,
- * because the surface has to be chosen in the same frame as the click: a deck
- * takes over the panel, a document opens a preview dialog over it, and waiting
- * for the detail request to say which would render one of them first and then
- * replace it.
+ * The kind travels with the id rather than being read back from the catalog so
+ * that the dialog can open on the click that asked for it: a deck draws the
+ * pages it already has and a document draws its source file, and the request
+ * that would say which has not answered yet.
  */
 interface OpenCustomTemplate {
   readonly templateId: string;
@@ -112,7 +111,10 @@ interface OpenCustomTemplate {
 
 const internalOpenTemplate$ = state<OpenCustomTemplate | null>(null);
 
-export const openCustomTemplateId$ = computed((get) => {
+/** Which template is open, for the request that loads it and the guards that
+ * clear it. The panel reads the kind instead: the id alone cannot say which
+ * surface an open template belongs on. */
+const openCustomTemplateId$ = computed((get) => {
   return get(internalOpenTemplate$)?.templateId ?? null;
 });
 
