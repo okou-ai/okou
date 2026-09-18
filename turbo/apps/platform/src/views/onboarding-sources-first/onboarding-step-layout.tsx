@@ -160,7 +160,9 @@ export function OnboardingStepLayout({
                 CONTENT_WIDTHS[contentWidth],
               )}
             >
-              <div className="flex flex-col justify-center rounded-3xl border border-border/60 bg-background p-6 shadow-surface lg:min-h-[430px]">
+              {/* The answers sit straight on the canvas; the band keeps their
+                  height constant so the action line never moves. */}
+              <div className="flex flex-col justify-center lg:min-h-[430px]">
                 {children}
               </div>
               {/* The step's one filled action, with its opt-out beside it. */}
