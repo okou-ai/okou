@@ -210,6 +210,7 @@ const PRIVATE_RESULT_FIELDS = [
   "contentType",
   "size",
   "url",
+  "privateArtifacts",
   "creditsCharged",
   "model",
   "provider",

@@ -60,6 +60,7 @@ import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
 import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefNativeThreadAuthority } from "./morning-brief-native-schedule.service";
 import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
@@ -852,6 +853,19 @@ export const deleteChatThread$ = command(
     const writeDb = set(writeDb$);
 
     const deletion = await writeDb.transaction(async (tx) => {
+      // Native authority is always fenced before the destination row. A
+      // delivery that already owns the schedule lock therefore commits first;
+      // this delete then bumps the epoch before the thread cascade is allowed.
+      await revokeMorningBriefNativeThreadAuthority(
+        tx,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          chatThreadId: args.threadId,
+        },
+        nowDate(),
+      );
+
       const [ownedThread] = await tx
         .select({
           id: chatThreads.id,
@@ -934,7 +948,8 @@ export const deleteChatThread$ = command(
         // Acquire the user/org event sequence only after all cleanup and
         // cascading deletes. A blocked child row must not hold this shared
         // lock and stall events for other threads. Keep the tombstone in this
-        // transaction so deletion and its ordered event become visible together.
+        // transaction so deletion and its ordered event become visible
+        // together.
         await appendChatThreadEvent(tx, {
           kind: "deleted",
           userId: args.userId,

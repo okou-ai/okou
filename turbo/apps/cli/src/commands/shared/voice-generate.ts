@@ -103,6 +103,8 @@ Notes:
         const presentation = createArtifactPresentation(
           result.filename,
           result.url,
+          undefined,
+          result,
         );
         if (options.json) {
           console.log(JSON.stringify({ ...result, ...presentation.json }));

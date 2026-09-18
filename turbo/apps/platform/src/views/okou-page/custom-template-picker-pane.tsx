@@ -39,6 +39,7 @@ import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import {
   closeCustomTemplate$,
   customTemplateSearchQuery$,
+  customTemplateSurface,
   deleteCustomTemplate$,
   openCustomTemplate$,
   openCustomTemplateDetail$,
@@ -341,6 +342,16 @@ function CustomTemplateUploadCard({
   const label = t(($) => {
     return $.artifacts.templates.importFile;
   });
+  // Every accepted extension is more than one tile-width of this line, so it
+  // is the truncated one that needs the whole list reachable on hover. The
+  // file picker enforces the list either way; this is only what tells the
+  // member before they open it.
+  const hint = t(
+    ($) => {
+      return $.artifacts.templates.importFileHint;
+    },
+    { formats: IMPORT_FORMATS },
+  );
   return (
     <label className="group/tile flex cursor-pointer flex-col gap-2">
       <span
@@ -360,13 +371,8 @@ function CustomTemplateUploadCard({
         <span className="truncate text-sm font-medium text-foreground">
           {label}
         </span>
-        <span className="truncate text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.artifacts.templates.importFileHint;
-            },
-            { formats: IMPORT_FORMATS },
-          )}
+        <span className="truncate text-xs text-muted-foreground" title={hint}>
+          {hint}
         </span>
       </span>
     </label>
@@ -538,9 +544,13 @@ export function CustomTemplatePickerPane({
   const templatesLoadable = useLoadable(visibleCustomTemplates$);
 
   // A deck takes the panel over, because its pages are a column this panel can
-  // scroll. A document stays on the catalog and opens a dialog instead: it is
-  // read inside a viewer that needs a viewport of its own.
-  if (openTemplateId !== null && openTemplateKind === "presentation") {
+  // scroll. Every other kind stays on the catalog and opens a dialog instead:
+  // it is one file, read at a size of its own.
+  if (
+    openTemplateId !== null &&
+    openTemplateKind !== null &&
+    customTemplateSurface(openTemplateKind) === "panel"
+  ) {
     return <CustomTemplateDetail onSelect={onSelect} />;
   }
 

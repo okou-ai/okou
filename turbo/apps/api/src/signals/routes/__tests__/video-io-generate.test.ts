@@ -1446,6 +1446,7 @@ describe("POST /api/video-io/generate", () => {
         contentType: "video/mp4",
         size: VIDEO_BYTES.byteLength,
         creditsCharged: 1081,
+        privateArtifacts,
         model: VIDEO_IO_MODEL,
         aspectRatio: "16:9",
         duration: "8s",

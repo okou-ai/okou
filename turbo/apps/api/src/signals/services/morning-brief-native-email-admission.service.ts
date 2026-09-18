@@ -29,6 +29,7 @@ import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import type { Db } from "../external/db";
 import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 
 /**
  * Outbox template name of a native Morning Brief delivery.
@@ -54,6 +55,8 @@ type NativeMorningBriefDelivery = Pick<
   | "collectionKind"
   | "collectionVersion"
   | "membershipId"
+  | "nativeOwnerEpoch"
+  | "executionPurpose"
   | "workflowId"
   | "automationId"
   | "agentId"
@@ -283,6 +286,8 @@ function nativeDeliverySelection() {
     collectionKind: morningBriefDeliveries.collectionKind,
     collectionVersion: morningBriefDeliveries.collectionVersion,
     membershipId: morningBriefDeliveries.membershipId,
+    nativeOwnerEpoch: morningBriefDeliveries.nativeOwnerEpoch,
+    executionPurpose: morningBriefDeliveries.executionPurpose,
     workflowId: morningBriefDeliveries.workflowId,
     automationId: morningBriefDeliveries.automationId,
     agentId: morningBriefDeliveries.agentId,
@@ -313,11 +318,33 @@ function sameNativeDelivery(
     left.collectionKind === right.collectionKind &&
     left.collectionVersion === right.collectionVersion &&
     left.membershipId === right.membershipId &&
+    left.nativeOwnerEpoch === right.nativeOwnerEpoch &&
+    left.executionPurpose === right.executionPurpose &&
     left.workflowId === right.workflowId &&
     left.automationId === right.automationId &&
     left.agentId === right.agentId &&
     left.chatThreadId === right.chatThreadId
   );
+}
+
+async function lockNativeAuthority(
+  tx: Tx,
+  delivery: NativeMorningBriefDelivery,
+): Promise<NativeMorningBriefEmailAdmission | null> {
+  if (delivery.executionPurpose !== "production") {
+    return null;
+  }
+  const native = await lockMorningBriefNativeSchedule(tx, delivery);
+  return delivery.nativeOwnerEpoch === null ||
+    native === undefined ||
+    (native.phase !== "native" && native.phase !== "rollback-draining") ||
+    !native.enabled ||
+    native.ownerEpoch !== delivery.nativeOwnerEpoch ||
+    native.membershipId !== delivery.membershipId ||
+    native.agentId !== delivery.agentId ||
+    native.chatThreadId !== delivery.chatThreadId
+    ? rejected("Morning Brief native delivery authority was revoked")
+    : null;
 }
 
 async function lockOccurrence(
@@ -398,14 +425,16 @@ async function lockOwnerBinding(
   tx: Tx,
   delivery: NativeMorningBriefDelivery,
 ): Promise<NativeMorningBriefEmailAdmission | null> {
-  const discovered = await loadMorningBriefMigrationState(tx, {
-    orgId: delivery.orgId,
-    userId: delivery.userId,
-  });
-  if (!stateMatchesDelivery(discovered, delivery)) {
-    return rejected(
-      "Morning Brief is no longer installed on the binding this delivery used",
-    );
+  if (delivery.executionPurpose !== "production") {
+    const discovered = await loadMorningBriefMigrationState(tx, {
+      orgId: delivery.orgId,
+      userId: delivery.userId,
+    });
+    if (!stateMatchesDelivery(discovered, delivery)) {
+      return rejected(
+        "Morning Brief is no longer installed on the binding this delivery used",
+      );
+    }
   }
 
   const [destination] = await tx
@@ -422,6 +451,12 @@ async function lockOwnerBinding(
     .for("update");
   if (!destination) {
     return rejected("Morning Brief delivery destination is no longer owned");
+  }
+  if (delivery.executionPurpose === "production") {
+    // Native authority was locked first. Once the canonical destination is
+    // pinned too, a deleted legacy Workflow is no longer part of delivery
+    // authority and cannot suppress an already-admitted native obligation.
+    return null;
   }
 
   const [binding] = await tx
@@ -542,6 +577,7 @@ export async function lockNativeMorningBriefEmailAdmission(
   if (!admission && !(await lockCollectionOwner(tx, owner))) {
     admission = rejected("Morning Brief delivery owner was revoked or erased");
   }
+  admission ??= await lockNativeAuthority(tx, delivery);
   admission ??= await lockOccurrence(tx, delivery);
   admission ??= await lockInstallationAgent(tx, delivery);
   admission ??= await lockOwnerBinding(tx, delivery);

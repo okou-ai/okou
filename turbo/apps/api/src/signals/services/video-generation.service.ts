@@ -283,6 +283,7 @@ interface RecordedVideo {
   readonly contentType: string;
   readonly size: number;
   readonly url: string;
+  readonly privateArtifacts: boolean;
   readonly durationSeconds: number;
   readonly creditsCharged: number;
   readonly model: VideoModel;
@@ -2129,6 +2130,7 @@ export const recordGeneratedVideo$ = command(
       contentType: params.generation.contentType,
       size: params.generation.videoBytes.byteLength,
       url,
+      privateArtifacts: artifact.isPrivate,
       durationSeconds: params.generation.durationSeconds,
       creditsCharged: estimateVideoCredits(
         params.generation.model,

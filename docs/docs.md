@@ -92,6 +92,13 @@ surface; the index does not replace their detailed rules.
   shared Morning Brief OAuth authorization boundary, Gmail's two bounded
   branches and caps, source outcome classification, and the preview-only
   deployment boundary.
+  boundary, and the coverage limits this first collector declares.
+- [Morning Brief platform-funded generation](./morning-brief-generation.md): the
+  single-invocation reservation contract, the validated result shape, and the
+  anonymous platform cost receipt kept outside every user ledger.
+- [Morning Brief thread provenance](./morning-brief-chat-provenance.md): the
+  sticky whole-thread exclusion, its producers and coverage limits, the bounded
+  unread Chat collection that consumes it, and the old-writer activation gate.
 - [Morning Brief platform-funded generation](./morning-brief-generation.md): the
   single-invocation reservation contract, the validated result shape, and the
   anonymous platform cost receipt kept outside every user ledger.
