@@ -11,6 +11,36 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.921.0](https://github.com/vm0-ai/okou/compare/app-v0.920.2...app-v0.921.0) (2026-09-18)
+
+
+### Features
+
+* **app:** align the 404 page with the marketing site ([#35314](https://github.com/vm0-ai/okou/issues/35314)) ([b6eee68](https://github.com/vm0-ai/okou/commit/b6eee68182edac78461ffe94a28b7c7ee5a9fdd0))
+
+
+### Bug Fixes
+
+* persist complete private artifact urls ([#35318](https://github.com/vm0-ai/okou/issues/35318)) ([40ba5df](https://github.com/vm0-ai/okou/commit/40ba5dfa253b8d5f3815f920d423e9452fbb4694))
+* **platform:** place fullscreen action last ([#35302](https://github.com/vm0-ai/okou/issues/35302)) ([82024dd](https://github.com/vm0-ai/okou/commit/82024dd70a8cb2985d9e506ba605ff92afad4e57))
+* remove artifact share save status copy ([#35306](https://github.com/vm0-ai/okou/issues/35306)) ([29fc6a0](https://github.com/vm0-ai/okou/commit/29fc6a0c7965ce5e59eed00cfc2fb7e4520032d5))
+* remove retired video rendering paid-tool control ([#35334](https://github.com/vm0-ai/okou/issues/35334)) ([53fc6ab](https://github.com/vm0-ai/okou/commit/53fc6ab900151e2a67ecf260c98c41327ddf9940))
+* say what the custom template import produces instead of listing extensions ([#35296](https://github.com/vm0-ai/okou/issues/35296)) ([94514a5](https://github.com/vm0-ai/okou/commit/94514a5445777cbdff510f4dffbc5afa98aa07d2))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#35345](https://github.com/vm0-ai/okou/issues/35345)) ([7425652](https://github.com/vm0-ai/okou/commit/7425652d84818a4c4fddca24ce68faeb08bb7b06))
+* remove the intro video product ([#35196](https://github.com/vm0-ai/okou/issues/35196)) ([75fccd3](https://github.com/vm0-ai/okou/commit/75fccd328813fd9e2b8b27b1075053b13ae7be50))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.474.0
+    * @okouai/core bumped to 8.682.0
+
 ## [0.920.2](https://github.com/vm0-ai/okou/compare/app-v0.920.1...app-v0.920.2) (2026-09-18)
 
 

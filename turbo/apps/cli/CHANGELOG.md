@@ -1,5 +1,28 @@
 # Changelog
 
+## [9.343.3](https://github.com/vm0-ai/okou/compare/cli-v9.343.2...cli-v9.343.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **cli:** return app urls for private artifacts ([#35289](https://github.com/vm0-ai/okou/issues/35289)) ([08e6cb3](https://github.com/vm0-ai/okou/commit/08e6cb3d8d7976412218b8e8637db13ec0e5ac88))
+* persist complete private artifact urls ([#35318](https://github.com/vm0-ai/okou/issues/35318)) ([40ba5df](https://github.com/vm0-ai/okou/commit/40ba5dfa253b8d5f3815f920d423e9452fbb4694))
+* remove retired video rendering paid-tool control ([#35334](https://github.com/vm0-ai/okou/issues/35334)) ([53fc6ab](https://github.com/vm0-ai/okou/commit/53fc6ab900151e2a67ecf260c98c41327ddf9940))
+
+
+### Refactoring
+
+* remove the intro video product ([#35196](https://github.com/vm0-ai/okou/issues/35196)) ([75fccd3](https://github.com/vm0-ai/okou/commit/75fccd328813fd9e2b8b27b1075053b13ae7be50))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.474.0
+    * @okouai/core bumped to 8.682.0
+    * @okouai/pi-agent-runtime bumped to 1.33.22
+
 ## [9.343.2](https://github.com/vm0-ai/okou/compare/cli-v9.343.1...cli-v9.343.2) (2026-09-18)
 
 

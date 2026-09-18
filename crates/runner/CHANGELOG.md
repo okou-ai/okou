@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.200.4](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.3...runner-rs-v0.200.4) (2026-09-18)
+
+
+### Refactoring
+
+* **billing:** remove x resource protocol compatibility ([#35333](https://github.com/vm0-ai/okou/issues/35333)) ([0fd1159](https://github.com/vm0-ai/okou/commit/0fd11599fb30efa045085f0302ed53cd52b24d5c))
+
 ## [0.200.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.2...runner-rs-v0.200.3) (2026-09-18)
 
 

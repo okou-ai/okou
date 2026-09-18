@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.682.0](https://github.com/vm0-ai/okou/compare/core-v8.681.4...core-v8.682.0) (2026-09-18)
+
+
+### Features
+
+* **core:** enable mcp server for staff ([#35335](https://github.com/vm0-ai/okou/issues/35335)) ([1ab03e1](https://github.com/vm0-ai/okou/commit/1ab03e1c19ae27c65db733384a47665053f6cf75))
+* **core:** enable x resource deduplication for staff ([#35338](https://github.com/vm0-ai/okou/issues/35338)) ([2f0dd3a](https://github.com/vm0-ai/okou/commit/2f0dd3a1a08a2b1a3ed2105ad58dc5ea7290326e))
+
+
+### Refactoring
+
+* remove the intro video product ([#35196](https://github.com/vm0-ai/okou/issues/35196)) ([75fccd3](https://github.com/vm0-ai/okou/commit/75fccd328813fd9e2b8b27b1075053b13ae7be50))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.474.0
+
 ## [8.681.4](https://github.com/vm0-ai/okou/compare/core-v8.681.3...core-v8.681.4) (2026-09-18)
 
 

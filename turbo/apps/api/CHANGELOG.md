@@ -8,6 +8,47 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.637.0](https://github.com/vm0-ai/okou/compare/api-v1.636.1...api-v1.637.0) (2026-09-18)
+
+
+### Features
+
+* **api:** publish immutable pi stable context ([#34908](https://github.com/vm0-ai/okou/issues/34908)) ([27eb5e6](https://github.com/vm0-ai/okou/commit/27eb5e6f525f4c23a7aa8a5b9b6e2c15852b02c7))
+* **mcp:** discover agents and models and create chat threads ([#35316](https://github.com/vm0-ai/okou/issues/35316)) ([603efb7](https://github.com/vm0-ai/okou/commit/603efb7775e82ef7896f9539a7ead4c3b2740db8))
+* **mcp:** expose input delivery and chat execution status ([#35303](https://github.com/vm0-ai/okou/issues/35303)) ([5deddfb](https://github.com/vm0-ai/okou/commit/5deddfb8446413782b3b51c827eb55affe8b4d2e))
+
+
+### Bug Fixes
+
+* **api:** fence computer use audit event reads ([#35326](https://github.com/vm0-ai/okou/issues/35326)) ([7a0367d](https://github.com/vm0-ai/okou/commit/7a0367ded5a5adb8853f8d22af8221c0f0ddd628))
+* **api:** fence computer use command reads ([#35341](https://github.com/vm0-ai/okou/issues/35341)) ([2f6a166](https://github.com/vm0-ai/okou/commit/2f6a166dcae17a33276de2a635a4e92fdf245c82))
+* **api:** fence legacy morning brief writers ([#35295](https://github.com/vm0-ai/okou/issues/35295)) ([273699e](https://github.com/vm0-ai/okou/commit/273699e46635b6dccd2a33ac8667b6c656b41e80))
+* **api:** fence metadata reads against account closure ([#35325](https://github.com/vm0-ai/okou/issues/35325)) ([4df6afa](https://github.com/vm0-ai/okou/commit/4df6afa7018b36e2f1789fa71c4a9381c5e2cd9a))
+* **api:** fence standalone computer use host reads ([#35312](https://github.com/vm0-ai/okou/issues/35312)) ([f4021c6](https://github.com/vm0-ai/okou/commit/f4021c628de3d4445a5b59a5f4f6e521499b0a2e))
+* **api:** fence unjournaled morning brief callbacks ([#35317](https://github.com/vm0-ai/okou/issues/35317)) ([55d56e5](https://github.com/vm0-ai/okou/commit/55d56e516a7f3448ae4da8723da582bc4638724a))
+* **api:** preserve unknown recovery after retention ([#35315](https://github.com/vm0-ai/okou/issues/35315)) ([5137614](https://github.com/vm0-ai/okou/commit/5137614a417ddf381390c1935a8d255c8cdf994d))
+* **api:** prevent authorization read lock upgrades ([#35311](https://github.com/vm0-ai/okou/issues/35311)) ([2f5608e](https://github.com/vm0-ai/okou/commit/2f5608e24eeb051e817fcb168ecf12facd253fcd))
+* **api:** recover bound morning brief outcomes ([#35283](https://github.com/vm0-ai/okou/issues/35283)) ([a27f580](https://github.com/vm0-ai/okou/commit/a27f58017d82c6f84d733e1bceb3bc733890c4e4))
+* persist complete private artifact urls ([#35318](https://github.com/vm0-ai/okou/issues/35318)) ([40ba5df](https://github.com/vm0-ai/okou/commit/40ba5dfa253b8d5f3815f920d423e9452fbb4694))
+* remove retired video rendering paid-tool control ([#35334](https://github.com/vm0-ai/okou/issues/35334)) ([53fc6ab](https://github.com/vm0-ai/okou/commit/53fc6ab900151e2a67ecf260c98c41327ddf9940))
+
+
+### Refactoring
+
+* **billing:** remove x resource protocol compatibility ([#35333](https://github.com/vm0-ai/okou/issues/35333)) ([0fd1159](https://github.com/vm0-ai/okou/commit/0fd11599fb30efa045085f0302ed53cd52b24d5c))
+* remove expired deployment compatibility ([#35345](https://github.com/vm0-ai/okou/issues/35345)) ([7425652](https://github.com/vm0-ai/okou/commit/7425652d84818a4c4fddca24ce68faeb08bb7b06))
+* remove the intro video product ([#35196](https://github.com/vm0-ai/okou/issues/35196)) ([75fccd3](https://github.com/vm0-ai/okou/commit/75fccd328813fd9e2b8b27b1075053b13ae7be50))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.474.0
+    * @okouai/core bumped to 8.682.0
+    * @okouai/db bumped to 1.278.0
+    * @okouai/pi-agent-runtime bumped to 1.33.22
+
 ## [1.636.1](https://github.com/vm0-ai/okou/compare/api-v1.636.0...api-v1.636.1) (2026-09-18)
 
 

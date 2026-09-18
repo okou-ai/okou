@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.69](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.68...app-worker-v1.8.69) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.682.0
+
 ## [1.8.68](https://github.com/vm0-ai/okou/compare/app-worker-v1.8.67...app-worker-v1.8.68) (2026-09-18)
 
 

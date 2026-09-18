@@ -1,6 +1,6 @@
 [package]
 name = "api-contracts"
-version = "0.37.0"
+version = "0.37.1"
 edition.workspace = true
 description = "Generated Rust bindings for selected TypeScript API contracts"
 
