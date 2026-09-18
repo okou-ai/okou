@@ -504,7 +504,7 @@
       "description": "Browse everything you have created here.",
       "emptyDescription": "Artifacts will appear here when they are available.",
       "emptyTitle": "No artifacts found",
-      "error": "Could not load artifacts. Try again later.",
+      "error": "Could not load artifacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Show avatar artifacts",
@@ -523,7 +523,8 @@
         "websiteAria": "Show website artifacts"
       },
       "kindIcon": "{{kind}} artifact",
-      "loading": "Loading artifacts"
+      "loading": "Loading artifacts",
+      "retry": "Try again"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -602,6 +603,7 @@
       "onlyMeDescription": "Only you can view this artifact",
       "organization": "Organization",
       "organizationDescription": "Anyone in {{organization}} with the link",
+      "organizationDescriptionUnnamed": "Anyone in your organization with the link",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
       "publicDescription": "Anyone with the link can view",

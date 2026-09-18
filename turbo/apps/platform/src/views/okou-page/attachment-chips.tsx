@@ -7,9 +7,11 @@ import {
   useLoadable,
   useSet,
 } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Columns2,
+  Download,
   FileMusic,
   Image,
   Loader2,
@@ -829,17 +831,63 @@ function ArtifactDialogDocumentFrameBody({
   );
 }
 
-function ArtifactDialogGenericFileBody({ filename }: { filename: string }) {
+// No preview is a terminal screen, so it has to carry the one action that
+// still works on the file: taking it away.
+function ArtifactDialogGenericFileBody({
+  filename,
+  preview,
+}: {
+  filename: string;
+  preview: AttachmentLightboxState;
+}) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [downloadLoadable, downloadAttachment] =
+    useLoadableSet(downloadAttachment$);
+  const downloading = downloadLoadable.state === "loading";
   return (
     <ArtifactDialogStage centered>
-      <div className="flex w-full max-w-md flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
-        <p className="text-sm">
+      <div className="flex w-full max-w-md flex-col items-center justify-center gap-4 p-6 text-center">
+        <FilePreviewIcon filename={filename} size="lg" />
+        <div className="flex flex-col gap-1">
+          <p className="break-all text-sm font-medium text-foreground">
+            {filename}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.preview.noInline;
+            })}
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          disabled={downloading}
+          aria-busy={downloading}
+          onClick={() => {
+            detach(
+              downloadAttachment({ filename, url: preview.url }, pageSignal),
+              Reason.DomCallback,
+              "artifact download",
+            );
+          }}
+        >
+          {downloading ? (
+            <Loader2 size={14} className="animate-spin" aria-hidden />
+          ) : (
+            <Download size={14} aria-hidden />
+          )}
           {t(($) => {
-            return $.artifacts.preview.noInline;
+            return $.artifacts.actions.download;
           })}
-        </p>
-        <p className="text-xs">{filename}</p>
+        </Button>
+        {downloadLoadable.state === "hasError" && (
+          <p role="alert" className="text-xs text-destructive">
+            {t(($) => {
+              return $.artifacts.toasts.downloadFailed;
+            })}
+          </p>
+        )}
       </div>
     </ArtifactDialogStage>
   );
@@ -916,7 +964,9 @@ export function ArtifactPreviewBody({
         />
       );
     }
-    return <ArtifactDialogGenericFileBody filename={filename} />;
+    return (
+      <ArtifactDialogGenericFileBody filename={filename} preview={preview} />
+    );
   }
 
   if (preview.kind === "markdown") {

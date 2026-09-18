@@ -503,7 +503,7 @@
       "description": "Telusuri semua yang Anda buat di sini.",
       "emptyDescription": "Artefak akan muncul di sini saat tersedia.",
       "emptyTitle": "Tidak ada artefak ditemukan",
-      "error": "Tidak dapat memuat artefak. Coba lagi nanti.",
+      "error": "Tidak dapat memuat artefak.",
       "filters": {
         "avatar": "Avatar",
         "avatarAria": "Tampilkan artefak avatar",
@@ -522,7 +522,8 @@
         "websiteAria": "Tampilkan artefak situs web"
       },
       "kindIcon": "Artefak {{kind}}",
-      "loading": "Memuat artefak"
+      "loading": "Memuat artefak",
+      "retry": "Coba lagi"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -601,6 +602,7 @@
       "onlyMeDescription": "Hanya Anda yang dapat melihat artefak ini",
       "organization": "Organisasi",
       "organizationDescription": "Siapa pun di {{organization}} yang memiliki tautan",
+      "organizationDescriptionUnnamed": "Siapa pun di organisasi Anda yang memiliki tautan",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
       "publicDescription": "Siapa pun yang memiliki tautan dapat melihat",

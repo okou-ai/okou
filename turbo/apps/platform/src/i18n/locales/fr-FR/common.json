@@ -519,7 +519,7 @@
       "description": "Parcourez tout ce que vous avez créé ici.",
       "emptyDescription": "Les artéfacts apparaîtront ici lorsqu'ils seront disponibles.",
       "emptyTitle": "Aucun artéfact trouvé",
-      "error": "Impossible de charger les artéfacts. Réessayez plus tard.",
+      "error": "Impossible de charger les artéfacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Afficher les artéfacts d'avatar",
@@ -538,7 +538,8 @@
         "websiteAria": "Afficher les artéfacts du site web"
       },
       "kindIcon": "Artéfact {{kind}}",
-      "loading": "Chargement des artéfacts"
+      "loading": "Chargement des artéfacts",
+      "retry": "Réessayer"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -620,6 +621,7 @@
       "onlyMeDescription": "Vous seul pouvez voir cet artefact",
       "organization": "Organisation",
       "organizationDescription": "Toute personne de {{organization}} disposant du lien",
+      "organizationDescriptionUnnamed": "Toute personne de votre organisation disposant du lien",
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
       "publicDescription": "Toute personne disposant du lien peut le voir",

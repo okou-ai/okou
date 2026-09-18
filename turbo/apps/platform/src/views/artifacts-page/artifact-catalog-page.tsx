@@ -18,7 +18,7 @@ import {
   useLoadable,
   useSet,
 } from "ccstate-react";
-import { surfaceVariants, cn } from "@okouai/ui";
+import { Button, surfaceVariants, cn } from "@okouai/ui";
 import { Alert, AlertDescription } from "@okouai/ui/components/ui/alert";
 import { useTranslation } from "react-i18next";
 
@@ -26,6 +26,7 @@ import {
   artifactCatalog$,
   loadMoreArtifactCatalog$,
   openArtifact$,
+  reloadArtifactCatalog$,
   scrollArtifactCardIntoViewRef$,
   selectedArtifactCatalogKind$,
   setArtifactCatalogKind$,
@@ -394,13 +395,30 @@ export function ArtifactCatalogSkeleton({
 
 export function ArtifactCatalogError() {
   const { t } = useTranslation();
+  const reload = useSet(reloadArtifactCatalog$);
   return (
     <Alert variant="destructive">
       <AlertTriangle size={16} aria-hidden />
-      <AlertDescription>
-        {t(($) => {
-          return $.artifacts.catalog.error;
-        })}
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+        <span>
+          {t(($) => {
+            return $.artifacts.catalog.error;
+          })}
+        </span>
+        {/* Reading the first page again is the whole recovery, so the message
+            carries the action instead of asking for a browser reload. */}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            reload();
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.catalog.retry;
+          })}
+        </Button>
       </AlertDescription>
     </Alert>
   );

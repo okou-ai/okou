@@ -504,7 +504,7 @@
       "description": "आपने जो कुछ भी यहां बनाया है उसे ब्राउज़ करें।",
       "emptyDescription": "आर्टिफ़ैक्ट उपलब्ध होने पर यहाँ दिखाई देंगे।",
       "emptyTitle": "कोई आर्टिफ़ैक्ट नहीं मिला",
-      "error": "आर्टिफ़ैक्ट लोड नहीं कर सके। बाद में पुनः प्रयास करें।",
+      "error": "आर्टिफ़ैक्ट लोड नहीं कर सके।",
       "filters": {
         "avatar": "अवतार",
         "avatarAria": "अवतार आर्टिफ़ैक्ट दिखाएँ",
@@ -523,7 +523,8 @@
         "websiteAria": "वेबसाइट आर्टिफ़ैक्ट दिखाएँ"
       },
       "kindIcon": "{{kind}} आर्टिफ़ैक्ट",
-      "loading": "आर्टिफ़ैक्ट लोड हो रहे हैं"
+      "loading": "आर्टिफ़ैक्ट लोड हो रहे हैं",
+      "retry": "पुनः प्रयास करें"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -602,6 +603,7 @@
       "onlyMeDescription": "केवल आप यह आर्टिफ़ैक्ट देख सकते हैं",
       "organization": "संगठन",
       "organizationDescription": "{{organization}} में लिंक वाला कोई भी व्यक्ति",
+      "organizationDescriptionUnnamed": "आपके संगठन में लिंक रखने वाला कोई भी व्यक्ति",
       "permissionsUpdated": "पहुँच अपडेट हो गई",
       "publicAccess": "सार्वजनिक ऐक्सेस",
       "publicDescription": "लिंक वाला कोई भी व्यक्ति देख सकता है",

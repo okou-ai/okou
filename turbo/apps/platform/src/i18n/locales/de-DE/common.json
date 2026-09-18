@@ -504,7 +504,7 @@
       "description": "Durchsuchen Sie alles, was Sie hier erstellt haben.",
       "emptyDescription": "Artefakte werden hier angezeigt, sobald sie verfügbar sind.",
       "emptyTitle": "Keine Artefakte gefunden",
-      "error": "Artefakte konnten nicht geladen werden. Versuchen Sie es später noch einmal.",
+      "error": "Artefakte konnten nicht geladen werden.",
       "filters": {
         "avatar": "Avatare",
         "avatarAria": "Avatar-Artefakte anzeigen",
@@ -523,7 +523,8 @@
         "websiteAria": "Website-Artefakte anzeigen"
       },
       "kindIcon": "{{kind}} Artefakt",
-      "loading": "Artefakte werden geladen"
+      "loading": "Artefakte werden geladen",
+      "retry": "Erneut versuchen"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -602,6 +603,7 @@
       "onlyMeDescription": "Nur du kannst dieses Artefakt ansehen",
       "organization": "Organisation",
       "organizationDescription": "Alle in {{organization}} mit dem Link",
+      "organizationDescriptionUnnamed": "Alle in Ihrer Organisation mit dem Link",
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
       "publicDescription": "Alle mit dem Link können es ansehen",

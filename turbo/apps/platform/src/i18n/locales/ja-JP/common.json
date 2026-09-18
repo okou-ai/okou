@@ -503,7 +503,7 @@
       "description": "ここで作成したものをすべて参照してください。",
       "emptyDescription": "アーティファクトが利用可能になると、ここに表示されます。",
       "emptyTitle": "アーティファクトは見つかりませんでした",
-      "error": "アーティファクトをロードできませんでした。後でもう一度試してください。",
+      "error": "アーティファクトをロードできませんでした。",
       "filters": {
         "avatar": "アバター",
         "avatarAria": "アバターのアーティファクトを表示する",
@@ -522,7 +522,8 @@
         "websiteAria": "Web サイトのアーティファクトを表示する"
       },
       "kindIcon": "{{kind}} アーティファクト",
-      "loading": "アーティファクトをロードしています"
+      "loading": "アーティファクトをロードしています",
+      "retry": "再試行"
     },
     "fileBadges": {
       "artwork": "アート",
@@ -601,6 +602,7 @@
       "onlyMeDescription": "このアーティファクトを表示できるのは自分だけです",
       "organization": "組織",
       "organizationDescription": "リンクを知っている {{organization}} のメンバー",
+      "organizationDescriptionUnnamed": "リンクを知っている組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
       "publicDescription": "リンクを知っている全員が表示できます",

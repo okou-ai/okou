@@ -519,7 +519,7 @@
       "description": "Sfoglia tutto ciò che hai creato qui.",
       "emptyDescription": "Gli artefatti appariranno qui quando saranno disponibili.",
       "emptyTitle": "Nessun artefatto trovato",
-      "error": "Impossibile caricare gli artefatti. Riprova più tardi.",
+      "error": "Impossibile caricare gli artefatti.",
       "filters": {
         "avatar": "Avatar",
         "avatarAria": "Mostra artefatti avatar",
@@ -538,7 +538,8 @@
         "websiteAria": "Mostra gli artefatti del sito web"
       },
       "kindIcon": "{{kind}} artefatto",
-      "loading": "Caricamento degli artefatti"
+      "loading": "Caricamento degli artefatti",
+      "retry": "Riprova"
     },
     "fileBadges": {
       "artwork": "ARTE",
@@ -620,6 +621,7 @@
       "onlyMeDescription": "Solo tu puoi visualizzare questo artefatto",
       "organization": "Organizzazione",
       "organizationDescription": "Chiunque in {{organization}} abbia il link",
+      "organizationDescriptionUnnamed": "Chiunque nella tua organizzazione abbia il link",
       "permissionsUpdated": "Accesso aggiornato",
       "publicAccess": "Accesso pubblico",
       "publicDescription": "Chiunque abbia il link può visualizzarlo",
