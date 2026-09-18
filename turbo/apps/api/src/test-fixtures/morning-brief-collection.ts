@@ -1,10 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import {
+  getInstructionsStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
+import { storages } from "@okouai/db/schema/storage";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
@@ -261,6 +266,55 @@ export async function repointMorningBriefInstallationAgent(installation: {
     await db().delete(agents).where(eq(agents.id, agentId));
   });
   return agentId;
+}
+
+/**
+ * Leave this Agent's instructions volume with nothing published.
+ *
+ * An Agent created through the product API always owns an instructions volume,
+ * but a member who never wrote instructions has no published head — the shape
+ * the language reader records as absence, with no archive to download. The
+ * Agent API exposes no way to unpublish, so the row is written directly; every
+ * later read still goes through the canonical storage reader.
+ */
+export async function clearMorningBriefInstructionsHead(
+  agentId: string,
+): Promise<void> {
+  const [agent] = await db()
+    .select({ name: agents.name, orgId: agents.orgId })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  if (!agent) {
+    throw new Error("Expected the Agent whose instructions are cleared");
+  }
+  await db()
+    .update(storages)
+    .set({ headVersionId: null })
+    .where(
+      and(
+        eq(storages.orgId, agent.orgId),
+        eq(storages.userId, VOLUME_ORG_USER_ID),
+        eq(storages.name, getInstructionsStorageName(agent.name)),
+      ),
+    );
+}
+
+/**
+ * Hold the final canonical instruction-version SELECT at PostgreSQL itself.
+ *
+ * There is no product input that pauses a read after retained-source authority
+ * and before request admission. The regression needs that exact infrastructure
+ * boundary, so it takes a short table lock only after the initial language read
+ * has completed and proves the production query is waiting through
+ * `pg_blocking_pids`. The fixture owns and releases the transaction at test end.
+ */
+export async function holdMorningBriefInstructionVersionRead(
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${storages} IN ACCESS EXCLUSIVE MODE`);
+  });
 }
 
 /** Pause the seeded schedule the way the Settings surface would. */

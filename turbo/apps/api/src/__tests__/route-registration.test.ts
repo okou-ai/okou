@@ -1,6 +1,8 @@
 import { morningBriefCalendarCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
+import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
@@ -10,7 +12,7 @@ import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { morningBriefCalendarCollectionPreviewRoutes } from "../signals/routes/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
-import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
+import { morningBriefCompositionPreviewRoutes } from "../signals/routes/morning-brief-composition-preview";
 import { morningBriefDeliveryPreviewRoutes } from "../signals/routes/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
@@ -62,6 +64,11 @@ describe("API route registrations", () => {
       name: "Morning Brief calendar collection preview",
       routes: morningBriefCalendarCollectionPreviewRoutes,
       route: morningBriefCalendarCollectionPreviewContract.collect,
+    },
+    {
+      name: "Morning Brief composition preview",
+      routes: morningBriefCompositionPreviewRoutes,
+      route: morningBriefCompositionPreviewContract.compose,
     },
   ])("registers the $name an operator invokes", ({ routes, route }) => {
     const [entry, ...extra] = routes;

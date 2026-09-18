@@ -54,6 +54,7 @@ const store = createStore();
 const CANONICAL_TARGET = "CLAUDE.md";
 const INSTRUCTIONS_MAX_BYTES = 64 * 1024;
 const STORAGE_PHASE_MS = 5000;
+const COLLECTION_PHASE_MS = 45_000;
 
 afterEach(() => {
   clearMockNow();
@@ -291,6 +292,22 @@ async function compose(member: Member, anchor = new Date(now()).toISOString()) {
     [200],
   );
   return response.body;
+}
+
+/** The exact language failure plus the composition's required source facts. */
+function languageUnavailableExpectation(detail: string) {
+  return {
+    result: "incomplete",
+    reason: "language-context-unavailable",
+    detail,
+    sources: expect.arrayContaining([
+      expect.objectContaining({
+        source: "chat",
+        coverage: "complete",
+        items: 1,
+      }),
+    ]),
+  };
 }
 
 function composeRequest(
@@ -565,11 +582,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       const body = await compose(member);
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "too-large",
-      });
+      expect(body).toStrictEqual(languageUnavailableExpectation("too-large"));
     });
 
     it("keeps the legacy profile-block behaviour of the canonical reader", async () => {
@@ -617,11 +630,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a symlink that follows it", async () => {
@@ -639,11 +650,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a symlink that precedes it", async () => {
@@ -661,11 +670,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a directory", async () => {
@@ -679,11 +686,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses an archive that omits the promised canonical target", async () => {
@@ -694,11 +699,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-missing",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-missing"),
+      );
     });
 
     it("refuses an instruction file that is not valid UTF-8", async () => {
@@ -711,11 +714,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "not-utf8",
-      });
+      expect(body).toStrictEqual(languageUnavailableExpectation("not-utf8"));
     });
 
     it("refuses an archive that does not decompress", async () => {
@@ -723,11 +722,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         storage.replace("/archive.tar.gz", Buffer.from("not a gzip", "utf8"));
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "archive-corrupt",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("archive-corrupt"),
+      );
     });
 
     it("refuses an archive that decompresses past the ceiling as oversized", async () => {
@@ -740,11 +737,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "too-large",
-      });
+      expect(body).toStrictEqual(languageUnavailableExpectation("too-large"));
     });
 
     it("refuses a manifest that is not valid UTF-8 instead of reading absence", async () => {
@@ -757,11 +750,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         storage.replace("/manifest.json", corrupted);
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "storage-unavailable",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("storage-unavailable"),
+      );
     });
   });
 
@@ -853,11 +844,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
   });
 
   describe("the absolute storage deadline", () => {
-    const timedOut = {
-      result: "incomplete",
-      reason: "language-context-unavailable",
-      detail: "timed-out",
-    } as const;
+    function timedOutExpectation() {
+      return languageUnavailableExpectation("timed-out");
+    }
 
     function archiveReads(storage: StorageBoundary): readonly string[] {
       return storage.reads.filter((key) => {
@@ -903,7 +892,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
             state: "no-target",
           });
         } else {
-          expect(body).toStrictEqual(timedOut);
+          expect(body).toStrictEqual(timedOutExpectation());
         }
         expect(archiveReads(storage)).toStrictEqual([]);
       },
@@ -939,13 +928,43 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
     it("expires extraction exactly at the deadline", async () => {
       await expect(
         composeAfterExtractionAt(STORAGE_PHASE_MS),
-      ).resolves.toStrictEqual(timedOut);
+      ).resolves.toStrictEqual(timedOutExpectation());
     });
 
     it("expires extraction after the deadline", async () => {
       await expect(
         composeAfterExtractionAt(STORAGE_PHASE_MS + 10),
-      ).resolves.toStrictEqual(timedOut);
+      ).resolves.toStrictEqual(timedOutExpectation());
+    });
+
+    /** The storage phase cannot outlive the tighter collection budget. */
+    it("expires on the collection budget and stops reading storage", async () => {
+      const storage = installStorageBoundary();
+      const member = await briefMember();
+      await publishInstructions(member, "Write in Danish.");
+      const base = now();
+      mockNow(base);
+      storage.beforeRead("/manifest.json", () => {
+        mockNow(base + COLLECTION_PHASE_MS);
+      });
+
+      const body = await compose(member, new Date(base).toISOString());
+
+      expect(body).toStrictEqual({
+        result: "incomplete",
+        reason: "deadline-exceeded",
+        detail: `language context reached ${new Date(
+          base + COLLECTION_PHASE_MS,
+        ).toISOString()}`,
+        sources: expect.arrayContaining([
+          expect.objectContaining({
+            source: "chat",
+            coverage: "complete",
+            items: 1,
+          }),
+        ]),
+      });
+      expect(archiveReads(storage)).toStrictEqual([]);
     });
 
     it("joins held storage work when the caller cancels", async () => {
