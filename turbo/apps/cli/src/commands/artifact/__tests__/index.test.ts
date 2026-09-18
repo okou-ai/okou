@@ -89,8 +89,6 @@ describe("okou artifact", () => {
       url: OWNER_URL,
       organization: PRIVATE.organization,
       selectedTarget: null,
-      selectedVersion: null,
-      candidateVersion: null,
     });
   });
 
@@ -145,6 +143,7 @@ describe("okou artifact", () => {
       const output = log.mock.calls.flat().join("\n");
       expect(output).toContain(`URL: ${OWNER_URL}`);
       expect(output).not.toContain(PUBLIC_URL);
+      expect(output).toContain(`Shared artifact: ${TARGET.kind} ${TARGET.id}`);
       expect(output).toContain(
         `Visibility: ${audience === "organization" ? "org" : "public"}`,
       );
@@ -201,8 +200,6 @@ describe("okou artifact", () => {
         visibility: audience === "organization" ? "org" : "public",
         url: OWNER_URL,
         selectedTarget: { ...TARGET, kind },
-        selectedVersion: version,
-        candidateVersion: version,
       });
       if (url !== OWNER_URL) {
         expect(output).not.toContain(url);
@@ -221,8 +218,6 @@ describe("okou artifact", () => {
       url: OWNER_URL,
       organization: PRIVATE.organization,
       selectedTarget: null,
-      selectedVersion: null,
-      candidateVersion: null,
     });
   });
 
@@ -254,7 +249,7 @@ describe("okou artifact", () => {
     expect(log.mock.calls.flat().join("\n")).not.toContain(PUBLIC_URL);
   });
 
-  it("explicitly shares a new hosted version instead of returning the older link", async () => {
+  it("explicitly shares the requested deployment when another deployment is currently shared", async () => {
     const target = { ...TARGET, kind: "html" as const };
     const shared = {
       ...PRIVATE,
@@ -283,7 +278,6 @@ describe("okou artifact", () => {
     );
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       selectedTarget: target,
-      selectedVersion: 2,
     });
   });
 

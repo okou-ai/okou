@@ -101,14 +101,13 @@ describe.each([
   let directory: string;
   let destination: string;
 
-  const invoke = (source = REFERENCE, extra: string[] = []) => {
+  const invoke = (source = REFERENCE) => {
     return command.parseAsync([
       "node",
       "okou",
       ...prefix,
       source,
       ...(clone ? [destination, "--json"] : ["--out", destination]),
-      ...extra,
     ]);
   };
 
@@ -159,7 +158,7 @@ describe.each([
         fileCount: CONTENTS.length,
         size: siteResponse().site.size,
         ...(clone
-          ? { deploymentVersion: 2 }
+          ? { deploymentId: siteResponse().site.deploymentId }
           : { entrypoint: join(destination, "index.html") }),
       });
     },
@@ -223,16 +222,4 @@ describe.each([
       expect(output).not.toHaveBeenCalled();
     },
   );
-
-  if (clone) {
-    it("does not substitute a different version for the visible shared version", async () => {
-      await expect(invoke(REFERENCE, ["--version", "3"])).rejects.toThrow(
-        "process.exit called",
-      );
-      expect(errors).toHaveBeenCalledWith(
-        expect.stringContaining("Hosted deployment version not found: 3"),
-      );
-      expect(existsSync(destination)).toBe(false);
-    });
-  }
 });

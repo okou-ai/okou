@@ -59,6 +59,9 @@ surface; the index does not replace their detailed rules.
   deduplication, two-date cleanup, transient remainder and activation gates.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
+- [Hosted publication version retirement](./database/hosted-publication-retirement.md):
+  immutable content identity, historical inventory, preserved links/permissions,
+  and the consumer/data/rollback gates before schema contraction.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
   dated sink/copy inventory, provider capability gaps, and the parent-worker
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).

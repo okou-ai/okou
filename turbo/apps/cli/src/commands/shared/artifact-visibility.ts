@@ -55,8 +55,8 @@ export async function applyArtifactVisibility<
 
   await assertPrivateArtifactUrl(result.url);
 
-  // A new private deployment is owner-only even if an older version is shared.
-  // Setting the site's audience to private would revoke that older version.
+  // New private artifacts are owner-only. Keep any existing sharing policy
+  // unchanged when the caller requests a private publication.
   if (visibility === "only-me") {
     return { ...result, visibility, ownerUrl: result.url };
   }

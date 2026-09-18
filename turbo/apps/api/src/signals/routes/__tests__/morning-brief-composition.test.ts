@@ -14,8 +14,12 @@ import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
+  barrierQueryBinds,
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/account-erasure-subject";
+import {
   clearMorningBriefInstructionsHead,
-  holdMorningBriefInstructionVersionRead,
   holdMorningBriefMembershipLookup,
   pauseMorningBriefAutomation,
 } from "../../../test-fixtures/morning-brief-collection";
@@ -1137,6 +1141,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
   ])(
     "decides the held canonical instruction version read $name the deadline",
     async ({ offset, expired }) => {
+      const otherOwner = await setupOwner();
       const fixture = await setupOwner({ slack: true });
       const at = freezeClock();
       const deadlineAt = at + 10_000;
@@ -1163,30 +1168,53 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       );
       await seedMembership(fixture);
       stubSlackMessage(at);
-      const pending = startCompose(fixture, {
-        anchor: anchorFor(at),
-        deadlineAt: new Date(deadlineAt).toISOString(),
-      });
-
-      const initialAuthority = await initialAuthorityReady.promise;
-      await initialAuthority.waitForArrival();
-      const finalAuthority = holdMorningBriefMembershipLookup(
-        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+      let awaitingVersionRead = false;
+      const response = await withDatabaseTransactionBarrierFixture(
+        {
+          select: (queryArgs) => {
+            const text = barrierQueryText(queryArgs);
+            return (
+              awaitingVersionRead &&
+              text.startsWith('select "head_version_id"') &&
+              text.includes('from "storages"') &&
+              barrierQueryBinds(queryArgs, fixture.actor.orgId)
+            );
+          },
+          stopAt: (_queryArgs, selectingStatement) => {
+            return selectingStatement;
+          },
+          pauseAfter: true,
+          work: async (versionRead) => {
+            const pending = startCompose(fixture, {
+              anchor: anchorFor(at),
+              deadlineAt: new Date(deadlineAt).toISOString(),
+            });
+            const initialAuthority = await initialAuthorityReady.promise;
+            await initialAuthority.waitForArrival();
+            const finalAuthority = holdMorningBriefMembershipLookup(
+              { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+              context.signal,
+            );
+            initialAuthority.release();
+            await finalAuthority.waitForArrival();
+            awaitingVersionRead = true;
+            // An unrelated storage operation must neither satisfy the target
+            // boundary nor wait on a table-wide lock held by this test.
+            await bdd.updateAgentInstructions(
+              otherOwner.actor,
+              otherOwner.agentId,
+              "Write in English.",
+            );
+            expect(versionRead.enteredYet()).toBeFalsy();
+            finalAuthority.release();
+            await versionRead.entered;
+            mockNow(deadlineAt + offset);
+            versionRead.release();
+            return await accept(pending, [200]);
+          },
+        },
         context.signal,
       );
-      initialAuthority.release();
-      await finalAuthority.waitForArrival();
-      // Source revalidation is complete and its final owner proof is now held.
-      // Acquire the database boundary before releasing that proof so only the
-      // canonical instruction-version SELECT can arrive at this lock.
-      const versionRead = await holdMorningBriefInstructionVersionRead(
-        context.signal,
-      );
-      finalAuthority.release();
-      await versionRead.waitForBlocked();
-      mockNow(deadlineAt + offset);
-      await versionRead.release();
-      const response = await accept(pending, [200]);
 
       if (!expired) {
         expect(response.body.result).toBe("composed");

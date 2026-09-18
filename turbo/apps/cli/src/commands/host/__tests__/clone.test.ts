@@ -58,6 +58,7 @@ describe("okou host clone command", () => {
 
   it.each([
     ARTIFACT_URL,
+    "dpl-00000000-0000-4000-8000-000000000002",
     "/artifacts/abcxyz1234.html",
     "https://app.okou.ai/artifacts/abcxyz1234.html#slide-2",
     "https://app.okou.ai/artifacts/00000000000040008000000000000002.html",
@@ -111,9 +112,8 @@ describe("okou host clone command", () => {
           "dpl-00000000-0000-4000-8000-000000000002",
         );
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
-        expect(new URL(request.url).searchParams.get("version")).toBe("1");
         expect(new URL(request.url).searchParams.get("hostname")).toBe(
-          new URL(sourceUrl).hostname,
+          URL.canParse(sourceUrl) ? new URL(sourceUrl).hostname : null,
         );
         return HttpResponse.json(siteFiles);
       }),
@@ -131,8 +131,6 @@ describe("okou host clone command", () => {
       "clone",
       sourceUrl,
       destination,
-      "--version",
-      "1",
       "--json",
     ]);
 
@@ -147,7 +145,7 @@ describe("okou host clone command", () => {
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
     expect(parsed).toMatchObject({
       publicSlug: "demo-site-a1b2c3d4-release-01",
-      deploymentVersion: 1,
+      deploymentId: "00000000-0000-4000-8000-000000000002",
       artifactUrl: ARTIFACT_URL,
       destination,
       fileCount: 2,
