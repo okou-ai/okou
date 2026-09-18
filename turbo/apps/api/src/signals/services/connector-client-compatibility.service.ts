@@ -9,6 +9,7 @@ import type { PublicConnectorCatalogItem } from "@okouai/api-contracts/contracts
 import { request$ } from "../context/hono";
 import { db$ } from "../external/db";
 import { loadAcceptedConnectorCatalogSnapshot } from "./connector-catalog-external-reader.service";
+import { loadConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 
 /** Negotiation changes response compatibility, never account or Run authority. */
 export const connectorClientSupportsBuiltinMcp$ = computed((get) => {
@@ -38,6 +39,16 @@ export function connectorClientUpgradeRequired(): Response {
   );
 }
 
+function createConnectorClientProjection(hiddenSlugs: ReadonlySet<string>) {
+  const allowsSlug = (slug: string): boolean => {
+    return !hiddenSlugs.has(slug);
+  };
+  const allowsTarget = (target: ConnectorAccountTarget): boolean => {
+    return target.kind !== "builtin" || allowsSlug(target.connectorSlug);
+  };
+  return { allowsSlug, allowsTarget, hiddenSlugs };
+}
+
 /**
  * Classify protocol only from explicit metadata in the accepted catalog.
  * Remove the legacy projection in #34913 after capable App rollout, the later
@@ -54,14 +65,33 @@ export const connectorClientProjection$ = computed(async (get) => {
       }
     }
   }
-  const allowsSlug = (slug: string): boolean => {
-    return !hiddenSlugs.has(slug);
-  };
-  const allowsTarget = (target: ConnectorAccountTarget): boolean => {
-    return target.kind !== "builtin" || allowsSlug(target.connectorSlug);
-  };
-  return { allowsSlug, allowsTarget, hiddenSlugs };
+  return createConnectorClientProjection(hiddenSlugs);
 });
+
+/** Classify selected targets without requiring the complete catalog snapshot. */
+export function connectorClientSelectionProjection(
+  selections: readonly { readonly target: ConnectorAccountTarget }[],
+) {
+  return computed(async (get) => {
+    const hiddenSlugs = new Set<string>();
+    const connectorSlugs = selections.flatMap((selection) => {
+      return selection.target.kind === "builtin"
+        ? [selection.target.connectorSlug]
+        : [];
+    });
+    if (!get(connectorClientSupportsBuiltinMcp$) && connectorSlugs.length > 0) {
+      const selection = await loadConnectorRuntimeSelection(get(db$), {
+        requestedConnectorSlugs: connectorSlugs,
+      });
+      for (const connector of selection.connectors.values()) {
+        if (connector.catalogConnector.mcp !== undefined) {
+          hiddenSlugs.add(connector.connectorSlug);
+        }
+      }
+    }
+    return createConnectorClientProjection(hiddenSlugs);
+  });
+}
 
 export function connectorClientSelectionGuard(
   selections: readonly { readonly target: ConnectorAccountTarget }[],
@@ -74,7 +104,9 @@ export function connectorClientSelectionGuard(
     ) {
       return null;
     }
-    const projection = await get(connectorClientProjection$);
+    const projection = await get(
+      connectorClientSelectionProjection(selections),
+    );
     return selections.some((selection) => {
       return !projection.allowsTarget(selection.target);
     })

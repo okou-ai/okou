@@ -1,5 +1,6 @@
 import {
   connectorClientProjection$,
+  connectorClientSelectionProjection,
   connectorClientUpgradeRequired,
 } from "../services/connector-client-compatibility.service";
 import { command, computed } from "ccstate";
@@ -53,12 +54,6 @@ const oauthCompletionInner$ = command(
       pathParamsOf(connectorAccountsContract.oauthCompletion),
     );
     const target = get(queryOf(connectorAccountsContract.oauthCompletion));
-    if (
-      target.kind === "builtin" &&
-      !(await get(connectorClientProjection$)).allowsTarget(target)
-    ) {
-      return connectorClientUpgradeRequired();
-    }
     set(setResHeader$, "Cache-Control", "no-store");
     const completion = await readConnectorOAuthCompletion(
       set(writeDb$),
@@ -70,9 +65,17 @@ const oauthCompletionInner$ = command(
       },
       signal,
     );
-    return completion
-      ? { status: 200 as const, body: completion }
-      : notFound("OAuth completion not found");
+    if (!completion) {
+      return notFound("OAuth completion not found");
+    }
+    if (target.kind === "builtin") {
+      const projection = await get(connectorClientProjection$);
+      signal.throwIfAborted();
+      if (!projection.allowsTarget(target)) {
+        return connectorClientUpgradeRequired();
+      }
+    }
+    return { status: 200 as const, body: completion };
   },
 );
 
@@ -94,7 +97,7 @@ const inspectInner$ = computed(async (get) => {
       return account.target.kind === "builtin";
     })
   ) {
-    const projection = await get(connectorClientProjection$);
+    const projection = await get(connectorClientSelectionProjection(accounts));
     if (
       body.data.selections.some((selection) => {
         return !projection.allowsTarget(selection.target);
@@ -374,12 +377,6 @@ const deletionImpactInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.deletionImpact));
   const query = get(queryOf(connectorAccountsContract.deletionImpact));
-  if (
-    query.kind === "builtin" &&
-    !(await get(connectorClientProjection$)).allowsTarget(query)
-  ) {
-    return connectorClientUpgradeRequired();
-  }
   const request = {
     orgId: auth.orgId,
     userId: auth.userId,
@@ -388,6 +385,12 @@ const deletionImpactInner$ = computed(async (get) => {
   };
   if (!(await getConnectorAccount(get(db$), request))) {
     return notFound("Connector account not found");
+  }
+  if (
+    query.kind === "builtin" &&
+    !(await get(connectorClientProjection$)).allowsTarget(query)
+  ) {
+    return connectorClientUpgradeRequired();
   }
   const impact = await connectorAccountDeletionImpact(get(db$), request);
   if (!impact) {

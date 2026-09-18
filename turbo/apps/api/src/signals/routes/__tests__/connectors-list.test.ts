@@ -264,6 +264,14 @@ describe("GET /api/connectors", () => {
     });
     const unavailableReads = await Promise.all([
       accept(
+        accountClient.oauthCompletion({
+          headers: authHeaders(),
+          query: target,
+          params: { attemptId: randomUUID() },
+        }),
+        [404],
+      ),
+      accept(
         accountClient.connections({ headers: authHeaders(), query: target }),
         [404],
       ),
@@ -279,6 +287,14 @@ describe("GET /api/connectors", () => {
         accountClient.scopeDiff({
           headers: authHeaders(),
           query: { connectorSlug: "gitlab" },
+          params: { connectionId: account.id },
+        }),
+        [404],
+      ),
+      accept(
+        accountClient.deletionImpact({
+          headers: authHeaders(),
+          query: target,
           params: { connectionId: account.id },
         }),
         [404],

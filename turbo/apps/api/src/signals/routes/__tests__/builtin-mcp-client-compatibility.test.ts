@@ -18,13 +18,26 @@ import {
   agentsByIdContract,
 } from "@okouai/api-contracts/contracts/agents";
 import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import {
+  chatThreadConnectorSelectionContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
+import {
+  clearApiTestConnectorCatalogExternalReaderIdentityReplacements,
+  installApiTestConnectorCatalog,
+  setApiTestConnectorCatalogExternalReaderIdentityReadHook,
+} from "../../../test-fixtures/connector-catalog";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorsRoutes } from "../connectors";
 import { agentsRoutes } from "../agents";
+import { chatThreadRoutes } from "../chat-threads";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
 describe("builtin MCP client compatibility", () => {
@@ -56,6 +69,7 @@ describe("builtin MCP client compatibility", () => {
   }
 
   afterEach(async () => {
+    clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
     for (const id of createdAgents.splice(0)) {
       await accept(
         setupApp({ context, routes })(agentsByIdContract).delete({
@@ -199,6 +213,14 @@ describe("builtin MCP client compatibility", () => {
         [426],
       ),
       accept(
+        accounts().deletionImpact({
+          headers,
+          params: { connectionId },
+          query: target,
+        }),
+        [426],
+      ),
+      accept(
         accounts().inspect({
           headers,
           body: { selections: [{ target, connectionId }] },
@@ -294,5 +316,95 @@ describe("builtin MCP client compatibility", () => {
     expect(new Set(actual.body.enabledConnectorSlugs)).toStrictEqual(
       new Set(["public-mcp", "slack"]),
     );
+  });
+
+  it("projects selected MCP accounts and rejects legacy changes without reading the full catalog", async () => {
+    mockEnv(
+      "R2_USER_STORAGES_BUCKET_NAME",
+      `test-mcp-selection-${randomUUID()}`,
+    );
+    await installApiTestConnectorCatalog({ runtimeProjection: true });
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Scoped MCP selections",
+    });
+    createdAgents.push(agent.agentId);
+    await accept(
+      setupApp({ context, routes })(userConnectorsContract).update({
+        headers: capableHeaders,
+        params: { id: agent.agentId },
+        body: { enabledConnectorSlugs: [target.connectorSlug] },
+      }),
+      [200],
+    );
+    const connected = await accept(
+      setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
+        headers: capableHeaders,
+        params: { connectorSlug: target.connectorSlug },
+        body: { authMethod: "none", account: { intent: "add" } },
+      }),
+      [200],
+    );
+    const connectionId = connected.body.id;
+    createdAccounts.push(connectionId);
+    const selection = { target, connectionId };
+    const threads = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadsContract,
+    );
+    const selections = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadConnectorSelectionContract,
+    );
+    const threadBody = {
+      agentId: agent.agentId,
+      model: "claude-sonnet-5" as const,
+      connectorSelections: [selection],
+    };
+    const createdThread = await accept(
+      threads.create({ headers: capableHeaders, body: threadBody }),
+      [201],
+    );
+    const params = { id: createdThread.body.id };
+
+    // The accepted PostgreSQL projection remains readable while the complete
+    // catalog snapshot is unavailable at its external-reader boundary.
+    setApiTestConnectorCatalogExternalReaderIdentityReadHook(() => {
+      return Promise.reject(new Error("Full catalog read is unavailable"));
+    });
+    const legacy = await accept(selections.get({ headers, params }), [200]);
+    expect(legacy.body).toStrictEqual({
+      selections: [],
+      selectedConnections: [],
+    });
+    const rejected = await Promise.all([
+      accept(selections.update({ headers, params, body: selection }), [426]),
+      accept(selections.clear({ headers, params, body: target }), [426]),
+      accept(
+        accounts().inspect({
+          headers,
+          body: { selections: [selection] },
+        }),
+        [426],
+      ),
+      accept(threads.create({ headers, body: threadBody }), [426]),
+    ]);
+    for (const response of rejected) {
+      expect(response.body.error.code).toBe(
+        "CONNECTOR_CLIENT_UPGRADE_REQUIRED",
+      );
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+    }
+    const retained = await accept(
+      selections.get({ headers: capableHeaders, params }),
+      [200],
+    );
+    expect(retained.body.selections).toStrictEqual([selection]);
+    expect(retained.body.selectedConnections).toMatchObject([
+      { id: connectionId, target, connectionStatus: "connected" },
+    ]);
   });
 });

@@ -1,5 +1,5 @@
 import {
-  connectorClientProjection$,
+  connectorClientSelectionProjection,
   connectorClientUpgradeRequired,
 } from "../services/connector-client-compatibility.service";
 import { command, computed } from "ccstate";
@@ -34,19 +34,17 @@ const getSelectionsInner$ = computed(async (get): Promise<unknown> => {
   if (!result) {
     return notFound("Chat thread not found");
   }
-  const projection = result.selections.some((selection) => {
-    return selection.target.kind === "builtin";
-  })
-    ? await get(connectorClientProjection$)
-    : null;
+  const projection = await get(
+    connectorClientSelectionProjection(result.selections),
+  );
   return {
     status: 200 as const,
     body: {
       selections: result.selections.filter((selection) => {
-        return !projection || projection.allowsTarget(selection.target);
+        return projection.allowsTarget(selection.target);
       }),
       selectedConnections: result.selectedConnections.filter((connection) => {
-        return !projection || projection.allowsTarget(connection.target);
+        return projection.allowsTarget(connection.target);
       }),
     },
   };
@@ -67,7 +65,9 @@ const updateSelectionInner$ = command(
     }
     if (
       body.data.target.kind === "builtin" &&
-      !(await get(connectorClientProjection$)).allowsTarget(body.data.target)
+      !(
+        await get(connectorClientSelectionProjection([body.data]))
+      ).allowsTarget(body.data.target)
     ) {
       return connectorClientUpgradeRequired();
     }
@@ -141,7 +141,9 @@ const clearSelectionInner$ = command(
     }
     if (
       body.data.kind === "builtin" &&
-      !(await get(connectorClientProjection$)).allowsTarget(body.data)
+      !(
+        await get(connectorClientSelectionProjection([{ target: body.data }]))
+      ).allowsTarget(body.data)
     ) {
       return connectorClientUpgradeRequired();
     }
