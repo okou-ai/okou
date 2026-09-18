@@ -162,11 +162,13 @@ export function isMorningBriefDatabaseDeadlineExceeded(
   if (error instanceof MorningBriefDatabaseDeadlineExceededError) {
     return true;
   }
+  const postgresError =
+    error instanceof Error && error.cause !== undefined ? error.cause : error;
   return (
-    error !== null &&
-    typeof error === "object" &&
-    "code" in error &&
-    error.code === "25P04"
+    postgresError !== null &&
+    typeof postgresError === "object" &&
+    "code" in postgresError &&
+    postgresError.code === "25P04"
   );
 }
 

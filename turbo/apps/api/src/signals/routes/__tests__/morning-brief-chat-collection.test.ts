@@ -866,7 +866,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
             // real server settings, including the whole-transaction bound.
             const healthy = collectRequest(member);
             await expect(contentQuery.entered).resolves.toMatchObject({
-              lockTimeout: "1s",
+              lockTimeout: "2s",
               statementTimeout: "5s",
               transactionTimeout: "12s",
             });
