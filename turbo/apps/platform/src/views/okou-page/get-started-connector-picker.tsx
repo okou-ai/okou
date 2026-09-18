@@ -1,9 +1,19 @@
-import { CircleCheck } from "lucide-react";
-import { useLastLoadable } from "ccstate-react";
+import { CircleCheck, Loader2 } from "lucide-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import {
+  connectConnectorOAuthAuthCode$,
+  connectFlowConnectorSlug$,
+  getConnectorStatusDirectConnectMethod,
+  pollingOAuthAuthCodeConnectorSlug$,
+  pollingOAuthDeviceAuthConnectorSlug$,
+} from "../../signals/okou-page/settings/connectors.ts";
+import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 
 /**
@@ -37,25 +47,34 @@ function oneClickConnectors(
 
 function ConnectorTile({
   connector,
-  onPick,
+  busy,
+  onSelect,
 }: {
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly onPick: (connector: PlatformConnectorCatalogStatusItem) => void;
+  readonly busy: boolean;
+  readonly onSelect: (connector: PlatformConnectorCatalogStatusItem) => void;
 }) {
   return (
     <button
       type="button"
       data-testid={`quest-connector-${connector.slug}`}
+      disabled={busy}
       onClick={() => {
-        onPick(connector);
+        onSelect(connector);
       }}
-      className="flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 text-left transition-colors hover:border-brand hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
     >
       <ConnectorIcon icon={connector.icon} size={22} />
       <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">
         {connector.label}
       </span>
-      {connector.connected ? (
+      {busy ? (
+        <Loader2
+          size={15}
+          aria-hidden="true"
+          className="animate-spin text-muted-foreground"
+        />
+      ) : connector.connected ? (
         <CircleCheck size={15} aria-hidden="true" className="text-brand-text" />
       ) : null}
     </button>
@@ -64,22 +83,56 @@ function ConnectorTile({
 
 /**
  * Every one-click connector, inside the dialog that explains why to connect
- * one. The catalog page is still the place to browse four thousand services;
- * this is the short list the quest is actually about, so picking one here goes
- * straight into its connect flow instead of leaving the reader on a page to
- * search for it again.
+ * one.
+ *
+ * Pressing one starts its authorization here rather than opening a second
+ * dialog that would repeat the connector's name and hold a single Connect
+ * button; the few connectors that genuinely need a choice fall back to that
+ * dialog through `onNeedsChoice`.
  */
 export function QuestConnectorPicker({
-  onPick,
+  onNeedsChoice,
 }: {
-  readonly onPick: (connector: PlatformConnectorCatalogStatusItem) => void;
+  readonly onNeedsChoice: (
+    connector: PlatformConnectorCatalogStatusItem,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const pageSignal = useGet(pageSignal$);
+  const connect = useSet(connectConnectorOAuthAuthCode$);
+  const connectFlowSlug = useGet(connectFlowConnectorSlug$);
+  const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
+  const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
   const connectors =
     catalogLoadable.state === "hasData"
       ? oneClickConnectors(catalogLoadable.data.connectors)
       : [];
+
+  const select = (connector: PlatformConnectorCatalogStatusItem) => {
+    const direct = getConnectorStatusDirectConnectMethod(connector);
+    const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
+    if (direct?.kind !== "browser-auth" || !accountOptions) {
+      onNeedsChoice(connector);
+      return;
+    }
+    detach(
+      connect(
+        connector.slug,
+        direct.authMethod,
+        {
+          connectorLabel: connector.label,
+          connectorIcon: connector.icon,
+          // The quest is about giving the assistant something to work on, so
+          // the agents this workspace can already see get the new connector.
+          authorizeVisibleAgents: true,
+          ...accountOptions,
+        },
+        pageSignal,
+      ),
+      Reason.DomCallback,
+    );
+  };
 
   if (connectors.length === 0) {
     return (
@@ -107,7 +160,12 @@ export function QuestConnectorPicker({
           <ConnectorTile
             key={connector.slug}
             connector={connector}
-            onPick={onPick}
+            busy={
+              connectFlowSlug === connector.slug ||
+              pollingAuthCodeSlug === connector.slug ||
+              pollingDeviceAuthSlug === connector.slug
+            }
+            onSelect={select}
           />
         );
       })}

@@ -412,9 +412,11 @@ function useLaterLabel(): string {
 function ConnectorIntro({
   onConfirm,
   onClose,
-  onPick,
+  onNeedsChoice,
 }: IntroProps & {
-  readonly onPick: (connector: PlatformConnectorCatalogStatusItem) => void;
+  readonly onNeedsChoice: (
+    connector: PlatformConnectorCatalogStatusItem,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
@@ -432,7 +434,7 @@ function ConnectorIntro({
       // The connectors themselves are the illustration: every one of them
       // connects in one press, which is the claim the abstract figure was
       // making and these marks make better.
-      figure={<QuestConnectorPicker onPick={onPick} />}
+      figure={<QuestConnectorPicker onNeedsChoice={onNeedsChoice} />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
@@ -704,7 +706,7 @@ export function GetStartedQuestIntroDialog({
     close();
   };
   const props: IntroProps = { onConfirm: confirm, onClose: close };
-  const pick = (connector: PlatformConnectorCatalogStatusItem) => {
+  const needsChoice = (connector: PlatformConnectorCatalogStatusItem) => {
     setSelectedSlug(connector.slug);
   };
 
@@ -727,7 +729,7 @@ export function GetStartedQuestIntroDialog({
           smMaxWidth={introducedKey === "connector" ? 640 : 560}
         >
           {introducedKey === "connector" && (
-            <ConnectorIntro {...props} onPick={pick} />
+            <ConnectorIntro {...props} onNeedsChoice={needsChoice} />
           )}
           {introducedKey === "slack" && <SlackIntro {...props} />}
           {introducedKey === "invite" && <InviteIntro {...props} />}

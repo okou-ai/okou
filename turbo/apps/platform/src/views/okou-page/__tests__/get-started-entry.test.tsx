@@ -17,7 +17,7 @@ import {
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -747,9 +747,14 @@ test("The connector step says what it costs the user before it hands them off", 
   });
 });
 
-test("Picking a connector in the dialog opens its connect flow", async () => {
+test("Picking a connector in the dialog starts its authorization", async () => {
   configureQuestPage(context, "admin");
   mockQuestCatalog();
+  const opened: string[] = [];
+  vi.stubGlobal("open", (url: string) => {
+    opened.push(url);
+    return null;
+  });
   await setupPage({
     context,
     path: questChatPath(),
@@ -765,9 +770,11 @@ test("Picking a connector in the dialog opens its connect flow", async () => {
 
   click(await screen.findByTestId("quest-connector-gmail"));
 
-  // Connecting happens here rather than on a page the reader would have to
-  // find the same connector on again.
-  await screen.findByRole("dialog", { name: /Gmail/u });
+  // Authorization begins in place: no second dialog repeating the connector's
+  // name, and no page the reader would have to find the same connector on.
+  await waitFor(() => {
+    expect(opened.join(" ")).toContain("gmail");
+  });
   expect(pathname()).toBe(questChatPath());
 });
 
