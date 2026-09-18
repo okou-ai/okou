@@ -188,8 +188,9 @@ test("allocates independent slugs across public and private publication policies
   const draft = await api.prepareHostedSite(actor, body);
   expect(draft.siteId).not.toBe(published.siteId);
   expect(draft.deploymentId).not.toBe(published.deploymentId);
-  expect(draft.publicSlug).toMatch(
-    new RegExp(`^${body.site}-[a-z0-9]{4}$`, "u"),
+  expect(draft.publicSlug.startsWith(`${body.site}-`)).toBeTruthy();
+  expect(draft.publicSlug.slice(body.site.length + 1)).toMatch(
+    /^[a-z0-9]{4}$/u,
   );
   expect(draft.deploymentVersion).toBe(1);
   await api.completeHostedSite(actor, draft.deploymentId);
@@ -218,8 +219,9 @@ test("allocates independent slugs across public and private publication policies
     [FeatureSwitchKey.PrivateArtifacts]: false,
   });
   const nextPublic = await api.prepareHostedSite(actor, body);
-  expect(nextPublic.publicSlug).toMatch(
-    new RegExp(`^${body.site}-[a-z0-9]{4}$`, "u"),
+  expect(nextPublic.publicSlug.startsWith(`${body.site}-`)).toBeTruthy();
+  expect(nextPublic.publicSlug.slice(body.site.length + 1)).toMatch(
+    /^[a-z0-9]{4}$/u,
   );
   expect(nextPublic.publicSlug).not.toBe(draft.publicSlug);
   expect(nextPublic.siteId).not.toBe(draft.siteId);
