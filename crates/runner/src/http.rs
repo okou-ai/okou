@@ -154,6 +154,13 @@ impl ApiRequestBuilder {
         }
     }
 
+    pub(crate) fn builtin_mcp_reader(self) -> Self {
+        Self {
+            builder: self.builder.header("Accept-Version", "builtin-mcp-v1"),
+            ..self
+        }
+    }
+
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {

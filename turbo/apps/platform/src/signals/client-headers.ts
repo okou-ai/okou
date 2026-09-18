@@ -1,4 +1,6 @@
 import {
+  CONNECTOR_CONTRACT_HEADER,
+  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
@@ -9,6 +11,7 @@ const clientSessionId = crypto.randomUUID();
 
 function createClientHeaders(clientVersion: string): Record<string, string> {
   return {
+    [CONNECTOR_CONTRACT_HEADER]: CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
     [CLIENT_VERSION_HEADER]: clientVersion,
     [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
     [CLIENT_SESSION_ID_HEADER]: clientSessionId,

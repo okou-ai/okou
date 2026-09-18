@@ -109,6 +109,7 @@ import {
   type ConnectorCredentialStatus,
 } from "./connector-credential-status.service";
 import {
+  getConnectorRuntimeConnector,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSnapshot,
@@ -211,6 +212,7 @@ interface ReferencedAuthKeys {
 }
 
 interface FirewallAuthResolutionContext {
+  readonly body: FirewallAuthBody;
   readonly referenced: ReferencedAuthKeys;
   readonly vars: Record<string, string>;
   readonly connectorAccessBySlug: ReadonlyMap<string, ConnectorAccessState>;
@@ -4374,32 +4376,73 @@ function hasMissingFirewallVariables(args: {
   });
 }
 
-async function prepareFirewallAuthResolutionContext(args: {
+/** MCP aliases are local to the explicitly matched account, never global Run
+ * secret owners. A caller-owned alias or another connector's alias must not
+ * override this account's proxy credentials. */
+function bindMatchedBuiltinMcpSecrets(args: {
+  readonly body: FirewallAuthBody;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorAccessBySlug: ReadonlyMap<string, ConnectorAccessState>;
+  readonly referencedSecretKeys: ReadonlySet<string>;
+}): FirewallAuthBody | undefined {
+  const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+  if (
+    connectorSlug === undefined ||
+    !getConnectorRuntimeConnector(args.connectorCatalogSnapshot, connectorSlug)
+      ?.catalogConnector.mcp
+  ) {
+    return args.body;
+  }
+  const access = args.connectorAccessBySlug.get(connectorSlug);
+  if (!access) {
+    return undefined;
+  }
+  const secretConnectorMap: Record<string, string> = {};
+  const secretConnectorMetadataMap: Record<string, SecretConnectorMetadata> =
+    {};
+  for (const binding of access.runtimeMetadata.runtimeBindings) {
+    if (!args.referencedSecretKeys.has(binding.envName)) {
+      continue;
+    }
+    if (binding.source.kind === "connector-secret") {
+      secretConnectorMap[binding.envName] = connectorSlug;
+      secretConnectorMetadataMap[binding.envName] = {
+        sourceType: "connector",
+        sourceId: access.connectorId,
+      };
+    } else if (binding.source.kind === "platform-secret") {
+      secretConnectorMap[binding.envName] = connectorSlug;
+      secretConnectorMetadataMap[binding.envName] = {
+        sourceType: "platform-secret",
+      };
+    }
+  }
+  if (
+    [...args.referencedSecretKeys].some((key) => {
+      return !Object.hasOwn(secretConnectorMap, key);
+    })
+  ) {
+    return undefined;
+  }
+  return { ...args.body, secretConnectorMap, secretConnectorMetadataMap };
+}
+
+async function prepareFirewallConnectorBindings(args: {
   readonly db: Db;
   readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
   readonly auth: SandboxAuth;
   readonly body: FirewallAuthBody;
   readonly orgId: string;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly secrets: Record<string, string>;
   readonly referenced: ReferencedAuthKeys;
 }): Promise<
-  | { readonly ok: true; readonly context: FirewallAuthResolutionContext }
+  | {
+      readonly ok: true;
+      readonly body: FirewallAuthBody;
+      readonly connectorAccessBySlug: ReadonlyMap<string, ConnectorAccessState>;
+    }
   | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
 > {
   const referenced = args.referenced;
-  const vars = args.body.vars ?? {};
-  if (
-    args.body.secretConnectorMap &&
-    hasForbiddenModelProviderOwner(
-      args.auth,
-      args.body.secretConnectorMap,
-      args.body.secretConnectorMetadataMap,
-      referenced.secrets,
-    )
-  ) {
-    return { ok: false, response: forbiddenModelProviderOwner() };
-  }
   const matchedConnectorSlug = args.body.matchedFirewall?.connectorSlug;
   const connectorAccessBySlug = await loadConnectorAccessStates(
     args.db,
@@ -4417,9 +4460,74 @@ async function prepareFirewallAuthResolutionContext(args: {
   ) {
     return { ok: false, response: connectorNotConfigured() };
   }
+  if (
+    matchedConnectorSlug !== undefined &&
+    getConnectorRuntimeConnector(
+      args.connectorCatalogSnapshot,
+      matchedConnectorSlug,
+    )?.catalogConnector.mcp !== undefined
+  ) {
+    const matchedAccess = connectorAccessBySlug.get(matchedConnectorSlug);
+    if (
+      matchedAccess &&
+      connectorAccessCredentialStatus(
+        matchedAccess,
+        Math.floor(nowDate().getTime() / 1000),
+      ) === "reconnect-required"
+    ) {
+      return {
+        ok: false,
+        response: connectorReconnectRequired([matchedConnectorSlug]),
+      };
+    }
+  }
+  const body = bindMatchedBuiltinMcpSecrets({
+    body: args.body,
+    connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+    connectorAccessBySlug,
+    referencedSecretKeys: referenced.secrets,
+  });
+  if (!body) {
+    return { ok: false, response: connectorNotConfigured() };
+  }
+  if (
+    body.secretConnectorMap &&
+    hasForbiddenModelProviderOwner(
+      args.auth,
+      body.secretConnectorMap,
+      body.secretConnectorMetadataMap,
+      referenced.secrets,
+    )
+  ) {
+    return { ok: false, response: forbiddenModelProviderOwner() };
+  }
+  return { ok: true, body, connectorAccessBySlug };
+}
+
+async function prepareFirewallAuthResolutionContext(args: {
+  readonly db: Db;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly auth: SandboxAuth;
+  readonly body: FirewallAuthBody;
+  readonly orgId: string;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly secrets: Record<string, string>;
+  readonly referenced: ReferencedAuthKeys;
+}): Promise<
+  | { readonly ok: true; readonly context: FirewallAuthResolutionContext }
+  | { readonly ok: false; readonly response: ResolveFirewallAuthResult }
+> {
+  const referenced = args.referenced;
+  const vars = args.body.vars ?? {};
+  const matchedConnectorSlug = args.body.matchedFirewall?.connectorSlug;
+  const bindings = await prepareFirewallConnectorBindings(args);
+  if (!bindings.ok) {
+    return bindings;
+  }
+  const { body, connectorAccessBySlug } = bindings;
   const modelProviderRefreshable = referencedModelProviderAccessMap({
-    secretConnectorMap: args.body.secretConnectorMap,
-    secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+    secretConnectorMap: body.secretConnectorMap,
+    secretConnectorMetadataMap: body.secretConnectorMetadataMap,
     referencedKeys: referenced.secrets,
   });
   const modelProviderSourceStateByProviderKey =
@@ -4433,14 +4541,14 @@ async function prepareFirewallAuthResolutionContext(args: {
           accessSourceKeys: [...new Set(modelProviderRefreshable.values())],
           metadataByAccessSource: buildMetadataByAccessSource(
             modelProviderRefreshable,
-            args.body.secretConnectorMetadataMap,
+            body.secretConnectorMetadataMap,
           ),
           connectorAccessBySlug,
         });
   if (
     hasUnavailableAccessSource({
-      secretConnectorMap: args.body.secretConnectorMap,
-      secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+      secretConnectorMap: body.secretConnectorMap,
+      secretConnectorMetadataMap: body.secretConnectorMetadataMap,
       referencedKeys: referenced.secrets,
       connectorAccessBySlug,
       modelProviderSourceStateByProviderKey,
@@ -4450,8 +4558,8 @@ async function prepareFirewallAuthResolutionContext(args: {
   }
   const reconnectRequiredConnectorSlugs =
     connectorSlugsWithReconnectRequiredStatus({
-      secretConnectorMap: args.body.secretConnectorMap,
-      secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+      secretConnectorMap: body.secretConnectorMap,
+      secretConnectorMetadataMap: body.secretConnectorMetadataMap,
       referencedKeys: referenced.secrets,
       connectorAccessBySlug,
     });
@@ -4464,7 +4572,7 @@ async function prepareFirewallAuthResolutionContext(args: {
   await syncFirewallRuntimeSecrets({
     db: args.db,
     auth: args.auth,
-    body: args.body,
+    body,
     orgId: args.orgId,
     secrets: args.secrets,
     referencedKeys: referenced.secrets,
@@ -4474,8 +4582,8 @@ async function prepareFirewallAuthResolutionContext(args: {
   const hasMissingSecrets = hasMissingUnresolvableSecrets({
     secrets: args.secrets,
     referencedKeys: referenced.secrets,
-    secretConnectorMap: args.body.secretConnectorMap,
-    secretConnectorMetadataMap: args.body.secretConnectorMetadataMap,
+    secretConnectorMap: body.secretConnectorMap,
+    secretConnectorMetadataMap: body.secretConnectorMetadataMap,
     connectorAccessBySlug,
   });
   const hasMissingVars = hasMissingFirewallVariables({
@@ -4491,6 +4599,7 @@ async function prepareFirewallAuthResolutionContext(args: {
   return {
     ok: true,
     context: {
+      body,
       referenced,
       vars,
       connectorAccessBySlug,
@@ -5863,7 +5972,7 @@ async function resolveFirewallAuthMaterial(args: {
   return await resolveNonCustomFirewallAuthMaterial({
     db: args.db,
     auth: args.auth,
-    body: args.body,
+    body: args.prepared.context.body,
     prepared: args.prepared,
   });
 }

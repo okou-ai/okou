@@ -1392,6 +1392,8 @@ function requireCompletePiFields(
  * Secrets are encrypted with AES-256-GCM before storage
  */
 const storedExecutionContextObjectSchema = z.object({
+  // API claim gate: this context needs the Runner's builtin MCP owner selection.
+  requiresBuiltinMcp: z.literal(true).optional(),
   storageMounts: z
     .array(storedStorageMountEntrySchema)
     .superRefine(uniqueStorageMountPaths),

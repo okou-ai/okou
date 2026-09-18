@@ -11,6 +11,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
+  noAuthMethod,
   httpConnector,
   ACME_CONNECTOR_ID,
   installComposerConnectorFixture,
@@ -20,6 +21,52 @@ import {
   context,
   findFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+
+test("Show builtin tool service details without HTTP permission controls", async () => {
+  const user = userEvent.setup({ delay: null });
+  installComposerConnectorFixture({
+    catalog: [
+      {
+        ...builtinConnector({
+          slug: "public-mcp",
+          label: "Public Tools",
+          connected: true,
+          authMethods: [noAuthMethod()],
+          popularityRank: 0,
+        }),
+        mcp: {
+          transport: "streamable-http",
+          endpoint: "https://public.example.test/mcp",
+        },
+      },
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+  const dialog = await openDirectory(user);
+  await fill(
+    within(dialog).getByPlaceholderText("Find connectors..."),
+    "public",
+  );
+  await waitFor(() => {
+    expect(within(dialog).getByText("Public Tools")).toBeVisible();
+  });
+  await user.click(dialogButton(dialog, "Open Public Tools details"));
+  await waitFor(() => {
+    expect(
+      within(dialog).getByRole("heading", { name: "Public Tools" }),
+    ).toBeVisible();
+  });
+  expect(within(dialog).queryByText("Permissions")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button", dialog).some((button) => {
+      return button.textContent?.trim() === "Configure";
+    }),
+  ).toBeFalsy();
+});
 
 const GITHUB_SLUG = "github" as ConnectorSlug;
 const GMAIL_SLUG = "gmail" as ConnectorSlug;

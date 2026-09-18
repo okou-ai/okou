@@ -1,10 +1,66 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import {
+  CONNECTOR_CONTRACT_HEADER,
+  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { expect, test, vi } from "vitest";
 
 import { createAuthedContractClient } from "../api-client-base";
 import { testContext } from "./test-helpers";
 
 const context = testContext();
+
+test("negotiates builtin MCP within the older API's cross-origin header allowlist", async () => {
+  // #34913: keep the serving/rollback API allowlist until those APIs drain.
+  const legacyAllowedHeaders = new Set([
+    "accept",
+    "accept-language",
+    "accept-version",
+    "authorization",
+    "content-length",
+    "content-md5",
+    "content-language",
+    "content-type",
+    "date",
+    "range",
+    "x-api-version",
+    "x-csrf-token",
+    "x-requested-with",
+    "x-client-version",
+    "x-client-type",
+    "x-client-product",
+    "x-client-session-id",
+    "x-client-request-id",
+    "x-chat-event-schema-version",
+    "x-vercel-protection-bypass",
+  ]);
+  context.mocks.http.get(
+    "https://api.okou.ai/api/feature-switches",
+    ({ request }) => {
+      expect(request.headers.get("Accept-Version")).toBe("builtin-mcp-v1");
+      expect(
+        [...request.headers.keys()].filter((name) => {
+          return !legacyAllowedHeaders.has(name.toLowerCase());
+        }),
+      ).toStrictEqual([]);
+      return Response.json({ switches: {}, effectiveSwitches: {} });
+    },
+  );
+  const client = createAuthedContractClient(featureSwitchesContract, {
+    baseUrl: "https://api.okou.ai",
+    clientVersion: "compatibility-test",
+    getToken: () => {
+      return Promise.resolve("clerk-session");
+    },
+    getVercelProtectionBypass: () => {
+      return undefined;
+    },
+  });
+
+  await expect(client.get({ headers: {} })).resolves.toMatchObject({
+    status: 200,
+  });
+});
 
 test("uses a matching bootstrap response once before falling back to the network", async () => {
   const bootstrapBody = {
@@ -25,7 +81,10 @@ test("uses a matching bootstrap response once before falling back to the network
   document.body.append(script);
 
   let networkRequestCount = 0;
-  context.mocks.http.get("*/api/feature-switches", () => {
+  context.mocks.http.get("*/api/feature-switches", ({ request }) => {
+    expect(request.headers.get(CONNECTOR_CONTRACT_HEADER)).toBe(
+      CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
+    );
     networkRequestCount += 1;
     return Response.json(networkBody);
   });

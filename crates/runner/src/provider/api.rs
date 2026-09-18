@@ -1622,7 +1622,7 @@ impl ApiClient {
         } else {
             request
         };
-        let request = request.json(&body);
+        let request = request.builtin_mcp_reader().json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let resp = send_api(request, "claim").await?;
         let request_to_response_headers_elapsed = request_to_response_headers_started_at.elapsed();
@@ -5415,7 +5415,9 @@ mod tests {
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
-                when.method(POST).path(claim_path.as_str());
+                when.method(POST)
+                    .path(claim_path.as_str())
+                    .header("Accept-Version", "builtin-mcp-v1");
                 then.status(200)
                     .header("content-type", "application/json")
                     .body(RUNNER_CLAIM_RESPONSE_FIXTURE);

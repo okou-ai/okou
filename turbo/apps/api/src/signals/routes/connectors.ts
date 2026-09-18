@@ -1,3 +1,9 @@
+import {
+  connectorClientAllowsMetadata$,
+  connectorClientProjection$,
+  connectorClientSupportsBuiltinMcp$,
+  connectorClientUpgradeRequired,
+} from "../services/connector-client-compatibility.service";
 import { command, computed } from "ccstate";
 import {
   connectorManualGrantContract,
@@ -183,12 +189,25 @@ const getConnectorListInner$ = computed(async (get) => {
   const result = await get(
     connectorList({ orgId: auth.orgId, userId: auth.userId }),
   );
-  return { status: 200 as const, body: result };
+  const projection = await get(connectorClientProjection$);
+  return {
+    status: 200 as const,
+    body: {
+      ...result,
+      connectors: result.connectors.filter((connector) => {
+        return projection.allowsSlug(connector.slug);
+      }),
+    },
+  };
 });
 
 const getConnectorBySlugInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorsBySlugContract.get));
+  const projection = await get(connectorClientProjection$);
+  if (!projection.allowsSlug(params.connectorSlug)) {
+    return connectorClientUpgradeRequired();
+  }
   const connector = await get(
     connectorBySlug({
       orgId: auth.orgId,
@@ -206,6 +225,10 @@ const getConnectorBySlugInner$ = computed(async (get) => {
 const getScopeDiffInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorScopeDiffContract.getScopeDiff));
+  const projection = await get(connectorClientProjection$);
+  if (!projection.allowsSlug(params.connectorSlug)) {
+    return connectorClientUpgradeRequired();
+  }
   const diff = await get(
     connectorScopeDiff({
       orgId: auth.orgId,
@@ -230,6 +253,7 @@ const searchConnectorsInner$ = computed(async (get) => {
         orgId: auth.orgId,
         userId: auth.userId,
         keyword: query.keyword,
+        includeBuiltinMcp: get(connectorClientSupportsBuiltinMcp$),
       }),
     ),
   );
@@ -258,6 +282,12 @@ const connectManualGrantConnectorInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
+    const projection = await get(connectorClientProjection$);
+    signal.throwIfAborted();
+    if (!projection.allowsSlug(params.connectorSlug)) {
+      return connectorClientUpgradeRequired();
+    }
+
     const agentTarget = await set(
       validateConnectorAuthorizationTarget$,
       {
@@ -286,6 +316,10 @@ const connectManualGrantConnectorInner$ = command(
         expectedGrantKind: "manual",
         expectedGrantLabel: "a manual grant",
       });
+    }
+
+    if (!get(connectorClientAllowsMetadata$)(resolved.catalogConnector)) {
+      return connectorClientUpgradeRequired();
     }
 
     const result = await set(
@@ -340,6 +374,12 @@ const connectNoAuthConnectorInner$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
+    const projection = await get(connectorClientProjection$);
+    signal.throwIfAborted();
+    if (!projection.allowsSlug(params.connectorSlug)) {
+      return connectorClientUpgradeRequired();
+    }
+
     const agentTarget = await set(
       validateConnectorAuthorizationTarget$,
       {
@@ -368,6 +408,10 @@ const connectNoAuthConnectorInner$ = command(
         expectedGrantKind: "none",
         expectedGrantLabel: "a no-auth grant",
       });
+    }
+
+    if (!get(connectorClientAllowsMetadata$)(resolved.catalogConnector)) {
+      return connectorClientUpgradeRequired();
     }
 
     const result = await set(
@@ -425,6 +469,12 @@ const startConnectorOauthInner$ = command(
       );
     }
 
+    const projection = await get(connectorClientProjection$);
+    signal.throwIfAborted();
+    if (!projection.allowsSlug(connectorSlug)) {
+      return connectorClientUpgradeRequired();
+    }
+
     const agentTarget = await set(
       validateConnectorAuthorizationTarget$,
       {
@@ -454,6 +504,10 @@ const startConnectorOauthInner$ = command(
         expectedGrantLabel: "an auth-code grant",
         missingGrantWhenAbsent: true,
       });
+    }
+
+    if (!get(connectorClientAllowsMetadata$)(resolved.catalogConnector)) {
+      return connectorClientUpgradeRequired();
     }
 
     const method = resolved.method;
@@ -556,6 +610,12 @@ const startConnectorOpenIdInner$ = command(
       );
     }
 
+    const projection = await get(connectorClientProjection$);
+    signal.throwIfAborted();
+    if (!projection.allowsSlug(connectorSlug)) {
+      return connectorClientUpgradeRequired();
+    }
+
     const agentTarget = await set(
       validateConnectorAuthorizationTarget$,
       {
@@ -585,6 +645,10 @@ const startConnectorOpenIdInner$ = command(
         expectedGrantLabel: "an OpenID auth grant",
         missingGrantWhenAbsent: true,
       });
+    }
+
+    if (!get(connectorClientAllowsMetadata$)(resolved.catalogConnector)) {
+      return connectorClientUpgradeRequired();
     }
 
     if (resolved.method.grant.kind !== "openid-auth") {

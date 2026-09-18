@@ -1,3 +1,8 @@
+import {
+  connectorClientProjection$,
+  connectorClientSupportsBuiltinMcp$,
+  connectorClientUpgradeRequired,
+} from "../services/connector-client-compatibility.service";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -78,6 +83,7 @@ const connectorCatalogRequestContext$ = command(async ({ get }) => {
   };
   return {
     db: get(db$),
+    includeBuiltinMcp: get(connectorClientSupportsBuiltinMcp$),
     featureStates: getAllFeatureStates(featureSwitchContext),
   };
 });
@@ -90,6 +96,7 @@ const listConnectorCatalogInner$ = command(
     const catalog = await settleConnectorCatalogRead(
       listPublicConnectorCatalog({
         db: context.db,
+        includeBuiltinMcp: context.includeBuiltinMcp,
         featureStates: context.featureStates,
       }),
       signal,
@@ -125,6 +132,7 @@ const listConnectorCatalogStatusInner$ = command(
     const catalog = await settleConnectorCatalogRead(
       listPublicConnectorCatalogStatus({
         db: context.db,
+        includeBuiltinMcp: context.includeBuiltinMcp,
         featureStates: context.featureStates,
         connections: connectorState.value,
       }),
@@ -162,6 +170,7 @@ const discoverConnectorCatalogInner$ = command(
     const catalog = await settleConnectorCatalogRead(
       discoverPublicConnectorCatalogStatus({
         db: context.db,
+        includeBuiltinMcp: context.includeBuiltinMcp,
         featureStates: context.featureStates,
         connections: connectorState.value,
         keyword: query.keyword,
@@ -211,9 +220,15 @@ const getConnectorCatalogInner$ = command(
     signal.throwIfAborted();
 
     const params = get(pathParamsOf(connectorCatalogContract.get));
+    const projection = await get(connectorClientProjection$);
+    signal.throwIfAborted();
+    if (!projection.allowsSlug(params.connectorSlug)) {
+      return connectorClientUpgradeRequired();
+    }
     const connector = await settleConnectorCatalogRead(
       getPublicConnectorCatalogStatus({
         db: context.db,
+        includeBuiltinMcp: context.includeBuiltinMcp,
         connectorSlug: params.connectorSlug,
         featureStates: context.featureStates,
         connections: connectorState.value,
@@ -237,9 +252,15 @@ const getConnectorCatalogPermissionsInner$ = command(
     signal.throwIfAborted();
 
     const params = get(pathParamsOf(connectorCatalogContract.permissions));
+    const projection = await get(connectorClientProjection$);
+    signal.throwIfAborted();
+    if (!projection.allowsSlug(params.connectorSlug)) {
+      return connectorClientUpgradeRequired();
+    }
     const permissions = await settleConnectorCatalogRead(
       getPublicConnectorCatalogPermissionDetail({
         db: context.db,
+        includeBuiltinMcp: context.includeBuiltinMcp,
         connectorSlug: params.connectorSlug,
         featureStates: context.featureStates,
       }),

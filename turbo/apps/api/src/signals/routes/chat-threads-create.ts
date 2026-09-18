@@ -1,3 +1,4 @@
+import { connectorClientSelectionGuard } from "../services/connector-client-compatibility.service";
 import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
@@ -269,6 +270,25 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
 });
 
+// Negotiate explicit connector selections before creating any thread state.
+const createCompatibleInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const body = await get(createBody$);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const incompatible = await get(
+      connectorClientSelectionGuard(body.data.connectorSelections ?? []),
+    );
+    signal.throwIfAborted();
+    if (incompatible) {
+      return incompatible;
+    }
+    return await set(createInner$, signal);
+  },
+);
+
 export const chatThreadCreateRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadsContract.create,
@@ -278,7 +298,7 @@ export const chatThreadCreateRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
       },
-      createInner$,
+      createCompatibleInner$,
     ),
   },
 ];

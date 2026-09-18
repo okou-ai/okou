@@ -1738,7 +1738,12 @@ export function mockAwsDeferredTokenExchange(): AwsDeferredTokenExchange {
   };
 }
 
-export function createConnectorBddApi(context: TestContext) {
+export function createConnectorBddApi(
+  context: TestContext,
+  options: {
+    readonly headers?: Readonly<Record<string, string>>;
+  } = {},
+) {
   const mocks = createRouteMocks(context);
 
   function authenticate(nextActor: ApiTestUser | null): AuthHeaders {
@@ -1750,7 +1755,7 @@ export function createConnectorBddApi(context: TestContext) {
     }
 
     mocks.clerk.session(nextActor.userId, nextActor.orgId, nextActor.orgRole);
-    return authHeaders(nextActor);
+    return { ...authHeaders(nextActor), ...options.headers };
   }
 
   const api = {

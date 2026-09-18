@@ -115,6 +115,7 @@ interface EffectiveConnector {
 }
 
 interface ExternalCatalogReadArgs {
+  readonly includeBuiltinMcp?: boolean;
   readonly db: ReadonlyDb;
   readonly featureStates: ConnectorFeatureStates;
 }
@@ -652,10 +653,16 @@ function featureSwitchEnabled(
 }
 
 function effectiveConnectors(args: {
+  readonly includeBuiltinMcp?: boolean;
   readonly catalog: AcceptedConnectorCatalogSnapshot;
   readonly featureStates: ConnectorFeatureStates;
 }): readonly EffectiveConnector[] {
   return args.catalog.artifact.connectors.flatMap((connector) => {
+    // #34913: remove after capable App rollout, the later client floor, and old
+    // API serving/rollback drain. Filter before pagination and category totals.
+    if (args.includeBuiltinMcp === false && connector.mcp !== undefined) {
+      return [];
+    }
     const authMethods = connector.authMethods.filter((method) => {
       if (
         args.catalog.filteredMethodKeys.has(
@@ -718,7 +725,7 @@ function referenceMetadataForCatalog(
 function permissionSummaryForCatalog(
   connector: ConnectorCatalogArtifactConnector,
 ): PublicConnectorCatalogPermissionSummary {
-  if (connector.firewall.kind === "none") {
+  if (connector.mcp !== undefined || connector.firewall.kind === "none") {
     return {
       hasPermissions: false,
       permissionCount: 0,
@@ -838,12 +845,14 @@ export function getConnectorCatalogResolutionDetail(
 }
 
 export function listAcceptedConnectorCatalogAvailableSlugs(args: {
+  readonly includeBuiltinMcp?: boolean;
   readonly snapshot: AcceptedConnectorCatalogSnapshot;
   readonly featureStates: ConnectorFeatureStates;
 }): readonly ConnectorSlug[] {
   return effectiveConnectors({
     catalog: args.snapshot,
     featureStates: args.featureStates,
+    includeBuiltinMcp: args.includeBuiltinMcp,
   })
     .map((entry) => {
       return entry.connector.slug;
@@ -1039,6 +1048,7 @@ export async function listExternalPublicConnectorCatalog(
   const connectors = effectiveConnectors({
     catalog,
     featureStates: args.featureStates,
+    includeBuiltinMcp: args.includeBuiltinMcp,
   });
   const popularityIndex = createConnectorPopularityIndex();
   return {
@@ -1193,6 +1203,7 @@ export async function searchExternalConnectorCatalog(
   const effective = effectiveConnectors({
     catalog,
     featureStates: args.featureStates,
+    includeBuiltinMcp: args.includeBuiltinMcp,
   });
   return searchEffectiveConnectors(effective, args.keyword).map((entry) => {
     const connector = entry.connector;
@@ -1214,6 +1225,7 @@ export async function getExternalPublicConnectorCatalogStatus(
   const effective = effectiveConnectors({
     catalog,
     featureStates: args.featureStates,
+    includeBuiltinMcp: args.includeBuiltinMcp,
   });
   const entry = effective.find((connector) => {
     return connector.connector.slug === args.connectorSlug;
@@ -1239,6 +1251,7 @@ export async function listExternalPublicConnectorCatalogStatus(
   const effective = effectiveConnectors({
     catalog,
     featureStates: args.featureStates,
+    includeBuiltinMcp: args.includeBuiltinMcp,
   });
   return connectorCatalogStatusRead({
     catalog,
@@ -1255,6 +1268,7 @@ export async function discoverExternalPublicConnectorCatalogStatus(
   const effective = effectiveConnectors({
     catalog,
     featureStates: args.featureStates,
+    includeBuiltinMcp: args.includeBuiltinMcp,
   });
   const read = connectorCatalogStatusRead({
     catalog,
@@ -1327,11 +1341,16 @@ export async function getExternalPublicConnectorCatalogPermissionDetail(
   const effective = effectiveConnectors({
     catalog,
     featureStates: args.featureStates,
+    includeBuiltinMcp: args.includeBuiltinMcp,
   });
   const entry = effective.find((connector) => {
     return connector.connector.slug === args.connectorSlug;
   });
-  if (!entry || entry.connector.firewall.kind === "none") {
+  if (
+    !entry ||
+    entry.connector.mcp !== undefined ||
+    entry.connector.firewall.kind === "none"
+  ) {
     return null;
   }
   const firewall = entry.connector.firewall;

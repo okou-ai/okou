@@ -5,6 +5,8 @@ import {
   CLIENT_TYPE_CLI,
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
+  CONNECTOR_CONTRACT_HEADER,
+  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
 } from "@okouai/api-contracts/contracts/client-headers";
 import {
   trpcRestFetchApi,
@@ -27,6 +29,7 @@ export function createCliClientHeaderInjector(options: {
   return (headers) => {
     headers.set(CLIENT_VERSION_HEADER, options.clientVersion);
     headers.set(CLIENT_TYPE_HEADER, CLIENT_TYPE_CLI);
+    headers.set(CONNECTOR_CONTRACT_HEADER, CONNECTOR_CONTRACT_BUILTIN_MCP_V1);
     headers.set(CLIENT_SESSION_ID_HEADER, clientSessionId);
     headers.set(CLIENT_REQUEST_ID_HEADER, createUuid());
   };

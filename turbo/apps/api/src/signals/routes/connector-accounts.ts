@@ -1,3 +1,7 @@
+import {
+  connectorClientProjection$,
+  connectorClientUpgradeRequired,
+} from "../services/connector-client-compatibility.service";
 import { command, computed } from "ccstate";
 import {
   connectorAccountTargetKey,
@@ -49,6 +53,12 @@ const oauthCompletionInner$ = command(
       pathParamsOf(connectorAccountsContract.oauthCompletion),
     );
     const target = get(queryOf(connectorAccountsContract.oauthCompletion));
+    if (
+      target.kind === "builtin" &&
+      !(await get(connectorClientProjection$)).allowsTarget(target)
+    ) {
+      return connectorClientUpgradeRequired();
+    }
     set(setResHeader$, "Cache-Control", "no-store");
     const completion = await readConnectorOAuthCompletion(
       set(writeDb$),
@@ -71,6 +81,20 @@ const inspectInner$ = computed(async (get) => {
   const body = await get(bodyResultOf(connectorAccountsContract.inspect));
   if (!body.ok) {
     return body.response;
+  }
+  if (
+    body.data.selections.some((selection) => {
+      return selection.target.kind === "builtin";
+    })
+  ) {
+    const projection = await get(connectorClientProjection$);
+    if (
+      body.data.selections.some((selection) => {
+        return !projection.allowsTarget(selection.target);
+      })
+    ) {
+      return connectorClientUpgradeRequired();
+    }
   }
   const accounts = await listConnectorAccountsByIds(get(db$), {
     orgId: auth.orgId,
@@ -116,12 +140,30 @@ const inspectInner$ = computed(async (get) => {
 const summariesInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const summaries = await listConnectorAccountSummaries(get(db$), auth);
-  return { status: 200 as const, body: { summaries: [...summaries] } };
+  const projection = summaries.some((summary) => {
+    return summary.target.kind === "builtin";
+  })
+    ? await get(connectorClientProjection$)
+    : null;
+  return {
+    status: 200 as const,
+    body: {
+      summaries: summaries.filter((summary) => {
+        return !projection || projection.allowsTarget(summary.target);
+      }),
+    },
+  };
 });
 
 const connectionsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(connectorAccountsContract.connections));
+  if (
+    query.kind === "builtin" &&
+    !(await get(connectorClientProjection$)).allowsTarget(query)
+  ) {
+    return connectorClientUpgradeRequired();
+  }
   const result = await listConnectorAccountsForTarget(get(db$), {
     orgId: auth.orgId,
     userId: auth.userId,
@@ -155,6 +197,12 @@ const connectionInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.connection));
   const query = get(queryOf(connectorAccountsContract.connection));
+  if (
+    query.kind === "builtin" &&
+    !(await get(connectorClientProjection$)).allowsTarget(query)
+  ) {
+    return connectorClientUpgradeRequired();
+  }
   const account = await getConnectorAccount(get(db$), {
     orgId: auth.orgId,
     userId: auth.userId,
@@ -170,6 +218,11 @@ const scopeDiffInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.scopeDiff));
   const query = get(queryOf(connectorAccountsContract.scopeDiff));
+  if (
+    !(await get(connectorClientProjection$)).allowsSlug(query.connectorSlug)
+  ) {
+    return connectorClientUpgradeRequired();
+  }
   const diff = await get(
     connectorScopeDiff({
       orgId: auth.orgId,
@@ -192,6 +245,13 @@ const renameInner$ = command(
     if (!body.ok) {
       return body.response;
     }
+    if (
+      body.data.target.kind === "builtin" &&
+      !(await get(connectorClientProjection$)).allowsTarget(body.data.target)
+    ) {
+      return connectorClientUpgradeRequired();
+    }
+    signal.throwIfAborted();
     const request = {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -232,6 +292,13 @@ const setDefaultInner$ = command(
     if (!body.ok) {
       return body.response;
     }
+    if (
+      body.data.target.kind === "builtin" &&
+      !(await get(connectorClientProjection$)).allowsTarget(body.data.target)
+    ) {
+      return connectorClientUpgradeRequired();
+    }
+    signal.throwIfAborted();
     const request = {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -305,6 +372,12 @@ const deletionImpactInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.deletionImpact));
   const query = get(queryOf(connectorAccountsContract.deletionImpact));
+  if (
+    query.kind === "builtin" &&
+    !(await get(connectorClientProjection$)).allowsTarget(query)
+  ) {
+    return connectorClientUpgradeRequired();
+  }
   const request = {
     orgId: auth.orgId,
     userId: auth.userId,
@@ -333,6 +406,13 @@ const deleteInner$ = command(
     if (!body.ok) {
       return body.response;
     }
+    if (
+      body.data.target.kind === "builtin" &&
+      !(await get(connectorClientProjection$)).allowsTarget(body.data.target)
+    ) {
+      return connectorClientUpgradeRequired();
+    }
+    signal.throwIfAborted();
     const request = {
       orgId: auth.orgId,
       userId: auth.userId,

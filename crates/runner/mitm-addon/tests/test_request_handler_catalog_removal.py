@@ -308,6 +308,71 @@ async def test_custom_connector_id_selects_active_owner_and_does_not_fall_throug
     assert "Authorization" not in removed_flow.request.headers
 
 
+@pytest.mark.parametrize("selected_kind", ["builtin", "custom", "unknown"])
+async def test_shared_builtin_custom_endpoint_injects_only_explicit_owner(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, selected_kind
+):
+    builtin_name = "builtin-mcp"
+    custom_name = "custom-mcp"
+    custom_id = "550e8400-e29b-41d4-a716-446655440000"
+    registry_path = tmp_path / "registry.json"
+    cache_path = tmp_path / "builtin-firewall-catalog-cache.json"
+    sandbox = {
+        **_active_sandbox(tmp_path),
+        "firewalls": [
+            {"kind": "builtin", "name": builtin_name},
+            {
+                "kind": "inline",
+                "customConnectorId": custom_id,
+                "firewall": _firewall(custom_name, "https://shared.example.com"),
+            },
+        ],
+        "connectorRoutingVariables": {f"builtin:{builtin_name}": {}, f"custom:{custom_id}": {}},
+        "networkPolicies": {
+            name: {"allow": ["items.read"], "deny": [], "ask": [], "unknownPolicy": "deny"}
+            for name in (builtin_name, custom_name)
+        },
+    }
+    write_multi_sandbox_registry(registry_path, {_CLIENT_IP: sandbox})
+    write_catalog_cache(
+        cache_path,
+        digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        version="catalog-a",
+        firewalls={builtin_name: _firewall(builtin_name, "https://shared.example.com")},
+    )
+    intent = {"builtin": builtin_name, "custom": custom_id, "unknown": "unavailable"}[selected_kind]
+    flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(
+            ("Host", "shared.example.com"), ("X-Okou-Connector-Intent", intent)
+        ),
+    )
+    with (
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url="https://api.okou.ai",
+        ),
+        fake_firewall_headers(headers={"Authorization": f"Bearer {selected_kind}"}) as auth_fetch,
+    ):
+        await mitm_addon.request(flow)
+
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
+    if selected_kind == "unknown":
+        auth_fetch.assert_not_awaited()
+        assert flow.response is not None
+        assert flow.response.status_code == 409
+        assert "Authorization" not in flow.request.headers
+    else:
+        auth_fetch.assert_awaited_once()
+        assert flow.response is None
+        assert flow.metadata[metadata_keys.FIREWALL_NAME] == f"{selected_kind}-mcp"
+        assert flow.request.headers["Authorization"] == f"Bearer {selected_kind}"
+
+
 async def test_catalog_removal_during_auth_revalidation_discards_old_credentials(
     tmp_path,
     real_flow,
