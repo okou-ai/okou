@@ -12,7 +12,6 @@ import { and, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import type { Tx } from "../../lib/db-types";
-import { env } from "../../lib/env";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
@@ -199,28 +198,20 @@ export async function deleteClerkAgentLifecycleData(
   db: NodePgDatabase,
   scope: ClerkDeletionScope,
 ): Promise<void> {
-  const resourceBillingEnabled =
-    env("X_RESOURCE_BILLING_START_DATE") !== undefined;
-  if (!resourceBillingEnabled) {
-    // Keep rollout cleanup separate until settlers and Run deleters share admission.
-    await deleteScopedUsageData(db, scope);
-  }
   const receipt = await db.transaction(async (tx) => {
-    if (resourceBillingEnabled) {
-      // Drain compute admission before retaining entitlement locks: creators
-      // and queue promotion hold Agent locks before accessing allowances.
-      await lockErasureSubjects(tx, [
-        {
-          subjectKind: scope.kind,
-          subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
-        },
-      ]);
-      // Subjects -> X admission -> compaction -> ledger/entitlements -> parents/Run.
-      // The helper uses a savepoint on this same connection; both deletion
-      // stages commit atomically and retain their locks through that commit.
-      await lockXResourceAdmission(tx, "exclusive");
-      await deleteScopedUsageData(tx, scope);
-    }
+    // Drain compute admission before retaining entitlement locks: creators
+    // and queue promotion hold Agent locks before accessing allowances.
+    await lockErasureSubjects(tx, [
+      {
+        subjectKind: scope.kind,
+        subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
+      },
+    ]);
+    // Subjects -> X admission -> compaction -> ledger/entitlements -> parents/Run.
+    // The helper uses a savepoint on this same connection; both deletion
+    // stages commit atomically and retain their locks through that commit.
+    await lockXResourceAdmission(tx, "exclusive");
+    await deleteScopedUsageData(tx, scope);
     await closePiStableContextErasureSubject(tx, {
       subjectKind: scope.kind,
       subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,

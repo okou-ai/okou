@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  XResourceDeduplication = "xResourceDeduplication",
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
