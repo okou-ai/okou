@@ -128,9 +128,10 @@ pub(super) enum IdlePressureSelection {
     Exhausted(Vec<BudgetLease>),
 }
 
-/// A parked sandbox reservation paired with the idle snapshot captured by the
-/// same pool mutation. Keeping both together lets claimed activation publish
-/// active ownership before unpark without reacquiring the pool.
+/// A reuse reservation paired with the idle snapshot captured by the pool
+/// mutation or direct handoff. Its reservation retains the parked/running
+/// distinction so cancellation cannot restore a running sandbox to the pool.
+/// Claimed activation can publish ownership without reacquiring the pool.
 pub(super) struct ReservedIdleActivation {
     reservation: Box<ReservedIdleSandbox>,
     idle_snapshot: IdlePoolSnapshot,

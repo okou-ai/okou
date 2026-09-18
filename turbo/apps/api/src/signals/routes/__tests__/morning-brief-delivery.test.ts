@@ -17,6 +17,11 @@ import {
   pauseMorningBriefAutomation,
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
+import {
+  bindMorningBriefThreadFixture,
+  seedFinishedChatRunFixture$,
+  seedOrdinaryChatThreadFixture$,
+} from "../../../test-fixtures/morning-brief-chat-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
 import {
   holdEmailOutboxClaim,
@@ -47,6 +52,7 @@ import {
   readChatThreadState,
   readEmailOutboxRow,
   readMorningBriefDeliveries,
+  readMorningBriefDeliveryAtomicState,
   readMorningBriefDeliveryOutbox,
   rejectMorningBriefOutboxDelete,
   revokeMemberMorningBriefDeliveries,
@@ -61,6 +67,8 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { morningBriefDeliveryPreviewRoutes } from "../morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import type { ApiTestUser } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
@@ -81,6 +89,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
 const store = createStore();
+const chat = createChatFilesBddApi(context);
 
 const SLACK_CONVERSATIONS_URL = "https://slack.com/api/users.conversations";
 const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
@@ -239,6 +248,14 @@ interface ProviderCalls {
   readonly generation: string[];
 }
 
+interface GenerationSection {
+  readonly heading: string;
+  readonly items: readonly {
+    readonly text: string;
+    readonly sourceIds: readonly string[];
+  }[];
+}
+
 /** Every argument list the shared sender handed the Resend SDK boundary. */
 function membershipRequestOrgId(request: unknown): string {
   if (
@@ -275,6 +292,7 @@ function scriptProviders(
     readonly deliverTitle?: string;
     readonly itemText?: string;
     readonly itemCount?: number;
+    readonly sections?: readonly GenerationSection[];
   } = {},
 ): {
   readonly calls: ProviderCalls;
@@ -293,7 +311,7 @@ function scriptProviders(
               content: JSON.stringify({
                 decision: "deliver",
                 title: options.deliverTitle ?? "Release readiness",
-                sections: [
+                sections: options.sections ?? [
                   {
                     heading: "Decisions",
                     items: Array.from(
@@ -368,6 +386,15 @@ async function readOutbox(f: Fixture) {
   });
 }
 
+function chatActor(f: Fixture): ApiTestUser {
+  return {
+    userId: f.userId,
+    orgId: f.orgId,
+    orgRole: "org:admin",
+    email: `${f.userId}@example.test`,
+  };
+}
+
 async function enqueueNativeDelivery(
   f: Fixture,
   scheduledFor: string = ANCHOR,
@@ -420,6 +447,73 @@ describe("Morning Brief native delivery", () => {
         return event.eventType.startsWith("run.");
       }),
     ).toHaveLength(0);
+
+    // Consume the committed delivery through the same routes the App uses.
+    // Metadata and history stay separate, history order is canonical seq order,
+    // and the projected native event remains runless rather than fabricating a
+    // terminal Run marker.
+    const actor = chatActor(f);
+    await expect(
+      chat.readThreadMetadata(actor, response.body.delivery.chatThreadId),
+    ).resolves.toMatchObject({
+      id: response.body.delivery.chatThreadId,
+      agentId: f.agentId,
+      title: "Okou Morning Brief",
+    });
+    await expect(
+      chat.readThread(actor, response.body.delivery.chatThreadId),
+    ).resolves.toMatchObject({ lastReadAt: null });
+    const history = await chat.listThreadEvents(
+      actor,
+      response.body.delivery.chatThreadId,
+    );
+    expect(
+      history.events.map((event) => {
+        return {
+          id: event.id,
+          eventType: event.eventType,
+          runId: event.runId ?? null,
+          content: event.content,
+          seqId: event.seqId,
+        };
+      }),
+    ).toStrictEqual([
+      {
+        id: response.body.delivery.chatEventId,
+        eventType: "output.message",
+        runId: null,
+        content: delivered[0]?.content,
+        seqId: 1,
+      },
+    ]);
+
+    // Native-only unread state is visible through the canonical query, clears
+    // through the real single-thread endpoint, and also clears through the
+    // Agent-wide endpoint after an explicit re-mark. One delivery identity
+    // therefore contributes one unread watermark, not a synthetic Run.
+    const unread = {
+      threadId: response.body.delivery.chatThreadId,
+      unreadAt: response.body.delivery.deliveredAt,
+    };
+    await expect(
+      chat.listThreadUnreads(actor, f.agentId),
+    ).resolves.toStrictEqual([unread]);
+    await expect(
+      chat.markThreadRead(actor, response.body.delivery.chatThreadId),
+    ).resolves.toStrictEqual({
+      lastReadAt: response.body.delivery.deliveredAt,
+      unreads: [],
+    });
+    await expect(
+      chat.listThreadUnreads(actor, f.agentId),
+    ).resolves.toStrictEqual([]);
+    await expect(
+      chat.markThreadUnread(actor, response.body.delivery.chatThreadId),
+    ).resolves.toStrictEqual({ lastReadAt: null, unreads: [unread] });
+    await chat.markAgentThreadsRead(actor, f.agentId);
+    await expect(
+      chat.listThreadUnreads(actor, f.agentId),
+    ).resolves.toStrictEqual([]);
 
     // The thread is the member's own Morning Brief thread, and it carries the
     // sticky exclusion so tomorrow's brief cannot summarise this one.
@@ -475,6 +569,98 @@ describe("Morning Brief native delivery", () => {
     expect(drained?.status).toBe("sent");
     expect(drained?.resendId).not.toBeNull();
     expect(drained?.providerIdempotencyKey).toBe(sent.options.idempotencyKey);
+  });
+
+  it("preserves mixed Run history and reads the later native watermark through both endpoints", async () => {
+    const f = await fixture();
+    const actor = chatActor(f);
+    const threadId = await store.set(
+      seedOrdinaryChatThreadFixture$,
+      { member: f, title: "Existing mixed history" },
+      context.signal,
+    );
+    const existingRun = await store.set(
+      seedFinishedChatRunFixture$,
+      {
+        chatThreadId: threadId,
+        prompt: "What changed overnight?",
+        reply: "The release candidate passed.",
+      },
+      context.signal,
+    );
+    await bindMorningBriefThreadFixture({
+      orgId: f.orgId,
+      userId: f.userId,
+      workflowId: f.workflowId,
+      chatThreadId: threadId,
+    });
+    await chat.markThreadRead(actor, threadId);
+
+    scriptSlack();
+    const { calls } = scriptProviders();
+    const attemptId = await generateAcceptedResult(f);
+    const response = await accept(deliver(f, attemptId), [200]);
+    expect(response.body.delivery.chatThreadId).toBe(threadId);
+    expect(calls.generation).toHaveLength(1);
+
+    const history = await chat.listThreadEvents(actor, threadId);
+    expect(
+      history.events.map((event) => {
+        return {
+          id: event.id,
+          eventType: event.eventType,
+          runId: event.runId ?? null,
+          content: event.content,
+          seqId: event.seqId,
+        };
+      }),
+    ).toStrictEqual([
+      {
+        id: existingRun.promptEventId,
+        eventType: "input.prompt",
+        runId: existingRun.runId,
+        content: null,
+        seqId: 1,
+      },
+      {
+        id: existingRun.outputEventId,
+        eventType: "output.message",
+        runId: existingRun.runId,
+        content: "The release candidate passed.",
+        seqId: 2,
+      },
+      {
+        id: existingRun.terminalEventId,
+        eventType: "run.completed",
+        runId: existingRun.runId,
+        content: null,
+        seqId: 3,
+      },
+      {
+        id: response.body.delivery.chatEventId,
+        eventType: "output.message",
+        runId: null,
+        content: expect.stringContaining("The release ships today."),
+        seqId: 4,
+      },
+    ]);
+
+    const nativeUnread = {
+      threadId,
+      unreadAt: response.body.delivery.deliveredAt,
+    };
+    await expect(
+      chat.listThreadUnreads(actor, f.agentId),
+    ).resolves.toStrictEqual([nativeUnread]);
+    await expect(chat.markThreadRead(actor, threadId)).resolves.toStrictEqual({
+      lastReadAt: response.body.delivery.deliveredAt,
+      unreads: [],
+    });
+    await chat.markThreadUnread(actor, threadId);
+    await chat.markAgentThreadsRead(actor, f.agentId);
+    await expect(
+      chat.listThreadUnreads(actor, f.agentId),
+    ).resolves.toStrictEqual([]);
   });
 
   it("returns the same delivery to a repeated request without a second message", async () => {
@@ -1281,29 +1467,44 @@ describe("Morning Brief native delivery", () => {
     await expect(readEmailOutboxRow(genericId)).resolves.toBeDefined();
   });
 
-  it("converges concurrent deliveries of one result on a single message", async () => {
+  it("creates one missing binding for two genuinely concurrent deliveries", async () => {
     const f = await fixture();
     scriptSlack();
     scriptProviders();
     const attemptId = await generateAcceptedResult(f);
+    await expect(readBoundChatThreadId(f.workflowId)).resolves.toBeNull();
 
-    const [first, second] = await Promise.all([
-      accept(deliver(f, attemptId), [200]),
-      accept(deliver(f, attemptId), [200]),
-    ]);
+    // Hold the first lock inside delivery, then prove at least one request is
+    // blocked on that live PostgreSQL transaction before releasing it. This is
+    // an overlap barrier, not timing or Promise.all alone.
+    const held = await holdDeliveryOwnerRow(f, context.signal);
+    const firstRequest = accept(deliver(f, attemptId), [200]);
+    const secondRequest = accept(deliver(f, attemptId), [200]);
+    await expect(held.waitForBlocked()).resolves.toBeGreaterThan(0);
+    await held.release();
+    const [first, second] = await Promise.all([firstRequest, secondRequest]);
 
     const results = [first.body.result, second.body.result].sort();
     expect(results).toStrictEqual(["already-delivered", "delivered"]);
-    expect(first.body.delivery.chatEventId).toBe(
-      second.body.delivery.chatEventId,
+    expect(first.body.delivery).toStrictEqual(second.body.delivery);
+    await expect(readBoundChatThreadId(f.workflowId)).resolves.toBe(
+      first.body.delivery.chatThreadId,
     );
-    await expect(readDeliveries(f)).resolves.toHaveLength(1);
-    const events = await readThreadEvents(first.body.delivery.chatThreadId);
-    expect(
-      events.filter((event) => {
-        return event.eventType === "output.message";
+    await expect(readDeliveries(f)).resolves.toStrictEqual([
+      expect.objectContaining({
+        chatThreadId: first.body.delivery.chatThreadId,
+        chatEventId: first.body.delivery.chatEventId,
       }),
-    ).toHaveLength(1);
+    ]);
+    const history = await chat.listThreadEvents(
+      chatActor(f),
+      first.body.delivery.chatThreadId,
+    );
+    expect(
+      history.events.map((event) => {
+        return [event.eventType, event.runId ?? null];
+      }),
+    ).toStrictEqual([["output.message", null]]);
     await expect(readOutbox(f)).resolves.toHaveLength(1);
   });
 
@@ -1522,63 +1723,175 @@ describe("Morning Brief native delivery", () => {
     ).toHaveLength(1);
   });
 
-  it("carries a full-size adversarial body intact into Chat and both email parts", async () => {
+  it("carries the maximum structured S5 result intact through canonical Chat and both email parts", async () => {
     const f = await fixture();
     scriptSlack();
-    // Model output can never carry a link: S5's own schema rejects URL-shaped
-    // prose, and program code resolves every link from the collected map. What
-    // this template must still survive is raw HTML, entity expansion and
-    // Markdown metacharacters at full accepted size.
-    const adversarial = [
-      "<script>alert(1)</script>",
-      "<img src=x onerror=alert(1)>",
-      "&".repeat(200),
-      '"><b>bold</b>',
-      "*".repeat(40),
-    ].join(" ");
-    // MAX_ITEMS_PER_SECTION is 8, so this fills one accepted section.
-    const { calls } = scriptProviders({ itemText: adversarial, itemCount: 8 });
-    const attemptId = await generateAcceptedResult(f);
-    expect(calls.generation).toHaveLength(1);
 
-    const response = await accept(deliver(f, attemptId), [200]);
-    const events = await readThreadEvents(response.body.delivery.chatThreadId);
-    const delivered = events.find((event) => {
-      return event.id === response.body.delivery.chatEventId;
+    // Fill every S5 structural maximum: title length, six sections, heading
+    // length, eight items per section, item length, and four source ids per
+    // item. Prose contains multibyte text, raw HTML and Markdown structure, but
+    // no model-supplied link; S5 resolves the only links from source `m1`.
+    const markers: string[] = [];
+    // The one-byte `|` occupies one model-prose code unit and renders as `\|`,
+    // so each allocated character adds exactly one byte to the accepted
+    // Markdown without changing any field limit. The measured maximum-shape
+    // baseline is 24,362 bytes; 8,406 escaped fillers reach 32 KiB exactly.
+    const expandedFillerCharacters = 8406;
+    let expandedFillerRemaining = expandedFillerCharacters;
+    const sections: GenerationSection[] = Array.from(
+      { length: 6 },
+      (_, sectionIndex) => {
+        const section = sectionIndex + 1;
+        return {
+          heading: `Section ${section} café 漢 <heading>`.padEnd(60, "h"),
+          items: Array.from({ length: 8 }, (_, itemIndex) => {
+            const marker = `S${section}I${itemIndex + 1}`;
+            markers.push(marker);
+            const prefix = `${marker} café 漢 <script>alert(1)</script> <img src=x onerror=alert(1)> & **bold** [label]`;
+            const paddingLength = 400 - prefix.length;
+            const expandedLength = Math.min(
+              paddingLength,
+              expandedFillerRemaining,
+            );
+            expandedFillerRemaining -= expandedLength;
+            return {
+              text: `${prefix}${"|".repeat(expandedLength)}${"x".repeat(paddingLength - expandedLength)}`,
+              sourceIds: ["m1", "m1", "m1", "m1"],
+            };
+          }),
+        };
+      },
+    );
+    if (expandedFillerRemaining !== 0) {
+      throw new Error("Maximum-shape fixture cannot reach the 32 KiB boundary");
+    }
+    const title = "Maximum Morning Brief café 漢 <title>".padEnd(120, "t");
+    const { calls } = scriptProviders({ deliverTitle: title, sections });
+    const generated = await accept(
+      generationClient().preview({
+        headers: f.headers,
+        body: { scheduledFor: ANCHOR },
+      }),
+      [200],
+    );
+    if (
+      generated.body.result !== "generated" ||
+      generated.body.generation === undefined ||
+      generated.body.generation.result?.decision !== "deliver"
+    ) {
+      throw new Error("Expected the maximum structured result to be accepted");
+    }
+    const acceptedResult = generated.body.generation.result;
+    expect(calls.generation).toHaveLength(1);
+    // Every structural dimension is full and the accepted result reaches its
+    // exact byte ceiling: 32,603 UTF-16 code units / 32,768 UTF-8 bytes.
+    expect(acceptedResult.markdown).toHaveLength(32_603);
+    expect(acceptedResult.bytes).toBe(
+      Buffer.byteLength(acceptedResult.markdown, "utf8"),
+    );
+    expect(acceptedResult.bytes).toBe(32 * 1024);
+    expect(acceptedResult.markdown.split(String.raw`\|`)).toHaveLength(
+      expandedFillerCharacters + 1,
+    );
+
+    const response = await accept(
+      deliver(f, generated.body.generation.attemptId),
+      [200],
+    );
+    const history = await chat.listThreadEvents(
+      chatActor(f),
+      response.body.delivery.chatThreadId,
+    );
+    expect(history.events).toHaveLength(1);
+    expect(history.events[0]).toMatchObject({
+      id: response.body.delivery.chatEventId,
+      eventType: "output.message",
+      content: acceptedResult.markdown,
+      seqId: 1,
     });
-    const body = delivered?.content ?? "";
-    expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(3000);
+    expect(history.events[0]?.runId).toBeUndefined();
+
+    // All six sections and all 48 unique items survived in committed order.
+    let previousHeading = -1;
+    for (const section of sections) {
+      const escapedHeading = `## ${section.heading.replaceAll("<", String.raw`\<`).replaceAll(">", String.raw`\>`)}`;
+      const index = acceptedResult.markdown.indexOf(escapedHeading);
+      expect(index).toBeGreaterThan(previousHeading);
+      previousHeading = index;
+    }
+    for (const marker of markers) {
+      expect(acceptedResult.markdown.split(marker)).toHaveLength(2);
+    }
+    const citation = acceptedResult.markdown.match(
+      /\[#general\]\((https:\/\/[^)]+)\)/,
+    );
+    const citationUrl = citation?.[1];
+    if (citationUrl === undefined) {
+      throw new Error(
+        "Expected every maximum-shape item to have a source link",
+      );
+    }
+    expect(acceptedResult.markdown.split(`(${citationUrl})`)).toHaveLength(
+      markers.length + 1,
+    );
 
     const [queued] = await readOutbox(f);
     const template = queued?.template as {
       props: { resultMarkdown: string };
     };
-    // Chat and the queued email carry the identical accepted body.
-    expect(template.props.resultMarkdown).toBe(body);
+    // Chat and the queued email carry the byte-for-byte accepted Markdown.
+    expect(template.props.resultMarkdown).toBe(acceptedResult.markdown);
 
     await drainEmailOutbox([queued!.id], context.signal);
     const sends = emailSends();
     expect(sends).toHaveLength(1);
     const html = String(sends[0]?.payload["html"]);
     const text = String(sends[0]?.payload["text"]);
-    // Nothing is truncated, and the unsafe constructs are inert.
+    // The email renderer makes model markup inert while preserving every item
+    // and the program-resolved source link in both rendered parts.
     expect(html).not.toContain("<script>");
-    expect(html).not.toContain("javascript:");
-    // The long ampersand run is escaped rather than interpreted as entities.
-    expect(html.split("&amp;").length - 1).toBeGreaterThan(100);
-    expect(text).toContain("alert(1)");
-    // Neither part is shortened: the whole accepted body reaches both.
-    expect(text).toContain("*".repeat(40));
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    const renderedCitationHrefs = [
+      ...html.matchAll(/<a href="([^"]+)"[^>]*>#general<\/a>/g),
+    ].map((match) => {
+      return match[1];
+    });
+    expect(renderedCitationHrefs).toHaveLength(markers.length);
+    expect(new Set(renderedCitationHrefs)).toHaveProperty("size", 1);
+    expect(renderedCitationHrefs[0]).toContain("&amp;channel=");
+    expect(text.split(citationUrl)).toHaveLength(markers.length + 1);
+    expect(html.split("|")).toHaveLength(expandedFillerCharacters + 1);
+    expect(text.split("|")).toHaveLength(expandedFillerCharacters + 1);
+    for (const marker of markers) {
+      expect(html.split(marker)).toHaveLength(2);
+      expect(text.split(marker)).toHaveLength(2);
+    }
   });
 
-  it("leaves nothing behind when the delivery row fails to commit", async () => {
+  it("restores the complete missing-binding state when the receipt fails", async () => {
     const f = await fixture();
     scriptSlack();
     const { calls } = scriptProviders();
     const attemptId = await generateAcceptedResult(f);
+    const atomicScope = {
+      orgId: f.orgId,
+      userId: f.userId,
+      agentId: f.agentId,
+      workflowId: f.workflowId,
+      automationId: f.automationId,
+    };
+    const before = await readMorningBriefDeliveryAtomicState(atomicScope);
+    expect(before).toStrictEqual({
+      binding: null,
+      threadRows: [],
+      deliveries: [],
+      outbox: [],
+    });
 
-    // The last write the transaction makes fails, so the message, the sticky
-    // provenance, the binding and the email intent must all unwind with it.
+    // The last write the transaction makes fails after destination, event,
+    // provenance and email preparation. The whole local state must return to
+    // the exact missing-binding snapshot, not merely lack a visible message.
     await rejectMorningBriefDeliveryInsert(f.orgId, context.signal);
     const failure = await deliver(f, attemptId).then(
       (response) => {
@@ -1592,22 +1905,12 @@ describe("Morning Brief native delivery", () => {
     );
     expect(failure).toBeDefined();
 
-    await expect(readDeliveries(f)).resolves.toHaveLength(0);
-    await expect(readOutbox(f)).resolves.toHaveLength(0);
+    await expect(
+      readMorningBriefDeliveryAtomicState(atomicScope),
+    ).resolves.toStrictEqual(before);
     expect(emailSends()).toHaveLength(0);
     // No second generation was made to recover from the failure.
     expect(calls.generation).toHaveLength(1);
-    const boundThreadId = await readBoundChatThreadId(f.workflowId);
-    if (boundThreadId) {
-      const events = await readThreadEvents(boundThreadId);
-      expect(
-        events.filter((event) => {
-          return event.eventType === "output.message";
-        }),
-      ).toHaveLength(0);
-      const thread = await readChatThreadState(boundThreadId);
-      expect(thread?.provenance).not.toBe("morning_brief");
-    }
   });
 
   it("keeps a committed delivery when its realtime notification fails", async () => {

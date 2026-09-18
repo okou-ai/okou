@@ -81,8 +81,6 @@ const SCHEMA = {
     .email()
     .optional(),
   CRON_SECRET: z.string().min(1),
-  // Fleet-wide clean-day cutover; unset until #34615 verifies producer drain.
-  X_RESOURCE_BILLING_START_DATE: z.iso.date().optional(),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),

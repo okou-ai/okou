@@ -38,7 +38,6 @@ import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
   freezeMorningBriefSourceSelection,
-  startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefSourceAuthorityLedger,
   type MorningBriefSourceDeadline,
@@ -94,7 +93,11 @@ import {
   boundMorningBriefDescriptors,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-revalidation.service";
+import {
+  morningBriefRetainedCheckExpired,
+  revalidateMorningBriefRetainedSources,
+  startMorningBriefRetainedCheckDeadline,
+} from "./morning-brief-source-revalidation.service";
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
@@ -195,6 +198,8 @@ interface MorningBriefCompositionResult {
   } | null;
   readonly language: MorningBriefLanguagePlan | null;
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
+  /** Exact UTF-8 bytes of the serialized descriptor array consumers retain. */
+  readonly descriptorBytes: number;
 }
 
 /** Why a composition produced no model request. */
@@ -254,9 +259,14 @@ export const composeMorningBrief$ = command(
     );
     const phaseStartedAt = deadline.startedAt;
     const phaseDeadlineAt = deadline.deadlineAt;
-    const phaseDeadline = startMorningBriefSourceDeadline(
-      Math.max(0, phaseDeadlineAt.getTime() - nowDate().getTime()),
-    );
+    const phaseDeadline: MorningBriefSourceDeadline = {
+      // Keep the shared authorizers on the exact resolved instant. Starting a
+      // duration helper here would sample the clock again and move this fence.
+      at: phaseDeadlineAt.getTime(),
+      signal: AbortSignal.timeout(
+        Math.max(0, phaseDeadlineAt.getTime() - nowDate().getTime()),
+      ),
+    };
     const expired = (
       step: string,
       sources: readonly MorningBriefSourceReport[] = [],
@@ -369,7 +379,7 @@ export const composeMorningBrief$ = command(
 
 type MorningBriefCompositionBase = Omit<
   MorningBriefCompositionResult,
-  "descriptors" | "language" | "request" | "sources"
+  "descriptorBytes" | "descriptors" | "language" | "request" | "sources"
 >;
 
 type ReducedMorningBriefCollections = ReturnType<
@@ -412,6 +422,7 @@ function finishEmptyComposition(
       ...base,
       sources: reduced.reports,
       descriptors: retained.descriptors,
+      descriptorBytes: retained.bytes,
       request: null,
       language: null,
     },
@@ -444,6 +455,7 @@ function finishPlannedComposition(
       ...base,
       sources,
       descriptors: retained.descriptors,
+      descriptorBytes: retained.bytes,
       language: planned.language,
       request: requestReport(planned),
     },
@@ -1017,6 +1029,21 @@ type RetainedAuthorityOutcome =
       readonly replanned: MorningBriefAllocated;
     };
 
+/** Outer expiry owns the public result when both retained clocks meet. */
+function retainedAuthorityExpired(
+  outerDeadlineAt: Date,
+  retainedDeadlineAt: number,
+  retainedSignal: AbortSignal,
+): MorningBriefDeadlineExceeded | { readonly kind: "withdrawn" } | null {
+  const outer = morningBriefExpired(outerDeadlineAt, "final authority check");
+  if (outer) {
+    return outer;
+  }
+  return morningBriefRetainedCheckExpired(retainedDeadlineAt, retainedSignal)
+    ? { kind: "withdrawn" }
+    : null;
+}
+
 /**
  * Re-ask the authorizers about every supplied source, then plan what survives.
  *
@@ -1044,70 +1071,115 @@ async function proveRetainedAuthority(
   },
   signal: AbortSignal,
 ): Promise<RetainedAuthorityOutcome> {
-  const deadlineAt = new Date(input.deadline.at);
-  const before = morningBriefExpired(deadlineAt, "final authority check");
+  const outerDeadlineAt = new Date(input.deadline.at);
+  const before = morningBriefExpired(outerDeadlineAt, "final authority check");
   if (before) {
     return before;
   }
-  const supplied = new Set(
-    input.planned.allocation.items.map((item) => {
-      return item.identity.source;
+  const reservation = input.deadline;
+  const deadline = startMorningBriefRetainedCheckDeadline(
+    reservation.at,
+    reservation.signal,
+  );
+  const initialExpiry = retainedAuthorityExpired(
+    outerDeadlineAt,
+    deadline.at,
+    deadline.signal,
+  );
+  if (initialExpiry) {
+    return initialExpiry;
+  }
+  const descriptors = new Map(
+    input.descriptors.map((descriptor) => {
+      return [descriptor.source, descriptor] as const;
     }),
   );
-  const revalidation = await revalidateMorningBriefRetainedSources(
-    {
-      db: input.db,
-      clerk: input.clerk,
-      scope: input.scope,
-      descriptors: input.descriptors.filter((descriptor) => {
+  const revoked = new Set<MorningBriefSourceKind>();
+  let collections = input.collections;
+  let replanned = input.planned;
+
+  // Every pass proves the complete supplied set. If a refusal changes
+  // allocation, the next pass re-proves every input in the new final request,
+  // not only the source that entered during reallocation. Each changed pass
+  // removes at least one source, so at most five sources make this finite; all
+  // passes spend the one retained deadline and the outer composition deadline.
+  for (let pass = 0; pass <= input.descriptors.length; pass += 1) {
+    const beforePass = retainedAuthorityExpired(
+      outerDeadlineAt,
+      deadline.at,
+      deadline.signal,
+    );
+    if (beforePass) {
+      return beforePass;
+    }
+    const supplied = allocatedSourceKinds(replanned);
+    let removed = false;
+    for (const source of supplied) {
+      if (!descriptors.has(source)) {
+        revoked.add(source);
+        removed = true;
+      }
+    }
+    if (!removed) {
+      const retained = input.descriptors.filter((descriptor) => {
         return supplied.has(descriptor.source);
-      }),
-      slack:
-        input.slack === null
-          ? null
-          : {
-              botToken: input.slack.botToken,
-              slackUserId: input.slack.slackUserId,
-            },
-      deadline: input.deadline,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const after = morningBriefExpired(deadlineAt, "final authority check");
-  if (after) {
-    return after;
+      });
+      const revalidation = await revalidateMorningBriefRetainedSources(
+        {
+          db: input.db,
+          clerk: input.clerk,
+          scope: input.scope,
+          descriptors: retained,
+          slack:
+            input.slack === null
+              ? null
+              : {
+                  botToken: input.slack.botToken,
+                  workspaceId: input.slack.workspaceId,
+                  slackUserId: input.slack.slackUserId,
+                },
+          deadline,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      const afterRevalidation = retainedAuthorityExpired(
+        outerDeadlineAt,
+        deadline.at,
+        deadline.signal,
+      );
+      if (afterRevalidation) {
+        return afterRevalidation;
+      }
+      if (revalidation.kind === "owner-lost") {
+        return { kind: "withdrawn" };
+      }
+      for (const refused of revalidation.revoked) {
+        revoked.add(refused.source);
+        removed = true;
+      }
+    }
+    if (!removed) {
+      const beforeRelease = retainedAuthorityExpired(
+        outerDeadlineAt,
+        deadline.at,
+        deadline.signal,
+      );
+      return (
+        beforeRelease ?? { kind: "proved", collections, revoked, replanned }
+      );
+    }
+    collections = withdrawRevokedSources(input.collections, revoked);
+    replanned = allocateForCollections(collections, {
+      language: input.language,
+      instructions: input.instructions,
+      omittedByNormalizedCap: input.omittedByNormalizedCap,
+    });
+    if (replanned.allocation.items.length === 0) {
+      return { kind: "withdrawn" };
+    }
   }
-  if (revalidation.kind === "owner-lost") {
-    return { kind: "withdrawn" };
-  }
-  const revoked = new Set(
-    revalidation.revoked.map((entry) => {
-      return entry.source;
-    }),
-  );
-  if (revoked.size === 0) {
-    return {
-      kind: "proved",
-      collections: input.collections,
-      revoked,
-      replanned: input.planned,
-    };
-  }
-  // Withdrawn material is removed and the authorized siblings are planned
-  // again, so the coverage the model receives describes the day that is
-  // actually being summarized rather than the one that was collected.
-  const collections = withdrawRevokedSources(input.collections, revoked);
-  const replanned = allocateForCollections(collections, {
-    language: input.language,
-    instructions: input.instructions,
-    omittedByNormalizedCap: input.omittedByNormalizedCap,
-  });
-  // The owner had material and every piece of it lost its authority. That is an
-  // authority change, never a quiet morning.
-  return replanned.allocation.items.length === 0
-    ? { kind: "withdrawn" }
-    : { kind: "proved", collections, revoked, replanned };
+  return { kind: "withdrawn" };
 }
 
 /** One sized request: the fixed envelope, the evidence that fits, the total. */
@@ -1115,6 +1187,17 @@ interface MorningBriefAllocated {
   readonly envelopeBytes: number;
   readonly totalBytes: number;
   readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+}
+
+/** The sources whose material the current request would actually release. */
+function allocatedSourceKinds(
+  planned: MorningBriefAllocated,
+): ReadonlySet<MorningBriefSourceKind> {
+  return new Set(
+    planned.allocation.items.map((item) => {
+      return item.identity.source;
+    }),
+  );
 }
 
 /** Allocate with the shared consumed serializer/packing contract. */
@@ -1454,8 +1537,6 @@ async function readGithubSource(
   return {
     normalized,
     descriptor: morningBriefGithubDescriptor({
-      // The exact login of the selected token, resolved by the collector.
-      login: execution.bundle.login,
       proof: args.authority.proof,
       membershipId: args.scope.membershipId,
       agentId: args.scope.agentId,

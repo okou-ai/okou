@@ -6,7 +6,6 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
 import { holdRunConversationDeletionForTest } from "../../../test-fixtures/usage-run-deletion-lock";
@@ -40,10 +39,6 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
       displayName: "Account cleanup commit evidence",
       visibility: "private",
     });
-    mockEnv(
-      "X_RESOURCE_BILLING_START_DATE",
-      nowDate().toISOString().slice(0, 10),
-    );
     // Pricing is operator-managed; use a private lookup identity for this test.
     const pricing = await createUsagePricingFixture({
       configured: [

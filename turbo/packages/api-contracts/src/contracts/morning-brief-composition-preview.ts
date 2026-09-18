@@ -73,7 +73,13 @@ const compositionBranchSchema = z.object({
   observedAt: z.string().nullable(),
 });
 
-/** The window and snapshot context one source's evidence is only true within. */
+/**
+ * The window and snapshot context one source's evidence is only true within.
+ *
+ * `startDate` and `endDateExclusive` are the frozen local dates an all-day
+ * record was selected against, and `timezone` is what makes them a day rather
+ * than a range of instants.
+ */
 const compositionProvenanceSchema = z.object({
   startAt: z.string().nullable(),
   endAt: z.string().nullable(),
@@ -106,7 +112,14 @@ const compositionSourcesSchema = z.array(
     }),
     omitted: compositionOmissionSchema,
     provenance: compositionProvenanceSchema,
-    /** Content-free fingerprint of this source's accepted request evidence. */
+    /**
+     * A fingerprint of exactly the evidence this source put in the request.
+     *
+     * It is content-free and one-way. Two provider states that a reader would
+     * act on differently must not produce the same value: that equality is how
+     * a normalization silently dropping branch, state or check facts becomes
+     * observable from outside.
+     */
     evidenceDigest: z.string(),
   }),
 );
@@ -169,6 +182,8 @@ const compositionResultSchema = z.object({
       ]),
     })
     .nullable(),
+  /** Exact UTF-8 bytes of the serialized descriptor array below. */
+  descriptorBytes: z.number().int().nonnegative(),
   /** Credential-free retained authority; never a token or a payload. */
   descriptors: z.array(
     z.object({

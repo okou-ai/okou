@@ -150,6 +150,49 @@ def test_denied_registered_custom_candidate_does_not_fall_back_to_builtin() -> N
     assert result.reason == "permission_denied"
 
 
+@pytest.mark.parametrize("selected_kind", ["builtin", "custom"])
+def test_explicit_connector_intent_selects_registered_owner(selected_kind: str) -> None:
+    builtin = _runtime_firewall("builtin", "builtin-service", ITEMS_BASE, auth_label="builtin")
+    custom = _runtime_firewall("custom", "custom-service", ITEMS_BASE, auth_label="custom")
+    custom_id = "00000000-0000-4000-8000-000000000002"
+    custom["customConnectorId"] = custom_id
+    selected_intent = "builtin-service" if selected_kind == "builtin" else custom_id
+    policies = {
+        "builtin-service": network_policy(unknown_policy="allow"),
+        "custom-service": network_policy(unknown_policy="allow"),
+    }
+
+    result = match_compiled_firewalls(
+        ITEMS_URL,
+        [builtin, custom],
+        policies,
+        intent=connector_intent.ConnectorIntent("present", selected_intent),
+    )
+
+    assert isinstance(result, matching.FirewallAllow)
+    assert result.name == f"{selected_kind}-service"
+    assert result.api_entry["auth"]["headers"]["Authorization"] == f"Bearer {selected_kind}"
+
+
+@pytest.mark.parametrize("remaining_kind", ["builtin", "custom"])
+def test_removed_explicit_owner_cannot_fall_through_to_remaining_owner(remaining_kind: str) -> None:
+    remaining = _runtime_firewall(
+        "builtin" if remaining_kind == "builtin" else "custom",
+        "remaining",
+        ITEMS_BASE,
+        auth_label="remaining",
+    )
+    result = match_compiled_firewalls(
+        ITEMS_URL,
+        [remaining],
+        {"remaining": network_policy(unknown_policy="allow")},
+        intent=connector_intent.ConnectorIntent("present", "removed-owner"),
+    )
+
+    assert isinstance(result, matching.FirewallAmbiguous)
+    assert result.reason == "connector_intent_not_candidate"
+
+
 def test_malformed_registered_custom_candidate_does_not_fall_back_to_builtin() -> None:
     builtin = _runtime_firewall(
         "builtin",

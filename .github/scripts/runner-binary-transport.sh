@@ -25,7 +25,8 @@ fi
 
 # A consumer-only rerun keeps its successful producer from an earlier attempt.
 # Bind the reference to this run and input, not the consumer's run_attempt.
-reference_key="runner-binaries/transports/${REPO}/${CURRENT_RUN_ID}/${EXPECTED_TARGET}/${EXPECTED_BINARY_INPUT_DIGEST}.json"
+# The input digest already includes the target; this prefix serves this repository.
+reference_key="runner-binaries/transports/${CURRENT_RUN_ID}/${EXPECTED_BINARY_INPUT_DIGEST}.json"
 mkdir -p "$(dirname "$OUTPUT_DIR")"
 transport_tmp=$(mktemp -d "$(dirname "$OUTPUT_DIR")/runner-binary-transport.XXXXXX")
 trap 'rm -rf "$transport_tmp"' EXIT

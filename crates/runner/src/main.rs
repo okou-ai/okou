@@ -1,4 +1,3 @@
-// Trigger another runner release on 2026-07-31.
 mod active_input;
 mod axiom_layer;
 mod bounded_command;
@@ -148,6 +147,7 @@ fn runner_hostname_from_config(path: &Path) -> Option<String> {
     Some(hostname)
 }
 
+/// Keep the runner release visible in log filenames across upgrades.
 fn runner_log_prefix(release: &str) -> String {
     format!("runner-{release}")
 }

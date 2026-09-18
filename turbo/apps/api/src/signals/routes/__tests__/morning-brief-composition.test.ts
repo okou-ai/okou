@@ -70,6 +70,7 @@ const CALENDAR_LIST_URL =
 const CALENDAR_EVENTS_URL =
   "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events";
 const SLACK_CONVERSATIONS_URL = "https://slack.com/api/users.conversations";
+const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
 const GITHUB_API_URL = "https://api.github.com/*";
 
 /** The documented absolute phase and the cutoff that sits inside it. */
@@ -900,16 +901,16 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
   );
 
   it.each([
-    { name: "one millisecond before", offset: -1, expired: false },
+    { name: "before", offset: -1000, expired: false },
     { name: "at", offset: 0, expired: true },
     { name: "after", offset: 1, expired: true },
   ])(
     "decides the held final authority read $name the deadline",
     async ({ offset, expired }) => {
-      const fixture = await setupOwner({ gmail: true });
+      const fixture = await setupOwner({ slack: true });
       const at = freezeClock();
       const deadlineAt = at + 10_000;
-      const authorityReady = createDeferredPromise<
+      const initialAuthorityReady = createDeferredPromise<
         ReturnType<typeof holdMorningBriefMembershipLookup>
       >(context.signal);
       let installed = false;
@@ -919,9 +920,9 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
         }
         installed = true;
         // The archive download occurs only after all source jobs have settled.
-        // Installing the next exact membership hold here therefore targets the
-        // outer retained-authority check without a Clerk call ordinal.
-        authorityReady.resolve(
+        // This first hold therefore targets retained proof admission without a
+        // Clerk call ordinal.
+        initialAuthorityReady.resolve(
           holdMorningBriefMembershipLookup(
             { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
             context.signal,
@@ -934,16 +935,55 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
         "Write in Polish.",
       );
       await seedMembership(fixture);
-      stubGmail({ messages: [{ id: "m-1", at: at - 30 * 60 * 1000 }] });
+      let slackEnumerations = 0;
+      server.use(
+        http.get(SLACK_CONVERSATIONS_URL, () => {
+          slackEnumerations += 1;
+          // With one retained channel, the third enumeration is the collector's
+          // final release proof. Advance there so the source was admitted with
+          // the full budget, while language and retained proof share the four
+          // seconds left before the tighter outer reservation.
+          if (slackEnumerations === 3) {
+            mockNow(at + 6000);
+          }
+          return HttpResponse.json({
+            ok: true,
+            channels: [{ id: "C1", name: "general", is_private: false }],
+          });
+        }),
+        http.get(SLACK_HISTORY_URL, () => {
+          return HttpResponse.json({
+            ok: true,
+            has_more: false,
+            messages: [
+              {
+                type: "message",
+                ts: `${String(Math.floor((at - 2 * 60 * 60 * 1000) / 1000))}.000100`,
+                user: "U2",
+                text: "Morning update",
+              },
+            ],
+          });
+        }),
+      );
       const pending = startCompose(fixture, {
         anchor: anchorFor(at),
         deadlineAt: new Date(deadlineAt).toISOString(),
       });
 
-      const authority = await authorityReady.promise;
-      await authority.waitForArrival();
+      const initialAuthority = await initialAuthorityReady.promise;
+      await initialAuthority.waitForArrival();
+      // Slack's retained proof has no Clerk membership lookup of its own. By
+      // installing the next exact lookup before releasing admission, this hold
+      // can only be the final owner proof after the remote source re-proof.
+      const finalAuthority = holdMorningBriefMembershipLookup(
+        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+        context.signal,
+      );
+      initialAuthority.release();
+      await finalAuthority.waitForArrival();
       mockNow(deadlineAt + offset);
-      authority.release();
+      finalAuthority.release();
       const response = await accept(pending, [200]);
 
       if (!expired) {

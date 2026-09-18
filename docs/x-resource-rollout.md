@@ -3,7 +3,10 @@
 [#35156](https://github.com/vm0-ai/okou/issues/35156) qualifies the producer and
 consumer against shared examples. [#34615](https://github.com/vm0-ai/okou/issues/34615)
 remains responsible for deployed verification and separately authorized
-activation. This document records no production acceptance or activation date.
+deduplication rollout. [#35197](https://github.com/vm0-ai/okou/issues/35197) replaces
+date-based activation with the standard `xResourceDeduplication` feature switch.
+That change does not enable the production switch, and this document records no
+production acceptance.
 The [ingestion contract](./x-resource-observations.md) remains authoritative:
 one upstream billing account, global daily resource identity, today and yesterday
 in UTC, and ordinary net usage without a user-visible deduplication status.
@@ -60,7 +63,14 @@ Keep the existing resource suites in the qualification record as well:
 Record the tested commit, exact commands and results in the PR. A passing CI
 run proves only the checks and commit that it actually executed.
 
-## Evidence needed before configuration
+The switch tests cover both states, transitions and source replay. Disabled
+observations still reach the usage ledger at quantity Q and record their resource
+IDs; enabled observations use N + R against the same shared records. A source
+accepted in either state retains its amount when replayed after a switch change.
+Claim capability, validation, lifecycle admission and two-date cleanup remain
+active in both states.
+
+## Deployment and rollback compatibility
 
 Record dated evidence in #34615 for the serving API deployment, every serving
 or draining Runner artifact/process, and the selected supported rollback API
@@ -80,22 +90,42 @@ is not a billing compatibility boundary. The current
 does not enforce an X-specific boundary, so its success alone cannot qualify a
 target. This qualification adds no rollback policy.
 
-Configuring `X_RESOURCE_BILLING_START_DATE`, even with a future date, immediately
-enables usage and account-lifecycle admission locks. All serving and supported
-rollback APIs must already preserve the settlement, compaction and Run-deletion
-lock order described in the ingestion contract. Verify that the actual rollback
-deployment also preserves the same setting: compatible source code with an
-unset date rejects v1 uploads and omits capability from new claims.
+Deploy API support for unconditional v1 ingestion and admission before relying on
+new producer claims. All serving and supported rollback APIs must preserve the
+settlement, compaction and Run-deletion lock order described in the ingestion
+contract. This is a deployment compatibility floor, independent of the switch.
+The updated API always advertises
+`xResourceBilling: { protocol: "x-resource-v1", startDate: "1970-01-01" }`.
+Deployed Runner parsers require the date field, so the API retains a fixed
+compatibility value without a configured date or API cutoff.
 
-## Evidence needed before the selected UTC day
+Deploying the change starts resource collection, reporting and recording on new
+capable Runs even while deduplication is disabled. Verify the actual rollback
+artifact's v1 ingestion behavior: an older API with its original date setting
+unset rejects v1 uploads and omits capability from new claims. Turning the
+deduplication switch off does not repair that incompatibility. Retain a compatible
+API for already admitted v1 uploads.
+
+## Deduplication rollout and observation
 
 Capability is captured when a Run is claimed. A current Runner can still host a
-Run claimed before configuration, with no capability for its entire lifetime.
+Run claimed before this API deployment, with no capability for its entire lifetime.
 An older Runner ignores the advertised field. Confirm the drain of both kinds
 of Runs and their in-flight requests, streams and retained uploads; checking
-binary versions alone is insufficient. Previously queued Runs resolve capability
-at claim time. Record the configuration propagation cutoff and evidence that no
-incapable API or Runner can create another absent-capability claim.
+binary versions alone is insufficient to claim complete resource coverage.
+Previously queued Runs resolve capability at claim time. Record deployment
+propagation and any remaining absent-capability claims.
+
+The standard `xResourceDeduplication` switch defaults to disabled, with no staff
+whitelist, and resolves the authenticated Run owner's organization/user context
+once per batch. When authorized, use existing user overrides within the
+authenticated organization to
+enable deduplication; there is no future UTC activation date to configure. Resource
+records collected while disabled are already available for the same-day switch
+to N + R billing. Resource identity is global even when switch rollout is scoped.
+Disabling the switch charges Q for newly accepted observations while continuing
+all other processing. Neither direction changes amounts already accepted under
+a source UUID.
 
 Use actual process/Run completion and delivery outcomes. Promotion's soft-drain
 acknowledgement is not completion. Proxy quiescence means no outstanding work;
@@ -110,9 +140,8 @@ call succeeds, not measured capacity. Compare actual expired-row volume and
 backlog with observed cleanup throughput. Delayed cleanup retains extra rows but
 must never extend the today/yesterday admission window.
 
-Only after this evidence is accepted should separately authorized activation
-select a clean future UTC day. Once v1 observations can exist, clearing or moving
-the date, replaying expired observations on a new date, or reverting to count-only
-producers is not a safe fallback. Record any operational recovery decision in
-#34615; the shared fixture does not authorize configuration changes or close
-that issue.
+Switch rollback does not require changing producer protocol or clearing resource
+records. Never replay expired observations on a new date or downgrade a rejected
+v1 upload to a count-only event. Record operational verification and recovery
+decisions in #34615; passing the shared fixture does not enable the production
+switch or close that issue.

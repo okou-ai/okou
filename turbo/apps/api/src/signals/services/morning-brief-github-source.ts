@@ -191,12 +191,13 @@ export function normalizeMorningBriefGithub(
 /**
  * The credential-free descriptor a later phase revalidates GitHub against.
  *
- * `accountRef` is the login the collector resolved from the member's selected
- * connection, and `containers` names the repositories that contributed, so a
- * later check can ask about the real scope of this input.
+ * `accountRef` is the canonical external identity pinned by the shared reader,
+ * while `containers` names the repositories that contributed, so a later check
+ * can ask about the real account and scope of this input. The provider login
+ * remains on the normalized item; it is not a substitute for the connector
+ * identity stored in the selected account row.
  */
 export function morningBriefGithubDescriptor(args: {
-  readonly login: string;
   /** What this source's reads were actually authorized by, or null. */
   readonly proof: MorningBriefSourceAuthorityProof | null;
   readonly membershipId: string;
@@ -209,7 +210,7 @@ export function morningBriefGithubDescriptor(args: {
   return {
     source: "github",
     connectionId: proven.connectionId,
-    accountRef: args.login,
+    accountRef: args.proof?.accountRef ?? null,
     scopeDigest: proven.scopeDigest,
     endpoints: proven.endpoints,
     membershipId: args.membershipId,

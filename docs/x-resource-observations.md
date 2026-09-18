@@ -4,7 +4,8 @@ This is the X resource ingestion contract for
 [#34713](https://github.com/vm0-ai/okou/issues/34713), using the schema prepared in
 [#34712](https://github.com/vm0-ai/okou/issues/34712), under backend
 [#34610](https://github.com/vm0-ai/okou/issues/34610) and overall delivery
-[#34532](https://github.com/vm0-ai/okou/issues/34532).
+[#34532](https://github.com/vm0-ai/okou/issues/34532). The deduplication-only
+feature switch is defined in [#35197](https://github.com/vm0-ai/okou/issues/35197).
 
 There is one X upstream billing account. Resource deduplication is site-wide
 across organizations, users, runs and processes. Retain only the current UTC
@@ -12,26 +13,29 @@ date and the previous UTC date. Adding or replacing the billing account needs
 a new design decision before that account uses this path; credential refresh
 within the same account does not reset resource identity.
 
-## Protocol and activation
+## Protocol and deduplication switch
 
 The existing usage webhook validates the strict `x-resource-v1` schema and
-authenticates the sandbox run. `X_RESOURCE_BILLING_START_DATE` is an optional
-server setting containing the fleet-wide UTC activation date (`YYYY-MM-DD`).
-Leave it unset until #34615 verifies the single account, compatible producers,
-serving and rollback APIs with settlement admission, and the legacy upload drain.
-Unset, every resource or
-mixed batch receives `400 X resource observations are not enabled` before any
-financial write. No per-user or per-organization override is supported.
+authenticates the sandbox run in both switch states. The standard
+`xResourceDeduplication` feature switch defaults to disabled, with no staff
+whitelist. Resolve it once per batch using the authenticated Run owner's
+organization and user through `loadUserFeatureSwitchContext`. It controls only
+the final quantity charged for a newly accepted resource observation. Collection,
+reporting, validation, resource recording, source idempotency, pricing, settlement
+and lifecycle admission remain active when the switch is disabled.
 
-When configured, observations must be on or after the activation date and
-inside the two-date admission window below. The complete batch commits
-atomically and returns the existing `{ success: true }` acknowledgement.
-Mixed batches retain legacy quantities and the existing BYOK model filter;
-legacy-only batches retain their quantities and source behavior, sharing the
-same bounded write admission after activation. Runner claims advertise the
-optional `xResourceBilling: { protocol: "x-resource-v1", startDate }` capability
-when the setting is configured, including a future activation date. A rejected
-resource batch must never be downgraded to legacy count billing.
+Observations must be inside the two-date admission window below. The complete
+batch commits atomically and returns the existing `{ success: true }`
+acknowledgement. Mixed batches retain legacy quantities and the existing BYOK
+model filter; legacy-only batches retain their quantities and source behavior,
+sharing bounded write admission regardless of the switch.
+
+Runner claims always advertise
+`xResourceBilling: { protocol: "x-resource-v1", startDate: "1970-01-01" }`.
+The fixed date preserves compatibility with deployed Runner parsers that require
+this field; it is neither a configurable activation date nor an API admission
+cutoff. No environment setting is required. A rejected resource batch must never
+be downgraded to legacy count billing.
 
 Each event carries:
 
@@ -51,15 +55,21 @@ Source UUIDs in a resource/mixed batch must be distinct, including UUID spelling
 that differs only in case. Resource type is derived from the category: post or user.
 There is no caller-supplied billing scope, binding or net quantity. `posts.read`
 is the existing X billing category; `tweet.read` is an OAuth permission and is
-not accepted as a resource billing category. This corrects the dormant contract
-before the first resource producer is activated; no category alias or price
-change is introduced.
+not accepted as a resource billing category. No category alias or price change
+is introduced.
 
 Let K be the sum of identified occurrences. Require Q = K + R, computing
-transient unidentified remainder R before collapsing repeated IDs. Bill N + R,
-where N is the number of newly inserted distinct resources. For Q=5 and
-occurrences A,A,B, R=2; if B was already read, N=1 and net quantity is 3.
-Only final net quantity reaches the existing ledger and rollups.
+transient unidentified remainder R before collapsing repeated IDs. With the
+switch disabled, bill the original quantity Q while still recording resource
+IDs. With it enabled, bill N + R, where N is the number of newly inserted distinct
+resources. For Q=5 and occurrences A,A,B, R=2; if B was already read, N=1 and the
+enabled quantity is 3, while the disabled quantity remains 5. Only the final
+quantity reaches the existing ledger and rollups.
+
+Resources recorded while the switch is disabled also count as prior reads when
+it is enabled later that UTC day, including across organizations. Disabling the
+switch makes new observations count-priced again without clearing shared reads.
+Changing the switch never recalculates an already accepted source's quantity.
 
 ## One short-lived table
 
@@ -103,10 +113,12 @@ the entire normalized/sorted source UUID set, then the entire sorted
 date/type/ID set. Reserve source rows at quantity zero before inserting any
 resource; uncommitted placeholders are invisible to settlement. Insert resources
 with `ON CONFLICT DO NOTHING RETURNING`, derive N from the inserted identities,
-and update the new sources to their final N+R quantities in that transaction.
-Repeated resources within a batch go to the first source in UUID order. Any
+and update the new sources to Q when disabled or N+R when enabled in that
+transaction. Repeated resources within a batch are first recorded by the first
+source in UUID order; that determines their contribution to N when enabled. Any
 failure rolls back both sources and claims. The first successfully committed
-observation owns the obligation, including allowance/pack-funded reads.
+observation records each resource, including allowance/pack-funded reads, in
+either switch state.
 Credit settlement keeps its billing behavior and takes shared compaction
 admission before its organization credit lock. Different organizations can
 still settle concurrently; exclusive maintenance waits for admitted settlements.
@@ -150,8 +162,8 @@ lookup, so old tokens cannot recreate erased billing records. Ordinary thread
 deletion retains run/billing history under the existing lifecycle; cancelling
 that run does not reset the shared resource set.
 
-With the activation setting configured, Clerk user/organization cleanup first
-takes the scoped account-erasure subject lock exclusively. This drains Run
+Clerk user/organization cleanup always takes the scoped account-erasure subject
+lock exclusively. This drains Run
 creation and queue promotion before retaining allowance locks; those compute
 transactions lock Agent rows before accessing allowances. It only borrows the
 existing admission lock and does not create an erasure job or close the account.
@@ -168,18 +180,18 @@ The Pi erasure preflight likewise drains usage admission before locking Runs,
 including already terminal Pi Runs. Admission and ledger cleanup occur before
 the lifecycle's existing 100-millisecond lock timeout; parent, Run and later
 deletion locks retain that policy. Shared resource records remain untouched.
-While the setting is unset, Clerk retains separately committed ledger cleanup
-before Run deletion, and the Pi preflight retains its existing behavior.
+Neither cleanup path depends on the deduplication switch.
 
 X and compaction admission locks are global: account cleanup briefly pauses all
 webhook usage writes, settlement and Run deletion. Slow settlement or deletion
 delays compaction or account cleanup. No network cleanup runs while those
-admission locks are held. Do not configure the setting while any serving or
-rollback API can settle or perform ordinary Run deletion without shared
-compaction admission; otherwise those transactions could invert the combined
-cleanup's ledger/allowance/Run lock order.
+admission locks are held. Before deploying the unconditional path, all serving
+and supported rollback APIs must preserve shared compaction admission for
+settlement and ordinary Run deletion; otherwise those transactions could invert
+the combined cleanup's ledger/allowance/Run lock order. This deployment
+compatibility requirement is independent of the deduplication switch.
 
-## Runner and activation
+## Runner and deployment compatibility
 
 [#34612](https://github.com/vm0-ai/okou/issues/34612) preserves exact IDs,
 occurrences, Q and transient reasons through extraction, bounded chunks,
@@ -192,8 +204,9 @@ existing count-only producer. A malformed advertised capability is rejected,
 never interpreted as permission to downgrade. Existing Runner versions ignore
 the additive claim field, so capability advertisement alone does not prove a
 fleet-wide switch. #34615 owns removal of the absent-capability compatibility
-path after older APIs/queued contexts and unsupported rollback targets leave
-the supported serving window.
+path after older APIs, already claimed Runs without capability and unsupported
+rollback targets leave the supported serving window. Previously queued Runs
+resolve capability when claimed by the current API.
 
 The existing selective parser remains the authoritative count validator. An
 additional identity copy retains at most 256 KiB of a JSON document. Only a
@@ -211,9 +224,9 @@ This can leave large legitimate responses count-priced rather than deduplicated.
 Capable NDJSON flows report one complete validated row at a time while the
 connection remains open. The row ordinal, flow, run and category form its stable
 source UUID. Observation time is the row's validation time; each row therefore
-belongs to one UTC date. A row completed before the configured start date uses
-legacy counts; a later row uses v1. Complete trailing rows report once on normal
-completion or interruption; malformed rows remain unbilled. Terminal hooks do
+belongs to one UTC date. The fixed compatibility date makes every current row
+use v1 regardless of the deduplication switch. Complete trailing rows report once
+on normal completion or interruption; malformed rows remain unbilled. Terminal hooks do
 not repeat previously emitted rows, including when a later decoder failure ends
 the stream. Ordinary JSON uses document validation time and a flow-local terminal
 guard, so another response/error notification cannot create a new observation.
@@ -230,21 +243,25 @@ process death. Existing buffer limits trigger flushing rather than imposing a
 new hard admission/memory ceiling.
 
 The protocol remainder stays internal to ingestion so the consumer can validate
-Q = K + R and bill N + R. User-facing usage and bills show the ordinary net
-quantity, with no separate deduplication status or result transport. Do not keep
-a flow-local remainder summary or add historical remainder metadata.
+Q = K + R and bill Q or N + R according to the switch. User-facing usage and bills
+show the ordinary final quantity, with no separate deduplication status or result
+transport. Do not keep a flow-local remainder summary or add historical remainder
+metadata.
 
 [#34615](https://github.com/vm0-ai/okou/issues/34615) verifies the single-account
 serving configuration, compatible producers/readers and rollback targets,
-measured bounds and fleet-wide legacy upload drain before a clean future UTC
-day activation. No organization-by-organization cutover or full-count fallback
-for activated days. Legacy GA events remain necessary for existing producers
-and other providers. Followers/following and other unverified resource types
-remain outside this protocol.
+measured bounds and fleet-wide legacy upload drain. The feature switch may be
+rolled out through existing user overrides within the authenticated organization; resource identity
+remains global throughout. Disabling it is a supported return to full-count
+billing for new observations, while preserving v1 ingestion and existing source
+amounts. It does not make an older API compatible: an older API with its original
+date setting unset rejects v1 uploads. Legacy GA events remain necessary for
+existing producers and other providers. Followers/following and other unverified
+resource types remain outside this protocol.
 
 ## Qualification and release evidence
 
 The [shared producer/consumer qualification and rollout evidence guide](./x-resource-rollout.md)
 maps repeatable tests to the remaining deployed checks for #34615. Matching
 Python webhook payloads and API billing results proves the shared examples;
-it does not prove a fleet-wide legacy drain or authorize the activation setting.
+it does not prove a fleet-wide legacy drain or enable the production switch.

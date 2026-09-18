@@ -77,7 +77,10 @@ export function connectorCredentialStorageIsCompatible(args: {
   readonly runtimeMethod: ConnectorRuntimeMethod;
   readonly storageVersion: number;
 }): boolean {
-  return args.storageVersion === args.runtimeMethod.method.storage.version;
+  return (
+    args.runtimeMethod.method.grant.kind === "none" ||
+    args.storageVersion === args.runtimeMethod.method.storage.version
+  );
 }
 
 export function resolveStoredConnectorRuntimeMethod(args: {

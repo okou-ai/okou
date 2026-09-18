@@ -225,7 +225,10 @@ export function boundMorningBriefDescriptors(
     return { kind: "rejected", reason: "too-many-sources" };
   }
   const sources = new Set<MorningBriefSourceKind>();
-  let bytes = 0;
+  const bytes = Buffer.byteLength(JSON.stringify(descriptors), "utf8");
+  if (bytes > MORNING_BRIEF_DESCRIPTOR_SET_MAX_BYTES) {
+    return { kind: "rejected", reason: "set-too-large" };
+  }
   for (const descriptor of descriptors) {
     if (sources.has(descriptor.source)) {
       return { kind: "rejected", reason: "duplicate-source" };
@@ -253,10 +256,6 @@ export function boundMorningBriefDescriptors(
     if (size > MORNING_BRIEF_DESCRIPTOR_MAX_BYTES) {
       return { kind: "rejected", reason: "descriptor-too-large" };
     }
-    bytes += size;
-  }
-  if (bytes > MORNING_BRIEF_DESCRIPTOR_SET_MAX_BYTES) {
-    return { kind: "rejected", reason: "set-too-large" };
   }
   return { kind: "bounded", descriptors, bytes };
 }

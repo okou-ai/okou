@@ -291,8 +291,10 @@ authorization surface actually exercised, **one endpoint per permission whose
 result the input still holds**, the membership generation, the Agent, when it
 was captured, **the containers the evidence actually came from**, and whether it
 entered the model input. At most one per source, at most 24 containers, at most
-8 endpoints, 2 KiB each and 8 KiB in total. No raw source body, prompt,
-credential or unrestricted URL blob is persisted or logged.
+8 endpoints, 2 KiB each and 8 KiB for the exact serialized descriptor array,
+including its brackets and commas. The reported byte count is that same retained
+serialization. No raw source body, prompt, credential or unrestricted URL blob
+is persisted or logged.
 
 The digest is taken over the **effective permissions the read was admitted
 under**, never over constant method names: a digest of method names hashes
@@ -321,23 +323,32 @@ Revalidation runs on the composition path itself, after the last network await
 and before any reservation. It re-enters the **existing** authorizers rather
 than a second engine: connector sources re-run the shared reader's identity and
 URL-policy gates for the frozen account and every retained endpoint, native
-Slack re-runs the same shared-conversation enumeration its collector proves
-against, and Chat re-resolves the same ownership, visibility and provenance
-predicates its collector resolved. No credential is decrypted and no provider
-payload is fetched: whether an input may still be used is a permission question,
-not a reason to fetch it again.
+Slack re-reads the credential-free canonical installation/member binding,
+re-runs the same shared-conversation enumeration its collector proves against,
+and then re-reads that local binding so a disconnect committed during the
+external wait wins. Chat re-resolves the same ownership, visibility and
+provenance predicates its collector resolved. No credential is decrypted and no
+provider payload is fetched: whether an input may still be used is a permission
+question, not a reason to fetch it again.
 
-The whole phase is bounded at 5 seconds and further constrained by the attempt's
-own reservation, whichever is nearer; shared-channel and permission work is
-counted inside it rather than given a budget of its own. A check that does not
-finish inside the phase is not a proof of authority, so its source is withheld
-like a revoked one.
+The whole phase has one absolute 5-second deadline and is further constrained by
+the attempt's own reservation, whichever is nearer; every finite replan spends
+that same deadline. Shared-channel and permission work is counted inside it
+rather than given a budget of its own. The clock and caller cancellation are
+checked after every wait and before proof is released; equality is expired. A
+check that does not finish inside the phase is not a proof of authority, so its
+source is withheld like a revoked one. Provider HTTP observes the phase signal;
+database and SDK operations that cannot be interrupted are still joined before
+public completion and their late answers are rejected.
 
 Material whose authority was withdrawn is removed and the authorized siblings
 are planned again, with that source's day reported as failed rather than as a
-quiet morning. Whole-owner loss — a lost membership, a disabled or reinstalled
-brief, an Agent the member can no longer act through — yields no plan at all, and
-losing every supplied source is an authority change rather than an empty brief.
+quiet morning. If replanning introduces a source that was not in the previous
+request, that source is proved before the new plan can be released; the bounded
+loop ends only when every final supplied source has proof or has been removed.
+Whole-owner loss — a lost membership, a disabled or reinstalled brief, an Agent
+the member can no longer act through — yields no plan at all, and losing every
+supplied source is an authority change rather than an empty brief.
 
 Contribution is decided by the material the final request actually carries. An
 item dropped by allocation supplied nothing, and marking its source contributing

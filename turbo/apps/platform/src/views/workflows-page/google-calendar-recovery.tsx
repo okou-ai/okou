@@ -109,7 +109,6 @@ export function GoogleCalendarRecoveryDialogs() {
           }}
           connectorLabel={googleCalendarManager.label}
           icon={<ConnectorIcon icon={googleCalendarManager.icon} size={20} />}
-          connectionActionsEnabled
           onClose={cancelRecovery}
           onReconnect={(account) => {
             openAccountConnect(googleCalendarManager, {

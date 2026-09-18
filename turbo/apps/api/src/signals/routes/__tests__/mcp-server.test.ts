@@ -11,6 +11,7 @@ import {
   mcpListChatThreadsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-search";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
@@ -36,6 +37,11 @@ import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import {
+  rejectSearchablePromptFixture,
+  setChatSearchEventTimestampPrecisionFixture,
+  updateChatSearchSourceThreadFixture,
+} from "../../../test-fixtures/chat-event-search";
 import { createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -225,6 +231,21 @@ async function getMessages(token: string, args: Record<string, unknown>) {
   const result = await callTool(token, "get_chat_messages", args);
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
   return mcpGetChatMessagesOutputSchema.parse(result.structuredContent);
+}
+
+async function searchMessages(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "search_chat_messages", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpSearchChatMessagesOutputSchema.parse(result.structuredContent);
+}
+
+async function projectSearchMessages(threadIds: string[]) {
+  await accept(
+    setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
+      testChatEventSearchProjectionContract,
+    ).project({ body: { chat_thread_ids: threadIds } }),
+    [200],
+  );
 }
 
 async function messageFixture() {
@@ -1273,109 +1294,118 @@ describe("MCP canonical message reads", () => {
     expect(result.content[0]?.text).toContain("32 MiB");
   });
 
-  it("propagates client cancellation into a partially consumed archive and permits a later fresh read", async () => {
-    const f = await messageFixture();
-    const puts: RecordedChatEventPut[] = [];
-    installFakeChatEventR2(context, puts);
-    const sent = await f.send("Read after cancellation");
-    await snapshotMessages(sent.threadId);
-    const archive = puts.at(-1);
-    if (!archive) {
-      throw new Error("Expected archive for cancellation");
-    }
-    const firstChunkRead = createDeferredPromise<void>(context.signal);
-    const storageAborted = createDeferredPromise<void>(context.signal);
-    const controller = new AbortController();
-    onTestFinished(() => {
-      controller.abort();
-    });
-    context.mocks.s3.send.mockImplementation(
-      (command: unknown, options: unknown) => {
-        const input = z
-          .object({ input: z.object({ Key: z.string() }) })
-          .parse(command).input;
-        expect(input.Key).toBe(archive.key);
-        const providerSignal = z
-          .object({ abortSignal: z.instanceof(AbortSignal) })
-          .parse(options).abortSignal;
-        return Promise.resolve({
-          ContentLength: archive.body.length,
-          Body: {
-            async *[Symbol.asyncIterator]() {
-              yield archive.body.subarray(0, 8);
-              const held = createDeferredPromise<void>(providerSignal);
-              providerSignal.addEventListener(
-                "abort",
-                () => {
-                  storageAborted.resolve();
-                },
-                { once: true },
-              );
-              firstChunkRead.resolve();
-              await held.promise;
-            },
-          },
-        });
-      },
-    );
-    const app = createAppWithRoutes({
-      routes: mcpServerRoutes,
-      signal: context.signal,
-    });
-    const pending = settleIncludingAbort(
-      (async () => {
-        const response = await app.request(
-          new Request(resource, {
-            method: "POST",
-            headers: {
-              ...protocolHeaders(
-                f.auth.token(),
-                "tools/call",
-                true,
-                "get_chat_messages",
-              ),
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(
-              requestBody("tools/call", true, {
-                name: "get_chat_messages",
-                arguments: { threadId: sent.threadId },
-              }),
-            ),
-            signal: controller.signal,
-          }),
-        );
-        return { status: response.status, body: await response.text() };
-      })(),
-    );
-    await Promise.race([
-      firstChunkRead.promise,
-      pending.then((result) => {
-        throw new Error(
-          `MCP request ended before reading its archive: ${JSON.stringify(result)}`,
-        );
-      }),
-    ]);
-    controller.abort();
-    await storageAborted.promise;
-    const result = await pending;
-    if (result.ok) {
-      if (result.value.status === 200) {
-        expect(rpc(result.value.body)).toMatchObject({
-          result: { isError: true },
-        });
-      } else {
-        expect(result.value.status).toBeGreaterThanOrEqual(400);
+  it.each(["get_chat_messages", "search_chat_messages"] as const)(
+    "propagates %s cancellation into a partially consumed archive and permits a later fresh read",
+    async (toolName) => {
+      const f = await messageFixture();
+      const puts: RecordedChatEventPut[] = [];
+      installFakeChatEventR2(context, puts);
+      const sent = await f.send("Read after cancellation");
+      await snapshotMessages(sent.threadId);
+      const archive = puts.at(-1);
+      if (!archive) {
+        throw new Error("Expected archive for cancellation");
       }
-    } else {
-      expect(result.error).toMatchObject({ name: "AbortError" });
-    }
-    installFakeChatEventR2(context);
-    expect(
-      (await getMessages(f.auth.token(), { threadId: sent.threadId }))
-        .messages[0]?.text,
-    ).toBe("Read after cancellation");
-  });
+      const args =
+        toolName === "get_chat_messages"
+          ? { threadId: sent.threadId }
+          : { threadId: sent.threadId, query: "cancellation" };
+      const firstChunkRead = createDeferredPromise<void>(context.signal);
+      const storageAborted = createDeferredPromise<void>(context.signal);
+      const controller = new AbortController();
+      onTestFinished(() => {
+        controller.abort();
+      });
+      context.mocks.s3.send.mockImplementation(
+        (command: unknown, options: unknown) => {
+          const input = z
+            .object({ input: z.object({ Key: z.string() }) })
+            .parse(command).input;
+          expect(input.Key).toBe(archive.key);
+          const providerSignal = z
+            .object({ abortSignal: z.instanceof(AbortSignal) })
+            .parse(options).abortSignal;
+          return Promise.resolve({
+            ContentLength: archive.body.length,
+            Body: {
+              async *[Symbol.asyncIterator]() {
+                yield archive.body.subarray(0, 8);
+                const held = createDeferredPromise<void>(providerSignal);
+                providerSignal.addEventListener(
+                  "abort",
+                  () => {
+                    storageAborted.resolve();
+                  },
+                  { once: true },
+                );
+                firstChunkRead.resolve();
+                await held.promise;
+              },
+            },
+          });
+        },
+      );
+      const app = createAppWithRoutes({
+        routes: mcpServerRoutes,
+        signal: context.signal,
+      });
+      const pending = settleIncludingAbort(
+        (async () => {
+          const response = await app.request(
+            new Request(resource, {
+              method: "POST",
+              headers: {
+                ...protocolHeaders(
+                  f.auth.token(),
+                  "tools/call",
+                  true,
+                  toolName,
+                ),
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(
+                requestBody("tools/call", true, {
+                  name: toolName,
+                  arguments: args,
+                }),
+              ),
+              signal: controller.signal,
+            }),
+          );
+          return { status: response.status, body: await response.text() };
+        })(),
+      );
+      await Promise.race([
+        firstChunkRead.promise,
+        pending.then((result) => {
+          throw new Error(
+            `MCP request ended before reading its archive: ${JSON.stringify(result)}`,
+          );
+        }),
+      ]);
+      controller.abort();
+      await storageAborted.promise;
+      const result = await pending;
+      if (result.ok) {
+        if (result.value.status === 200) {
+          expect(rpc(result.value.body)).toMatchObject({
+            result: { isError: true },
+          });
+        } else {
+          expect(result.value.status).toBeGreaterThanOrEqual(400);
+        }
+      } else {
+        expect(result.error).toMatchObject({ name: "AbortError" });
+      }
+      installFakeChatEventR2(context);
+      const fresh =
+        toolName === "get_chat_messages"
+          ? (await getMessages(f.auth.token(), args)).messages[0]?.text
+          : (await searchMessages(f.auth.token(), args)).matches[0]?.excerpt
+              .text;
+      expect(fresh).toBe("Read after cancellation");
+    },
+  );
 
   it.each([
     { limit: 0 },
@@ -1394,6 +1424,884 @@ describe("MCP canonical message reads", () => {
       ).isError,
     ).toBeTruthy();
   });
+});
+
+describe("MCP message search", () => {
+  it("pages beyond 25 matches with real references and leaves thread state unchanged", async () => {
+    const f = await messageFixture();
+    const query = "mcpsearchpaging";
+    const first = await withMockNowForTest(now(), async () => {
+      const sent = await f.send(`${query} 0`);
+      for (let index = 1; index < 28; index++) {
+        await f.send(`${query} ${index}`, sent.threadId);
+      }
+      const second = await f.send(`${query} another thread`);
+      return {
+        threadId: sent.threadId,
+        threadIds: [sent.threadId, second.threadId],
+      };
+    });
+    await f.chat.renameThread(f.actor, first.threadId, "Current search title");
+    const token = f.auth.token();
+    expect((await searchMessages(token, { query })).matches).toStrictEqual([]);
+    await projectSearchMessages(first.threadIds);
+    const before = await Promise.all(
+      first.threadIds.map(async (threadId) => {
+        return await f.chat.readThread(f.actor, threadId);
+      }),
+    );
+    const source = (
+      await Promise.all(
+        first.threadIds.map(async (threadId) => {
+          const history = await f.chat.listThreadEvents(f.actor, threadId);
+          return history.events
+            .filter((event) => {
+              return event.eventType === "input.rejected";
+            })
+            .map((event) => {
+              return {
+                ref: { threadId, eventId: event.id, seqId: event.seqId },
+                createdAt: event.createdAt,
+              };
+            });
+        }),
+      )
+    ).flat();
+    source.sort((left, right) => {
+      return (
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.ref.threadId.localeCompare(left.ref.threadId) ||
+        right.ref.seqId - left.ref.seqId
+      );
+    });
+    const args = { query, limit: 7 };
+    let page = await searchMessages(token, args);
+    const matches = [...page.matches];
+    while (page.nextCursor !== null) {
+      expect(matches.length).toBeLessThan(29);
+      const result = await callTool(token, "search_chat_messages", {
+        ...args,
+        cursor: page.nextCursor,
+      });
+      expect(result.isError).not.toBeTruthy();
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(
+        512 * 1024,
+      );
+      page = mcpSearchChatMessagesOutputSchema.parse(result.structuredContent);
+      expect(page.scanLimited).toBeFalsy();
+      matches.push(...page.matches);
+    }
+    expect(
+      matches.map(({ ref, createdAt }) => {
+        return { ref, createdAt: new Date(createdAt).toISOString() };
+      }),
+    ).toStrictEqual(source);
+    expect(matches).toHaveLength(29);
+    expect(
+      new Set(
+        matches.map(({ ref }) => {
+          return ref.eventId;
+        }),
+      ).size,
+    ).toBe(29);
+    for (const match of matches) {
+      expect(match.agent.agentId).toBe(f.agent.agentId);
+      expect(match.excerpt).toMatchObject({
+        offset: 0,
+        hasBefore: false,
+        hasAfter: false,
+      });
+      expect(new URL(match.url).pathname).toBe(`/chats/${match.ref.threadId}`);
+    }
+    const hit = matches.find(({ ref }) => {
+      return ref.threadId === first.threadIds[0];
+    });
+    if (!hit) {
+      throw new Error("Expected a hit in the renamed thread");
+    }
+    expect(hit.threadTitle).toBe("Current search title");
+    expect(hit.titleTruncated).toBeFalsy();
+    const around = await getMessages(token, {
+      threadId: hit.ref.threadId,
+      around: { eventId: hit.ref.eventId, seqId: hit.ref.seqId },
+      limit: 1,
+    });
+    expect(around.messages).toMatchObject([
+      { ref: hit.ref, text: hit.excerpt.text },
+    ]);
+    await expect(
+      Promise.all(
+        first.threadIds.map(async (threadId) => {
+          return await f.chat.readThread(f.actor, threadId);
+        }),
+      ),
+    ).resolves.toStrictEqual(before);
+  });
+
+  it("preserves stored microseconds and sequence ties in cursors and date bounds", async () => {
+    const f = await messageFixture();
+    const sent = await f.send("precisionneedle oldest");
+    for (const suffix of ["newest", "first tie", "second tie"]) {
+      await f.send(`precisionneedle ${suffix}`, sent.threadId);
+    }
+    await projectSearchMessages([sent.threadId]);
+    const token = f.auth.token();
+    const source = await getMessages(token, { threadId: sent.threadId });
+    const timestamps = [
+      "2026-09-18T01:02:03.456001Z",
+      "2026-09-18T01:02:03.456003Z",
+      "2026-09-18T01:02:03.456002Z",
+      "2026-09-18T01:02:03.456002Z",
+    ];
+    const expected: {
+      ref: (typeof source.messages)[number]["ref"];
+      createdAt: string;
+    }[] = [];
+    for (const [index, message] of source.messages.entries()) {
+      const createdAt = timestamps[index];
+      if (!createdAt) {
+        throw new Error(
+          "Expected one timestamp for each precision fixture event",
+        );
+      }
+      // Infrastructure exception: product writes cannot choose exact stored
+      // sub-millisecond times. Model already-indexed historical SQL timestamps
+      // without relying on the current projector's Date normalization.
+      await setChatSearchEventTimestampPrecisionFixture({
+        eventId: message.ref.eventId,
+        createdAt,
+      });
+      expected.push({ ref: message.ref, createdAt });
+    }
+    expected.sort((left, right) => {
+      return (
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.ref.seqId - left.ref.seqId
+      );
+    });
+    const args = { query: "precisionneedle", limit: 1 };
+    let page = await searchMessages(token, args);
+    const actual = [...page.matches];
+    while (page.nextCursor !== null) {
+      expect(actual.length).toBeLessThan(4);
+      page = await searchMessages(token, { ...args, cursor: page.nextCursor });
+      actual.push(...page.matches);
+    }
+    expect(
+      actual.map(({ ref, createdAt }) => {
+        return { ref, createdAt };
+      }),
+    ).toStrictEqual(expected);
+    const bounded = await searchMessages(token, {
+      query: "precisionneedle",
+      since: "2026-09-18T01:02:03.456002Z",
+      before: "2026-09-18T01:02:03.456003Z",
+    });
+    expect(
+      bounded.matches.map(({ excerpt }) => {
+        return excerpt.text;
+      }),
+    ).toStrictEqual([
+      "precisionneedle second tie",
+      "precisionneedle first tie",
+    ]);
+  });
+
+  it("applies role, source time, Agent and thread filters before limiting and excludes private context", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const query = "mcpfilterneedle";
+    const baseTime = now();
+    const sent = await withMockNowForTest(baseTime, async () => {
+      return await f.sendChatRun(actor.actor, {
+        agentId: actor.agentId,
+        prompt: `${query} user before`,
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: `${query} user before` },
+            { type: "additional_info", text: "mcpprivateneedle context" },
+          ],
+        },
+      });
+    });
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, sent.runId);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    await withMockNowForTest(baseTime + 1000, async () => {
+      await f.webhooks.requestAgentEvents(
+        {
+          runId: sent.runId,
+          events: [
+            {
+              type: "assistant",
+              sequenceNumber: 0,
+              message: {
+                content: [
+                  { type: "text", text: `${query} assistant answer` },
+                  { type: "thinking", thinking: "mcpprivateneedle reasoning" },
+                ],
+              },
+            },
+          ],
+        },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      await flushWaitUntilForTest();
+    });
+    await withMockNowForTest(baseTime + 2000, async () => {
+      await f.chat.requestSendEvent(
+        actor.actor,
+        {
+          agentId: actor.agentId,
+          threadId: sent.threadId,
+          prompt: `${query} queued after`,
+        },
+        [201],
+      );
+    });
+    const otherAgent = await f.chat.createAgentForChatThread(
+      actor.actor,
+      "Other search Agent",
+    );
+    const other = await withMockNowForTest(baseTime + 3000, async () => {
+      return await f.sendChatRun(actor.actor, {
+        agentId: otherAgent.agentId,
+        prompt: `${query} other Agent`,
+      });
+    });
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, other.runId);
+    });
+    await projectSearchMessages([sent.threadId, other.threadId]);
+    // Infrastructure exception: event timestamps come from the PostgreSQL
+    // clock, so the public API cannot select exact inclusive/exclusive bounds.
+    // Only timestamp placement uses the centralized historical fixture.
+    const sourceMessages = await getMessages(auth.token(), {
+      threadId: sent.threadId,
+    });
+    for (const message of sourceMessages.messages) {
+      const offset =
+        message.role === "assistant"
+          ? 1000
+          : message.text.endsWith("queued after")
+            ? 2000
+            : 0;
+      await setChatSearchEventTimestampPrecisionFixture({
+        eventId: message.ref.eventId,
+        createdAt: new Date(baseTime + offset).toISOString(),
+      });
+    }
+    const otherMessages = await getMessages(auth.token(), {
+      threadId: other.threadId,
+    });
+    for (const message of otherMessages.messages) {
+      await setChatSearchEventTimestampPrecisionFixture({
+        eventId: message.ref.eventId,
+        createdAt: new Date(baseTime + 3000).toISOString(),
+      });
+    }
+    const token = auth.token();
+    const args = { query, limit: 1 };
+    expect((await searchMessages(token, args)).matches[0]?.ref.threadId).toBe(
+      other.threadId,
+    );
+    for (const filters of [
+      { agentId: actor.agentId },
+      { threadId: sent.threadId },
+    ]) {
+      expect(
+        (await searchMessages(token, { ...args, ...filters })).matches[0]
+          ?.excerpt.text,
+      ).toBe(`${query} queued after`);
+    }
+    const since = new Date(baseTime + 1000).toISOString();
+    const before = new Date(baseTime + 2000).toISOString();
+    for (const filters of [
+      { role: "assistant" },
+      { before },
+      { since, before },
+    ]) {
+      const page = await searchMessages(token, { ...args, ...filters });
+      expect(page.matches).toMatchObject([
+        {
+          role: "assistant",
+          runId: sent.runId,
+          excerpt: { text: `${query} assistant answer` },
+        },
+      ]);
+    }
+    expect(
+      (
+        await searchMessages(token, {
+          ...args,
+          threadId: sent.threadId,
+          since: before,
+        })
+      ).matches[0]?.excerpt.text,
+    ).toBe(`${query} queued after`);
+    expect(
+      (await searchMessages(token, { query, role: "user" })).matches,
+    ).toHaveLength(3);
+    expect(
+      (await searchMessages(token, { query: "mcpprivateneedle" })).matches,
+    ).toStrictEqual([]);
+    expect(
+      (await searchMessages(token, { ...args, threadId: randomUUID() }))
+        .matches,
+    ).toStrictEqual([]);
+  });
+
+  it("centers late Unicode excerpts on real matches and rejects CJK phrases split across runs", async () => {
+    const f = await messageFixture();
+    const text = `${"😀文 ".repeat(3000)}LateNeedle 上海滩 ${"𠮷尾 ".repeat(500)}`;
+    const sent = await f.send(text);
+    await f.send("LateNeedle 上海 海滩", sent.threadId);
+    await projectSearchMessages([sent.threadId]);
+    const token = f.auth.token();
+    const result = await searchMessages(token, { query: "lateneedle 上海滩" });
+    expect(result.matches).toHaveLength(1);
+    const match = result.matches[0];
+    if (!match) {
+      throw new Error("Expected the contiguous mixed-language match");
+    }
+    expect(match.excerpt.text).toContain("LateNeedle 上海滩");
+    expect(match.excerpt.text.length).toBeLessThanOrEqual(1000);
+    expect(match.excerpt.offset).toBeGreaterThan(8192);
+    expect(match.excerpt.hasBefore).toBeTruthy();
+    expect(match.excerpt.hasAfter).toBeTruthy();
+    expect(Buffer.from(match.excerpt.text).toString("utf8")).toBe(
+      match.excerpt.text,
+    );
+    expect(
+      text.slice(
+        match.excerpt.offset,
+        match.excerpt.offset + match.excerpt.text.length,
+      ),
+    ).toBe(match.excerpt.text);
+    expect(
+      (await searchMessages(token, { query: "上海滩" })).matches.map(
+        ({ ref }) => {
+          return ref;
+        },
+      ),
+    ).toStrictEqual([match.ref]);
+    expect(
+      (await searchMessages(token, { query: "LATENEEDLE" })).matches,
+    ).toHaveLength(2);
+    const around = await getMessages(token, {
+      threadId: match.ref.threadId,
+      around: { eventId: match.ref.eventId, seqId: match.ref.seqId },
+      limit: 1,
+    });
+    expect(around.messages[0]?.ref).toStrictEqual(match.ref);
+    expect(around.messages[0]?.nextContentCursor).not.toBeNull();
+  });
+
+  it("never returns stale revoked or replaced inputs before the index catches up", async () => {
+    const f = await chatRunFixture();
+    const active = await f.chat.requestSendEvent(
+      f.actor,
+      {
+        agentId: f.agent.agentId,
+        prompt: "Active unrelated task",
+      },
+      [201],
+    );
+    if (active.status !== 201 || active.body.runId === null) {
+      throw new Error("Expected an active run for queued edits");
+    }
+    const runId = active.body.runId;
+    onTestFinished(async () => {
+      await f.runs.requestCancelRun(f.actor, runId, [200]);
+      await flushWaitUntilForTest();
+    });
+    const threadId = active.body.threadId;
+    for (const prompt of [
+      "staleneedle recall",
+      "staleneedle replace",
+      "staleneedle unchanged",
+    ]) {
+      await f.chat.requestSendEvent(
+        f.actor,
+        { agentId: f.agent.agentId, threadId, prompt },
+        [201],
+      );
+    }
+    await projectSearchMessages([threadId]);
+    const token = f.auth.token();
+    const original = await searchMessages(token, { query: "staleneedle" });
+    expect(original.matches).toHaveLength(3);
+    const recalled = original.matches.find((match) => {
+      return match.excerpt.text.endsWith("recall");
+    });
+    const replaced = original.matches.find((match) => {
+      return match.excerpt.text.endsWith("replace");
+    });
+    if (!recalled || !replaced) {
+      throw new Error("Expected both queued search targets");
+    }
+    await f.chat.requestSendEvent(
+      f.actor,
+      {
+        agentId: f.agent.agentId,
+        threadId,
+        revokesEventId: recalled.ref.eventId,
+      },
+      [201],
+    );
+    // Infrastructure exception: normal sends cannot author an arbitrary
+    // internal replacement. Reuse the canonical writer fixture to reconstruct
+    // the legacy replacement state that can outlive its indexed source row.
+    await rejectSearchablePromptFixture({
+      chatThreadId: threadId,
+      eventId: replaced.ref.eventId,
+      text: "replacementneedle current text",
+    });
+    const stale = await searchMessages(token, { query: "staleneedle" });
+    expect(
+      stale.matches.map(({ excerpt }) => {
+        return excerpt.text;
+      }),
+    ).toStrictEqual(["staleneedle unchanged"]);
+    expect(stale.nextCursor).toBeNull();
+    expect(
+      (await searchMessages(token, { query: "replacementneedle" })).matches,
+    ).toStrictEqual([]);
+    await projectSearchMessages([threadId]);
+    const current = await searchMessages(token, { query: "replacementneedle" });
+    expect(current.matches).toHaveLength(1);
+    expect(current.matches[0]?.ref.eventId).not.toBe(replaced.ref.eventId);
+  });
+
+  it("finds retained source messages with valid context references and fails explicitly on a missing archive", async () => {
+    const f = await threadFixture();
+    const puts: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, puts);
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    // Infrastructure exception: public writes cannot backdate the event beyond
+    // the retention worker's database-clock cutoff. All projection, archival,
+    // retention, search and context reads below use their real HTTP routes.
+    const eventId = await createStore().set(
+      seedRetentionOutputEvent$,
+      {
+        chatThreadId: thread.id,
+        content: "retainedsearchneedle canonical answer",
+        offsetMs: -60_000,
+      },
+      context.signal,
+    );
+    await snapshotMessages(thread.id);
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({
+        body: { chat_thread_ids: [thread.id] },
+      }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const token = f.auth.token();
+    const args = { query: "retainedsearchneedle" };
+    const page = await searchMessages(token, args);
+    expect(page.matches).toMatchObject([
+      {
+        ref: { eventId, threadId: thread.id },
+        role: "assistant",
+        excerpt: { text: "retainedsearchneedle canonical answer" },
+      },
+    ]);
+    const match = page.matches[0];
+    const archive = puts.at(-1);
+    if (!match || !archive) {
+      throw new Error("Expected a retained match and its canonical archive");
+    }
+    expect(
+      (
+        await getMessages(token, {
+          threadId: thread.id,
+          around: { eventId, seqId: match.ref.seqId },
+          limit: 1,
+        })
+      ).messages[0]?.ref,
+    ).toStrictEqual(match.ref);
+    await deleteFakeChatEventObject(archive.key);
+    const missing = await callTool(token, "search_chat_messages", args);
+    expect(missing.isError).toBeTruthy();
+    expect(missing.structuredContent).toBeUndefined();
+    expect(JSON.stringify(missing)).not.toContain("canonical answer");
+  });
+
+  it("enforces one aggregate history budget across individually readable search matches", async () => {
+    const f = await messageFixture();
+    const puts: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, puts);
+    const threadIds: string[] = [];
+    for (let index = 0; index < 2; index++) {
+      const text = `aggregatebudgetneedle VISIBLE_EXCERPT_CANARY_${index}`;
+      const sent = await f.send(text);
+      threadIds.push(sent.threadId);
+      onTestFinished(async () => {
+        await f.chat.deleteThread(f.actor, sent.threadId);
+      });
+      await snapshotMessages(sent.threadId);
+      const archive = puts.at(-1);
+      if (!archive) {
+        throw new Error("Expected a genuine indexed message archive");
+      }
+      // Infrastructure exception: historical imported archives can exceed the
+      // current HTTP envelope. Preserve the actual indexed event coordinates
+      // and visible text, adding only private context that is never searchable.
+      const rows = gunzipSync(archive.body)
+        .toString("utf8")
+        .trimEnd()
+        .split("\n")
+        .map((line) => {
+          return chatEventRowSchema.parse(JSON.parse(line));
+        });
+      const expanded = Buffer.from(
+        rows
+          .map((row) => {
+            return `${JSON.stringify(
+              row.eventType === "input.rejected"
+                ? {
+                    ...row,
+                    payload: {
+                      ...row.payload,
+                      userMessage: {
+                        version: 1,
+                        parts: [
+                          { type: "text", text },
+                          {
+                            type: "additional_info",
+                            text: "x".repeat(17 * 1024 * 1024),
+                          },
+                        ],
+                      },
+                    },
+                  }
+                : row,
+            )}\n`;
+          })
+          .join(""),
+      );
+      expect(expanded.length).toBeGreaterThan(17 * 1024 * 1024);
+      expect(expanded.length).toBeLessThan(18 * 1024 * 1024);
+      const body = gzipSync(expanded);
+      expect(body.length).toBeLessThan(8 * 1024 * 1024);
+      const last = rows.at(-1);
+      if (!last) {
+        throw new Error("Expected the original archive's terminal coordinate");
+      }
+      const key = `chat-events/${sent.threadId}/${last.seqId.toString()}-${createHash("sha256").update(body).digest("hex")}.ndjson.gz`;
+      writeFakeChatEventObject(key, body);
+      onTestFinished(async () => {
+        await deleteFakeChatEventObject(key);
+      });
+      await updateChatEventSnapshotHead(context, sent.threadId, key);
+    }
+    const token = f.auth.token();
+    const query = "aggregatebudgetneedle";
+    for (const threadId of threadIds) {
+      const narrow = await searchMessages(token, { query, threadId });
+      expect(narrow.matches).toHaveLength(1);
+      expect(narrow.matches[0]?.ref.threadId).toBe(threadId);
+      expect(narrow.matches[0]?.excerpt.text).toContain(
+        "VISIBLE_EXCERPT_CANARY_",
+      );
+    }
+    const combined = await callTool(token, "search_chat_messages", { query });
+    expect(combined.isError).toBeTruthy();
+    expect(combined.structuredContent).toBeUndefined();
+    expect(combined.content[0]?.text).toMatch(/budget|limit/u);
+    expect(JSON.stringify(combined)).not.toContain("VISIBLE_EXCERPT_CANARY_");
+  });
+
+  it("continues after a full scan of lexical false positives without hiding an older exact match", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const query = "scanbudgetneedle 上海滩";
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: `${query} visible older input`,
+    });
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, sent.runId);
+    });
+    const token = auth.token();
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    const before = await getMessages(token, { threadId: sent.threadId });
+    expect(before.messages).toHaveLength(1);
+    const visible = before.messages[0];
+    if (!visible) {
+      throw new Error("Expected the canonical older input reference");
+    }
+    // One runner batch creates 100 indexed candidates with the same CJK
+    // bigrams; canonical phrase verification rejects their disconnected text.
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: sent.runId,
+        events: Array.from({ length: 100 }, (_, sequenceNumber) => {
+          return {
+            type: "assistant" as const,
+            sequenceNumber,
+            message: {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `scanbudgetneedle 上海 海滩 candidate ${sequenceNumber}`,
+                },
+              ],
+            },
+          };
+        }),
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await projectSearchMessages([sent.threadId]);
+    const args = { query, limit: 1 };
+    const first = await searchMessages(token, args);
+    expect(first.matches).toStrictEqual([]);
+    expect(first.scanLimited).toBeTruthy();
+    expect(first.nextCursor).not.toBeNull();
+    const next = await searchMessages(token, {
+      ...args,
+      cursor: first.nextCursor,
+    });
+    expect(next).toMatchObject({
+      matches: [
+        {
+          ref: visible.ref,
+          excerpt: { text: `${query} visible older input` },
+        },
+      ],
+      scanLimited: false,
+      nextCursor: null,
+    });
+  });
+
+  it("rechecks current ownership and Agent organization when indexed labels are stale", async () => {
+    const f = await messageFixture();
+    const ownerChanged = await f.send("transfersearchneedle owner moved");
+    const agentChanged = await f.send("transfersearchneedle Agent moved");
+    await projectSearchMessages([ownerChanged.threadId, agentChanged.threadId]);
+    const token = f.auth.token();
+    expect(
+      (await searchMessages(token, { query: "transfersearchneedle" })).matches,
+    ).toHaveLength(2);
+    const peer = f.bdd.user({ orgId: f.auth.orgId });
+    const otherOrganization = f.bdd.user({ userId: f.auth.userId });
+    const otherAgent = await f.bdd.createAgent(otherOrganization, {
+      displayName: "Agent from another organization",
+      visibility: "private",
+    });
+    // Infrastructure exception: no product writer currently transfers thread
+    // ownership or Agent identity. This existing fixture models historical or
+    // future transfers without letting stale projected labels grant access.
+    await updateChatSearchSourceThreadFixture({
+      chatThreadId: ownerChanged.threadId,
+      userId: peer.userId,
+      agentId: f.agent.agentId,
+    });
+    await updateChatSearchSourceThreadFixture({
+      chatThreadId: agentChanged.threadId,
+      userId: f.auth.userId,
+      agentId: otherAgent.agentId,
+    });
+    for (const args of [
+      { query: "transfersearchneedle" },
+      { query: "transfersearchneedle", threadId: ownerChanged.threadId },
+      { query: "transfersearchneedle", threadId: agentChanged.threadId },
+      { query: "transfersearchneedle", agentId: f.agent.agentId },
+    ]) {
+      expect((await searchMessages(token, args)).matches).toStrictEqual([]);
+    }
+  });
+
+  it("keeps escaped excerpts within page and wire byte limits without skipping a match", async () => {
+    const f = await messageFixture();
+    const text = `escapedsearchneedle ${"\u0001".repeat(1200)}`;
+    const first = await f.send(`${text} 0`);
+    for (let index = 1; index < 30; index++) {
+      await f.send(`${text} ${index}`, first.threadId);
+    }
+    await projectSearchMessages([first.threadId]);
+    const token = f.auth.token();
+    const args = { query: "escapedsearchneedle", limit: 50 };
+    let response = await callTool(token, "search_chat_messages", args);
+    expect(response.isError).not.toBeTruthy();
+    let page = mcpSearchChatMessagesOutputSchema.parse(
+      response.structuredContent,
+    );
+    expect(page.matches.length).toBeGreaterThan(0);
+    expect(page.matches.length).toBeLessThan(30);
+    const eventIds: string[] = [];
+    do {
+      expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(
+        160 * 1024,
+      );
+      expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(
+        512 * 1024,
+      );
+      expect(page.scanLimited).toBeFalsy();
+      eventIds.push(
+        ...page.matches.map(({ ref }) => {
+          return ref.eventId;
+        }),
+      );
+      expect(eventIds.length).toBeLessThanOrEqual(30);
+      if (page.nextCursor === null) {
+        break;
+      }
+      response = await callTool(token, "search_chat_messages", {
+        ...args,
+        cursor: page.nextCursor,
+      });
+      expect(response.isError).not.toBeTruthy();
+      page = mcpSearchChatMessagesOutputSchema.parse(
+        response.structuredContent,
+      );
+    } while (page.matches.length > 0);
+    expect(page.nextCursor).toBeNull();
+    expect(eventIds).toHaveLength(30);
+    expect(new Set(eventIds).size).toBe(30);
+  });
+
+  it("binds search cursors to all filters and expires them without extending their lifetime", async () => {
+    const f = await messageFixture();
+    const first = await f.send("searchcursor first");
+    await f.send("searchcursor second", first.threadId);
+    await projectSearchMessages([first.threadId]);
+    const token = f.auth.token();
+    const args = { query: "searchcursor", limit: 1 };
+    const page = await searchMessages(token, args);
+    const cursor = page.nextCursor;
+    if (!cursor) {
+      throw new Error("Expected a signed search continuation");
+    }
+    for (const invalid of [
+      { cursor: `${cursor[0] === "A" ? "B" : "A"}${cursor.slice(1)}` },
+      { cursor, query: "differentquery" },
+      { cursor, limit: 2 },
+      { cursor, threadId: first.threadId },
+      { cursor, agentId: f.agent.agentId },
+      { cursor, role: "user" },
+      { cursor, since: new Date(0).toISOString() },
+      { cursor, before: new Date(now() + 60_000).toISOString() },
+    ]) {
+      const result = await callTool(token, "search_chat_messages", {
+        ...args,
+        ...invalid,
+      });
+      expect(result.isError).toBeTruthy();
+      expect(result.structuredContent).toBeUndefined();
+    }
+    expect(
+      (await searchMessages(token, { ...args, cursor })).matches[0]?.excerpt
+        .text,
+    ).toBe("searchcursor first");
+    const longToken = f.auth.token({
+      exp: Math.floor((now() + 2 * 24 * 60 * 60 * 1000) / 1000),
+    });
+    await withMockNowForTest(now() + 24 * 60 * 60 * 1000, async () => {
+      expect(
+        (await callTool(longToken, "search_chat_messages", { ...args, cursor }))
+          .isError,
+      ).toBeTruthy();
+      expect((await searchMessages(longToken, args)).matches).toHaveLength(1);
+    });
+  });
+
+  it("does not disclose foreign or deleted threads or accept a cursor from another principal", async () => {
+    const f = await messageFixture();
+    const sent = await f.send("ownersearchneedle first");
+    await f.send("ownersearchneedle second", sent.threadId);
+    await projectSearchMessages([sent.threadId]);
+    const args = { query: "ownersearchneedle", limit: 1 };
+    const cursor = (await searchMessages(f.auth.token(), args)).nextCursor;
+    expect(cursor).not.toBeNull();
+    for (const actor of [
+      f.bdd.user({ orgId: f.auth.orgId }),
+      f.bdd.user({ userId: f.auth.userId }),
+    ]) {
+      if (!actor.orgId) {
+        throw new Error("Expected the other principal's organization");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId: actor.userId, orgId: actor.orgId },
+        { [FeatureSwitchKey.McpServer]: true },
+      );
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [f.auth.orgId, actor.orgId].map((orgId) => {
+            return {
+              id: randomUUID(),
+              role: "org:member",
+              organization: { id: orgId },
+            };
+          }),
+          totalCount: 2,
+        },
+      );
+      const token = f.auth.token({ sub: actor.userId, org_id: actor.orgId });
+      expect((await searchMessages(token, args)).matches).toStrictEqual([]);
+      expect(
+        (await searchMessages(token, { ...args, threadId: sent.threadId }))
+          .matches,
+      ).toStrictEqual([]);
+      const result = await callTool(token, "search_chat_messages", {
+        ...args,
+        cursor,
+      });
+      expect(result.isError).toBeTruthy();
+      expect(JSON.stringify(result)).not.toContain("ownersearchneedle first");
+    }
+    await f.chat.deleteThread(f.actor, sent.threadId);
+    expect((await searchMessages(f.auth.token(), args)).matches).toStrictEqual(
+      [],
+    );
+  });
+
+  it.each([
+    { query: "" },
+    { query: "   " },
+    { query: "x".repeat(201) },
+    { query: "中文", limit: 0 },
+    { query: "中文", limit: 51 },
+    { query: "中文", cursor: "x".repeat(4097) },
+    { query: "中文", role: "system" },
+    { query: "中文", since: "not-a-date" },
+    {
+      query: "中文",
+      since: "2026-01-02T00:00:00.000Z",
+      before: "2026-01-01T00:00:00.000Z",
+    },
+    { query: "!!!" },
+    { query: "中" },
+  ])(
+    "rejects malformed or unsupported lexical search arguments %j",
+    async (args) => {
+      const auth = await fixture();
+      const result = await callTool(auth.token(), "search_chat_messages", args);
+      expect(result.isError).toBeTruthy();
+      expect(result.structuredContent).toBeUndefined();
+    },
+  );
 });
 
 describe("external MCP entry", () => {
@@ -1491,6 +2399,10 @@ describe("external MCP entry", () => {
         result: {
           tools: [
             { name: "get_chat_messages", annotations: { readOnlyHint: true } },
+            {
+              name: "search_chat_messages",
+              annotations: { readOnlyHint: true },
+            },
             { name: "list_chat_threads", annotations: { readOnlyHint: true } },
             { name: "get_chat_thread", annotations: { readOnlyHint: true } },
           ],
@@ -1529,7 +2441,8 @@ describe("external MCP entry", () => {
   it.each([true, false])(
     "works with the generic MCP SDK client with modern=%s",
     async (modern) => {
-      const auth = await fixture();
+      const f = await messageFixture();
+      const auth = f.auth;
       const app = createAppWithRoutes({
         routes: mcpServerRoutes,
         signal: context.signal,
@@ -1564,6 +2477,7 @@ describe("external MCP entry", () => {
         }),
       ).toStrictEqual([
         "get_chat_messages",
+        "search_chat_messages",
         "list_chat_threads",
         "get_chat_thread",
       ]);
@@ -1573,6 +2487,36 @@ describe("external MCP entry", () => {
       });
       expect(result).toMatchObject({
         structuredContent: { threads: [], nextCursor: null },
+      });
+      const sent = await f.send("sdksearchneedle context handoff");
+      await projectSearchMessages([sent.threadId]);
+      const searched = await sdk.callTool({
+        name: "search_chat_messages",
+        arguments: { query: "sdksearchneedle" },
+      });
+      expect(searched.isError).not.toBeTruthy();
+      const match = mcpSearchChatMessagesOutputSchema.parse(
+        searched.structuredContent,
+      ).matches[0];
+      if (!match) {
+        throw new Error(
+          "Expected the generic SDK search to return a real reference",
+        );
+      }
+      const around = await sdk.callTool({
+        name: "get_chat_messages",
+        arguments: {
+          threadId: match.ref.threadId,
+          around: { eventId: match.ref.eventId, seqId: match.ref.seqId },
+          limit: 1,
+        },
+      });
+      expect(around).toMatchObject({
+        structuredContent: {
+          messages: [
+            { ref: match.ref, text: "sdksearchneedle context handoff" },
+          ],
+        },
       });
       const missing = await sdk.callTool({
         name: "get_chat_thread",

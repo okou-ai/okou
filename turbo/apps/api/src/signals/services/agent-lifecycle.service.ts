@@ -5,7 +5,6 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
-import { env } from "../../lib/env";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
@@ -42,29 +41,20 @@ export async function deleteClerkAgentLifecycleData(
   db: NodePgDatabase,
   scope: ClerkDeletionScope,
 ): Promise<void> {
-  const resourceBillingEnabled =
-    env("X_RESOURCE_BILLING_START_DATE") !== undefined;
-  if (!resourceBillingEnabled) {
-    // Keep the existing separately committed cleanup during the API rollout.
-    // Activation requires settlers and ordinary Run deleters to share admission.
-    await deleteScopedUsageData(db, scope);
-  }
   const receipt = await db.transaction(async (tx) => {
-    if (resourceBillingEnabled) {
-      // Drain compute admission before retaining entitlement locks: creators
-      // and queue promotion hold Agent locks before accessing allowances.
-      await lockErasureSubjects(tx, [
-        {
-          subjectKind: scope.kind,
-          subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
-        },
-      ]);
-      // Subjects -> X admission -> compaction -> ledger/entitlements -> parents/Run.
-      // The helper uses a savepoint on this same connection; both deletion
-      // stages commit atomically and retain their locks through that commit.
-      await lockXResourceAdmission(tx, "exclusive");
-      await deleteScopedUsageData(tx, scope);
-    }
+    // Drain compute admission before retaining entitlement locks: creators
+    // and queue promotion hold Agent locks before accessing allowances.
+    await lockErasureSubjects(tx, [
+      {
+        subjectKind: scope.kind,
+        subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
+      },
+    ]);
+    // Subjects -> X admission -> compaction -> ledger/entitlements -> parents/Run.
+    // The helper uses a savepoint on this same connection; both deletion
+    // stages commit atomically and retain their locks through that commit.
+    await lockXResourceAdmission(tx, "exclusive");
+    await deleteScopedUsageData(tx, scope);
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
     );

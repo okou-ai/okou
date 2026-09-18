@@ -121,10 +121,6 @@ export const avatarFramingEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.AvatarFraming] ?? false;
 });
 
-export const customConnectorMcpEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.CustomConnectorMcp] ?? false;
-});
-
 export const applyFeatureSwitches$ = command(
   ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);

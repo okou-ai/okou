@@ -392,6 +392,9 @@ function slackChatIngressRows(db: ReadonlyDb, teamId: string) {
       publicBrand: slackChatIngress.publicBrand,
       status: slackChatIngress.status,
       retryCount: slackChatIngress.retryCount,
+      processingAttemptCount: slackChatIngress.processingAttemptCount,
+      retryAt: slackChatIngress.retryAt,
+      lastErrorClass: slackChatIngress.lastErrorClass,
       lastError: slackChatIngress.lastError,
       createdAt: slackChatIngress.createdAt,
       updatedAt: slackChatIngress.updatedAt,
@@ -645,6 +648,7 @@ const getSlackState$ = computed(async (get) => {
       chat_ingress: chatIngress.map((ingress) => {
         return {
           ...ingress,
+          retryAt: ingress.retryAt ? isoString(ingress.retryAt) : null,
           createdAt: isoString(ingress.createdAt),
           updatedAt: isoString(ingress.updatedAt),
         };

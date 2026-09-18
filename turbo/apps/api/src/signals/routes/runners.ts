@@ -2217,17 +2217,15 @@ async function buildClaimResponseBody(
         storageMounts: _storedStorageMounts,
         ...runnerStoredContext
       } = args.storedContext;
-      const xResourceBillingStartDate = env("X_RESOURCE_BILLING_START_DATE");
       return {
         ...runnerStoredContext,
-        ...(xResourceBillingStartDate === undefined
-          ? {}
-          : {
-              xResourceBilling: {
-                protocol: "x-resource-v1" as const,
-                startDate: xResourceBillingStartDate,
-              },
-            }),
+        xResourceBilling: {
+          protocol: "x-resource-v1" as const,
+          // Deployed Runner readers require this field. It is a fixed wire
+          // compatibility value, not an activation date. Remove only after
+          // those readers leave serving and supported rollback versions.
+          startDate: "1970-01-01",
+        },
         runId: args.run.id,
         reuseKey: args.reuseKey,
         prompt: args.run.prompt,

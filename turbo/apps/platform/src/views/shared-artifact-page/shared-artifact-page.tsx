@@ -56,7 +56,7 @@ function ArtifactViewerActions({
   );
   return (
     <div className="flex shrink-0 items-center gap-1">
-      {artifact.publicUrl === null ? (
+      {artifact.publicUrl === null && !artifact.sharedThreadSnapshot ? (
         <ArtifactShareMenu
           surface="viewer"
           url={artifact.preview.url}

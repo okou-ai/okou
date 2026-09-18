@@ -1,12 +1,48 @@
-import type { SharedMessageAttachment } from "@okouai/api-contracts/contracts/shared-threads";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
+import { useLoadable } from "ccstate-react";
+import { useTranslation } from "react-i18next";
 
+import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
 import { FilePreviewIcon } from "../okou-page/file-preview-icon.tsx";
+import type { SharedDisplayAttachment } from "./shared-thread-page.tsx";
+
+function SharedImageAttachment({
+  attachment,
+}: {
+  readonly attachment: SharedDisplayAttachment;
+}) {
+  const { t } = useTranslation();
+  const resourceUrl = useLoadable(attachment.preview.resourceUrl$);
+  return resourceUrl.state === "hasData" ? (
+    <img
+      src={r2ImageTransformUrl(
+        resourceUrl.data,
+        { width: 480, height: 320, contentType: attachment.contentType },
+        resolveArtifactImageTransformOrigin(),
+      )}
+      alt={attachment.filename}
+      loading="lazy"
+      className="h-40 max-w-full object-contain"
+    />
+  ) : (
+    <span className="flex h-40 w-60 max-w-full items-center justify-center px-3 text-xs text-muted-foreground">
+      {resourceUrl.state === "hasError" ? (
+        <span role="status">
+          {t(($) => {
+            return $.artifacts.access.title;
+          })}
+        </span>
+      ) : (
+        <span className="h-full w-full animate-pulse bg-muted/30" />
+      )}
+    </span>
+  );
+}
 
 export function SharedMessageAttachments({
   attachments,
 }: {
-  readonly attachments: readonly SharedMessageAttachment[];
+  readonly attachments: readonly SharedDisplayAttachment[];
 }) {
   const files = new Map(
     attachments.map((attachment) => {
@@ -34,16 +70,7 @@ export function SharedMessageAttachments({
             }
           >
             {isImage ? (
-              <img
-                src={r2ImageTransformUrl(attachment.url, {
-                  width: 480,
-                  height: 320,
-                  contentType: attachment.contentType,
-                })}
-                alt={attachment.filename}
-                loading="lazy"
-                className="h-40 max-w-full object-contain"
-              />
+              <SharedImageAttachment attachment={attachment} />
             ) : (
               <>
                 <FilePreviewIcon
