@@ -78,6 +78,7 @@ import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
+import { holdUnjournaledCallbackAfterLineageReadFixture } from "../../../test-fixtures/morning-brief-callback";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
 import { holdMorningBriefReconfigurationAfterPersist } from "../../../test-fixtures/morning-brief-reconciliation";
 import {
@@ -92,6 +93,7 @@ import {
   installWorkflowAutomationRunInsertFailureFixture,
   observeMorningBriefSettlementAttemptsFixture,
   readMorningBriefScheduleClaimsFixture,
+  removeMorningBriefScheduleClaimForCompatibilityFixture,
   readWorkflowAutomationLastRunFixture,
   recordWorkflowAutomationLastRunFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
@@ -13394,6 +13396,445 @@ describe("Morning Brief legacy schedule claim journal", () => {
     }
     return Date.parse(enabled.body.nextRunAt);
   }
+
+  /**
+   * Launch through the real scheduler, then retain the Run while removing only
+   * the S7a journal row. That is the historical pre-S7a compatibility state no
+   * current external entry point can create.
+   */
+  async function startUnjournaledCompatibilityRun(
+    brief: JournaledBrief,
+    anchor: number,
+  ): Promise<string> {
+    await pollAt(brief.automationId, anchor + 60_000);
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    const current = claims.find((claim) => {
+      return claim.scheduledAnchorAt.getTime() === anchor;
+    });
+    if (!current?.runId) {
+      throw new Error("Expected a journaled compatibility Run");
+    }
+    await removeMorningBriefScheduleClaimForCompatibilityFixture({
+      automationId: brief.automationId,
+      runId: current.runId,
+    });
+    return current.runId;
+  }
+
+  async function cancelRunAndFlush(
+    actor: ApiTestUser,
+    runId: string,
+  ): Promise<void> {
+    await runs.requestCancelRun(actor, runId, [200]);
+    await flushWaitUntilForTest();
+  }
+
+  async function failRunForInsufficientCredits(
+    brief: JournaledBrief,
+    runId: string,
+  ): Promise<void> {
+    const sandboxToken = runs.sandboxTokenForRun(brief.actor, runId);
+    await webhooks.requestAgentComplete(
+      {
+        runId,
+        exitCode: 1,
+        failureReason: "insufficient_credits",
+        error: "Insufficient credits. Add credits to continue.",
+        checkpoint: {
+          cliAgentType: "claude-code",
+          cliAgentSessionId: `morning-brief-compatibility-${runId}`,
+          cliAgentSessionHistoryHash: createHash("sha256")
+            .update(`morning brief compatibility ${runId}`)
+            .digest("hex"),
+        },
+      },
+      { authorization: `Bearer ${sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+  }
+
+  async function runMorningBriefReconciliationUntilTerminal(): Promise<void> {
+    for (let page = 0; page < 100; page += 1) {
+      const worker = await runOfficialWorkflowReconciliationWorker();
+      if (worker.retried > 0 || worker.completed > 0) {
+        return;
+      }
+    }
+    throw new Error("Morning Brief reconciliation did not terminate");
+  }
+
+  it("orders a selected unjournaled callback before disable and re-enable", async () => {
+    const brief = await installJournaledBrief();
+    if (!brief.actor.orgId) {
+      throw new Error("Expected an organization-scoped Morning Brief owner");
+    }
+    const owner = {
+      orgId: brief.actor.orgId,
+      userId: brief.actor.userId,
+    };
+    const initial = await readNativeSchedule(owner);
+    const runId = await startUnjournaledCompatibilityRun(brief, brief.anchor);
+    const held = await holdWorkflowAutomationRowFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+
+    await runs.requestCancelRun(brief.actor, runId, [200]);
+    const callback = flushWaitUntilForTest();
+    await expect
+      .poll(async () => {
+        return await held.blockedWaiterCount();
+      })
+      .toBe(1);
+
+    // The callback already owns durable authority and is waiting on the held
+    // legacy row. Settings is issued second, so its final re-enable wins.
+    const settings = republishBriefSchedule(brief.actor);
+    held.release();
+    await held.done;
+    const [, settingsAnchor] = await Promise.all([callback, settings]);
+
+    const legacy = await readLegacyAutomation(brief.automationId);
+    expect(legacy).toMatchObject({
+      enabled: true,
+      officialIntendedEnabled: true,
+      consecutiveFailures: 0,
+      nextRunAt: new Date(settingsAnchor),
+    });
+    await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+      enabled: true,
+      phase: "legacy",
+      ownerEpoch: (initial?.ownerEpoch ?? 0) + 2,
+      nextRunAt: new Date(settingsAnchor),
+      scheduleOwner: "legacy",
+    });
+  });
+
+  it("keeps both schedules byte-for-byte when disable and re-enable win first", async () => {
+    const brief = await installJournaledBrief();
+    if (!brief.actor.orgId) {
+      throw new Error("Expected an organization-scoped Morning Brief owner");
+    }
+    const owner = {
+      orgId: brief.actor.orgId,
+      userId: brief.actor.userId,
+    };
+    const runId = await startUnjournaledCompatibilityRun(brief, brief.anchor);
+    await republishBriefSchedule(brief.actor);
+    const legacyBefore = await readLegacyAutomation(brief.automationId);
+    const nativeBefore = await readNativeSchedule(owner);
+    const held = await holdWorkflowAutomationRowFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+
+    await runs.requestCancelRun(brief.actor, runId, [200]);
+    const callback = flushWaitUntilForTest();
+    await expect
+      .poll(async () => {
+        return await held.blockedWaiterCount();
+      })
+      .toBe(1);
+    held.release();
+    await held.done;
+    await callback;
+
+    await expect(
+      readLegacyAutomation(brief.automationId),
+    ).resolves.toStrictEqual(legacyBefore);
+    await expect(readNativeSchedule(owner)).resolves.toStrictEqual(
+      nativeBefore,
+    );
+  });
+
+  it("retries schedule-first when a missing retained row is recreated under the same id", async () => {
+    const brief = await installJournaledBrief();
+    if (!brief.actor.orgId) {
+      throw new Error("Expected an organization-scoped Morning Brief owner");
+    }
+    const owner = {
+      orgId: brief.actor.orgId,
+      userId: brief.actor.userId,
+    };
+    const runId = await startUnjournaledCompatibilityRun(brief, brief.anchor);
+
+    await syncCatalog(morningBriefCatalog([]));
+    await runMorningBriefReconciliationUntilTerminal();
+    await expect(
+      readLegacyAutomation(brief.automationId),
+    ).resolves.toBeUndefined();
+    await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+      phase: "legacy",
+      legacyWorkflowId: brief.workflowId,
+      legacyAutomationId: brief.automationId,
+    });
+
+    const held = holdUnjournaledCallbackAfterLineageReadFixture({
+      automationId: brief.automationId,
+      expectedLineageKind: "ordinary-or-absent",
+      signal: context.signal,
+    });
+    onTestFinished(held.release);
+    await runs.requestCancelRun(brief.actor, runId, [200]);
+    const callback = flushWaitUntilForTest();
+    await held.arrival;
+
+    await syncCatalog(
+      morningBriefCatalog([morningBriefScheduleBlueprint("0 10 * * *")]),
+    );
+    await runMorningBriefReconciliationUntilTerminal();
+    const legacyBefore = await readLegacyAutomation(brief.automationId);
+    const nativeBefore = await readNativeSchedule(owner);
+    expect(legacyBefore).toMatchObject({
+      id: brief.automationId,
+      enabled: true,
+      cronExpression: "0 10 * * *",
+      consecutiveFailures: 0,
+      nextRunAt: expect.any(Date),
+    });
+    expect(nativeBefore).toMatchObject({
+      phase: "legacy",
+      enabled: true,
+      cronExpression: "0 10 * * *",
+      legacyAutomationId: brief.automationId,
+      nextRunAt: expect.any(Date),
+      scheduleOwner: "legacy",
+    });
+
+    held.release();
+    await callback;
+    await expect(
+      readLegacyAutomation(brief.automationId),
+    ).resolves.toStrictEqual(legacyBefore);
+    await expect(readNativeSchedule(owner)).resolves.toStrictEqual(
+      nativeBefore,
+    );
+  });
+
+  it("preserves compatibility recurrence, failure pause, and credit handling", async () => {
+    const creditBrief = await installJournaledBrief();
+    if (!creditBrief.actor.orgId) {
+      throw new Error("Expected an organization-scoped Morning Brief owner");
+    }
+    const creditOwner = {
+      orgId: creditBrief.actor.orgId,
+      userId: creditBrief.actor.userId,
+    };
+    const creditRunId = await startUnjournaledCompatibilityRun(
+      creditBrief,
+      creditBrief.anchor,
+    );
+    await failRunForInsufficientCredits(creditBrief, creditRunId);
+    const creditLegacy = await readLegacyAutomation(creditBrief.automationId);
+    expect(creditLegacy).toMatchObject({
+      enabled: true,
+      consecutiveFailures: 0,
+      nextRunAt: expect.any(Date),
+    });
+    await expect(readNativeSchedule(creditOwner)).resolves.toMatchObject({
+      enabled: true,
+      phase: "legacy",
+      ownerEpoch: 1,
+      nextRunAt: creditLegacy?.nextRunAt,
+      scheduleOwner: "legacy",
+    });
+
+    const failingBrief = await installJournaledBrief();
+    if (!failingBrief.actor.orgId) {
+      throw new Error("Expected an organization-scoped Morning Brief owner");
+    }
+    const failingOwner = {
+      orgId: failingBrief.actor.orgId,
+      userId: failingBrief.actor.userId,
+    };
+    let anchor = failingBrief.anchor;
+    for (let failure = 1; failure <= 3; failure += 1) {
+      const runId = await startUnjournaledCompatibilityRun(
+        failingBrief,
+        anchor,
+      );
+      await cancelRunAndFlush(failingBrief.actor, runId);
+      const legacy = await readLegacyAutomation(failingBrief.automationId);
+      const native = await readNativeSchedule(failingOwner);
+      if (failure < 3) {
+        expect(legacy).toMatchObject({
+          enabled: true,
+          consecutiveFailures: failure,
+          nextRunAt: expect.any(Date),
+        });
+        expect(native).toMatchObject({
+          enabled: true,
+          phase: "legacy",
+          ownerEpoch: 1,
+          nextRunAt: legacy?.nextRunAt,
+          scheduleOwner: "legacy",
+        });
+        if (!legacy?.nextRunAt) {
+          throw new Error("Expected a compatibility recurrence");
+        }
+        anchor = legacy.nextRunAt.getTime();
+      } else {
+        expect(legacy).toMatchObject({
+          enabled: false,
+          officialIntendedEnabled: false,
+          consecutiveFailures: 3,
+          nextRunAt: null,
+        });
+        expect(native).toMatchObject({
+          enabled: false,
+          phase: "legacy",
+          ownerEpoch: 2,
+          nextRunAt: null,
+          scheduleOwner: null,
+        });
+      }
+    }
+  });
+
+  it("preserves ordinary cron and loop callback behavior", async () => {
+    const brief = await installJournaledBrief();
+    const ordinaryAgent = await workflowBdd.createAgent(brief.actor);
+    onTestFinished(async () => {
+      await bdd.deleteAgent(brief.actor, ordinaryAgent.agentId);
+    });
+    const ordinaryWorkflowId = await workflowBdd.createWorkflow(brief.actor, {
+      agentId: ordinaryAgent.agentId,
+      name: "ordinary-callback-compatibility",
+      visibility: "private",
+    });
+    const ordinaryLoop = await accept(
+      automationClient().create({
+        headers: authHeaders(brief.actor),
+        params: { workflowId: ordinaryWorkflowId },
+        body: { schedule: { type: "loop", intervalSeconds: 300 } },
+      }),
+      [201],
+    );
+    if (!ordinaryLoop.body.nextRunAt) {
+      throw new Error("Expected ordinary loop next run");
+    }
+    await pollAt(
+      ordinaryLoop.body.id,
+      Date.parse(ordinaryLoop.body.nextRunAt) + 1000,
+    );
+    const firedLoop = await workflowBdd.readAutomation(ordinaryLoop.body.id);
+    if (!firedLoop.chatThreadId) {
+      throw new Error("Expected ordinary loop chat thread");
+    }
+    const [loopRunId] = await briefRunIds(firedLoop.chatThreadId);
+    if (!loopRunId) {
+      throw new Error("Expected ordinary loop Run");
+    }
+    await cancelRunAndFlush(brief.actor, loopRunId);
+    await expect(
+      readLegacyAutomation(ordinaryLoop.body.id),
+    ).resolves.toMatchObject({
+      enabled: true,
+      consecutiveFailures: 1,
+      nextRunAt: expect.any(Date),
+    });
+
+    const ordinaryCron = await accept(
+      automationClient().create({
+        headers: authHeaders(brief.actor),
+        params: { workflowId: ordinaryWorkflowId },
+        body: {
+          schedule: {
+            type: "cron",
+            cronExpression: "0 9 * * *",
+            timezone: "UTC",
+          },
+        },
+      }),
+      [201],
+    );
+    if (!ordinaryCron.body.nextRunAt) {
+      throw new Error("Expected ordinary cron next run");
+    }
+    mockNow(Date.parse(ordinaryCron.body.nextRunAt) + 60_000);
+    await pollAt(ordinaryCron.body.id, now());
+    const firedCron = await workflowBdd.readAutomation(ordinaryCron.body.id);
+    if (!firedCron.chatThreadId) {
+      throw new Error("Expected ordinary cron chat thread");
+    }
+    const cronRunIds = await briefRunIds(firedCron.chatThreadId);
+    const cronRunId = cronRunIds[cronRunIds.length - 1];
+    if (!cronRunId || cronRunId === loopRunId) {
+      throw new Error("Expected ordinary cron Run");
+    }
+    await cancelRunAndFlush(brief.actor, cronRunId);
+    await expect(
+      readLegacyAutomation(ordinaryCron.body.id),
+    ).resolves.toMatchObject({
+      enabled: true,
+      consecutiveFailures: 1,
+      nextRunAt: expect.any(Date),
+    });
+  });
+
+  it("keeps an additional Morning Brief installation on ordinary callback behavior", async () => {
+    const brief = await installJournaledBrief();
+    if (!brief.actor.orgId) {
+      throw new Error("Expected an organization-scoped Morning Brief owner");
+    }
+    const owner = {
+      orgId: brief.actor.orgId,
+      userId: brief.actor.userId,
+    };
+    const selectedBefore = await readNativeSchedule(owner);
+    const alternate = await workflowBdd.createAgent(brief.actor);
+    onTestFinished(async () => {
+      await bdd.deleteAgent(brief.actor, alternate.agentId);
+    });
+    await setOfficialWorkflowsEnabled(brief.actor, true);
+    const additionalWorkflowId = await installMorningBriefFromCatalog(
+      brief.actor,
+      alternate.agentId,
+    );
+    const [additional] = await readMorningBriefAutomations(
+      brief.actor,
+      additionalWorkflowId,
+    );
+    if (!additional?.nextRunAt) {
+      throw new Error("Expected an additional scheduled Morning Brief");
+    }
+    const before = await readLegacyAutomation(additional.id);
+    mockNow(Date.parse(additional.nextRunAt) + 60_000);
+    const explicit = await accept(
+      automationClient().run({
+        headers: authHeaders(brief.actor),
+        extraHeaders: { origin: "https://app.okou.ai" },
+        params: { id: additional.id },
+      }),
+      [201],
+    );
+    if (!explicit.body.runId) {
+      throw new Error("Expected an additional Morning Brief Run");
+    }
+    await cancelRunAndFlush(brief.actor, explicit.body.runId);
+
+    const after = await readLegacyAutomation(additional.id);
+    expect(after).toMatchObject({
+      enabled: true,
+      consecutiveFailures: (before?.consecutiveFailures ?? 0) + 1,
+      nextRunAt: expect.any(Date),
+    });
+    expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
+    await expect(readNativeSchedule(owner)).resolves.toStrictEqual(
+      selectedBefore,
+    );
+  });
 
   it("ignores a still-unsettled older occurrence's callback once a newer claim exists", async () => {
     const brief = await installJournaledBrief();

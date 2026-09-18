@@ -120,6 +120,14 @@ and samples the current durable choice at finalization. A Settings write that
 lands after reservation therefore wins; recreation and rollback cannot replay
 the older retained choice.
 
+An unjournalled compatibility callback revalidates the automation identity under
+its write transaction. If an optimistic ordinary or absent read has become a
+Morning Brief row, the callback releases that attempt and retries schedule-first;
+it never locks durable authority after the automation. Even in `legacy`, the
+selected callback may advance only when both retained and durable recurrence
+slots are still empty. Disable/re-enable or any writer that already published a
+successor wins without changing either failure count, choice, epoch or schedule.
+
 ### Timezone and cron edits do not revoke in-flight work
 
 This is deliberate and load-bearing. An edit that arrives while an execution
