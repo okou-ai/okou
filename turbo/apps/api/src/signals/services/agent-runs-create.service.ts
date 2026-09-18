@@ -1223,7 +1223,13 @@ const THREAD_SESSION_PREPARATION_ATTEMPTS = 3;
 const createAgentRunAfterPreCreate$ = command(
   async ({ set }, input: AgentRunAfterPreCreate, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const capturedInput = await captureSubscriptionAccount(db, input, signal);
+    const capturedInput = await measureAgentRunPreCreate(
+      input.timing,
+      "api_dispatch_pre_create_agent_capture_subscription_account",
+      () => {
+        return captureSubscriptionAccount(db, input, signal);
+      },
+    );
     signal.throwIfAborted();
     if ("status" in capturedInput) {
       return capturedInput;

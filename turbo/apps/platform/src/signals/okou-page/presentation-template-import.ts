@@ -30,6 +30,13 @@ const TEMPLATE_IMPORT_EXTENSIONS: Readonly<
 > = {
   presentation: [".pptx", ".ppt", ".pdf"],
   document: [".docx", ".doc"],
+  // Empty on purpose, and only for as long as this pane has nowhere to show
+  // one. An illustration is published by the CLI already, but the catalog
+  // opens a deck as a column of pages and a document in a file viewer, and an
+  // image is neither; offering the file here first would put a tile in the
+  // grid that opens nothing. The extensions land with the surface that can
+  // draw one.
+  illustration: [],
 };
 
 function acceptList(kinds: readonly UserTemplateKind[]): string {

@@ -24,12 +24,15 @@ import {
   desc,
   eq,
   exists,
+  getTableColumns,
   inArray,
   isNotNull,
   isNull,
   notExists,
   or,
+  sql,
 } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { settle } from "../utils";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -85,6 +88,14 @@ interface EncryptedAccountSecret {
 
 type AccountRow = typeof modelProviderAccounts.$inferSelect;
 type ProviderRow = typeof modelProviders.$inferSelect;
+// Reuse schema decoders for the locking subquery aliases without rebuilding
+// their inferred field proxies for every snapshot. These contain no row data.
+const subscriptionProviderColumns = getTableColumns(
+  alias(modelProviders, "subscription_provider"),
+);
+const subscriptionAccountColumns = getTableColumns(
+  alias(modelProviderAccounts, "subscription_accounts"),
+);
 export type PersonalProviderAccountErrorResponse =
   | ReturnType<typeof badRequestMessage>
   | ReturnType<typeof notFound>;
@@ -1687,7 +1698,11 @@ async function lockSubscriptionCredentialSnapshot(
 ) {
   const { db } = args;
   await lockModelProviderState(db, args);
-  const [provider] = await db
+  // Establish this statement's snapshot only after the advisory wait. Account
+  // writers take that lock; the correlated locking subquery consumes the locked
+  // provider before locking accounts in ID order. Keep the secret reads below as
+  // fresh statements for historical Claude's secret-first autocommit writer.
+  const lockedProvider = db
     .select()
     .from(modelProviders)
     .where(
@@ -1697,16 +1712,32 @@ async function lockSubscriptionCredentialSnapshot(
         eq(modelProviders.type, args.type),
       ),
     )
-    .for("no key update");
+    .for("no key update")
+    .as("subscription_provider");
+  const lockedAccounts = db
+    .select()
+    .from(modelProviderAccounts)
+    .where(
+      eq(modelProviderAccounts.modelProviderId, subscriptionProviderColumns.id),
+    )
+    .orderBy(modelProviderAccounts.id)
+    .for("no key update")
+    .as("subscription_accounts");
+  const inventory = await db
+    .select({
+      provider: subscriptionProviderColumns,
+      account: subscriptionAccountColumns,
+    })
+    .from(lockedProvider)
+    .leftJoinLateral(lockedAccounts, sql`true`)
+    .orderBy(subscriptionAccountColumns.id);
+  const provider = inventory[0]?.provider;
   if (!provider) {
     return null;
   }
-  const accounts = await db
-    .select()
-    .from(modelProviderAccounts)
-    .where(eq(modelProviderAccounts.modelProviderId, provider.id))
-    .orderBy(modelProviderAccounts.id)
-    .for("no key update");
+  const accounts = inventory.flatMap((row) => {
+    return row.account ? [row.account] : [];
+  });
   const names =
     args.type === CLAUDE_CODE_TYPE
       ? ["CLAUDE_CODE_OAUTH_TOKEN"]

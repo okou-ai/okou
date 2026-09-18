@@ -28,6 +28,17 @@ export interface UserTemplateDocumentManifest {
   readonly kind: "document";
 }
 
+/**
+ * An illustration template is a style, and what the catalog shows for it is
+ * the picture it was reversed from. That file is already on the row as
+ * `source_storage_key`, so this arm carries the discriminant alone: repeating
+ * the key here would give one object two places to say where the cover is.
+ */
+export interface UserTemplateIllustrationManifest {
+  readonly kind: "illustration";
+}
+
 export type UserTemplateManifest =
   | UserTemplatePresentationManifest
-  | UserTemplateDocumentManifest;
+  | UserTemplateDocumentManifest
+  | UserTemplateIllustrationManifest;
