@@ -35,6 +35,9 @@ patchedDependencies:
   '@testing-library/jest-dom@6.9.1':
     hash: 82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf
     path: patches/@testing-library__jest-dom@6.9.1.patch
+  drizzle-orm@0.45.2:
+    hash: 2d305a978f9a4c5f70890e7e535cda9d71423daf9cb4c56c12d4687ae0493fde
+    path: patches/drizzle-orm@0.45.2.patch
 
 importers:
 
@@ -189,7 +192,7 @@ importers:
         version: 9.1.0
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
+        version: 0.45.2(patch_hash=2d305a978f9a4c5f70890e7e535cda9d71423daf9cb4c56c12d4687ae0493fde)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
       google-auth-library:
         specifier: ^10.9.0
         version: 10.9.0
@@ -998,7 +1001,7 @@ importers:
         version: link:../core
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
+        version: 0.45.2(patch_hash=2d305a978f9a4c5f70890e7e535cda9d71423daf9cb4c56c12d4687ae0493fde)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9)
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -16400,7 +16403,7 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.21.0
 
-  drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9):
+  drizzle-orm@0.45.2(patch_hash=2d305a978f9a4c5f70890e7e535cda9d71423daf9cb4c56c12d4687ae0493fde)(@opentelemetry/api@1.9.1)(@types/pg@8.21.0)(pg@8.23.0)(postgres@3.4.9):
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.21.0

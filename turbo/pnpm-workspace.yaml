@@ -58,6 +58,9 @@ patchedDependencies:
   "@langfuse/pi-observability-plugin@0.1.2": patches/@langfuse__pi-observability-plugin@0.1.2.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch
+  # Remove once upstream protects BEGIN cleanup and preserves transaction errors
+  # after failed rollback; packages/db's transaction regression suite covers both.
+  "drizzle-orm@0.45.2": patches/drizzle-orm@0.45.2.patch
 
 ignoredBuiltDependencies:
   - esbuild

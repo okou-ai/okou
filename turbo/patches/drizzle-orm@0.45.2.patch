@@ -1,0 +1,76 @@
+diff --git a/node-postgres/session.cjs b/node-postgres/session.cjs
+index 8ef1fbdb684c7b9a8fb0e832f9470659707905f9..01ecd896caf98cb846ec9a3a568647f3ee1dcd1b 100644
+--- a/node-postgres/session.cjs
++++ b/node-postgres/session.cjs
+@@ -216,16 +216,25 @@ class NodePgSession extends import_session.PgSession {
+     const isPool = this.client instanceof Pool || Object.getPrototypeOf(this.client).constructor.name.includes("Pool");
+     const session = isPool ? new NodePgSession(await this.client.connect(), this.dialect, this.schema, this.options) : this;
+     const tx = new NodePgTransaction(this.dialect, session, this.schema);
+-    await tx.execute(import_sql.sql`begin${config ? import_sql.sql` ${tx.getTransactionConfigSQL(config)}` : void 0}`);
++    let discardClient = true;
+     try {
+-      const result = await transaction(tx);
+-      await tx.execute(import_sql.sql`commit`);
+-      return result;
+-    } catch (error) {
+-      await tx.execute(import_sql.sql`rollback`);
+-      throw error;
++      await tx.execute(import_sql.sql`begin${config ? import_sql.sql` ${tx.getTransactionConfigSQL(config)}` : void 0}`);
++      try {
++        const result = await transaction(tx);
++        await tx.execute(import_sql.sql`commit`);
++        discardClient = false;
++        return result;
++      } catch (error) {
++        try {
++          await tx.execute(import_sql.sql`rollback`);
++          discardClient = false;
++        } catch {
++          // Discard the unsafe session without replacing the original failure.
++        }
++        throw error;
++      }
+     } finally {
+-      if (isPool) session.client.release();
++      if (isPool) session.client.release(discardClient);
+     }
+   }
+   async count(sql2) {
+diff --git a/node-postgres/session.js b/node-postgres/session.js
+index f60d9ed16ff6e29a6b34b3600f93e2d6e2e09585..4a03da5768b90a96abd160a909236ceb7f60c648 100644
+--- a/node-postgres/session.js
++++ b/node-postgres/session.js
+@@ -181,16 +181,25 @@ class NodePgSession extends PgSession {
+     const isPool = this.client instanceof Pool || Object.getPrototypeOf(this.client).constructor.name.includes("Pool");
+     const session = isPool ? new NodePgSession(await this.client.connect(), this.dialect, this.schema, this.options) : this;
+     const tx = new NodePgTransaction(this.dialect, session, this.schema);
+-    await tx.execute(sql`begin${config ? sql` ${tx.getTransactionConfigSQL(config)}` : void 0}`);
++    let discardClient = true;
+     try {
+-      const result = await transaction(tx);
+-      await tx.execute(sql`commit`);
+-      return result;
+-    } catch (error) {
+-      await tx.execute(sql`rollback`);
+-      throw error;
++      await tx.execute(sql`begin${config ? sql` ${tx.getTransactionConfigSQL(config)}` : void 0}`);
++      try {
++        const result = await transaction(tx);
++        await tx.execute(sql`commit`);
++        discardClient = false;
++        return result;
++      } catch (error) {
++        try {
++          await tx.execute(sql`rollback`);
++          discardClient = false;
++        } catch {
++          // Discard the unsafe session without replacing the original failure.
++        }
++        throw error;
++      }
+     } finally {
+-      if (isPool) session.client.release();
++      if (isPool) session.client.release(discardClient);
+     }
+   }
+   async count(sql2) {
