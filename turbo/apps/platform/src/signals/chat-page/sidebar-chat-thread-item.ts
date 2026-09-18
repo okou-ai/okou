@@ -13,7 +13,12 @@ import {
   SIDEBAR_PARAM,
   unloadRightThread$,
 } from "./chat-thread-panes.ts";
-import { openRenameChatThreadDialogForThreadId$ } from "./chat-thread-rename.ts";
+import {
+  archiveChatThreadFromThreadMeta$,
+  openRenameChatThreadDialogForThreadId$,
+  unarchiveChatThreadFromThreadMeta$,
+} from "./chat-thread-rename.ts";
+import { isChatThreadArchived } from "./chat-thread-title.ts";
 import { markChatThreadUnread$ } from "./chat-thread-mark-unread.ts";
 import { sidebarDraftThreadIds$ } from "./sidebar-draft-threads.ts";
 import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
@@ -26,6 +31,7 @@ export type SidebarChatThreadTargetPane = "main" | "sidebar";
 export interface SidebarChatThreadItemSignals {
   readonly threadId: string;
   readonly title$: Computed<string | null>;
+  readonly archived$: Computed<boolean>;
   readonly pinned$: Computed<boolean>;
   readonly currentPage$: Computed<boolean>;
   readonly highlighted$: Computed<boolean>;
@@ -36,6 +42,7 @@ export interface SidebarChatThreadItemSignals {
   >;
   readonly select$: Command<boolean, [SidebarChatThreadTargetPane]>;
   readonly togglePinned$: Command<Promise<void>, [AbortSignal]>;
+  readonly toggleArchived$: Command<Promise<void>, [AbortSignal]>;
   readonly markUnread$: Command<Promise<void>, [AbortSignal]>;
   readonly openRename$: Command<void, [AbortSignal]>;
   readonly requestDelete$: Command<void, []>;
@@ -51,6 +58,12 @@ function createSidebarChatThreadItemSignals(
   threadId: string,
 ): SidebarChatThreadItemSignals {
   const meta$ = threadMeta(threadId);
+  const title$ = computed((get): string | null => {
+    return get(meta$)?.title ?? null;
+  });
+  const archived$ = computed((get): boolean => {
+    return isChatThreadArchived(get(title$));
+  });
   const currentPage$ = computed((get): boolean => {
     return get(pathParams$)?.threadId === threadId;
   });
@@ -72,9 +85,8 @@ function createSidebarChatThreadItemSignals(
 
   return {
     threadId,
-    title$: computed((get): string | null => {
-      return get(meta$)?.title ?? null;
-    }),
+    title$,
+    archived$,
     pinned$: computed((get): boolean => {
       const pinnedAt = get(meta$)?.pinnedAt;
       return pinnedAt !== null && pinnedAt !== undefined;
@@ -138,6 +150,13 @@ function createSidebarChatThreadItemSignals(
         return;
       }
       await set(unpinChatThread$, threadId, signal);
+    }),
+    toggleArchived$: command(async ({ get, set }, signal: AbortSignal) => {
+      if (get(archived$)) {
+        await set(unarchiveChatThreadFromThreadMeta$, threadId, signal);
+        return;
+      }
+      await set(archiveChatThreadFromThreadMeta$, threadId, signal);
     }),
     markUnread$: command(async ({ set }, signal: AbortSignal) => {
       await set(markChatThreadUnread$, { threadId }, signal);

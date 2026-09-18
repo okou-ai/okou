@@ -10,6 +10,7 @@ import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
+import { testOverride } from "../../lib/singleton";
 import { now, nowDate } from "../../lib/time";
 import {
   isQueueFirstRunClaimLost,
@@ -50,6 +51,32 @@ import {
 } from "./built-in-model-runtime-route.service";
 
 export type AutomationRow = typeof workflowAutomations.$inferSelect;
+
+export interface WorkflowAutomationCommittedRunSnapshot {
+  readonly automationId: string;
+  readonly runId: string;
+  readonly runStatus: string;
+}
+
+type WorkflowAutomationCommittedRunHook = (
+  snapshot: WorkflowAutomationCommittedRunSnapshot,
+) => Promise<void>;
+
+const workflowAutomationCommittedRunHook = testOverride<
+  WorkflowAutomationCommittedRunHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setWorkflowAutomationCommittedRunHookForTest(
+  hook: WorkflowAutomationCommittedRunHook,
+): void {
+  workflowAutomationCommittedRunHook.set(hook);
+}
+
+export function clearWorkflowAutomationCommittedRunHookForTest(): void {
+  workflowAutomationCommittedRunHook.clear();
+}
 
 export interface DueWorkflowAutomation {
   readonly automation: AutomationRow;
@@ -334,7 +361,11 @@ async function resolveModelContext(
   const selectedModel = pin.selectedModel;
   const builtInModelRuntimeRoute =
     isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
-      ? await resolveBuiltInModelRuntimeRoute(args.db, selectedModel)
+      ? await resolveBuiltInModelRuntimeRoute(
+          args.db,
+          selectedModel,
+          threadModelContext.featureSwitchContext,
+        )
       : undefined;
   signal.throwIfAborted();
   if (
@@ -825,6 +856,15 @@ export const launchQueuedWorkflowAutomation$ = command(
       signal.throwIfAborted();
       return { kind: "run_error", response: result };
     }
+    // The Run and queue claim are committed here, while the legacy last-run
+    // fields have not been written yet. Tests suspend this exact production
+    // boundary to prove callback authority does not depend on that late write.
+    await workflowAutomationCommittedRunHook.get()?.({
+      automationId: automation.id,
+      runId: result.body.runId,
+      runStatus: result.body.status,
+    });
+    signal.throwIfAborted();
     await recordWorkflowAutomationRunStart(
       {
         db,

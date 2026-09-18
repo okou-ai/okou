@@ -1,11 +1,14 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { createStore } from "ccstate";
 import { and, count, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { createDeferredPromise } from "../signals/utils";
+import { dispatchFailedRunCallbacks } from "../signals/services/agent-run-callback.service";
+import { drainChatThreadQueueForThread$ } from "../signals/services/chat-thread-queue-drain.service";
 import { admitWorkflowAutomationEvent } from "../signals/services/workflow-chat-event-queue.service";
 import {
   persistedWorkflowAutomationEventPayload,
@@ -31,6 +34,20 @@ export async function readWorkflowRunTriggerSourceFixture(
 }
 
 /** Admit a complete generic-webhook context through the production queue path. */
+export async function drainWorkflowAutomationQueueFixture(args: {
+  readonly chatThreadId: string;
+  readonly signal: AbortSignal;
+}): Promise<void> {
+  await createStore().set(
+    drainChatThreadQueueForThread$,
+    {
+      chatThreadId: args.chatThreadId,
+      dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+    },
+    args.signal,
+  );
+}
+
 export async function admitWorkflowAutomationEventFixture(
   args: WorkflowAutomationEventFixtureArgs,
 ): Promise<string> {

@@ -39,6 +39,26 @@ export async function setChatThreadAgentFixture(args: {
 }
 
 /**
+ * Infrastructure exception: no production writer moves a thread between users,
+ * but `user_id` is not a key column. This mutation proves the shared helper's
+ * KEY SHARE permits the move and the creation-local SHARE re-read detects it
+ * before a downstream run can be pinned.
+ */
+export async function setChatThreadUserFixture(args: {
+  readonly chatThreadId: string;
+  readonly userId: string;
+}): Promise<void> {
+  const updated = await db()
+    .update(chatThreads)
+    .set({ userId: args.userId })
+    .where(eq(chatThreads.id, args.chatThreadId))
+    .returning({ id: chatThreads.id });
+  if (updated.length !== 1) {
+    throw new Error("Expected one chat thread user to move");
+  }
+}
+
+/**
  * The persisted title state of one thread, including `updated_at`.
  *
  * Read-only fixture exception: the generated-title writer sets `title`,

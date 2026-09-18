@@ -16,6 +16,7 @@ import urllib.error
 import urllib.parse
 from collections.abc import Callable
 from concurrent.futures import Executor
+from datetime import UTC, datetime, timedelta
 from functools import partial
 
 import network_log_sanitization
@@ -224,6 +225,22 @@ def _do_post_webhook_attempts(
     payload_bytes = len(data)
     for attempt in range(max_retries + 1):
         try:
+            if _resource_observation_expired(payload):
+                _log_webhook_entry(
+                    proxy_log_path,
+                    "error",
+                    "expired outside the two-UTC-date resource admission window",
+                    url,
+                    log_type,
+                    payload,
+                    payload_bytes=payload_bytes,
+                    attempt=attempt + 1,
+                    extra_fields={
+                        "reason": "x_resource_observation_expired",
+                        "delivery_outcome": _PERMANENT_FAILURE,
+                    },
+                )
+                return _PERMANENT_FAILURE
             _post_webhook(url, bearer_credential, data)
             _log_webhook_entry(
                 proxy_log_path,
@@ -296,6 +313,25 @@ def _do_post_webhook_attempts(
             raise
 
     return _RETRYABLE_FAILURE
+
+
+def _resource_observation_expired(payload: dict) -> bool:
+    """Check immutable observation dates again after executor waits and HTTP retries."""
+    events = payload.get("events")
+    if not isinstance(events, list):
+        return False
+    resource_events = [
+        event
+        for event in events
+        if isinstance(event, dict) and event.get("protocol") == "x-resource-v1"
+    ]
+    if not resource_events:
+        return False
+    oldest_date = datetime.now(UTC).date() - timedelta(days=1)
+    return any(
+        datetime.fromisoformat(event["observedAt"]).astimezone(UTC).date() < oldest_date
+        for event in resource_events
+    )
 
 
 def _is_retryable_http_error(exc: urllib.error.HTTPError) -> bool:

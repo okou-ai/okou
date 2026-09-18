@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 DEFAULT_FLUSH_INTERVAL_SECONDS = 30.0
 DEFAULT_FLUSH_JITTER_RATIO = 0.2
@@ -12,7 +12,19 @@ MAX_AGGREGATE_BUCKETS = 100
 MAX_BUFFERED_WEBHOOK_BATCHES = 4
 MAX_SOURCE_IDEMPOTENCY_KEYS = 10_000
 USAGE_EVENT_BATCH_SIZE = 100
+MAX_RESOURCE_IDS_PER_BATCH = 1_000
+MAX_RESOURCE_BATCH_BYTES = 256 * 1024
 MAX_RETAINED_USAGE_BATCH_RETRIES = 20
+
+
+class ResourceUsageItem(TypedDict):
+    id: str
+    occurrences: int
+
+
+class ResourceUsageRemainder(TypedDict):
+    reason: Literal["missing_id", "unsupported_resource", "identity_limit", "parse_fallback"]
+    quantity: int
 
 
 class UsageEvent(TypedDict):
@@ -21,6 +33,10 @@ class UsageEvent(TypedDict):
     provider: str
     category: str
     quantity: int
+    protocol: NotRequired[Literal["x-resource-v1"]]
+    observedAt: NotRequired[str]
+    resources: NotRequired[list[ResourceUsageItem]]
+    remainder: NotRequired[list[ResourceUsageRemainder]]
 
 
 UsageFlushTrigger = Literal["timer", "threshold", "runner", "shutdown", "test"]
@@ -51,6 +67,7 @@ class _AggregateBucket:
 class _BufferedSourceEvent:
     run_id: str
     event: UsageEvent
+    encoded_size: int
 
 
 @dataclass(frozen=True)

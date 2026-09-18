@@ -194,6 +194,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   reconnect_required: "suppress-byok",
   usage_limit: "suppress-byok",
   session_history_limit: "retain",
+  guest_root_filesystem_full: "retain",
   unsupported_model: "retain",
 } satisfies Record<
   KnownRunFailureReason,
@@ -275,9 +276,11 @@ function logRunFailure(
     commit.transitionFailureReason === "insufficient_credits";
   const logFailure = isCreditError
     ? L.debug
-    : isBuiltInCapacityFailure(commit)
-      ? L.error
-      : L.warn;
+    : commit.transitionFailureReason === "guest_root_filesystem_full"
+      ? L.info
+      : isBuiltInCapacityFailure(commit)
+        ? L.error
+        : L.warn;
   logFailure(
     isCreditError ? "Run stopped: insufficient credits" : "Run failed",
     {

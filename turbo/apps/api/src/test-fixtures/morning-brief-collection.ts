@@ -11,6 +11,7 @@ import { onTestFinished } from "vitest";
 
 import { getApiTestMocks } from "../__tests__/mocks";
 import { db } from "../lib/db";
+import { nowDate } from "../lib/time";
 import { createDeferredPromise } from "../signals/utils";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
@@ -101,6 +102,12 @@ export async function seedInstalledMorningBrief(options: {
   if (!workflow) {
     throw new Error("Expected a seeded Morning Brief installation");
   }
+  // The Official Workflow installer stamps these from the application clock,
+  // and the Settings surface's own lifecycle guard later matches `updated_at`
+  // exactly. A `DEFAULT now()` stamp carries microseconds a JavaScript `Date`
+  // cannot represent, so seeding it that way would make a real preference
+  // update unrepresentable against this row.
+  const stampedAt = nowDate();
   const [automation] = await db()
     .insert(workflowAutomations)
     .values({
@@ -120,6 +127,8 @@ export async function seedInstalledMorningBrief(options: {
       officialParameterBindings: [],
       officialIntendedEnabled: options.enabled ?? true,
       officialResultEmailEnabled: true,
+      createdAt: stampedAt,
+      updatedAt: stampedAt,
     })
     .returning({ id: workflowAutomations.id });
   if (!automation) {

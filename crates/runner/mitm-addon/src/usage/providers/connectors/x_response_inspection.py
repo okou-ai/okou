@@ -5,6 +5,7 @@ responses and publishes parser-owned flow metadata for X usage reporting.
 """
 
 import urllib.parse
+from collections.abc import Callable
 from typing import TypedDict
 
 from mitmproxy import http
@@ -19,6 +20,7 @@ from ...json_selective import (
 )
 from .response_parser import ConnectorResponseParser
 from .x_billing import MAX_UNKNOWN_INCLUDE_CATEGORIES, include_billing_category
+from .x_resources import IDENTITY_BODY_LIMIT, inspect_identities, observed_at
 
 # HTTP 2xx success range (RFC 9110). Also defined in ``response_streaming.py``
 # and ``x.py``; kept local to avoid a constants module for a simple bound.
@@ -123,14 +125,18 @@ def _parse_x_json_response_fields(extracted: JsonExtractionResult) -> dict:
     return result
 
 
-def parse_json_response_fields_from_body(body: bytes) -> dict | None:
+def parse_json_response_fields_from_body(body: bytes, *, identities: bool = False) -> dict | None:
     """Extract billing-relevant fields from one complete X JSON body."""
     extractor = _create_x_json_selective_extractor()
     extractor.feed(body)
     extracted = extractor.finish()
     if not extracted.complete or () not in extracted.object_present:
         return None
-    return _parse_x_json_response_fields(extracted)
+    result = _parse_x_json_response_fields(extracted)
+    if identities:
+        result["resource_identities"] = inspect_identities(body)
+        result["observed_at"] = observed_at()
+    return result
 
 
 class _NdjsonState(TypedDict):
@@ -189,7 +195,7 @@ class _NdjsonExtractor:
     failed, unbilled line.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, on_row: Callable[[dict, int], None] | None = None) -> None:
         self.state: _NdjsonState = {
             "data_count": 0,
             "includes": {},
@@ -201,6 +207,7 @@ class _NdjsonExtractor:
         self._line_buf = bytearray()
         self._discarding_overlong_line = False
         self._finished = False
+        self._on_row = on_row
 
     def feed(self, chunk: bytes) -> None:
         """Process one decoded response-body chunk."""
@@ -260,12 +267,34 @@ class _NdjsonExtractor:
         if not extracted.complete:
             self.state["lines_failed"] += 1
             return
+        previous_includes = dict(self.state["includes"]) if self._on_row else {}
+        previous_overflow = self.state["unknown_includes_overflow_count"]
         self.state["lines_parsed"] += 1
         if ("data",) in extracted.object_present:
             self.state["data_count"] += 1
         includes = extracted.wildcard_array_counts.get(("includes", "*"), {})
         for key, count in includes.items():
             self._record_include_count(key, count)
+        if self._on_row is not None:
+            self._on_row(
+                {
+                    "body_parsed": True,
+                    "body_truncated": False,
+                    "body_format": "ndjson",
+                    "response_data_count": int(("data",) in extracted.object_present),
+                    "response_includes": {
+                        key: count - previous_includes.get(key, 0)
+                        for key, count in self.state["includes"].items()
+                        if count > previous_includes.get(key, 0)
+                    },
+                    "response_unknown_includes_overflow_count": (
+                        self.state["unknown_includes_overflow_count"] - previous_overflow
+                    ),
+                    "resource_identities": inspect_identities(line, ndjson=True),
+                    "observed_at": observed_at(),
+                },
+                self.state["lines_parsed"],
+            )
 
     def _record_include_count(self, key: str, count: int) -> None:
         if count <= 0:
@@ -290,11 +319,18 @@ class _NdjsonExtractor:
 class _XJsonResponseExtractor:
     """Incrementally extract billing metadata from non-streaming X JSON."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, identities: bool = False) -> None:
         self._extractor = _create_x_json_selective_extractor()
+        self._identity_body = bytearray() if identities else None
+        self._identities = identities
 
     def feed(self, chunk: bytes) -> None:
         self._extractor.feed(chunk)
+        if self._identity_body is not None:
+            if len(self._identity_body) + len(chunk) <= IDENTITY_BODY_LIMIT:
+                self._identity_body.extend(chunk)
+            else:
+                self._identity_body = None
 
     def accepts_more_input(self) -> bool:
         """Return whether the document parser can still consume input."""
@@ -303,6 +339,8 @@ class _XJsonResponseExtractor:
 
     def finish(self) -> tuple[dict, str | None]:
         result: dict = {"body_parsed": False, "body_truncated": False}
+        if self._identities:
+            result["observed_at"] = observed_at()
         extracted = self._extractor.finish()
         if not extracted.complete:
             return result, extracted.error
@@ -311,11 +349,20 @@ class _XJsonResponseExtractor:
 
         result["body_parsed"] = True
         result.update(_parse_x_json_response_fields(extracted))
+        if self._identities:
+            result["resource_identities"] = inspect_identities(
+                bytes(self._identity_body) if self._identity_body is not None else None
+            )
+            self._identity_body = None
         return result, None
 
 
 def create_response_parser(
-    flow: http.HTTPFlow, original_url: str
+    flow: http.HTTPFlow,
+    original_url: str,
+    *,
+    identities: bool = False,
+    on_row: Callable[[dict, int], None] | None = None,
 ) -> ConnectorResponseParser | None:
     """Create the X response-body parser needed for this flow, if any."""
     if not flow.response:
@@ -327,7 +374,7 @@ def create_response_parser(
         # final request metadata cannot diverge.
         stream_path = urllib.parse.urlparse(original_url).path
         if is_stream_path(stream_path):
-            extractor = _NdjsonExtractor()
+            extractor = _NdjsonExtractor(on_row)
             # Deliberately NOT "model_provider_usage" — that key routes through
             # report_model_provider_usage and triggers the model-provider webhook.
             # x_ndjson_state is only consumed by report_connector_usage.
@@ -352,7 +399,7 @@ def create_response_parser(
     if not (_HTTP_STATUS_OK_MIN <= status_code < _HTTP_STATUS_REDIRECT_MIN):
         return None
 
-    extractor = _XJsonResponseExtractor()
+    extractor = _XJsonResponseExtractor(identities=identities)
 
     def finish_json_state() -> None:
         state, error = extractor.finish()

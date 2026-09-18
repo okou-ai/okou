@@ -1,5 +1,5 @@
 {
-  "id": "9e4ec759-c0cf-4b46-87d2-8642871de128",
+  "id": "af8de52e-4eba-491b-a175-34224c0af369",
   "prevId": "186a8b37-6ae5-4530-9a9d-622d79fa9815",
   "version": "7",
   "dialect": "postgresql",
@@ -19859,241 +19859,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.morning_brief_schedule_claims": {
-      "name": "morning_brief_schedule_claims",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "automation_id": {
-          "name": "automation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "workflow_id": {
-          "name": "workflow_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scheduled_anchor_at": {
-          "name": "scheduled_anchor_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "claim_sequence": {
-          "name": "claim_sequence",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "queue_event_id": {
-          "name": "queue_event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "queue_disposition": {
-          "name": "queue_disposition",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'queued'"
-        },
-        "settlement": {
-          "name": "settlement",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'unsettled'"
-        },
-        "settled_at": {
-          "name": "settled_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_morning_brief_schedule_claims_anchor": {
-          "name": "idx_morning_brief_schedule_claims_anchor",
-          "columns": [
-            {
-              "expression": "automation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scheduled_anchor_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_schedule_claims_queue_event": {
-          "name": "idx_morning_brief_schedule_claims_queue_event",
-          "columns": [
-            {
-              "expression": "queue_event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"morning_brief_schedule_claims\".\"queue_event_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_schedule_claims_run": {
-          "name": "idx_morning_brief_schedule_claims_run",
-          "columns": [
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"morning_brief_schedule_claims\".\"run_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_schedule_claims_sequence": {
-          "name": "idx_morning_brief_schedule_claims_sequence",
-          "columns": [
-            {
-              "expression": "automation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "claim_sequence",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_schedule_claims_owner": {
-          "name": "idx_morning_brief_schedule_claims_owner",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "morning_brief_schedule_claims_automation_id_workflow_automations_id_fk": {
-          "name": "morning_brief_schedule_claims_automation_id_workflow_automations_id_fk",
-          "tableFrom": "morning_brief_schedule_claims",
-          "tableTo": "workflow_automations",
-          "columnsFrom": [
-            "automation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_morning_brief_schedule_claims_queue_disposition": {
-          "name": "chk_morning_brief_schedule_claims_queue_disposition",
-          "value": "\"morning_brief_schedule_claims\".\"queue_disposition\" IN ('queued', 'claimed')"
-        },
-        "chk_morning_brief_schedule_claims_settlement": {
-          "name": "chk_morning_brief_schedule_claims_settlement",
-          "value": "(\n            \"morning_brief_schedule_claims\".\"settlement\" = 'unsettled' AND \"morning_brief_schedule_claims\".\"settled_at\" IS NULL\n          ) OR (\n            \"morning_brief_schedule_claims\".\"settlement\" IN ('completed', 'failed', 'pre_run_failure', 'revoked')\n            AND \"morning_brief_schedule_claims\".\"settled_at\" IS NOT NULL\n          )"
-        },
-        "chk_morning_brief_schedule_claims_owner": {
-          "name": "chk_morning_brief_schedule_claims_owner",
-          "value": "(\n            \"morning_brief_schedule_claims\".\"org_id\" IS NOT NULL AND \"morning_brief_schedule_claims\".\"owner_user_id\" IS NOT NULL\n          ) OR (\n            \"morning_brief_schedule_claims\".\"settlement\" = 'revoked'\n            AND \"morning_brief_schedule_claims\".\"org_id\" IS NULL\n            AND \"morning_brief_schedule_claims\".\"owner_user_id\" IS NULL\n          )"
-        },
-        "chk_morning_brief_schedule_claims_sequence": {
-          "name": "chk_morning_brief_schedule_claims_sequence",
-          "value": "\"morning_brief_schedule_claims\".\"claim_sequence\" >= 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.notion_webhook_events": {
       "name": "notion_webhook_events",
       "schema": "",
@@ -34684,6 +34449,374 @@
         "chk_variables_connector_owner_type": {
           "name": "chk_variables_connector_owner_type",
           "value": "(\"variables\".\"type\" = 'connector') = (\"variables\".\"connector_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.vnc_connections": {
+      "name": "vnc_connections",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "host": {
+          "name": "host",
+          "type": "varchar(253)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "port": {
+          "name": "port",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5900
+        },
+        "credential_id": {
+          "name": "credential_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "security_type": {
+          "name": "security_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trust_mode": {
+          "name": "trust_mode",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ca_bundle": {
+          "name": "ca_bundle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_vnc_connections_credential": {
+          "name": "idx_vnc_connections_credential",
+          "columns": [
+            {
+              "expression": "credential_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_connections_owner_created": {
+          "name": "idx_vnc_connections_owner_created",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_connections_user": {
+          "name": "idx_vnc_connections_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vnc_connections_credential_owner_fk": {
+          "name": "vnc_connections_credential_owner_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "vnc_credentials",
+          "columnsFrom": [
+            "credential_id",
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_vnc_connections_display_name": {
+          "name": "chk_vnc_connections_display_name",
+          "value": "char_length(\"vnc_connections\".\"display_name\") BETWEEN 1 AND 128"
+        },
+        "chk_vnc_connections_host": {
+          "name": "chk_vnc_connections_host",
+          "value": "char_length(\"vnc_connections\".\"host\") BETWEEN 1 AND 253 AND \"vnc_connections\".\"host\" = lower(\"vnc_connections\".\"host\") AND \"vnc_connections\".\"host\" !~ '[[:space:]/@?#]'"
+        },
+        "chk_vnc_connections_port": {
+          "name": "chk_vnc_connections_port",
+          "value": "\"vnc_connections\".\"port\" BETWEEN 1 AND 65535"
+        },
+        "chk_vnc_connections_generation": {
+          "name": "chk_vnc_connections_generation",
+          "value": "\"vnc_connections\".\"generation\" > 0"
+        },
+        "chk_vnc_connections_security_type": {
+          "name": "chk_vnc_connections_security_type",
+          "value": "\"vnc_connections\".\"security_type\" = 'x509_vnc'"
+        },
+        "chk_vnc_connections_trust": {
+          "name": "chk_vnc_connections_trust",
+          "value": "(\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.vnc_credentials": {
+      "name": "vnc_credentials",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_method": {
+          "name": "auth_method",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_password": {
+          "name": "encrypted_password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_vnc_credentials_owner_created": {
+          "name": "idx_vnc_credentials_owner_created",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_credentials_user": {
+          "name": "idx_vnc_credentials_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_vnc_credentials_owner_id": {
+          "name": "uq_vnc_credentials_owner_id",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "org_id",
+            "user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_vnc_credentials_name": {
+          "name": "chk_vnc_credentials_name",
+          "value": "char_length(\"vnc_credentials\".\"name\") BETWEEN 1 AND 128"
+        },
+        "chk_vnc_credentials_auth_method": {
+          "name": "chk_vnc_credentials_auth_method",
+          "value": "\"vnc_credentials\".\"auth_method\" = 'vnc_password'"
+        },
+        "chk_vnc_credentials_password": {
+          "name": "chk_vnc_credentials_password",
+          "value": "char_length(\"vnc_credentials\".\"encrypted_password\") > 0"
+        },
+        "chk_vnc_credentials_revision": {
+          "name": "chk_vnc_credentials_revision",
+          "value": "\"vnc_credentials\".\"revision\" > 0"
         }
       },
       "isRLSEnabled": false

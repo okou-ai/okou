@@ -30,6 +30,16 @@ interface UserTemplatePreviewAssetIdentity {
 }
 
 /**
+ * The cache identity of one storage object.
+ *
+ * Presigned URLs are cached per object rather than per row, so a rendered page
+ * and the file the template was compiled from are keyed the same way.
+ */
+export function userTemplateStorageVersionId(objectKey: string): string {
+  return createHash("sha256").update(objectKey).digest("base64url");
+}
+
+/**
  * Give a rendered page a stable public identity without exposing its object
  * key. The hash follows the immutable page object if page order changes.
  */
@@ -37,10 +47,7 @@ export function userTemplatePreviewAssetId(
   templateId: string,
   objectKey: string,
 ): string {
-  const storageVersionId = createHash("sha256")
-    .update(objectKey)
-    .digest("base64url");
-  return `${USER_TEMPLATE_PREVIEW_ASSET_PREFIX}${templateId}:${storageVersionId}`;
+  return `${USER_TEMPLATE_PREVIEW_ASSET_PREFIX}${templateId}:${userTemplateStorageVersionId(objectKey)}`;
 }
 
 export function parseUserTemplatePreviewAssetId(

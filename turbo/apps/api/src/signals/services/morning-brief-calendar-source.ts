@@ -18,7 +18,8 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-calendar-collection-preview";
 
 import {
-  morningBriefScopeDigest,
+  morningBriefProvenAuthority,
+  type MorningBriefSourceAuthorityProof,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
 import type {
@@ -27,11 +28,6 @@ import type {
   MorningBriefSourceItem,
   MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
-
-/** The Calendar authorization surface a Morning Brief read exercises. */
-const MORNING_BRIEF_CALENDAR_READ_SURFACE: readonly string[] = [
-  "https://www.googleapis.com/auth/calendar.readonly",
-];
 
 /**
  * Which kind of instant this event contributes.
@@ -134,19 +130,24 @@ export function normalizeMorningBriefCalendar(
  * a digest of constants.
  */
 export function morningBriefCalendarDescriptor(args: {
-  readonly accountRef: string | null;
-  readonly connectionId: string | null;
+  /** What this source's reads were actually authorized by, or null. */
+  readonly proof: MorningBriefSourceAuthorityProof | null;
   readonly membershipId: string;
   readonly agentId: string;
   readonly capturedAt: Date;
   readonly contributed: boolean;
   readonly containers: readonly string[];
 }): MorningBriefRetainedSourceDescriptor {
+  const proven = morningBriefProvenAuthority(args.proof);
   return {
     source: "calendar",
-    connectionId: args.connectionId,
-    accountRef: args.accountRef,
-    scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_CALENDAR_READ_SURFACE),
+    connectionId: proven.connectionId,
+    // The exact Google account the shared reader pinned, not the member's own
+    // user id: a first-party id proves nothing about which calendar account
+    // this material came from.
+    accountRef: args.proof?.accountRef ?? null,
+    scopeDigest: proven.scopeDigest,
+    endpoints: proven.endpoints,
     membershipId: args.membershipId,
     agentId: args.agentId,
     capturedAt: args.capturedAt.toISOString(),

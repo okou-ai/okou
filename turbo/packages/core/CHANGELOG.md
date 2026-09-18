@@ -1,5 +1,84 @@
 # Changelog
 
+## [8.680.1](https://github.com/vm0-ai/okou/compare/core-v8.680.0...core-v8.680.1) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.465.0
+
+## [8.680.0](https://github.com/vm0-ai/okou/compare/core-v8.679.0...core-v8.680.0) (2026-09-18)
+
+
+### Features
+
+* add owner-scoped vnc configuration ([#34990](https://github.com/vm0-ai/okou/issues/34990)) ([fe59c96](https://github.com/vm0-ai/okou/commit/fe59c96ec2d3baab99cf6c219962656661bfd13e))
+
+
+### Refactoring
+
+* remove team usage breakdown feature switch ([#35098](https://github.com/vm0-ai/okou/issues/35098)) ([4939996](https://github.com/vm0-ai/okou/commit/49399969ea1bcc428000cfced32effa669ce74cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.464.0
+
+## [8.679.0](https://github.com/vm0-ai/okou/compare/core-v8.678.0...core-v8.679.0) (2026-09-18)
+
+
+### Features
+
+* **mcp:** add oauth-authorized http entry and indicators ([#34954](https://github.com/vm0-ai/okou/issues/34954)) ([7999ce4](https://github.com/vm0-ai/okou/commit/7999ce41c17d7544b0f1da457d840fb2f0505b54))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.463.0
+
+## [8.678.0](https://github.com/vm0-ai/okou/compare/core-v8.677.0...core-v8.678.0) (2026-09-17)
+
+
+### Features
+
+* **billing:** group usage by thread and show member breakdowns ([#35082](https://github.com/vm0-ai/okou/issues/35082)) ([6b7e3ae](https://github.com/vm0-ai/okou/commit/6b7e3ae71559d4c2ba8552c1fdb650054e4b41f6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.462.0
+
+## [8.677.0](https://github.com/vm0-ai/okou/compare/core-v8.676.3...core-v8.677.0) (2026-09-17)
+
+
+### Features
+
+* **app:** add chat thread archiving ([#35081](https://github.com/vm0-ai/okou/issues/35081)) ([c2c9e70](https://github.com/vm0-ai/okou/commit/c2c9e70124bf9457e69130566ab70d2e00cc06e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.1
+
+## [8.676.3](https://github.com/vm0-ai/okou/compare/core-v8.676.2...core-v8.676.3) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.0
+
 ## [8.676.2](https://github.com/vm0-ai/okou/compare/core-v8.676.1...core-v8.676.2) (2026-09-17)
 
 

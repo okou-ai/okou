@@ -89,7 +89,7 @@ describe("X resource usage during Pi account erasure", () => {
       idempotencyKey: randomUUID(),
       kind: "connector" as const,
       provider: "x" as const,
-      category: "tweet.read" as const,
+      category: "posts.read" as const,
       quantity: 1,
       observedAt: at,
       resources: [{ id: resourceId, occurrences: 1 }],

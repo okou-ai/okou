@@ -9,6 +9,7 @@ import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
+import { testOverride } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -21,6 +22,31 @@ import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
 const log = logger("MorningBriefScheduleClaim");
+
+interface MorningBriefSettlementAttemptSnapshot {
+  readonly automationId: string;
+  readonly subjectKind: "run" | "claim";
+}
+
+type MorningBriefSettlementAttemptHook = (
+  snapshot: MorningBriefSettlementAttemptSnapshot,
+) => Promise<void>;
+
+const morningBriefSettlementAttemptHook = testOverride<
+  MorningBriefSettlementAttemptHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setMorningBriefSettlementAttemptHookForTest(
+  hook: MorningBriefSettlementAttemptHook,
+): void {
+  morningBriefSettlementAttemptHook.set(hook);
+}
+
+export function clearMorningBriefSettlementAttemptHookForTest(): void {
+  morningBriefSettlementAttemptHook.clear();
+}
 
 /** Mirrors the legacy poller and callback policy; they share one constant. */
 const MAX_CONSECUTIVE_FAILURES = 3;
@@ -395,6 +421,10 @@ async function settleMorningBriefSchedule(
   tx: Tx,
   args: SettleMorningBriefScheduleArgs,
 ): Promise<MorningBriefScheduleSettlementOutcome> {
+  await morningBriefSettlementAttemptHook.get()?.({
+    automationId: args.automationId,
+    subjectKind: args.subject.kind,
+  });
   const [automation] = await tx
     .select(workflowAutomationColumns())
     .from(workflowAutomations)

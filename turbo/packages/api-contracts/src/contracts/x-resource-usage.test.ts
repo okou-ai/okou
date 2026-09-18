@@ -8,7 +8,7 @@ function observation() {
     idempotencyKey: randomUUID(),
     kind: "connector",
     provider: "x",
-    category: "tweet.read",
+    category: "posts.read",
     quantity: 5,
     observedAt: "2026-09-16T23:59:59.999Z",
     resources: [
@@ -118,6 +118,7 @@ describe("X resource observation wire contract", () => {
     { protocol: "x-resource-v2" },
     { kind: "model" },
     { provider: "other" },
+    { category: "tweet.read" },
     { category: "followers.read" },
     { scopeId: randomUUID() },
     { netQuantity: 0 },

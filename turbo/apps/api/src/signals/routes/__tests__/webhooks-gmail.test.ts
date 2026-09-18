@@ -748,7 +748,7 @@ async function workflowRunIds(
   return events.flatMap((message) => {
     if (
       message.eventType !== "input.prompt" ||
-      chatEventAutomationPart(message)?.workflowName !== WORKFLOW_NAME ||
+      !chatEventAutomationPart(message) ||
       !message.runId
     ) {
       return [];

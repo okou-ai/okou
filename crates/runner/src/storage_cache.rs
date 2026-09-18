@@ -71,7 +71,7 @@ use crate::lock;
 use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
 use crate::paths::{HomePaths, short_digest, touch_mtime};
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
-use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
+use crate::telemetry::{ArchiveSizeMismatch, JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 
 pub(crate) mod decoded;
 
@@ -1043,6 +1043,7 @@ fn spawn_background_fill_reports(
 struct FreshArchivePhaseRecord {
     operation: SandboxOpRecord,
     completed_at: DateTime<Utc>,
+    archive_size_mismatch: Option<ArchiveSizeMismatch>,
 }
 
 /// At most four phases for each of the four archives admitted to one delivery.
@@ -1063,13 +1064,10 @@ impl FreshArchivePhaseRecords {
                 .unwrap_or_else(|poisoned| poisoned.into_inner()),
         );
         for record in records {
-            let operation = record.operation;
-            telemetry.record_at(
-                operation.action_type,
-                operation.duration,
-                operation.success,
-                operation.error,
+            telemetry.record_archive_phase_at(
+                record.operation,
                 record.completed_at,
+                record.archive_size_mismatch,
             );
         }
     }
@@ -1079,6 +1077,7 @@ struct FreshArchivePhaseGuard {
     records: FreshArchivePhaseRecords,
     action_type: Option<&'static str>,
     started_at: Instant,
+    archive_size_mismatch: Option<ArchiveSizeMismatch>,
 }
 
 impl FreshArchivePhaseGuard {
@@ -1087,10 +1086,20 @@ impl FreshArchivePhaseGuard {
             records: records.clone(),
             action_type: Some(action_type),
             started_at: Instant::now(),
+            archive_size_mismatch: None,
         }
     }
 
     fn finish(mut self, result: Result<(), &'static str>) {
+        self.record(result);
+    }
+
+    fn finish_with_archive_size_mismatch(
+        mut self,
+        result: Result<(), &'static str>,
+        mismatch: Option<ArchiveSizeMismatch>,
+    ) {
+        self.archive_size_mismatch = mismatch;
         self.record(result);
     }
 
@@ -1106,6 +1115,7 @@ impl FreshArchivePhaseGuard {
                 result.err(),
             ),
             completed_at: Utc::now(),
+            archive_size_mismatch: self.archive_size_mismatch,
         };
         self.records
             .records
@@ -2857,6 +2867,7 @@ impl FreshArchiveRequests {
         })?;
         let http = admission.client_for_archive(&target.archive_url)?;
         let archive_url = target.archive_url.clone();
+        let representative = target.handle;
         let group = group.clone();
         let cancel = cancel.clone();
         let phase_records = self.phase_records.clone();
@@ -2866,7 +2877,7 @@ impl FreshArchiveRequests {
             let fetch = tokio::select! {
                 biased;
                 () = cancel.cancelled() => Err("cancelled"),
-                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, &phase_records) => result,
+                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, representative, &phase_records) => result,
             };
             let (bytes, size_source) = match fetch {
                 Ok(download) => download,
@@ -2911,9 +2922,11 @@ async fn fetch_fresh_archive(
     http: &Client,
     archive_url: &str,
     expected_size: Option<u64>,
+    representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), &'static str> {
     let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_HEADERS);
+    let mut mismatch = None;
     let headers = async {
         let response = http
             .get(archive_url)
@@ -2934,7 +2947,13 @@ async fn fetch_fresh_archive(
         let response_size = response.content_length();
         let (exact_size, size_source) = match expected_size {
             Some(expected) => {
-                if response_size.is_some_and(|size| size != expected) {
+                if let Some(size) = response_size.filter(|size| *size != expected) {
+                    mismatch = Some(ArchiveSizeMismatch::new(
+                        expected,
+                        size,
+                        representative,
+                        response.headers(),
+                    ));
                     return Err("response-size-mismatch");
                 }
                 (expected, FreshArchiveSizeSource::Manifest)
@@ -2955,7 +2974,10 @@ async fn fetch_fresh_archive(
         Ok((response, response_size, exact_size, size_source))
     }
     .await;
-    phase.finish(headers.as_ref().map(|_| ()).map_err(|reason| *reason));
+    phase.finish_with_archive_size_mismatch(
+        headers.as_ref().map(|_| ()).map_err(|reason| *reason),
+        mismatch,
+    );
     let (mut response, response_size, exact_size, size_source) = headers?;
 
     let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_BODY);

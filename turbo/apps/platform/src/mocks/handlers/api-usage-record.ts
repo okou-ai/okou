@@ -35,12 +35,7 @@ export const apiUsageRecordHandlers = [
   mockApi(usageRecordContract.get, ({ query, respond }) => {
     const page = query.page;
     const pageSize = query.pageSize;
-    const source = query.source;
-    const rows = source
-      ? mockUsageRecordResponse.rows.filter((row) => {
-          return row.source === source;
-        })
-      : mockUsageRecordResponse.rows;
+    const rows = mockUsageRecordResponse.rows;
     const offset = (page - 1) * pageSize;
 
     return respond(200, {

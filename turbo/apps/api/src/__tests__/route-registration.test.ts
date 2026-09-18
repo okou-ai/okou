@@ -15,8 +15,14 @@ import { morningBriefDeliveryPreviewRoutes } from "../signals/routes/morning-bri
 import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
 import { morningBriefPreviewGithubCollectionRoutes } from "../signals/routes/morning-brief-preview-github-collection";
+import { mcpServerRoutes } from "../signals/routes/mcp-server";
 
 describe("API route registrations", () => {
+  it("registers the hosted MCP endpoint and resource metadata", () => {
+    for (const entry of mcpServerRoutes) {
+      expect(ROUTES).toContain(entry);
+    }
+  });
   // Hono keeps both registrations for a duplicated path and answers with the
   // first, so a collision takes a handler over instead of failing. Asserted
   // over the route table rather than inside `createAppWithRoutes`, because
