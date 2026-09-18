@@ -706,6 +706,11 @@ function useJobRemoteAccess(agentId: string) {
     sshAccess,
     vncAccess,
     hasRemoteAccess: Boolean(sshAccess || vncAccess),
+    hasRemoteLoading:
+      sshAccessLoadable.state === "loading" ||
+      sshIdentity.state === "loading" ||
+      vncAccessLoadable.state === "loading" ||
+      vncIdentity.state === "loading",
     hasRemoteError: sshFailed || vncFailed,
     remoteErrors: (
       <>
@@ -728,6 +733,7 @@ function JobPermissionsTab({
     sshAccess,
     vncAccess,
     hasRemoteAccess,
+    hasRemoteLoading,
     remoteErrors,
     hasRemoteError,
   } = useJobRemoteAccess(agentId);
@@ -829,6 +835,8 @@ function JobPermissionsTab({
       {connectedConnectors.length === 0 && !hasRemoteAccess ? (
         hasRemoteError ? (
           remoteErrors
+        ) : hasRemoteLoading ? (
+          <PermissionListSkeleton />
         ) : (
           <NoConnectedConnectors />
         )

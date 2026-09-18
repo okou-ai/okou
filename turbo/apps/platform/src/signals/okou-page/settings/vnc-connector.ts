@@ -19,14 +19,14 @@ export const filteredVncSummary$ = computed(async (get) => {
   }
   const filter = get(connectorsConnectionFilter$);
   const search = get(connectorsSearch$).trim().toLowerCase();
-  const summary = await get(vncSummary$);
-  if (!summary) {
-    return null;
-  }
   const description = i18n.t(($) => {
     return $.vnc.description;
   });
   if (!`vnc ${description}`.toLowerCase().includes(search)) {
+    return null;
+  }
+  const summary = await get(vncSummary$);
+  if (!summary) {
     return null;
   }
   if (filter.kind === "connected" && summary.configuredCount === 0) {

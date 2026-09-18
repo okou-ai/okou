@@ -1737,6 +1737,14 @@ function remoteAccessLoadState(
   return states.has("loading") ? "loading" : "hasData";
 }
 
+function suppressBuiltinEmptyState(
+  shelfEnabled: boolean,
+  ssh: Loadable<{ configuredCount: number } | null>,
+  vnc: Loadable<{ configuredCount: number } | null>,
+): boolean {
+  return shelfEnabled || remoteAccessLoadState(ssh, vnc) !== "hasData";
+}
+
 function connectorLabelForSlug(
   connectors: readonly PlatformConnectorCatalogStatusItem[],
   connectorSlug: ConnectorSlug | null,
@@ -1885,6 +1893,19 @@ function VncDirectoryLoadError() {
     filtered.state === "hasError" ||
     rows.state === "hasError" ? (
     <VncLoadError />
+  ) : null;
+}
+
+function VncDirectoryLoading() {
+  const { t } = useTranslation();
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.VncAccess] === true;
+  const filtered = useLoadable(filteredVncSummary$);
+  return enabled && filtered.state === "loading" ? (
+    <p role="status" className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.vnc.loading;
+      })}
+    </p>
   ) : null;
 }
 
@@ -2258,7 +2279,11 @@ export function ConnectorsPage() {
     renderCard: renderPresentationCard,
     search,
     connectionFilter,
-    suppressEmpty: shelfEnabled,
+    suppressEmpty: suppressBuiltinEmptyState(
+      shelfEnabled,
+      filteredSshSummary,
+      filteredVncSummary,
+    ),
   });
   const builtinPanel = (
     <ConnectorsBuiltinPanel
@@ -2270,6 +2295,7 @@ export function ConnectorsPage() {
         <>
           <SshDirectoryLoadError />
           <VncDirectoryLoadError />
+          <VncDirectoryLoading />
           <RemoteAccessShelfCategory
             enabled={browse.showShelves}
             groups={grouped}
@@ -2397,6 +2423,7 @@ export function ConnectorsPage() {
                     <>
                       <SshDirectoryLoadError />
                       <VncDirectoryLoadError />
+                      <VncDirectoryLoading />
                       <RemoteAccessShelfCategory
                         enabled
                         groups={grouped}

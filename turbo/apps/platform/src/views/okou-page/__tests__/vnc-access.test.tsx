@@ -201,6 +201,51 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
+  "VNC discovery does not report an empty result while a failed summary retries (%s)",
+  async (directory) => {
+    mockCatalog();
+    let failed = true;
+    const retryStarted = context.mocks.deferred<void>();
+    const recovery = context.mocks.deferred<void>();
+    context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
+      if (failed) {
+        return respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "private VNC error" },
+        });
+      }
+      retryStarted.resolve();
+      await recovery.promise;
+      return respond(200, { configuredCount: 0 });
+    });
+    await setupPage({
+      context,
+      path: "/connectors?keywords=vnc",
+      featureSwitches: {
+        [FeatureSwitchKey.VncAccess]: true,
+        [FeatureSwitchKey.ConnectorDirectory]: directory,
+      },
+    });
+    const error = await screen.findByText("Could not load VNC configuration.");
+    const alert = error.closest('[role="alert"]');
+    if (!(alert instanceof HTMLElement)) {
+      throw new Error("Missing VNC error alert");
+    }
+    expect(screen.queryByText(/No connectors matching/u)).toBeNull();
+    failed = false;
+    click(await findFastControl("button", "Retry", alert));
+    await retryStarted.promise;
+    await expect(
+      screen.findByText("Loading VNC configuration…"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByText(/No connectors matching/u)).toBeNull();
+    recovery.resolve();
+    await expect(
+      findFastControl("link", "Manage VNC"),
+    ).resolves.toHaveAttribute("href", "/connectors/vnc?add=1");
+  },
+);
+
+test.each([false, true])(
   "Feature-off VNC makes no discovery calls in directory layout %s",
   async (directory) => {
     mockCatalog();
@@ -267,6 +312,52 @@ test("VNC settings grants authorize a visible Agent independently of SSH", async
     within(dialog).findByRole("switch", {
       name: "Authorize VNC access for Research",
     }),
+  ).resolves.not.toBeChecked();
+});
+
+test("Agent authorization does not report no services while VNC recovery is pending", async () => {
+  mockCatalog();
+  const agent = listAgent(agentId, "Research");
+  context.mocks.data.agents([agent]);
+  context.mocks.api(agentsByIdContract.get, ({ respond }) => {
+    return respond(200, agent);
+  });
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  });
+  let failed = true;
+  const retryStarted = context.mocks.deferred<void>();
+  const recovery = context.mocks.deferred<void>();
+  context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
+    if (failed) {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "private VNC error" },
+      });
+    }
+    retryStarted.resolve();
+    await recovery.promise;
+    return respond(200, { configuredCount: 1 });
+  });
+  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
+    return respond(200, { enabled: false });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}?tab=authorization`,
+    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
+  });
+  const error = await screen.findByText("Could not load VNC configuration.");
+  const alert = error.closest('[role="alert"]');
+  if (!(alert instanceof HTMLElement)) {
+    throw new Error("Missing VNC error alert");
+  }
+  failed = false;
+  click(await findFastControl("button", "Retry", alert));
+  await retryStarted.promise;
+  expect(screen.queryByText(/No connected services yet/u)).toBeNull();
+  recovery.resolve();
+  await expect(
+    screen.findByRole("switch", { name: "Grant VNC access" }),
   ).resolves.not.toBeChecked();
 });
 
