@@ -228,25 +228,33 @@ async function acquireErasureSubjectLocks(
   subjects: readonly ErasureSubject[],
   mode: "shared" | "exclusive",
 ): Promise<void> {
-  const [isolation] = await tx
-    .select({
-      value: sql`current_setting('transaction_isolation')`.mapWith(
-        jobs.subjectId,
-      ),
-    })
-    .from(sql`(VALUES (1)) AS erasure_isolation_probe`);
-  invariant(isolation?.value === "read committed", "unsupported_isolation");
   invariant(
     subjects.length > 0 && subjects.length <= MAX_SINKS,
     "subject_limit",
   );
-  for (const key of [...new Set(subjects.map(subjectKey))].sort()) {
+  const keys = [...new Set(subjects.map(subjectKey))].sort();
+  for (const [index, key] of keys.entries()) {
     const lockKey = `account-erasure:${key}`;
-    await tx.execute(
+    const lock =
       mode === "shared"
-        ? sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${lockKey}, 0))`
-        : sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
-    );
+        ? sql`pg_advisory_xact_lock_shared(hashtextextended(${lockKey}, 0))`
+        : sql`pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    if (index === 0) {
+      // CASE must guard the lock itself: unsupported snapshots cannot wait for
+      // admission. The scalar subquery runs the lock before returning isolation.
+      const [isolation] = await tx
+        .select({
+          value: sql`CASE
+            WHEN current_setting('transaction_isolation') = 'read committed'
+            THEN (SELECT current_setting('transaction_isolation') FROM ${lock})
+            ELSE current_setting('transaction_isolation')
+          END`.mapWith(jobs.subjectId),
+        })
+        .from(sql`(VALUES (1)) AS erasure_isolation_probe`);
+      invariant(isolation?.value === "read committed", "unsupported_isolation");
+    } else {
+      await tx.execute(sql`SELECT ${lock}`);
+    }
   }
 }
 

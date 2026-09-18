@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
-import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import { bankingContract } from "@okouai/api-contracts/contracts/banking";
 import {
   billingAutoRechargeContract,
@@ -48,7 +47,6 @@ import {
 import { testUsageSettlementRoutes } from "../../test-usage-settlement";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
-import { acquisitionAttributionRoutes } from "../../acquisition-attribution";
 import { bankingRoutes } from "../../banking";
 import { billingAutoRechargeRoutes } from "../../billing-auto-recharge";
 import { billingCheckoutRoutes } from "../../billing-checkout";
@@ -553,27 +551,6 @@ export function createBillingMediaApi(context: TestContext) {
       })(testUsageSettlementContract);
       return await accept(
         client.process({ body: { org_id: actor.orgId } }),
-        [200],
-      );
-    },
-
-    async recordSignupAttribution(actor: ApiTestUser) {
-      const client = setupApp({
-        context,
-        routes: acquisitionAttributionRoutes,
-      })(acquisitionAttributionContract);
-      return await accept(
-        client.recordSignup({
-          headers: authenticate(actor),
-          body: {
-            attribution: {
-              source_type: "paid",
-              landing_host: "www.okou.ai",
-              landing_path: "/",
-              utm_source: "bdd",
-            },
-          },
-        }),
         [200],
       );
     },

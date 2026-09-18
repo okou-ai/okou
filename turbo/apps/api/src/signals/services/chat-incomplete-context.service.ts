@@ -14,8 +14,8 @@ import {
   inArray,
   isNotNull,
   lt,
+  min,
   ne,
-  notExists,
   or,
   sql,
   type SQL,
@@ -38,6 +38,10 @@ const INCOMPLETE_ROUND_LIMIT = 20;
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
 const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
 const earlierRunEvent = alias(chatEvents, "earlier_run_event");
+const incompleteAnchorCandidate = alias(
+  chatEvents,
+  "incomplete_anchor_candidate",
+);
 const incompleteRoundFrontierRowSchema = z.object({
   runId: z.string(),
   runStatus: z.string(),
@@ -81,6 +85,51 @@ function incompleteRoundAnchorQuery(
     )},
     FALSE
   )`.mapWith(pgBooleanDecoder);
+  // Grouping prevents PostgreSQL's MIN/MAX optimization from seeking forward
+  // through unrelated older runs in the thread-sequence index.
+  // Keep eligibility in this run-keyed lookup too: joining runs in the outer
+  // candidate scan can sort the entire thread before its caller's LIMIT.
+  const firstOwnedEvent = db
+    .select({ seqId: min(earlierRunEvent.seqId).as("first_seq") })
+    .from(earlierRunEvent)
+    .innerJoin(agentRuns, eq(agentRuns.id, earlierRunEvent.runId))
+    .where(
+      and(
+        eq(earlierRunEvent.chatThreadId, threadId),
+        eq(earlierRunEvent.runId, incompleteRunAnchor.runId),
+        ne(earlierRunEvent.eventType, "control.interrupt"),
+        or(
+          isSuccessfulRun,
+          inArray(agentRuns.status, sql`('cancelled', 'failed', 'timeout')`),
+        ),
+      ),
+    )
+    .groupBy(earlierRunEvent.runId)
+    .as("first_owned_event");
+  const candidates = db
+    .select({
+      runId: incompleteRunAnchor.runId,
+      seqId: incompleteRunAnchor.seqId,
+      firstSeq: firstOwnedEvent.seqId,
+    })
+    .from(incompleteRunAnchor)
+    .crossJoinLateral(firstOwnedEvent)
+    .where(
+      and(
+        eq(incompleteRunAnchor.chatThreadId, threadId),
+        beforeSeq === undefined
+          ? undefined
+          : lt(incompleteRunAnchor.seqId, beforeSeq),
+        isNotNull(incompleteRunAnchor.runId),
+        ne(incompleteRunAnchor.eventType, "control.interrupt"),
+      ),
+    )
+    .orderBy(desc(incompleteRunAnchor.seqId));
+  // Keep the equality outside this planner boundary so the lateral minimum
+  // can be memoized by run ID, not recomputed for every candidate sequence.
+  // Drizzle omits .offset(0); this shell must retain PostgreSQL's OFFSET 0.
+  const candidateSource = sql`(${candidates} OFFSET 0)
+      AS incomplete_anchor_candidate(run_id, seq_id, first_seq)`;
   // A later append cannot move the first retained event for a run. Include
   // revoked rows in this ordering fact; visibility only controls eligibility
   // and content. control.interrupt targets a run without belonging to it.
@@ -90,34 +139,15 @@ function incompleteRoundAnchorQuery(
       runId: agentRuns.id,
       runStatus: agentRuns.status,
       isSuccess: isSuccessfulRun,
-      seqId: incompleteRunAnchor.seqId,
+      seqId: sql`${incompleteAnchorCandidate.seqId}`.mapWith(chatEvents.seqId),
     })
-    .from(incompleteRunAnchor)
-    .innerJoin(agentRuns, eq(agentRuns.id, incompleteRunAnchor.runId))
+    .from(candidateSource)
+    .innerJoin(agentRuns, eq(agentRuns.id, incompleteAnchorCandidate.runId))
     .where(
       and(
-        eq(incompleteRunAnchor.chatThreadId, threadId),
-        beforeSeq === undefined
-          ? undefined
-          : lt(incompleteRunAnchor.seqId, beforeSeq),
-        isNotNull(incompleteRunAnchor.runId),
-        ne(incompleteRunAnchor.eventType, "control.interrupt"),
-        or(
-          isSuccessfulRun,
-          inArray(agentRuns.status, sql`('cancelled', 'failed', 'timeout')`),
-        ),
-        notExists(
-          db
-            .select({ id: earlierRunEvent.id })
-            .from(earlierRunEvent)
-            .where(
-              and(
-                eq(earlierRunEvent.chatThreadId, threadId),
-                eq(earlierRunEvent.runId, incompleteRunAnchor.runId),
-                ne(earlierRunEvent.eventType, "control.interrupt"),
-                lt(earlierRunEvent.seqId, incompleteRunAnchor.seqId),
-              ),
-            ),
+        eq(
+          incompleteAnchorCandidate.seqId,
+          sql`incomplete_anchor_candidate.first_seq`,
         ),
         exists(
           db
@@ -126,7 +156,7 @@ function incompleteRoundAnchorQuery(
             .where(
               and(
                 eq(chatEvents.chatThreadId, threadId),
-                eq(chatEvents.runId, incompleteRunAnchor.runId),
+                eq(chatEvents.runId, incompleteAnchorCandidate.runId),
                 runOwnedChatEventCondition(),
                 visibleChatEventCondition(db),
                 or(isSuccessfulRun, chatEventTypeIn(CHAT_EVENT_TYPES)),
@@ -135,7 +165,7 @@ function incompleteRoundAnchorQuery(
         ),
       ),
     )
-    .orderBy(desc(incompleteRunAnchor.seqId))
+    .orderBy(desc(incompleteAnchorCandidate.seqId))
     .limit(1);
 }
 

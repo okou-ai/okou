@@ -3,6 +3,7 @@ import { nowDate } from "../../lib/time";
 import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { command, computed } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
@@ -39,6 +40,9 @@ import {
 } from "./private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
+import { signHostedSiteFiles$ } from "./hosted-site-files.service";
+import { artifactDeliveryRecord } from "./artifact-delivery.service";
+import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
 
 interface ShareCandidate {
   readonly targetId: string;
@@ -556,7 +560,7 @@ export const updateArtifactShare$ = command(
   },
 );
 
-export const resolveArtifactShare$ = command(
+const authorizedArtifactSharePolicy$ = command(
   async (
     { get, set },
     args: {
@@ -564,6 +568,9 @@ export const resolveArtifactShare$ = command(
       readonly userId: string;
       readonly expectedTarget?: ArtifactShareTarget;
       readonly allowPrivateOwner?: boolean;
+      readonly allowPublic?: boolean;
+      readonly publicToken?: string;
+      readonly publicBrand?: "vm0" | "okou";
     },
     signal: AbortSignal,
   ) => {
@@ -585,16 +592,44 @@ export const resolveArtifactShare$ = command(
         !(args.allowPrivateOwner && policy.ownerId === args.userId)) ||
       (args.expectedTarget &&
         (policy.target.kind !== args.expectedTarget.kind ||
-          policy.target.id !== args.expectedTarget.id))
+          policy.target.id !== args.expectedTarget.id)) ||
+      (args.publicToken !== undefined &&
+        (policy.audience !== "public" ||
+          policy.publicToken !== args.publicToken)) ||
+      (args.publicBrand !== undefined &&
+        policy.publicBrand !== args.publicBrand)
     ) {
       return null;
     }
     // No active-org assumption and no membership cache: removal is observed at
     // the next resolve. Already issued delivery credentials expire in two days;
     // content already downloaded into a browser cache can remain available.
-    if (!(await set(currentShareMember$, row.orgId, args.userId, signal))) {
+    if (
+      !(args.allowPublic && policy.audience === "public") &&
+      !(await set(currentShareMember$, row.orgId, args.userId, signal))
+    ) {
       return null;
     }
+    return { row, policy };
+  },
+);
+
+export const resolveArtifactShare$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly id: string;
+      readonly userId: string;
+      readonly expectedTarget?: ArtifactShareTarget;
+      readonly allowPrivateOwner?: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    const authorized = await set(authorizedArtifactSharePolicy$, args, signal);
+    if (!authorized) {
+      return null;
+    }
+    const { row, policy } = authorized;
     if (policy.target.kind === "html") {
       const preview = await set(
         createPrivateHostedPreview$,
@@ -638,6 +673,184 @@ export const resolveArtifactShare$ = command(
       contentType: file.contentType,
       target: { kind: "file" as const, id: policy.target.id },
     };
+  },
+);
+
+/** Download grants use the same live policy and membership as artifact visibility. */
+export const resolveArtifactShareDownload$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly userId: string;
+      readonly selector:
+        | { readonly kind: "share"; readonly id: string }
+        | {
+            readonly kind: "target";
+            readonly target: ArtifactShareTarget;
+            readonly targetId: string;
+          }
+        | { readonly kind: "site"; readonly id: string };
+      readonly allowPrivateOwner?: boolean;
+      readonly publicToken?: string;
+      readonly publicBrand?: "vm0" | "okou";
+      readonly expectedKind?: "html";
+    },
+    signal: AbortSignal,
+  ): Promise<ArtifactDownloadResponse | null> => {
+    const selector = args.selector;
+    const shareId =
+      selector.kind === "share"
+        ? selector.id
+        : (
+            await get(
+              shareIdentity(
+                selector.kind === "site" ? "html" : selector.target.kind,
+                selector.kind === "site" ? selector.id : selector.targetId,
+              ),
+            )
+          )?.id;
+    signal.throwIfAborted();
+    if (!shareId) {
+      return null;
+    }
+    const authorized = await set(
+      authorizedArtifactSharePolicy$,
+      {
+        id: shareId,
+        userId: args.userId,
+        allowPublic: true,
+        allowPrivateOwner: args.allowPrivateOwner,
+        publicToken: args.publicToken,
+        publicBrand: args.publicBrand,
+        expectedTarget:
+          selector.kind === "target" ? selector.target : undefined,
+      },
+      signal,
+    );
+    if (
+      !authorized ||
+      (args.expectedKind && authorized.policy.target.kind !== args.expectedKind)
+    ) {
+      return null;
+    }
+    const { row, policy } = authorized;
+    // Revocation and selected version come from the policy; deletion and
+    // readiness still follow the underlying owned resource.
+    const candidate = await get(
+      ownedShareTarget(policy.target, row.userId, row.orgId),
+    );
+    signal.throwIfAborted();
+    if (!candidate) {
+      return null;
+    }
+    if (policy.target.kind === "file") {
+      const file = await get(privateArtifactRecord(policy.target.id));
+      signal.throwIfAborted();
+      if (!file) {
+        return null;
+      }
+      const preview = await get(
+        generateArtifactPreviewUrl(file.bucket, policy.target.key, {
+          signingDate: nowDate(),
+          filename: policy.target.filename,
+        }),
+      );
+      signal.throwIfAborted();
+      return {
+        kind: "file",
+        url: preview.url,
+        filename: policy.target.filename,
+        contentType: policy.target.contentType,
+      };
+    }
+    const target = policy.target;
+    const site = await set(
+      signHostedSiteFiles$,
+      {
+        metadata: {
+          siteId: target.siteId,
+          deploymentId: target.id,
+          deploymentVersion: target.deploymentVersion,
+          publicSlug: target.manifest.publicSlug,
+          url: candidate.ownerUrl,
+          artifactUrl: candidate.ownerUrl,
+          ...(policy.audience === "public"
+            ? { aliasUrl: publicShareUrl(policy) }
+            : {}),
+        },
+        manifest: target.manifest,
+        prefix: `shared-artifacts/${policy.publicBrand}/${target.snapshotId}/${target.id}`,
+      },
+      signal,
+    );
+    return { kind: "html", site };
+  },
+);
+
+/** A copied public alias must keep following its selected snapshot, even for its owner. */
+export const resolveHostedSitePublicationDownload$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly publicSlug: string;
+      readonly publicBrand: "vm0" | "okou";
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const legacy = /^sh-([a-f0-9]{32})-([a-f0-9]{24})$/u.exec(args.publicSlug);
+    const hash = legacy?.[1];
+    const publicToken = legacy?.[2];
+    const record =
+      hash && publicToken
+        ? {
+            kind: "publication" as const,
+            targetKind: "html" as const,
+            shareId: `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`,
+            publicToken,
+          }
+        : await get(
+            artifactDeliveryRecord(
+              args.publicBrand,
+              "html",
+              args.publicSlug,
+              signal,
+            ),
+          );
+    signal.throwIfAborted();
+    if (!record) {
+      return { kind: "missing" as const };
+    }
+    if (record.kind === "legacy-site") {
+      return { kind: "legacy" as const };
+    }
+    if (record.kind === "thread-resource") {
+      const site = await set(
+        resolveSharedThreadHostedDownload$,
+        { publicSlug: args.publicSlug, record },
+        signal,
+      );
+      return site
+        ? { kind: "shared" as const, site }
+        : { kind: "unavailable" as const };
+    }
+    if (record.kind !== "publication" || record.targetKind !== "html") {
+      return { kind: "unavailable" as const };
+    }
+    const download = await set(
+      resolveArtifactShareDownload$,
+      {
+        selector: { kind: "share", id: record.shareId },
+        userId: args.userId,
+        publicBrand: args.publicBrand,
+        publicToken: record.publicToken,
+        expectedKind: "html",
+      },
+      signal,
+    );
+    return download?.kind === "html"
+      ? { kind: "shared" as const, site: download.site }
+      : { kind: "unavailable" as const };
   },
 );
 

@@ -33,8 +33,6 @@ import { chatThreadModelPinColumns } from "../services/chat-thread-model.service
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
 import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
-import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import type { RouteEntry } from "../route-entry";
 
 const createBody$ = bodyResultOf(chatThreadsContract.create);
@@ -211,19 +209,15 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return codexServiceTierError;
   }
 
-  const [modelSettings, featureSwitchContext] = await Promise.all([
-    loadNewChatThreadModelSettings(writeDb, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-    }),
-    loadUserFeatureSwitchContext(writeDb, auth.orgId, auth.userId),
-  ]);
+  const modelSettings = await loadNewChatThreadModelSettings(writeDb, {
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
   signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
     selectedModel: pin.selectedModel,
     modelSettings,
     requested: body.data.reasoningEffort,
-    enabled: isChatEffortEnabled(featureSwitchContext),
   });
   if ("status" in effort) {
     return effort;

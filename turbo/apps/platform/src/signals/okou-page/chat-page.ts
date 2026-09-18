@@ -7,10 +7,7 @@ import {
   DEFAULT_VIDEO_MODEL,
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
-import {
-  chatEffortEnabled$,
-  codexFastModeEnabled$,
-} from "../external/feature-switch.ts";
+import { codexFastModeEnabled$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
@@ -88,9 +85,7 @@ export const chatPageModelSelection$ = computed(
       }
       const selection: ModelProviderSelection = {
         selectedModel: user.value.selectedModel,
-        modelSettings: get(chatEffortEnabled$)
-          ? (user.value.modelSettings ?? {})
-          : {},
+        modelSettings: user.value.modelSettings ?? {},
       };
       if (user.value.codexServiceTier !== "fast") {
         return selection;

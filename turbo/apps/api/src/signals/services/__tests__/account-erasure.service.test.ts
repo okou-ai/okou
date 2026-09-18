@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it, onTestFinished } from "vitest";
@@ -1132,16 +1132,63 @@ describe("dormant account erasure persistence", () => {
     ]);
   });
 
-  it("rejects a snapshot-isolated writer before it can miss a concurrent closure", async () => {
-    await expect(
-      db.transaction(
+  it.each([
+    { isolationLevel: "repeatable read", mode: "shared" },
+    { isolationLevel: "repeatable read", mode: "exclusive" },
+    { isolationLevel: "serializable", mode: "shared" },
+    { isolationLevel: "serializable", mode: "exclusive" },
+  ] as const)(
+    "rejects $isolationLevel $mode admission without acquiring or waiting for subject locks",
+    async ({ isolationLevel, mode }) => {
+      const held = decision();
+      const entered = deferred<void>();
+      const release = releaseGate();
+      const holding = db.transaction(async (tx) => {
+        await lockErasureSubjects(tx, [held]);
+        entered.resolve();
+        await release.promise;
+      });
+      const tasks: Promise<unknown>[] = [holding];
+      onTestFinished(async () => {
+        release.release();
+        await Promise.allSettled(tasks);
+      });
+      await Promise.race([entered.promise, holding]);
+      const lock =
+        mode === "shared" ? assertErasureSubjectWritable : lockErasureSubjects;
+      const rejected = db.transaction(
         async (tx) => {
-          return await assertErasureSubjectWritable(tx, [decision()]);
+          await tx.execute(sql`SET LOCAL lock_timeout = '1s'`);
+          await expect(lock(tx, [decision()])).rejects.toThrow(
+            "unsupported_isolation",
+          );
+          // Inspect the still-open rejected transaction: rollback would hide an
+          // accidentally acquired uncontended lock. No public B1 ingress can
+          // choose transaction isolation or observe its PostgreSQL lock state.
+          const advisoryLocks = await tx
+            .select({ count: count() })
+            .from(sql`pg_locks`)
+            .where(
+              and(
+                eq(sql`pid`, sql`pg_backend_pid()`),
+                eq(sql`locktype`, "advisory"),
+              ),
+            );
+          expect(advisoryLocks).toStrictEqual([{ count: 0 }]);
+          // The held subject must produce the isolation denial immediately,
+          // never the lock-timeout error from entering the guarded lock call.
+          await expect(lock(tx, [held])).rejects.toThrow(
+            "unsupported_isolation",
+          );
         },
-        { isolationLevel: "repeatable read" },
-      ),
-    ).rejects.toThrow("unsupported_isolation");
-  });
+        { isolationLevel },
+      );
+      tasks.push(rejected);
+      await rejected;
+      release.release();
+      await holding;
+    },
+  );
   it("projects exactly once, rejects conflicting decisions, and separates user from organization", async () => {
     const input = decision();
     const [first, second] = await Promise.all([project(input), project(input)]);
@@ -1343,38 +1390,47 @@ describe("dormant account erasure persistence", () => {
     },
   );
 
-  it("rejects a writer after waiting for a non-first subject's first closure", async () => {
-    const input = decision();
-    const open = decision({ subjectKind: "organization" });
-    const entered = deferred<void>();
-    const release = deferred<void>();
-    const closing = db.transaction(async (tx) => {
-      const job = await projectErasureDecision(tx, input);
-      jobIds.push(job.id);
-      entered.resolve();
-      await release.promise;
-    });
-    await entered.promise;
-    const writing = Promise.allSettled([
-      db.transaction(async (tx) => {
-        // Organization locks sort before user locks. The final closure read
-        // must see the new user decision committed while that second lock waits.
-        return await assertErasureSubjectWritable(tx, [open, input]);
-      }),
-    ]);
-    const completed = Promise.allSettled([closing, writing]);
-    onTestFinished(async () => {
-      await completed;
-    });
-    await waitForAdvisoryWaiter();
-    release.resolve();
-    await closing;
-    const [result] = await writing;
-    expect(result).toMatchObject({
-      status: "rejected",
-      reason: new Error("account_erasure:subject_closed"),
-    });
-  });
+  it.each(["first", "non-first"] as const)(
+    "rejects a writer after waiting for the %s subject's first closure",
+    async (position) => {
+      const input = decision({
+        subjectKind: position === "first" ? "organization" : "user",
+      });
+      const open = decision({
+        subjectKind: position === "first" ? "user" : "organization",
+      });
+      const entered = deferred<void>();
+      const release = releaseGate();
+      const closing = db.transaction(async (tx) => {
+        const job = await projectErasureDecision(tx, input);
+        jobIds.push(job.id);
+        entered.resolve();
+        await release.promise;
+      });
+      const tasks: Promise<unknown>[] = [closing];
+      onTestFinished(async () => {
+        release.release();
+        await Promise.allSettled(tasks);
+      });
+      await Promise.race([entered.promise, closing]);
+      const writing = Promise.allSettled([
+        db.transaction(async (tx) => {
+          // Organization locks sort before user locks. The final closure read
+          // must see the decision committed while either subject lock waits.
+          return await assertErasureSubjectWritable(tx, [open, input]);
+        }),
+      ]);
+      tasks.push(writing);
+      await waitForAdvisoryWaiter();
+      release.release();
+      await closing;
+      const [result] = await writing;
+      expect(result).toMatchObject({
+        status: "rejected",
+        reason: new Error("account_erasure:subject_closed"),
+      });
+    },
+  );
 
   it("retains locators after synthetic source-root deletion and requires a distinct capture barrier", async () => {
     const input = decision();

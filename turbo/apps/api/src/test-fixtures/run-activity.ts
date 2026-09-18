@@ -64,6 +64,13 @@ export async function expireRunActivityRetentionFixture(runId: string) {
     .where(eq(runActivitySnapshots.runId, runId));
 }
 
+/** Maintenance deletion cannot be targeted through a production user API. */
+export async function deleteRunActivitySnapshotFixture(runId: string) {
+  await db()
+    .delete(runActivitySnapshots)
+    .where(eq(runActivitySnapshots.runId, runId));
+}
+
 /** PostgreSQL cancellation is an infrastructure fault, distinct from 55P03. */
 export async function cancelRunActivityWaiterFixture(pid: number) {
   await db().execute(sql`SELECT pg_cancel_backend(${pid})`);
@@ -82,6 +89,7 @@ export async function readRunActivityBookkeepingFixture(runId: string) {
       claimId: runActivitySnapshots.claimId,
       claimRevision: runActivitySnapshots.claimRevision,
       claimExpiresAt: runActivitySnapshots.claimExpiresAt,
+      summary: runActivitySnapshots.summary,
       summaryRevision: runActivitySnapshots.summaryRevision,
     })
     .from(runActivitySnapshots)
@@ -89,12 +97,7 @@ export async function readRunActivityBookkeepingFixture(runId: string) {
   return row;
 }
 
-type ActivityCommitStage =
-  | "capture"
-  | "claim"
-  | "completion"
-  | "response"
-  | "output";
+type ActivityCommitStage = "capture" | "claim" | "completion" | "output";
 
 function activityCommitQuery(queryArgs: unknown[], runId: string) {
   const parsed = z
@@ -123,9 +126,8 @@ function activityCommitQuery(queryArgs: unknown[], runId: string) {
 function matchesActivityCommit(
   stage: ActivityCommitStage,
   query: ReturnType<typeof activityCommitQuery>,
-  completionSeen: boolean,
 ) {
-  const { text, owned, snapshot, update, completion } = query;
+  const { text, owned, update, completion } = query;
   switch (stage) {
     case "output": {
       return (
@@ -140,9 +142,6 @@ function matchesActivityCommit(
     }
     case "completion": {
       return completion;
-    }
-    case "response": {
-      return snapshot && text.startsWith("insert") && completionSeen;
     }
   }
 }
@@ -171,7 +170,6 @@ export async function withActivityCommitBarrierFixture<T>(
   args: {
     readonly runId: string;
     readonly stage: ActivityCommitStage;
-    readonly position: "before" | "after";
     readonly work: (barrier: {
       readonly entered: Promise<{
         pid: number;
@@ -198,15 +196,11 @@ export async function withActivityCommitBarrierFixture<T>(
   };
   const original = Client.prototype.query;
   let selected: unknown;
-  let completionSeen = false;
   let paused = false;
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const query = activityCommitQuery(queryArgs, args.runId);
-      const matches = matchesActivityCommit(args.stage, query, completionSeen);
-      if (query.completion) {
-        completionSeen = true;
-      }
+      const matches = matchesActivityCommit(args.stage, query);
       if (matches && !paused) {
         selected = receiver;
       }
@@ -231,20 +225,6 @@ export async function withActivityCommitBarrierFixture<T>(
               .length(1),
           })
           .parse(settings).rows[0]!;
-        if (args.position === "after") {
-          const result: unknown = await Reflect.apply(
-            target,
-            receiver,
-            queryArgs,
-          );
-          entered.resolve({
-            pid: row.pid,
-            lockTimeout: row.lock_timeout,
-            statementTimeout: row.statement_timeout,
-          });
-          await released.promise;
-          return result;
-        }
         entered.resolve({
           pid: row.pid,
           lockTimeout: row.lock_timeout,

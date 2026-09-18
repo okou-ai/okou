@@ -132,8 +132,10 @@ export function eligibleActivityRun(
     );
 }
 
-export async function lockActivitySnapshot(tx: ActivityTx, runId: string) {
-  await tx.insert(runActivitySnapshots).values({ runId }).onConflictDoNothing();
+export async function lockExistingActivitySnapshot(
+  tx: ActivityTx,
+  runId: string,
+) {
   const [row] = await tx
     .select({
       ...getTableColumns(runActivitySnapshots),
@@ -142,6 +144,12 @@ export async function lockActivitySnapshot(tx: ActivityTx, runId: string) {
     .from(runActivitySnapshots)
     .where(eq(runActivitySnapshots.runId, runId))
     .for("update");
+  return row;
+}
+
+export async function lockActivitySnapshot(tx: ActivityTx, runId: string) {
+  await tx.insert(runActivitySnapshots).values({ runId }).onConflictDoNothing();
+  const row = await lockExistingActivitySnapshot(tx, runId);
   if (!row) {
     throw new Error("Activity snapshot missing after insert");
   }

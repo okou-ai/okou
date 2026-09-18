@@ -5878,6 +5878,51 @@
         "resetTimePassedTitle": "Temps écoulé depuis la réinitialisation"
       }
     },
+    "paidTools": {
+      "description": "Choisissez les outils payants intégrés que vous pouvez utiliser.",
+      "loadError": "Impossible de charger vos paramètres.",
+      "loading": "Chargement de vos paramètres…",
+      "retry": "Réessayer",
+      "saveError": "Votre modification n’a pas été enregistrée.",
+      "saving": "Enregistrement…",
+      "scope": "Ces paramètres ne concernent que vous dans {{workspace}}.",
+      "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
+      "title": "Outils payants",
+      "tools": {
+        "finance": {
+          "description": "Consultez les entreprises, les cours et les données de marché.",
+          "name": "Données financières"
+        },
+        "image-recognition": {
+          "description": "Lisez et analysez des images.",
+          "name": "Reconnaissance d’images"
+        },
+        "maps": {
+          "description": "Trouvez des lieux, des adresses et des itinéraires.",
+          "name": "Cartes et lieux"
+        },
+        "people-search": {
+          "description": "Trouvez des profils professionnels publics.",
+          "name": "Recherche de personnes"
+        },
+        "scrape": {
+          "description": "Lisez et extrayez le contenu de pages web.",
+          "name": "Extraction de pages"
+        },
+        "seo": {
+          "description": "Analysez les classements, les mots-clés et les liens entrants.",
+          "name": "Recherche SEO"
+        },
+        "social": {
+          "description": "Analysez des publications publiques et collectez des médias.",
+          "name": "Recherche sur les réseaux sociaux"
+        },
+        "web-search": {
+          "description": "Trouvez des informations actuelles sur le web.",
+          "name": "Recherche web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Gérer",
