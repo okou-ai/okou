@@ -90,10 +90,33 @@ compensation cannot restore an older epoch's state over a newer writer.
 | Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**      |
 | Enrollment adoption / materialization     | Bootstrap insert only; an existing row is authority           |
 | Generic automation enable/disable/update  | Logical choice, same rules as Settings                        |
-| Official reconciliation pause / restore   | Retained legacy readiness only; native choice is unchanged    |
+| Official reconciliation pause / restore   | Configuration/readiness only; durable choice is preserved     |
 | Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded    |
 | Native cron claim                         | Takes the obligation; owes exactly one settlement             |
 | Native settlement                         | Installs the next obligation from the **current** recurrence  |
+
+### Selected legacy writers are schedule-first
+
+Once a Morning Brief is materialized into the native schedule row, that row is
+the authority even while `phase = legacy`. Every legacy reconciliation, S7a
+claim, pre-run failure and callback transaction locks the native row before the
+legacy automation. Claims must consume the exact durable legacy-owned anchor.
+Settlements mirror the exact successor and the three-failure pause into both
+rows atomically.
+
+Reconciliation carries a composite fence across transaction boundaries:
+phase, target, epoch, enabled choice, cron, timezone, obligation owner and
+instant, legacy lineage, and row version. A changed field makes finalize or
+compensation stale. Reconciliation may converge retained configuration, but it
+can publish legacy recurrence only in `legacy`; `draining`, `native`, and
+`rollback-draining` force legacy admission closed. A late journalled callback
+may settle only its exact drain fact, while an unjournalled callback after
+cutover is a no-op.
+
+Removing and recreating the Blueprint retains the durable legacy automation ID
+and samples the current durable choice at finalization. A Settings write that
+lands after reservation therefore wins; recreation and rollback cannot replay
+the older retained choice.
 
 ### Timezone and cron edits do not revoke in-flight work
 

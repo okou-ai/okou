@@ -1,8 +1,10 @@
 import { command } from "ccstate";
+import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
@@ -12,6 +14,12 @@ import type {
   InternalRunCallbackKind,
 } from "./internal-run-callback";
 import { settleMorningBriefScheduleForRun } from "./morning-brief-schedule-claim.service";
+import {
+  lockMorningBriefLegacyWriterAuthority,
+  settleSelectedLegacyMorningBriefObligation,
+  type MorningBriefLegacyLineage,
+  type MorningBriefLegacyWriterAuthority,
+} from "./morning-brief-native-schedule.service";
 import {
   automationCronCallbackPayloadSchema,
   type AutomationCronCallbackPayload,
@@ -49,6 +57,137 @@ function parseWorkflowAutomationPayload(
       return result.success ? { kind: "loop", data: result.data } : null;
     }
   }
+}
+
+async function resolveMorningBriefCallbackLineage(
+  db: Db,
+  automationId: string,
+): Promise<MorningBriefLegacyLineage | undefined> {
+  const [candidate] = await db
+    .select({
+      orgId: workflowAutomations.orgId,
+      userId: workflowAutomations.ownerUserId,
+      workflowId: workflowAutomations.workflowId,
+      blueprintKey: workflowAutomations.officialBlueprintKey,
+    })
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, automationId))
+    .limit(1);
+  return candidate?.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
+    candidate.userId !== null
+    ? {
+        orgId: candidate.orgId,
+        userId: candidate.userId,
+        workflowId: candidate.workflowId,
+        automationId,
+      }
+    : undefined;
+}
+
+async function callbackFailedForCredits(
+  tx: Tx,
+  callback: InternalRunCallbackEnvelope,
+  orgId: string,
+): Promise<boolean> {
+  if (callback.status !== "failed") {
+    return false;
+  }
+  const [run] = await tx
+    .select({ failureReason: agentRuns.failureReason })
+    .from(agentRuns)
+    .where(and(eq(agentRuns.id, callback.runId), eq(agentRuns.orgId, orgId)))
+    .limit(1);
+  return run?.failureReason === "insufficient_credits";
+}
+
+async function settleUnjournaledWorkflowAutomationCallback(
+  tx: Tx,
+  args: {
+    readonly automationId: string;
+    readonly callback: InternalRunCallbackEnvelope;
+    readonly lineage: MorningBriefLegacyLineage | undefined;
+  },
+  signal?: AbortSignal,
+): Promise<InternalRunCallbackDispatchResult> {
+  const authority: MorningBriefLegacyWriterAuthority =
+    args.lineage === undefined
+      ? { kind: "ordinary", fence: { kind: "ordinary" } }
+      : await lockMorningBriefLegacyWriterAuthority(tx, args.lineage);
+  if (authority.kind === "stale") {
+    return { success: true, skipped: true };
+  }
+  const [automation] = await tx
+    .select(workflowAutomationColumns())
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, args.automationId))
+    .limit(1)
+    .for("update");
+  signal?.throwIfAborted();
+  if (
+    !automation ||
+    !automation.enabled ||
+    (automation.scheduleType !== "cron" && automation.scheduleType !== "loop")
+  ) {
+    return { success: true, skipped: true };
+  }
+  if (authority.kind === "selected" && authority.row.phase !== "legacy") {
+    return { success: true, skipped: true };
+  }
+
+  const completedAt = nowDate();
+  const isCreditError = await callbackFailedForCredits(
+    tx,
+    args.callback,
+    automation.orgId,
+  );
+  signal?.throwIfAborted();
+  const consecutiveFailures =
+    args.callback.status === "completed"
+      ? 0
+      : automation.consecutiveFailures + (isCreditError ? 0 : 1);
+  const shouldDisable =
+    !isCreditError && consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
+  const nextRunAt = advanceTimeAutomationAfterCompletion({
+    scheduleType: automation.scheduleType,
+    cronExpression: automation.cronExpression,
+    intervalSeconds: automation.intervalSeconds,
+    timezone: automation.timezone,
+    completedAt,
+    shouldDisable,
+  });
+  await tx
+    .update(workflowAutomations)
+    .set({
+      consecutiveFailures,
+      ...(shouldDisable && { enabled: false }),
+      ...(shouldDisable && authority.kind === "selected"
+        ? { officialIntendedEnabled: false }
+        : {}),
+      nextRunAt,
+      updatedAt: completedAt,
+    })
+    .where(
+      and(
+        eq(workflowAutomations.id, args.automationId),
+        eq(workflowAutomations.enabled, true),
+      ),
+    );
+  if (args.lineage !== undefined) {
+    await settleSelectedLegacyMorningBriefObligation(
+      tx,
+      args.lineage,
+      authority,
+      {
+        enabled: !shouldDisable,
+        cronExpression: automation.cronExpression,
+        timezone: automation.timezone,
+        nextRunAt,
+        at: completedAt,
+      },
+    );
+  }
+  signal?.throwIfAborted();
+  return { success: true };
 }
 
 /**
@@ -92,78 +231,23 @@ export async function handleWorkflowAutomationInternalCallback(
     return { success: true };
   }
 
-  // Historical, manual and every unjournaled legacy execution keeps the exact
-  // behavior below. It is deliberately unchanged and carries no journaled
-  // protection; S7b removes it once no unjournaled execution can still call
-  // back. It never infers an anchor for a run it does not recognize.
+  // Historical, manual and every unjournaled unrelated execution keeps the
+  // exact behavior below. A selected Morning Brief additionally takes durable
+  // authority before the legacy row and becomes a no-op after cutover.
+  const lineage = await resolveMorningBriefCallbackLineage(
+    db,
+    payload.data.automationId,
+  );
   return await db.transaction(async (tx) => {
-    // Serialize completion with schedule edits so the entire current schedule
-    // remains authoritative until its next run has been written.
-    const [automation] = await tx
-      .select(workflowAutomationColumns())
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, payload.data.automationId))
-      .limit(1)
-      .for("update");
-    signal?.throwIfAborted();
-
-    if (
-      !automation ||
-      !automation.enabled ||
-      (automation.scheduleType !== "cron" && automation.scheduleType !== "loop")
-    ) {
-      // A newly configured one-time schedule keeps its own next run.
-      return { success: true, skipped: true };
-    }
-
-    const completedAt = nowDate();
-    const [failedRun] =
-      input.callback.status === "failed"
-        ? await tx
-            .select({ failureReason: agentRuns.failureReason })
-            .from(agentRuns)
-            .where(
-              and(
-                eq(agentRuns.id, input.callback.runId),
-                eq(agentRuns.orgId, automation.orgId),
-              ),
-            )
-            .limit(1)
-        : [];
-    signal?.throwIfAborted();
-    const isCreditError = failedRun?.failureReason === "insufficient_credits";
-    const consecutiveFailures =
-      input.callback.status === "completed"
-        ? 0
-        : automation.consecutiveFailures + (isCreditError ? 0 : 1);
-    const shouldDisable =
-      !isCreditError && consecutiveFailures >= MAX_CONSECUTIVE_FAILURES;
-    const nextRunAt = advanceTimeAutomationAfterCompletion({
-      scheduleType: automation.scheduleType,
-      cronExpression: automation.cronExpression,
-      intervalSeconds: automation.intervalSeconds,
-      timezone: automation.timezone,
-      completedAt,
-      shouldDisable,
-    });
-
-    await tx
-      .update(workflowAutomations)
-      .set({
-        consecutiveFailures,
-        ...(shouldDisable && { enabled: false }),
-        nextRunAt,
-        updatedAt: completedAt,
-      })
-      .where(
-        and(
-          eq(workflowAutomations.id, payload.data.automationId),
-          eq(workflowAutomations.enabled, true),
-        ),
-      );
-    signal?.throwIfAborted();
-
-    return { success: true };
+    return await settleUnjournaledWorkflowAutomationCallback(
+      tx,
+      {
+        automationId: payload.data.automationId,
+        callback: input.callback,
+        lineage,
+      },
+      signal,
+    );
   });
 }
 
