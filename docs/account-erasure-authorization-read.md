@@ -52,43 +52,45 @@ statements, including transaction control. `s` is the number of deduplicated B1
 subjects (`1 <= s <= 3`); the three-subject case is a distinct thread user,
 distinct Agent owner and organization.
 
-| Stage                 | Statement, predicate and lock                                                                                        | Existing index or bound                                                                                                                                                              |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| locator               | request-token hash plus exact authenticated `org_id` and `user_id`; no lock; at most one row                         | unique `uq_browser_authorization_requests_token_hash` or `idx_computer_use_auth_requests_token_hash`; additional actor predicates cannot widen the unique hit                        |
-| begin                 | `BEGIN ISOLATION LEVEL READ COMMITTED`                                                                               | unchanged isolation                                                                                                                                                                  |
-| controls              | transaction-local `lock_timeout = '1s'`, then `statement_timeout = '5s'`                                             | two statements; no longer budget                                                                                                                                                     |
-| canonical identity    | thread PK lookup with Agent join; at most one thread/Agent pair                                                      | `chat_threads` and `agents` primary keys                                                                                                                                             |
-| first B1 subject      | one folded statement: a guarded shared advisory lock scalar subquery plus `current_setting('transaction_isolation')` | the lock runs only for READ COMMITTED and the returned isolation must be `read committed`                                                                                            |
-| remaining B1 subjects | one shared advisory-lock statement per sorted remaining subject                                                      | at most two additional statements                                                                                                                                                    |
-| closure lookup        | OR over every exact `(subject_kind, subject_id)`                                                                     | `account_erasure_subject_generation` begins with those columns; `LIMIT 1`                                                                                                            |
-| Agent identity        | Agent PK `FOR KEY SHARE`; at most one                                                                                | Agent primary key                                                                                                                                                                    |
-| thread identity       | thread PK `FOR UPDATE`; at most one                                                                                  | thread primary key; this is the repaired first thread lock                                                                                                                           |
-| identity recheck      | same thread PK + Agent join and field-for-field comparison                                                           | primary keys; movement raises the bounded ownership-change retry                                                                                                                     |
-| local projection      | same thread PK `FOR UPDATE`, exact retained user/Agent comparison, browser flag or selected host ID                  | at most one; same-transaction lock retention, not an upgrade                                                                                                                         |
-| request pin           | request PK plus original hash/org/user/run/thread and Computer Use `source = 'chat'`; `FOR SHARE`; at most one       | primary key after the unique-hash locator                                                                                                                                            |
-| clock                 | `nowDate()` after every potentially waiting request lock                                                             | no SQL statement; one clock for TTL and Computer Use heartbeat eligibility                                                                                                           |
-| host projection       | exact org/user, `revoked_at IS NULL`, `ORDER BY last_seen_at DESC`; no lock, limit or pagination                     | `idx_computer_use_hosts_org_user`; physical index scan is bounded only by all exact actor/org rows, logical serialization by all nonrevoked matches, response by their online subset |
-| finish                | final signal check and `COMMIT`, or `ROLLBACK` on error/retry                                                        | B1, Agent, thread and request locks remain transaction-bound                                                                                                                         |
+| Stage                 | Statement, predicate and lock                                                                                        | Existing index or bound                                                                                                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| locator               | request-token hash plus exact authenticated `org_id` and `user_id`; no lock; at most one row                         | unique `uq_browser_authorization_requests_token_hash` or `idx_computer_use_auth_requests_token_hash`; additional actor predicates cannot widen the unique hit                                     |
+| begin                 | `BEGIN ISOLATION LEVEL READ COMMITTED`                                                                               | unchanged isolation                                                                                                                                                                               |
+| controls              | transaction-local `lock_timeout = '1s'`, then `statement_timeout = '5s'`                                             | two statements; no longer budget                                                                                                                                                                  |
+| canonical identity    | thread PK lookup with Agent join; at most one thread/Agent pair                                                      | `chat_threads` and `agents` primary keys                                                                                                                                                          |
+| first B1 subject      | one folded statement: a guarded shared advisory lock scalar subquery plus `current_setting('transaction_isolation')` | the lock runs only for READ COMMITTED and the returned isolation must be `read committed`                                                                                                         |
+| remaining B1 subjects | one shared advisory-lock statement per sorted remaining subject                                                      | at most two additional statements                                                                                                                                                                 |
+| closure lookup        | OR over every exact `(subject_kind, subject_id)`                                                                     | `account_erasure_subject_generation` begins with those columns; `LIMIT 1`                                                                                                                         |
+| Agent identity        | Agent PK `FOR KEY SHARE`; at most one                                                                                | Agent primary key                                                                                                                                                                                 |
+| thread identity       | thread PK `FOR UPDATE`; at most one                                                                                  | thread primary key; this is the repaired first thread lock                                                                                                                                        |
+| identity recheck      | same thread PK + Agent join and field-for-field comparison                                                           | primary keys; movement raises the bounded ownership-change retry                                                                                                                                  |
+| local projection      | same thread PK `FOR UPDATE`, exact retained user/Agent comparison, browser flag or selected host ID                  | at most one; same-transaction lock retention, not an upgrade                                                                                                                                      |
+| request pin           | request PK plus original hash/org/user/run/thread and Computer Use `source = 'chat'`; `FOR SHARE`; at most one       | primary key after the unique-hash locator                                                                                                                                                         |
+| clock                 | `nowDate()` after every potentially waiting request lock                                                             | no SQL statement; one clock for TTL and Computer Use heartbeat eligibility                                                                                                                        |
+| host projection       | exact org/user, `revoked_at IS NULL`, `ORDER BY last_seen_at DESC`; no lock, limit or pagination                     | `idx_computer_use_hosts_org_user`; its actor/org prefix has seven fixture candidates, the SQL returns six nonrevoked rows and the route returns their five online members; no physical-plan claim |
+| finish                | final signal check and `COMMIT`, or `ROLLBACK` on error/retry                                                        | B1, Agent, thread and request locks remain transaction-bound                                                                                                                                      |
 
 ### Statement counts
 
 The counts below use the maximum three-subject identity and include the locator,
 `BEGIN`, `COMMIT`/`ROLLBACK`, both controls and every stage above.
 
-| Outcome                                           | Browser | Canonical Computer Use | Explanation                                                                                   |
-| ------------------------------------------------- | ------: | ---------------------: | --------------------------------------------------------------------------------------------- |
-| wrong actor/org, missing token or locator-expired |       1 |                      1 | exits after the locator; exact actor/org sees expiry before canonical scope                   |
-| missing/unauthorized canonical identity           |       6 |                      6 | locator + begin + two controls + identity + commit                                            |
-| closed canonical identity                         |      10 |                     10 | adds three B1 lock statements and one closure lookup, then commits without business-row locks |
-| accepted, first attempt                           |      15 |                     16 | Computer Use adds the final host projection                                                   |
-| exact request missing/moved or post-pin expired   |      15 |                     15 | request pin is reached; Computer Use does not query hosts after rejection                     |
-| one latest-stage ownership retry, then accepted   |      28 |                     29 | one 13-statement rolled-back attempt plus the accepted attempt; locator is not repeated       |
-| two latest-stage retries, third attempt accepted  |      41 |                     42 | maximum successful bounded retry path                                                         |
-| three latest-stage failures                       |      40 |                     40 | maximum exhausted path; all three attempts roll back                                          |
+| Outcome                                           | Browser | Canonical Computer Use | Explanation                                                                                     |
+| ------------------------------------------------- | ------: | ---------------------: | ----------------------------------------------------------------------------------------------- |
+| wrong actor/org, missing token or locator-expired |       1 |                      1 | exits after the locator; exact actor/org sees expiry before canonical scope                     |
+| missing/unauthorized canonical identity           |       6 |                      6 | locator + begin + two controls + identity + commit                                              |
+| closed canonical identity                         |      10 |                     10 | adds three B1 lock statements and one closure lookup, then commits without business-row locks   |
+| accepted, first attempt                           |      15 |                     16 | Computer Use adds the final host projection                                                     |
+| exact request missing/moved or post-pin expired   |      15 |                     15 | request pin is reached; Computer Use does not query hosts after rejection                       |
+| one latest-stage ownership retry, then accepted   |      27 |                     28 | one 12-statement rolled-back transaction plus the accepted transaction; locator is not repeated |
+| two latest-stage retries, third attempt accepted  |      39 |                     40 | maximum successful bounded retry path                                                           |
+| three latest-stage failures                       |      37 |                     37 | maximum exhausted path; all three 12-statement transactions roll back                           |
 
 For fewer subjects, subtract one statement per absent B1 subject from each
-transaction attempt. A movement detected before the caller-local recheck also
-uses fewer statements. The helper still allows at most three whole attempts and
+transaction attempt. The latest reachable ownership movement is the helper's
+identity recheck: after the first thread `FOR UPDATE` succeeds, the retained row
+cannot move before the caller-local projection. Earlier movement detection uses
+fewer statements. The helper still allows at most three whole attempts and
 reuses the original fixed request locator; it does not catch/retry SQL timeout
 or deadlock errors.
 
@@ -101,14 +103,15 @@ The complete-host route fixture creates nine host rows:
 - one same-organization foreign-user host;
 - one foreign-organization host.
 
-The transaction's index scope scans the seven exact actor/organization entries,
-selects and serializes all six nonrevoked rows, then returns all five online
-rows in standalone-list order. The fixed fixture's serialized successful JSON
-body is **2,605 UTF-8 bytes**. It includes every existing host field: ID, names,
-App/OS versions, capabilities, nested permissions, status, `lastSeenAt` and
-`createdAt`. A separate zero-host control returns an empty list. Host cardinality
-remains deliberately unbounded; no truncation, pagination or active-run
-requirement is introduced.
+The fixture's logical actor/organization index-key scope contains seven
+candidates. The SQL predicate returns and serializes all six nonrevoked rows,
+and the route returns all five online rows in standalone-list order; no
+`EXPLAIN`-based physical-plan claim is made. The fixed fixture's serialized
+successful JSON body is **2,605 UTF-8 bytes**. It includes every existing host
+field: ID, names, App/OS versions, capabilities, nested permissions, status,
+`lastSeenAt` and `createdAt`. A separate zero-host control returns an empty list.
+Host cardinality remains deliberately unbounded; no truncation, pagination or
+active-run requirement is introduced.
 
 Both empty and populated GETs are read-only: no thread/request/host mutation,
 sidebar sequence or realtime publication occurs. Suite wall time is reported
