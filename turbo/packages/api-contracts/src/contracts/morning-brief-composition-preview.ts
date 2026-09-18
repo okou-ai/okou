@@ -101,7 +101,10 @@ const compositionSourcesSchema = z.array(
     items: z.number().int().nonnegative(),
     /** Of those, the ones the assembled request could actually carry. */
     includedInRequest: z.number().int().nonnegative(),
-    /** Null when a started source rejected before returning its accounting. */
+    /**
+     * Exact provider reads the collector issued. Zero means no read was issued;
+     * null means the source job rejected before returning its accounting.
+     */
     requests: z.number().int().nonnegative().nullable(),
     /** Why each item is in the window, counted by claim. */
     timeSemantics: z.object({
