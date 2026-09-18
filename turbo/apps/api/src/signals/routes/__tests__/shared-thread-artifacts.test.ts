@@ -10,6 +10,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 import { http, HttpResponse } from "msw";
+import { z } from "zod";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { completeHostedSiteWithoutDependencyIndex } from "../../../test-fixtures/hosted-site-dependencies-previous-api";
@@ -56,6 +57,8 @@ beforeEach(() => {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
+  mockEnv("R2_HOSTED_SITES_ACCESS_KEY_ID", "snapshot-hosted-key");
+  mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", "snapshot-private-key");
 });
 
 function api(rethrowErrors = false) {
@@ -121,7 +124,7 @@ async function fixture() {
   const copies: { source: string; destination: string }[] = [];
 
   context.mocks.s3.getSignedUrl.mockImplementation(
-    (_client: unknown, command: unknown) => {
+    (client: unknown, command: unknown) => {
       if (
         !(
           command instanceof PutObjectCommand ||
@@ -132,6 +135,17 @@ async function fixture() {
       }
       const url = new URL(
         `https://test.r2.cloudflarestorage.com/${command.input.Bucket}/${command.input.Key}?X-Amz-Signature=fixture`,
+      );
+      const configured = z
+        .object({
+          config: z.object({
+            credentials: z.object({ accessKeyId: z.string() }),
+          }),
+        })
+        .parse(client);
+      url.searchParams.set(
+        "X-Amz-Credential",
+        configured.config.credentials.accessKeyId,
       );
       if (
         command instanceof GetObjectCommand &&
@@ -253,10 +267,20 @@ async function fixture() {
   });
   server.use(
     http.get("https://test.r2.cloudflarestorage.com/*", ({ request }) => {
-      const key = decodeURIComponent(new URL(request.url).pathname.slice(1));
+      const url = new URL(request.url);
+      const key = decodeURIComponent(url.pathname.slice(1));
+      const credential = key.startsWith("test-hosted-sites/")
+        ? "snapshot-hosted-key"
+        : "snapshot-private-key";
+      if (url.searchParams.get("X-Amz-Credential") !== credential) {
+        return new HttpResponse("AccessDenied", { status: 403 });
+      }
       const body = objects.get(key);
+      const disposition = url.searchParams.get("response-content-disposition");
       return body
-        ? new HttpResponse(new Uint8Array(body))
+        ? new HttpResponse(new Uint8Array(body), {
+            headers: disposition ? { "Content-Disposition": disposition } : {},
+          })
         : new HttpResponse(null, { status: 404 });
     }),
   );
@@ -725,11 +749,19 @@ test.each(["video", "site"] as const)(
     const previewImageUrl = resolved.body.previewImageUrl;
     expect(resolved.body.downloadUrl).toBeDefined();
     const download = new URL(resolved.body.downloadUrl!);
+    expect(download.searchParams.get("X-Amz-Credential")).toBe(
+      kind === "site" ? "snapshot-hosted-key" : "snapshot-private-key",
+    );
     expect(download.searchParams.get("response-content-disposition")).toBe(
       `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
     );
     expect(download.pathname).toContain(created.body.id);
-    await expect((await fetch(download)).text()).resolves.toBe(
+    const downloaded = await fetch(download);
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get("content-disposition")).toBe(
+      `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
+    );
+    await expect(downloaded.text()).resolves.toBe(
       kind === "video" ? "Private video bytes" : "<main>Private site</main>",
     );
     expect(previewImageUrl).toMatch(

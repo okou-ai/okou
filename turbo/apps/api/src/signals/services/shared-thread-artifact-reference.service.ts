@@ -8,6 +8,7 @@ import { nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import {
   generateArtifactPreviewUrl,
+  generateHostedSitesPresignedGetUrl,
   readArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
@@ -141,17 +142,18 @@ export const resolveSharedThreadArtifactReference$ = command(
       signal,
     );
     const filename = file.path.slice(file.path.lastIndexOf("/") + 1);
-    const download = await get(
-      generateArtifactPreviewUrl(
+    const downloadUrl = await get(
+      generateHostedSitesPresignedGetUrl(
         sharedThreadArtifactsBucket(),
         `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
+        true,
         { signingDate: nowDate(), filename },
       ),
     );
     signal.throwIfAborted();
     return {
       ...preview,
-      downloadUrl: download.url,
+      downloadUrl,
       ...(reference.previewPath
         ? { url: new URL(reference.previewPath, preview.url).href }
         : {}),
