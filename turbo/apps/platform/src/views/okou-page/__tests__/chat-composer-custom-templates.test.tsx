@@ -212,6 +212,37 @@ test("The Custom category stays hidden while the switch is off", async () => {
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
+test("The picker opens on Custom once the switch is on", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+
+  // Custom leads the nav for this member, so the picker lands there without a
+  // click rather than on the first format below it.
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "true");
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("The picker keeps opening on Presentation while the switch is off", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  await openCustomPanel(false);
+
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+});
+
+test("A named category still wins over the one the nav leads with", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { user } = await openCustomPanel();
+  await user.click(tabByText("Presentation"));
+
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "false");
+});
+
 test("The switch decides whether the catalog is requested at all", async () => {
   let listed = 0;
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
