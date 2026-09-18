@@ -1151,7 +1151,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       ).toBe(enabled);
       expect(
         prompt.includes(
-          "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
+          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
         ),
       ).toBe(enabled);
       await api.requestCancelRun(actor, created.runId, [200]);

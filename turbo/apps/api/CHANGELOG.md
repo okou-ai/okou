@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.629.0](https://github.com/vm0-ai/okou/compare/api-v1.628.0...api-v1.629.0) (2026-09-18)
+
+
+### Features
+
+* **runner:** record archive size mismatch diagnostics ([#35149](https://github.com/vm0-ai/okou/issues/35149)) ([b6ce895](https://github.com/vm0-ai/okou/commit/b6ce8952ca15bb670cc4e592676c8d2a21b88332))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.466.0
+    * @okouai/core bumped to 8.680.2
+    * @okouai/db bumped to 1.271.2
+    * @okouai/pi-agent-runtime bumped to 1.33.12
+
 ## [1.628.0](https://github.com/vm0-ai/okou/compare/api-v1.627.0...api-v1.628.0) (2026-09-18)
 
 

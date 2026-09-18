@@ -1997,8 +1997,10 @@ The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v
 launch discriminator without a Runner profile and three sparse ownership/intent/lease
 tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
 expand migration replaces the launch CHECK as NOT VALID; a separate bounded
-validation transaction scans retained runs before API promotion. New runtime
-writers are absent and `piDeferredSandbox` is org-scoped and off, including staff.
+validation transaction scans retained runs before API promotion. The
+`piDeferredSandbox` default remains off, but that default does not establish the
+state of every organization or staff override; historical v4 attempts and their
+retained obligations must remain readable.
 
 After future v4 activation, disabling starts must retain phase/epoch-aware readers,
 consumer/recovery, cancellation, capacity counting, credential retention and erasure.
@@ -2034,17 +2036,21 @@ Its optional Runner header is ignored by older APIs; older Runners remain
 excluded from v4 jobs. The release endpoint and Runner use one strict explicit
 outcome contract: a missing, malformed or unknown outcome retains the receipt
 instead of fabricating a stale acknowledgement. No mixed-response bridge is
-required while the feature is non-GA: no production publisher is enabled and
-`piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
-Runner. The outer Pi launch-config v2 contains a new versioned continuation slot.
-The co-built Guest uses its private Sandbox control token to assemble the handoff
-in a 0600 run-scoped file and passes only an additive path variable to the CLI.
-An older CLI fails its legacy ordinary-token read; a newer CLI under an older
-Guest fails because the authenticated file is absent. Both combinations stop
-before the RPC boundary. Enablement therefore requires the capable API,
-Runner/Guest and newly captured commit-addressed CLI.
-Drain existing v4 intents, leases and release receipts before rolling any of
-those readers back below that floor. No switch is enabled by the consumer
+provided for this non-GA path. New admission remains default-off and the
+user-reported shutdown is the current operational boundary, but historical
+production attempts under #34795 mean retained v4 obligations may still exist.
+The outer Pi launch-config v2 contains a new versioned continuation slot. The
+co-built Guest uses its private Sandbox control token to assemble the handoff in
+a 0600 run-scoped file and passes only an additive path variable to the CLI. The
+entire pre-spawn request and response-body wait stays under the existing user
+cancellation token, original absolute execution deadline and heartbeat terminal
+semantics; a winning control removes unpublished/published startup files and
+starts no child. An older CLI fails its legacy ordinary-token read; a newer CLI
+under an older Guest fails because the authenticated file is absent. Both
+combinations stop before the RPC boundary. Enablement therefore requires the
+capable API, Runner/Guest and newly captured commit-addressed CLI.
+Drain existing v4 intents, leases, claims and release receipts before rolling any
+of those readers back below that floor. No switch is enabled by the consumer
 implementation.
 
 ## Email outbox provider replay and send-time expiry (#34645, #34695)
