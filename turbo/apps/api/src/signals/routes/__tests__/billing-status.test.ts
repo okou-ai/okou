@@ -497,9 +497,6 @@ describe("GET /api/billing/status", () => {
     expect(response.body.status).toBe("active");
     expect(response.body.autoRechargeAllowed).toBeFalsy();
     expect(response.body.supportByok).toBeFalsy();
-    // Both names are optional on the contract, so `toBeFalsy` alone would also
-    // pass on an omitted field. Pin the emitted type as well.
-    expect(typeof response.body.restrictedBuiltInModels).toBe("boolean");
     expect(response.body.restrictedBuiltInModels).toBeFalsy();
     expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();

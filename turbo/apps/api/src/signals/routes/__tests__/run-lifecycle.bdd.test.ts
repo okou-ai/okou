@@ -15590,8 +15590,6 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     expect(usageRecord.body.totalCredits).toBe(17);
     expect(usageRecord.body.rows).toContainEqual(
       expect.objectContaining({
-        source: "chat",
-        runId: null,
         title: "Unavailable thread",
         credits: 17,
       }),

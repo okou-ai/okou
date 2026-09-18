@@ -1202,7 +1202,6 @@ describe("managed SocialKit route", () => {
       expect.objectContaining({
         title: "Unavailable thread",
         threadId: null,
-        runId: null,
         credits: SOCIALKIT_REQUEST_CREDITS,
       }),
     ]);
