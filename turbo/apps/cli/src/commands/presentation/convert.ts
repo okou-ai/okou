@@ -50,6 +50,9 @@ const DEFAULT_SLIDE_HEIGHT_IN = 7.5;
 const TRANSFER_CHUNK = 200_000;
 /** Below this share of source text present in the deck, the export is broken. */
 const TEXT_COVERAGE_FLOOR = 0.98;
+/** A hosted deck may sit behind a redirect or bot check before it renders. */
+const SLIDE_WAIT_MS = 30_000;
+const SLIDE_POLL_MS = 1_000;
 
 /**
  * Candidate slide containers, most specific first. Carried over from the
@@ -117,6 +120,7 @@ interface Options {
   readonly input: string;
   readonly out?: string;
   readonly selector?: string;
+  readonly session?: string;
   readonly width: number;
   readonly height: number;
   readonly viewportWidth: number;
@@ -192,6 +196,40 @@ function ensureRenderer(): string {
     return bundle;
   } finally {
     rmSync(staging, { force: true, recursive: true });
+  }
+}
+
+function viewportAspect(page: ReturnType<typeof browser>): number {
+  const value = page.evaluate("innerWidth / innerHeight");
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new Error("Could not read the browser viewport");
+  }
+  return value;
+}
+
+/**
+ * Waits for slide elements to exist.
+ *
+ * Settling covers fonts and paint, which a bot check or an error page satisfies
+ * just as well as a deck does. Without this the command reports that it could
+ * not identify slides, which sends the reader looking for a selector problem
+ * when the browser simply never reached the deck.
+ */
+function awaitSlides(page: ReturnType<typeof browser>): void {
+  const deadline = Date.now() + SLIDE_WAIT_MS;
+  const probe = `document.querySelectorAll(${JSON.stringify(SLIDE_SELECTORS.join(","))}).length`;
+  for (;;) {
+    const count = page.evaluate(probe);
+    if (typeof count === "number" && count > 0) {
+      return;
+    }
+    if (Date.now() >= deadline) {
+      const title = page.evaluate("JSON.stringify(document.title)");
+      throw new Error(
+        `The page never rendered slide elements; it is showing "${typeof title === "string" ? title : "an unknown page"}"`,
+      );
+    }
+    page.call(["wait", SLIDE_POLL_MS.toString()]);
   }
 }
 
@@ -274,21 +312,29 @@ interface Rendered {
  * leaving the page — the geometry that exports is the geometry that painted.
  */
 function render(options: Options, bundle: string): Rendered {
-  const page = browser(`okou-convert-${process.pid.toString()}`);
+  // A hosted deck can sit behind a login or a bot check that only the thread's
+  // managed browser clears, so the session is addressable rather than private.
+  const borrowed = options.session !== undefined;
+  const page = browser(
+    options.session ?? `okou-convert-${process.pid.toString()}`,
+  );
   try {
-    page.call([
-      "set",
-      "viewport",
-      options.viewportWidth.toString(),
-      options.viewportHeight.toString(),
-    ]);
-    page.quiet(["set", "media", "reduced-motion"]);
+    if (!borrowed) {
+      // A borrowed session is configured by whoever opened it; resizing it
+      // changes what the page sees and is not ours to do.
+      page.call([
+        "set",
+        "viewport",
+        options.viewportWidth.toString(),
+        options.viewportHeight.toString(),
+      ]);
+      page.quiet(["set", "media", "reduced-motion"]);
+    }
     page.call(["open", sourceUrl(options.input)]);
     page.call(["eval", SETTLE]);
+    awaitSlides(page);
 
-    const selector =
-      options.selector ??
-      detectSelector(page, options.viewportWidth / options.viewportHeight);
+    const selector = options.selector ?? detectSelector(page, viewportAspect(page));
 
     // Read the source text before normalising, so verification compares against
     // what the deck says rather than against our own rewrite of it.
@@ -370,7 +416,9 @@ function render(options: Options, bundle: string): Rendered {
       texts: Array.isArray(texts) ? (texts as string[]) : [],
     };
   } finally {
-    page.quiet(["close"]);
+    if (!borrowed) {
+      page.quiet(["close"]);
+    }
   }
 }
 
@@ -554,6 +602,10 @@ export const presentationConvertCommand = new Command()
     "Slide element selector (default: detected from the page)",
   )
   .option(
+    "--session <name>",
+    "Reuse an existing agent-browser session instead of opening one",
+  )
+  .option(
     "--width <inches>",
     "Slide width in inches",
     positiveNumber,
@@ -592,6 +644,8 @@ Examples:
   Name the slides:     okou presentation convert --input deck.html --selector ".stage"
   Convert a hosted deck: okou presentation convert --input https://example.com/deck
   Machine-readable:    okou presentation convert --input deck.html --json
+  Deck behind a login: okou browser use && okou presentation convert \\
+                         --session okou-browser --input https://example.com/deck
 
 Output:
   Writes an editable .pptx with real text frames and shapes. Text stays editable
