@@ -5372,14 +5372,16 @@ async fn wait_for_balloon_follows_exact_bounded_poll_schedule() {
 }
 
 #[tokio::test]
-async fn wait_for_balloon_extends_deadline_for_recent_safe_progress() {
+async fn wait_for_balloon_extends_deadline_for_progress_with_low_free_memory() {
     let target_mib = 4096 - balloon::MIN_GUEST_MIB;
     let initial_stats =
-        MockBalloonStats::new(target_mib, 256).with_memory(mib(3840), mib(3940), mib(3940));
+        MockBalloonStats::new(target_mib, 256).with_memory(mib(1000), mib(3940), mib(3940));
+    // Free memory is below the deficit, but available memory covers the deficit
+    // and the 192 MiB reserve exactly at both extension deadlines.
     let first_progressing_stats =
-        MockBalloonStats::new(target_mib, 1200).with_memory(mib(3000), mib(3300), mib(3940));
+        MockBalloonStats::new(target_mib, 1200).with_memory(mib(1000), mib(2064), mib(3940));
     let second_progressing_stats =
-        MockBalloonStats::new(target_mib, 2314).with_memory(mib(2136), mib(2265), mib(3940));
+        MockBalloonStats::new(target_mib, 2314).with_memory(mib(500), mib(950), mib(3940));
     let api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
         std::collections::VecDeque::from([
@@ -5426,8 +5428,8 @@ async fn wait_for_balloon_extends_deadline_for_recent_safe_progress() {
     assert_event_field(event, "target", "3072");
     assert_event_field(event, "deficit_mib", "Some(1872)");
     assert_event_field(event, "previous_actual_mib", "Some(256)");
-    assert_event_field(event, "reported_free_mib", "Some(3000)");
-    assert_event_field(event, "reported_available_mib", "Some(3300)");
+    assert_event_field(event, "reported_free_mib", "Some(1000)");
+    assert_event_field(event, "reported_available_mib", "Some(2064)");
     assert_event_field(event, "grace_ms", "5000");
     assert!(!has_captured_event(
         &events,
@@ -5436,14 +5438,86 @@ async fn wait_for_balloon_extends_deadline_for_recent_safe_progress() {
 }
 
 #[tokio::test]
+async fn wait_for_balloon_denies_progress_grace_without_memory_stats_or_available_reserve() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let progressing_stats =
+        MockBalloonStats::new(target_mib, 1200).with_memory(mib(1000), mib(2064), mib(3940));
+    let mut missing_free = progressing_stats.clone();
+    missing_free.free_memory = None;
+    let mut missing_available = progressing_stats.clone();
+    missing_available.available_memory = None;
+    let mut insufficient_available = progressing_stats;
+    insufficient_available.available_memory = Some(mib(2063));
+
+    for (case, latest_stats) in [
+        ("missing-free", missing_free),
+        ("missing-available", missing_available),
+        ("insufficient-available-reserve", insufficient_available),
+    ] {
+        let api = MockLifecycleApi::with_stats(
+            std::collections::VecDeque::new(),
+            std::collections::VecDeque::from([
+                MockBalloonStatsReply::Ok(MockBalloonStats::new(target_mib, 256).with_memory(
+                    mib(1000),
+                    mib(3940),
+                    mib(3940),
+                )),
+                MockBalloonStatsReply::Ok(latest_stats),
+                // Reaching this response would admit the sandbox if an unsafe
+                // progress extension were granted at the initial deadline.
+                MockBalloonStatsReply::Ok(MockBalloonStats::new(target_mib, target_mib)),
+            ]),
+        );
+        let client = ApiClient::new(api.socket_path()).unwrap();
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        let guard = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
+        tokio::time::pause();
+        let wait = wait_for_balloon_with_outcome(&client, target_mib, case);
+        tokio::pin!(wait);
+
+        wait_for_balloon_sample_count(wait.as_mut(), &captured, 1).await;
+        tokio::time::advance(BALLOON_SETTLE_FAST_POLL_INTERVALS[0]).await;
+        tokio::time::resume();
+        wait_for_balloon_sample_count(wait.as_mut(), &captured, 2).await;
+        tokio::time::pause();
+        tokio::time::advance(
+            BALLOON_SETTLE_INITIAL_TIMEOUT - BALLOON_SETTLE_FAST_POLL_INTERVALS[0],
+        )
+        .await;
+        tokio::time::resume();
+        let outcome = wait.await;
+        drop(guard);
+
+        let diagnostics = expect_severe_memory_retention(outcome.park_outcome);
+        assert_eq!(diagnostics.actual_mib, Some(1200), "case: {case}");
+        assert_eq!(diagnostics.sample_count, 2, "case: {case}");
+        assert_eq!(
+            outcome.telemetry_outcome,
+            SandboxFinalExecParkSubstageOutcome::Deadline,
+            "case: {case}"
+        );
+        assert_eq!(
+            captured_message_count(
+                &captured.entries(),
+                "balloon inflation still progressing, extending settle deadline"
+            ),
+            0,
+            "case: {case}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn wait_for_balloon_progress_extensions_stop_when_progress_stalls() {
     let target_mib = 4096 - balloon::MIN_GUEST_MIB;
     let initial_stats =
-        MockBalloonStats::new(target_mib, 256).with_memory(mib(3840), mib(3940), mib(3940));
+        MockBalloonStats::new(target_mib, 256).with_memory(mib(1000), mib(3940), mib(3940));
     let first_progressing_stats =
-        MockBalloonStats::new(target_mib, 1200).with_memory(mib(3000), mib(3300), mib(3940));
+        MockBalloonStats::new(target_mib, 1200).with_memory(mib(1000), mib(2064), mib(3940));
     let second_progressing_stats =
-        MockBalloonStats::new(target_mib, 2314).with_memory(mib(2136), mib(2265), mib(3940));
+        MockBalloonStats::new(target_mib, 2314).with_memory(mib(500), mib(950), mib(3940));
     let api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),
         std::collections::VecDeque::from([
@@ -5500,7 +5574,7 @@ async fn wait_for_balloon_progress_extensions_stop_at_absolute_timeout() {
     let slow_stats_entered = Arc::new(Notify::new());
     let slow_stats_release = Arc::new(Notify::new());
     let progressing_stats = |actual_mib| {
-        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(4096), mib(4096), mib(4096))
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(1000), mib(4096), mib(4096))
     };
     let api = MockLifecycleApi::with_stats(
         std::collections::VecDeque::new(),

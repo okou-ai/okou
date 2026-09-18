@@ -3994,7 +3994,7 @@ impl BalloonSettleSummary {
             Some(previous_actual_mib),
             Some(last_actual_mib),
             Some(deficit_mib),
-            Some(free_mib),
+            Some(_),
             Some(available_mib),
         ) = (
             self.previous_actual_mib,
@@ -4007,10 +4007,11 @@ impl BalloonSettleSummary {
             return false;
         };
 
+        // Available memory includes reclaimable cache that may not yet be free.
+        // Require observed progress and the reserve while that cache is reclaimed.
         self.is_severe_deficit()
             && self.last_observed_target_mib == Some(self.requested_target_mib)
             && last_actual_mib > previous_actual_mib
-            && free_mib >= i64::from(deficit_mib)
             && available_mib >= i64::from(deficit_mib) + balloon::PRESSURE_AVAILABLE_MIB
     }
 
