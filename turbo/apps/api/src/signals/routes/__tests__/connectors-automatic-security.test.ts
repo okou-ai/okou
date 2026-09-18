@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { connectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  connectorAutomaticContract,
+  connectorNoAuthGrantContract,
+} from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -10,6 +13,7 @@ import { holdBuiltinConnectorAccountFixture } from "../../../test-fixtures/built
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { settleIncludingAbort } from "../../utils";
 import { connectorsAutomaticRoutes } from "../connectors-automatic";
+import { connectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import { installBuiltinAutomaticMcpCatalog } from "./helpers/builtin-automatic-catalog";
@@ -20,6 +24,7 @@ const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 const routes = [
   ...connectorsAutomaticRoutes,
+  ...connectorsRoutes,
   ...connectorAccountRoutes,
 ] as const;
 
@@ -137,7 +142,7 @@ describe("builtin Automatic account and consent ownership", () => {
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "dcr",
       initialExpiresIn: 3600,
-      authorizationCodeErrors: [null, null, "invalid_client", null],
+      authorizationCodeErrors: [null, null, "invalid_client"],
     });
     const firstInitial = await oauthStart(first);
     await callback(firstInitial.state, provider.issuer);
@@ -155,21 +160,31 @@ describe("builtin Automatic account and consent ownership", () => {
     await installBuiltinAutomaticMcpCatalog({
       slug: first.slug,
       methodId: first.methodId,
-      additionalAutomaticMethodId: "replacement-connect",
+      additionalNoAuthMethodId: "replacement-connect",
       isolateSource: false,
     });
-    const replacement = await oauthStart(
-      { ...second, methodId: "replacement-connect" },
-      secondAccount.body.connectionId,
-    );
     mocks.clerk.session(first.userId, first.orgId);
     const retiring = await oauthStart(first, firstAccount.body.connectionId);
     const held = await holdBuiltinConnectorAccountFixture(
       { ...second, connectorId: secondAccount.body.connectionId },
       context.signal,
     );
+    mocks.clerk.session(second.userId, second.orgId);
     const replacementResult = settleIncludingAbort(
-      callback(replacement.state, provider.issuer),
+      accept(
+        setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
+          headers,
+          params: { connectorSlug: second.slug },
+          body: {
+            authMethod: "replacement-connect",
+            account: {
+              intent: "reconnect",
+              connectionId: secondAccount.body.connectionId,
+            },
+          },
+        }),
+        [200],
+      ),
     );
     const replacementBackend = await held.waitForBlocked();
     const retirementResult = settleIncludingAbort(
@@ -179,7 +194,7 @@ describe("builtin Automatic account and consent ownership", () => {
     await held.release();
     await expect(replacementResult).resolves.toMatchObject({
       ok: true,
-      value: { body: { status: "success" } },
+      value: { status: 200, body: { id: secondAccount.body.connectionId } },
     });
     await expect(retirementResult).resolves.toMatchObject({
       ok: true,
@@ -199,6 +214,119 @@ describe("builtin Automatic account and consent ownership", () => {
       connectionStatus: "connected",
       reconnectReason: null,
     });
+  });
+
+  it("settles concurrent cross-method reconnects when both DCR clients are rejected", async () => {
+    const first = await fixture();
+    const second = {
+      ...first,
+      userId: `user_${randomUUID()}`,
+      methodId: "other-connect",
+    };
+    onTestFinished(async () => {
+      mocks.clerk.session(second.userId, second.orgId);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", second.bucket);
+      const list = await accept(
+        accounts().connections({ headers, query: second.target }),
+        [200],
+      );
+      for (const account of list.body.connections) {
+        await accept(
+          accounts().delete({
+            headers,
+            params: { connectionId: account.id },
+            body: { target: second.target },
+          }),
+          [200],
+        );
+      }
+    });
+    await installBuiltinAutomaticMcpCatalog({
+      slug: first.slug,
+      methodId: first.methodId,
+      additionalAutomaticMethodId: second.methodId,
+      isolateSource: false,
+    });
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "dcr",
+      initialExpiresIn: 3600,
+      authorizationCodeErrors: [null, null, "invalid_client", "invalid_client"],
+    });
+    const firstInitial = await oauthStart(first);
+    await callback(firstInitial.state, provider.issuer);
+    const firstAccount = await accept(
+      receipt(first, firstInitial.attemptId),
+      [200],
+    );
+    const firstReconnect = await oauthStart(
+      { ...first, methodId: second.methodId },
+      firstAccount.body.connectionId,
+    );
+    mocks.clerk.session(second.userId, second.orgId);
+    const secondInitial = await oauthStart(second);
+    await callback(secondInitial.state, provider.issuer);
+    const secondAccount = await accept(
+      receipt(second, secondInitial.attemptId),
+      [200],
+    );
+    const secondReconnect = await oauthStart(
+      { ...second, methodId: first.methodId },
+      secondAccount.body.connectionId,
+    );
+
+    // The row lock models database contention. Both competing callbacks must
+    // arrive before release, whether they wait on a lifecycle or account lock.
+    const held = await holdBuiltinConnectorAccountFixture(
+      { ...first, connectorId: firstAccount.body.connectionId },
+      context.signal,
+    );
+    const firstResult = settleIncludingAbort(
+      callback(firstReconnect.state, provider.issuer),
+    );
+    const firstBackend = await held.waitForBlocked();
+    const secondResult = settleIncludingAbort(
+      callback(secondReconnect.state, provider.issuer),
+    );
+    await waitForDeferredBlocker(firstBackend);
+    await held.release();
+    for (const result of await Promise.all([firstResult, secondResult])) {
+      expect(result).toMatchObject({
+        ok: true,
+        value: { body: { status: "error" } },
+      });
+    }
+    for (const account of [
+      {
+        actor: first,
+        id: firstAccount.body.connectionId,
+        attemptId: firstReconnect.attemptId,
+        connectionStatus: "connected",
+        reconnectReason: null,
+      },
+      {
+        actor: second,
+        id: secondAccount.body.connectionId,
+        attemptId: secondReconnect.attemptId,
+        connectionStatus: "reconnect-required",
+        reconnectReason: "authorization_expired_or_revoked",
+      },
+    ]) {
+      mocks.clerk.session(account.actor.userId, account.actor.orgId);
+      await accept(receipt(account.actor, account.attemptId), [404]);
+      const retained = await accept(
+        accounts().connection({
+          headers,
+          params: { connectionId: account.id },
+          query: account.actor.target,
+        }),
+        [200],
+      );
+      expect(retained.body).toMatchObject({
+        authMethod: account.actor.methodId,
+        connectionStatus: account.connectionStatus,
+        reconnectReason: account.reconnectReason,
+      });
+    }
   });
 
   it("preserves an existing account and DCR client after a temporary callback failure", async () => {

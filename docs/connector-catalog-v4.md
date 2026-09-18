@@ -106,6 +106,10 @@ OAuth completion receipts identify the actual connected account and attempt.
 
 Deploy the additive builtin OAuth schema migration before the API. OAuth runtime
 resolution validates the stored binding and serializes refresh and token rotation.
+Automatic connection commits, token resolution and shared DCR client retirement
+lock the organization and connector before account rows, including reconnects
+across authentication methods. Registration ownership remains specific to the
+method and catalog contract.
 Providers without refresh tokens work until the access token expires. A no-auth
 account bypasses credential validity, storage-version and refresh checks. Each
 Run receives an account-specific inline firewall; runtime sync updates it when

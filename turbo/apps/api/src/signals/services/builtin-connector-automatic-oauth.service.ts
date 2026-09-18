@@ -48,7 +48,7 @@ import {
 } from "./crypto.utils";
 import {
   builtinAutomaticDcrStore,
-  lockBuiltinAutomaticContract,
+  lockBuiltinAutomaticLifecycle,
   type BuiltinAutomaticContractOwner,
 } from "./builtin-connector-automatic-dcr.service";
 import {
@@ -463,7 +463,7 @@ export const startBuiltinConnectorAutomatic$ = command(
           signal,
         );
         return await db.transaction(async (tx) => {
-          await lockBuiltinAutomaticContract(
+          await lockBuiltinAutomaticLifecycle(
             tx,
             contractOwner(args.orgId, contract),
           );
@@ -556,7 +556,7 @@ async function finishBuiltinAutomaticOAuth(
     return { kind: "error", reason: "stale-contract" } as const;
   }
   return await db.transaction(async (tx) => {
-    await lockBuiltinAutomaticContract(
+    await lockBuiltinAutomaticLifecycle(
       tx,
       contractOwner(stored.orgId, contract),
     );
@@ -997,7 +997,7 @@ async function resolveLockedBuiltinAutomatic(
 ): Promise<CredentialResult> {
   const { contract, accessName, initialAccessEncrypted, accountIdentity } =
     context;
-  await lockBuiltinAutomaticContract(tx, contractOwner(args.orgId, contract));
+  await lockBuiltinAutomaticLifecycle(tx, contractOwner(args.orgId, contract));
   const [account] = await tx
     .select()
     .from(connectors)

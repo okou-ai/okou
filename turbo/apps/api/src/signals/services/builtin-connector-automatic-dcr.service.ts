@@ -20,12 +20,13 @@ export interface BuiltinAutomaticContractOwner {
   readonly contractHash: string;
 }
 
-export async function lockBuiltinAutomaticContract(
+/** Reconnects can cross method contracts, so take this lock before any account row. */
+export async function lockBuiltinAutomaticLifecycle(
   db: Db,
-  owner: BuiltinAutomaticContractOwner,
+  owner: Pick<BuiltinAutomaticContractOwner, "orgId" | "connectorSlug">,
 ): Promise<void> {
   await db.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtext(${JSON.stringify(["builtin-mcp-oauth", owner.orgId, owner.connectorSlug, owner.authMethod, owner.contractHash])}))`,
+    sql`SELECT pg_advisory_xact_lock(hashtext(${JSON.stringify(["builtin-mcp-oauth", owner.orgId, owner.connectorSlug])}))`,
   );
 }
 
@@ -44,7 +45,7 @@ function registration(
   return { ...row, hasClientSecret: row.encryptedClientSecret !== null };
 }
 
-/** The contract lock serializes refresh/retirement; ordinary account writers never acquire it. */
+/** The lifecycle lock serializes refresh/retirement; ordinary account writers never acquire it. */
 async function retireRegistration(
   db: Db,
   owner: BuiltinAutomaticContractOwner,
@@ -159,7 +160,7 @@ export function builtinAutomaticDcrStore(args: {
     },
     async withLock(operation) {
       return await db.transaction(async (tx) => {
-        await lockBuiltinAutomaticContract(tx, owner);
+        await lockBuiltinAutomaticLifecycle(tx, owner);
         await args.assertCurrentContract(tx);
         return await operation(builtinAutomaticDcrStore({ ...args, db: tx }));
       });
