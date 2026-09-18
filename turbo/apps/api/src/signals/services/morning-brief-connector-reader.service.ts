@@ -144,12 +144,12 @@ function deadlineHasPassed(at: number, timer: AbortSignal): boolean {
   return timer.aborted || now() >= at;
 }
 
-export interface MorningBriefDatabaseDeadlineCaps {
+interface MorningBriefDatabaseDeadlineCaps {
   readonly lockTimeoutMs: number;
   readonly statementTimeoutMs: number;
 }
 
-export class MorningBriefDatabaseDeadlineExceededError extends Error {
+class MorningBriefDatabaseDeadlineExceededError extends Error {
   constructor(options?: ErrorOptions) {
     super("Morning Brief database deadline exceeded", options);
     this.name = "MorningBriefDatabaseDeadlineExceededError";
