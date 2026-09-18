@@ -26,16 +26,15 @@ and lifecycle admission remain active when the switch is disabled.
 
 Observations must be inside the two-date admission window below. The complete
 batch commits atomically and returns the existing `{ success: true }`
-acknowledgement. Both mixed and legacy-only batches discard original zero
+acknowledgement. Both mixed and count-event batches discard original zero
 quantities for every usage kind, retain positive quantities and the existing BYOK
 model filter, and share bounded write admission regardless of the switch.
 
-Runner claims always advertise
-`xResourceBilling: { protocol: "x-resource-v1", startDate: "1970-01-01" }`.
-The fixed date preserves compatibility with deployed Runner parsers that require
-this field; it is neither a configurable activation date nor an API admission
-cutoff. No environment setting is required. A rejected resource batch must never
-be downgraded to legacy count billing.
+X post and user reads always use resource observations. Runner claims and the
+proxy registry carry no separate X capability or activation date. The API accepts
+`posts.read` and `user.read` for provider `x` only through the resource schema;
+X writes, other connectors, model and image usage keep their count-event format.
+A rejected resource batch must never be downgraded to a count event.
 
 Each event carries:
 
@@ -207,16 +206,21 @@ compatibility requirement is independent of the deduplication switch.
 occurrences, Q and transient reasons through extraction, bounded chunks,
 cross-language copies, serialization and retries. There is no bindingId.
 
-The API adds the capability when claiming a run, not when persisting a queued
-context. Rust carries it into its private proxy registry; Python validates it
-and snapshots it onto each matched request. Missing capability selects the
-existing count-only producer. A malformed advertised capability is rejected,
-never interpreted as permission to downgrade. Existing Runner versions ignore
-the additive claim field, so capability advertisement alone does not prove a
-fleet-wide switch. #34615 owns removal of the absent-capability compatibility
-path after older APIs, already claimed Runs without capability and unsupported
-rollback targets leave the supported serving window. Previously queued Runs
-resolve capability when claimed by the current API.
+The producer unconditionally records resources for X post and user reads; it
+does not consult claim metadata or an activation date. All X events preserve
+their source UUIDs instead of using the aggregate-count buffer. The API-only
+deduplication switch continues to choose Q or N+R after ingestion.
+
+This cleanup retires the capability/date-based producer and its count-only X
+read uploads. A new Runner can run against the preceding switch-based API,
+which already accepts resource observations; its tolerant claim projection
+ignores the old capability field. An old Runner against the cleaned-up API can
+instead emit count-only reads, which the API rejects. Upgrade and drain those
+old Runner processes, Runs and retained uploads before promoting the cleaned-up
+API. Keep supported rollback Runner artifacts on the unconditional producer.
+The normal API-before-Runner promotion order does not establish this prerequisite;
+see the [rollout guide](./x-resource-rollout.md). No production release or drain
+is performed by the cleanup PR itself.
 
 The existing selective parser remains the authoritative count validator. An
 additional identity copy retains at most 256 KiB of a JSON document. Only a
@@ -231,11 +235,11 @@ the authoritative count and records the unidentified portion as `identity_limit`
 malformed bodies keep only the existing trusted count fallback as `parse_fallback`.
 This can leave large legitimate responses count-priced rather than deduplicated.
 
-Capable NDJSON flows report one complete validated row at a time while the
+NDJSON flows report one complete validated row at a time while the
 connection remains open. The row ordinal, flow, run and category form its stable
 source UUID. Observation time is the row's validation time; each row therefore
-belongs to one UTC date. The fixed compatibility date makes every current row
-use v1 regardless of the deduplication switch. Complete trailing rows report once
+belongs to one UTC date and uses v1 regardless of the deduplication switch.
+Complete trailing rows report once
 on normal completion or interruption; malformed rows remain unbilled. Terminal hooks do
 not repeat previously emitted rows, including when a later decoder failure ends
 the stream. Ordinary JSON uses document validation time and a flow-local terminal
@@ -265,9 +269,9 @@ rolled out through existing user overrides within the authenticated organization
 remains global throughout. Disabling it is a supported return to full-count
 billing for new observations, while preserving v1 ingestion and existing source
 amounts. It does not make an older API compatible: an older API with its original
-date setting unset rejects v1 uploads. Legacy GA events remain necessary for
-existing producers and other providers. Followers/following and other unverified
-resource types remain outside this protocol.
+date setting unset rejects v1 uploads. Count events remain necessary for X writes
+and other providers. Followers/following and other unverified resource types
+remain outside this resource-identity protocol.
 
 ## Qualification and release evidence
 

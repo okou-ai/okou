@@ -125,7 +125,7 @@ def _parse_x_json_response_fields(extracted: JsonExtractionResult) -> dict:
     return result
 
 
-def parse_json_response_fields_from_body(body: bytes, *, identities: bool = False) -> dict | None:
+def parse_json_response_fields_from_body(body: bytes) -> dict | None:
     """Extract billing-relevant fields from one complete X JSON body."""
     extractor = _create_x_json_selective_extractor()
     extractor.feed(body)
@@ -133,9 +133,8 @@ def parse_json_response_fields_from_body(body: bytes, *, identities: bool = Fals
     if not extracted.complete or () not in extracted.object_present:
         return None
     result = _parse_x_json_response_fields(extracted)
-    if identities:
-        result["resource_identities"] = inspect_identities(body)
-        result["observed_at"] = observed_at()
+    result["resource_identities"] = inspect_identities(body)
+    result["observed_at"] = observed_at()
     return result
 
 
@@ -195,7 +194,7 @@ class _NdjsonExtractor:
     failed, unbilled line.
     """
 
-    def __init__(self, on_row: Callable[[dict, int], None] | None = None) -> None:
+    def __init__(self, on_row: Callable[[dict, int], None]) -> None:
         self.state: _NdjsonState = {
             "data_count": 0,
             "includes": {},
@@ -267,7 +266,7 @@ class _NdjsonExtractor:
         if not extracted.complete:
             self.state["lines_failed"] += 1
             return
-        previous_includes = dict(self.state["includes"]) if self._on_row else {}
+        previous_includes = dict(self.state["includes"])
         previous_overflow = self.state["unknown_includes_overflow_count"]
         self.state["lines_parsed"] += 1
         if ("data",) in extracted.object_present:
@@ -275,26 +274,25 @@ class _NdjsonExtractor:
         includes = extracted.wildcard_array_counts.get(("includes", "*"), {})
         for key, count in includes.items():
             self._record_include_count(key, count)
-        if self._on_row is not None:
-            self._on_row(
-                {
-                    "body_parsed": True,
-                    "body_truncated": False,
-                    "body_format": "ndjson",
-                    "response_data_count": int(("data",) in extracted.object_present),
-                    "response_includes": {
-                        key: count - previous_includes.get(key, 0)
-                        for key, count in self.state["includes"].items()
-                        if count > previous_includes.get(key, 0)
-                    },
-                    "response_unknown_includes_overflow_count": (
-                        self.state["unknown_includes_overflow_count"] - previous_overflow
-                    ),
-                    "resource_identities": inspect_identities(line, ndjson=True),
-                    "observed_at": observed_at(),
+        self._on_row(
+            {
+                "body_parsed": True,
+                "body_truncated": False,
+                "body_format": "ndjson",
+                "response_data_count": int(("data",) in extracted.object_present),
+                "response_includes": {
+                    key: count - previous_includes.get(key, 0)
+                    for key, count in self.state["includes"].items()
+                    if count > previous_includes.get(key, 0)
                 },
-                self.state["lines_parsed"],
-            )
+                "response_unknown_includes_overflow_count": (
+                    self.state["unknown_includes_overflow_count"] - previous_overflow
+                ),
+                "resource_identities": inspect_identities(line, ndjson=True),
+                "observed_at": observed_at(),
+            },
+            self.state["lines_parsed"],
+        )
 
     def _record_include_count(self, key: str, count: int) -> None:
         if count <= 0:
@@ -319,10 +317,9 @@ class _NdjsonExtractor:
 class _XJsonResponseExtractor:
     """Incrementally extract billing metadata from non-streaming X JSON."""
 
-    def __init__(self, *, identities: bool = False) -> None:
+    def __init__(self) -> None:
         self._extractor = _create_x_json_selective_extractor()
-        self._identity_body = bytearray() if identities else None
-        self._identities = identities
+        self._identity_body: bytearray | None = bytearray()
 
     def feed(self, chunk: bytes) -> None:
         self._extractor.feed(chunk)
@@ -338,9 +335,11 @@ class _XJsonResponseExtractor:
         return self._extractor.accepts_more_input()
 
     def finish(self) -> tuple[dict, str | None]:
-        result: dict = {"body_parsed": False, "body_truncated": False}
-        if self._identities:
-            result["observed_at"] = observed_at()
+        result: dict = {
+            "body_parsed": False,
+            "body_truncated": False,
+            "observed_at": observed_at(),
+        }
         extracted = self._extractor.finish()
         if not extracted.complete:
             return result, extracted.error
@@ -349,11 +348,10 @@ class _XJsonResponseExtractor:
 
         result["body_parsed"] = True
         result.update(_parse_x_json_response_fields(extracted))
-        if self._identities:
-            result["resource_identities"] = inspect_identities(
-                bytes(self._identity_body) if self._identity_body is not None else None
-            )
-            self._identity_body = None
+        result["resource_identities"] = inspect_identities(
+            bytes(self._identity_body) if self._identity_body is not None else None
+        )
+        self._identity_body = None
         return result, None
 
 
@@ -361,8 +359,7 @@ def create_response_parser(
     flow: http.HTTPFlow,
     original_url: str,
     *,
-    identities: bool = False,
-    on_row: Callable[[dict, int], None] | None = None,
+    on_row: Callable[[dict, int], None],
 ) -> ConnectorResponseParser | None:
     """Create the X response-body parser needed for this flow, if any."""
     if not flow.response:
@@ -399,7 +396,7 @@ def create_response_parser(
     if not (_HTTP_STATUS_OK_MIN <= status_code < _HTTP_STATUS_REDIRECT_MIN):
         return None
 
-    extractor = _XJsonResponseExtractor(identities=identities)
+    extractor = _XJsonResponseExtractor()
 
     def finish_json_state() -> None:
         state, error = extractor.finish()

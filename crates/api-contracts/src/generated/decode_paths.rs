@@ -85,7 +85,7 @@ pub mod runners {
             /// Generated decode-path schemas under `runners::jobs::by_id::claim`.
             pub mod claim {
                 const NODES: &[crate::decode_path::DecodePathNode] = &[
-                    crate::decode_path::DecodePathNode::Object(148, 34),
+                    crate::decode_path::DecodePathNode::Object(146, 33),
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::Sequence(4),
@@ -297,9 +297,6 @@ pub mod runners {
                     crate::decode_path::DecodePathNode::Leaf,
                     crate::decode_path::DecodePathNode::DynamicMap(211),
                     crate::decode_path::DecodePathNode::Leaf,
-                    crate::decode_path::DecodePathNode::Object(146, 2),
-                    crate::decode_path::DecodePathNode::Leaf,
-                    crate::decode_path::DecodePathNode::Leaf,
                 ];
 
                 const FIELDS: &[crate::decode_path::DecodePathField] = &[
@@ -449,8 +446,6 @@ pub mod runners {
                     crate::decode_path::DecodePathField::new("versionId", 205),
                     crate::decode_path::DecodePathField::new("writeback", 206),
                     crate::decode_path::DecodePathField::new("storageMounts", 194),
-                    crate::decode_path::DecodePathField::new("protocol", 213),
-                    crate::decode_path::DecodePathField::new("startDate", 214),
                     crate::decode_path::DecodePathField::new("apiStartTime", 1),
                     crate::decode_path::DecodePathField::new("appendSystemPrompt", 2),
                     crate::decode_path::DecodePathField::new("billableFirewalls", 3),
@@ -484,7 +479,6 @@ pub mod runners {
                     crate::decode_path::DecodePathField::new("tools", 207),
                     crate::decode_path::DecodePathField::new("userTimezone", 209),
                     crate::decode_path::DecodePathField::new("vars", 210),
-                    crate::decode_path::DecodePathField::new("xResourceBilling", 212),
                 ];
 
                 /// Decode-path schema for the runner job claim response.

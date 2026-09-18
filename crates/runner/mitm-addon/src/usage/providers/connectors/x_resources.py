@@ -1,4 +1,4 @@
-"""Bounded, transient identities for the configured X daily resource protocol."""
+"""Bounded, transient identities for the X daily resource protocol."""
 
 import json
 import re

@@ -5483,10 +5483,6 @@ mod tests {
         assert_eq!(context.capture_network_bodies, Some(true));
         assert_eq!(context.user_timezone.as_deref(), Some("UTC"));
         assert_eq!(
-            serde_json::to_value(context.x_resource_billing.as_ref().unwrap()).unwrap(),
-            serde_json::json!({"protocol": "x-resource-v1", "startDate": "2099-01-01"})
-        );
-        assert_eq!(
             context.network_policies.as_ref().unwrap()["model-provider:fixture"].unknown_policy,
             "deny"
         );

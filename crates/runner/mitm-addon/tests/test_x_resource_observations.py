@@ -7,8 +7,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from mitmproxy.flow import Error
 
-import flow_metadata
-import flow_metadata_keys as metadata_keys
 import mitm_addon
 import usage
 from tests.flow_helpers import response_stream
@@ -21,15 +19,10 @@ def _inline_delivery(sync_usage_executor):
     pass
 
 
-def _flow(real_flow, tmp_path, *, path="/2/tweets", permission="tweet.read", start="2000-01-01"):
-    flow = make_x_pipeline_flow(
+def _flow(real_flow, tmp_path, *, path="/2/tweets", permission="tweet.read"):
+    return make_x_pipeline_flow(
         real_flow, tmp_path, path=path, permission=permission, sandbox_run_id=str(uuid.uuid4())
     )
-    if start is not None:
-        flow.metadata[metadata_keys.X_RESOURCE_BILLING] = flow_metadata.XResourceBilling(
-            protocol="x-resource-v1", start_date=start
-        )
-    return flow
 
 
 def _complete(flow, body):
@@ -101,19 +94,6 @@ def test_bounded_or_malformed_identity_inspection_preserves_original_count(
     assert len(event["resources"]) <= 1000
 
 
-@pytest.mark.parametrize("start", [None, "9999-01-01"])
-def test_missing_or_future_capability_preserves_legacy_counts(
-    real_flow, tmp_path, usage_webhook_api, start
-):
-    flow = _flow(real_flow, tmp_path, start=start)
-    with usage_webhook_api() as webhook:
-        _complete(flow, b'{"data":[{"id":"1"},{"id":"1"}]}')
-    (event,) = webhook.usage_events()
-    assert event["category"] == "posts.read"
-    assert event["quantity"] == 2
-    assert "protocol" not in event
-
-
 def test_profile_ids_are_supported_but_unknown_posts_paths_do_not_claim_ids(
     real_flow, tmp_path, usage_webhook_api
 ):
@@ -179,7 +159,7 @@ def test_ndjson_reports_complete_rows_during_stream_and_never_at_terminal_again(
     assert len({event["idempotencyKey"] for event in events}) == 2
 
 
-def test_rows_crossing_activation_midnight_keep_original_protocol_and_completion_time(
+def test_rows_crossing_midnight_keep_their_observation_time_after_delayed_completion(
     real_flow, tmp_path, usage_webhook_api, monkeypatch
 ):
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -192,9 +172,7 @@ def test_rows_crossing_activation_midnight_keep_original_protocol_and_completion
             return cls.value
 
     monkeypatch.setattr(x_resources, "datetime", Clock)
-    flow = _flow(
-        real_flow, tmp_path, path="/2/tweets/search/stream", start=today.date().isoformat()
-    )
+    flow = _flow(real_flow, tmp_path, path="/2/tweets/search/stream")
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         stream = response_stream(flow)
@@ -207,8 +185,12 @@ def test_rows_crossing_activation_midnight_keep_original_protocol_and_completion
         usage.flush_usage_events(trigger="test")
     events = webhook.usage_events()
     assert len(events) == 2
-    legacy = next(event for event in events if "protocol" not in event)
-    resource = next(event for event in events if "protocol" in event)
-    assert legacy["quantity"] == 1
-    assert resource["observedAt"] == today.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-    assert legacy["idempotencyKey"] != resource["idempotencyKey"]
+    assert [event["observedAt"] for event in events] == [
+        (today - timedelta(milliseconds=1))
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z"),
+        today.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    ]
+    assert all(event["quantity"] == 1 for event in events)
+    assert all(event["resources"] == [{"id": "1", "occurrences": 1}] for event in events)
+    assert len({event["idempotencyKey"] for event in events}) == 2

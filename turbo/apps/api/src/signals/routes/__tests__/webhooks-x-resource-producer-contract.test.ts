@@ -221,7 +221,7 @@ describe("X producer payload billing contract", () => {
     );
 
     // A different organization and source share resource claims, but retain
-    // independently billable remainder (or the legacy count before activation).
+    // independently billable remainder.
     await submit(anotherOrg.authorization, repeatedPayloads, observationClock);
     await expect(
       chargedUnits(anotherOrg.actor, configuredPricing),

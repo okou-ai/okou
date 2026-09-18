@@ -5,8 +5,9 @@ consumer against shared examples. [#34615](https://github.com/vm0-ai/okou/issues
 remains responsible for deployed verification and separately authorized
 deduplication rollout. [#35197](https://github.com/vm0-ai/okou/issues/35197) replaces
 date-based activation with the standard `xResourceDeduplication` feature switch.
-That change does not enable the production switch, and this document records no
-production acceptance.
+The protocol cleanup removes the claim capability and fixed activation date;
+it preserves the feature switch. Neither code change enables the production
+switch, and repository qualification alone is not production acceptance.
 The [ingestion contract](./x-resource-observations.md) remains authoritative:
 one upstream billing account, global daily resource identity, today and yesterday
 in UTC, and ordinary net usage without a user-visible deduplication status.
@@ -54,7 +55,6 @@ Keep the existing resource suites in the qualification record as well:
 
 | Boundary                                                          | Existing coverage                                                                         |
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Claim-time capability                                             | `runner-x-resource-capability.test.ts`, `test_x_resource_capability.py`                   |
 | Complete responses, stream failures and UTC midnight              | `test_x_resource_observations.py`, `test_x_resource_stream_failures.py`                   |
 | Batch limits, retry identity, saturation and expiry               | `test_x_resource_usage_transport.py`                                                      |
 | Atomic global billing, concurrent uploads and lifecycle admission | `webhooks-x-resource-usage.test.ts` and adjacent `webhooks-x-resource-*` lifecycle suites |
@@ -69,7 +69,7 @@ quantity Q; enabled observations use N + R against the same shared records.
 Zero quantities are discarded without source receipts. Persisted positive
 sources retain their amount when replayed after a switch change; discarded zero
 observations are evaluated again under the current switch.
-Claim capability, validation, lifecycle admission and two-date cleanup remain
+Resource production, validation, lifecycle admission and two-date cleanup remain
 active in both states.
 
 ## Deployment and rollback compatibility
@@ -92,31 +92,36 @@ is not a billing compatibility boundary. The current
 does not enforce an X-specific boundary, so its success alone cannot qualify a
 target. This qualification adds no rollback policy.
 
-Deploy API support for unconditional v1 ingestion and admission before relying on
-new producer claims. All serving and supported rollback APIs must preserve the
+All serving and supported rollback APIs must preserve the
 settlement, compaction and Run-deletion lock order described in the ingestion
 contract. This is a deployment compatibility floor, independent of the switch.
-The updated API always advertises
-`xResourceBilling: { protocol: "x-resource-v1", startDate: "1970-01-01" }`.
-Deployed Runner parsers require the date field, so the API retains a fixed
-compatibility value without a configured date or API cutoff.
 
-Deploying the change starts resource collection, reporting and recording on new
-capable Runs even while deduplication is disabled. Verify the actual rollback
-artifact's v1 ingestion behavior: an older API with its original date setting
-unset rejects v1 uploads and omits capability from new claims. Turning the
-deduplication switch off does not repair that incompatibility. Retain a compatible
-API for already admitted v1 uploads.
+The cleanup removes the entire claim/registry capability, its fixed activation
+date and the producer's count-only X read path. X reads always produce v1;
+the API rejects count-only X `posts.read` and `user.read` events. Other count
+categories remain supported, including X writes and other providers.
+
+The preceding switch-based API already accepts the unconditional producer's
+uploads. Deploy that new Runner against the preceding API first, then drain old
+Runner processes, Runs, streams and retained count-only uploads before promoting
+the cleaned-up API. The standard API-before-Runner release order cannot be used
+as evidence that this drain has happened. An old Runner receiving a cleaned-up
+claim without its capability falls back to count events and cannot bill those
+reads through the new API. A merge or this document does not authorize or prove
+the required production deployment/drain.
+
+Supported rollback Runners must retain the unconditional resource producer.
+The preceding switch-based API remains a compatible rollback target; older
+date-gated APIs with the setting unset reject v1 uploads. Switching deduplication
+off repairs neither an incompatible producer nor an incompatible API.
 
 ## Deduplication rollout and observation
 
-Capability is captured when a Run is claimed. A current Runner can still host a
-Run claimed before this API deployment, with no capability for its entire lifetime.
-An older Runner ignores the advertised field. Confirm the drain of both kinds
-of Runs and their in-flight requests, streams and retained uploads; checking
-binary versions alone is insufficient to claim complete resource coverage.
-Previously queued Runs resolve capability at claim time. Record deployment
-propagation and any remaining absent-capability claims.
+The unconditional producer no longer captures an X capability at claim time.
+Confirm the drain of previous date-gated or absent-capability Runs and their
+in-flight requests, streams and retained uploads before the API cutover;
+checking binary versions alone is insufficient to claim complete resource
+coverage. Record immutable artifact identities and actual drain outcomes.
 
 The standard `xResourceDeduplication` switch defaults to disabled, with no staff
 whitelist, and resolves the authenticated Run owner's organization/user context

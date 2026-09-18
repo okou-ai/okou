@@ -236,10 +236,6 @@ describe("runner claim response contract", () => {
       runId: "00000000-0000-4000-8000-000000020985",
       reuseKey: "thread:00000000-0000-4000-8000-000000020986",
       modelUsageProvider: "fixture-model",
-      xResourceBilling: {
-        protocol: "x-resource-v1",
-        startDate: "2099-01-01",
-      },
       platformEnvironment: { OKOU_AGENT_ID: "fixture-agent-id" },
     });
     expect(context.environment).not.toHaveProperty("OKOU_AGENT_ID");
@@ -256,33 +252,6 @@ describe("runner claim response contract", () => {
     });
 
     expect(context).not.toHaveProperty("connectorPermissionBaseline");
-  });
-
-  it("accepts an older API response without X resource capability", () => {
-    const { xResourceBilling: _capability, ...olderResponse } =
-      executionContextSchema.parse(loadRunnerClaimResponseFixture());
-    expect(executionContextSchema.parse(olderResponse)).not.toHaveProperty(
-      "xResourceBilling",
-    );
-  });
-
-  it.each([
-    null,
-    { protocol: "x-resource-v2", startDate: "2099-01-01" },
-    { protocol: "x-resource-v1", startDate: "2099-02-30" },
-    { protocol: "x-resource-v1", startDate: "20990101" },
-    { protocol: "x-resource-v1" },
-    { protocol: "x-resource-v1", startDate: "2099-01-01", bindingId: "x" },
-  ])("rejects malformed advertised X resource capability: %j", (capability) => {
-    const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
-    );
-    expect(
-      executionContextSchema.safeParse({
-        ...fixture,
-        xResourceBilling: capability,
-      }).success,
-    ).toBe(false);
   });
 
   it("round-trips canonical trusted environments through stored contexts", () => {

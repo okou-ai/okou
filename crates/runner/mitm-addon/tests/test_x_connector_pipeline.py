@@ -3,6 +3,7 @@
 import gzip
 import json
 import zlib
+from collections import Counter
 from pathlib import Path
 
 import brotli
@@ -334,39 +335,44 @@ class TestXConnectorResponsePipeline:
         assert events[0]["quantity"] == 3
 
     def test_full_streaming_pipeline_filtered_stream(self, tmp_path, real_flow, mitm_ctx, headers):
-        """End-to-end: responseheaders registers parser, chunks accumulate, response() logs."""
+        """Complete rows retain separate resource sources through terminal delivery."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
         # 1. responseheaders - registers NDJSON parser
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        assert metadata_keys.X_NDJSON_STATE in flow.metadata
-        assert "connector_response_finish" in flow.metadata
-
-        # 2. Stream chunks (including keep-alives and a mid-line split)
-        chunks = [
-            b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n',
-            b"\n",  # keep-alive
-            b'{"data":{"id":"2"},"includes":{"users":[{"id":"u2"}]}}\n',
-            b'{"data":{"id":"3"}',  # split mid-line
-            b',"includes":{"users":[{"id":"u3"}]}}\n',
-        ]
-        for chunk in chunks:
-            callback(chunk)
-
-        # 3. Simulated disconnect - response() fires and logs via webhook
         with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            assert metadata_keys.X_NDJSON_STATE in flow.metadata
+            assert "connector_response_finish" in flow.metadata
+
+            # 2. Stream chunks (including keep-alives and a mid-line split)
+            chunks = [
+                b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n',
+                b"\n",  # keep-alive
+                b'{"data":{"id":"2"},"includes":{"users":[{"id":"u2"}]}}\n',
+                b'{"data":{"id":"3"}',  # split mid-line
+                b',"includes":{"users":[{"id":"u3"}]}}\n',
+            ]
+            for chunk in chunks:
+                callback(chunk)
+
+            # 3. Simulated disconnect - response() fires and logs via webhook
             mitm_addon.response(flow)
             usage.flush_usage_events(trigger="test")
 
         # 4. Verify billing payloads
         payloads = webhook.usage_events()
-        by_cat = {p["category"]: p["quantity"] for p in payloads}
-        assert len(payloads) == len(by_cat)
-        assert by_cat == {
+        assert Counter(event["category"] for event in payloads) == {
             "posts.read": 3,  # 3 primary tweets; no includes.tweets
             "user.read": 3,  # 3 users from includes
         }
+        assert all(event["quantity"] == 1 for event in payloads)
+        assert len({event["idempotencyKey"] for event in payloads}) == 6
+        assert [event["resources"] for event in payloads if event["category"] == "posts.read"] == [
+            [{"id": "1", "occurrences": 1}],
+            [{"id": "2", "occurrences": 1}],
+            [{"id": "3", "occurrences": 1}],
+        ]
 
     def test_full_streaming_pipeline_counts_final_line_without_newline(
         self, tmp_path, real_flow, mitm_ctx, headers
@@ -374,43 +380,52 @@ class TestXConnectorResponsePipeline:
         """End-to-end: response() finalizes a complete NDJSON row without trailing newline."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        callback(b'{"data":{"id":"1"}}\n')
-        callback(b'{"data":{"id":"2"},"includes":{"users":[{"id":"u2"}]}}')
-
         with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            callback(b'{"data":{"id":"1"}}\n')
+            callback(b'{"data":{"id":"2"},"includes":{"users":[{"id":"u2"}]}}')
+
             mitm_addon.response(flow)
             usage.flush_usage_events(trigger="test")
 
         payloads = webhook.usage_events()
-        by_cat = {payload["category"]: payload["quantity"] for payload in payloads}
-        assert len(payloads) == len(by_cat)
-        assert by_cat == {"posts.read": 2, "user.read": 1}
+        assert Counter(event["category"] for event in payloads) == {
+            "posts.read": 2,
+            "user.read": 1,
+        }
+        assert all(event["quantity"] == 1 for event in payloads)
+        assert len({event["idempotencyKey"] for event in payloads}) == 3
         assert "connector_response_finish" not in flow.metadata
 
-    def test_full_pipeline_compressed_stream_error_does_not_bill_unverified_rows(
+    def test_full_pipeline_compressed_stream_error_preserves_completed_rows(
         self, tmp_path, real_flow, mitm_ctx, headers, usage_webhook_api
     ):
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
         assert flow.response is not None
         flow.response.headers["content-encoding"] = "gzip"
 
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        callback(
-            gzip.compress(
-                b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n{"data":{"id":"2"}}\n'
-            )[:-1]
-        )
-        assert flow.metadata[metadata_keys.X_NDJSON_STATE]["data_count"] == 2
-        flow.error = Error("connection reset by peer")
-
         with usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            callback(
+                gzip.compress(
+                    b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n{"data":{"id":"2"}}\n'
+                )[:-1]
+            )
+            assert flow.metadata[metadata_keys.X_NDJSON_STATE]["data_count"] == 2
+            flow.error = Error("connection reset by peer")
+
             mitm_addon.error(flow)
             usage.flush_usage_events(trigger="test")
 
-        assert webhook.request_count == 0
+        events = webhook.usage_events()
+        assert Counter(event["category"] for event in events) == {
+            "posts.read": 2,
+            "user.read": 1,
+        }
+        assert all(event["quantity"] == 1 for event in events)
+        assert len({event["idempotencyKey"] for event in events}) == 3
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
         proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
         entries = read_jsonl_entries_after_flush(proxy_log)
@@ -426,24 +441,24 @@ class TestXConnectorResponsePipeline:
         """Malformed include values are ignored while valid siblings still bill."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        assert metadata_keys.X_NDJSON_STATE in flow.metadata
-        assert "connector_response_finish" in flow.metadata
-
-        callback(
-            b'{"data":{"id":"1"},"includes":'
-            b'{"users":null,'
-            b'"tweets":{"id":"t1"},'
-            b'"media":[{"media_key":"m1"}]}}\n'
-        )
-        state = flow.metadata[metadata_keys.X_NDJSON_STATE]
-        assert state["data_count"] == 1
-        assert state["includes"] == {"media": 1}
-        assert state["lines_parsed"] == 1
-        assert state["lines_failed"] == 0
-
         with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            assert metadata_keys.X_NDJSON_STATE in flow.metadata
+            assert "connector_response_finish" in flow.metadata
+
+            callback(
+                b'{"data":{"id":"1"},"includes":'
+                b'{"users":null,'
+                b'"tweets":{"id":"t1"},'
+                b'"media":[{"media_key":"m1"}]}}\n'
+            )
+            state = flow.metadata[metadata_keys.X_NDJSON_STATE]
+            assert state["data_count"] == 1
+            assert state["includes"] == {"media": 1}
+            assert state["lines_parsed"] == 1
+            assert state["lines_failed"] == 0
+
             mitm_addon.response(flow)
             usage.flush_usage_events(trigger="test")
 
@@ -469,18 +484,18 @@ class TestXConnectorResponsePipeline:
         """A hostile NDJSON row must not stop later valid rows from billing."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-
-        callback(failed_line + b'\n{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n')
-
-        state = flow.metadata[metadata_keys.X_NDJSON_STATE]
-        assert state["lines_failed"] == 1
-        assert state["lines_parsed"] == 1
-        assert state["data_count"] == 1
-        assert state["includes"] == {"users": 1}
-
         with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+
+            callback(failed_line + b'\n{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n')
+
+            state = flow.metadata[metadata_keys.X_NDJSON_STATE]
+            assert state["lines_failed"] == 1
+            assert state["lines_parsed"] == 1
+            assert state["data_count"] == 1
+            assert state["includes"] == {"users": 1}
+
             mitm_addon.response(flow)
             usage.flush_usage_events(trigger="test")
 
@@ -495,24 +510,24 @@ class TestXConnectorResponsePipeline:
         """The nesting guard does not reject a wide but shallow NDJSON row."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        callback(
-            json.dumps(
-                {
-                    "data": {"id": "1"},
-                    "matching_rules": [{} for _ in range(300)],
-                }
-            ).encode()
-            + b"\n"
-        )
-
-        state = flow.metadata[metadata_keys.X_NDJSON_STATE]
-        assert state["lines_failed"] == 0
-        assert state["lines_parsed"] == 1
-        assert state["data_count"] == 1
-
         with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            callback(
+                json.dumps(
+                    {
+                        "data": {"id": "1"},
+                        "matching_rules": [{} for _ in range(300)],
+                    }
+                ).encode()
+                + b"\n"
+            )
+
+            state = flow.metadata[metadata_keys.X_NDJSON_STATE]
+            assert state["lines_failed"] == 0
+            assert state["lines_parsed"] == 1
+            assert state["data_count"] == 1
+
             mitm_addon.response(flow)
             usage.flush_usage_events(trigger="test")
 
@@ -527,34 +542,35 @@ class TestXConnectorResponsePipeline:
         """Long-lived streams fold unknown include overflow into one fallback-priced bucket."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        for index in range(70):
-            callback(
-                b'{"data":{"id":"'
-                + str(index).encode()
-                + b'"},"includes":{"future_'
-                + str(index).encode()
-                + b'":[{"id":"u"}]}}\n'
-            )
-        callback(b'{"data":{"id":"known"},"includes":{"users":[{"id":"user"}]}}\n')
-        state = flow.metadata[metadata_keys.X_NDJSON_STATE]
-        assert state["unknown_includes_overflow_count"] == 6
-        assert state["includes"]["users"] == 1
-
         with self._usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            for index in range(70):
+                callback(
+                    b'{"data":{"id":"'
+                    + str(index).encode()
+                    + b'"},"includes":{"future_'
+                    + str(index).encode()
+                    + b'":[{"id":"u"}]}}\n'
+                )
+            callback(b'{"data":{"id":"known"},"includes":{"users":[{"id":"user"}]}}\n')
+            state = flow.metadata[metadata_keys.X_NDJSON_STATE]
+            assert state["unknown_includes_overflow_count"] == 6
+            assert state["includes"]["users"] == 1
+
             mitm_addon.response(flow)
             usage.flush_usage_events(trigger="test")
 
         payloads = webhook.usage_events()
-        by_cat = {payload["category"]: payload["quantity"] for payload in payloads}
-        assert len(payloads) == len(by_cat)
+        by_cat = Counter(event["category"] for event in payloads)
         assert by_cat == {
             "posts.read": 71,
             "user.read": 1,
             **{f"includes.future_{index}": 1 for index in range(64)},
             "includes.__overflow__": 6,
         }
+        assert all(event["quantity"] == 1 for event in payloads)
+        assert len({event["idempotencyKey"] for event in payloads}) == 142
         assert all(len(category) <= 100 for category in by_cat)
 
     def test_response_logs_incremental_x_json_parse_error(self, tmp_path, real_flow, mitm_ctx):
@@ -690,25 +706,28 @@ class TestXConnectorErrorPipeline:
         assert flow.response is not None
         flow.response.headers["content-encoding"] = encoding_case
 
-        mitm_addon.responseheaders(flow)
-        response_stream(flow)(
-            _compress_body(
-                encoding_case,
-                b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n{"data":{"id":"2"}}\n',
-            )
-        )
-        assert flow.metadata[metadata_keys.X_NDJSON_STATE]["data_count"] == 2
-        flow.error = Error("connection reset by peer")
-
         with usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            response_stream(flow)(
+                _compress_body(
+                    encoding_case,
+                    b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n{"data":{"id":"2"}}\n',
+                )
+            )
+            assert flow.metadata[metadata_keys.X_NDJSON_STATE]["data_count"] == 2
+            flow.error = Error("connection reset by peer")
+
             mitm_addon.error(flow)
             usage.flush_usage_events(trigger="test")
 
         payloads = webhook.usage_events()
-        by_cat = {payload["category"]: payload["quantity"] for payload in payloads}
         assert webhook.request_count == 1
-        assert len(payloads) == len(by_cat)
-        assert by_cat == {"posts.read": 2, "user.read": 1}
+        assert Counter(event["category"] for event in payloads) == {
+            "posts.read": 2,
+            "user.read": 1,
+        }
+        assert all(event["quantity"] == 1 for event in payloads)
+        assert len({event["idempotencyKey"] for event in payloads}) == 3
 
         proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
         entries = read_jsonl_entries_after_flush(proxy_log)
@@ -734,27 +753,30 @@ class TestXConnectorErrorPipeline:
         flow.metadata.pop(metadata_keys.NETWORK_LOG_TARGET)
 
         # 1. Register parser
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        assert metadata_keys.X_NDJSON_STATE in flow.metadata
-
-        # 2. Receive two complete tweets, then a partial third (cut off)
-        callback(b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n')
-        callback(b'{"data":{"id":"2"}}\n')
-        callback(b'{"data":{"id":"3"}')  # no trailing newline; connection dies here
-
-        # 3. Connection aborts
-        flow.error = Error("connection reset by peer")
-
         with usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            assert metadata_keys.X_NDJSON_STATE in flow.metadata
+
+            # 2. Receive two complete tweets, then a partial third (cut off)
+            callback(b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n')
+            callback(b'{"data":{"id":"2"}}\n')
+            callback(b'{"data":{"id":"3"}')  # no trailing newline; connection dies here
+
+            # 3. Connection aborts
+            flow.error = Error("connection reset by peer")
+
             mitm_addon.error(flow)
             usage.flush_usage_events(trigger="test")
 
         # 4. Billing must reflect the 2 complete tweets (partial 3rd is dropped)
         payloads = webhook.usage_events()
-        by_cat = {p["category"]: p["quantity"] for p in payloads}
-        assert len(payloads) == len(by_cat)
-        assert by_cat == {"posts.read": 2, "user.read": 1}
+        assert Counter(event["category"] for event in payloads) == {
+            "posts.read": 2,
+            "user.read": 1,
+        }
+        assert all(event["quantity"] == 1 for event in payloads)
+        assert len({event["idempotencyKey"] for event in payloads}) == 3
         assert "connector_response_report_on_interruption" not in flow.metadata
         assert not (tmp_path / "network.jsonl").exists()
 
@@ -764,18 +786,21 @@ class TestXConnectorErrorPipeline:
         """Connection error finalizes a complete NDJSON row without trailing newline."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
-        mitm_addon.responseheaders(flow)
-        callback = response_stream(flow)
-        callback(b'{"data":{"id":"1"}}\n')
-        callback(b'{"data":{"id":"2"},"includes":{"users":[{"id":"u2"}]}}')
-        flow.error = Error("connection reset by peer")
-
         with usage_webhook_api() as webhook:
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            callback(b'{"data":{"id":"1"}}\n')
+            callback(b'{"data":{"id":"2"},"includes":{"users":[{"id":"u2"}]}}')
+            flow.error = Error("connection reset by peer")
+
             mitm_addon.error(flow)
             usage.flush_usage_events(trigger="test")
 
         payloads = webhook.usage_events()
-        by_cat = {payload["category"]: payload["quantity"] for payload in payloads}
-        assert len(payloads) == len(by_cat)
-        assert by_cat == {"posts.read": 2, "user.read": 1}
+        assert Counter(event["category"] for event in payloads) == {
+            "posts.read": 2,
+            "user.read": 1,
+        }
+        assert all(event["quantity"] == 1 for event in payloads)
+        assert len({event["idempotencyKey"] for event in payloads}) == 3
         assert "connector_response_finish" not in flow.metadata

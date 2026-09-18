@@ -150,7 +150,27 @@ describe("X resource observation wire contract", () => {
     expect(parse(Array.from({ length: 101 }, observation)).success).toBe(false);
   });
 
-  it("retains the legacy protocol and requires a bounded UUID run for v1", () => {
+  it.each(["posts.read", "user.read"])(
+    "requires resource observations for X %s while retaining other count events",
+    (category) => {
+      const count = {
+        idempotencyKey: randomUUID(),
+        kind: "connector",
+        provider: "x",
+        category,
+        quantity: 2,
+      };
+      expect(parse([count]).success).toBe(false);
+      expect(parse([{ ...count, quantity: 0 }]).success).toBe(false);
+      expect(parse([{ ...count, provider: "other" }]).success).toBe(true);
+      expect(parse([{ ...count, category: "content.create" }]).success).toBe(
+        true,
+      );
+      expect(parse([{ ...count, kind: "model" }]).success).toBe(true);
+    },
+  );
+
+  it("accepts other usage kinds and requires a bounded UUID run for resources", () => {
     for (const kind of ["connector", "model", "image"]) {
       expect(
         parse([

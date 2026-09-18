@@ -2690,3 +2690,27 @@ Coordinate the Marketing single-sender cutover with this App/API deployment.
 Verify the replacement App is live before setting a later client floor; an
 already-open old bundle can otherwise continue sending browser conversions.
 This PR does not select a floor or change production provider settings.
+
+## X resource protocol cleanup
+
+The X producer always emits `x-resource-v1` observations for post and user reads.
+The claim and proxy registry no longer carry `xResourceBilling` or its fixed
+`startDate`; date-based and absent-capability count producers are retired.
+The API accepts X `posts.read` and `user.read` only in the resource form. X writes,
+other connector counts, model and image events retain their existing shapes.
+The deduplication feature switch still chooses Q or N+R, and neither direction
+changes the producer protocol or the two-UTC-date retention window.
+
+New Runners work with the preceding switch-based API: they ignore the old claim
+capability and that API accepts resource uploads. Old Runners receiving the new
+claim instead select count-only reads, which the new API rejects. Upgrade and
+drain the old Runner processes, their Runs and retained uploads before promoting
+the API cleanup. The normal API-before-Runner promotion order does not satisfy
+this prerequisite. Supported rollback Runners must retain the unconditional
+producer; the preceding switch-based API remains a compatible rollback target.
+
+This is a requested protocol retirement, not a database migration. No stored
+execution context contains the claim-only capability, and no historical usage
+or resource row needs rewriting. A code merge and local tests do not prove the
+production drain. Record that evidence under #34615 as described in the
+[X rollout guide](x-resource-rollout.md).

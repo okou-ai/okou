@@ -1504,16 +1504,6 @@ export const claimCompatibleStoredExecutionContextSchema =
  */
 const executionContextObjectSchema = z.object({
   runId: z.uuid(),
-  // Always advertised by the current API at claim time, not persisted in queued
-  // contexts. startDate is a fixed epoch date retained for deployed producers
-  // that require it and compare it with the response completion UTC date.
-  xResourceBilling: z
-    .object({
-      protocol: z.literal("x-resource-v1"),
-      startDate: z.iso.date(),
-    })
-    .strict()
-    .optional(),
   reuseKey: z.string().nullable().optional(),
   prompt: z.string(),
   appendSystemPrompt: z.string().nullable(),
