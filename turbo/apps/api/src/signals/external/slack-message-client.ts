@@ -260,7 +260,7 @@ class SlackMessageClientError extends Error {
   }
 }
 
-export interface SlackMessageClientFailure {
+interface SlackMessageClientFailure {
   readonly code: string;
   readonly retryable: boolean;
   readonly retryAfterMs: number | null;
