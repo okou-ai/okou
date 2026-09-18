@@ -52,18 +52,14 @@ async function openMediaCategory(
 }
 
 /**
- * A row reads as its model followed by a price tier, and model families share a
- * prefix, so the name has to end where the model's own name ends.
+ * A row reads as its model followed by a price tier. Compare the complete model
+ * name so models with a shared prefix remain distinct.
  */
 function expectSelectedMediaModel(panel: HTMLElement, label: string): void {
-  const named = new RegExp(
-    `^${label.replace(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`)}(?![\\w.])`,
-    "u",
-  );
   const row = within(panel)
     .getAllByRole("option")
     .find((option) => {
-      return named.test(option.textContent ?? "");
+      return option.textContent?.replace(/\$+$/u, "").trim() === label;
     });
   if (!row) {
     throw new Error(`Expected a ${label} row in the open model panel`);
