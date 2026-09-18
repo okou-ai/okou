@@ -30,7 +30,10 @@ import {
   executeMorningBriefComposedGeneration$,
   type MorningBriefComposedExecution,
 } from "./morning-brief-composed-generation.service";
-import { recoverMorningBriefGeneration$ } from "./morning-brief-generation-executor.service";
+import {
+  recoverMorningBriefGeneration$,
+  type MorningBriefGenerationRecovery,
+} from "./morning-brief-generation-executor.service";
 import type {
   NativeDeliveryRecovery,
   NativeDeliveryRecoveryResolution,
@@ -455,6 +458,18 @@ async function hasNativeMorningBriefDeliveryReceipt(
   return receipt !== undefined;
 }
 
+function resolutionOfGenerationRecovery(
+  generation: MorningBriefGenerationRecovery,
+): NativeDeliveryRecoveryResolution | null {
+  if (generation.kind === "deliverable") {
+    return null;
+  }
+  if (generation.kind === "pending") {
+    return { kind: "pending" };
+  }
+  return { kind: "settle", outcome: generation.kind };
+}
+
 /**
  * Resolve one pending delivery recovery, receipt first.
  *
@@ -505,11 +520,9 @@ export const recoverNativeMorningBriefDelivery$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (generation.kind === "pending") {
-      return { kind: "pending" };
-    }
-    if (generation.kind !== "deliverable") {
-      return { kind: "settle", outcome: generation.kind };
+    const generationResolution = resolutionOfGenerationRecovery(generation);
+    if (generationResolution !== null) {
+      return generationResolution;
     }
 
     // Only an accepted, retained `deliver` result reaches S6. S6 remains the
@@ -539,10 +552,28 @@ export const recoverNativeMorningBriefDelivery$ = command(
       return { kind: "settle", outcome: "generation-unknown" };
     }
     if (retried.reason === "result-not-deliverable") {
-      // S5 classified this immutable row as deliverable. If S6 cannot validate
-      // that same exact attempt, it is terminally inconsistent rather than a
-      // reason to spin or to regenerate.
-      return { kind: "settle", outcome: "generation-failed" };
+      // S6 can wait on its schedule parent after S5's content-free read. The
+      // retention worker locks only the generation row, so it may purge an
+      // accepted body during that wait. Re-read the exact attempt through S5's
+      // canonical state machine: purged content is honestly unknown, while a
+      // terminal model outcome keeps its precise meaning. If S5 still calls the
+      // row deliverable, the missing body is a genuine invariant failure.
+      const currentGeneration = await set(
+        recoverMorningBriefGeneration$,
+        {
+          owner: args.owner,
+          attemptId: generation.attemptId,
+          purpose: "production",
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      return (
+        resolutionOfGenerationRecovery(currentGeneration) ?? {
+          kind: "settle",
+          outcome: "generation-failed",
+        }
+      );
     }
     // Authority and destination refusals can change while the retained result
     // remains valid. Keep the obligation pending for a later finite recovery;

@@ -181,7 +181,7 @@ export type MorningBriefGenerationExecution =
  * own settlement outcomes, but it does not inspect S5 rows or reinterpret model
  * output itself. A deliverable result still has to pass S6's authority fence.
  */
-interface MorningBriefGenerationRecovery {
+export interface MorningBriefGenerationRecovery {
   readonly kind:
     | "pending"
     | "deliverable"

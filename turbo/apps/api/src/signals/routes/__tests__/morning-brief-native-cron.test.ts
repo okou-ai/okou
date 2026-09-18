@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -26,7 +27,10 @@ import {
 } from "../../../test-fixtures/morning-brief-generation";
 import {
   drainEmailOutbox,
+  readChatThreadEvents,
   readEmailOutboxRow,
+  readMorningBriefDeliveryOutbox,
+  rejectMorningBriefDeliveryInsert,
 } from "../../../test-fixtures/morning-brief-delivery";
 import {
   abandonClaimedOccurrence,
@@ -58,6 +62,7 @@ import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock"
 import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
 import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
+import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
@@ -130,6 +135,18 @@ function tick(owner: Fixture, secret: string = CRON_SECRET) {
   return cronClient(owner).execute({
     headers: { authorization: `Bearer ${secret}` },
   });
+}
+
+async function runRetentionMaintenance(owner: Fixture): Promise<number> {
+  const response = await accept(
+    setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
+      testWorkflowAutomationExecutionContract,
+    ).retainMorningBriefGenerations({
+      body: { owners: [{ orgId: owner.orgId, userId: owner.userId }] },
+    }),
+    [200],
+  );
+  return response.body.purged;
 }
 
 function preferenceClient() {
@@ -535,6 +552,175 @@ describe("native Morning Brief cron", () => {
     const after = await readNativeSchedule(f);
     expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
   });
+
+  it("delivers the same retained accepted result on the next tick after S6 is interrupted", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(f);
+    const restoreReceipt = await rejectMorningBriefDeliveryInsert(
+      f.orgId,
+      context.signal,
+    );
+    const due = await makeNativeOccurrenceDue(f);
+
+    // S5 commits the accepted body and binds the exact native occurrence before
+    // S6 reaches its final receipt write. The owner-scoped PostgreSQL fault then
+    // rolls the complete S6 transaction back, leaving no Chat or email effect.
+    const interrupted = await tick(f).then(
+      (response) => {
+        return response.status === 200
+          ? undefined
+          : new Error(`Unexpected status ${response.status.toString()}`);
+      },
+      (error: unknown) => {
+        return error;
+      },
+    );
+    expect(interrupted).toBeDefined();
+    expect(calls.generation).toHaveLength(1);
+    const [generation] = await readNativeGenerations(f);
+    const attemptId = generation?.attemptId;
+    const markdown = generation?.resultMarkdown;
+    expect(generation).toMatchObject({
+      state: "succeeded",
+      decision: "deliver",
+      resultTitle: expect.any(String),
+      resultMarkdown: expect.any(String),
+      contentPurgedAt: null,
+    });
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        scheduledFor: due,
+        generationAttemptId: attemptId,
+        settledAt: null,
+        deliveryPending: true,
+      },
+    ]);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
+    await restoreReceipt();
+
+    const recovered = await accept(tick(f), [200]);
+    expect(recovered.body.deliveriesRecovered).toBe(1);
+    expect(calls.generation).toHaveLength(1);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        generationAttemptId: attemptId,
+        outcome: "delivered",
+        settledAt: expect.any(Date),
+        deliveryPending: false,
+      },
+    ]);
+    const deliveries = await readNativeDeliveries(f);
+    expect(deliveries).toHaveLength(1);
+    const events = await readChatThreadEvents(
+      deliveries[0]?.chatThreadId ?? "",
+    );
+    expect(events).toMatchObject([
+      { eventType: "output.message", content: markdown },
+    ]);
+    await expect(readMorningBriefDeliveryOutbox(f)).resolves.toMatchObject([
+      {
+        template: {
+          template: "morning-brief-result",
+          props: { resultMarkdown: markdown },
+        },
+      },
+    ]);
+    expect((await readNativeGenerations(f))[0]?.attemptId).toBe(attemptId);
+    expect((await readNativeSchedule(f))?.nextRunAt?.getTime()).toBeGreaterThan(
+      now(),
+    );
+  });
+
+  it("settles accepted content purged while S6 waits as generation unknown", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(f);
+    const restoreReceipt = await rejectMorningBriefDeliveryInsert(
+      f.orgId,
+      context.signal,
+    );
+    await makeNativeOccurrenceDue(f);
+
+    // Leave the real accepted S5 result bound to an unsettled occurrence, with
+    // no S6 receipt or prepared destination surviving the failed transaction.
+    const interrupted = await tick(f).then(
+      (response) => {
+        return response.status === 200
+          ? undefined
+          : new Error(`Unexpected status ${response.status.toString()}`);
+      },
+      (error: unknown) => {
+        return error;
+      },
+    );
+    expect(interrupted).toBeDefined();
+    await restoreReceipt();
+    const [before] = await readNativeGenerations(f);
+    const attemptId = before?.attemptId;
+    expect(before).toMatchObject({
+      state: "succeeded",
+      decision: "deliver",
+      resultTitle: expect.any(String),
+      resultMarkdown: expect.any(String),
+      contentPurgedAt: null,
+    });
+    expect(before?.expiresAt.getTime()).toBeGreaterThan(now());
+    const receiptBefore = await readPlatformGenerationReceipts([
+      attemptId ?? "",
+    ]);
+    expect(receiptBefore).toHaveLength(1);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
+
+    // Holding the schedule row lets the registered cron finish receipt-first
+    // recovery, canonical S5 classification and both external preflights, then
+    // proves its real S6 transaction is waiting at the schedule lock. Retention
+    // does not take that lock, so the actual worker can cross the immutable
+    // deadline and purge the accepted body before S6 resumes.
+    const schedule = await holdNativeScheduleRow(f, context.signal);
+    const recovering = tick(f);
+    await schedule.waitForBlocked();
+    mockNow((before?.expiresAt.getTime() ?? now()) + 1000);
+    await expect(runRetentionMaintenance(f)).resolves.toBe(1);
+    await expect(readNativeGenerations(f)).resolves.toMatchObject([
+      {
+        attemptId,
+        state: "succeeded",
+        decision: "deliver",
+        resultTitle: null,
+        resultMarkdown: null,
+        contentPurgedAt: expect.any(Date),
+      },
+    ]);
+    await schedule.release();
+
+    const recovered = await accept(recovering, [200]);
+    expect(recovered.body.deliveriesRecovered).toBe(1);
+    expect(calls.generation).toHaveLength(1);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        generationAttemptId: attemptId,
+        outcome: "generation-unknown",
+        settledAt: expect.any(Date),
+        deliveryPending: false,
+      },
+    ]);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
+    await expect(readMorningBriefDeliveryOutbox(f)).resolves.toHaveLength(0);
+    expect(emailSends()).toHaveLength(0);
+    await expect(
+      readPlatformGenerationReceipts([attemptId ?? ""]),
+    ).resolves.toStrictEqual(receiptBefore);
+    expect((await readNativeSchedule(f))?.nextRunAt?.getTime()).toBeGreaterThan(
+      now(),
+    );
+
+    const repeated = await accept(tick(f), [200]);
+    expect(repeated.body.deliveriesRecovered).toBe(0);
+    expect(calls.generation).toHaveLength(1);
+  }, 20_000);
 
   it("lets an S6 receipt committed while recovery waits override an expired S5 snapshot", async () => {
     const f = await fixture();
