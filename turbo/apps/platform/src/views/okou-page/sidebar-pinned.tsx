@@ -219,6 +219,7 @@ function PinnedAgentGridCard({
   isPrimarySelected,
   hasUnread,
   isDefaultAgent,
+  isPinned,
   isReorderable,
   dropSide,
 }: {
@@ -226,9 +227,11 @@ function PinnedAgentGridCard({
   readonly isPrimarySelected: boolean;
   readonly hasUnread: boolean;
   readonly isDefaultAgent: boolean;
+  readonly isPinned: boolean;
   readonly isReorderable: boolean;
   readonly dropSide: PinnedDropSide | null;
 }) {
+  const { t } = useTranslation("agents");
   const pageSignal = useGet(pageSignal$);
   const draggingAgentId = useGet(draggingPinnedAgentId$);
   const dropTargetAgentId = useGet(pinnedAgentDropTargetId$);
@@ -241,6 +244,7 @@ function PinnedAgentGridCard({
 
   const isDragging = draggingAgentId === agent.agentId;
   const isDragInFlight = draggingAgentId !== null;
+  const isUnreadOnly = hasUnread && !isPinned;
   const acceptsDrop =
     isReorderable &&
     draggingAgentId !== null &&
@@ -252,6 +256,7 @@ function PinnedAgentGridCard({
       pathname="/agents/:agentId/chat"
       options={{ pathParams: { agentId: agent.agentId } }}
       data-testid="pinned-agent-card"
+      data-pin-state={isPinned ? "pinned" : "unread-only"}
       aria-current={isPrimarySelected ? "page" : undefined}
       draggable={isReorderable}
       onDragStart={(e) => {
@@ -349,6 +354,17 @@ function PinnedAgentGridCard({
             <AgentUnreadIndicator />
           </span>
         )}
+        {isUnreadOnly && (
+          <span
+            aria-label={t(($) => {
+              return $.sidebar.pin;
+            })}
+            className="absolute -bottom-0.5 -left-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-sidebar text-sidebar-foreground shadow-sm"
+            data-testid="pinned-agent-unpinned-indicator"
+          >
+            <PinOff aria-hidden="true" size={9} strokeWidth={2.5} />
+          </span>
+        )}
       </span>
       <span
         data-testid="pinned-agent-label-frame"
@@ -367,6 +383,13 @@ function PinnedAgentGridCard({
         <TooltipTrigger asChild>{card}</TooltipTrigger>
         <TooltipContent side="top">
           <p className="text-xs">{displayName}</p>
+          {isUnreadOnly && (
+            <p className="text-[11px] text-muted-foreground">
+              {t(($) => {
+                return $.sidebar.pin;
+              })}
+            </p>
+          )}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -492,6 +515,7 @@ export function PinnedAgentListSection({
                   isPrimarySelected={isPrimarySelected}
                   hasUnread={hasUnread}
                   isDefaultAgent={isDefaultAgent}
+                  isPinned={isPinned}
                   isReorderable={isPinned && !isDefaultAgent}
                   dropSide={resolveDropSide({
                     agents: horizontalPinnedAgents,

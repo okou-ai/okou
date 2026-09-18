@@ -3387,6 +3387,45 @@ test("Use context actions on pinned agents", async () => {
   });
 });
 
+test("Keep an unpinned unread agent distinct in the pinned grid", async () => {
+  prepareAgents();
+  context.mocks.data.userPreferences({
+    pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
+  });
+  mockUnreadAgents(() => {
+    return [SUPPORT_AGENT_ID];
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  const grid = await screen.findByTestId("pinned-agents-grid");
+  const supportAgent = await waitFor(() => {
+    return pinnedAgentLink(grid, "Support Agent");
+  });
+
+  expect(supportAgent).toHaveAttribute("data-pin-state", "pinned");
+  expect(
+    within(supportAgent).queryByTestId("pinned-agent-unpinned-indicator"),
+  ).not.toBeInTheDocument();
+
+  fireEvent.contextMenu(supportAgent);
+  expect(menuItemByText("Unpin")).toBeInTheDocument();
+  click(menuItemByText("Unpin"));
+
+  await waitFor(() => {
+    expect(supportAgent).toHaveAttribute("data-pin-state", "unread-only");
+    expect(
+      within(supportAgent).getByTestId("pinned-agent-unpinned-indicator"),
+    ).toHaveAttribute("aria-label", "Pin to sidebar");
+  });
+
+  fireEvent.contextMenu(supportAgent);
+  expect(menuItemByText("Pin to sidebar")).toBeInTheDocument();
+});
+
 test("Show the three-column chat navigation and actions", async () => {
   prepareDefaultAgent();
 
