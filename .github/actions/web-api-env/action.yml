@@ -30,7 +30,7 @@ inputs:
     required: false
     default: ""
   api-backend-url:
-    description: "Backend API URL used by web proxy routes"
+    description: "Backend API URL; required for API deployments, optional for web proxy routes"
     required: false
     default: ""
   cli-pkg-url:
@@ -64,6 +64,11 @@ runs:
 
         if [[ "$INPUT_ENVIRONMENT" != "preview" && "$INPUT_ENVIRONMENT" != "production" ]]; then
           echo "::error::environment must be preview or production"
+          exit 1
+        fi
+
+        if [[ "$INPUT_APP" == "api" && -z "$INPUT_API_BACKEND_URL" ]]; then
+          echo "::error::api-backend-url is required for API deployments"
           exit 1
         fi
 
@@ -228,6 +233,11 @@ runs:
           add_env OKOU_API_BACKEND_URL "$api_backend_url"
         fi
         if [[ "$INPUT_APP" == "api" ]]; then
+          # Bind the MCP audience to this deployment's API, including PR aliases.
+          add_env MCP_RESOURCE_URL "${api_backend_url%/}/mcp"
+          # Repository variables configure previews; production overrides the
+          # same names through its GitHub Environment, like the Clerk bindings.
+          add_var MCP_OAUTH_ISSUER MCP_OAUTH_ISSUER
           # GitHub Environment production overrides the same repository keys.
           add_var GCP_LLM_PROJECT_ID GCP_LLM_PROJECT_ID
           add_var GCP_LLM_WORKLOAD_IDENTITY_PROVIDER GCP_LLM_WORKLOAD_IDENTITY_PROVIDER

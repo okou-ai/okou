@@ -209,11 +209,19 @@ async function attemptWorkflowQueueAdmission(
       return { kind: "schedule_unavailable", reason: "superseded" };
     }
 
+    const [workflow] = await tx
+      .select({ displayName: workflows.displayName })
+      .from(workflows)
+      .where(eq(workflows.id, automation.workflowId))
+      .limit(1);
+    if (!workflow) {
+      throw new Error(`Workflow not found: ${automation.workflowId}`);
+    }
     const automationUserMessage = createUserMessageDocument({
       text: args.displayPrompt,
       nonContentPart: {
         type: "automation",
-        workflowName: args.workflowName,
+        workflowName: workflow.displayName?.trim() || args.workflowName,
         workflowId: automation.workflowId,
         ...(args.triggerBrief === undefined
           ? {}

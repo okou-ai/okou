@@ -849,9 +849,13 @@ describe("okou people-search route", () => {
       [200],
     );
     const usageRow = usage.body.rows.find((row) => {
-      return row.runId === run.runId;
+      return row.threadId === null;
     });
 
+    expect(usageRow).toMatchObject({
+      title: "Unavailable thread",
+      runId: null,
+    });
     expect(usageRow?.breakdown).toContainEqual({
       kind: "other",
       credits: 25,

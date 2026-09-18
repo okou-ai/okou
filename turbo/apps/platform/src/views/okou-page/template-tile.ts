@@ -34,7 +34,7 @@ export const TEMPLATE_TILE_RING_SELECTED = "ring-1 ring-primary";
 export const TEMPLATE_TILE_MEDIA =
   "relative overflow-hidden border border-border bg-muted";
 export const TEMPLATE_TILE_SCRIM =
-  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 group-hover/tile:opacity-100";
+  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100 group-focus-visible/tile:opacity-100";
 export const TEMPLATE_TILE_USE =
   "absolute bottom-2 right-2 z-20 h-[30px] rounded-lg bg-primary px-3 text-[12.5px] font-medium text-primary-foreground opacity-100 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/tile:opacity-100";
 // Caption metrics track the illustration card: same text size, and enough
@@ -48,4 +48,4 @@ export const TEMPLATE_TILE_NAME =
  * `Check` glyph so the icon import stays with the component that renders it.
  */
 export const TEMPLATE_TILE_SELECTED_BADGE =
-  "pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground";
+  "pointer-events-none absolute left-[7px] top-[7px] z-20 flex size-[22px] items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm";

@@ -1,3 +1,7 @@
+import {
+  computeContentHashFromHashes,
+  type FileEntryWithHash,
+} from "@okouai/api-contracts/contracts/storage-content-hash";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import {
   MEMORY_ARTIFACT_NAME,
@@ -25,10 +29,6 @@ import {
   type S3ObjectHead,
   verifyS3FilesExist,
 } from "../external/s3";
-import {
-  computeContentHashFromHashes,
-  type FileEntryWithHash,
-} from "./storage-content-hash.service";
 import { enqueueMemorySummaryProjection } from "./memory-summary-projection.service";
 import { notifyPiMemoryPhase2ExternalHeadChange } from "./pi-memory-phase2-job.service";
 import {

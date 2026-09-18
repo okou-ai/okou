@@ -23,11 +23,13 @@ pub(crate) use session_history::{
     SessionHistoryTransferEncodingState, session_history_prefix_extension_action_type,
 };
 
+mod archive_size_mismatch;
 mod dns_readiness;
 mod history_transfer;
 mod session_history;
 mod workspace_session_history;
 
+pub(crate) use archive_size_mismatch::ArchiveSizeMismatch;
 pub(crate) use history_transfer::{
     HistoryCodecReason, HistoryTransferMeasurements, HistoryTransferSource,
 };
@@ -290,6 +292,8 @@ struct SandboxOp {
     history_transfer: Option<history_transfer::HistoryTransferTelemetry>,
     #[serde(flatten)]
     dns_readiness: Option<dns_readiness::DnsReadinessTelemetryFields>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_size_mismatch: Option<ArchiveSizeMismatch>,
 }
 
 #[derive(Serialize)]
@@ -380,6 +384,25 @@ impl JobTelemetry {
             None,
             completed_at,
         ));
+    }
+
+    pub(crate) fn record_archive_phase_at(
+        &mut self,
+        record: SandboxOpRecord,
+        completed_at: DateTime<Utc>,
+        mismatch: Option<ArchiveSizeMismatch>,
+    ) {
+        let mut operation = sandbox_op_at(
+            record.action_type,
+            record.duration,
+            record.success,
+            record.error,
+            None,
+            None,
+            completed_at,
+        );
+        operation.archive_size_mismatch = mismatch;
+        self.push_operation(operation);
     }
 
     pub(crate) fn record_api_to_spawn(
@@ -909,6 +932,7 @@ fn sandbox_op_at(
         workspace_session_history: None,
         history_transfer: None,
         dns_readiness: None,
+        archive_size_mismatch: None,
     }
 }
 
@@ -1047,6 +1071,7 @@ mod tests {
             workspace_session_history: None,
             history_transfer: None,
             dns_readiness: None,
+            archive_size_mismatch: None,
         };
         let json = serde_json::to_value(&op).unwrap();
         assert_eq!(
@@ -1333,6 +1358,7 @@ mod tests {
                 workspace_session_history: None,
                 history_transfer: None,
                 dns_readiness: None,
+                archive_size_mismatch: None,
             }],
         };
         let json = serde_json::to_value(&payload).unwrap();
@@ -1506,6 +1532,66 @@ mod tests {
         telemetry.flush().await;
 
         telemetry_mock.assert_calls_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn archive_mismatch_keeps_exact_u64_text_and_completion_time_through_auto_flush() {
+        let receiver = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&receiver.url()),
+            RunId::nil(),
+            "tok".to_string(),
+            None,
+        );
+        telemetry.record("previous_operation", Duration::ZERO, true, None);
+        telemetry.rewind_oldest_pending_for_test(FLUSH_THRESHOLD + Duration::from_millis(1));
+        let completed_at = DateTime::parse_from_rfc3339("2026-09-18T02:03:04.567Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        telemetry.record_archive_phase_at(
+            SandboxOpRecord::new(
+                "storage_cache_fresh_delivery_headers",
+                Duration::from_millis(7),
+                false,
+                Some("response-size-mismatch"),
+            ),
+            completed_at,
+            Some(ArchiveSizeMismatch::new(
+                5,
+                u64::MAX,
+                crate::storage_plan::ArchiveHandle::artifact(0),
+                &reqwest::header::HeaderMap::new(),
+            )),
+        );
+        telemetry.flush().await;
+        let requests = receiver.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        let operations = payload["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), 2);
+        assert!(operations[0].get("archive_size_mismatch").is_none());
+        assert_eq!(
+            operations[1],
+            serde_json::json!({
+                "ts": "2026-09-18T02:03:04.567Z",
+                "action_type": "storage_cache_fresh_delivery_headers",
+                "duration_ms": 7,
+                "success": false,
+                "error": "response-size-mismatch",
+                "archive_size_mismatch": {
+                    "expected_bytes": "5",
+                    "response_bytes": "18446744073709551615",
+                    "source_kind": "artifact",
+                    "source_index": 0,
+                    "content_encoding": "absent",
+                },
+            })
+        );
     }
 
     #[tokio::test]

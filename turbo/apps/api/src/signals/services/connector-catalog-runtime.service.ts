@@ -244,6 +244,9 @@ function platformSecretName(value: string): ConnectorPlatformSecretName {
 function runtimeAccess(
   access: ConnectorCatalogAuthMethod["access"],
 ): ConnectorAccessConfig {
+  if (access.kind === "none" || access.kind === "automatic") {
+    throw new Error("Unsupported accepted connector access capability");
+  }
   const envBindings: Record<string, ConnectorEnvBindingValue> = {};
   for (const [name, binding] of Object.entries(access.envBindings)) {
     envBindings[name] = envBindingValue(binding);
@@ -375,6 +378,10 @@ function runtimeMethod(
   };
 
   switch (method.grant.kind) {
+    case "none":
+    case "automatic": {
+      throw new Error("Unsupported accepted connector grant capability");
+    }
     case "manual": {
       return {
         storage,
@@ -484,6 +491,17 @@ function runtimeConnector(
   for (const method of connector.authMethods) {
     if (method.visible) {
       authoredVisibleMethodIds.add(method.id);
+    }
+    // Catalog recognition does not enable execution. The builtin MCP runtime
+    // and generic authentication capabilities are delivered in #34910/#34911.
+    if (
+      connector.mcp !== undefined ||
+      method.grant.kind === "none" ||
+      method.grant.kind === "automatic" ||
+      method.access.kind === "none" ||
+      method.access.kind === "automatic"
+    ) {
+      continue;
     }
     if (filteredMethodKeys.has(methodKey(connectorSlug, method.id))) {
       continue;

@@ -1,6 +1,9 @@
 // Rule identifiers are content-free. Detailed messages stay inside validation;
 // the artifact loader never forwards them or their private catalog values.
 export type ConnectorCatalogRelationshipRule =
+  | "invalid-replacement"
+  | "mcp-auth-contract"
+  | "mcp-firewall-contract"
   | "duplicate-identifier"
   | "overlapping-storage-classes"
   | "platform-secret-storage-overlap"

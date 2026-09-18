@@ -627,6 +627,11 @@ test.each(
 test.each(retryFailures)(
   "A recovered $code recording stays cleared after navigation and reload",
   async (failure) => {
+    const resetInitialPage$ = resetSignal();
+    const initialPageSignal = context.store.set(
+      resetInitialPage$,
+      context.signal,
+    );
     let transcriptionAttempts = 0;
     context.mocks.browser.voiceInput({ rms: 0.12 });
     installAvailableVoiceQuota();
@@ -646,7 +651,7 @@ test.each(retryFailures)(
     });
     installRunChat();
     await setupPage({
-      context,
+      context: { ...context, signal: initialPageSignal },
       path: RUN_PATH,
       locale: "en-US",
     });
@@ -671,7 +676,8 @@ test.each(retryFailures)(
 
     click(await findLink("Agents"));
     await screen.findByRole("heading", { name: "Agents" });
-    cleanup();
+    context.store.set(resetInitialPage$);
+    releasePageDom();
     await setupPage({
       context: refreshedContext,
       path: RUN_PATH,

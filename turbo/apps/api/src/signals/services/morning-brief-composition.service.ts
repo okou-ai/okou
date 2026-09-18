@@ -70,8 +70,9 @@ import {
   normalizeMorningBriefGmail,
 } from "./morning-brief-gmail-source";
 import {
+  morningBriefInstructionsProvenance,
+  morningBriefInstructionsUnchanged,
   readMorningBriefLanguageContext$,
-  resolveMorningBriefInstructionsVersion,
 } from "./morning-brief-language-context.service";
 import {
   planMorningBriefLanguage,
@@ -608,10 +609,7 @@ const planMorningBriefRequest$ = command(
     const memberLocale = await loadMorningBriefMemberLocale(db, scope);
     signal.throwIfAborted();
     const language = planMorningBriefLanguage({
-      instructions:
-        context.kind === "available"
-          ? { versionId: context.versionId, digest: context.digest }
-          : null,
+      instructions: morningBriefInstructionsProvenance(context),
       memberLocale,
     });
     // The complete text stays in memory and goes straight into the request.
@@ -654,21 +652,21 @@ const planMorningBriefRequest$ = command(
     }
     const { collections, revoked, replanned } = proved;
 
-    // The Agent's instruction version is part of the request, so a change to it
-    // between the read and the reservation is a changed request, not a detail.
-    if (context.kind === "available") {
-      const current = await resolveMorningBriefInstructionsVersion(
-        db,
-        scope,
-        scope.agentId,
-      );
-      signal.throwIfAborted();
-      if (
-        current.kind !== "resolved" ||
-        current.versionId !== context.versionId
-      ) {
-        return { kind: "authority-changed" };
-      }
+    // The Agent's instruction context is part of the request, so a change to it
+    // between the read and the reservation is a changed request, not a detail —
+    // and that is as true of a proven absence as of a version that was read.
+    // An owner who publishes their first instructions, or replaces an empty
+    // file, while this attempt holds its authority has changed what the brief
+    // would be written from.
+    const unchanged = await morningBriefInstructionsUnchanged(
+      db,
+      scope,
+      scope.agentId,
+      context,
+    );
+    signal.throwIfAborted();
+    if (!unchanged) {
+      return { kind: "authority-changed" };
     }
     return {
       kind: "planned",

@@ -1,6 +1,6 @@
 import type { IntroVideoStyle } from "@okouai/api-contracts/contracts/intro-video-presenter";
 import { cn } from "@okouai/ui";
-import { Check, LayoutTemplate, Play } from "lucide-react";
+import { Check, LayoutTemplate, LoaderCircle, Pause, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -23,10 +23,15 @@ import {
 /**
  * The cover's only chrome is a chip in the bottom-left corner: the middle of
  * the artwork is what the user is reading, so nothing is drawn over it. The
- * chip says "this is a video" and toggles the preview. Everything else — the
- * hover scrim, the Use pill, the selected ring and badge — comes from the
- * shared tile chrome, so this wall matches the presentation, illustration and
+ * chip is the preview's whole state in one 18px square — play at rest, a
+ * spinner while the clip buffers, pause while it runs — and it grows to 22px
+ * on hover, where it is the thing being aimed at. Everything else — the hover
+ * scrim, the Use pill, the selected ring and badge — comes from the shared
+ * tile chrome, so this wall matches the presentation, illustration and
  * creative video walls.
+ *
+ * The chip states no duration: the styles catalog does not return one, and a
+ * number invented from nothing is worse than no number.
  */
 function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
   const { t } = useTranslation();
@@ -87,9 +92,32 @@ function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
               }
               startVideoPreview(video);
             }}
-            className="absolute bottom-2 left-2 z-20 grid h-[18px] w-[18px] cursor-pointer place-items-center rounded-md bg-black/45 text-white backdrop-blur-[2px] transition-colors hover:bg-black/70 group-hover/tile:bg-black/60"
+            className={cn(
+              "absolute bottom-2 left-2 z-20 grid size-[18px] cursor-pointer place-items-center rounded-md bg-black/45 text-white backdrop-blur-[2px] transition-all hover:bg-black/70 group-hover/tile:size-[22px] group-hover/tile:bg-black/60 group-focus-visible/tile:size-[22px]",
+              // The video is this chip's `peer`, so its own state picks the
+              // glyph. React state would need this component to own playback,
+              // which the shared hover helpers own instead.
+              "peer-data-[preview-playing=true]:[&_[data-glyph=play]]:hidden peer-data-[preview-playing=true]:[&_[data-glyph=pause]]:block",
+              "peer-data-[preview-buffering=true]:[&_[data-glyph=play]]:hidden peer-data-[preview-buffering=true]:[&_[data-glyph=spinner]]:block",
+            )}
           >
-            <Play size={9} fill="currentColor" />
+            <Play
+              data-glyph="play"
+              size={9}
+              fill="currentColor"
+              className="col-start-1 row-start-1"
+            />
+            <Pause
+              data-glyph="pause"
+              size={9}
+              fill="currentColor"
+              className="col-start-1 row-start-1 hidden"
+            />
+            <LoaderCircle
+              data-glyph="spinner"
+              size={11}
+              className="col-start-1 row-start-1 hidden animate-spin"
+            />
           </span>
         </>
       ) : null}
@@ -144,7 +172,9 @@ export function IntroVideoStyleCard({
           ) : null}
           <span className={cn(TEMPLATE_TILE_USE, "grid place-items-center")}>
             {t(($) => {
-              return $.artifacts.templates.use;
+              return selected
+                ? $.artifacts.templates.selected
+                : $.artifacts.templates.use;
             })}
           </span>
         </div>

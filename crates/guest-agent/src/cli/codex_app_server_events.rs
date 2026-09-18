@@ -2617,6 +2617,40 @@ mod tests {
     }
 
     #[test]
+    fn output_token_limit_is_classified_only_after_native_terminal_error() {
+        let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+        for will_retry in [true, false] {
+            let event = mapped_event(
+                "error",
+                json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "willRetry": will_retry,
+                    "error": {
+                        "message": message,
+                        "codexErrorInfo": "other",
+                        "additionalDetails": null
+                    }
+                }),
+            );
+            let diagnostic =
+                events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""));
+            if will_retry {
+                assert_eq!(event["type"], "warning");
+                assert_eq!(diagnostic, None);
+            } else {
+                assert_eq!(event["type"], "error");
+                let diagnostic = diagnostic.expect("terminal error diagnostic");
+                assert_eq!(diagnostic.message, message);
+                assert_eq!(
+                    diagnostic.failure_reason,
+                    Some(FailureReason::OutputTokenLimit)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn retryable_error_maps_to_warning() {
         let event = mapped_event(
             "error",

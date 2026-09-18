@@ -251,6 +251,8 @@ function clearMockedAuth() {
   mockedClerk.redirectToSignIn.mockImplementation(defaultRedirectToSignInImpl);
   mockedClerk.redirectToSignUp.mockReset();
   mockedClerk.redirectToSignUp.mockImplementation(defaultRedirectToSignUpImpl);
+  mockedClerk.redirectWithAuth.mockReset();
+  mockedClerk.redirectWithAuth.mockImplementation(defaultRedirectWithAuthImpl);
 }
 
 export function clearMockedAuthOnAbort(signal: AbortSignal): void {
@@ -397,6 +399,11 @@ const defaultRedirectToSignUpImpl: BrowserClerk["redirectToSignUp"] = async (
   await defaultNavigateImpl(defaultBuildSignUpUrlImpl(options));
 };
 
+const defaultRedirectWithAuthImpl: BrowserClerk["redirectWithAuth"] = (to) => {
+  window.location.assign(mockedClerk.buildUrlWithAuth(to));
+  return Promise.resolve();
+};
+
 const defaultLoadImpl = (options?: MockedClerkLoadOptions) => {
   internalMockedClerkLoadOptions = options ?? {};
   return Promise.resolve();
@@ -491,6 +498,7 @@ export const mockedClerk = {
     }
     return {
       id: internalMockedSession.id ?? "test-session-id",
+      status: "active",
       get lastActiveOrganizationId() {
         return internalMockedOrganization?.id ?? null;
       },
@@ -536,6 +544,9 @@ export const mockedClerk = {
   ),
   redirectToSignUp: vi.fn<BrowserClerk["redirectToSignUp"]>(
     defaultRedirectToSignUpImpl,
+  ),
+  redirectWithAuth: vi.fn<BrowserClerk["redirectWithAuth"]>(
+    defaultRedirectWithAuthImpl,
   ),
   buildSignInUrl: vi.fn<typeof defaultBuildSignInUrlImpl>(
     defaultBuildSignInUrlImpl,

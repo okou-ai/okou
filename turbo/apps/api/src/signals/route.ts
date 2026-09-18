@@ -112,6 +112,7 @@ import { mailRoutes } from "./routes/mail";
 import { mapsRoutes } from "./routes/maps";
 import { mcpConnectorsRoutes } from "./routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata";
+import { mcpServerRoutes } from "./routes/mcp-server";
 import { morningBriefPreviewGithubCollectionRoutes } from "./routes/morning-brief-preview-github-collection";
 import { weatherRoutes } from "./routes/weather";
 import { modelPoliciesRoutes } from "./routes/model-policies";
@@ -142,6 +143,7 @@ import { peopleSearchRoutes } from "./routes/people-search";
 import { webSearchRoutes } from "./routes/web-search";
 import { socialRoutes } from "./routes/social";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
+import { vncConnectionsRoutes } from "./routes/vnc-connections";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
@@ -335,6 +337,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...mapsRoutes,
   ...mcpConnectorsRoutes,
   ...mcpOAuthClientMetadataRoutes,
+  ...mcpServerRoutes,
   // Registered here so the protected preview has real application ingress. It
   // is 404 in production: the environment gate runs before authentication.
   ...morningBriefPreviewGithubCollectionRoutes,
@@ -344,6 +347,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webSearchRoutes,
   ...socialRoutes,
   ...sshConnectionsRoutes,
+  ...vncConnectionsRoutes,
   ...cloudflareAccessRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,

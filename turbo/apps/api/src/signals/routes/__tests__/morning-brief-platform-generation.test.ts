@@ -41,6 +41,7 @@ import {
   setMorningBriefMemberLocale,
 } from "../../../test-fixtures/morning-brief-generation";
 import { upsertOrgMetadataFixture } from "../../../test-fixtures/org-metadata";
+import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { modelProvidersRoutes } from "../model-providers";
@@ -2136,7 +2137,9 @@ describe("Morning Brief platform-funded generation commit admission", () => {
   it("admits one provider request when a second attempt overlaps the reservation commit", async () => {
     const f = await fixture();
     slackWithMessages();
-    const traffic = scriptProvider(() => {
+    const releaseProvider = createDeferredPromise<void>(context.signal);
+    const traffic = scriptProvider(async () => {
+      await releaseProvider.promise;
       return completion({ cost: 0.006 });
     });
     // The first attempt is suspended between its reservation INSERT and its
@@ -2146,19 +2149,30 @@ describe("Morning Brief platform-funded generation commit admission", () => {
       context.signal,
     );
 
-    const first = accept(generate(f), [200]);
-    await barrier.waitForArrival();
-    const second = accept(generate(f), [409]);
-    // The second attempt serializes on the occurrence row the first holds.
-    await barrier.waitForArrival();
-    await barrier.release();
-
-    const [firstResponse, secondResponse] = await Promise.all([first, second]);
+    const [firstResponse] = await Promise.all([
+      accept(generate(f), [200]),
+      (async () => {
+        const firstTransaction = await barrier.waitForArrival();
+        const [secondResponse] = await Promise.all([
+          accept(generate(f), [409]),
+          (async () => {
+            // The second request must wait on the first transaction, not on
+            // the barrier that is already blocking the first request.
+            await waitForDeferredBlocker(firstTransaction);
+            expect(traffic.bodies).toHaveLength(0);
+            await barrier.release();
+          })(),
+        ]);
+        expect(secondResponse.body.error.code).toBe(
+          "MORNING_BRIEF_GENERATION_IN_PROGRESS",
+        );
+        // Keep the reservation open until the second request observes it;
+        // a completed generation would legitimately return 200 instead.
+        releaseProvider.resolve();
+      })(),
+    ]);
     expect(expectGenerated(firstResponse.body).generation.state).toBe(
       "succeeded",
-    );
-    expect(secondResponse.body.error.code).toBe(
-      "MORNING_BRIEF_GENERATION_IN_PROGRESS",
     );
     expect(traffic.bodies).toHaveLength(1);
 

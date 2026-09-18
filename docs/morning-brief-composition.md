@@ -274,6 +274,18 @@ These outcomes are distinct and stay distinct:
 | A complete, valid, nonempty file                                                                                      | It stays in the sole request, which may apply the locale/default when the text carries no applicable language directive. |
 | Inaccessible storage, corrupt archive, duplicate or missing promised target, oversize, invalid UTF-8, storage timeout | Failure. Missing data under an existing promised version is never absence.                                               |
 
+Absence is reported as the state it was read in and the configuration it was
+read from: `no-storage` (no volume was ever published, so there is no version),
+`no-target` (that version carries no instructions file) and `empty-file` (that
+version's file is empty). The manifest is decoded strictly, because replacing a
+byte it cannot read would turn a promised path into a path that matches
+nothing — and "matches nothing" is absence. Inside the archive, every entry
+claiming the canonical path is counted before any type filtering: a regular file
+beside a same-path symlink or directory is ambiguous, not a single file, and no
+link, include or URL is ever followed. An archive that decompresses past the
+ceiling is oversize rather than corrupt, because the ceiling is this pipeline's
+bound and not a fault in the owner's data.
+
 A read error must never masquerade as either usable case: an owner whose
 instructions are unreadable has not asked for English. If the complete policy and
 request cannot fit, that is recorded as language-context-unavailable before the
@@ -286,7 +298,19 @@ A healthy empty collection settles with zero generation and zero delivery withou
 any storage I/O.
 
 The version is resolved before network reads and that immutable version is read
-outside any transaction. Once reserved, the language policy is frozen for that
+outside any transaction. One absolute deadline starts before that resolution and
+bounds everything the phase owns; it is the tighter of the five seconds and what
+is left of the collection budget, and reaching it is already expired. The clock
+and cancellation are rechecked after every wait and after the synchronous parse
+and extraction, so a successful response whose own timer has not fired yet
+cannot be released late, and an exhausted budget asks storage for nothing at
+all.
+
+Every frozen outcome is revalidated against live configuration before the
+generation reservation, absence included: an available or empty file must still
+be that version, a missing target must still be missing under that version, and
+`no-storage` must still be unconfigured. A failure is never absence and never
+reaches this boundary. Once reserved, the language policy is frozen for that
 invocation: a later instructions-only edit applies to the next occurrence and
 authorizes neither another POST nor a silent rewrite. The policy, version and
 digest are frozen with the generation; the raw text stays ephemeral. A validated

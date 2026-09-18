@@ -665,6 +665,7 @@
       "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
+      "selected": "選択中",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
       "selectVideo": "ビデオ テンプレート {{title}} を選択してください",
@@ -1878,6 +1879,7 @@
         "heading": "アバターを選択",
         "label": "アバター",
         "none": "アバターなし",
+        "noneDetail": "スタイルのみ",
         "previewLook": "{{name}} の外見をプレビュー"
       },
       "catalog": {
@@ -1890,17 +1892,28 @@
         "cancel": "キャンセル"
       },
       "picker": {
-        "autoVoiceDescription": "コンテンツに合う音声を選びます。",
+        "allPresenters": "すべてのプレゼンター",
+        "allPresentersCount": "すべてのプレゼンター ({{total}})",
+        "allVoices": "すべての音声",
+        "allVoicesCount": "すべての音声 ({{total}})",
+        "autoVoiceDescription": "スタイルに合う音声",
         "avatarVoice": "アバターの音声",
         "back": "戻る",
-        "chooseStyle": "スタイルを選択",
         "closeOptions": "オプションを閉じる",
+        "done": "完了",
         "moreOptions": "その他のオプション",
         "noMatches": "見つかりませんでした。",
+        "optionsNote": "チャットのチップからいつでも変更できます。",
+        "pickStyle": "スタイルを選択",
+        "reset": "リセット",
+        "searchPresenters": "プレゼンターを検索",
         "searchStyles": "スタイルを検索",
-        "selectionSummary": "音声: {{voice}} · アバター: {{avatar}}",
+        "searchVoices": "音声を検索",
+        "selectedStyle": "選択中: {{name}}",
         "settings": "イントロ動画の設定",
-        "useSelection": "この設定を使用"
+        "styleCount_other": "{{count}} 件のスタイル",
+        "styleCountOf": "{{total}} 件中 {{shown}} 件",
+        "useStyle": "{{name}} を使用"
       },
       "style": {
         "auto": "Okou におまかせ",
@@ -1919,10 +1932,9 @@
       "voice": {
         "auto": "Okou におまかせ",
         "defaultDescription": "選択したアバターのデフォルト音声を使用",
-        "heading": "音声を選択",
         "label": "音声",
         "none": "ナレーションなし",
-        "noneDescription": "ナレーションは追加せず、消音の指定がない限り元の音声を保持します。"
+        "noneShortDescription": "元の音声を残す"
       }
     },
     "mail": {
@@ -2104,7 +2116,10 @@
       "number": "番号"
     },
     "sidebar": {
+      "allArchived": "すべてのチャットがアーカイブされています",
+      "allCaughtUp": "すべて完了しました",
       "allChats": "すべてのチャット",
+      "archive": "チャットをアーカイブ",
       "chatsWith": "{{agentName}} とのチャット",
       "chatThreads": "チャットスレッド",
       "delete": "チャットを削除する",
@@ -2123,7 +2138,10 @@
       "pinned": "ピン留め済み",
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
+      "showArchived": "アーカイブ済みを表示",
+      "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
+      "unarchive": "アーカイブを解除",
       "unpin": "チャットの固定を解除する",
       "unread": "未読",
       "unreadOnly": "未読のみ"
@@ -2835,6 +2853,7 @@
       "ariaLabel": "チャットスレッド",
       "changeIcon": "アイコンの変更",
       "emoji": {
+        "archive": "アーカイブ",
         "done": "完了",
         "idea": "アイデア",
         "no": "いいえ",
@@ -3548,6 +3567,7 @@
           "sourceUnavailable": "ソースが利用できません",
           "stale": "古い",
           "unchanged": "変わらない",
+          "unsupportedProtocol": "サポートされていないプロトコル",
           "unsupportedSchema": "サポートされていないスキーマ"
         }
       },
@@ -5464,7 +5484,7 @@
         "usage": {
           "balanceDescription": "チームが使える残高です。",
           "balanceTitle": "クレジット残高",
-          "usageDescription": "チャット、オートメーション、チャネル全体でのクレジットの使用状況。",
+          "usageDescription": "スレッドごとにまとめたクレジット使用量。",
           "usageTitle": "クレジット使用量"
         }
       },
@@ -5628,9 +5648,12 @@
         "codexDescription": "Codex をサポートするモデル ルートの Codex デバイス ログインを使用して接続します。",
         "codexTitle": "ChatGPT (Codex)",
         "description": "自分の実行でのみ、自分の資格情報を使用して使用されます。",
+        "disconnectAccount": "アカウントの接続を解除",
+        "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
+        "disconnecting": "接続を解除中…",
+        "disconnectTitle": "{{account}}の接続を解除しますか？",
         "noAccounts": "接続済みのアカウントはありません。",
         "reconnectAccount": "再接続",
-        "removeAccount": "削除",
         "sectionTitle": "個人的な",
         "status": {
           "connected": "接続済み",
@@ -5756,7 +5779,7 @@
         "codexTitle": "ChatGPTセッションは再接続が必要です"
       },
       "toasts": {
-        "accountRemoved": "アカウントを削除しました",
+        "accountDisconnected": "アカウントの接続を解除しました",
         "accountSwitched": "使用するアカウントを切り替えました",
         "disconnected": "{{provider}} が切断されました",
         "policiesUpdated": "モデルプロバイダーの設定が更新されました",
@@ -6290,7 +6313,7 @@
       "host": "例: ssh.example.com",
       "passphrase": "鍵が暗号化されていなければ空欄",
       "password": "SSH ユーザーのパスワードを入力",
-      "privateKey": "秘密鍵全体を貼り付け",
+      "privateKey": "秘密鍵全体を貼り付けるか、「ファイルを選択」からインポート",
       "username": "例: ubuntu"
     },
     "port": "ポート",
@@ -6370,36 +6393,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "この請求期間の利用はありません",
-        "description": "チャット、オートメーション、チャネルで使ったクレジットがここに表示されます。",
+        "description": "スレッドで使ったクレジットがここに表示されます。",
         "noBillingPeriodDescription": "請求期間が始まるとチームの利用状況が表示されます。",
         "noBillingPeriodTitle": "有効な請求期間はありません",
         "rangeTitle": "この期間の利用はありません",
-        "teamDescription": "チームがチャット、オートメーション、チャネルで使ったクレジットがここに表示されます。"
+        "teamDescription": "チームがスレッドで使ったクレジットがここに表示されます。"
       },
       "loadError": "使用量を読み込めませんでした。",
       "loadMore": "さらに読み込む",
       "myUsage": "自分の使用量",
       "teamLoadError": "チームの使用量を読み込めませんでした。",
       "teamUsage": "チームの使用量",
+      "thread": "スレッド",
+      "unavailableThread": "利用できないスレッド",
       "untitled": "(無題)"
     },
-    "sources": {
-      "agent": "エージェント",
-      "automation": "オートメーション",
-      "chat": "チャット",
-      "email": "メール",
-      "github": "GitHub",
-      "other": "その他",
-      "phone": "電話",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}}件の会話",
-      "chat_other": "{{value}}件の会話",
       "credit_one": "{{value}}クレジット",
-      "credit_other": "{{value}}クレジット"
+      "credit_other": "{{value}}クレジット",
+      "thread_one": "{{value}}件のスレッド",
+      "thread_other": "{{value}}件のスレッド"
     }
   },
   "workflows": {

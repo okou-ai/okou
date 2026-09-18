@@ -685,6 +685,7 @@
       "renameImportedTemplate": "Rinomina modello",
       "searchConnector": "Cerca modelli",
       "searchConnectors": "Cerca modelli",
+      "selected": "Selezionato",
       "selectStyle": "Seleziona lo stile {{style}}",
       "selectTemplate": "Seleziona il modello {{title}}",
       "selectVideo": "Seleziona il modello video {{title}}",
@@ -1924,6 +1925,7 @@
         "heading": "Scegli un avatar",
         "label": "Avatar",
         "none": "Nessun avatar",
+        "noneDetail": "Solo stile",
         "previewLook": "Anteprima dell’aspetto {{name}}"
       },
       "catalog": {
@@ -1936,17 +1938,30 @@
         "cancel": "Annulla"
       },
       "picker": {
-        "autoVoiceDescription": "Trova una voce adatta ai tuoi contenuti.",
+        "allPresenters": "Tutti i presentatori",
+        "allPresentersCount": "Tutti i presentatori ({{total}})",
+        "allVoices": "Tutte le voci",
+        "allVoicesCount": "Tutte le voci ({{total}})",
+        "autoVoiceDescription": "Una voce adatta al tuo stile",
         "avatarVoice": "Voce dell’avatar",
         "back": "Indietro",
-        "chooseStyle": "Scegli uno stile",
         "closeOptions": "Chiudi opzioni",
+        "done": "Fatto",
         "moreOptions": "Altre opzioni",
         "noMatches": "Nessun risultato.",
+        "optionsNote": "Puoi cambiarle in qualsiasi momento dal chip nella chat.",
+        "pickStyle": "Scegli uno stile",
+        "reset": "Reimposta",
+        "searchPresenters": "Cerca presentatori",
         "searchStyles": "Cerca stili",
-        "selectionSummary": "Voce: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Cerca voci",
+        "selectedStyle": "Selezionato: {{name}}",
         "settings": "Impostazioni del video introduttivo",
-        "useSelection": "Usa selezione"
+        "styleCount_one": "{{count}} stile",
+        "styleCount_many": "{{count}} stili",
+        "styleCount_other": "{{count}} stili",
+        "styleCountOf": "{{shown}} di {{total}}",
+        "useStyle": "Usa {{name}}"
       },
       "style": {
         "auto": "Lascia scegliere a Okou",
@@ -1965,10 +1980,9 @@
       "voice": {
         "auto": "Lascia scegliere a Okou",
         "defaultDescription": "Usa la voce predefinita dell’avatar scelto",
-        "heading": "Scegli una voce",
         "label": "Voce",
         "none": "Nessuna voce fuori campo",
-        "noneDescription": "Non aggiungere narrazione; mantieni l’audio originale salvo richiesta di disattivarlo."
+        "noneShortDescription": "Mantieni l’audio originale"
       }
     },
     "mail": {
@@ -2160,7 +2174,10 @@
       "number": "numero"
     },
     "sidebar": {
+      "allArchived": "Tutte le chat sono archiviate",
+      "allCaughtUp": "Tutto fatto",
       "allChats": "Tutte le chat",
+      "archive": "Archivia chat",
       "chatsWith": "Chatta con {{agentName}}",
       "chatThreads": "Thread di chat",
       "delete": "Elimina la chat",
@@ -2179,7 +2196,10 @@
       "pinned": "In evidenza",
       "rename": "Rinomina la chat",
       "renameDescription": "Inserisci un nuovo nome per questo thread di chat.",
+      "showArchived": "Mostra archiviate",
+      "showArchivedChats": "Mostra chat archiviate",
       "titlePlaceholder": "Titolo della chat",
+      "unarchive": "Rimuovi dall'archivio",
       "unpin": "Rimuovi la chat",
       "unread": "Non letto",
       "unreadOnly": "Solo non letto"
@@ -2891,6 +2911,7 @@
       "ariaLabel": "Discussione della chat",
       "changeIcon": "Cambia icona",
       "emoji": {
+        "archive": "Archivia",
         "done": "Fatto",
         "idea": "Idea",
         "no": "No",
@@ -3616,6 +3637,7 @@
           "sourceUnavailable": "Fonte non disponibile",
           "stale": "Stanco",
           "unchanged": "Invariato",
+          "unsupportedProtocol": "Protocollo non supportato",
           "unsupportedSchema": "Schema non supportato"
         }
       },
@@ -5536,7 +5558,7 @@
         "usage": {
           "balanceDescription": "Quanto resta da spendere al tuo team.",
           "balanceTitle": "Saldo del credito",
-          "usageDescription": "Il tuo utilizzo del credito attraverso chat, automazioni e canali.",
+          "usageDescription": "Il tuo utilizzo dei crediti, raggruppato per conversazione.",
           "usageTitle": "Utilizzo del credito"
         }
       },
@@ -5700,9 +5722,12 @@
         "codexDescription": "Connettiti con l'accesso del dispositivo Codex per i percorsi del modello supportati da Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Utilizzato solo nelle tue esecuzioni, con le tue credenziali.",
+        "disconnectAccount": "Disconnetti account",
+        "disconnectDescription": "Questa azione rimuove l'account da Okou. Non annulla l'abbonamento con il provider.",
+        "disconnecting": "Disconnessione…",
+        "disconnectTitle": "Disconnettere {{account}}?",
         "noAccounts": "Nessun account collegato.",
         "reconnectAccount": "Riconnetti",
-        "removeAccount": "Rimuovi",
         "sectionTitle": "Personale",
         "status": {
           "connected": "Connesso",
@@ -5831,7 +5856,7 @@
         "codexTitle": "La sessione ChatGPT necessita di riconnessione"
       },
       "toasts": {
-        "accountRemoved": "Account rimosso",
+        "accountDisconnected": "Account disconnesso",
         "accountSwitched": "Account attivo cambiato",
         "disconnected": "{{provider}} disconnesso",
         "policiesUpdated": "Impostazioni del provider del modello aggiornate",
@@ -6376,7 +6401,7 @@
       "host": "ad es. ssh.example.com",
       "passphrase": "Lascia vuoto se la chiave non è cifrata",
       "password": "Inserisci la password dell'utente SSH",
-      "privateKey": "Incolla la chiave privata completa",
+      "privateKey": "Incolla la chiave privata completa o importala con «Scegli file»",
       "username": "ad es. ubuntu"
     },
     "port": "Porta",
@@ -6461,38 +6486,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Nessun utilizzo in questo periodo di fatturazione",
-        "description": "I crediti che spendi in chat, automazioni e canali compaiono qui.",
+        "description": "I crediti che spendi nelle conversazioni compaiono qui.",
         "noBillingPeriodDescription": "L'utilizzo del team compare all'inizio di un periodo di fatturazione.",
         "noBillingPeriodTitle": "Nessun periodo di fatturazione attivo",
         "rangeTitle": "Nessun utilizzo in questo intervallo di tempo",
-        "teamDescription": "I crediti che il tuo team spende in chat, automazioni e canali compaiono qui."
+        "teamDescription": "I crediti che il tuo team spende nelle conversazioni compaiono qui."
       },
       "loadError": "Impossibile caricare il tuo utilizzo.",
       "loadMore": "Carica di più",
       "myUsage": "Il mio utilizzo",
       "teamLoadError": "Impossibile caricare l'utilizzo del team.",
       "teamUsage": "Utilizzo del team",
+      "thread": "Conversazione",
+      "unavailableThread": "Conversazione non disponibile",
       "untitled": "(senza titolo)"
     },
-    "sources": {
-      "agent": "Agente",
-      "automation": "Automazione",
-      "chat": "Chat",
-      "email": "E-mail",
-      "github": "GitHub",
-      "other": "Altro",
-      "phone": "Telefono",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_many": "{{value}} chat",
-      "chat_other": "{{value}} chat",
       "credit_one": "{{value}} credito",
       "credit_many": "{{value}} crediti",
-      "credit_other": "{{value}} crediti"
+      "credit_other": "{{value}} crediti",
+      "thread_one": "{{value}} conversazione",
+      "thread_many": "{{value}} conversazioni",
+      "thread_other": "{{value}} conversazioni"
     }
   },
   "workflows": {

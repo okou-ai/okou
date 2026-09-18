@@ -2217,8 +2217,17 @@ async function buildClaimResponseBody(
         storageMounts: _storedStorageMounts,
         ...runnerStoredContext
       } = args.storedContext;
+      const xResourceBillingStartDate = env("X_RESOURCE_BILLING_START_DATE");
       return {
         ...runnerStoredContext,
+        ...(xResourceBillingStartDate === undefined
+          ? {}
+          : {
+              xResourceBilling: {
+                protocol: "x-resource-v1" as const,
+                startDate: xResourceBillingStartDate,
+              },
+            }),
         runId: args.run.id,
         reuseKey: args.reuseKey,
         prompt: args.run.prompt,

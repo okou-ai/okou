@@ -50,7 +50,7 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
         {
           kind: "connector",
           provider: "x",
-          category: "tweet.read",
+          category: "posts.read",
           unitPrice: 1,
           unitSize: 1,
         },
@@ -77,7 +77,7 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
             idempotencyKey: randomUUID(),
             kind: "connector",
             provider: "x",
-            category: "tweet.read",
+            category: "posts.read",
             quantity: 1,
             observedAt: nowDate().toISOString(),
             resources: [{ id: resourceId, occurrences: 1 }],
