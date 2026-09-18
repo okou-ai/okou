@@ -925,8 +925,7 @@
     },
     "viewer": {
       "continuePrompt": "इस आर्टिफ़ैक्ट पर काम करने में मेरी मदद करें: {{url}}",
-      "continueWithBrand": "{{brandName}} के साथ जारी रखें",
-      "escapeKey": "Esc"
+      "continueWithBrand": "{{brandName}} के साथ जारी रखें"
     }
   },
   "auth": {

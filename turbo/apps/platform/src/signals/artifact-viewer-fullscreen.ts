@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { animationFrame, timeout } from "signal-timers";
-import { onRef, resetSignal, settle } from "./utils.ts";
+import { animationFrame } from "signal-timers";
+import { onRef, settle } from "./utils.ts";
 
 type FullscreenMode = "windowed" | "native" | "immersive";
 
@@ -14,8 +14,6 @@ export function createArtifactViewerFullscreenSignals() {
   const internalMode$ = state<FullscreenMode>("windowed");
   const internalContainer$ = state<HTMLElement | null>(null);
   const internalTrigger$ = state<HTMLElement | null>(null);
-  const internalHint$ = state(false);
-  const resetHint$ = resetSignal();
 
   const enterButtonRef$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
@@ -28,8 +26,6 @@ export function createArtifactViewerFullscreenSignals() {
 
   const close$ = command(({ get, set }, signal: AbortSignal) => {
     set(internalMode$, "windowed");
-    set(internalHint$, false);
-    set(resetHint$);
     animationFrame(
       () => {
         get(internalTrigger$)?.focus({ preventScroll: true });
@@ -74,7 +70,6 @@ export function createArtifactViewerFullscreenSignals() {
         set(internalContainer$, null);
         set(internalTrigger$, null);
         set(internalMode$, "windowed");
-        set(internalHint$, false);
       });
     }),
   );
@@ -100,15 +95,6 @@ export function createArtifactViewerFullscreenSignals() {
       // Mobile browsers without Fullscreen API still get the full viewport.
       set(internalMode$, "immersive");
     }
-    const hintSignal = set(resetHint$, signal);
-    set(internalHint$, true);
-    timeout(
-      () => {
-        set(internalHint$, false);
-      },
-      2500,
-      { signal: hintSignal },
-    );
   });
 
   const exit$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -129,12 +115,6 @@ export function createArtifactViewerFullscreenSignals() {
     exitButtonRef$: focusExitButtonRef$,
     fullscreen$: computed((get) => {
       return get(internalMode$) !== "windowed";
-    }),
-    native$: computed((get) => {
-      return get(internalMode$) === "native";
-    }),
-    hint$: computed((get) => {
-      return get(internalHint$);
     }),
   };
 }

@@ -924,8 +924,7 @@
     },
     "viewer": {
       "continuePrompt": "Bantu saya mengerjakan artefak ini: {{url}}",
-      "continueWithBrand": "Lanjutkan dengan {{brandName}}",
-      "escapeKey": "Esc"
+      "continueWithBrand": "Lanjutkan dengan {{brandName}}"
     }
   },
   "auth": {

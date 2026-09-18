@@ -233,8 +233,6 @@ export function SharedArtifactPage({
   const { t } = useTranslation();
   const mountRef = useSet(shellDocumentAttributesRef$);
   const fullscreen = useGet(viewer.fullscreen.fullscreen$);
-  const nativeFullscreen = useGet(viewer.fullscreen.native$);
-  const showHint = useGet(viewer.fullscreen.hint$);
   const containerRef = useSet(viewer.fullscreen.containerRef$);
   const exitButtonRef = useSet(viewer.fullscreen.exitButtonRef$);
   const exitFullscreen = useSet(viewer.fullscreen.exit$);
@@ -310,35 +308,17 @@ export function SharedArtifactPage({
           <ArtifactAccessPage />
         )}
         {artifact !== null && fullscreen && (
-          <div className="absolute right-6 top-6 z-20 flex items-center gap-2">
-            {showHint && (
-              <span
-                role="status"
-                className="rounded-lg border border-border/70 bg-background/90 px-3 py-2 text-sm text-foreground backdrop-blur-sm"
-              >
-                {exitLabel}
-                {nativeFullscreen && (
-                  <kbd className="ml-2 text-xs">
-                    {t(($) => {
-                      return $.artifacts.viewer.escapeKey;
-                    })}
-                  </kbd>
-                )}
-              </span>
-            )}
-            <IconButton
-              ref={exitButtonRef}
-              aria-label={exitLabel}
-              aria-keyshortcuts="Escape"
-              title={exitLabel}
-              className="size-11 border border-border/70 bg-background/90 text-foreground backdrop-blur-sm sm:size-9"
-              onClick={() => {
-                detach(exitFullscreen(pageSignal), Reason.DomCallback);
-              }}
-            >
-              <Minimize2 size={18} aria-hidden />
-            </IconButton>
-          </div>
+          <IconButton
+            ref={exitButtonRef}
+            aria-label={exitLabel}
+            aria-keyshortcuts="Escape"
+            className="absolute right-6 top-6 z-20 size-11 border border-border/70 bg-background/90 text-foreground opacity-40 backdrop-blur-sm transition-none hover:opacity-100 focus-visible:opacity-100 active:opacity-100 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:ease-out sm:size-9"
+            onClick={() => {
+              detach(exitFullscreen(pageSignal), Reason.DomCallback);
+            }}
+          >
+            <Minimize2 size={18} aria-hidden />
+          </IconButton>
         )}
       </main>
     </div>
