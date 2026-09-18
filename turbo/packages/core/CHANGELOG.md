@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.680.5](https://github.com/vm0-ai/okou/compare/core-v8.680.4...core-v8.680.5) (2026-09-18)
+
+
+### Refactoring
+
+* remove custom connector mcp feature switch ([#35202](https://github.com/vm0-ai/okou/issues/35202)) ([2a24579](https://github.com/vm0-ai/okou/commit/2a24579fecd98b9933a2c75589d4502e7af0a298))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.0
+
 ## [8.680.4](https://github.com/vm0-ai/okou/compare/core-v8.680.3...core-v8.680.4) (2026-09-18)
 
 

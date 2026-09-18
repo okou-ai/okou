@@ -8,6 +8,33 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.632.0](https://github.com/vm0-ai/okou/compare/api-v1.631.0...api-v1.632.0) (2026-09-18)
+
+
+### Features
+
+* **api:** add canonical mcp message search ([#35207](https://github.com/vm0-ai/okou/issues/35207)) ([e2731e0](https://github.com/vm0-ai/okou/commit/e2731e0d28ad5e80604efb0b149a37d2dd697bd3))
+
+
+### Bug Fixes
+
+* resolve shared thread artifacts through full app references ([#35206](https://github.com/vm0-ai/okou/issues/35206)) ([afe3553](https://github.com/vm0-ai/okou/commit/afe355360b5c12e71446f3358fdf61f21f776de7))
+
+
+### Refactoring
+
+* remove custom connector mcp feature switch ([#35202](https://github.com/vm0-ai/okou/issues/35202)) ([2a24579](https://github.com/vm0-ai/okou/commit/2a24579fecd98b9933a2c75589d4502e7af0a298))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.0
+    * @okouai/core bumped to 8.680.5
+    * @okouai/db bumped to 1.273.1
+    * @okouai/pi-agent-runtime bumped to 1.33.15
+
 ## [1.631.0](https://github.com/vm0-ai/okou/compare/api-v1.630.0...api-v1.631.0) (2026-09-18)
 
 
