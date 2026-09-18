@@ -11,6 +11,10 @@ import {
 } from "../../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import {
+  getGenerationPaidTool,
+  getPaidToolUnavailableMessage,
+} from "../../../lib/command/paid-tools";
+import {
   currentPlanAllowsVideo,
   currentTokenCanReadBilling,
 } from "../../shared/billing-capabilities";
@@ -663,15 +667,26 @@ function renderBuiltInProvider(params: {
   generationType: GenerationType;
   videoGenerationAllowed: boolean | undefined;
   platformOrigin: string;
+  unavailableMessage: string | undefined;
 }): void {
-  const { generationType, videoGenerationAllowed, platformOrigin } = params;
+  const {
+    generationType,
+    videoGenerationAllowed,
+    platformOrigin,
+    unavailableMessage,
+  } = params;
   const command = getBuiltInCommand(generationType);
   if (command) {
     console.log("");
     console.log("Built-in command:");
     console.log(`  Okou  ${command.label}`);
     console.log(`  Models: ${command.models}`);
-    if (generationType === "video" || generationType === "avatar-video") {
+    if (unavailableMessage) {
+      console.log(`  Availability: ${unavailableMessage}`);
+    } else if (
+      generationType === "video" ||
+      generationType === "avatar-video"
+    ) {
       if (videoGenerationAllowed === false) {
         console.log(
           "  Availability: Requires a Pro, Team, or Custom workspace plan.",
@@ -726,6 +741,7 @@ function renderText(params: {
   videoGenerationAllowed: boolean | undefined;
   platformOrigin: string;
   runBound: boolean;
+  unavailableMessage: string | undefined;
 }): void {
   const {
     generationType,
@@ -736,6 +752,7 @@ function renderText(params: {
     videoGenerationAllowed,
     platformOrigin,
     runBound,
+    unavailableMessage,
   } = params;
   const label = GENERATION_TYPE_LABELS[generationType];
   const scope = agentId ? "for current agent" : "(connected connectors)";
@@ -769,6 +786,7 @@ function renderText(params: {
     generationType,
     videoGenerationAllowed,
     platformOrigin,
+    unavailableMessage,
   });
   renderGenerationContext(generationType);
 
@@ -817,16 +835,25 @@ export async function runLister(
   const connectorGenerationType = getConnectorGenerationType(generationType);
   const agentId = getOkouAgentId();
   const runBound = isRunBoundConnectorContext();
-  const [catalog, enabledConnectorSlugs, platformOrigin, billing] =
-    await Promise.all([
-      loadGenerationCatalog(connectorGenerationType, runBound),
-      agentId ? getAgentUserConnectors(agentId) : Promise.resolve(null),
-      getPlatformOrigin(),
-      (generationType === "video" || generationType === "avatar-video") &&
-      currentTokenCanReadBilling()
-        ? getBillingStatus()
-        : Promise.resolve(null),
-    ]);
+  const paidTool = getGenerationPaidTool(generationType);
+  const [
+    catalog,
+    enabledConnectorSlugs,
+    platformOrigin,
+    billing,
+    unavailableMessage,
+  ] = await Promise.all([
+    loadGenerationCatalog(connectorGenerationType, runBound),
+    agentId ? getAgentUserConnectors(agentId) : Promise.resolve(null),
+    getPlatformOrigin(),
+    (generationType === "video" || generationType === "avatar-video") &&
+    currentTokenCanReadBilling()
+      ? getBillingStatus()
+      : Promise.resolve(null),
+    paidTool
+      ? getPaidToolUnavailableMessage(paidTool)
+      : Promise.resolve(undefined),
+  ]);
   const authorizedConnectorSlugs = enabledConnectorSlugs
     ? new Set(enabledConnectorSlugs)
     : null;
@@ -884,6 +911,7 @@ export async function runLister(
       : undefined,
     platformOrigin,
     runBound,
+    unavailableMessage,
   });
 
   const shouldShowOtherHint =

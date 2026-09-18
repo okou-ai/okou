@@ -2,8 +2,9 @@
 
 Paid-tool controls are personal preferences within one workspace. They do not
 change connector authorization, organization permissions, or billing policy.
-The `paidToolControls` feature switch is disabled by default and controls only
-the settings UI. Saved preferences and CLI enforcement are independent of it.
+The `paidToolControls` feature switch is disabled by default and controls the
+settings and creation-guidance UI. Saved preferences and enforcement are
+independent of it.
 
 ## Storage and API
 
@@ -16,9 +17,10 @@ a user session; agent and sandbox credentials cannot
 change preferences. Membership removal deletes only that member's workspace
 rows; user and organization deletion remove their respective rows.
 
-The shared catalog currently includes `web-search`, `people-search`, `scrape`,
-`finance`, `maps`, `seo`, `social`, and `image-recognition`. Media generation and
-rendering are tracked separately in [#35187](https://github.com/vm0-ai/okou/issues/35187).
+The shared catalog includes `web-search`, `people-search`, `scrape`, `finance`,
+`maps`, `seo`, `social`, `image-recognition`, `image-generation`,
+`video-generation`, `voice-generation`, `avatar-video-generation`, and
+`video-rendering`.
 
 ## Settings and run semantics
 
@@ -42,6 +44,47 @@ platform environment. Social capabilities, status, download listing, and
 `download --resume` remain available because they discover or recover existing
 work. Collection `social resume` can fetch additional paid pages and is blocked.
 
+Prompt injection is unchanged. A disabled paid invocation exits with status 1
+and identifies the disabled tool, links to Settings → Personal → Paid tools,
+and explains that re-enabling applies to later runs.
+
+## Media execution
+
+Media commands check the same snapshot at their paid execution boundary.
+Provider discovery reports when a built-in option is disabled and preserves
+connector alternatives. Free help, prompt compilation, template authoring,
+resource catalogs and existing result observation remain available.
+
+| Tool ID                   | Paid execution covered                                                         | Free branches preserved                                |
+| ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| `image-generation`        | Built-in image generation, image-batch start and hidden batch worker           | Prompt compilation, provider and connector guidance    |
+| `video-generation`        | Built-in video generation and hidden intro Video Agent submission              | Template authoring, provider guidance and agent status |
+| `voice-generation`        | Built-in voice generation and hidden intro narration                           | Provider and connector guidance                        |
+| `avatar-video-generation` | Built-in avatar video and hidden intro presenter generation                    | Avatar/voice catalogs and connector guidance           |
+| `video-rendering`         | Managed cloud render, repeated submission and resume that replays a submission | Local dry-run, status and resume without replay        |
+
+Checks precede uploads, artifact preparation and execution output writes. A
+render resume may read the existing job to determine whether recovery would
+submit again; it checks the preference before that submission. A disabled batch
+worker does not create a misleading completion file.
+
+The full intro Video Agent creates a video under `video-generation`. It does
+not require the separate narration or presenter controls, which apply to their
+own paid commands. Controlled compositions use the render control and whichever
+speech/presenter commands they actually invoke. A local recording/camera flow
+does not acquire a paid dependency solely because it is an intro video.
+
+The creation UI explains disabled choices and links to settings. Explicit
+built-in image/video creation checks current owner preferences before sending;
+a failed read does not assume the tools are enabled. Selected templates can
+also be discussed without generating anything, so a template alone does not
+block ordinary messages. Intro route hints describe the relevant default;
+the CLI checks the actual route selected by the agent. Confirmed settings saves
+refresh creation hints, and workspace changes do not retain the previous
+owner's preference state. New proactive UI follows the UI feature switch;
+saved restrictions still apply to explicit creation and CLI execution while
+the switch is off.
+
 ## Compatibility and activation
 
 The migration is additive. Deploy it before the API and enable the switch only
@@ -50,6 +93,13 @@ Do not enable it while an old serving API can prepare runs without the policy.
 Runner job schemas are unchanged: the existing platform environment carries
 the variable, and prepared jobs retain their commit-addressed CLI package.
 
+The media catalog extension needs no database migration. Deploy the expanded
+API and select a CLI that enforces the new IDs before deploying the App's media
+creation checks, which read preferences even while the UI switch is off.
+An older API rejects writes for unfamiliar IDs, and an older pinned
+CLI ignores those IDs; already prepared jobs therefore do not gain media
+enforcement retroactively.
+
 An absent or empty variable means no disabled tools for contexts without this
 policy. Unknown string IDs are ignored by older CLIs, allowing later catalog
 additions. Invalid JSON or a non-string-array value rejects paid operations;
@@ -57,7 +107,7 @@ free operations and help remain usable. API read lists likewise allow unknown
 string IDs, while writes validate the current catalog. These are the optional
 input and additive catalog contracts, not recovery from database failures.
 Preference query failures fail run preparation rather than silently enabling
-tools. Turning the feature off only hides the settings UI; saved rows remain
+tools. Turning the feature off only hides its proactive UI; saved rows remain
 effective for newly prepared runs and accessible through the authenticated API.
 After preferences have been saved, keep an API version that includes their
 snapshot production and membership/user/organization cleanup; hiding the UI

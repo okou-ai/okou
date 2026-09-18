@@ -62,7 +62,7 @@ test("Members open Paid tools independently of Chat preferences and see their wo
   click(button("Paid tools", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
-  expect(within(dialog).getAllByRole("switch")).toHaveLength(8);
+  expect(within(dialog).getAllByRole("switch")).toHaveLength(13);
   expect(
     within(dialog).getByText(
       "These settings apply only to you in Research team.",
