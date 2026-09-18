@@ -182,16 +182,23 @@ function StyleToolbar({ signals }: PickerProps) {
  */
 function StyleCount({
   signals,
+  ready,
   shown,
   total,
   hiddenSelection,
 }: PickerProps & {
+  readonly ready: boolean;
   readonly shown: number;
   readonly total: number;
   readonly hiddenSelection: string | null;
 }) {
   const { t } = useTranslation();
   const clearFilters = useSet(signals.clearFilters$);
+  if (!ready) {
+    // Before the catalog resolves there is nothing to count, and a restored
+    // style would read as filtered out of a wall that has not arrived.
+    return null;
+  }
   if (hiddenSelection !== null) {
     return (
       <Button
@@ -232,11 +239,13 @@ function StyleCount({
 function StyleFilterRow({
   signals,
   hasOther,
+  ready,
   shown,
   total,
   hiddenSelection,
 }: PickerProps & {
   readonly hasOther: boolean;
+  readonly ready: boolean;
   readonly shown: number;
   readonly total: number;
   readonly hiddenSelection: string | null;
@@ -274,6 +283,7 @@ function StyleFilterRow({
       />
       <StyleCount
         signals={signals}
+        ready={ready}
         shown={shown}
         total={total}
         hiddenSelection={hiddenSelection}
@@ -1093,6 +1103,7 @@ export function IntroVideoPicker({
         <StyleFilterRow
           signals={signals}
           hasOther={hasOther}
+          ready={catalog.state === "hasData"}
           shown={items.length}
           total={all.length}
           hiddenSelection={hiddenSelection}
