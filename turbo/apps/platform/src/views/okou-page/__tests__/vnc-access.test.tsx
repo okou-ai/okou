@@ -334,6 +334,58 @@ test.each([false, true])(
   },
 );
 
+test.each([false, true])(
+  "Chat VNC discovery can retry a failed summary inside directory layout %s",
+  async (directory) => {
+    installComposerConnectorFixture();
+    let failed = true;
+    const recovery = context.mocks.deferred<void>();
+    context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
+      if (failed) {
+        return respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "private VNC error" },
+        });
+      }
+      await recovery.promise;
+      return respond(200, { configuredCount: 0 });
+    });
+    await setupPage({
+      context,
+      path: `/agents/${SCOUT_AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.VncAccess]: true,
+        [FeatureSwitchKey.ConnectorDirectory]: directory,
+      },
+    });
+    click(await findFastControl("button", "Connectors"));
+    click(await findFastControl("button", "Add connectors"));
+    const search = await screen.findByPlaceholderText("Find connectors...");
+    const dialog = search.closest('[role="dialog"]');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Missing connector dialog");
+    }
+    await fill(search, "vnc");
+    await expect(
+      within(dialog).findByText("Could not load VNC configuration."),
+    ).resolves.toBeInTheDocument();
+    expect(within(dialog).queryByText("No connector matches “vnc”")).toBeNull();
+    expect(dialog.textContent).not.toContain("private VNC error");
+    failed = false;
+    click(await findFastControl("button", "Retry", dialog));
+    await expect(
+      within(dialog).findByText("Loading VNC configuration…"),
+    ).resolves.toBeInTheDocument();
+    expect(within(dialog).queryByText("No connector matches “vnc”")).toBeNull();
+    recovery.resolve();
+    await expect(
+      findFastControl("link", "Manage VNC", dialog),
+    ).resolves.toHaveAttribute("href", "/connectors/vnc?add=1");
+    expect(
+      within(dialog).queryByText("Could not load VNC configuration."),
+    ).toBeNull();
+  },
+);
+
 test("Chat VNC grant changes leave SSH authorization intact", async () => {
   installComposerConnectorFixture();
   context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {

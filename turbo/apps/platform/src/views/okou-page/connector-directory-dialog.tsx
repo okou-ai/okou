@@ -26,6 +26,7 @@ import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector
 import { connectorAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
+import { VncLoadError } from "./vnc-load-error.tsx";
 import { sshSummary$ } from "../../signals/ssh.ts";
 import {
   bindConnectorCategoryRail$,
@@ -465,6 +466,7 @@ function DirectoryDiscoverPanel({
   model,
   showSsh,
   showVnc,
+  vncStatus,
   renderCard,
   search,
   category,
@@ -474,6 +476,7 @@ function DirectoryDiscoverPanel({
   readonly model: ConnectorDirectoryModel;
   readonly showSsh: boolean;
   readonly showVnc: boolean;
+  readonly vncStatus: React.ReactNode;
   readonly renderCard: RenderConnectorCard;
   readonly search: string;
   readonly category: string | null;
@@ -488,7 +491,8 @@ function DirectoryDiscoverPanel({
     model.discover.length === 0 &&
     model.matchedConnected.length === 0 &&
     !showSsh &&
-    !showVnc
+    !showVnc &&
+    !vncStatus
   ) {
     return (
       <>
@@ -517,6 +521,7 @@ function DirectoryDiscoverPanel({
   ) {
     return (
       <>
+        {vncStatus}
         {attention}
         {model.matchedConnected.length > 0 && (
           <DirectorySection
@@ -553,6 +558,7 @@ function DirectoryDiscoverPanel({
   }
   return (
     <>
+      {vncStatus}
       {attention}
       {model.shelfLayout.shelves.map((shelf) => {
         return (
@@ -698,6 +704,7 @@ function DirectoryBody({
   tab,
   showSsh,
   showVnc,
+  vncStatus,
   loading,
   model,
   renderCard,
@@ -709,6 +716,7 @@ function DirectoryBody({
   readonly tab: ConnectorDirectoryTab;
   readonly showSsh: boolean;
   readonly showVnc: boolean;
+  readonly vncStatus: React.ReactNode;
   readonly loading: boolean;
   readonly model: ConnectorDirectoryModel;
   readonly renderCard: RenderConnectorCard;
@@ -726,6 +734,7 @@ function DirectoryBody({
         model={model}
         showSsh={showSsh}
         showVnc={showVnc}
+        vncStatus={vncStatus}
         renderCard={renderCard}
         search={search}
         category={category}
@@ -772,14 +781,23 @@ function DirectoryBrowseView({
   const vncSummary = useLoadable(vncSummary$);
   const vncAvailable =
     vncSummary.state === "hasData" && vncSummary.data?.configuredCount === 0;
-  const showVnc =
-    vncAvailable &&
+  const matchesVnc =
     (category === null || category === REMOTE_ACCESS_CATEGORY) &&
     `vnc ${t(($) => {
       return $.vnc.description;
     })}`
       .toLowerCase()
       .includes(search.trim().toLowerCase());
+  const showVnc = vncAvailable && matchesVnc;
+  const vncStatus = !matchesVnc ? null : vncSummary.state === "hasError" ? (
+    <VncLoadError />
+  ) : vncSummary.state === "loading" ? (
+    <p role="status" className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.vnc.loading;
+      })}
+    </p>
+  ) : null;
   const sshAvailable =
     summary.state === "hasData" && summary.data?.configuredCount === 0;
   const showSsh =
@@ -851,6 +869,7 @@ function DirectoryBrowseView({
           tab={tab}
           showSsh={showSsh}
           showVnc={showVnc}
+          vncStatus={vncStatus}
           loading={loading}
           model={model}
           renderCard={renderCard}

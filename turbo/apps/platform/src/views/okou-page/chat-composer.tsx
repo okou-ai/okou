@@ -7371,14 +7371,15 @@ function AddConnectorsDialog({
   });
   const sshSummary = useLoadable(sshSummary$);
   const vncSummary = useLoadable(vncSummary$);
+  const matchesVnc = `vnc ${t(($) => {
+    return $.vnc.description;
+  })}`
+    .toLowerCase()
+    .includes(search.trim().toLowerCase());
   const showVnc =
     vncSummary.state === "hasData" &&
     vncSummary.data?.configuredCount === 0 &&
-    `vnc ${t(($) => {
-      return $.vnc.description;
-    })}`
-      .toLowerCase()
-      .includes(search.trim().toLowerCase());
+    matchesVnc;
   const showSsh =
     sshSummary.state === "hasData" &&
     sshSummary.data?.configuredCount === 0 &&
@@ -7446,6 +7447,14 @@ function AddConnectorsDialog({
           />
         </div>
         <div className="overflow-y-auto -mx-6 px-6">
+          {matchesVnc && vncSummary.state === "hasError" && <VncLoadError />}
+          {matchesVnc && vncSummary.state === "loading" && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.vnc.loading;
+              })}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             {showVnc && <VncConnectorCard configuredCount={0} />}
             {showSsh && sshSummary.state === "hasData" && sshSummary.data && (
