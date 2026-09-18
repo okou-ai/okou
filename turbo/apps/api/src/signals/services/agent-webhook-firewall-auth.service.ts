@@ -4167,6 +4167,9 @@ function connectorAccessCredentialStatus(
   connectorAccess: ConnectorAccessState,
   nowSeconds: number,
 ): ConnectorCredentialStatus {
+  if (connectorAccess.runtimeMethod.method.grant.kind === "none") {
+    return "available";
+  }
   return connectorRuntimeCredentialStatusForAccess({
     storedNeedsReconnect: connectorAccess.needsReconnect,
     tokenExpiresAt:
@@ -5777,8 +5780,8 @@ async function prepareNonCustomFirewallAuth(args: {
 }): Promise<FirewallAuthPreparation<PreparedNonCustomFirewallAuth>> {
   const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
-  // Account deletion or reconnect must end cached MCP authorization, including
-  // no-auth and static credentials whose provider token has no expiry. Start
+  // Account deletion or reconnect must end cached MCP credential authorization,
+  // including static credentials whose provider token has no expiry. Start
   // the lease before reading the account so slow resolution cannot extend it.
   const builtinMcpExpiresAt =
     connectorSlug !== undefined &&
@@ -5815,7 +5818,12 @@ async function prepareNonCustomFirewallAuth(args: {
     ok: true,
     prepared: {
       kind: "non-custom",
-      builtinMcpExpiresAt,
+      builtinMcpExpiresAt:
+        connectorSlug !== undefined &&
+        prepared.context.connectorAccessBySlug.get(connectorSlug)?.runtimeMethod
+          .method.grant.kind !== "none"
+          ? builtinMcpExpiresAt
+          : null,
       connectorCatalogSnapshot,
       featureSwitchContext: decrypted.featureSwitchContext,
       secrets: decrypted.secrets,

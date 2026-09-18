@@ -208,7 +208,6 @@ class _FirewallAuthPlan:
     """Pure firewall-auth policy shared by requestheaders and request hooks."""
 
     injects_credentials: bool
-    requires_current_authorization: bool
     needs_resolution: bool
     uses_auth_base: bool
     uses_aws_sigv4: bool
@@ -267,6 +266,8 @@ def _build_firewall_auth_context(
     flow: http.HTTPFlow,
     allow: matching.FirewallAllow,
     sandbox_info: dict,
+    *,
+    needs_resolution: bool,
 ) -> _FirewallAuthContext:
     """Capture request-local auth inputs after matched-firewall metadata exists."""
     api_entry = allow.api_entry
@@ -278,7 +279,7 @@ def _build_firewall_auth_context(
     source_id = api_entry.get("sourceId")
     connector_routing_variables = sandbox_info.get("connectorRoutingVariables", {})
     matched_firewall: dict | None = None
-    if isinstance(custom_connector_id, str):
+    if needs_resolution and isinstance(custom_connector_id, str):
         routing_variables = connector_routing_variables.get(f"custom:{custom_connector_id}")
         if not isinstance(routing_variables, dict):
             raise TypeError("custom connector routing variables are missing from proxy registry")
@@ -289,7 +290,7 @@ def _build_firewall_auth_context(
             "routingVariables": routing_variables,
             **({"sourceId": source_id} if isinstance(source_id, str) else {}),
         }
-    else:
+    elif needs_resolution:
         routing_variables = connector_routing_variables.get(f"builtin:{allow.name}")
         if isinstance(routing_variables, dict):
             matched_firewall = {
@@ -526,21 +527,7 @@ def _build_firewall_auth_plan(
         and bool(auth_config["awsSigv4"])
     )
     injects_credentials = auth_config_injects_credentials(auth_config)
-    has_builtin_account = (
-        isinstance(allow.api_entry.get("sourceId"), str)
-        and allow.api_entry.get("customConnectorId") is None
-    )
-    routing_variables = sandbox_info.get("connectorRoutingVariables", {})
-    missing_builtin_routing_identity = has_builtin_account and not (
-        isinstance(routing_variables, dict)
-        and isinstance(routing_variables.get(f"builtin:{allow.name}"), dict)
-    )
-    # An account still owns a no-auth connector. Resolve its current authority
-    # through the same bounded API/cache path before forwarding the request.
-    requires_current_authorization = injects_credentials or has_builtin_account
-    needs_resolution = requires_current_authorization or is_billable_firewall(
-        allow.name, sandbox_info
-    )
+    needs_resolution = injects_credentials or is_billable_firewall(allow.name, sandbox_info)
 
     failure = None
     if injects_credentials and _request_method_forbids_managed_credentials(flow.request.method):
@@ -551,14 +538,11 @@ def _build_firewall_auth_plan(
         failure = _FirewallAuthPlanFailure.METHOD_OVERRIDE
     elif injects_credentials and flow.request.scheme.lower() != "https":
         failure = _FirewallAuthPlanFailure.INSECURE_TRANSPORT
-    elif missing_builtin_routing_identity or (
-        needs_resolution and not sandbox_info.get("encryptedSecrets")
-    ):
+    elif needs_resolution and not sandbox_info.get("encryptedSecrets"):
         failure = _FirewallAuthPlanFailure.AUTH_UNAVAILABLE
 
     return _FirewallAuthPlan(
         injects_credentials=injects_credentials,
-        requires_current_authorization=requires_current_authorization,
         needs_resolution=needs_resolution,
         uses_auth_base=uses_auth_base,
         uses_aws_sigv4=uses_aws_sigv4,
@@ -1308,7 +1292,7 @@ def _preflight_firewall_auth(
         log_proxy_entry(
             context.proxy_log_path,
             "error",
-            f"Auth context not configured for firewall rule {context.firewall_base}",
+            f"No encryptedSecrets for firewall rule {context.firewall_base}",
             type="firewall",
             firewall_base=context.firewall_base,
         )
@@ -1317,7 +1301,7 @@ def _preflight_firewall_auth(
             status=502,
             action="ALLOW",
             error_code="auth_unavailable",
-            message="Auth context not configured",
+            message="Auth secrets not configured",
             permission=context.allow.name,
         )
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
@@ -1710,7 +1694,9 @@ async def handle_firewall_request(
     try:
         plan = _build_firewall_auth_plan(flow, allow, sandbox_info)
         _prepare_firewall_metadata(flow, allow, sandbox_info)
-        context = _build_firewall_auth_context(flow, allow, sandbox_info)
+        context = _build_firewall_auth_context(
+            flow, allow, sandbox_info, needs_resolution=plan.needs_resolution
+        )
 
         preflight_result = _preflight_firewall_auth(flow, context, plan)
         if preflight_result is not None:
@@ -1759,7 +1745,7 @@ async def handle_firewall_request(
             resolved_auth=resolved_auth,
         )
 
-        if plan.requires_current_authorization and not revalidate_current_firewall_authorization():
+        if plan.injects_credentials and not revalidate_current_firewall_authorization():
             return _finish_firewall_auth_result(
                 flow,
                 FirewallAuthHandlingResult.LOCAL_RESPONSE,
@@ -1812,7 +1798,9 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     _prepare_firewall_metadata(flow, allow, sandbox_info)
-    context = _build_firewall_auth_context(flow, allow, sandbox_info)
+    context = _build_firewall_auth_context(
+        flow, allow, sandbox_info, needs_resolution=plan.needs_resolution
+    )
 
     try:
         token_meta = await _resolve_firewall_auth(plan, context)
@@ -1839,7 +1827,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         )
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
-    if plan.requires_current_authorization and not revalidate_current_firewall_authorization():
+    if plan.injects_credentials and not revalidate_current_firewall_authorization():
         _restore_header_phase_probe_state(
             flow,
             metadata_snapshot=metadata_snapshot,

@@ -1233,9 +1233,7 @@ def _firewall_authorization_is_current_for_requestheaders(
     admitted_server: connection.Server,
     require_connected: bool,
 ) -> bool:
-    if _firewall_allow_injects_ordinary_upstream_credentials(
-        allow
-    ) and not _has_current_direct_connector_auth_binding(
+    if not _has_current_direct_connector_auth_binding(
         flow,
         admitted_server=admitted_server,
         require_connected=require_connected,

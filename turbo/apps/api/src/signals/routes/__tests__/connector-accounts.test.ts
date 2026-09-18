@@ -1239,7 +1239,7 @@ describe("connector account lifecycle routes", () => {
       } satisfies CreateCustomConnectorBody,
     },
   ])(
-    "projects current no-auth custom $label accounts as connected",
+    "projects no-auth custom $label accounts as connected without credential checks",
     async ({ body }) => {
       const fixture = await seedFixture();
       mocks.clerk.session(fixture.userId, fixture.orgId);
@@ -1269,6 +1269,17 @@ describe("connector account lifecycle routes", () => {
       const accountId = connected.body.connectedAccountId;
       if (!accountId) {
         throw new Error("Expected a connected no-auth custom account");
+      }
+
+      if (body.kind === "mcp") {
+        await accept(
+          customConnectorByIdClient().update({
+            headers: authHeaders(),
+            params: { id: definition.body.id },
+            body: { ...body, storageVersion: 2 },
+          }),
+          [200],
+        );
       }
 
       const accounts = await accept(

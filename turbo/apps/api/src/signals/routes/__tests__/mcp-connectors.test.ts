@@ -322,6 +322,70 @@ describe("GET /api/mcp-connectors", () => {
     expect(foreignResponse.body).toStrictEqual({ connectors: [] });
   });
 
+  it("keeps an admitted no-auth MCP available without checking its account", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.CustomConnectorMcp]: true,
+    });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Public MCP Agent",
+    });
+    const body = {
+      kind: "mcp",
+      slug: "_public-mcp",
+      displayName: "Public MCP",
+      endpoint: "https://public-mcp.example.test/server",
+      transport: "streamable-http",
+      fields: [],
+      headerInjections: [],
+      queryInjections: [],
+      authMode: "none",
+    } satisfies McpCreateBody;
+    const connector = await connectors.createCustomConnector(actor, body);
+    const connectionId = requireConnectedAccountId(
+      await connectors.setCustomConnectorValues(actor, connector.id, []),
+    );
+    await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
+      connector.id,
+    ]);
+    const run = await createRunForAgent(actor, agent.agentId);
+    const token = exactConnectorRunToken({
+      actor,
+      runId: run.runId,
+      customConnectorSourceIds: { [connector.id]: connectionId },
+    });
+    await connectors.updateCustomConnector(actor, connector.id, {
+      ...body,
+      storageVersion: 2,
+    });
+    await connectors.deleteCustomConnectorAccount(
+      actor,
+      connector.id,
+      connectionId,
+    );
+    const response = await accept(
+      client().list({ headers: headers(token) }),
+      [200],
+    );
+    expect(response.body.connectors).toStrictEqual([
+      {
+        target: { kind: "custom", customConnectorId: connector.id },
+        connectionId,
+        slug: body.slug,
+        displayName: body.displayName,
+        transport: body.transport,
+        endpoint: body.endpoint,
+        connected: true,
+      },
+    ]);
+  });
+
   it("does not fall back when the exact run account is deleted or mismatched", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
@@ -683,7 +747,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     },
   );
 
-  it("rejects Automatic accounts resolved to no authentication", async () => {
+  it("discovers Automatic no-auth accounts without offering OAuth reauthorization", async () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -738,6 +802,17 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     if (!okouToken) {
       throw new Error("Expected the claimed run to include an Okou token");
     }
+
+    const discovery = await accept(
+      client().list({ headers: headers(okouToken) }),
+      [200],
+    );
+    expect(discovery.body.connectors).toStrictEqual([
+      expect.objectContaining({
+        target: { kind: "custom", customConnectorId: connector.id },
+        connected: true,
+      }),
+    ]);
 
     const response = await accept(
       client().reauthorizeOAuth({

@@ -15,6 +15,7 @@ import {
   getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
 import { connectorCredentialStatusWithMethod } from "./connector-credential-status.service";
+import { connectorCredentialStorageIsCompatible } from "./connector-credential-access.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import { loadCurrentCustomConnectorStoredValues } from "./custom-connector-credential-access.service";
 import {
@@ -86,7 +87,10 @@ async function builtinMcpConnectors(args: {
       connector === undefined ||
       mcp === undefined ||
       runtimeMethod?.executable !== true ||
-      runtimeMethod.method.storage.version !== row.storageVersion
+      !connectorCredentialStorageIsCompatible({
+        runtimeMethod,
+        storageVersion: row.storageVersion,
+      })
     ) {
       return [];
     }
@@ -160,12 +164,16 @@ export function runMcpConnectorList(args: {
       )
       .orderBy(orgCustomConnectors.slug);
 
-    const definitions = rows.map(({ connector }) => {
-      return {
-        id: connector.id,
-        authMode: connector.authMode,
-        storageVersion: connector.storageVersion,
-      };
+    const definitions = rows.flatMap(({ connector }) => {
+      return connector.authMode === "none"
+        ? []
+        : [
+            {
+              id: connector.id,
+              authMode: connector.authMode,
+              storageVersion: connector.storageVersion,
+            },
+          ];
     });
     const storage = await loadCurrentCustomConnectorStoredValues(db, {
       orgId: args.orgId,
@@ -175,8 +183,14 @@ export function runMcpConnectorList(args: {
     });
 
     const custom = rows.map(({ connector }): McpConnector => {
+      const connectionId = memberConnectorIdsByCustomConnectorId.get(
+        connector.id,
+      );
+      if (connectionId === undefined) {
+        throw new Error("Run MCP connector is missing its admitted account");
+      }
       const access = storage.accesses.get(connector.id);
-      if (!access) {
+      if (connector.authMode !== "none" && !access) {
         throw new Error("Expected MCP connector credential access");
       }
       const valueMarkers = storage.values.flatMap((value) => {
@@ -196,18 +210,14 @@ export function runMcpConnectorList(args: {
         row: normaliseCustomConnectorRow(connector),
         valueMarkers,
         connectedAccountId:
-          access.kind === "current" && access.connected
-            ? access.memberConnectorId
-            : null,
+          connector.authMode === "none"
+            ? connectionId
+            : access?.kind === "current" && access.connected
+              ? access.memberConnectorId
+              : null,
       });
       if (response.kind !== "mcp") {
         throw new Error("Run MCP connector query returned a non-MCP connector");
-      }
-      const connectionId = memberConnectorIdsByCustomConnectorId.get(
-        response.id,
-      );
-      if (connectionId === undefined) {
-        throw new Error("Run MCP connector is missing its admitted account");
       }
       return {
         target: { kind: "custom", customConnectorId: response.id },

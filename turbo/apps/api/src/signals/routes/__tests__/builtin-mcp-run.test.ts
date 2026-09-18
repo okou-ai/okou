@@ -220,39 +220,6 @@ describe("builtin MCP Run admission", () => {
     expect(missingAccountAuth.body).toMatchObject({
       error: { code: "CONNECTOR_NOT_CONFIGURED" },
     });
-    const publicAuthBody = {
-      encryptedSecrets: claim.encryptedSecrets,
-      authHeaders: {},
-      matchedFirewall: {
-        name: "public-mcp",
-        apiId: "public-mcp:0",
-        connectorSlug: "public-mcp",
-        sourceId: publicAccountId,
-        routingVariables: {},
-      },
-    };
-    const publicAuth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      publicAuthBody,
-      [200],
-    );
-    expect(publicAuth.body).toMatchObject({
-      headers: {},
-      expiresAt: Math.floor(authorizationTime / 1000) + 30,
-    });
-    await connectors.deleteBuiltinConnectorAccount(
-      actor,
-      "public-mcp",
-      publicAccountId,
-    );
-    const disconnectedPublicAuth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      publicAuthBody,
-      [424],
-    );
-    expect(disconnectedPublicAuth.body).toMatchObject({
-      error: { code: "CONNECTOR_NOT_CONFIGURED" },
-    });
     await runs.requestCancelRun(actor, run.runId, [200]);
   });
 

@@ -1952,8 +1952,9 @@ method remains unavailable until its handler lands. The addon honors explicit
 owner intent and never injects another owner's credentials when the requested
 owner is absent, including overlapping builtin/custom destinations.
 
-Account-bound builtin proxy requests resolve authorization even when they
-inject no credentials. Builtin MCP auth responses use the existing `expiresAt`
+No-auth builtin and custom MCP requests skip credential validity checks and
+proxy auth resolution, including Automatic custom MCP resolved to no
+authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
 field to cap cached account authorization at 30 seconds from validation; this
 also bounds static-token cache reuse. Discovery immediately removes deleted
 accounts, while subsequent proxy requests may reuse an existing lease until
