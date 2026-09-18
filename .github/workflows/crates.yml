@@ -154,10 +154,10 @@ jobs:
           echo "api-contracts-rust-bindings-changed=$api_contracts_rust_bindings_changed" >> "$GITHUB_OUTPUT"
           rm -f "$changed_files"
 
-          # Shared firewall contracts are stored under turbo but are read by
+          # Shared contract fixtures are stored under turbo but are read by
           # mitm-addon tests. Keep this separate from any-changed so a turbo-only
           # contract edit runs mitm-addon-test without forcing every crate job.
-          if git diff --name-only "$BASE_REF" HEAD | grep -Eqx "turbo/packages/connectors/src/__tests__/(firewall-semantics-contract|firewall-base-url-validation-contract|public-destination-policy-contract)\\.json"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -Eqx "turbo/packages/(connectors/src/__tests__/(firewall-semantics-contract|firewall-base-url-validation-contract|public-destination-policy-contract)|api-contracts/src/contracts/__tests__/fixtures/x-resource-observations)\\.json"; then
             echo "mitm-addon-test-inputs-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "mitm-addon-test-inputs-changed=false" >> "$GITHUB_OUTPUT"

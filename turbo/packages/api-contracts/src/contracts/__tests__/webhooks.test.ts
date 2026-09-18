@@ -28,6 +28,66 @@ import {
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
 
+describe("archive size mismatch telemetry", () => {
+  const operation = {
+    ts: "2026-09-18T00:00:00Z",
+    action_type: "storage_cache_fresh_delivery_headers",
+    duration_ms: 183,
+    success: false,
+    error: "response-size-mismatch",
+  };
+  const diagnostic = {
+    expected_bytes: "5",
+    response_bytes: "18446744073709551615",
+    source_kind: "storage",
+    source_index: 0,
+    content_encoding: "other",
+  };
+
+  it("preserves exact byte strings and zero index while accepting legacy operations", () => {
+    const measured = { ...operation, archive_size_mismatch: diagnostic };
+    const parsed = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      sandboxOperations: [
+        operation,
+        {
+          ...measured,
+          archive_size_mismatch: {
+            ...diagnostic,
+            archive_url: "https://private.example/archive?secret=private",
+            raw_content_encoding: "private-header",
+          },
+        },
+      ],
+    });
+    expect(parsed.sandboxOperations).toStrictEqual([operation, measured]);
+  });
+
+  it("rejects malformed or incomplete diagnostic objects", () => {
+    for (const invalid of [
+      { ...diagnostic, expected_bytes: 5 },
+      { ...diagnostic, expected_bytes: "-1" },
+      { ...diagnostic, response_bytes: "01" },
+      { ...diagnostic, response_bytes: "1.5" },
+      { ...diagnostic, response_bytes: "1e20" },
+      { ...diagnostic, response_bytes: "1".repeat(21) },
+      { ...diagnostic, response_bytes: "" },
+      { ...diagnostic, source_kind: "private-path" },
+      { ...diagnostic, source_index: -1 },
+      { ...diagnostic, source_index: Number.MAX_SAFE_INTEGER + 1 },
+      { ...diagnostic, content_encoding: "private-header" },
+      { expected_bytes: "5", response_bytes: "7" },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [{ ...operation, archive_size_mismatch: invalid }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("Sandbox transient session output", () => {
   const body = {
     runId: "00000000-0000-4000-8000-000000000001",

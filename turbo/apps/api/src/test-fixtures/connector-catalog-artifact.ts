@@ -577,6 +577,61 @@ const slackPermissions = [
 ] satisfies NonNullable<FirewallApi["permissions"]>;
 
 const connectors = [
+  {
+    ...connector({
+      connectorSlug: "public-mcp",
+      label: "Public Tools",
+      authMethods: [
+        {
+          id: "none",
+          label: "Connect",
+          description: null,
+          visible: true,
+          storage: { version: 1, secrets: [], variables: [] },
+          grant: { kind: "none" },
+          access: { kind: "none" },
+          revoke: { kind: "none" },
+        },
+      ],
+      firewall: generatedFirewall([
+        {
+          base: "https://public-mcp.example.test/server",
+          auth: {},
+          permissions: [],
+        },
+      ]),
+    }),
+    mcp: {
+      transport: "streamable-http",
+      endpoint: "https://public-mcp.example.test/server",
+    },
+  },
+  {
+    ...connector({
+      connectorSlug: "manual-mcp",
+      label: "Manual Tools",
+      authMethods: [
+        manualMethod({
+          fields: [
+            manualField({
+              privateName: "MCP_API_KEY",
+              publicId: "apiKey",
+              label: "API Key",
+              storage: "secret",
+            }),
+          ],
+          envBindings: { MCP_API_KEY: secret("MCP_API_KEY") },
+        }),
+      ],
+      firewall: generatedFirewall([
+        bearerApi("https://manual-mcp.example.test/server", "MCP_API_KEY"),
+      ]),
+    }),
+    mcp: {
+      transport: "streamable-http",
+      endpoint: "https://manual-mcp.example.test/server",
+    },
+  },
   connector({
     connectorSlug: "ahrefs",
     label: "Ahrefs",

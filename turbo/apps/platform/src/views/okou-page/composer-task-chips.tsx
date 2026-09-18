@@ -34,7 +34,7 @@ import {
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
 import {
-  slashTemplatePreviewGroup,
+  slashTemplatePreviews,
   type SlashTemplatePreview,
   type SlashTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
@@ -245,7 +245,7 @@ function ComposerTemplateShelf({
 }) {
   const { t } = useTranslation();
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
-  const group = slashTemplatePreviewGroup(category);
+  const previews = slashTemplatePreviews(category);
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const saveDraft = useSet(signals.draft.save$);
@@ -292,7 +292,7 @@ function ComposerTemplateShelf({
         signals={signals}
         rail={`templates:${task}`}
         gap="gap-3"
-        items={group.previews.map((preview) => {
+        items={previews.map((preview) => {
           return (
             <ComposerTemplateCover
               key={preview.slug}

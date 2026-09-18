@@ -55,10 +55,10 @@ async function chatEventQueueAdmissionLock(
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
-async function pendingTickExistsForAutomation(
+async function pendingTickForAutomation(
   db: Pick<Db, "select">,
   automationId: string,
-): Promise<boolean> {
+): Promise<string | undefined> {
   const [tick] = await db
     .select({ id: chatEvents.id })
     .from(chatAutomationContext)
@@ -83,16 +83,65 @@ async function pendingTickExistsForAutomation(
       ),
     )
     .limit(1);
-  return tick !== undefined;
+  return tick?.id;
 }
 
 type WorkflowQueueAdmission =
-  | { readonly kind: "inserted"; readonly eventId: string }
-  | { readonly kind: "coalesced" };
+  | {
+      readonly kind: "inserted";
+      readonly eventId: string;
+      readonly scheduleClaimId?: string;
+    }
+  | {
+      readonly kind: "coalesced";
+      /** The recorded occurrence the pending event already belongs to. */
+      readonly scheduleClaimId?: string;
+    }
+  /**
+   * The schedule was not consumed: either a competing tick won the exact
+   * occurrence, or the pending event belongs to no recorded occurrence and a
+   * new anchor must not be attached to it. `next_run_at` is untouched, so the
+   * existing cron rereads the same due row on its next tick.
+   */
+  | {
+      readonly kind: "schedule_unavailable";
+      readonly reason: ScheduleUnclaimed;
+    };
+
+export type ScheduleUnclaimed = "superseded" | "untracked_pending_event";
 
 export type PersistWorkflowQueueSourceTransition = (
   tx: WorkflowQueueAdmissionTransaction,
 ) => Promise<void>;
+
+export type WorkflowScheduleClaimAttempt =
+  | { readonly kind: "claimed"; readonly claimId: string }
+  | { readonly kind: "unavailable" };
+
+/**
+ * Consumes the due occurrence in the admission transaction.
+ *
+ * The schedule CAS, the journal row and the queue event commit together, so a
+ * claim never outlives a rolled-back admission and an admitted event always
+ * carries the occurrence it was fired for.
+ */
+export interface WorkflowScheduleClaimPlan {
+  readonly claim: (
+    tx: WorkflowQueueAdmissionTransaction,
+  ) => Promise<WorkflowScheduleClaimAttempt>;
+  readonly bindQueueEvent: (
+    tx: WorkflowQueueAdmissionTransaction,
+    args: { readonly claimId: string; readonly queueEventId: string },
+  ) => Promise<void>;
+  /**
+   * The recorded occurrence a pending event already belongs to, or undefined
+   * when that event is untracked.
+   */
+  readonly recordedClaimForQueueEvent: (
+    tx: WorkflowQueueAdmissionTransaction,
+    queueEventId: string,
+  ) => Promise<string | undefined>;
+}
 
 interface WorkflowQueueAdmissionArgs {
   readonly automation: typeof workflowAutomations.$inferSelect;
@@ -112,6 +161,32 @@ interface WorkflowQueueAdmissionArgs {
    * workflow queue item has been inserted. Throwing rolls back both writes.
    */
   readonly persistSourceTransition?: PersistWorkflowQueueSourceTransition;
+  /**
+   * Present only for the schedule occurrences this API version journals. Its
+   * absence keeps the historical claim-then-admit behavior untouched.
+   */
+  readonly scheduleClaim?: WorkflowScheduleClaimPlan;
+}
+
+async function admitCoalescedScheduleTick(
+  tx: WorkflowQueueAdmissionTransaction,
+  args: WorkflowQueueAdmissionArgs,
+  pendingEventId: string,
+): Promise<WorkflowQueueAdmission> {
+  if (!args.scheduleClaim) {
+    return { kind: "coalesced" };
+  }
+  const recorded = await args.scheduleClaim.recordedClaimForQueueEvent(
+    tx,
+    pendingEventId,
+  );
+  if (!recorded) {
+    // The pending event predates this journal or belongs to an untracked
+    // path. Attaching this occurrence's anchor to it would invent an identity
+    // for work nobody recorded, so the schedule stays due instead.
+    return { kind: "schedule_unavailable", reason: "untracked_pending_event" };
+  }
+  return { kind: "coalesced", scheduleClaimId: recorded };
 }
 
 async function attemptWorkflowQueueAdmission(
@@ -122,12 +197,16 @@ async function attemptWorkflowQueueAdmission(
   return await db.transaction(async (tx) => {
     await chatEventQueueAdmissionLock(tx, args.chatThreadId);
 
-    if (
-      args.coalescePendingScheduleRun &&
-      automation.kind === "schedule" &&
-      (await pendingTickExistsForAutomation(tx, automation.id))
-    ) {
-      return { kind: "coalesced" };
+    if (args.coalescePendingScheduleRun && automation.kind === "schedule") {
+      const pendingEventId = await pendingTickForAutomation(tx, automation.id);
+      if (pendingEventId) {
+        return await admitCoalescedScheduleTick(tx, args, pendingEventId);
+      }
+    }
+
+    const claim = await args.scheduleClaim?.claim(tx);
+    if (claim?.kind === "unavailable") {
+      return { kind: "schedule_unavailable", reason: "superseded" };
     }
 
     const [workflow] = await tx
@@ -181,6 +260,17 @@ async function attemptWorkflowQueueAdmission(
       workflowIds: [automation.workflowId],
     });
     await args.persistSourceTransition?.(tx);
+    if (claim) {
+      await args.scheduleClaim?.bindQueueEvent(tx, {
+        claimId: claim.claimId,
+        queueEventId: inserted.id,
+      });
+      return {
+        kind: "inserted",
+        eventId: inserted.id,
+        scheduleClaimId: claim.claimId,
+      };
+    }
     return { kind: "inserted", eventId: inserted.id };
   });
 }

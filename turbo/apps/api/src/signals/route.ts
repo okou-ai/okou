@@ -143,6 +143,8 @@ import { webSearchRoutes } from "./routes/web-search";
 import { socialRoutes } from "./routes/social";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
+import { vncAccessRoutes } from "./routes/vnc-access";
+import { runnerVncRoutes } from "./routes/runner-vnc";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
@@ -346,6 +348,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...socialRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
+  ...vncAccessRoutes,
+  ...runnerVncRoutes,
   ...cloudflareAccessRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,

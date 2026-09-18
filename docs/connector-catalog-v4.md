@@ -5,7 +5,8 @@ the complete v4 catalog published by
 [vm0-connectors #4634](https://github.com/vm0-ai/vm0-connectors/pull/4634).
 The new API syncs v4 through the existing catalog path and temporarily reads
 retained accepted v3 data until the first v4 snapshot is accepted.
-Catalog support does not enable built-in MCP execution or Automatic OAuth.
+Builtin MCP execution supports none/manual authentication. Automatic OAuth
+remains a separate capability delivered by #34911.
 
 ## Publication and bootstrap
 
@@ -69,18 +70,35 @@ interpret the `-mcp` naming convention. Every MCP descriptor must declare
 HTTP connectors retain bundled skill support and exact-version mounting.
 
 The reader validates endpoint, ownership, replacement and none/Automatic auth
-metadata. All MCP methods remain filtered with `unsupported-protocol` until the
-execution/auth slices land; unsupported generic auth also appears in capability
-diagnostics. These expected filters do not emit warning or error logs and do not
-reject an otherwise valid catalog. Runtime materialization and HTTP firewall
-permission-bundle lookup independently exclude MCP. Existing supported HTTP
-methods remain usable through v4.
+metadata. MCP none/none and manual/static methods with no-op revocation are
+executable. Automatic and provider-backed MCP methods remain filtered until
+their handlers are installed. These expected filters do not emit warning or
+error logs and do not reject an otherwise valid catalog. MCP generated firewalls
+participate in named builtin execution, but cannot supply HTTP permission bundles
+or permission editors. Existing supported HTTP methods remain usable through v4.
+
+Builtin MCP uses the current CLI without client-version negotiation or requiring
+its package URL to match the serving API commit. Its signed builtin account
+mapping comes from the final admitted runtime targets; later default changes
+cannot substitute another account. MCP credential values and aliases remain
+outside the sandbox environment and skill mounts. The proxy resolves the exact
+selected account at the network boundary when credentials are needed. Shared
+MCP discovery supplies tools and schemas. No-auth builtin and custom MCP skip
+credential validity checks and proxy auth resolution, including Automatic custom
+MCP accounts resolved to no authentication.
+Credentialed builtin MCP authorization is cached for at most 30 seconds from account
+validation, even when the provider credential has no expiry. Deleting an
+account removes it from discovery immediately; subsequent proxy requests can
+reuse cached authorization until its lease expires, then must validate the
+same account again. Lease expiry does not interrupt an in-flight request or
+stream. No-auth requests have no account authorization lease. Credentialed HTTP
+and custom connector cache behavior is unchanged.
 
 ## Rollback and remaining integration
 
 Deploying this consumer starts v4 sync with the bounded v3 read bridge described
-above. Enabling MCP execution, Automatic OAuth and same-service replacement
-remains work under
+above. Automatic OAuth, live Plaud acceptance and same-service replacement
+remain work under
 [#34157](https://github.com/vm0-ai/okou/issues/34157).
 No production release, storage pointer change or provider authorization is
 performed by this implementation PR itself.

@@ -927,12 +927,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
-      - name: Build real Guest and maintenance runtime
+      - name: Build real Guest and Pi boundary runtimes
         run: |
           cargo build --manifest-path crates/Cargo.toml --profile local -p guest-agent -j 2
           pnpm --dir turbo --filter @okouai/pi-agent-runtime build
+          pnpm --dir turbo --filter @okouai/cli build
           mkdir -p /home/user/workspace
-      - name: Exercise private maintenance boundaries
+      - name: Exercise private Pi boundaries
         working-directory: turbo
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres

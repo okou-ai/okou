@@ -1,17 +1,18 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { customConnectorMcpResponseCoreSchema } from "./custom-connectors";
+import { connectorAccountTargetSchema } from "./connector-accounts";
 
 const c = initContract();
 
-export const mcpConnectorSchema = customConnectorMcpResponseCoreSchema.pick({
-  id: true,
-  slug: true,
-  displayName: true,
-  transport: true,
-  endpoint: true,
-  connected: true,
+export const mcpConnectorSchema = z.object({
+  target: connectorAccountTargetSchema,
+  connectionId: z.uuid(),
+  slug: z.string().min(1),
+  displayName: z.string().min(1),
+  transport: z.literal("streamable-http"),
+  endpoint: z.string().min(1),
+  connected: z.boolean(),
 });
 export type McpConnector = z.infer<typeof mcpConnectorSchema>;
 
@@ -34,16 +35,26 @@ export const mcpOAuthScopeListSchema = z
   }, "MCP OAuth scopes must be unique");
 
 export const mcpConnectorOAuthReauthorizationRequestSchema = z.object({
+  target: connectorAccountTargetSchema,
   scopes: mcpOAuthScopeListSchema,
 });
 export type McpConnectorOAuthReauthorizationRequest = z.infer<
   typeof mcpConnectorOAuthReauthorizationRequestSchema
 >;
 
-export const mcpConnectorOAuthReauthorizationResponseSchema = z.object({
-  authorizationUrl: z.string().url(),
-  expiresAt: z.iso.datetime(),
-});
+export const mcpConnectorOAuthReauthorizationResponseSchema =
+  z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("oauth"),
+      authorizationUrl: z.string().url(),
+      expiresAt: z.iso.datetime(),
+    }),
+    z.object({
+      kind: z.literal("reconnect"),
+      connectionId: z.uuid(),
+      authorizationUrl: z.string().url(),
+    }),
+  ]);
 export type McpConnectorOAuthReauthorizationResponse = z.infer<
   typeof mcpConnectorOAuthReauthorizationResponseSchema
 >;
@@ -63,9 +74,8 @@ export const mcpConnectorsContract = c.router({
   },
   reauthorizeOAuth: {
     method: "POST",
-    path: "/api/mcp-connectors/:id/oauth2/reauthorize",
+    path: "/api/mcp-connectors/oauth2/reauthorize",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
     body: mcpConnectorOAuthReauthorizationRequestSchema,
     responses: {
       200: mcpConnectorOAuthReauthorizationResponseSchema,

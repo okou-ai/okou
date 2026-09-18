@@ -1,7 +1,8 @@
 # 017: Pi stable-context report and repair
 
-Migration 1160 creates empty additive stable-context tables after the VNC 1158
-and MCP thread-discovery 1159 migrations. It intentionally
+Migration 1163 creates empty additive stable-context tables after the VNC 1158
+and 1160, MCP thread-discovery 1159, Morning Brief schedule-claim 1161, and
+Slack ingress retry-policy 1162 migrations. It intentionally
 does not enumerate user x Agent x session combinations or materialize a
 production-wide cache. Normal authoritative source writes invalidate existing
 heads, and an exact request miss records bounded demand from captured immutable
@@ -16,7 +17,7 @@ five attempts. It does not create owner/variant combinations, synthesize
 credentials, read archives, compose prompts, change feature switches, deploy,
 or activate Pi.
 
-Run from `turbo/packages/db` only after migration 1160 is present:
+Run from `turbo/packages/db` only after migration 1163 is present:
 
 ```bash
 # Bounded dry-run/report (default).

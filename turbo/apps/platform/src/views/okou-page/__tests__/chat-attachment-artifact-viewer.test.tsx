@@ -28,6 +28,9 @@ import {
 
 const context = testContext();
 const CREATED_AT = "2026-03-10T00:00:01Z";
+const R2_ORIGIN = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
+const THUMBNAIL_PREFIX =
+  "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/";
 
 function assistantMessage(
   content: string,
@@ -225,6 +228,10 @@ test("Artifact thumbnails fall back to a usable live preview", async () => {
   expect(previews).toHaveLength(2);
   const successfulThumbnail = await within(previews[0]!).findByTestId(
     "attachment-preview-thumbnail",
+  );
+  expect(successfulThumbnail).toHaveAttribute(
+    "src",
+    `${THUMBNAIL_PREFIX}artifacts/tests/chat-attachments/thumbnail-success.webp`,
   );
   fireEvent.load(successfulThumbnail);
   expect(
@@ -533,13 +540,12 @@ test("Private HTML previews keep mounted frames stable and resolve again when re
   });
 });
 
-test("A private site card resolves its screenshot and opens the site on click", async () => {
+test("A private site card resizes its authorized screenshot and opens the site on click", async () => {
   const deploymentId = "00000000-0000-4000-8000-000000000019";
   const screenshotId = "00000000-0000-4000-8000-000000000020";
   const site = artifactReferencePath(deploymentId, "index.html");
   const screenshot = artifactReferencePath(screenshotId, "preview.webp");
-  const screenshotUrl =
-    "https://private-files.example/screenshot.webp?signature=owner";
+  const screenshotUrl = `${R2_ORIGIN}/private/screenshot%20%2B.bin?X-Amz-Signature=owner&X-Amz-Security-Token=token%2B%2F%3D`;
   const previewUrl = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
   mockAttachmentChat(context, {
     chatEvents: [assistantMessage(`![Private report](${site})`)],
@@ -574,7 +580,10 @@ test("A private site card resolves its screenshot and opens the site on click", 
   const thumbnail = await within(card).findByTestId(
     "attachment-preview-thumbnail",
   );
-  expect(thumbnail).toHaveAttribute("src", screenshotUrl);
+  expect(thumbnail).toHaveAttribute(
+    "src",
+    `${THUMBNAIL_PREFIX}${screenshotUrl}`,
+  );
   fireEvent.load(thumbnail);
   expect(
     within(card).queryByTestId("attachment-preview-html-viewport"),
@@ -588,51 +597,65 @@ test("A private site card resolves its screenshot and opens the site on click", 
   });
 });
 
-test("A private generated video shows its authorized poster and opens the original", async () => {
-  const videoId = "00000000-0000-4000-8000-000000000021";
-  const posterId = "00000000-0000-4000-8000-000000000022";
-  const video = artifactReferencePath(videoId, "generated.mp4");
-  const poster = artifactReferencePath(posterId, "poster-v2.jpg");
-  const videoUrl =
-    "https://private-files.example/generated.mp4?signature=owner";
-  const posterUrl =
-    "https://private-files.example/poster-v2.jpg?signature=owner";
-  mockAttachmentChat(context, {
-    chatEvents: [assistantMessage(`![Generated video](${video})`)],
-    artifacts: [
-      artifactFile("generated.mp4", {
-        id: videoId,
-        contentType: "video/mp4",
-        url: video,
-        previewImageUrl: poster,
-      }),
-    ],
-  });
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      const isPoster = params.reference === poster.slice("/artifacts/".length);
-      return respond(200, {
-        url: isPoster ? posterUrl : videoUrl,
-        filename: isPoster ? "poster-v2.jpg" : "generated.mp4",
-        contentType: isPoster ? "image/jpeg" : "video/mp4",
-        target: { kind: "file", id: isPoster ? posterId : videoId },
-        expiresAt: "2099-01-01T00:00:00.000Z",
-      });
-    },
-  );
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  const thumbnail = await screen.findByTestId("chat-video-preview-thumbnail");
-  expect(thumbnail).toHaveAttribute("src", posterUrl);
-  fireEvent.load(thumbnail);
-  expect(screen.queryByTestId("chat-video-preview-fallback")).toBeNull();
-  const card = thumbnail.closest("button");
-  if (!card) {
-    throw new Error("Expected a video preview button");
-  }
-  click(card);
-  const stage = await screen.findByTestId("artifact-dialog-video-stage");
-  await waitFor(() => {
-    expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
-  });
-});
+test.each(["assistant", "user"] as const)(
+  "A private video in a %s message resizes its authorized poster and opens the original",
+  async (role) => {
+    const videoId = "00000000-0000-4000-8000-000000000021";
+    const posterId = "00000000-0000-4000-8000-000000000022";
+    const video = artifactReferencePath(videoId, "generated.mp4");
+    const poster = artifactReferencePath(posterId, "poster-v2.jpg");
+    const videoUrl = `${R2_ORIGIN}/private/generated.mp4?X-Amz-Signature=owner`;
+    const posterUrl = `${R2_ORIGIN}/private/poster%20%2B.bin?X-Amz-Signature=owner&X-Amz-Security-Token=token%2B%2F%3D`;
+    mockAttachmentChat(context, {
+      chatEvents: [
+        role === "assistant"
+          ? assistantMessage(`![Generated video](${video})`)
+          : userImageMessage("user-video-message", [
+              {
+                type: "file",
+                fileId: videoId,
+                filenameSnapshot: "generated.mp4",
+                contentType: "video/mp4",
+              },
+            ]),
+      ],
+      artifacts: [
+        artifactFile("generated.mp4", {
+          id: videoId,
+          contentType: "video/mp4",
+          url: video,
+          previewImageUrl: poster,
+        }),
+      ],
+    });
+    context.mocks.api(
+      artifactReferencesContract.resolve,
+      ({ params, respond }) => {
+        const isPoster =
+          params.reference === poster.slice("/artifacts/".length);
+        return respond(200, {
+          url: isPoster ? posterUrl : videoUrl,
+          filename: isPoster ? "poster-v2.jpg" : "generated.mp4",
+          contentType: isPoster ? "image/jpeg" : "video/mp4",
+          target: { kind: "file", id: isPoster ? posterId : videoId },
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        });
+      },
+    );
+    mockPrivateUrlSequence(context, { [videoId]: [videoUrl] });
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    const thumbnail = await screen.findByTestId("chat-video-preview-thumbnail");
+    expect(thumbnail).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${posterUrl}`);
+    fireEvent.load(thumbnail);
+    expect(screen.queryByTestId("chat-video-preview-fallback")).toBeNull();
+    const card = thumbnail.closest("button");
+    if (!card) {
+      throw new Error("Expected a video preview button");
+    }
+    click(card);
+    const stage = await screen.findByTestId("artifact-dialog-video-stage");
+    await waitFor(() => {
+      expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
+    });
+  },
+);

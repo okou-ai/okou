@@ -102,31 +102,22 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("enables chat thread archiving for staff by default and honors explicit overrides", () => {
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        orgId: "org_nonexistent",
-      }),
-    ).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {})).toBe(
-      false,
-    );
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
-      }),
-    ).toBe(true);
+  it("keeps chat thread archiving disabled by default and honors explicit overrides", () => {
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, context),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+          ...context,
+          overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+        }),
+      ).toBe(true);
+    }
   });
 
   it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
@@ -361,6 +352,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",

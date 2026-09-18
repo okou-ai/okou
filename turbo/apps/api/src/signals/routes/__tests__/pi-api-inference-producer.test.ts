@@ -599,9 +599,8 @@ describe("durable Pi API producer", () => {
     );
 
     mockPiResourceArchiveDownloads();
-    // Cross both the one-hour grant horizon and PostgreSQL's real fixture
-    // timestamps so the deterministic recovery endpoint can materialize the
-    // deferred H0 claim under the same expired authority.
+    // Cross the one-hour grant horizon while retaining the captured fixture
+    // timeline. Runner queue expiry is owned by PostgreSQL's clock.
     mockNow(capturedAt + 24 * 60 * 60 * 1000);
     const expired = await sendChatRun(
       actor,

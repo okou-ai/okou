@@ -35,9 +35,9 @@ import {
 } from "../external/openrouter-platform-generation";
 import { settleIncludingAbort } from "../utils";
 import {
+  admitMorningBriefLocalAuthority,
   currentMorningBriefCollectionAuthority$,
   executeMorningBriefSlackCollection$,
-  morningBriefLocalAuthorityStillCurrent,
   type MorningBriefCollectionConflict,
   type MorningBriefCollectionHandoffContext,
   type MorningBriefLocalAuthority,
@@ -62,6 +62,7 @@ import { interpretGenerationOutput } from "./morning-brief-generation-result";
 import {
   acceptMorningBriefGenerationResult,
   holdMorningBriefGenerationSlot,
+  lockMorningBriefGeneration,
   readMorningBriefGeneration,
   readPlatformGenerationReceipt,
   recordMorningBriefGenerationOutcome,
@@ -645,25 +646,22 @@ type OwnerWriteResult =
  * The outcome this write may actually commit, decided where it is admitted.
  *
  * The canonical authority was proved before persistence began, outside any
- * transaction, because it waits on Clerk. That proof describes the past: the
- * writes below then wait for the owner lock and the slot row, and a Settings
- * disable, an Agent transfer or a Slack rebinding can commit during exactly
- * that wait. Re-resolving the *local* half here, under the locks those mutators
- * really take, is what stops a decision made before the wait from turning into
- * owner content after it. The remote half is deliberately not re-resolved: a
+ * transaction, because it waits on Clerk. That proof describes the past: a
+ * Settings disable, an Agent deletion or a Slack rebinding can commit while
+ * this write waits for its locks. Re-resolving the *local* half here — through
+ * the shared admission point, which holds the rows those mutators really write
+ * — is what stops a decision made before the wait from turning into owner
+ * content after it. The remote half is deliberately not re-resolved: a
  * transaction is never held open across a network round trip.
+ *
+ * A write that stores no content skips it. Such a write only records why this
+ * already-observed invocation produced nothing, so it neither needs nor should
+ * take another owner's authority rows.
  */
-async function admittedOutcome(
-  tx: Tx,
+function admittedOutcome(
   args: PersistenceArgs,
-): Promise<InterpretedOutcome> {
-  if (args.interpreted.kind !== "accept") {
-    return args.interpreted;
-  }
-  const authority = await morningBriefLocalAuthorityStillCurrent(
-    tx,
-    args.occurrenceRow,
-  );
+  authority: MorningBriefLocalAuthority,
+): InterpretedOutcome {
   return authority.kind === "current"
     ? args.interpreted
     : lapsedAuthorityOutcome(authority);
@@ -673,35 +671,57 @@ async function admittedOutcome(
  * Write the owner-scoped outcome under the fence the reservation was admitted
  * with.
  *
- * The slot is taken first, and the two things only this layer can decide happen
- * at that instant rather than before it: a caller that cancelled commits
- * nothing at all, and a result whose authority lapsed during the wait is
- * recorded as discarded instead of accepted. Acceptance additionally requires
- * an unexpired reservation, so content that arrived too late is never stored;
- * when it does arrive too late the honest `result_discarded` outcome is
+ * The order is the whole point. The owner fence and the local authority rows
+ * are taken first, then this attempt's own slot, and only then is the authority
+ * resolved — so every wait this transaction performs is already behind it when
+ * the decision is made. The three things only this layer can decide then happen
+ * at that one instant: a caller that cancelled commits nothing at all, a result
+ * whose authority lapsed while it waited is recorded as discarded instead of
+ * accepted, and the reservation deadline is compared against the clock read
+ * there rather than against an earlier reading. Content that became late during
+ * those waits is never stored; the honest `result_discarded` outcome is
  * recorded instead, because refusing both would leave the slot looking merely
  * stale. A revoked owner matches neither write, and nothing here recreates an
  * owner row.
+ *
+ * Cancellation after this transaction commits cannot retract it. The guarantee
+ * is that nothing is committed for a caller that had already cancelled when its
+ * write was admitted, not that accepted bytes can be taken back afterwards.
  */
 async function commitOwnerOutcome(
   tx: Tx,
   args: PersistenceArgs,
   signal: AbortSignal,
 ): Promise<OwnerWriteResult> {
-  const held = await holdMorningBriefGenerationSlot(tx, args.fence);
-  if (!held) {
+  let interpreted = args.interpreted;
+  if (interpreted.kind === "accept") {
+    if (!(await lockCollectionOwner(tx, args.fence.key.owner))) {
+      return { kind: "owner-revoked" };
+    }
+    const admission = await admitMorningBriefLocalAuthority(
+      tx,
+      args.occurrenceRow,
+      async () => {
+        return await lockMorningBriefGeneration(tx, args.fence.key);
+      },
+    );
+    if (!admission.guarded) {
+      return { kind: "owner-revoked" };
+    }
+    interpreted = admittedOutcome(args, admission.authority);
+  } else if (!(await holdMorningBriefGenerationSlot(tx, args.fence))) {
     return { kind: "owner-revoked" };
   }
-  // Admitted after every real wait and before any mutation is issued. Throwing
-  // here unwinds the whole transaction, so a cancelled caller leaves the slot
-  // exactly as its reservation left it.
+  // Admitted after every wait this transaction performs and before any mutation
+  // is issued. Throwing here unwinds the whole transaction, so a cancelled
+  // caller leaves the slot exactly as its reservation left it.
   signal.throwIfAborted();
-  const interpreted = await admittedOutcome(tx, args);
+  const at = nowDate();
   if (interpreted.kind === "accept") {
     const accepted = await acceptMorningBriefGenerationResult(
       tx,
       args.fence,
-      held,
+      at,
       {
         decision: interpreted.decision,
         skipReason: interpreted.skipReason,
@@ -716,7 +736,7 @@ async function commitOwnerOutcome(
     const discarded = await recordMorningBriefGenerationOutcome(
       tx,
       args.fence,
-      held,
+      at,
       {
         state: "result_discarded",
         failureReason: "reservation_expired",
@@ -729,7 +749,7 @@ async function commitOwnerOutcome(
   const written = await recordMorningBriefGenerationOutcome(
     tx,
     args.fence,
-    held,
+    at,
     {
       state: interpreted.state,
       failureReason: interpreted.failureReason,
@@ -922,10 +942,19 @@ type GenerationRelease =
  * Every earlier check describes an instant that has already passed: the Clerk
  * membership resolution waits on the network, and the receipt lookup waits on
  * the database. A deletion, a Settings disable, a rebinding or the retention
- * deadline can all land during those waits, so the row is read again here
- * rather than served from the copy the request started with, and the clock is
- * sampled only after every wait this fence itself performs. Equality with the
- * retention deadline is already expired: a result becomes unreadable at its
+ * deadline can all land during those waits, so this fence takes every authority
+ * parent before it re-reads the row `FOR UPDATE`. The copy it returns therefore
+ * cannot be deleted out from under it while canonical authority is re-resolved.
+ * The maintenance purge selects `SKIP LOCKED` and simply leaves a held row for
+ * its next pass; the owner sweep, the member cleanup cascade and the Agent
+ * deletion cascade all have to wait for this transaction. Reading the row a
+ * second time afterwards would reopen exactly the interval that lock closes, so
+ * the pinned copy is what is returned.
+ *
+ * The shared admission point holds Agent, Settings and Slack rows, then the
+ * caller's generation row, then reuses the canonical reader. The clock is
+ * sampled last — after every wait this fence performs. Equality with
+ * the retention deadline is already expired: a result becomes unreadable at its
  * deadline, whether or not the maintenance purge has physically removed it yet.
  *
  * Nothing here writes. A result that may not be released is simply not
@@ -942,27 +971,30 @@ async function releaseStoredGeneration(
   if (!(await lockCollectionOwner(tx, args.key.owner))) {
     return { kind: "owner-revoked" };
   }
-  const row = await readMorningBriefGeneration(
+  const admission = await admitMorningBriefLocalAuthority(
     tx,
-    args.key,
-    GENERATION_PURPOSE,
+    args.occurrenceRow,
+    async () => {
+      return await lockMorningBriefGeneration(tx, args.key);
+    },
   );
-  if (!row || row.attemptId !== args.attemptId) {
+  const row = admission.guarded;
+  if (
+    !row ||
+    row.attemptId !== args.attemptId ||
+    row.executionPurpose !== GENERATION_PURPOSE
+  ) {
     return { kind: "gone" };
   }
-  // Sampled after the lock and after the row itself was read, so the deadline
+  // Sampled after every lock and every read this fence performs, so the deadline
   // comparison describes the instant this release is really decided.
   if (row.expiresAt.getTime() <= nowDate().getTime()) {
     return { kind: "gone" };
   }
-  const authority = await morningBriefLocalAuthorityStillCurrent(
-    tx,
-    args.occurrenceRow,
-  );
-  if (authority.kind === "not-executed") {
-    return { kind: "not-executed", reason: authority.reason };
+  if (admission.authority.kind === "not-executed") {
+    return { kind: "not-executed", reason: admission.authority.reason };
   }
-  if (authority.kind === "binding-changed") {
+  if (admission.authority.kind === "binding-changed") {
     return { kind: "binding-changed" };
   }
   return { kind: "released", row };
@@ -1268,11 +1300,12 @@ async function recordUninvokedAttempt(
   failureReason: MorningBriefGenerationFailureReason,
 ): Promise<MorningBriefGenerationExecution> {
   const written = await args.db.transaction(async (tx) => {
-    const held = await holdMorningBriefGenerationSlot(tx, fence);
-    if (!held) {
+    if (!(await holdMorningBriefGenerationSlot(tx, fence))) {
       return { kind: "not-owned" } as const;
     }
-    return await recordMorningBriefGenerationOutcome(tx, fence, held, {
+    // Sampled after the locks this transaction waited on, so the instant
+    // recorded is the one the write is really admitted at.
+    return await recordMorningBriefGenerationOutcome(tx, fence, nowDate(), {
       state: "not_invoked",
       failureReason,
     });

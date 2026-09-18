@@ -22,7 +22,7 @@ const WELCOME_STEP_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
 const WELCOME_SCENE_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
-const QUICK_START = "https://okou-quick-start-deck.okou.app";
+const QUICK_START = "https://4nnp6iwpss.okou.app";
 
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {

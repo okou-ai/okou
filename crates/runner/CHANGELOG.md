@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.200.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.199.1...runner-rs-v0.200.0) (2026-09-18)
+
+
+### Features
+
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+## [0.199.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.199.0...runner-rs-v0.199.1) (2026-09-18)
+
+## [0.199.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.1...runner-rs-v0.199.0) (2026-09-18)
+
+
+### Features
+
+* **runner:** record archive size mismatch diagnostics ([#35149](https://github.com/vm0-ai/okou/issues/35149)) ([b6ce895](https://github.com/vm0-ai/okou/commit/b6ce8952ca15bb670cc4e592676c8d2a21b88332))
+
+## [0.198.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.0...runner-rs-v0.198.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* log sandbox rootfs exhaustion at info ([#35141](https://github.com/vm0-ai/okou/issues/35141)) ([e015f06](https://github.com/vm0-ai/okou/commit/e015f0643c9d33d6ddb144b233845734bde075f5))
+
 ## [0.198.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.6...runner-rs-v0.198.0) (2026-09-18)
 
 
