@@ -112,37 +112,69 @@ export function OnboardingStepLayout({
       >
         {/* Centred while the step fits, scrollable from the top when it does
             not: a centred flex child would otherwise clip its own top. */}
+        {/* One grid for every step: the track, the title and the action line
+            sit at the same height on all of them, and the step's own content
+            is centred inside a band of fixed height. */}
         <div className="flex min-h-full flex-col justify-center">
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14">
-            {/* The question, its progress and its action live on the canvas;
-                only the answers are grouped on a surface. */}
-            <div className="w-full shrink-0 lg:w-[380px] lg:pt-2">
-              {onBack ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={onBack}
-                  className="mb-5 gap-1.5"
-                >
-                  <ChevronLeft size={16} aria-hidden="true" />
-                  {t(($) => {
-                    return $.onboarding.sourcesFirst.common.back;
-                  })}
-                </Button>
-              ) : null}
-              <OnboardingStepProgress
-                current={currentStep}
-                total={totalSteps}
-              />
-              <h1 className="mt-8 text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
-                {title}
-              </h1>
-              <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
-                {description}
-              </p>
+          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-16">
+            <div className="w-full shrink-0 lg:w-[340px]">
+              <div className="lg:min-h-[430px]">
+                <OnboardingStepProgress
+                  current={currentStep}
+                  total={totalSteps}
+                />
+                <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
+                  {title}
+                </h1>
+                <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
+                  {description}
+                </p>
+                {footnote ? (
+                  <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                    {footnote}
+                  </p>
+                ) : null}
+              </div>
+              {/* Back keeps the action line's height even when it is absent. */}
+              <div className="mt-9 flex h-10 items-center">
+                {onBack ? (
+                  <Button
+                    type="button"
+                    size="icon-lg"
+                    variant="quiet"
+                    showTooltip
+                    onClick={onBack}
+                    className="-ml-2.5"
+                    aria-label={t(($) => {
+                      return $.onboarding.sourcesFirst.common.back;
+                    })}
+                  >
+                    <ChevronLeft size={18} aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <div
+              className={cn(
+                "w-full min-w-0 lg:flex-1",
+                CONTENT_WIDTHS[contentWidth],
+              )}
+            >
+              <div className="flex flex-col justify-center rounded-3xl border border-border/60 bg-background p-6 shadow-surface lg:min-h-[430px]">
+                {children}
+              </div>
               {/* The step's one filled action, with its opt-out beside it. */}
-              <div className="mt-10 flex flex-wrap items-center gap-2">
+              <div className="mt-9 flex h-10 items-center justify-end gap-2">
+                {secondaryLabel && onSecondary ? (
+                  <Button
+                    type="button"
+                    size="lg"
+                    variant="ghost"
+                    onClick={onSecondary}
+                  >
+                    {secondaryLabel}
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   size="lg"
@@ -160,30 +192,7 @@ export function OnboardingStepLayout({
                   ) : null}
                   {primaryLabel}
                 </Button>
-                {secondaryLabel && onSecondary ? (
-                  <Button
-                    type="button"
-                    size="lg"
-                    variant="ghost"
-                    onClick={onSecondary}
-                  >
-                    {secondaryLabel}
-                  </Button>
-                ) : null}
               </div>
-              {footnote ? (
-                <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                  {footnote}
-                </p>
-              ) : null}
-            </div>
-            <div
-              className={cn(
-                "flex w-full min-w-0 flex-col justify-center rounded-3xl border border-border/60 bg-muted/30 p-6 shadow-surface lg:min-h-[520px] lg:flex-1",
-                CONTENT_WIDTHS[contentWidth],
-              )}
-            >
-              {children}
             </div>
           </div>
         </div>
