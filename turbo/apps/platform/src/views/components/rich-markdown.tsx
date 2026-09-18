@@ -1,6 +1,12 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import "../css/vendor/uiw-react-markdown-preview-5.2.0.css";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { File, Image, Loader2, Video } from "lucide-react";
@@ -16,6 +22,7 @@ import {
 } from "../../lib/markdown/pipeline.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import type {
   ArtifactKind,
   ArtifactSignals,
@@ -25,11 +32,18 @@ import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
 import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
-import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
+import {
+  CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS,
+  CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
+  ChatVideoPreviewButton,
+  MarkdownCardView,
+} from "../okou-page/chat-body-cards.tsx";
+import type { SharedThreadArtifactSignals } from "../../signals/shared-thread-page/shared-thread-rich-content.ts";
 import { FilePreviewIcon } from "../okou-page/file-preview-icon.tsx";
 import {
   fallbackHtmlPreviewTitle,
   SitePreviewCard,
+  SitePreviewContent,
   SitePreviewViewport,
 } from "../okou-page/attachment-preview.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
@@ -391,23 +405,83 @@ function LinkedArtifactImage({
   );
 }
 
-function LinkedArtifactPreview({
+export function SharedThreadArtifactCard({
   signals,
   label,
+  compact = false,
 }: {
-  readonly signals: ArtifactSignals;
+  readonly signals: SharedThreadArtifactSignals;
   readonly label: string;
+  readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
   const resourceUrl = useLoadable(signals.resourceUrl$);
-  const src = resourceUrl.state === "hasData" ? resourceUrl.data : undefined;
-  const title = label.trim() || signals.filename;
+  const previewImage = useLastLoadable(signals.previewImageUrl$);
+  const openPreview = useSet(signals.openPreview$);
+  const pageSignal = useGet(pageSignal$);
+  const title =
+    signals.kind === "html"
+      ? fallbackHtmlPreviewTitle(label.trim() || signals.filename, signals.url)
+      : label.trim() || signals.filename;
+  if (signals.kind === "video") {
+    return (
+      <ChatVideoPreviewButton
+        resourceUrl$={signals.resourceUrl$}
+        ariaLabel={t(
+          ($) => {
+            return $.chat.attachments.previewFile;
+          },
+          {
+            filename: title,
+          },
+        )}
+        buttonClassName={
+          compact
+            ? CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS
+            : CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS
+        }
+        filename={signals.filename}
+        onPreview={() => {
+          openPreview(title, pageSignal);
+        }}
+        posterClassName="h-full w-full"
+        posterLoad={signals.previewImageLoad}
+        previewImageUrl$={signals.previewImageUrl$}
+        videoClassName="h-full w-full object-contain"
+        testId="markdown-artifact-preview-video"
+        unavailableLabel={
+          resourceUrl.state === "hasError"
+            ? t(($) => {
+                return $.artifacts.access.title;
+              })
+            : undefined
+        }
+      />
+    );
+  }
   return (
     <SitePreviewCard
       href={signals.url}
       testId={`markdown-artifact-preview-${signals.kind}`}
       openInNewTab
       title={title}
+      onClick={
+        signals.kind === "html"
+          ? (event) => {
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              openPreview(title, pageSignal);
+            }
+          : undefined
+      }
     >
       {resourceUrl.state === "hasError" ? (
         <span
@@ -419,15 +493,14 @@ function LinkedArtifactPreview({
           })}
         </span>
       ) : signals.kind === "html" ? (
-        <SitePreviewViewport src={src} title={title} />
-      ) : signals.kind === "video" ? (
-        <video
-          src={src}
-          muted
-          playsInline
-          preload="metadata"
-          aria-hidden="true"
-          className="pointer-events-none h-full w-full bg-black object-contain"
+        <SitePreviewContent
+          resourceUrl$={signals.resourceUrl$}
+          title={title}
+          previewImageLoad={signals.previewImageLoad}
+          previewImagePending={previewImage.state === "loading"}
+          previewImageUrl={
+            previewImage.state === "hasData" ? previewImage.data : undefined
+          }
         />
       ) : (
         <span className="absolute inset-0 flex items-center justify-center">
@@ -452,7 +525,7 @@ function LinkedMediaImageRenderer(props: MarkdownImageProps) {
         insideLink={props.node?.data?.imageInsideLink}
       />
     ) : (
-      <LinkedArtifactPreview signals={artifact} label={alt ?? ""} />
+      <SharedThreadArtifactCard signals={artifact} label={alt ?? ""} />
     );
   }
   const site = props.node?.data?.hostedSite;

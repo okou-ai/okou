@@ -437,6 +437,7 @@ function buildAgentToolsPrompt(args: {
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
+  readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
 }): string {
@@ -452,6 +453,11 @@ function buildAgentToolsPrompt(args: {
         ]
       : []),
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
+    ...(args.vncEnabled
+      ? [
+          "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
+        ]
+      : []),
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",
     "- Capability questions: when the user asks what Okou can do, whether Okou can do a category of work, or compares Okou to another assistant, run `okou intro` first. Use its output to synthesize a concise answer in the user's language. Do not paste the intro verbatim.",
     "- Locate local agent-session files, search web chat messages, or inspect external services via connectors: `okou search --help`.",
@@ -587,6 +593,7 @@ function buildAppendSystemPrompt(args: {
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
+  readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
 }): string {
@@ -600,6 +607,7 @@ function buildAppendSystemPrompt(args: {
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
+      vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
     }),
@@ -791,6 +799,7 @@ function createRunBody(args: {
   readonly appendSystemPrompt: string | undefined;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
+  readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
 }) {
@@ -802,6 +811,7 @@ function createRunBody(args: {
     triggerSource,
     cloudBrowserEnabled: args.cloudBrowserEnabled,
     bankingEnabled: args.bankingEnabled,
+    vncEnabled: args.vncEnabled,
     larkEnabled: args.larkEnabled,
     deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
   });
@@ -980,7 +990,7 @@ function buildCreateAgentRunArgs(args: {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
 }): CreateAgentRunArgs {
-  const command = args.command;
+  const { command, featureSwitchContext: featureContext } = args;
   const userInfo = { ...args.userInfo, ...command.userInfoExtras };
   const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
   const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
@@ -994,7 +1004,7 @@ function buildCreateAgentRunArgs(args: {
     body: createRunBody({
       privateArtifactsEnabled: isFeatureEnabled(
         FeatureSwitchKey.PrivateArtifacts,
-        args.featureSwitchContext,
+        featureContext,
       ),
       body: command.body,
       agent: args.agent,
@@ -1005,15 +1015,16 @@ function buildCreateAgentRunArgs(args: {
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: isFeatureEnabled(
         FeatureSwitchKey.Banking,
-        args.featureSwitchContext,
+        featureContext,
       ),
+      vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
       larkEnabled: isFeatureEnabled(
         FeatureSwitchKey.LarkIntegration,
-        args.featureSwitchContext,
+        featureContext,
       ),
       deliveryFormatGuidanceEnabled: isFeatureEnabled(
         FeatureSwitchKey.DeliveryFormatGuidance,
-        args.featureSwitchContext,
+        featureContext,
       ),
     }),
     apiStartTime: command.apiStartTime,

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.681.2](https://github.com/vm0-ai/okou/compare/core-v8.681.1...core-v8.681.2) (2026-09-18)
+
+
+### Refactoring
+
+* remove _fastModel feature switch ([#35221](https://github.com/vm0-ai/okou/issues/35221)) ([132088c](https://github.com/vm0-ai/okou/commit/132088c059db14747a82313b1f7a842ca63dd55e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.472.0
+
 ## [8.681.1](https://github.com/vm0-ai/okou/compare/core-v8.681.0...core-v8.681.1) (2026-09-18)
 
 

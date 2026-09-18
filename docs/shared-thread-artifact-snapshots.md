@@ -5,7 +5,8 @@ organization, sharing selected chat messages copies their referenced private
 artifacts into an independent resource snapshot. The original messages and
 artifact sharing policies are unchanged. The switch remains false by default.
 
-Only the selected messages and their managed static dependencies are included.
+Only the selected messages, their generated covers and their managed static
+dependencies are included.
 Private input attachments use the same reference and resolution flow. Public
 input attachments retain their existing independent public snapshot projection.
 Existing public links and external resources retain their current
@@ -34,6 +35,15 @@ URLs; this feature does not backfill historical data or crawl external websites.
 - Files are copied within the private artifact bucket to
   `private-artifacts/<sourceId>/thread-shares/<sharedThreadId>/<token>/<filename>`.
   The App resolves the reference to a temporary signature for those copied bytes.
+- Generated video posters and hosted-site screenshots are separate owned image
+  resources. The planner copies them into the same parent snapshot and records
+  an optional `previews` association from the parent resource to the copied
+  image's token and immutable App reference. Preview metadata returns that
+  absolute `/artifacts/` URL, never the source preview or its temporary signature.
+  Changing or removing the source image cannot change the copied cover, and
+  removing the thread share revokes both resources. Covers count toward the
+  existing managed-resource limit. Shares created without covers remain valid
+  and are not backfilled from a later source image.
 - Hosted sites pin one ready private deployment, including its full manifest and
   bundle, under `shared-artifacts/<brand>/<sharedThreadId>/<deploymentId>` in the
   existing hosted-sites bucket. The App resolves the reference to a temporary,
@@ -62,6 +72,13 @@ anonymous requests. Only an active policy with the exact recorded resource
 identity can issue a temporary URL. Original file ownership and source sharing
 settings neither grant nor revoke access to the independent copy. Typed owner
 resolution and sharing management reject snapshot references.
+
+Snapshot resolution also returns a separate `downloadUrl` for the copied file
+or selected hosted entry document. This short-lived URL carries an attachment
+content disposition for a direct browser download; the stable App reference
+remains the address to copy and share. Downloads authorize against the same
+active parent policy before issuing the URL and retain the ordinary signature
+expiry semantics described below.
 
 The existing `thread-resource` delivery aliases remain available for previously
 shared URLs and static dependencies. Their Worker reads the parent policy
@@ -112,3 +129,10 @@ policies. The Worker reuses the existing private snapshot preview grants and
 retains byte-delivery alias support. No database migration, bucket, DNS route,
 credential or rollout override is introduced by the reference change. Per-PR
 staging acceptance is still needed for the deployed App/API/Worker combination.
+
+The optional `previews` policy field and `previewImageUrl` / `downloadUrl`
+response fields are additive. Older policies still resolve without a cover,
+and older readers ignore the new metadata while preserving the copied image's
+parent authority. Deploy the API metadata reader before relying on shared-page
+covers and direct downloads. No historical source lookup occurs during public
+resolution, including for old snapshot delivery aliases.

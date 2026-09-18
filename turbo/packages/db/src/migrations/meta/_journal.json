@@ -610,6 +610,13 @@
       "when": 1789718687727,
       "tag": "1164_odd_victor_mancha",
       "breakpoints": true
+    },
+    {
+      "idx": 1165,
+      "version": "7",
+      "when": 1789721104492,
+      "tag": "1165_supreme_red_skull",
+      "breakpoints": true
     }
   ]
 }

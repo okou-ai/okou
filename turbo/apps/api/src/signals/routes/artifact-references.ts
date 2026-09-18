@@ -263,10 +263,14 @@ const resolvePublicReference$ = command(
             body: {
               url: shared.url,
               expiresAt: shared.expiresAt,
+              downloadUrl: shared.downloadUrl,
               sharedThreadSnapshot: shared.sharedThreadSnapshot,
               preview: {
                 filename: shared.filename,
                 contentType: shared.contentType,
+                ...(shared.previewImageUrl
+                  ? { previewImageUrl: shared.previewImageUrl }
+                  : {}),
               },
             },
           }

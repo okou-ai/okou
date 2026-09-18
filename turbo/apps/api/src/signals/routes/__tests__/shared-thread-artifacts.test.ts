@@ -10,6 +10,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 import { http, HttpResponse } from "msw";
+import { z } from "zod";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { completeHostedSiteWithoutDependencyIndex } from "../../../test-fixtures/hosted-site-dependencies-previous-api";
@@ -27,7 +28,9 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { signSandboxJwtForTests } from "../../auth/tokens";
 import { artifactShareRoutes } from "../artifact-shares";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
@@ -54,6 +57,8 @@ beforeEach(() => {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
+  mockEnv("R2_HOSTED_SITES_ACCESS_KEY_ID", "snapshot-hosted-key");
+  mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", "snapshot-private-key");
 });
 
 function api(rethrowErrors = false) {
@@ -119,7 +124,7 @@ async function fixture() {
   const copies: { source: string; destination: string }[] = [];
 
   context.mocks.s3.getSignedUrl.mockImplementation(
-    (_client: unknown, command: unknown) => {
+    (client: unknown, command: unknown) => {
       if (
         !(
           command instanceof PutObjectCommand ||
@@ -128,9 +133,30 @@ async function fixture() {
       ) {
         throw new Error("Unexpected presign operation");
       }
-      return Promise.resolve(
+      const url = new URL(
         `https://test.r2.cloudflarestorage.com/${command.input.Bucket}/${command.input.Key}?X-Amz-Signature=fixture`,
       );
+      const configured = z
+        .object({
+          config: z.object({
+            credentials: z.object({ accessKeyId: z.string() }),
+          }),
+        })
+        .parse(client);
+      url.searchParams.set(
+        "X-Amz-Credential",
+        configured.config.credentials.accessKeyId,
+      );
+      if (
+        command instanceof GetObjectCommand &&
+        command.input.ResponseContentDisposition
+      ) {
+        url.searchParams.set(
+          "response-content-disposition",
+          command.input.ResponseContentDisposition,
+        );
+      }
+      return Promise.resolve(url.href);
     },
   );
   function putSnapshotObject(command: PutObjectCommand) {
@@ -241,22 +267,40 @@ async function fixture() {
   });
   server.use(
     http.get("https://test.r2.cloudflarestorage.com/*", ({ request }) => {
-      const key = decodeURIComponent(new URL(request.url).pathname.slice(1));
+      const url = new URL(request.url);
+      const key = decodeURIComponent(url.pathname.slice(1));
+      const credential = key.startsWith("test-hosted-sites/")
+        ? "snapshot-hosted-key"
+        : "snapshot-private-key";
+      if (url.searchParams.get("X-Amz-Credential") !== credential) {
+        return new HttpResponse("AccessDenied", { status: 403 });
+      }
       const body = objects.get(key);
+      const disposition = url.searchParams.get("response-content-disposition");
       return body
-        ? new HttpResponse(new Uint8Array(body))
+        ? new HttpResponse(new Uint8Array(body), {
+            headers: disposition ? { "Content-Disposition": disposition } : {},
+          })
         : new HttpResponse(null, { status: 404 });
     }),
   );
   await flag(actor, true);
 
-  async function upload(owner = actor, content = "Original generated PDF") {
+  async function upload(
+    owner = actor,
+    content = "Original generated PDF",
+    options: {
+      filename?: string;
+      contentType?: string;
+      bearerToken?: string;
+    } = {},
+  ) {
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers: headers(owner),
         body: {
-          filename: "report.pdf",
-          contentType: "application/pdf",
+          filename: options.filename ?? "report.pdf",
+          contentType: options.contentType ?? "application/pdf",
           size: Buffer.byteLength(content),
           purpose: "artifact",
         },
@@ -272,7 +316,9 @@ async function fixture() {
     objects.set(key, Buffer.from(content));
     await accept(
       api()(uploadsContract).complete({
-        headers: headers(owner),
+        headers: options.bearerToken
+          ? { authorization: `Bearer ${options.bearerToken}` }
+          : headers(owner),
         body: { id: prepared.body.id },
       }),
       [200],
@@ -307,16 +353,21 @@ async function fixture() {
     if (!event) {
       throw new Error("Expected selected message");
     }
-    return { threadId, eventId: event.id, content };
+    if (!runId) {
+      throw new Error("Expected a run for the selected message");
+    }
+    return { threadId, runId, eventId: event.id, content };
   }
 
   async function site(
     files: { path: string; content: string; contentType?: string }[],
     name = `snapshot-${randomUUID().slice(0, 8)}`,
     legacy = false,
+    bearerToken?: string,
   ) {
     const host = createHostMapsBddApi(context);
-    const prepared = await host.prepareHostedSite(actor, {
+    const hostActor = bearerToken ? { bearerToken } : actor;
+    const prepared = await host.prepareHostedSite(hostActor, {
       site: name,
       artifactKind: "hosted-site",
       spaFallback: true,
@@ -348,7 +399,7 @@ async function fixture() {
         orgId: actor.orgId,
       });
     } else {
-      await host.completeHostedSite(actor, prepared.deploymentId);
+      await host.completeHostedSite(hostActor, prepared.deploymentId);
     }
     return {
       ...prepared,
@@ -526,6 +577,7 @@ test("resolves a public snapshot to copied bytes without exposing its private so
     filename: "report.pdf",
     contentType: "application/pdf",
   });
+  expect(resolved.body).not.toHaveProperty("previewImageUrl");
   expect(resolved.body.url).toContain(`/thread-shares/${created.body.id}/`);
   expect(resolved.body.url).toContain("X-Amz-Signature=");
   expect(resolved.headers.get("cache-control")).toBe("private, no-store");
@@ -561,6 +613,7 @@ test("resolves a public snapshot to copied bytes without exposing its private so
     url: resolved.body.url,
     preview: { filename: "report.pdf", contentType: "application/pdf" },
   });
+  expect(published.body.preview).not.toHaveProperty("previewImageUrl");
   await accept(
     api()(artifactReferencesContract).resolve({
       params: { reference: referenceName(file.url) },
@@ -603,6 +656,179 @@ test("resolves a public snapshot to copied bytes without exposing its private so
   const revokedDownload = await accept(download(), [404]);
   expect(revokedDownload.body).not.toHaveProperty("url");
 });
+
+test.each(["video", "site"] as const)(
+  "copies the generated %s cover with a stable reference, independent bytes, and the parent revocation",
+  async (kind) => {
+    const f = await fixture();
+    const generatedImage = Buffer.from("Generated preview image");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv(
+      "ARTIFACT_PREVIEW_WAF_SECRET",
+      "test-artifact-preview-waf-secret-value",
+    );
+    server.use(
+      http.post("https://files.okou.app/__artifact-video-poster", () => {
+        return new HttpResponse(new Uint8Array(generatedImage), {
+          headers: { "Content-Type": "image/jpeg" },
+        });
+      }),
+      http.post(
+        "https://api.cloudflare.com/client/v4/accounts/test-account/browser-rendering/snapshot",
+        () => {
+          return HttpResponse.json({
+            success: true,
+            errors: [],
+            meta: { status: 200, title: "Snapshot preview" },
+            result: {
+              content: "<main>Snapshot preview</main>",
+              screenshot: generatedImage.toString("base64"),
+            },
+          });
+        },
+      ),
+    );
+    const sourceRun = await f.selection("Generate an artifact with a cover");
+    if (!f.actor.orgId) {
+      throw new Error("Expected artifact owner organization");
+    }
+    const seconds = Math.floor(now() / 1000);
+    const bearerToken = signSandboxJwtForTests({
+      scope: "okou",
+      userId: f.actor.userId,
+      orgId: f.actor.orgId,
+      runId: sourceRun.runId,
+      capabilities: ["file:write", "host:write"],
+      iat: seconds,
+      exp: seconds + 60,
+    });
+    const source =
+      kind === "video"
+        ? await f.upload(f.actor, "Private video bytes", {
+            filename: "video.mp4",
+            contentType: "video/mp4",
+            bearerToken,
+          })
+        : await f.site(
+            [{ path: "/index.html", content: "<main>Private site</main>" }],
+            undefined,
+            false,
+            bearerToken,
+          );
+    await flushWaitUntilForTest();
+    const sourceArtifacts = await chat.listThreadArtifacts(
+      f.actor,
+      sourceRun.threadId,
+    );
+    const sourcePreviewUrl = sourceArtifacts.runs
+      .flatMap((run) => {
+        return run.files;
+      })
+      .find((file) => {
+        return file.url === source.url;
+      })?.previewImageUrl;
+    expect(sourcePreviewUrl).toBeDefined();
+    const originalPreview = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers: headers(f.actor),
+        params: { reference: referenceName(sourcePreviewUrl!) },
+      }),
+      [200],
+    );
+    const selection = await f.selection(source.url);
+    const created = await accept(share(f.actor, selection), [201]);
+    const shared = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    const reference = referenceName(shared.body.messages[0]!.content);
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({ params: { reference } }),
+      [200],
+    );
+    const previewImageUrl = resolved.body.previewImageUrl;
+    expect(resolved.body.downloadUrl).toBeDefined();
+    const download = new URL(resolved.body.downloadUrl!);
+    expect(download.searchParams.get("X-Amz-Credential")).toBe(
+      kind === "site" ? "snapshot-hosted-key" : "snapshot-private-key",
+    );
+    expect(download.searchParams.get("response-content-disposition")).toBe(
+      `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
+    );
+    expect(download.pathname).toContain(created.body.id);
+    const downloaded = await fetch(download);
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get("content-disposition")).toBe(
+      `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
+    );
+    await expect(downloaded.text()).resolves.toBe(
+      kind === "video" ? "Private video bytes" : "<main>Private site</main>",
+    );
+    expect(previewImageUrl).toMatch(
+      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(jpg|webp)$/u,
+    );
+    expect(previewImageUrl).not.toBe(
+      new URL(sourcePreviewUrl!, "https://app.okou.ai").href,
+    );
+    const published = await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [200],
+    );
+    expect(published.body.preview.previewImageUrl).toBe(previewImageUrl);
+    expect(published.body.downloadUrl).toBe(resolved.body.downloadUrl);
+    const previewReference = referenceName(previewImageUrl!);
+    const sourceKey = decodeURIComponent(
+      new URL(originalPreview.body.url).pathname.slice(1),
+    );
+    f.objects.set(sourceKey, Buffer.from("Changed source preview"));
+    const copiedPreview = await accept(
+      api()(artifactReferencesContract).resolve({
+        params: { reference: previewReference },
+      }),
+      [200],
+    );
+    await expect((await fetch(copiedPreview.body.url)).text()).resolves.toBe(
+      generatedImage.toString(),
+    );
+    f.objects.delete(sourceKey);
+    const retainedPreview = await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: previewReference },
+      }),
+      [200],
+    );
+    await expect((await fetch(retainedPreview.body.url)).text()).resolves.toBe(
+      generatedImage.toString(),
+    );
+    await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: referenceName(sourcePreviewUrl!) },
+      }),
+      [404],
+    );
+    await accept(
+      api()(sharedThreadsContract).delete({
+        headers: headers(f.actor),
+        params: { id: created.body.id },
+      }),
+      [204],
+    );
+    for (const revoked of [reference, previewReference]) {
+      await accept(
+        api()(artifactReferencesContract).resolve({
+          params: { reference: revoked },
+        }),
+        [404],
+      );
+      await accept(
+        api()(artifactReferencesContract).publicUrl({
+          params: { reference: revoked },
+        }),
+        [404],
+      );
+    }
+  },
+);
 
 test.each(["missing", "unavailable"] as const)(
   "does not resolve a snapshot when its parent policy is %s",

@@ -1,0 +1,17 @@
+name: Setup AWS CLI
+description: Install AWS CLI on x86_64 Linux workers.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        installer_dir=$(mktemp -d "${RUNNER_TEMP}/awscli.XXXXXX")
+        trap 'rm -rf "$installer_dir"' EXIT
+        # Both Rust targets compile on x86_64 GitHub-hosted workers.
+        curl -fsSL --retry 3 \
+          https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+          --output "${installer_dir}/awscliv2.zip"
+        python3 -m zipfile -e "${installer_dir}/awscliv2.zip" "$installer_dir"
+        chmod +x "${installer_dir}/aws/install" "${installer_dir}/aws/dist/aws"
+        "${installer_dir}/aws/install"
+        aws --version

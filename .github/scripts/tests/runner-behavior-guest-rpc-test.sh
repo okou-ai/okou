@@ -108,8 +108,11 @@ fi
 ruby -ryaml - "$REPO_ROOT/.github/workflows/crates.yml" <<'RUBY'
 jobs = YAML.load_file(ARGV.fetch(0)).fetch('jobs')
 native = jobs.fetch('guest-rpc-firecracker-test')
-raise 'native test must follow the selected image' unless native.fetch('needs') == ['runner-build']
+raise 'native test must follow its selected image and compiled binary' unless native.fetch('needs') == ['runner-build', 'guest-rpc-firecracker-build']
 raise 'container steps require Bash' unless native.dig('defaults', 'run', 'shell') == 'bash'
+validation = native.fetch('steps').index { |step| step['run'] == 'bash .github/scripts/runner-native-test-artifact.sh validate' }
+ssh_setup = native.fetch('steps').index { |step| step['uses'] == './.github/actions/setup-ssh-tunnel' }
+raise 'native artifact must be validated before contacting metal' unless validation && ssh_setup && validation < ssh_setup
 %w[rootfs snapshot].each do |kind|
   expected = "${{ needs.runner-build.outputs.default-#{kind}-hash }}"
   raise "wrong #{kind} source" unless native.fetch('env').fetch("DEFAULT_#{kind.upcase}_HASH") == expected
