@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.636.1](https://github.com/vm0-ai/okou/compare/api-v1.636.0...api-v1.636.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **api:** fence canonical authorization reads against account closure ([#35287](https://github.com/vm0-ai/okou/issues/35287)) ([f222776](https://github.com/vm0-ai/okou/commit/f2227760e9bf081cbcebd9981a73fd885f24c8d1))
+
+
+### Refactoring
+
+* retire hosted version controls and audit historical publications ([#35281](https://github.com/vm0-ai/okou/issues/35281)) ([a8fed1e](https://github.com/vm0-ai/okou/commit/a8fed1e3bf69e3ab7133db0f6d08ada0419f42fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.473.1
+    * @okouai/core bumped to 8.681.4
+    * @okouai/db bumped to 1.277.1
+    * @okouai/pi-agent-runtime bumped to 1.33.21
+
 ## [1.636.0](https://github.com/vm0-ai/okou/compare/api-v1.635.0...api-v1.636.0) (2026-09-18)
 
 
