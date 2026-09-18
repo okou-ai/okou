@@ -42,6 +42,12 @@ import {
 const RENDERER_PACKAGE = "dom-to-pptx@2.1.2";
 const RENDERER_BUNDLE = "dom-to-pptx.bundle.js";
 const RENDERER_CACHE_VERSION = "v1";
+/**
+ * The same published artifact as the cached copy, byte for byte. A borrowed
+ * session may be driving a remote browser, which cannot read this machine's
+ * filesystem, so the bundle has to come from somewhere that browser can reach.
+ */
+const RENDERER_CDN = `https://cdn.jsdelivr.net/npm/${RENDERER_PACKAGE}/dist/${RENDERER_BUNDLE}`;
 const DEFAULT_VIEWPORT_WIDTH = 1600;
 const DEFAULT_VIEWPORT_HEIGHT = 900;
 const DEFAULT_SLIDE_WIDTH_IN = 13.333;
@@ -356,14 +362,6 @@ function ensureRenderer(): string {
   }
 }
 
-function viewportAspect(page: ReturnType<typeof browser>): number {
-  const value = page.evaluate("innerWidth / innerHeight");
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new Error("Could not read the browser viewport");
-  }
-  return value;
-}
-
 /**
  * Waits for slide elements to exist.
  *
@@ -391,9 +389,12 @@ function awaitSlides(page: ReturnType<typeof browser>): void {
 }
 
 /**
- * Picks the selector that yields the most page-shaped elements. Deck shells
- * nest a scroll container around the printable page, so the element that looks
- * like a slide to a human is rarely the outermost match.
+ * Picks the selector whose elements are shaped like the page being written.
+ *
+ * Deck shells nest a scroll container around the printable page, and the
+ * container matches the window rather than the slide. Measuring against the
+ * requested slide aspect rather than the viewport keeps the choice correct in a
+ * borrowed session, whose window is whatever size its owner left it.
  */
 function detectSelector(
   page: ReturnType<typeof browser>,
@@ -492,7 +493,8 @@ function render(options: Options, bundle: string): Rendered {
     page.call(["eval", SETTLE]);
     awaitSlides(page);
 
-    const selector = options.selector ?? detectSelector(page, viewportAspect(page));
+    const selector =
+      options.selector ?? detectSelector(page, options.width / options.height);
     const eastAsian = page.evaluate(RESOLVE_EAST_ASIAN);
     const eastAsianFont = typeof eastAsian === "string" ? eastAsian : "";
 
@@ -529,13 +531,18 @@ function render(options: Options, bundle: string): Rendered {
     page.call([
       "eval",
       `(async()=>{
-        await new Promise((resolve, reject) => {
+        const load = (src) => new Promise((resolve, reject) => {
           const tag = document.createElement("script");
-          tag.src = ${JSON.stringify(`file://${bundle}`)};
+          tag.src = src;
           tag.addEventListener("load", () => resolve(), { once: true });
-          tag.addEventListener("error", () => reject(new Error("renderer bundle failed to load")), { once: true });
+          tag.addEventListener("error", () => reject(new Error("cannot load " + src)), { once: true });
           document.head.append(tag);
         });
+        try {
+          await load(${JSON.stringify(`file://${bundle}`)});
+        } catch {
+          await load(${JSON.stringify(RENDERER_CDN)});
+        }
         if (!window.domToPptx || !window.domToPptx.exportToPptx) {
           throw new Error("renderer bundle exposed no exportToPptx");
         }
@@ -633,8 +640,16 @@ function decodeXmlText(value: string): string {
     .replace(/&amp;/gu, "&");
 }
 
+/**
+ * Strips whitespace entirely rather than collapsing it.
+ *
+ * Pinning a line break splits one string across two runs, and rejoining the
+ * runs reintroduces a separator the source never had — which reads as lost
+ * content in languages that do not write spaces between words. A gate that
+ * reports intact decks as broken is worse than no gate.
+ */
 function normalizeForCompare(value: string): string {
-  return value.replace(/\s+/gu, " ").trim().toLowerCase();
+  return value.replace(/\s+/gu, "").toLowerCase();
 }
 
 function deckText(deck: Buffer): { slides: number; text: string } {
@@ -651,7 +666,7 @@ function deckText(deck: Buffer): { slides: number; text: string } {
   }
   return {
     slides: slideNames.length,
-    text: normalizeForCompare(parts.join(" ")),
+    text: normalizeForCompare(parts.join("")),
   };
 }
 
