@@ -94,7 +94,7 @@ Dir.mktmpdir("native-test-artifact") do |dir|
       raise "wrong executable selected" unless File.read(File.join(built, "test-bin")) == File.read(fake_test)
 
       # Only this producer's exact run/attempt objects are published and fetched.
-      key = "runner-binaries/123/1/#{name}-#{target}"
+      key = "runner-binaries/#{target}/123/1/#{name}"
       File.write(env.fetch("AWS_LOG"), "")
       run_helper(helper, inputs, "publish")
       uploaded = File.readlines(env.fetch("AWS_LOG")).map { |line| JSON.parse(line) }
@@ -189,7 +189,7 @@ Dir.mktmpdir("native-test-artifact") do |dir|
         run_helper(helper, failed_inputs, "build")
         output = run_helper(helper, failed_inputs.merge("AWS_FAIL" => stage), "publish", success: false)
         raise "provider diagnostics leaked" if output.include?("fixture-sensitive-signature")
-        failed_key = File.join(env.fetch("AWS_STORE"), "runner-binaries/456/1/#{name}-#{target}.json")
+        failed_key = File.join(env.fetch("AWS_STORE"), "runner-binaries/#{target}/456/1/#{name}.json")
         raise "failed publication advertised readiness" if File.exist?(failed_key)
         FileUtils.rm_rf(failed_build)
       end

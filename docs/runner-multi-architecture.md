@@ -190,8 +190,10 @@ compiled test and the selected image, then uses the same host and immutable imag
 hashes supplied by `runner-build`.
 
 Each producer uploads its compressed test binary and provenance to R2 under
-`runner-binaries/<run_id>/<producer_attempt>/<test>-<target>.zst` and the matching
-`.json` key. These objects transfer a compiled test between jobs in the same
+`runner-binaries/<target>/<run_id>/<producer_attempt>/<test>.zst` and the matching
+`.json` key. This follows the existing runner binary layout: the first directory
+is the validated target triple (`aarch64-unknown-linux-musl` or
+`x86_64-unknown-linux-musl`). These objects transfer a compiled test between jobs in the same
 workflow run; they are not reused across runs or PRs. They use the existing
 seven-day lifecycle policy for the `runner-binaries/` prefix.
 

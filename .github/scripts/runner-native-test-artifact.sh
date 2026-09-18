@@ -30,7 +30,7 @@ esac
 
 # This is an exact producer address, not a cross-run cache lookup. Using the
 # producer's attempt also keeps consumer-only reruns on their original inputs.
-object_prefix="runner-binaries/${GITHUB_RUN_ID}/${PRODUCER_ATTEMPT}/${TEST_NAME}-${TARGET_TRIPLE}"
+object_prefix="runner-binaries/${TARGET_TRIPLE}/${GITHUB_RUN_ID}/${PRODUCER_ATTEMPT}/${TEST_NAME}"
 
 validate_manifest() {
   local manifest=$1
