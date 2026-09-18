@@ -61,7 +61,9 @@ export function createArtifactSignals(
       return undefined;
     }
     const previewImageUrlsByUrl = await get(previewImageUrlsByUrl$);
-    const url = previewImageUrlsByUrl.get(descriptor.url);
+    const url =
+      previewImageUrlsByUrl.get(descriptor.url) ??
+      (await get(preview.presignedToken$))?.previewImageUrl;
     return url
       ? await get(createAttachmentPreviewSignals(url).thumbnailUrl$)
       : undefined;

@@ -23,6 +23,7 @@ import {
   uploadWebFile,
 } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { createArtifactPresentation } from "../shared/artifact-return";
 import { packageRenderProject } from "./render-project";
 
@@ -83,12 +84,15 @@ function printRender(
 
 async function resumeRender(id: string): Promise<IntroVideoRenderResponse> {
   const existing = await getWebIntroVideoRender(z.uuid().parse(id));
-  return existing.recovery.action === "replay_submission"
-    ? await createWebIntroVideoRender(existing.input)
-    : existing;
+  if (existing.recovery.action === "replay_submission") {
+    await assertPaidToolEnabled("video-rendering");
+    return await createWebIntroVideoRender(existing.input);
+  }
+  return existing;
 }
 
 async function render(project: string, options: RenderOptions): Promise<void> {
+  if (!options.dryRun) await assertPaidToolEnabled("video-rendering");
   const root = resolve(project);
   const composition = options.composition ?? "index.html";
   const started = performance.now();

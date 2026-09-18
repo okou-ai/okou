@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -135,6 +135,103 @@ describe("personal paid-tool controls through the CLI entry point", () => {
         "Describe",
       ],
     },
+    {
+      tool: "image-generation",
+      args: [
+        "generate",
+        "image",
+        "--raw-prompt",
+        "A fox",
+        "--visibility",
+        "public",
+      ],
+    },
+    {
+      tool: "image-generation",
+      args: ["generate", "image", "--compiled-prompt", "A fox"],
+    },
+    {
+      tool: "video-generation",
+      args: [
+        "generate",
+        "video",
+        "--prompt",
+        "A fox",
+        "--first-frame-image-url",
+        "https://example.com/frame.png",
+        "--visibility",
+        "public",
+      ],
+    },
+    {
+      tool: "voice-generation",
+      args: [
+        "generate",
+        "voice",
+        "--prompt",
+        "Hello",
+        "--visibility",
+        "public",
+      ],
+    },
+    {
+      tool: "avatar-video-generation",
+      args: [
+        "generate",
+        "avatar-video",
+        "--script",
+        "Hello",
+        "--avatar-id",
+        "81",
+        "--voice-id",
+        "voice",
+        "--visibility",
+        "public",
+      ],
+    },
+    {
+      tool: "avatar-video-generation",
+      args: [
+        "generate",
+        "avatar-video",
+        "--audio-url",
+        "https://example.com/audio.mp3",
+        "--avatar-id",
+        "81",
+        "--voice-id",
+        "voice",
+      ],
+    },
+    {
+      tool: "video-generation",
+      args: [
+        "__intro-video-agent",
+        "--prompt-file",
+        "missing.txt",
+        "--style-id",
+        "editorial",
+        "--orientation",
+        "landscape",
+      ],
+    },
+    {
+      tool: "avatar-video-generation",
+      args: [
+        "__intro-video-presenter",
+        "--avatar-id",
+        "presenter",
+        "--audio-url",
+        "https://example.com/audio.mp3",
+      ],
+    },
+    {
+      tool: "voice-generation",
+      args: ["__intro-video-voice", "--voice-id", "voice", "--text", "Hello"],
+    },
+    {
+      tool: "video-rendering",
+      args: ["video", "render", "missing-project"],
+    },
   ])("rejects disabled $tool before any request", async ({ tool, args }) => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
 
@@ -144,6 +241,140 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(errors).toContain("http://localhost:3000/?settings=paid-tools");
     expect(requests).toEqual([]);
     expect(await readdir(directory)).toEqual([]);
+  });
+
+  it.each(["start", "__run"])(
+    "rejects disabled image-batch %s without creating worker state or output",
+    async (operation) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["image-generation"]');
+      const manifest = join(directory, "images.tsv");
+      const state = join(directory, "state");
+      await writeFile(manifest, "hero\tA fox\n");
+      if (operation === "__run") await mkdir(state);
+
+      await expect(
+        run(["generate", "image-batch", operation, manifest, state]),
+      ).rejects.toThrow("process.exit(1)");
+
+      expect(errors).toContain('Paid tool "image-generation" is disabled');
+      expect(requests).toEqual([]);
+      expect(output).toBe("");
+      if (operation === "__run") {
+        expect(await readdir(state)).toEqual([]);
+      } else {
+        expect(await readdir(directory)).toEqual(["images.tsv"]);
+      }
+    },
+  );
+
+  it.each([
+    {
+      tool: "image-generation",
+      args: [
+        "image",
+        "--style",
+        "image-style:ink-storefront",
+        "--prompt",
+        "A fox",
+        "--compile",
+      ],
+      expected: "image prompt-compilation packet",
+    },
+    {
+      tool: "video-generation",
+      args: [
+        "video",
+        "--template",
+        "video-template:epic-grandeur",
+        "--prompt",
+        "A mountain",
+      ],
+      expected: "federated generation source-selection packet",
+    },
+  ])(
+    "keeps free $tool authoring available under disabled or invalid policy",
+    async ({ tool, args, expected }) => {
+      for (const policy of [JSON.stringify([tool]), "invalid"]) {
+        vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, policy);
+        await run(["generate", ...args]);
+        expect(output).toContain(expected);
+        expect(errors).toBe("");
+        expect(requests).toEqual([]);
+      }
+    },
+  );
+
+  it("keeps completed image-batch results readable when generation is disabled", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["image-generation"]');
+    await writeFile(join(directory, "pid"), String(process.pid));
+    await writeFile(join(directory, "done"), "0\n");
+    await writeFile(
+      join(directory, "results.tsv"),
+      "hero\thttps://example.com/hero.png\n",
+    );
+
+    await run(["generate", "image-batch", "wait", directory]);
+
+    expect(output).toContain("hero\thttps://example.com/hero.png");
+    expect(errors).toBe("");
+    expect(requests).toEqual([]);
+  });
+
+  it("rejects built-in media execution with malformed policy", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, "invalid");
+    await expect(
+      run(["generate", "voice", "--prompt", "Hello"]),
+    ).rejects.toThrow("process.exit(1)");
+    expect(errors).toContain("Paid tool configuration is invalid");
+    expect(requests).toEqual([]);
+  });
+
+  it("allows voice generation when only unrelated and future tools are disabled", async () => {
+    vi.stubEnv(
+      DISABLED_PAID_TOOLS_ENV_VAR,
+      '["image-generation", "video-generation", "avatar-video-generation", "video-rendering", "future-tool"]',
+    );
+    let submissions = 0;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/voice-io/speech",
+        async ({ request }) => {
+          expect(await request.json()).toMatchObject({ text: "Hello" });
+          submissions += 1;
+          return HttpResponse.json({
+            id: "voice-file-id",
+            filename: "voice.wav",
+            contentType: "audio/wav",
+            size: 19,
+            url: "https://example.com/voice.wav",
+            durationSeconds: 3,
+            creditsCharged: 1,
+            model: "gpt-4o-mini-tts",
+            voice: "cedar",
+          });
+        },
+      ),
+    );
+    await run(["generate", "voice", "--prompt", "Hello", "--json"]);
+    expect(submissions).toBe(1);
+    expect(output).toContain('"filename":"voice.wav"');
+    expect(errors).toBe("");
+    expect(requests).toEqual([]);
+  });
+
+  it.each([
+    { args: ["generate", "image"], tool: "image-generation" },
+    { args: ["video", "render"], tool: "video-rendering" },
+  ])("annotates relevant media help for $tool", async ({ args, tool }) => {
+    vi.stubEnv(
+      DISABLED_PAID_TOOLS_ENV_VAR,
+      '["image-generation", "video-rendering"]',
+    );
+    await expect(run([...args, "--help"])).rejects.toMatchObject({
+      code: "commander.helpDisplayed",
+    });
+    expect(output).toContain(`Disabled paid tools in this run: ${tool}.`);
+    expect(requests).toEqual([]);
   });
 
   it.each([

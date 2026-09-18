@@ -392,6 +392,7 @@ function buildStableAgentPrompt(args: {
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
+  readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
@@ -407,6 +408,7 @@ function buildStableAgentPrompt(args: {
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
+      vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
       introVideoEnabled: args.introVideoEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
@@ -802,6 +804,10 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     ),
     bankingEnabled: isFeatureEnabled(
       FeatureSwitchKey.Banking,
+      args.featureSwitchContext,
+    ),
+    vncEnabled: isFeatureEnabled(
+      FeatureSwitchKey.VncAccess,
       args.featureSwitchContext,
     ),
     larkEnabled: isFeatureEnabled(

@@ -1138,23 +1138,6 @@ describe("GET/PUT /api/model-policies", () => {
       [200],
     );
 
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.CodexFastMode]: false,
-    });
-    const switchOff = await accept(
-      preferenceClient.update({
-        headers: authHeaders(),
-        body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
-      }),
-      [400],
-    );
-    expect(switchOff.body.error.message).toBe(
-      "Codex fast mode is not enabled for this workspace",
-    );
-
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.CodexFastMode]: true,
-    });
     const priority = await accept(
       preferenceClient.update({
         headers: authHeaders(),
@@ -1199,7 +1182,6 @@ describe("GET/PUT /api/model-policies", () => {
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
     });
     useSession(fixture);
     const preferences = setupApp({

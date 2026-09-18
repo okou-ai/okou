@@ -197,14 +197,10 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in pin) {
     return pin;
   }
-  const codexServiceTierError = await validateCodexServiceTier({
-    db: writeDb,
-    orgId: auth.orgId,
-    userId: auth.userId,
+  const codexServiceTierError = validateCodexServiceTier({
     pin,
     codexServiceTier,
   });
-  signal.throwIfAborted();
   if (codexServiceTierError) {
     return codexServiceTierError;
   }

@@ -141,7 +141,13 @@ export const morningBriefGenerationViewSchema = z.object({
   promptVersion: z.number().int().positive(),
   resultSchemaVersion: z.number().int().positive(),
   language: z.string(),
-  languageSource: z.enum(["member-locale", "default"]),
+  /**
+   * Where the request's language instruction came from.
+   *
+   * `agent-instructions` means the Agent's complete instruction text travelled
+   * in the one request and was allowed to steer the output language.
+   */
+  languageSource: z.enum(["agent-instructions", "member-locale", "default"]),
   /** What the bundle offered, what travelled, and whether anything was dropped. */
   inputItems: z.number().int().nonnegative(),
   includedItems: z.number().int().nonnegative(),

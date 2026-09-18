@@ -1521,14 +1521,9 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);
 
-  it("passes Codex fast mode only for feature-enabled GPT 5.6 sends", async () => {
+  it("passes Codex fast mode only for GPT 5.6 sends", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected entitled chat actor to have an org");
-    }
-    const actorWithOrg = { ...actor, orgId };
     await seedBuiltInModelKey("gpt-5.6-sol");
 
     await api.updateOrgModelPolicies(actor, [
@@ -1554,31 +1549,6 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: null,
       },
     ]);
-
-    await updateFeatureSwitchesForUser(context, actorWithOrg, {
-      [FeatureSwitchKey.CodexFastMode]: false,
-    });
-    const switchOffThreadId = randomUUID();
-    const switchOff = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "run codex fast with switch off",
-        clientThreadId: switchOffThreadId,
-        model: "gpt-5.6-sol",
-        runOptions: { codexServiceTier: "fast" },
-      },
-      [400],
-    );
-    expectApiError(switchOff.body);
-    expect(switchOff.body.error.message).toBe(
-      "Codex fast mode is not enabled for this workspace",
-    );
-    await chat.requestReadThread(actor, switchOffThreadId, [404]);
-
-    await updateFeatureSwitchesForUser(context, actorWithOrg, {
-      [FeatureSwitchKey.CodexFastMode]: true,
-    });
 
     const fast = await sendChatRun(actor, {
       agentId,
@@ -1763,11 +1733,6 @@ describe("CHAT-02: model-first provider policies", () => {
         type: "openai-api-key",
         secret: "rerouted-openai-key",
       },
-    );
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.CodexFastMode]: true },
     );
     await api.updateOrgModelPolicies(actor, [
       {

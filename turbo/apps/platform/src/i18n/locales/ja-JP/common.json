@@ -5805,8 +5805,10 @@
     },
     "paidTools": {
       "description": "使用する有料の組み込みツールを選択します。",
+      "disabledForCreation": "有料ツールの設定で{{tool}}が無効になっています。",
       "loadError": "ツールの設定を読み込めませんでした。",
       "loading": "ツールの設定を読み込み中…",
+      "openSettings": "有料ツールの設定を開く",
       "retry": "再試行",
       "saveError": "変更を保存できませんでした。",
       "saving": "保存中…",
@@ -5814,9 +5816,17 @@
       "timing": "変更は今後の実行に適用されます。実行中または準備済みのタスクには以前の設定が適用される場合があります。",
       "title": "有料ツール",
       "tools": {
+        "avatar-video-generation": {
+          "description": "話すアバターの動画を生成します。",
+          "name": "アバター動画生成"
+        },
         "finance": {
           "description": "企業、株価、市場データを調べます。",
           "name": "金融データ"
+        },
+        "image-generation": {
+          "description": "組み込みモデルで画像を生成します。",
+          "name": "画像生成"
         },
         "image-recognition": {
           "description": "画像を読み取り、分析します。",
@@ -5841,6 +5851,18 @@
         "social": {
           "description": "公開投稿を調べ、メディアを収集します。",
           "name": "ソーシャル調査"
+        },
+        "video-generation": {
+          "description": "組み込みモデルで動画を生成します。",
+          "name": "動画生成"
+        },
+        "video-rendering": {
+          "description": "クラウドで動画をレンダリングします。",
+          "name": "動画レンダリング"
+        },
+        "voice-generation": {
+          "description": "組み込みの音声で読み上げを生成します。",
+          "name": "音声生成"
         },
         "web-search": {
           "description": "ウェブで最新の情報を検索します。",

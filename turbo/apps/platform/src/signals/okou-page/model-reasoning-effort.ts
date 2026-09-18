@@ -11,7 +11,6 @@ import {
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 
 /** Saved preferences remain independent of the route's current capability. */
@@ -44,7 +43,6 @@ export function availableChatReasoningEfforts(
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
     piEnabled: switches[FeatureSwitchKey.PiLoop] === true,
-    codexFastModeEnabled: isCodexFastModeEnabled({ overrides: switches }),
   });
   return getRouteReasoningEfforts({
     model: selection.selectedModel,

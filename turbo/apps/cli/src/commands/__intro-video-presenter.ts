@@ -3,6 +3,7 @@ import chalk from "chalk";
 
 import { generateWebIntroVideoPresenter } from "../lib/api/domains/web";
 import { withErrorHandler } from "../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../lib/command/paid-tools";
 import { createArtifactPresentation } from "./shared/artifact-return";
 
 interface IntroVideoPresenterCommandOptions {
@@ -24,6 +25,7 @@ function parseAvatarId(value: string): string {
 async function runIntroVideoPresenterCommand(
   options: IntroVideoPresenterCommandOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("avatar-video-generation");
   const result = await generateWebIntroVideoPresenter({
     avatarId: options.avatarId,
     ...(options.avatarGroupId ? { avatarGroupId: options.avatarGroupId } : {}),

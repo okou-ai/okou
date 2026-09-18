@@ -131,10 +131,7 @@ async function writeModelSelection(
     body.codexServiceTier === undefined && body.reasoningEffort !== undefined
       ? current.codexServiceTier
       : (body.codexServiceTier ?? null);
-  const tierError = await validateCodexServiceTier({
-    db: tx,
-    orgId: auth.orgId,
-    userId: auth.userId,
+  const tierError = validateCodexServiceTier({
     pin,
     codexServiceTier,
   });

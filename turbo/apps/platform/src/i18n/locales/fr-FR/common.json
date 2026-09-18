@@ -5882,8 +5882,10 @@
     },
     "paidTools": {
       "description": "Choisissez les outils payants intégrés que vous pouvez utiliser.",
+      "disabledForCreation": "{{tool}} est désactivé dans vos paramètres d’outils payants.",
       "loadError": "Impossible de charger vos paramètres.",
       "loading": "Chargement de vos paramètres…",
+      "openSettings": "Ouvrir les paramètres des outils payants",
       "retry": "Réessayer",
       "saveError": "Votre modification n’a pas été enregistrée.",
       "saving": "Enregistrement…",
@@ -5891,9 +5893,17 @@
       "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
       "title": "Outils payants",
       "tools": {
+        "avatar-video-generation": {
+          "description": "Créez des vidéos avec des avatars parlants.",
+          "name": "Génération de vidéos avec avatar"
+        },
         "finance": {
           "description": "Consultez les entreprises, les cours et les données de marché.",
           "name": "Données financières"
+        },
+        "image-generation": {
+          "description": "Créez des images avec les modèles intégrés.",
+          "name": "Génération d’images"
         },
         "image-recognition": {
           "description": "Lisez et analysez des images.",
@@ -5918,6 +5928,18 @@
         "social": {
           "description": "Analysez des publications publiques et collectez des médias.",
           "name": "Recherche sur les réseaux sociaux"
+        },
+        "video-generation": {
+          "description": "Créez des vidéos avec les modèles intégrés.",
+          "name": "Génération de vidéos"
+        },
+        "video-rendering": {
+          "description": "Effectuez le rendu de compositions vidéo dans le cloud.",
+          "name": "Rendu vidéo"
+        },
+        "voice-generation": {
+          "description": "Créez des paroles avec les voix intégrées.",
+          "name": "Génération de voix"
         },
         "web-search": {
           "description": "Trouvez des informations actuelles sur le web.",

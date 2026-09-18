@@ -53,7 +53,7 @@ import {
 } from "../morning-brief-source-authority";
 import {
   morningBriefEnvelopeBytes,
-  morningBriefRequestBytes,
+  buildMorningBriefProviderRequest,
   buildMorningBriefRequest,
   morningBriefCoverageReport,
   packMorningBriefRequest,
@@ -917,21 +917,16 @@ describe("exact request bytes", () => {
       }),
     });
 
-    const allocated = allocateMorningBriefRequest(collections, {
-      overheadBytes: envelopeBytes,
-    });
-    const request = buildMorningBriefRequest({
+    const packed = packMorningBriefRequest({
+      collections,
       language,
       instructions: null,
-      coverage: morningBriefCoverageReport(collections, {
-        byNormalizedCap: {},
-        byRequest: allocated.omittedBySource,
-      }),
-      items: allocated.items,
+      omittedByNormalizedCap: {},
     });
 
-    expect(allocated.omittedItems).toBeGreaterThan(0);
-    expect(morningBriefRequestBytes(request)).toBeLessThanOrEqual(
+    expect(envelopeBytes).toBeLessThan(MORNING_BRIEF_REQUEST_MAX_BYTES);
+    expect(packed.allocation.omittedItems).toBeGreaterThan(0);
+    expect(packed.totalBytes).toBeLessThanOrEqual(
       MORNING_BRIEF_REQUEST_MAX_BYTES,
     );
   });
@@ -958,10 +953,15 @@ describe("exact request bytes", () => {
       coverage,
     });
 
-    // The field changes from `null` to a quoted string, so the growth is the
-    // whole text plus two quotes minus the four bytes `null` occupied.
+    // The whole file is reserved, and it is measured where it actually
+    // travels: inside the transport body, where the evidence document is
+    // nested as a JSON string. The field changes from `null` to a quoted
+    // string, and both of those quotes are themselves escaped on the way in —
+    // two bytes each — so the growth is the text plus four escaped quote bytes
+    // minus the four bytes `null` occupied. Measuring the inner document alone
+    // would have counted two bytes that the provider never receives.
     expect(withText - withoutText).toBe(
-      Buffer.byteLength(instructions, "utf8") + 2 - 4,
+      Buffer.byteLength(instructions, "utf8") + 4 - 4,
     );
   });
 });
@@ -1117,7 +1117,8 @@ describe("request packing against the final report", () => {
     });
 
     expect(packed.allocation.omittedItems).toBeGreaterThan(0);
-    expect(Buffer.byteLength(JSON.stringify(packed.request), "utf8")).toBe(
+    expect(packed.providerRequest.bodyBytes).toBe(packed.totalBytes);
+    expect(Buffer.byteLength(packed.providerRequest.body, "utf8")).toBe(
       packed.totalBytes,
     );
     expect(packed.totalBytes).toBeLessThanOrEqual(
@@ -1572,19 +1573,17 @@ describe("request ceiling measured on the consumed serialization", () => {
       }),
     });
     const baseCollections = [collection("gmail", [baseItem])];
-    const baseBytes = Buffer.byteLength(
-      JSON.stringify(assemble(baseCollections, [baseItem], {})),
-      "utf8",
-    );
+    const baseBytes = buildMorningBriefProviderRequest(
+      assemble(baseCollections, [baseItem], {}),
+    ).bodyBytes;
     const only = {
       ...baseItem,
       body: prefix + "x".repeat(MORNING_BRIEF_REQUEST_MAX_BYTES - baseBytes),
     };
     const collections = [collection("gmail", [only])];
-    const oracle = Buffer.byteLength(
-      JSON.stringify(assemble(collections, [only], {})),
-      "utf8",
-    );
+    const oracle = buildMorningBriefProviderRequest(
+      assemble(collections, [only], {}),
+    ).bodyBytes;
     expect(oracle).toBe(MORNING_BRIEF_REQUEST_MAX_BYTES);
 
     const fitted = packMorningBriefRequest({
@@ -1595,7 +1594,8 @@ describe("request ceiling measured on the consumed serialization", () => {
     });
     expect(fitted.allocation.items).toHaveLength(1);
     expect(fitted.totalBytes).toBe(MORNING_BRIEF_REQUEST_MAX_BYTES);
-    expect(Buffer.byteLength(JSON.stringify(fitted.request), "utf8")).toBe(
+    expect(fitted.providerRequest.bodyBytes).toBe(fitted.totalBytes);
+    expect(Buffer.byteLength(fitted.providerRequest.body, "utf8")).toBe(
       fitted.totalBytes,
     );
 

@@ -113,9 +113,12 @@ test("anonymous conversation snapshots preview temporary bytes and keep full sta
     ).toHaveAttribute("src", `${HTML_URL}#slide-2`);
   });
   const video = screen.getByTestId("markdown-artifact-preview-video");
-  expect(video).toHaveAttribute("href", VIDEO);
+  expect(video).toHaveAttribute("type", "button");
   await waitFor(() => {
-    expect(video.querySelector("video")).toHaveAttribute("src", VIDEO_URL);
+    expect(video.querySelector("video")).toHaveAttribute(
+      "src",
+      `${VIDEO_URL}#t=0.001`,
+    );
   });
   expect(screen.getByTestId("markdown-artifact-preview-audio")).toHaveAttribute(
     "href",

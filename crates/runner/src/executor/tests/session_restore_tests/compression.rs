@@ -4,7 +4,7 @@ use sandbox::{FileCompression, SandboxError, SandboxOperation, SandboxOperationR
 #[tokio::test]
 async fn history_business_selects_compression_without_changing_restored_bytes() {
     for framework in ["claude-code", "codex", "pi"] {
-        for size in [16 * 1024 * 1024 - 1, 16 * 1024 * 1024] {
+        for size in [16 * 1024 * 1024 - 1, 16 * 1024 * 1024, 16 * 1024 * 1024 + 1] {
             let sandbox = MockSandbox::new("history-policy");
             let mut context = minimal_context();
             context.cli_agent_type = framework.into();
@@ -21,11 +21,11 @@ async fn history_business_selects_compression_without_changing_restored_bytes() 
             assert_eq!(metadata["session_history_transfer_bytes"], size);
             assert_eq!(metadata["session_history_restore_representation"], "raw");
             assert_eq!(
-                metadata["session_history_codec_reason"],
+                metadata["session_history_codec_decision"],
                 if size < 16 * 1024 * 1024 {
                     "below_threshold"
                 } else {
-                    "sample_accepted"
+                    "above_threshold"
                 }
             );
             assert_eq!(
@@ -73,7 +73,7 @@ async fn native_codex_zstd_representation_is_not_recompressed() {
         .await
         .unwrap();
     let metadata = serde_json::to_value(&diagnostics.transfer).unwrap();
-    assert_eq!(metadata["session_history_codec_reason"], "native_zstd");
+    assert_eq!(metadata["session_history_codec_decision"], "native_zstd");
     assert_eq!(metadata["session_history_wire_codec"], "none");
     assert_eq!(
         metadata["session_history_restore_representation"],
@@ -113,28 +113,32 @@ async fn compressed_history_failure_is_propagated_without_raw_retry() {
 }
 
 #[tokio::test]
-async fn compressible_prefix_does_not_enable_low_benefit_history() {
+async fn large_low_compressibility_text_uses_compressed_transfer() {
     let sandbox = MockSandbox::new("low-benefit");
     let mut state = 34573_u64;
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut history = (0..16 * 1024 * 1024)
         .map(|_| {
             state ^= state << 13;
             state ^= state >> 7;
             state ^= state << 17;
-            (state >> 32) as u8
+            alphabet[((state >> 32) & 63) as usize]
         })
         .collect::<Vec<_>>();
-    // Sampling must inspect the interior, not just a highly compressible header.
+    // Text histories can mix repetitive headers with low-compressibility payloads.
     history[..64 * 1024].fill(b'x');
     let session = materialized_bytes_session(CODEX_SESSION_ID, &history);
     let diagnostics = restore_session_in_fresh_sandbox(&sandbox, &codex_context(), &session)
         .await
         .unwrap();
     let metadata = serde_json::to_value(&diagnostics.transfer).unwrap();
-    assert_eq!(metadata["session_history_codec_reason"], "sample_rejected");
-    assert_eq!(metadata["session_history_wire_codec"], "none");
+    assert_eq!(
+        metadata["session_history_codec_decision"],
+        "above_threshold"
+    );
+    assert_eq!(metadata["session_history_wire_codec"], "zstd");
     let writes = sandbox.write_file_calls();
     assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].compression, FileCompression::None);
+    assert_eq!(writes[0].compression, FileCompression::Zstd);
     assert_eq!(writes[0].content, history);
 }

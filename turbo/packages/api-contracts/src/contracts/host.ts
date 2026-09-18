@@ -230,6 +230,8 @@ export const hostContract = c.router({
       publicSlug: hostedSitePublicSlugSchema,
     }),
     query: z.object({
+      // Pinned CLIs and historical sites retain this selector until #35240's
+      // data/consumer retirement gates. Current CLI selects publication URLs.
       version: z.coerce.number().int().positive().optional(),
       hostname: z.string().min(1).max(253).optional(),
     }),
@@ -243,9 +245,11 @@ export const hostContract = c.router({
       409: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "List active hosted-site files for an owned site",
+    summary: "List files for a visible hosted publication",
   },
   deployments: {
+    // Historical discovery for pinned clients; remove after the complete
+    // artifact mapping and client drain documented in #35240.
     method: "GET",
     path: "/api/host/sites/:site/deployments",
     pathParams: z.object({

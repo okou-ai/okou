@@ -150,6 +150,67 @@ it is not process RSS and excludes TLS/socket buffers and allocator overhead.
 The process bound is independent for overlapping Runner processes during drain.
 No screenshot is written to disk or published by Runner.
 
+## Okou CLI
+
+`okou vnc` is a Run-only command. Host inventory needs `vnc:read`; session,
+screenshot and input operations need `vnc:write`. The existing VNC feature switch
+controls command discovery, Run token capabilities and Agent instructions, and
+remains disabled by default. Local checks do not replace the API and Runner's
+current owner-grant checks. The CLI accepts saved IDs only, without endpoint,
+credential or trust overrides.
+
+```sh
+okou vnc host list --json
+okou vnc session start <connection-id> --mode shared --json
+okou vnc session list --json
+okou vnc session status <session-id> --json
+okou vnc screenshot <session-id> --output desktop.png --json
+okou vnc click <session-id> --geometry '<geometry-json>' --x 100 --y 200 --json
+okou vnc drag <session-id> --geometry '<geometry-json>' --points '[[100,200],[300,400]]' --json
+okou vnc scroll <session-id> --geometry '<geometry-json>' --x 100 --y 200 --axis vertical --steps -3 --json
+okou vnc text <session-id> --text 'Hello' --json
+okou vnc key <session-id> --keys Control a --json
+okou vnc session close <session-id> --json
+```
+
+Choose `--mode shared` or `--mode exclusive` explicitly. Shared clients can
+interfere with one another; exclusive requests may disconnect other viewers or
+be refused or overridden by the server. The returned mode records the request,
+not a guarantee of exclusive control. The CLI never switches modes, reconnects
+or replays a request automatically.
+
+Replace `<geometry-json>` with the screenshot's exact `{sessionId,epoch}`
+object; its `sessionId` is distinct from the RPC session ID. The CLI rejects
+malformed IDs, geometry, out-of-range coordinates, unsupported keys and input
+outside engine budgets before dispatch. Capture epochs must fit JavaScript's
+safe integer range. Runner still validates current geometry and dimensions.
+Take a fresh screenshot after input to inspect its effect; a fresh image does
+not prove that the remote application has settled.
+
+Every command supports `--json`. Results preserve Runner's `outcome` and safe
+`reason`; local or helper failures also report `delivery` when available.
+`not_started` means no application-input write was attempted. `unknown` or
+`delivery: "unknown"` requires state inspection rather than automatic replay.
+`sent` confirms only that the input was written and flushed. An uncertain start
+can be investigated with `session list`; list contains active sessions only,
+not a historical execution receipt. Failures and uncertain outcomes exit
+nonzero. Local invalid input or missing capability reports
+`delivery: "not_dispatched"` without launching the helper.
+
+Screenshot JSON includes `path`, `sha256`, `bytes`, dimensions, `geometry`,
+`updateSequence` and `capturedAt`. The CLI stages data in a private directory and
+publishes the destination atomically only after complete bounded framing, the
+binary End, a matching success terminal, EOF and successful helper exit.
+Existing destinations are refused unless `--overwrite` is explicit; symlinks
+and nonregular targets are refused. Failed captures preserve existing files.
+Cleanup failures exit nonzero and report any private staging residue even if
+the complete destination was already published.
+
+CLI command tests enter through Commander, use the real framed child-process
+boundary and real temporary files, and cover no-replay and publication behavior.
+Owner connection UI and real-Agent, multi-client product acceptance remain
+[#34782](https://github.com/vm0-ai/okou/issues/34782).
+
 ## Deployment and verification
 
 This slice adds no API schema, database migration, guest-helper framing or
@@ -162,6 +223,8 @@ VNC stays disabled by default, including staff. Runner integration tests exercis
 production dispatch against a controlled HTTP authority and an independent
 TLS/RFB peer, checking protocol bytes, captures, authority changes, cancellation
 and cleanup. The engine's separate TigerVNC acceptance evidence does not establish
-complete product acceptance. [#34781](https://github.com/vm0-ai/okou/issues/34781)
-owns the CLI and [#34782](https://github.com/vm0-ai/okou/issues/34782) owns the
-remaining UI and real-Agent, multi-client acceptance before activation.
+complete product acceptance. The CLI requires the matching packaged helper and
+a Runner supporting the VNC methods. Unsupported helpers or Runners fail
+explicitly without a compatibility fallback. The remaining UI and real-Agent,
+multi-client acceptance in [#34782](https://github.com/vm0-ai/okou/issues/34782)
+must finish before activation.

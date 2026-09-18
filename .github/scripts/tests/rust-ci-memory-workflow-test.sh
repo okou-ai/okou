@@ -19,7 +19,7 @@ action_json=$(yq -o=json '.' "$ACTION")
 
 jq -e '
   . as $workflow |
-  ["check", "coverage", "runner-firewall-contract-test", "host-cpu-fairness-test", "nbd-cow-test"] |
+  ["check", "coverage", "runner-firewall-contract-test", "host-cpu-fairness-build", "guest-rpc-firecracker-build", "nbd-cow-test"] |
   all(.[];
     . as $job |
     ($workflow.jobs[$job].steps[-1] |
@@ -48,11 +48,12 @@ jq -e '
   )
 ' <<<"$action_json" >/dev/null || fail "peak memory action must run the bundled cgroup reporter"
 
-jq -e '
-  any(.jobs.detect.steps[]?;
-    .id == "detect" and
-    (.run | contains(".github/actions/(setup-ssh-tunnel|provision|report-memory-peak)/"))
-  )
-' <<<"$crates_json" >/dev/null || fail "crates change detection must include the peak memory action"
+ci_pattern=$(jq -r '.jobs.detect.steps[] | select(.id == "detect") | .run' <<<"$crates_json" |
+  sed -n 's/^if git diff .* | grep -qE "\([^"]*\)"; then$/\1/p')
+[ -n "$ci_pattern" ] || fail "crates CI change detector is missing"
+for action_file in action.yml report.sh; do
+  printf '%s\n' ".github/actions/report-memory-peak/$action_file" |
+    grep -qE "$ci_pattern" || fail "crates change detection must include the peak memory action"
+done
 
 echo "rust-ci-memory-workflow-test: ok"

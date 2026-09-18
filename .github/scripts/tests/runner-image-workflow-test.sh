@@ -42,6 +42,41 @@ image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c 
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "download-only changes must be recognized as runner image inputs"
 
+# An installer-only edit must still select its image and native test consumers.
+base_ref=$(fixture_git rev-parse HEAD)
+mkdir -p "${test_root}/.github/actions/setup-aws-cli"
+cp "${REPO_ROOT}/.github/actions/setup-aws-cli/action.yml" \
+  "${test_root}/.github/actions/setup-aws-cli/action.yml"
+fixture_git add .github/actions/setup-aws-cli/action.yml
+fixture_git commit --quiet -m installer
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "installer-only changes must be recognized as runner image inputs"
+
+ruby -ryaml -ropen3 - "$REPO_ROOT" "$test_root" "$base_ref" <<'RUBY'
+root, fixture, base = ARGV
+[["crates", "detect", "detect"], ["runner-image", "prepare", "turbo"],
+ ["runner-image", "prepare", "crates"]].each do |workflow, job, step_id|
+  steps = YAML.load_file("#{root}/.github/workflows/#{workflow}.yml").fetch("jobs").fetch(job).fetch("steps")
+  lines = steps.find { |step| step["id"] == step_id }.fetch("run").lines
+  first = lines.index { |line| line.start_with?("if git diff ") && line.include?(".github/actions/") }
+  raise "missing CI detector: #{workflow}/#{step_id}" unless first
+  last = (first...lines.length).find { |index| lines[index].strip == "fi" }
+  # Execute the workflow's actual selection boundary against a real Git diff.
+  script = lines[first..last].join + "\necho \"ci-changed=${ci_changed:-}\"\n"
+  output_file = "#{fixture}/detected"
+  [base, "HEAD"].each do |comparison|
+    File.write(output_file, "")
+    output, error, status = Open3.capture3({"BASE_REF" => comparison, "GITHUB_OUTPUT" => output_file},
+                                         "bash", "-e", "-o", "pipefail", "-c", script, chdir: fixture)
+    raise error unless status.success?
+    expected = comparison == base ? "true" : "false"
+    result = output + File.read(output_file)
+    raise "wrong installer selection: #{workflow}/#{step_id}" unless result.lines.include?("ci-changed=#{expected}\n")
+  end
+end
+RUBY
+
 jq -e '
   .jobs.prepare.outputs["turbo-runner-consumer-needed"] ==
     "${{ steps.needed.outputs.turbo-runner-consumer-needed }}" and

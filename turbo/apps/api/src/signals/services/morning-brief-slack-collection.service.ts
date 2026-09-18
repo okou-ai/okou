@@ -98,9 +98,11 @@ export type MorningBriefSlackCollectionResult =
   | {
       readonly kind: "rate-limited";
       readonly retryAfterSeconds: number | undefined;
+      /** Exact provider requests this failed attempt issued. */
+      readonly requests: number;
     }
-  | { readonly kind: "permission-denied" }
-  | { readonly kind: "provider-failed" };
+  | { readonly kind: "permission-denied"; readonly requests: number }
+  | { readonly kind: "provider-failed"; readonly requests: number };
 
 /**
  * Slack timestamps are `seconds.microseconds`, so they are compared and built
@@ -420,12 +422,17 @@ class SlackCollectionBudget {
 /** Slack failures are classified once, so no caller invents its own mapping. */
 function classifySlackFailure(
   error: unknown,
+  requests: number,
 ): Exclude<MorningBriefSlackCollectionResult, { kind: "collected" }> {
   if (!isSlackApiClientError(error)) {
-    return { kind: "provider-failed" };
+    return { kind: "provider-failed", requests };
   }
   if (error.statusCode === 429 || error.code === "ratelimited") {
-    return { kind: "rate-limited", retryAfterSeconds: error.retryAfterSeconds };
+    return {
+      kind: "rate-limited",
+      retryAfterSeconds: error.retryAfterSeconds,
+      requests,
+    };
   }
   if (
     error.code === "missing_scope" ||
@@ -433,9 +440,9 @@ function classifySlackFailure(
     error.code === "not_in_channel" ||
     error.code === "channel_not_found"
   ) {
-    return { kind: "permission-denied" };
+    return { kind: "permission-denied", requests };
   }
-  return { kind: "provider-failed" };
+  return { kind: "provider-failed", requests };
 }
 
 /**
@@ -853,7 +860,7 @@ export async function collectMorningBriefSlackBundle(
     })(),
   );
   if (!collected.ok) {
-    return classifySlackFailure(collected.error);
+    return classifySlackFailure(collected.error, budget.requestCount);
   }
 
   const { channels, readChannels, expandedThreads, truncatedChannels } =

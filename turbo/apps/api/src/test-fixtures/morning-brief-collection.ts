@@ -300,23 +300,6 @@ export async function clearMorningBriefInstructionsHead(
     );
 }
 
-/**
- * Hold the final canonical instruction-version SELECT at PostgreSQL itself.
- *
- * There is no product input that pauses a read after retained-source authority
- * and before request admission. The regression needs that exact infrastructure
- * boundary, so it takes a short table lock only after the initial language read
- * has completed and proves the production query is waiting through
- * `pg_blocking_pids`. The fixture owns and releases the transaction at test end.
- */
-export async function holdMorningBriefInstructionVersionRead(
-  signal: AbortSignal,
-) {
-  return await holdDeferredRow(signal, async (tx) => {
-    await tx.execute(sql`LOCK TABLE ${storages} IN ACCESS EXCLUSIVE MODE`);
-  });
-}
-
 /** Pause the seeded schedule the way the Settings surface would. */
 export async function pauseMorningBriefAutomation(
   automationId: string,

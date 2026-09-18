@@ -420,9 +420,6 @@ describe("CHAT effort: thread configuration", () => {
 
   it("preserves Fast when changing effort", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CodexFastMode]: true,
-    });
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "openai-api-key",
       secret: "test-effort-openai-key",

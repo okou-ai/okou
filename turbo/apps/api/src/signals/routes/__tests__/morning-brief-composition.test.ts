@@ -14,8 +14,12 @@ import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
+  barrierQueryBinds,
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/account-erasure-subject";
+import {
   clearMorningBriefInstructionsHead,
-  holdMorningBriefInstructionVersionRead,
   holdMorningBriefMembershipLookup,
   pauseMorningBriefAutomation,
 } from "../../../test-fixtures/morning-brief-collection";
@@ -411,6 +415,35 @@ function stubGmail(
   };
 }
 
+interface CompositionSlackTraffic {
+  /** Every provider request the Slack collector actually issued. */
+  readonly requests: string[];
+}
+
+/**
+ * Double Slack at its real HTTP boundary and record every issued request.
+ *
+ * The response functions keep classified failures, successful empties and
+ * partial reads on the same production client path.
+ */
+function stubCompositionSlack(args: {
+  readonly channels: () => Response;
+  readonly history?: () => Response;
+}): CompositionSlackTraffic {
+  const requests: string[] = [];
+  server.use(
+    http.get(SLACK_CONVERSATIONS_URL, ({ request }) => {
+      requests.push(new URL(request.url).pathname);
+      return args.channels();
+    }),
+    http.get(SLACK_HISTORY_URL, ({ request }) => {
+      requests.push(new URL(request.url).pathname);
+      return args.history?.() ?? HttpResponse.json({ ok: true, messages: [] });
+    }),
+  );
+  return { requests };
+}
+
 /** One real Slack item, including the collector's final release proof. */
 function stubSlackMessage(
   at: number,
@@ -703,6 +736,91 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     // A brief nobody will write needs no language, so nothing was read for one.
     expect(body.composition.language).toBeNull();
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
+
+  it("reports the exact issued Slack request count after a classified failure", async () => {
+    const fixture = await readyOwner({ slack: true });
+    const at = freezeClock();
+    const slack = stubCompositionSlack({
+      channels: () => {
+        return HttpResponse.json(
+          { ok: false, error: "ratelimited" },
+          { status: 429, headers: { "retry-after": "30" } },
+        );
+      },
+    });
+
+    const body = await compose(fixture, { anchor: anchorFor(at) });
+
+    expect(slack.requests).toStrictEqual(["/api/users.conversations"]);
+    expect(body.result).toBe("incomplete");
+    if (body.result !== "incomplete") {
+      return;
+    }
+    expect(body.reason).toBe("incomplete-coverage");
+    expect(
+      body.sources.find((source) => {
+        return source.source === "slack";
+      }),
+    ).toMatchObject({ coverage: "failed", requests: slack.requests.length });
+  });
+
+  it("keeps a successful Slack collector's exact request count", async () => {
+    const fixture = await readyOwner({ slack: true });
+    const at = freezeClock();
+    const slack = stubCompositionSlack({
+      channels: () => {
+        return HttpResponse.json({ ok: true, channels: [] });
+      },
+    });
+
+    const body = await compose(fixture, { anchor: anchorFor(at) });
+
+    expect(slack.requests).toStrictEqual(["/api/users.conversations"]);
+    expect(body.result).toBe("empty");
+    if (body.result !== "empty") {
+      return;
+    }
+    expect(
+      body.composition.sources.find((source) => {
+        return source.source === "slack";
+      }),
+    ).toMatchObject({ coverage: "empty", requests: slack.requests.length });
+  });
+
+  it("keeps a partial Slack collector's exact request count", async () => {
+    const fixture = await readyOwner({ slack: true });
+    const at = freezeClock();
+    const slack = stubCompositionSlack({
+      channels: () => {
+        return HttpResponse.json({
+          ok: true,
+          channels: [{ id: "C1", name: "general", is_private: false }],
+        });
+      },
+      history: () => {
+        return HttpResponse.json({ ok: true, messages: [], has_more: true });
+      },
+    });
+
+    const body = await compose(fixture, { anchor: anchorFor(at) });
+
+    expect(slack.requests).toStrictEqual([
+      "/api/users.conversations",
+      "/api/users.conversations",
+      "/api/conversations.history",
+      "/api/users.conversations",
+    ]);
+    expect(body.result).toBe("incomplete");
+    if (body.result !== "incomplete") {
+      return;
+    }
+    expect(body.reason).toBe("incomplete-coverage");
+    expect(
+      body.sources.find((source) => {
+        return source.source === "slack";
+      }),
+    ).toMatchObject({ coverage: "partial", requests: slack.requests.length });
   });
 
   it("refuses to call a failed read a quiet morning", async () => {
@@ -1023,6 +1141,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
   ])(
     "decides the held canonical instruction version read $name the deadline",
     async ({ offset, expired }) => {
+      const otherOwner = await setupOwner();
       const fixture = await setupOwner({ slack: true });
       const at = freezeClock();
       const deadlineAt = at + 10_000;
@@ -1049,30 +1168,53 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       );
       await seedMembership(fixture);
       stubSlackMessage(at);
-      const pending = startCompose(fixture, {
-        anchor: anchorFor(at),
-        deadlineAt: new Date(deadlineAt).toISOString(),
-      });
-
-      const initialAuthority = await initialAuthorityReady.promise;
-      await initialAuthority.waitForArrival();
-      const finalAuthority = holdMorningBriefMembershipLookup(
-        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+      let awaitingVersionRead = false;
+      const response = await withDatabaseTransactionBarrierFixture(
+        {
+          select: (queryArgs) => {
+            const text = barrierQueryText(queryArgs);
+            return (
+              awaitingVersionRead &&
+              text.startsWith('select "head_version_id"') &&
+              text.includes('from "storages"') &&
+              barrierQueryBinds(queryArgs, fixture.actor.orgId)
+            );
+          },
+          stopAt: (_queryArgs, selectingStatement) => {
+            return selectingStatement;
+          },
+          pauseAfter: true,
+          work: async (versionRead) => {
+            const pending = startCompose(fixture, {
+              anchor: anchorFor(at),
+              deadlineAt: new Date(deadlineAt).toISOString(),
+            });
+            const initialAuthority = await initialAuthorityReady.promise;
+            await initialAuthority.waitForArrival();
+            const finalAuthority = holdMorningBriefMembershipLookup(
+              { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+              context.signal,
+            );
+            initialAuthority.release();
+            await finalAuthority.waitForArrival();
+            awaitingVersionRead = true;
+            // An unrelated storage operation must neither satisfy the target
+            // boundary nor wait on a table-wide lock held by this test.
+            await bdd.updateAgentInstructions(
+              otherOwner.actor,
+              otherOwner.agentId,
+              "Write in English.",
+            );
+            expect(versionRead.enteredYet()).toBeFalsy();
+            finalAuthority.release();
+            await versionRead.entered;
+            mockNow(deadlineAt + offset);
+            versionRead.release();
+            return await accept(pending, [200]);
+          },
+        },
         context.signal,
       );
-      initialAuthority.release();
-      await finalAuthority.waitForArrival();
-      // Source revalidation is complete and its final owner proof is now held.
-      // Acquire the database boundary before releasing that proof so only the
-      // canonical instruction-version SELECT can arrive at this lock.
-      const versionRead = await holdMorningBriefInstructionVersionRead(
-        context.signal,
-      );
-      finalAuthority.release();
-      await versionRead.waitForBlocked();
-      mockNow(deadlineAt + offset);
-      await versionRead.release();
-      const response = await accept(pending, [200]);
 
       if (!expired) {
         expect(response.body.result).toBe("composed");

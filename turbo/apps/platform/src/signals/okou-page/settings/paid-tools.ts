@@ -9,6 +9,7 @@ import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import { authenticatedSessionKey$, clerk$ } from "../../auth.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
+import { reloadDisabledPaidTools$ } from "../paid-tools.ts";
 import {
   settingsActiveSection$,
   settingsDialogOpen$,
@@ -69,6 +70,7 @@ function createPaidToolsSignals(
             [response.body.toolId]: response.body.disabled,
           };
         });
+        set(reloadDisabledPaidTools$);
       },
     );
     return { toolId, enabled$, update$ };

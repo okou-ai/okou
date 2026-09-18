@@ -1191,6 +1191,7 @@ describe("Pi stable context generation fences", () => {
       promptInputs: {
         privateArtifactsEnabled: false,
         bankingEnabled: false,
+        vncEnabled: false,
         larkEnabled: false,
         deliveryFormatGuidanceEnabled: false,
         introVideoEnabled: false,
@@ -1394,6 +1395,7 @@ describe("Pi stable context generation fences", () => {
       promptInputs: {
         privateArtifactsEnabled: false,
         bankingEnabled: false,
+        vncEnabled: false,
         larkEnabled: false,
         deliveryFormatGuidanceEnabled: false,
         introVideoEnabled: false,

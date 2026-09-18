@@ -122,7 +122,7 @@ function createAudienceSignals(
       if (
         details.audience === draft.audience &&
         (draft.audience === "private" ||
-          details.status.selectedVersion === details.status.candidateVersion)
+          details.status.selectedTarget?.id === details.target.id)
       ) {
         return;
       }

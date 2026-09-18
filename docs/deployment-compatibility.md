@@ -19,8 +19,8 @@ surfaces are on different versions.
 
 ## Pi stable-context schema rollout and rollback
 
-Migration 1165, following retained main migrations through
-`1164_odd_victor_mancha`, adds
+Migration 1166, following retained main migrations through
+`1165_supreme_red_skull`, adds
 `pi_stable_context_erasure_fences`,
 `pi_stable_context_generations`,
 `pi_stable_context_publications`, `pi_stable_context_heads`,
@@ -39,7 +39,7 @@ the same check. A refresh admitted before closure either finishes first and is
 subsequently cleaned up, or waits and observes the fence. The table is
 feature-local deletion finality: it does not register the dormant account-
 erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1165
+other product data. Keep stable-context activation on hold until migration 1166
 and this API writer are present on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
@@ -200,6 +200,75 @@ reader for an API lacking the preview metadata. No database or host Worker
 protocol change is required. Previously copied URLs remain valid under their
 existing policy. Owner resolution of an old organization alias continues after
 switching it to Only me; recipients lose access.
+
+#### Hosted-site publication identity
+
+Every hosted-site prepare creates an independent site. `--site` is a preferred
+name: the allocator tries that name first, then adds a four-character hash when
+it is reserved, including by a deleted site. Each publication's deployment ID
+seeds its suffix candidates, so repeated publications do not exhaust one fixed
+set of names. Atomic inserts and the existing unique indexes arbitrate concurrent
+requests; an exhausted bounded retry returns an actionable `409 CONFLICT`.
+
+New rows store the allocated name in `slug`, `publicSlug` and `requestedSlug`,
+while the manifest retains the caller's preferred name. This preserves the
+existing database constraints and keeps each publication addressable by older
+readers. The catalog displays the allocated name; `host clone` uses the returned
+site slug or immutable URL to inspect that publication. Historical rows and their
+requested-name reservations stay intact. No database migration or historical data
+rewrite runs here.
+
+Completion retries for the same deployment remain idempotent. Previous URLs,
+content, historical version listings and share policies remain unchanged when
+another publication uses the same preferred name, including across chat scopes.
+Existing authorization checks still govern reads and completion; name allocation
+never adopts an existing site.
+
+Older pinned CLIs can consume the allocated `publicSlug` and URL through the
+unchanged response shape. The CLI retains the legacy `--slug-suffix` request field
+for older API servers; the new API assigns suffixes automatically. Older API
+instances must leave serving and supported rollback targets before no-redeploy
+behavior is universal. Issue
+[#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
+site-version model after preserving existing links and metadata.
+
+The [version-retirement preparation](database/hosted-publication-retirement.md)
+removes version operations from the current CLI and version comparison from App
+sharing. It replaces new-publication counter allocation with fixed compatibility
+values and binds immutable public content by deployment ID. Legacy API history,
+selectors, old upload completion and schema fields remain until the documented
+consumer, data and rollback gates; no physical schema cleanup runs in that step.
+
+New prepares bind each upload URL to its declared SHA-256 through the signed
+`x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
+`Content-Type`; identical-byte retries work, while different bytes fail R2's
+checksum validation. The root `/manifest.json` path is reserved for the server's
+delivery manifest. New database manifests carry `immutableContent: true`, which
+the API copies into its server-issued preview grants. The Worker trusts the grant
+for cache eligibility because old uploads could target `/manifest.json`. Completion of
+older drafts does not add that marker because their outstanding upload URLs
+were not checksum-bound.
+
+The host Worker uses the shared `PRIVATE_ARTIFACT_CACHE_CONTROL` for successful
+private previews of marked deployments and immutable organization snapshots.
+It retains `private, no-store` for unmarked deployments, authorization errors,
+and standalone publication responses that must recheck the current share policy.
+New APIs with older Workers remain conservatively uncached; new Workers with
+older API grants likewise retain `no-store`. The optional manifest field is
+preserved by older completion readers without a schema migration. Immutable
+delivery derives HTTP headers from the manifest, so replayed upload credentials
+cannot change presentation through unsigned object metadata.
+
+Retiring the unmarked-deployment path belongs to #35240: legacy content must
+first become immutable through migration or sealing after its last upload
+credential expires, older writers must leave serving and supported rollback
+targets, and old preview grants must finish their lifetime.
+
+Thread HTML cards, links and attachment viewers reuse the existing preview
+signals as images do. No expiry-driven re-resolution or retry is added. A
+48-hour credential controls new network access; the browser may keep already
+cached bytes for the configured cache lifetime. Iframe remounting still restarts
+the document, and catalog reload behavior is unchanged.
 
 #### CLI artifact content reads
 
@@ -2481,6 +2550,54 @@ schedule, Run, credit, Chat or email behavior, and it does not activate the
 still-unregistered Clerk erasure bridge. It is a local serialization boundary
 for one owner's collection authority; durable membership and materialization
 ownership and global deletion finality remain S7 gates.
+
+## Morning Brief retained generation authority (#35054)
+
+Migration 1164 generalizes collection occurrences from Slack-only to an exact
+kind-specific binding and adds the all-source generation provenance:
+instruction version/digest, reported language, retained source descriptors and
+deadline, complete installation/automation/destination ids, and
+`content_purged_at`. Its anchor-wide partial unique index prevents another kind
+or contract version from invoking the same logical morning. The replacement
+decision constraint lets an expired successful delivery retain a content-free
+invocation fence. Binding columns stay nullable only for rows written by the
+older Slack-only writer; every all-source reservation writes the complete
+canonical binding. The migration has no backfill, but its index and replacement
+constraints inspect the existing table under the migration wrapper's ordinary
+bounded lock.
+
+The API and migration therefore have these mixed-version rules:
+
+- **Old code after migration** keeps writing null binding columns and a null
+  purge stamp. Those rows still satisfy the expanded constraint and retain the
+  existing Slack authority checks. Old code ignores binding proof written by a
+  newer API.
+- **New code before migration** must not be promoted. Reservation, stored-result
+  revalidation, and expiry sanitation name the new columns directly; without
+  migration 1164 they fail with `42703`. The default-off feature switch and
+  protected preview route contain provider use, but they are not a substitute
+  for the repository's migration-before-API ordering.
+- **New readers of old rows** preserve only the Slack-only contract. A row whose
+  `collection_kind` is `sources` must have retained source proof and complete
+  installation/automation provenance or its content is withheld. A historical
+  non-`sources` row may use its existing live Slack authority gate during the
+  rollback overlap; this compatibility branch can be removed after the old API
+  rollback window closes and the 24-hour result lifetime has elapsed. The
+  generation-time null destination may become the exact thread recorded by its
+  first S6 delivery receipt; only that receipt-first transition is accepted,
+  and any later destination change is withheld.
+- **Rollback after new writes** ignores the additive binding metadata. Content
+  sanitation starts only at the row's existing `expires_at`, when the old
+  generation contract already refuses the result. The row remains solely as a
+  cross-kind/version invocation fence through the seven-day anchor admission
+  window, and the separate immutable email outbox retains any already committed
+  email body.
+
+Retained descriptors identify every source that supplied model input, including
+uncited material, and survive only through the original result or email
+obligation deadline. They contain no source body, prompt, instruction text, or
+credential. Platform usage receipts remain anonymous and are neither purged nor
+reattributed to a user or organization.
 
 ## Marketing attribution cutover (#33886)
 

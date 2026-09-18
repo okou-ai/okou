@@ -56,6 +56,7 @@ export interface PiStableContextPromptProjection {
 export interface PiStableContextPromptInputs {
   readonly privateArtifactsEnabled: boolean;
   readonly bankingEnabled: boolean;
+  readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly introVideoEnabled: boolean;

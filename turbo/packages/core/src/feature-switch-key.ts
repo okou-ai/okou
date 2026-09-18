@@ -44,7 +44,6 @@ export enum FeatureSwitchKey {
   StabilityAiConnector = "stabilityAiConnector",
   ZoomConnector = "zoomConnector",
   WorkdayConnector = "workdayConnector",
-  CodexFastMode = "_fastModel",
   ChatPreference = "chatPreference",
   PaidToolControls = "paidToolControls",
   RealAgentInPreview = "_realAgentInPreview",

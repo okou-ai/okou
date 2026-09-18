@@ -383,7 +383,7 @@ test("organization downloads and clones use current membership across active org
   await download(actor, site.url);
 });
 
-test("public URLs pin the selected snapshot while owners can clone newer private versions", async () => {
+test("public snapshots remain independent when the same preferred slug is published again", async () => {
   const { actor, bdd, host, deploy, share } = await fixture();
   const first = await deploy();
   const target = { kind: "html" as const, id: first.deploymentId };
@@ -399,6 +399,11 @@ test("public URLs pin the selected snapshot while owners can clone newer private
     });
   }
   const second = await deploy(first.site);
+  expect(second.siteId).not.toBe(first.siteId);
+  expect(second.publicSlug).toMatch(
+    new RegExp(`^${first.site}-[a-z0-9]{4}$`, "u"),
+  );
+  expect(second.deploymentVersion).toBe(1);
   const outsider = bdd.user({ orgId: null });
   const publicRunner = bdd.user();
   const runClone = await accept(cloneReference(publicRunner, first.url), [200]);
@@ -421,9 +426,14 @@ test("public URLs pin the selected snapshot while owners can clone newer private
   }
   expectCompleteSite(
     await host.readHostedSiteFiles(actor, first.publicSlug),
+    first.deploymentId,
+  );
+  expectCompleteSite(
+    await host.readHostedSiteFiles(actor, second.publicSlug),
     second.deploymentId,
   );
   await rejectDownload(outsider, second.url);
+  await host.requestHostedSiteFiles(outsider, second.publicSlug, [404]);
   await host.requestHostedSiteFiles(
     outsider,
     `dpl-${second.deploymentId}`,
@@ -431,25 +441,51 @@ test("public URLs pin the selected snapshot while owners can clone newer private
   );
   await host.requestHostedSiteFiles(outsider, alias, [404], 2);
 
-  await share({ kind: "html", id: second.deploymentId }, "public");
-  await rejectDownload(outsider, first.url);
-  await host.requestHostedSiteFiles(
-    outsider,
-    `dpl-${first.deploymentId}`,
-    [404],
+  const secondTarget = { kind: "html" as const, id: second.deploymentId };
+  const secondPublished = await share(secondTarget, "public");
+  const secondAlias = new URL(secondPublished.url!).hostname.split(".")[0]!;
+  expect(secondAlias).not.toBe(alias);
+  expect((await download(outsider, first.url)).body).toStrictEqual(
+    selected.body,
   );
-  const updated = await host.readHostedSiteFiles(outsider, alias);
+  expectCompleteSite(
+    await host.readHostedSiteFiles(outsider, `dpl-${first.deploymentId}`),
+    first.deploymentId,
+  );
+  const original = await host.readHostedSiteFiles(outsider, alias);
+  expectCompleteSite(original, first.deploymentId);
+  expectSharedSnapshot(original);
+  const updated = await host.readHostedSiteFiles(outsider, secondAlias);
   expectCompleteSite(updated, second.deploymentId);
   expectSharedSnapshot(updated);
 
   await share(target, "private");
-  await rejectDownload(outsider, second.url);
-  await accept(cloneReference(publicRunner, second.url), [404]);
+  await rejectDownload(outsider, first.url);
+  await accept(cloneReference(publicRunner, first.url), [404]);
   await host.requestHostedSiteFiles(outsider, alias, [404]);
   const revoked = await accept(clonePublished(actor), [404]);
   expect(revoked.body).not.toHaveProperty("files");
+  const retained = await accept(
+    cloneReference(publicRunner, second.url),
+    [200],
+  );
+  expectCompleteSite(retained.body, second.deploymentId);
+  expectSharedSnapshot(retained.body);
+  expectCompleteSite(
+    await host.readHostedSiteFiles(outsider, secondAlias),
+    second.deploymentId,
+  );
+
+  await share(secondTarget, "private");
+  await rejectDownload(outsider, second.url);
+  await accept(cloneReference(publicRunner, second.url), [404]);
+  await host.requestHostedSiteFiles(outsider, secondAlias, [404]);
   expectCompleteSite(
     await host.readHostedSiteFiles(actor, first.publicSlug),
+    first.deploymentId,
+  );
+  expectCompleteSite(
+    await host.readHostedSiteFiles(actor, second.publicSlug),
     second.deploymentId,
   );
 });
@@ -580,18 +616,35 @@ test("legacy public sites are cloneable outside their originating organization",
   }
 });
 
-test("a legacy published hostname clones its public version while the owner has a newer private version", async () => {
+test("legacy public sources stay readable when the same preferred slug creates a private site", async () => {
   const { actor, bdd, host, deploy } = await fixture(false);
   const published = await deploy();
   await createBillingMediaApi(context).updateFeatureSwitches(actor, {
     [FeatureSwitchKey.PrivateArtifacts]: true,
   });
-  const privateVersion = await deploy(published.site);
+  const privateSite = await deploy(published.site);
+  expect(privateSite.siteId).not.toBe(published.siteId);
+  expect(privateSite.publicSlug).toMatch(
+    new RegExp(`^${published.site}-[a-z0-9]{4}$`, "u"),
+  );
+  expect(privateSite.deploymentVersion).toBe(1);
   expect(
     (await host.readHostedSiteFiles(actor, published.publicSlug)).deploymentId,
-  ).toBe(privateVersion.deploymentId);
+  ).toBe(published.deploymentId);
+  expectCompleteSite(
+    await host.readHostedSiteFiles(actor, privateSite.publicSlug),
+    privateSite.deploymentId,
+  );
 
-  for (const reader of [actor, bdd.user({ orgId: null })]) {
+  const outsider = bdd.user({ orgId: null });
+  await rejectDownload(outsider, privateSite.url);
+  for (const slug of [
+    privateSite.publicSlug,
+    `dpl-${privateSite.deploymentId}`,
+  ]) {
+    await host.requestHostedSiteFiles(outsider, slug, [404]);
+  }
+  for (const reader of [actor, outsider]) {
     session(reader);
     const cloned = await accept(
       api()(hostContract).files({

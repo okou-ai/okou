@@ -2,7 +2,6 @@ import type {
   HostedSitePrepareRequest,
   HostedSitePrepareResponse,
   HostedSiteCompleteResponse,
-  HostedSiteDeploymentsResponse,
   HostedSiteFilesResponse,
 } from "@okouai/api-contracts/contracts/host";
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
@@ -132,7 +131,6 @@ export async function completeHostedSite(
 
 export async function getHostedSiteFiles(
   publicSlug: string,
-  version?: number,
   hostname?: string,
 ): Promise<HostedSiteFilesResponse> {
   const { baseUrl, token } = await getAuthContext();
@@ -140,9 +138,6 @@ export async function getHostedSiteFiles(
     `/api/host/sites/${encodeURIComponent(publicSlug)}/files`,
     baseUrl,
   );
-  if (version !== undefined) {
-    url.searchParams.set("version", String(version));
-  }
   if (hostname !== undefined) {
     url.searchParams.set("hostname", hostname);
   }
@@ -160,39 +155,4 @@ export async function getHostedSiteFiles(
   return withAbsoluteHostedUrls(
     (await response.json()) as HostedSiteFilesResponse,
   );
-}
-
-export async function getHostedSiteDeployments(
-  site: string,
-): Promise<HostedSiteDeploymentsResponse> {
-  const { baseUrl, token } = await getAuthContext();
-  const response = await fetch(
-    new URL(`/api/host/sites/${encodeURIComponent(site)}/deployments`, baseUrl),
-    {
-      method: "GET",
-      headers: headersWithCliClientHeaders(authHeaders(token)),
-    },
-  );
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Failed to list hosted-site deployments",
-    );
-    throw new ApiRequestError(message, code, response.status);
-  }
-  const result = (await response.json()) as HostedSiteDeploymentsResponse;
-  return {
-    ...result,
-    deployments: await Promise.all(
-      result.deployments.map(async (deployment) => {
-        return {
-          ...deployment,
-          artifactUrl:
-            deployment.artifactUrl === null
-              ? null
-              : await absoluteArtifactUrl(deployment.artifactUrl),
-        };
-      }),
-    ),
-  };
 }

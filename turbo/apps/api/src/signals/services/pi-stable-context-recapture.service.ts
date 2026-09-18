@@ -100,6 +100,7 @@ function featurePromptInputs(
       featureContext,
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, featureContext),
+    vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
     larkEnabled: isFeatureEnabled(
       FeatureSwitchKey.LarkIntegration,
       featureContext,

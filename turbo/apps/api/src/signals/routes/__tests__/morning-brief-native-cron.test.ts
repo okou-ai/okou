@@ -250,12 +250,13 @@ function scriptProviders(outcome: "deliver" | "provider-failure" = "deliver"): {
             message: {
               content: JSON.stringify({
                 decision: "deliver",
+                language: "en-US",
                 title: "Release readiness",
                 sections: [
                   {
                     heading: "Decisions",
                     items: [
-                      { text: "The release ships today.", sourceIds: ["m1"] },
+                      { text: "The release ships today.", citations: ["c1"] },
                     ],
                   },
                 ],

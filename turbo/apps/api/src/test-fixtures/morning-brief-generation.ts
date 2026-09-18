@@ -3,6 +3,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import {
+  MORNING_BRIEF_COLLECTION_KIND_SLACK,
+  MORNING_BRIEF_COLLECTION_VERSION,
+  morningBriefCollectionOccurrences,
+} from "@okouai/db/schema/morning-brief-collection-occurrence";
+import {
   morningBriefGenerations,
   morningBriefPlatformGenerationReceipts,
 } from "@okouai/db/schema/morning-brief-generation";
@@ -16,6 +21,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 
 import { db } from "../lib/db";
+import { sweepExpiredMorningBriefGenerations } from "../signals/services/morning-brief-generation-store.service";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
@@ -197,6 +203,15 @@ export async function expireMorningBriefGenerationRetention(
       expiresAt: at,
     })
     .where(ownerRows(owner));
+}
+
+/** Exercise the production owner-scoped content sweep after expiry. */
+export async function expireAndSweepMorningBriefGeneration(
+  owner: MorningBriefGenerationOwner,
+  args: { readonly expiresAt: Date; readonly sweptAt: Date },
+): Promise<number> {
+  await expireMorningBriefGenerationRetention(owner, args.expiresAt);
+  return await sweepExpiredMorningBriefGenerations(db(), owner, args.sweptAt);
 }
 
 /**
@@ -590,4 +605,77 @@ export async function holdMorningBriefGenerationReservation(
     await dropTrigger();
   });
   return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * A historical Slack-only attempt that may already have reached the provider.
+ *
+ * `reserved` is exactly the ambiguous state: the reservation commits before the
+ * request, so nothing can say whether the provider saw it. It exists so a test
+ * can prove that widening the source set never turns that ambiguity into a
+ * second request for the same morning.
+ */
+export async function seedPossiblyInvokedSlackGeneration(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly workflowId: string;
+  readonly automationId: string;
+  readonly scheduledFor: Date;
+  readonly timezone?: string;
+}): Promise<{ readonly attemptId: string }> {
+  const { scheduledFor } = args;
+  const attemptId = randomUUID();
+  const membershipId = `orgmem_${randomUUID()}`;
+  await db()
+    .insert(morningBriefCollectionOccurrences)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      scheduledFor,
+      collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
+      collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
+      windowStart: new Date(scheduledFor.getTime() - 24 * 60 * 60 * 1000),
+      windowEnd: scheduledFor,
+      timezone: args.timezone ?? "Asia/Shanghai",
+      membershipId,
+      workflowId: args.workflowId,
+      automationId: args.automationId,
+      agentId: args.agentId,
+      slackWorkspaceId: "T_HISTORICAL",
+      slackUserId: "U_HISTORICAL",
+      status: "completed",
+      attempt: 1,
+      outcome: "complete",
+      claimedAt: scheduledFor,
+      finishedAt: scheduledFor,
+    });
+  await db()
+    .insert(morningBriefGenerations)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      scheduledFor,
+      collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
+      collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
+      executionPurpose: "preview",
+      attemptId,
+      state: "reserved",
+      membershipId,
+      agentId: args.agentId,
+      model: "google/gemini-3.8-flash",
+      promptVersion: 1,
+      resultSchemaVersion: 1,
+      language: "en-US",
+      languageSource: "default",
+      inputDigest: createHash("sha256").update("historical").digest("hex"),
+      inputItems: 1,
+      includedItems: 1,
+      inputReduced: false,
+      sourceCoverage: "complete",
+      reservedAt: scheduledFor,
+      reservationExpiresAt: new Date(scheduledFor.getTime() + 60_000),
+      expiresAt: new Date(scheduledFor.getTime() + 24 * 60 * 60 * 1000),
+    });
+  return { attemptId };
 }

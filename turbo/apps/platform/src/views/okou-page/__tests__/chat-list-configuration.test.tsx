@@ -1,5 +1,4 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { expect, test } from "vitest";
 
@@ -212,7 +211,6 @@ test("Conversation configuration arriving before creation is retained", async ()
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await waitFor(() => {
@@ -301,7 +299,6 @@ test("Service tier and Computer Use settings update independently", async () => 
     path: `/chats/${target.id}`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   const order = ["Newer conversation", "Configured conversation"];

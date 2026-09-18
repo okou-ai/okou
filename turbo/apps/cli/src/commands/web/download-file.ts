@@ -55,9 +55,9 @@ Notes:
   - Use this command for the ID in a [Web file] block, an artifact URL, or a /artifacts/<hash> reference
   - Artifact references require artifact:read and allow owned, organization-shared, or public artifacts under their current access policy
   - Raw file IDs and /api/web/download-file URLs require file:read and retain their existing file access checks
-  - Hosted sites download every HTML page and asset in the selected version, preserving directories and verifying size/hash
+  - Hosted sites download every HTML page and asset in the authorized publication, preserving directories and verifying size/hash
   - For sites, --out is a directory that must be empty or not exist; external URLs are not mirrored
-  - Shared sites use their current visibility and selected shared version
+  - Shared sites use their current visibility and shared publication
   - The output path is local to this runtime; users cannot open it directly
   - Authenticates access via OKOU_TOKEN; delivery URLs do not receive the token
   - Streams the file bytes directly to disk`,

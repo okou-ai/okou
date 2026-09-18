@@ -873,12 +873,14 @@ function ArtifactDialogOfficeDocumentBody({
 
 export function ArtifactPreviewBody({
   artifact,
+  focusHtmlOnMount = true,
   fullscreen,
   imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
+  focusHtmlOnMount?: boolean;
   fullscreen: boolean;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
@@ -932,6 +934,7 @@ export function ArtifactPreviewBody({
     return (
       <ArtifactDialogHtmlBody
         artifact={artifact}
+        focusOnMount={focusHtmlOnMount}
         filename={filename}
         fullscreen={fullscreen}
         preview={preview}
@@ -946,11 +949,13 @@ export function ArtifactPreviewBody({
 
 function ArtifactDialogHtmlBody({
   artifact,
+  focusOnMount,
   filename,
   fullscreen,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
+  focusOnMount: boolean;
   filename: string;
   fullscreen: boolean;
   preview: AttachmentLightboxState;
@@ -971,7 +976,7 @@ function ArtifactDialogHtmlBody({
   const frame = (
     <AutoFocusedArtifactIframe
       focusKey={`${preview.url}:${fullscreen ? "fullscreen" : "dialog"}`}
-      focusOnMount={!isPresentationHtml}
+      focusOnMount={focusOnMount && !isPresentationHtml}
       src={src}
       title={t(
         ($) => {
@@ -1504,6 +1509,7 @@ export function FileAttachmentChip({
 export function PreviewableFileAttachmentChip({
   filename,
   kind,
+  preview,
   shareAvailable,
   splitViewAvailable,
   text$,
@@ -1511,6 +1517,7 @@ export function PreviewableFileAttachmentChip({
 }: {
   filename: string;
   kind: "markdown" | "text" | "json" | "csv" | "pdf" | "html";
+  preview?: AttachmentPreviewSignals;
   shareAvailable?: boolean;
   splitViewAvailable?: boolean;
   text$?: TextPreviewComputed;
@@ -1551,6 +1558,7 @@ export function PreviewableFileAttachmentChip({
           kind,
           url,
           filename,
+          ...(preview ? { preview } : {}),
           ...(shareAvailable === undefined ? {} : { shareAvailable }),
           ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
           ...(text$ ? { text$ } : {}),

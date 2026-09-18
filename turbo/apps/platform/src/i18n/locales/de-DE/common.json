@@ -5820,8 +5820,10 @@
     },
     "paidTools": {
       "description": "Wähle, welche kostenpflichtigen integrierten Tools du verwenden kannst.",
+      "disabledForCreation": "{{tool}} ist in deinen Einstellungen für kostenpflichtige Tools deaktiviert.",
       "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
       "loading": "Deine Tool-Einstellungen werden geladen…",
+      "openSettings": "Einstellungen für kostenpflichtige Tools öffnen",
       "retry": "Erneut versuchen",
       "saveError": "Deine Änderung wurde nicht gespeichert.",
       "saving": "Wird gespeichert…",
@@ -5829,9 +5831,17 @@
       "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
       "title": "Kostenpflichtige Tools",
       "tools": {
+        "avatar-video-generation": {
+          "description": "Videos mit sprechenden Avataren erstellen.",
+          "name": "Avatar-Videoerzeugung"
+        },
         "finance": {
           "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
           "name": "Finanzdaten"
+        },
+        "image-generation": {
+          "description": "Bilder mit integrierten Modellen erstellen.",
+          "name": "Bilderzeugung"
         },
         "image-recognition": {
           "description": "Lies und analysiere Bilder.",
@@ -5856,6 +5866,18 @@
         "social": {
           "description": "Recherchiere öffentliche Beiträge und sammle Medien.",
           "name": "Social-Media-Recherche"
+        },
+        "video-generation": {
+          "description": "Videos mit integrierten Modellen erstellen.",
+          "name": "Videoerzeugung"
+        },
+        "video-rendering": {
+          "description": "Videokompositionen in der Cloud rendern.",
+          "name": "Video-Rendering"
+        },
+        "voice-generation": {
+          "description": "Sprache mit integrierten Stimmen erstellen.",
+          "name": "Spracherzeugung"
         },
         "web-search": {
           "description": "Finde aktuelle Informationen im Web.",

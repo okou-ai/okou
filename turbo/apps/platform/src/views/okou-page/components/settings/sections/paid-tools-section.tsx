@@ -10,6 +10,10 @@ import {
   Search,
   Users,
   MessageCircle,
+  Video,
+  AudioLines,
+  UserRound,
+  Clapperboard,
 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
@@ -32,6 +36,11 @@ const TOOL_ICONS = {
   seo: Globe,
   social: MessageCircle,
   "image-recognition": Image,
+  "image-generation": Image,
+  "video-generation": Video,
+  "voice-generation": AudioLines,
+  "avatar-video-generation": UserRound,
+  "video-rendering": Clapperboard,
 } as const;
 
 function PaidToolRow({ tool }: { readonly tool: PaidToolSettings }) {

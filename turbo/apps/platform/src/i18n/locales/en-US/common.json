@@ -5812,8 +5812,10 @@
     },
     "paidTools": {
       "description": "Choose which paid built-in tools you can use.",
+      "disabledForCreation": "{{tool}} is disabled in your paid tool settings.",
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
+      "openSettings": "Open paid tool settings",
       "retry": "Retry",
       "saveError": "Your change was not saved.",
       "saving": "Saving…",
@@ -5821,9 +5823,17 @@
       "timing": "Changes apply to future runs. Running tasks and tasks already prepared may keep their previous settings.",
       "title": "Paid tools",
       "tools": {
+        "avatar-video-generation": {
+          "description": "Create talking-avatar videos.",
+          "name": "Avatar video generation"
+        },
         "finance": {
           "description": "Look up companies, quotes, and market data.",
           "name": "Financial data"
+        },
+        "image-generation": {
+          "description": "Create images with built-in models.",
+          "name": "Image generation"
         },
         "image-recognition": {
           "description": "Read and analyze images.",
@@ -5848,6 +5858,18 @@
         "social": {
           "description": "Research public social posts and collect media.",
           "name": "Social research"
+        },
+        "video-generation": {
+          "description": "Create videos with built-in models.",
+          "name": "Video generation"
+        },
+        "video-rendering": {
+          "description": "Render video compositions in the cloud.",
+          "name": "Video rendering"
+        },
+        "voice-generation": {
+          "description": "Create speech with built-in voices.",
+          "name": "Voice generation"
         },
         "web-search": {
           "description": "Find current information on the web.",

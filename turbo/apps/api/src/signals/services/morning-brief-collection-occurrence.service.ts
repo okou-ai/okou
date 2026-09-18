@@ -62,8 +62,15 @@ export interface MorningBriefCollectionAdmission {
   readonly workflowId: string;
   readonly automationId: string;
   readonly agentId: string;
-  readonly slackWorkspaceId: string;
-  readonly slackUserId: string;
+  /**
+   * The native Slack binding, present exactly for a Slack-only occurrence.
+   *
+   * A source-independent occurrence has no single binding to pin — its owner
+   * may have no Slack installation at all — so it carries null here rather than
+   * a placeholder the comparison below would treat as a real workspace.
+   */
+  readonly slackWorkspaceId: string | null;
+  readonly slackUserId: string | null;
 }
 
 export interface MorningBriefCollectionClaim {

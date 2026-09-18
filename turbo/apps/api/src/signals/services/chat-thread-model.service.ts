@@ -60,7 +60,6 @@ interface ResolvePersistedChatThreadModelParams {
   readonly requestedCodexServiceTier?: CodexServiceTier;
   readonly requestedReasoningEffort?: ReasoningEffort;
   readonly persistRequestedCodexServiceTier: boolean;
-  readonly codexFastModeEnabled: boolean;
 }
 
 export function persistedChatThreadModelSnapshotColumns() {
@@ -406,7 +405,6 @@ async function evaluatePersistedChatThreadModel(
     persistRequestedTier: params.persistRequestedCodexServiceTier,
     fastSupported: isCodexFastServiceTierSupported({
       selectedModel: pin.selectedModel,
-      codexFastModeEnabled: params.codexFastModeEnabled,
     }),
     selectedModelChanged,
   });

@@ -171,6 +171,7 @@ describe("Pi stable context projection", () => {
       privateArtifactsEnabled: false,
       cloudBrowserEnabled: false,
       bankingEnabled: false,
+      vncEnabled: false,
       larkEnabled: false,
       deliveryFormatGuidanceEnabled: false,
       introVideoEnabled: false,
