@@ -19,6 +19,7 @@ import { now } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
+  onRejection,
   readBoundedResponseText,
   safeJsonParse,
   settle,
@@ -199,47 +200,64 @@ export async function withMorningBriefDatabaseDeadline<T>(
   if (remaining() === 0) {
     throw new MorningBriefDatabaseDeadlineExceededError();
   }
+  const callbackFailure: { failed: boolean; error: unknown } = {
+    failed: false,
+    error: undefined,
+  };
   const transaction = await settle(
-    args.db.transaction(async (tx: Tx) => {
-      signal.throwIfAborted();
-      const transactionRemaining = remaining();
-      if (transactionRemaining === 0) {
-        throw new MorningBriefDatabaseDeadlineExceededError();
-      }
-      const transactionTimeout = `${transactionRemaining.toString()}ms`;
-      await tx.execute(sql`SELECT
-        set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
-        set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
-        set_config('transaction_timeout', ${transactionTimeout}, true)`);
-
-      const beforeStatement = async (): Promise<void> => {
+    args.db.transaction((tx: Tx) => {
+      const run = async (): Promise<T> => {
         signal.throwIfAborted();
-        const statementRemaining = remaining();
-        if (statementRemaining === 0) {
+        const transactionRemaining = remaining();
+        if (transactionRemaining === 0) {
           throw new MorningBriefDatabaseDeadlineExceededError();
         }
+        const transactionTimeout = `${transactionRemaining.toString()}ms`;
         await tx.execute(sql`SELECT
-          set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
-          set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
-        signal.throwIfAborted();
-        if (remaining() === 0) {
-          throw new MorningBriefDatabaseDeadlineExceededError();
-        }
-      };
+          set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
+          set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
+          set_config('transaction_timeout', ${transactionTimeout}, true)`);
 
-      await beforeStatement();
-      return await work(tx, beforeStatement);
+        const beforeStatement = async (): Promise<void> => {
+          signal.throwIfAborted();
+          const statementRemaining = remaining();
+          if (statementRemaining === 0) {
+            throw new MorningBriefDatabaseDeadlineExceededError();
+          }
+          await tx.execute(sql`SELECT
+            set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
+            set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
+          signal.throwIfAborted();
+          if (remaining() === 0) {
+            throw new MorningBriefDatabaseDeadlineExceededError();
+          }
+        };
+
+        await beforeStatement();
+        return await work(tx, beforeStatement);
+      };
+      return onRejection(run(), (error) => {
+        // transaction_timeout terminates the session. Drizzle still issues its
+        // owned ROLLBACK, and that cleanup can fail after the server closes the
+        // connection. Retain the callback's PostgreSQL error so cleanup cannot
+        // mask 25P04, while still awaiting the transaction through settlement.
+        callbackFailure.failed = true;
+        callbackFailure.error = error;
+      });
     }),
   );
   if (transaction.ok) {
     return transaction.value;
   }
-  if (isMorningBriefDatabaseDeadlineExceeded(transaction.error)) {
+  const transactionError = callbackFailure.failed
+    ? callbackFailure.error
+    : transaction.error;
+  if (isMorningBriefDatabaseDeadlineExceeded(transactionError)) {
     throw new MorningBriefDatabaseDeadlineExceededError({
-      cause: transaction.error,
+      cause: transactionError,
     });
   }
-  throw transaction.error;
+  throw transactionError;
 }
 
 /**
