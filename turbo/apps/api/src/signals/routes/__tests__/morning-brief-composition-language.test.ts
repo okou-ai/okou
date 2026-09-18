@@ -294,11 +294,9 @@ async function compose(member: Member, anchor = new Date(now()).toISOString()) {
   return response.body;
 }
 
-type CompositionBody = Awaited<ReturnType<typeof compose>>;
-
-/** Keep language assertions exact while accepting the required source facts. */
-function expectLanguageUnavailable(body: CompositionBody, detail: string) {
-  expect(body).toStrictEqual({
+/** The exact language failure plus the composition's required source facts. */
+function languageUnavailableExpectation(detail: string) {
+  return {
     result: "incomplete",
     reason: "language-context-unavailable",
     detail,
@@ -309,7 +307,7 @@ function expectLanguageUnavailable(body: CompositionBody, detail: string) {
         items: 1,
       }),
     ]),
-  });
+  };
 }
 
 function composeRequest(
@@ -584,7 +582,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       const body = await compose(member);
 
-      expectLanguageUnavailable(body, "too-large");
+      expect(body).toStrictEqual(languageUnavailableExpectation("too-large"));
     });
 
     it("keeps the legacy profile-block behaviour of the canonical reader", async () => {
@@ -632,7 +630,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expectLanguageUnavailable(body, "target-ambiguous");
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a symlink that follows it", async () => {
@@ -650,7 +650,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expectLanguageUnavailable(body, "target-ambiguous");
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a symlink that precedes it", async () => {
@@ -668,7 +670,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expectLanguageUnavailable(body, "target-ambiguous");
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a directory", async () => {
@@ -682,7 +686,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expectLanguageUnavailable(body, "target-ambiguous");
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses an archive that omits the promised canonical target", async () => {
@@ -693,7 +699,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expectLanguageUnavailable(body, "target-missing");
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-missing"),
+      );
     });
 
     it("refuses an instruction file that is not valid UTF-8", async () => {
@@ -706,7 +714,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expectLanguageUnavailable(body, "not-utf8");
+      expect(body).toStrictEqual(languageUnavailableExpectation("not-utf8"));
     });
 
     it("refuses an archive that does not decompress", async () => {
@@ -714,7 +722,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         storage.replace("/archive.tar.gz", Buffer.from("not a gzip", "utf8"));
       });
 
-      expectLanguageUnavailable(body, "archive-corrupt");
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("archive-corrupt"),
+      );
     });
 
     it("refuses an archive that decompresses past the ceiling as oversized", async () => {
@@ -727,7 +737,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expectLanguageUnavailable(body, "too-large");
+      expect(body).toStrictEqual(languageUnavailableExpectation("too-large"));
     });
 
     it("refuses a manifest that is not valid UTF-8 instead of reading absence", async () => {
@@ -740,7 +750,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         storage.replace("/manifest.json", corrupted);
       });
 
-      expectLanguageUnavailable(body, "storage-unavailable");
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("storage-unavailable"),
+      );
     });
   });
 
@@ -861,13 +873,13 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
     it("expires a response that arrives exactly at the deadline", async () => {
       const body = await composeWithReadAt(STORAGE_PHASE_MS);
 
-      expectLanguageUnavailable(body, "timed-out");
+      expect(body).toStrictEqual(languageUnavailableExpectation("timed-out"));
     });
 
     it("expires a response that arrives after the deadline", async () => {
       const body = await composeWithReadAt(STORAGE_PHASE_MS + 10);
 
-      expectLanguageUnavailable(body, "timed-out");
+      expect(body).toStrictEqual(languageUnavailableExpectation("timed-out"));
     });
 
     /**
@@ -889,7 +901,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       const body = await compose(member, new Date(base).toISOString());
 
-      expectLanguageUnavailable(body, "timed-out");
+      expect(body).toStrictEqual(languageUnavailableExpectation("timed-out"));
       expect(
         storage.reads.filter((key) => {
           return key.endsWith("/archive.tar.gz");
