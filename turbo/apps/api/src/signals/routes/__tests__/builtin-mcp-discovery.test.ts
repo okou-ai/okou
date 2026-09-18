@@ -122,12 +122,12 @@ describe("builtin MCP discovery authority", () => {
     for (const sources of unavailableSources) {
       expect(
         (await discovery(actor, run.runId, sources)).body.connectors,
-      ).toEqual([]);
+      ).toStrictEqual([]);
     }
     expect(
       (await discovery(actor, randomUUID(), { "manual-mcp": account.id })).body
         .connectors,
-    ).toEqual([]);
+    ).toStrictEqual([]);
     expect(
       (await discovery(actor, run.runId, { "manual-mcp": account.id })).body
         .connectors,
@@ -146,7 +146,7 @@ describe("builtin MCP discovery authority", () => {
     expect(
       (await discovery(actor, run.runId, { "manual-mcp": account.id })).body
         .connectors,
-    ).toEqual([]);
+    ).toStrictEqual([]);
   });
 
   it("returns reconnect guidance for the exact non-default account and requires the client contract", async () => {
@@ -189,7 +189,7 @@ describe("builtin MCP discovery authority", () => {
       }),
       [200],
     );
-    expect(result.body).toEqual({
+    expect(result.body).toStrictEqual({
       kind: "reconnect",
       connectionId: selected.id,
       authorizationUrl: `https://app.okou.ai/connectors/manual-mcp/reconnect/${selected.id}`,
