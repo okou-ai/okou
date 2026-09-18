@@ -62,10 +62,10 @@ function kindAccent(kind: StartCardKind): string {
 // row — so it is the one strength that carries no drawing and is laid down
 // lighter than the bands inside the art, which have white paper under them.
 export const TILE_ALPHA = "1A";
-export const BAND_ALPHA = "24";
+const BAND_ALPHA = "24";
 export const LINE_ALPHA = "59";
 export const SOFT_ALPHA = "40";
-export const FILL_ALPHA = "8C";
+const FILL_ALPHA = "8C";
 
 /**
  * The avatar palette the illustrated tiles draw from, for surfaces outside the
