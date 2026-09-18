@@ -45,6 +45,7 @@ import {
   createDeferredPromise,
   onRejection,
   safeSync,
+  settle,
   tapError,
 } from "../utils";
 import {
@@ -1193,14 +1194,11 @@ const driveErrorResponseSchema = z.object({
 const UNSUPPORTED_CONVERSION_REASON = "conversionUnsupportedConversionPath";
 
 async function isUnsupportedConversion(response: Response): Promise<boolean> {
-  const parsed = driveErrorResponseSchema.safeParse(
-    await response
-      .clone()
-      .json()
-      .catch(() => {
-        return null;
-      }),
-  );
+  const payload = await settle(response.clone().json());
+  if (!payload.ok) {
+    return false;
+  }
+  const parsed = driveErrorResponseSchema.safeParse(payload.value);
   return (
     parsed.success &&
     (parsed.data.error.errors ?? []).some((entry) => {
@@ -1496,6 +1494,7 @@ export const syncArtifactToGoogleDrive$ = command(
       );
     }
     const body = await parseUploadResponse(result.value);
+    signal.throwIfAborted();
     if (targetMimeType !== undefined) {
       const rejected = await rejectEmptyConvertedDeck(
         { accessToken, presentationId: body.id },
