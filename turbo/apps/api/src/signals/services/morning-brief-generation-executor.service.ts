@@ -300,6 +300,20 @@ interface MorningBriefNativeGenerationAuthority {
   readonly leaseToken: string;
 }
 
+type MorningBriefGenerationRequest = {
+  readonly owner: MorningBriefCollectionOwner;
+  readonly scheduledFor: Date;
+} & (
+  | {
+      readonly purpose: "preview";
+      readonly nativeAuthority?: never;
+    }
+  | {
+      readonly purpose: "production";
+      readonly nativeAuthority: MorningBriefNativeGenerationAuthority;
+    }
+);
+
 async function admitGeneration(
   tx: Tx,
   purpose: MorningBriefExecutionPurpose,
@@ -1565,13 +1579,7 @@ async function collectForGeneration<T>(
 export const executeMorningBriefGeneration$ = command(
   async (
     { set },
-    args: {
-      readonly owner: MorningBriefCollectionOwner;
-      readonly scheduledFor: Date;
-      readonly purpose: MorningBriefExecutionPurpose;
-      /** Required for `production`; bound to the reservation before any POST. */
-      readonly nativeAuthority?: MorningBriefNativeGenerationAuthority;
-    },
+    args: MorningBriefGenerationRequest,
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const db = set(writeDb$);
