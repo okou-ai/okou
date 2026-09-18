@@ -96,22 +96,24 @@ export function OnboardingStepLayout({
         key={`${String(currentStep)}-${title}`}
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden"
       >
-        {/* The question stays on the rail's own surface, vertically centred so
-            the track, the title and the description sit at the same height on
-            every step. */}
+        {/* The question stays on the rail's own surface. Its block keeps one
+            height on every step and is centred as a whole, so the track and the
+            title sit at the same point however long the step's words run. */}
         <div className="flex w-full shrink-0 flex-col justify-center px-6 pt-8 pb-6 lg:w-[380px] lg:px-10 lg:py-10">
-          <OnboardingStepProgress current={currentStep} total={totalSteps} />
-          <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
-            {title}
-          </h1>
-          <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
-            {description}
-          </p>
-          {footnote ? (
-            <p className="mt-4 text-xs leading-5 text-muted-foreground">
-              {footnote}
+          <div className="lg:h-[360px]">
+            <OnboardingStepProgress current={currentStep} total={totalSteps} />
+            <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
+              {title}
+            </h1>
+            <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
+              {description}
             </p>
-          ) : null}
+            {footnote ? (
+              <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                {footnote}
+              </p>
+            ) : null}
+          </div>
         </div>
         {/* The answers take the rest of the canvas as the app's own sheet
             does: the whole side, framed by the same small margin, with the way
