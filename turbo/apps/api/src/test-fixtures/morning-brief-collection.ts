@@ -197,32 +197,31 @@ export async function readMorningBriefCollectionOccurrences(
     .orderBy(asc(morningBriefCollectionOccurrences.scheduledFor));
 }
 
-/**
- * Delete the Agent an installation runs on.
- *
- * The Agent lifecycle deletion this stands in for is what the occurrence's
- * foreign key is for, so the test exercises the constraint directly rather than
- * asserting that some other service would have removed the row.
- */
+/** Hold the Agent row that begins final local authority admission. */
+export async function holdMorningBriefAdmissionAgent(
+  agentId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .for("update");
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/** Delete an Agent directly for endpoint-less foreign-key fixture cases. */
 export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
   await db().delete(agents).where(eq(agents.id, agentId));
 }
 
-/**
- * Move the installation's Agent out of this member's reach without deleting it.
- *
- * Deletion cascades the occurrence away, which hides every fence behind a
- * foreign key. An access change does not: the Agent row survives, so only a
- * real re-resolution of the installation's authority can notice that the member
- * may no longer act through it.
- *
- * This is a deliberate external-behavior exception. The Agent only stops
- * resolving when it is private *and* owned by somebody else, and no production
- * endpoint transfers Agent ownership — `agentRequestSchema` and
- * `agentMetadataRequestSchema` expose visibility but never an owner — so the
- * state cannot be constructed through the real API. Turning visibility private
- * alone leaves the member as the owner, which still resolves.
- */
+/** Construct a private foreign-owned Agent for canonical-reader unit cases. */
 export async function restrictMorningBriefAgent(
   agentId: string,
 ): Promise<void> {

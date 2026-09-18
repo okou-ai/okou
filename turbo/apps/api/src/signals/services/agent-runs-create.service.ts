@@ -30,6 +30,8 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
+
+import type { Tx } from "../../lib/db-types";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -207,6 +209,8 @@ interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 > {
   readonly chatThreadId: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
+  /** Binds a caller-journaled occurrence inside the launch transaction. */
+  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin: AgentRunModelPin;
 }
 
@@ -462,7 +466,7 @@ function buildAgentToolsPrompt(args: {
     ...(args.privateArtifactsEnabled
       ? [
           "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
-          "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
+          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
         ]
       : []),
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
@@ -1066,6 +1070,10 @@ function buildCreateAgentRunArgs(args: {
     piExecution: command.piExecution,
     ...("queueFirstAssociation" in command
       ? { queueFirstAssociation: command.queueFirstAssociation }
+      : {}),
+    ...("bindClaimedQueueFirstRun" in command &&
+    command.bindClaimedQueueFirstRun
+      ? { bindClaimedQueueFirstRun: command.bindClaimedQueueFirstRun }
       : {}),
     timing: args.timing,
     timingDimensions: agentRunTimingDimensions({

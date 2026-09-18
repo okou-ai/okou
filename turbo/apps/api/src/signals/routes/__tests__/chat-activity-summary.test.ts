@@ -896,6 +896,9 @@ describe("thread activity summary", () => {
           f.headers,
           [200],
         );
+        // Completion callbacks also acquire content locks. Finish them before
+        // asserting terminal eligibility instead of transient unavailability.
+        await flushWaitUntilForTest();
       } else {
         await chat.deleteThread(f.actor, f.run.threadId);
       }

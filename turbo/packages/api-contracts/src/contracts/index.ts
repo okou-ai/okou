@@ -47,6 +47,22 @@ export {
   type ChatRunFoldState,
 } from "./chat-events";
 export {
+  groupSemanticChatEvents,
+  isFollowupsEvent,
+  isGoalMarkerEvent,
+  isGoalQueueEvent,
+  isInterruptControlEvent,
+  isInterruptedAssistantCancellation,
+  isQueueMarkerEvent,
+  isRecallControlEvent,
+  isUsageEvent,
+  semanticChatEventsFromChatEvents,
+  type SemanticChatEventGroup,
+  type SemanticChatEventState,
+  type SemanticChatGroups,
+  orderSemanticEventsByRunTurn,
+} from "./chat-event-semantics";
+export {
   ACTIONABLE_RUN_ERROR_SNIPPETS,
   apiErrorSchema,
   ApiError,

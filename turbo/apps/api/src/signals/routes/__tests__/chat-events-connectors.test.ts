@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
 
@@ -22,6 +23,7 @@ import {
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
+import { connectorAccountRoutes } from "../connector-accounts";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import {
@@ -217,6 +219,22 @@ describe("CHAT-02: thread connector account selection", () => {
     );
     expect(selections.body.selections).toStrictEqual([
       {
+        connectionId: fixture.connectionId,
+        target: { kind: "builtin", connectorSlug: "openai" },
+      },
+    ]);
+    const inspection = await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).inspect({
+        headers: sessionHeaders(fixture.actor),
+        body: { selections: selections.body.selections },
+      }),
+      [200],
+    );
+    expect(inspection.body.results).toMatchObject([
+      {
+        kind: "available",
         connectionId: fixture.connectionId,
         target: { kind: "builtin", connectorSlug: "openai" },
       },

@@ -218,8 +218,15 @@ async def test_suppressed_specific_owner_does_not_fall_back_to_broader_connector
 
 @pytest.mark.parametrize("requestheaders_first", [False, True])
 @pytest.mark.parametrize("shared_specific_base", [False, True])
+@pytest.mark.parametrize("include_intent", [False, True])
 async def test_broader_shared_owners_cannot_interrupt_active_request_authentication(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, requestheaders_first, shared_specific_base
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    requestheaders_first,
+    shared_specific_base,
+    include_intent,
 ):
     firewalls = _overlapping_catalog()
     if shared_specific_base:
@@ -244,7 +251,8 @@ async def test_broader_shared_owners_cannot_interrupt_active_request_authenticat
         path="/special/items/123",
         method="GET",
     )
-    flow.request.headers["X-Okou-Connector-Intent"] = "broad-a"
+    if include_intent:
+        flow.request.headers["X-Okou-Connector-Intent"] = "broad-b"
     if requestheaders_first:
         flow.request.headers["Content-Length"] = str(mitm_addon.STREAM_BUFFER_LIMIT + 1)
 

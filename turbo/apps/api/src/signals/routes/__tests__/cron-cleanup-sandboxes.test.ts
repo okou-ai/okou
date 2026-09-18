@@ -1740,15 +1740,13 @@ describe("sandbox cleanup", () => {
       error: null,
     });
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(1);
-    expect(context.mocks.s3.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: expect.objectContaining({
-          Bucket: BUCKET,
-          Delete: {
-            Objects: [{ Key: "exports/expired.zip" }],
-          },
-        }),
-      }),
-    );
+    expect(context.mocks.s3.send.mock.calls[0]?.[0]).toMatchObject({
+      input: {
+        Bucket: BUCKET,
+        Delete: {
+          Objects: [{ Key: "exports/expired.zip" }],
+        },
+      },
+    });
   });
 });

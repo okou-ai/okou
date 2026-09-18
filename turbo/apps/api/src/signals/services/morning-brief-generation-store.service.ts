@@ -234,60 +234,67 @@ interface AcceptedResultValues {
 }
 
 /**
- * The admission this attempt actually holds, and the instant it holds it at.
+ * Take this occurrence's generation row for the rest of the transaction.
  *
- * It is a value rather than an implicit step so the caller can do the two
- * things only it can do — honour cancellation, and re-prove the owner's live
- * authority — at the one instant that matters: after every real wait, and
- * before any mutation has been issued.
+ * It is the row every guarded write updates and the row the retention purge
+ * deletes, so holding it is what makes an attempt's own slot stable: the
+ * maintenance purge selects `FOR UPDATE ... SKIP LOCKED` and simply skips a held
+ * row, and the owner-scoped sweep, the member cleanup cascade and the Agent
+ * deletion cascade all have to acquire it before they can remove it.
+ *
+ * It returns the row rather than an existence flag because the readback fence
+ * needs the same copy it just pinned; reading it again afterwards would reopen
+ * the interval the lock exists to close. It deliberately samples no clock: the
+ * instant that decides a deadline belongs at the caller's own admission point,
+ * after every wait the caller still has ahead of it.
  */
-interface MorningBriefGenerationHold {
-  readonly at: Date;
+export async function lockMorningBriefGeneration(
+  tx: Tx,
+  key: MorningBriefGenerationKey,
+): Promise<MorningBriefGenerationRow | undefined> {
+  const [locked] = await tx
+    .select()
+    .from(morningBriefGenerations)
+    .where(generationKey(key))
+    .for("update")
+    .limit(1);
+  return locked;
 }
 
 /**
- * Take this attempt's slot and read the clock only once it is really held.
+ * The owner fence plus this attempt's slot, in the one order that is safe.
  *
- * Both guarded writes below wait twice: once for the owner lock, and once for
- * the slot row itself. A clock sampled before those waits can be arbitrarily
- * stale by the time the write lands, which would let a reservation that expired
- * *during* the wait still accept content. Sampling here — after every relevant
- * wait and on every attempt — makes the deadline comparison describe the
- * instant the mutation is actually admitted.
+ * The member row comes first because membership, user and organization cleanup
+ * take it before deleting the occurrences this row hangs from; the slot row
+ * comes second because every cascade that can remove it walks a parent first.
+ * Callers that also hold local authority rows take those between the two, so
+ * the whole path stays parent-before-child and cannot close a cycle with a
+ * deletion walking the same foreign keys.
  */
 export async function holdMorningBriefGenerationSlot(
   tx: Tx,
   fence: MorningBriefGenerationFence,
-): Promise<MorningBriefGenerationHold | null> {
+): Promise<boolean> {
   if (!(await lockCollectionOwner(tx, fence.key.owner))) {
-    return null;
+    return false;
   }
-  const [locked] = await tx
-    .select({ attemptId: morningBriefGenerations.attemptId })
-    .from(morningBriefGenerations)
-    .where(generationKey(fence.key))
-    .for("update")
-    .limit(1);
-  if (!locked) {
-    return null;
-  }
-  return { at: nowDate() };
+  return (await lockMorningBriefGeneration(tx, fence.key)) !== undefined;
 }
 
 /**
  * Accept one validated result into the occurrence's single result slot.
  *
  * Content is accepted only while this attempt still holds an unexpired
- * reservation under an unchanged membership generation, measured against the
- * clock the caller sampled when it actually took the slot. Equality with the
- * reservation deadline is already expired, so a result that became late while
- * persistence waited is not stored — the caller records the honest
- * non-accepting outcome instead.
+ * reservation under an unchanged membership generation, measured against `at` —
+ * the instant the caller admitted this write at, after every lock, every local
+ * read and its own cancellation check. Equality with the reservation deadline is
+ * already expired, so a result that became late while persistence waited is not
+ * stored — the caller records the honest non-accepting outcome instead.
  */
 export async function acceptMorningBriefGenerationResult(
   tx: Tx,
   fence: MorningBriefGenerationFence,
-  held: MorningBriefGenerationHold,
+  at: Date,
   result: AcceptedResultValues,
 ): Promise<MorningBriefGenerationWriteResult> {
   const [written] = await tx
@@ -300,13 +307,13 @@ export async function acceptMorningBriefGenerationResult(
       resultMarkdown: result.markdown,
       resultBytes: result.bytes,
       failureReason: null,
-      finishedAt: held.at,
-      updatedAt: held.at,
+      finishedAt: at,
+      updatedAt: at,
     })
     .where(
       and(
         fenceCondition(fence),
-        gt(morningBriefGenerations.reservationExpiresAt, held.at),
+        gt(morningBriefGenerations.reservationExpiresAt, at),
       ),
     )
     .returning();
@@ -325,7 +332,7 @@ export async function acceptMorningBriefGenerationResult(
 export async function recordMorningBriefGenerationOutcome(
   tx: Tx,
   fence: MorningBriefGenerationFence,
-  held: MorningBriefGenerationHold,
+  at: Date,
   outcome: {
     readonly state: Extract<
       MorningBriefGenerationState,
@@ -343,8 +350,8 @@ export async function recordMorningBriefGenerationOutcome(
     .set({
       state: outcome.state,
       failureReason: outcome.failureReason,
-      finishedAt: held.at,
-      updatedAt: held.at,
+      finishedAt: at,
+      updatedAt: at,
     })
     .where(fenceCondition(fence))
     .returning();
@@ -480,13 +487,32 @@ const purgedRowSchema = z.object({ purged: z.int().nonnegative() });
  * collection occurrence, which is content-free and is what actually refuses a
  * second invocation — a purged slot is reported as a completed collection that
  * holds no generation, never as an occurrence free to call the provider again.
+ *
+ * `owners` narrows the same statement to an explicit set of members. Production
+ * maintenance passes none and keeps the unrestricted index range; the test
+ * entrypoint passes the identities its own case created, so a global purge run
+ * against a moved clock cannot remove a concurrently running suite's rows. It is
+ * a predicate on the one engine, never a second retention implementation.
  */
 export async function purgeExpiredMorningBriefGenerations(
   db: Pick<Db, "execute">,
   at: Date,
   limit: number,
+  owners?: readonly MorningBriefCollectionOwner[],
 ): Promise<number> {
+  if (owners?.length === 0) {
+    return 0;
+  }
   const cutoff = timestampWithoutTimeZone(at);
+  const ownerScope =
+    owners === undefined
+      ? sql.empty()
+      : sql` AND (generation.org_id, generation.user_id) IN (${sql.join(
+          owners.map((owner) => {
+            return sql`(${owner.orgId}, ${owner.userId})`;
+          }),
+          sql`, `,
+        )})`;
   const rows = await executeRawRows(
     db,
     sql`
@@ -498,7 +524,7 @@ export async function purgeExpiredMorningBriefGenerations(
           generation.collection_kind,
           generation.collection_version
         FROM ${morningBriefGenerations} generation
-        WHERE generation.expires_at <= ${cutoff}::timestamp
+        WHERE generation.expires_at <= ${cutoff}::timestamp${ownerScope}
         ORDER BY generation.expires_at ASC
         LIMIT ${limit}
         FOR UPDATE OF generation SKIP LOCKED

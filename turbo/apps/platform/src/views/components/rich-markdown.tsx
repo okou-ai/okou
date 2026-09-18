@@ -7,6 +7,7 @@ import { File, Image, Loader2, Video } from "lucide-react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { z } from "zod";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 
 import {
   escapeHtmlTags,
@@ -22,6 +23,7 @@ import type { HostedSiteCard } from "../../signals/hosted-site-card.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
+import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
 import {
   fallbackHtmlPreviewTitle,
@@ -37,6 +39,7 @@ import { MermaidDiagramView } from "./mermaid-diagram.tsx";
 type MarkdownNodeProp = { node?: Element };
 type MarkdownAnchorProps = ComponentPropsWithoutRef<"a"> & MarkdownNodeProp;
 type MarkdownImageProps = ComponentPropsWithoutRef<"img"> & MarkdownNodeProp;
+type MarkdownVideoProps = ComponentPropsWithoutRef<"video"> & MarkdownNodeProp;
 type MarkdownSpanProps = ComponentPropsWithoutRef<"span"> & MarkdownNodeProp;
 type MarkdownTimeProps = ComponentPropsWithoutRef<"time"> & MarkdownNodeProp;
 type MarkdownDivProps = ComponentPropsWithoutRef<"div"> & {
@@ -92,6 +95,14 @@ function MediaImage({
   insideLink?: boolean;
 }) {
   const imageStatus = useGet(load.status$);
+  const thumbnailSrc =
+    src === undefined
+      ? undefined
+      : r2ImageTransformUrl(
+          src,
+          { width: 800, height: 720 },
+          resolveArtifactImageTransformOrigin(),
+        );
   const markLoaded = useSet(load.loaded$);
   const markFailed = useSet(load.failed$);
   // Self-sourced lightbox handler so MediaImage doesn't need a callback
@@ -119,10 +130,10 @@ function MediaImage({
           )}
         </span>
       )}
-      {src !== undefined && (
+      {thumbnailSrc !== undefined && (
         <img
-          key={src}
-          src={src}
+          key={thumbnailSrc}
+          src={thumbnailSrc}
           alt={alt}
           loading="lazy"
           onLoad={markLoaded}
@@ -271,6 +282,38 @@ function MediaLinkRenderer(
 function PlainImageRenderer(props: MarkdownImageProps) {
   const { src, alt, ...rest } = props;
   return <img {...omitMarkdownNodeProp(rest)} src={src} alt={alt} />;
+}
+
+function ResolvedMediaVideo({
+  preview,
+  ...props
+}: {
+  readonly preview: AttachmentPreviewSignals;
+} & ComponentPropsWithoutRef<"video">) {
+  const poster = useLastResolved(preview.thumbnailUrl$);
+  return <video {...props} poster={poster} />;
+}
+
+function MediaVideoRenderer({ poster, ...props }: MarkdownVideoProps) {
+  const preview = props.node?.data?.videoPosterPreview;
+  const videoProps = omitMarkdownNodeProp(props);
+  if (preview) {
+    return <ResolvedMediaVideo {...videoProps} preview={preview} />;
+  }
+  return (
+    <video
+      {...videoProps}
+      poster={
+        poster
+          ? r2ImageTransformUrl(
+              poster,
+              { width: 800, height: 720 },
+              resolveArtifactImageTransformOrigin(),
+            )
+          : undefined
+      }
+    />
+  );
 }
 
 function MediaImageRenderer(props: MarkdownImageProps) {
@@ -447,6 +490,7 @@ const MEDIA_MARKDOWN_COMPONENTS = {
   p: MediaParagraphRenderer,
   a: MediaLinkRenderer,
   img: MediaImageRenderer,
+  video: MediaVideoRenderer,
   span: MarkdownSpanRenderer,
   time: MarkdownTimeRenderer,
   div: MarkdownDivRenderer,
@@ -457,6 +501,7 @@ const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
   // A site card is a block, so its paragraph has to become a div here too.
   p: MediaParagraphRenderer,
   img: LinkedMediaImageRenderer,
+  video: MediaVideoRenderer,
 } as const;
 
 // Neutralize raw HTML by escaping only `<`: a tag cannot start without it, so

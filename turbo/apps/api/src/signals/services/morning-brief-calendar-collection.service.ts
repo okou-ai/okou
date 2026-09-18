@@ -404,19 +404,98 @@ interface CalendarListOutcome {
   readonly listCoverage: MorningBriefCalendarCollection["coverage"]["calendarList"];
 }
 
+/** One exact calendar identity after all repeated list entries are reconciled. */
+interface EnumeratedCalendar {
+  readonly id: string;
+  readonly pathId: string;
+  readonly summary: string | null;
+  readonly timezone: string | null;
+  readonly accessRole: string | null;
+  readonly primary: boolean;
+}
+
+/**
+ * Reconcile repeated metadata without letting page order broaden authority.
+ *
+ * A provider that contradicts itself has not established either value, so the
+ * conflicting field becomes absent. In particular, two different access roles
+ * become `unknown-access`; choosing either occurrence would let response order
+ * decide whether this source reads a calendar, and choosing the broader role
+ * would invent authority.
+ */
+function mergeCalendarEntry(
+  current: EnumeratedCalendar,
+  repeated: EnumeratedCalendar,
+): EnumeratedCalendar {
+  return {
+    id: current.id,
+    pathId: current.pathId,
+    summary: current.summary === repeated.summary ? current.summary : null,
+    timezone: current.timezone === repeated.timezone ? current.timezone : null,
+    accessRole:
+      current.accessRole === repeated.accessRole ? current.accessRole : null,
+    primary: current.primary && repeated.primary,
+  };
+}
+
+type CalendarListEntry = NonNullable<
+  z.infer<typeof calendarListSchema>["items"]
+>[number];
+
+/** Add one provider entry to the exact-identity list inventory. */
+function recordEnumeratedCalendar(
+  entry: CalendarListEntry,
+  enumerated: Map<string, EnumeratedCalendar>,
+  state: CollectionState,
+): void {
+  if (entry.deleted === true) {
+    return;
+  }
+  const pathId = calendarPathId(entry.id);
+  if (pathId === null) {
+    // Its own coverage entry would have to name it, and a clipped calendar id
+    // names a different calendar, so the limit is reported without one.
+    state.truncations.add("oversized-identity");
+    return;
+  }
+  const candidate: EnumeratedCalendar = {
+    id: entry.id,
+    pathId,
+    summary: truncate(
+      entry.summaryOverride ?? entry.summary,
+      MORNING_BRIEF_CALENDAR_CAPS.maxSummaryCharacters,
+    ),
+    timezone: truncate(
+      entry.timeZone,
+      MORNING_BRIEF_CALENDAR_FIELD_CAPS.timezone,
+    ),
+    accessRole: truncate(
+      entry.accessRole,
+      MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
+    ),
+    primary: entry.primary === true,
+  };
+  const current = enumerated.get(entry.id);
+  enumerated.set(
+    entry.id,
+    current === undefined ? candidate : mergeCalendarEntry(current, candidate),
+  );
+}
+
 /**
  * Enumerates the calendars this account may actually read events from.
  *
  * A denied list stays denied. Falling back to `primary` would claim coverage
- * the account never proved it has. Every entry the list names leaves the loop
- * either selected or declared: an entry that is silently skipped would make an
- * account this reader cannot interpret look like an account with nothing on.
+ * the account never proved it has. Every exact calendar identity the list names
+ * leaves the loop either selected or declared. Repeated entries are reconciled
+ * before the eight-calendar cap, so a duplicate can neither consume two slots
+ * nor cause one `(calendarId,eventId)` pair to be released twice.
  */
 async function enumerateCalendars(
   reader: MorningBriefConnectorReader,
   state: CollectionState,
 ): Promise<CalendarListOutcome> {
-  const readable: SelectedCalendar[] = [];
+  const enumerated = new Map<string, EnumeratedCalendar>();
   let pageToken: string | undefined;
   let listCoverage: CalendarListOutcome["listCoverage"] = "complete";
 
@@ -452,53 +531,7 @@ async function enumerateCalendars(
     state.noteMetadata(result.meta);
 
     for (const entry of result.value.items ?? []) {
-      if (entry.deleted === true) {
-        continue;
-      }
-      const pathId = calendarPathId(entry.id);
-      if (pathId === null) {
-        // Its own coverage entry would have to name it, and a clipped calendar
-        // id names a different calendar, so the limit is reported without one.
-        state.truncations.add("oversized-identity");
-        continue;
-      }
-      const summary = truncate(
-        entry.summaryOverride ?? entry.summary,
-        MORNING_BRIEF_CALENDAR_CAPS.maxSummaryCharacters,
-      );
-      const role = readableAccessRole(entry.accessRole);
-      if (role === null) {
-        // `freeBusyReader` sees busy blocks, never event detail, and an
-        // unrecognized or missing role is a calendar whose contents stay
-        // unknown. Both are coverage limits rather than silent omissions.
-        const known = entry.accessRole === "freeBusyReader";
-        if (!known) {
-          state.unknownAccess = true;
-        }
-        state.coverage.push({
-          calendarId: entry.id,
-          summary,
-          accessRole: truncate(
-            entry.accessRole,
-            MORNING_BRIEF_CALENDAR_FIELD_CAPS.label,
-          ),
-          primary: entry.primary === true,
-          outcome: known ? "free-busy-only" : "unknown-access",
-          retryAfterMs: null,
-        });
-        continue;
-      }
-      readable.push({
-        id: entry.id,
-        pathId,
-        summary,
-        timezone: truncate(
-          entry.timeZone,
-          MORNING_BRIEF_CALENDAR_FIELD_CAPS.timezone,
-        ),
-        accessRole: role,
-        primary: entry.primary === true,
-      });
+      recordEnumeratedCalendar(entry, enumerated, state);
     }
 
     pageToken = result.value.nextPageToken;
@@ -512,18 +545,51 @@ async function enumerateCalendars(
     }
   }
 
-  // Primary first inside the set actually enumerated, then stable by ID.
-  const ordered = [...readable].sort((left, right) => {
+  // Primary first inside the distinct set actually enumerated, then stable by
+  // exact ID. Repeated primary metadata remains primary only when every copy
+  // agreed, so a contradictory duplicate cannot reorder the selection.
+  const ordered = [...enumerated.values()].sort((left, right) => {
     if (left.primary !== right.primary) {
       return left.primary ? -1 : 1;
     }
     return left.id.localeCompare(right.id);
   });
-  const selected = ordered.slice(
+  const readable: SelectedCalendar[] = [];
+  for (const entry of ordered) {
+    const role = readableAccessRole(entry.accessRole ?? undefined);
+    if (role === null) {
+      // `freeBusyReader` sees busy blocks, never event detail, and an
+      // unrecognized, missing or contradictory role is a calendar whose
+      // contents stay unknown. Both are coverage limits, not quiet calendars.
+      const known = entry.accessRole === "freeBusyReader";
+      if (!known) {
+        state.unknownAccess = true;
+      }
+      state.coverage.push({
+        calendarId: entry.id,
+        summary: entry.summary,
+        accessRole: entry.accessRole,
+        primary: entry.primary,
+        outcome: known ? "free-busy-only" : "unknown-access",
+        retryAfterMs: null,
+      });
+      continue;
+    }
+    readable.push({
+      id: entry.id,
+      pathId: entry.pathId,
+      summary: entry.summary,
+      timezone: entry.timezone,
+      accessRole: role,
+      primary: entry.primary,
+    });
+  }
+
+  const selected = readable.slice(
     0,
     MORNING_BRIEF_CALENDAR_CAPS.maxReadableCalendars,
   );
-  for (const dropped of ordered.slice(
+  for (const dropped of readable.slice(
     MORNING_BRIEF_CALENDAR_CAPS.maxReadableCalendars,
   )) {
     state.truncations.add("calendars");
@@ -803,6 +869,24 @@ function normalizeEvent(
  * and counting a subset of the retained fields is what let 200 items promise
  * 40,000 characters while holding 100,000.
  */
+function retainedTextCost(values: readonly (string | null)[]): number {
+  return values.reduce((total, value) => {
+    return total + (value?.length ?? 0);
+  }, 0);
+}
+
+/** Exact event identity, with recurrence instances kept as separate records. */
+function calendarItemIdentity(item: MorningBriefCalendarItem): string {
+  return item.recurringEventId === null
+    ? JSON.stringify(["event", item.eventId])
+    : JSON.stringify([
+        "instance",
+        item.eventId,
+        item.recurringEventId,
+        item.originalStartTime,
+      ]);
+}
+
 function itemTextCost(item: MorningBriefCalendarItem): number {
   // The inventory is written out so that a field added to the contract without
   // being charged here is visible as an omission rather than hidden in a sum.
@@ -827,9 +911,38 @@ function itemTextCost(item: MorningBriefCalendarItem): number {
       return [attendee.label, attendee.responseStatus];
     }),
   ];
-  return retained.reduce((total, value) => {
-    return total + (value?.length ?? 0);
-  }, 0);
+  return retainedTextCost(retained);
+}
+
+/** Provider strings one retained coverage entry contributes to the envelope. */
+function coverageTextCost(entry: CoverageEntry): number {
+  return retainedTextCost([entry.calendarId, entry.summary, entry.accessRole]);
+}
+
+/**
+ * Reserve final text for complete coverage entries before admitting items.
+ *
+ * IDs are exact identities, so an entry is retained whole or omitted whole.
+ * The `text-characters` truncation is the aggregate, truthful statement that
+ * additional per-calendar coverage could not fit; no prefix is released as a
+ * different calendar and no unknown remainder is presented as complete.
+ */
+function admitCoverage(
+  entries: readonly CoverageEntry[],
+  budget: OutputBudget,
+  state: CollectionState,
+): readonly CoverageEntry[] {
+  const admitted: CoverageEntry[] = [];
+  for (const entry of entries) {
+    const cost = coverageTextCost(entry);
+    if (cost > budget.characters) {
+      state.truncations.add("text-characters");
+      continue;
+    }
+    budget.characters -= cost;
+    admitted.push(entry);
+  }
+  return admitted;
 }
 
 /**
@@ -921,9 +1034,6 @@ async function readCalendar(args: {
       if (event.status === "cancelled") {
         continue;
       }
-      if (seen.has(event.id)) {
-        continue;
-      }
       const time = normalizeTime(event, window);
       if (time === null) {
         state.truncations.add("unreadable-event-time");
@@ -940,6 +1050,10 @@ async function readCalendar(args: {
         outcome = "truncated";
         continue;
       }
+      const identity = calendarItemIdentity(item);
+      if (seen.has(identity)) {
+        continue;
+      }
       const refused = admit(budget, itemTextCost(item));
       if (refused !== null) {
         // One calendar alone reached a shared cap, so the limit that stopped
@@ -949,7 +1063,7 @@ async function readCalendar(args: {
         outcome = "truncated";
         break;
       }
-      seen.add(event.id);
+      seen.add(identity);
       items.push(item);
     }
     if (capped) {
@@ -1038,15 +1152,25 @@ async function readCalendars(args: {
  */
 function admitReadCalendars(
   reads: readonly CalendarRead[],
+  budget: OutputBudget,
   state: CollectionState,
-): readonly MorningBriefCalendarItem[] {
-  const budget = emptyBudget();
+): {
+  readonly items: readonly MorningBriefCalendarItem[];
+  readonly outcomes: ReadonlyMap<string, MorningBriefCalendarOutcome>;
+} {
   const admitted: MorningBriefCalendarItem[] = [];
+  const outcomes = new Map<string, MorningBriefCalendarOutcome>();
+  const seen = new Map<string, Set<string>>();
   let full = false;
 
   for (const read of reads) {
     const kept: MorningBriefCalendarItem[] = [];
     for (const item of read.items) {
+      const calendarEvents = seen.get(item.calendarId);
+      const eventIdentity = calendarItemIdentity(item);
+      if (calendarEvents?.has(eventIdentity) === true) {
+        continue;
+      }
       if (full) {
         break;
       }
@@ -1056,24 +1180,24 @@ function admitReadCalendars(
         full = true;
         break;
       }
+      if (calendarEvents === undefined) {
+        seen.set(item.calendarId, new Set([eventIdentity]));
+      } else {
+        calendarEvents.add(eventIdentity);
+      }
       kept.push(item);
     }
     admitted.push(...kept);
-    state.coverage.push({
-      calendarId: read.calendar.id,
-      summary: read.calendar.summary,
-      accessRole: read.calendar.accessRole,
-      primary: read.calendar.primary,
+    outcomes.set(
+      read.calendar.id,
       // A calendar that was read completely but could not be carried whole is
       // still a shortened calendar, never a complete one.
-      outcome:
-        kept.length < read.items.length && read.outcome === "complete"
-          ? "truncated"
-          : read.outcome,
-      retryAfterMs: read.retryAfterMs,
-    });
+      kept.length < read.items.length && read.outcome === "complete"
+        ? "truncated"
+        : read.outcome,
+    );
   }
-  return admitted;
+  return { items: admitted, outcomes };
 }
 
 interface CollectedCalendars {
@@ -1092,6 +1216,9 @@ async function collectCalendarsWithReader(args: {
   const list = await enumerateCalendars(args.reader, state);
   const readable = list.selected.length;
   if (readable === 0) {
+    const budget = emptyBudget();
+    const admittedCoverage = admitCoverage(state.coverage, budget, state);
+    state.coverage.splice(0, state.coverage.length, ...admittedCoverage);
     return { items: [], listCoverage: list.listCoverage, readable, state };
   }
   const reads = await readCalendars({
@@ -1100,8 +1227,36 @@ async function collectCalendarsWithReader(args: {
     window: args.window,
     state,
   });
+
+  // Coverage for calendars that were actually read is retained first; unknown
+  // and over-cap calendars follow in their deterministic enumeration order.
+  // All of it shares the same final character budget as the items below.
+  const coverageCandidates: readonly CoverageEntry[] = [
+    ...reads.map((read) => {
+      return {
+        calendarId: read.calendar.id,
+        summary: read.calendar.summary,
+        accessRole: read.calendar.accessRole,
+        primary: read.calendar.primary,
+        outcome: read.outcome,
+        retryAfterMs: read.retryAfterMs,
+      };
+    }),
+    ...state.coverage,
+  ];
+  const budget = emptyBudget();
+  const admittedCoverage = admitCoverage(coverageCandidates, budget, state);
+  const admitted = admitReadCalendars(reads, budget, state);
+  state.coverage.splice(
+    0,
+    state.coverage.length,
+    ...admittedCoverage.map((entry) => {
+      const outcome = admitted.outcomes.get(entry.calendarId);
+      return outcome === undefined ? entry : { ...entry, outcome };
+    }),
+  );
   return {
-    items: admitReadCalendars(reads, state),
+    items: admitted.items,
     listCoverage: list.listCoverage,
     readable,
     state,

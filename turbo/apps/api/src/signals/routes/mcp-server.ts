@@ -2,6 +2,7 @@ import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
+import { env } from "../../lib/env";
 
 import {
   MCP_DEFAULT_SCOPES,
@@ -21,6 +22,7 @@ import {
   listMcpChatThreads,
 } from "../services/mcp-chat-threads.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
 import { awaitWithSignal, settle } from "../utils";
 
 function unavailable() {
@@ -143,6 +145,16 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
     {
       readScope: MCP_READ_SCOPE,
       scopes: principal.scopes,
+      getMessages: async (input, readSignal) => {
+        return await get(
+          getMcpChatMessages(
+            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
+            principal,
+            input,
+            readSignal,
+          ),
+        );
+      },
       listThreads: async (input, readSignal) => {
         return await awaitWithSignal(
           listMcpChatThreads(set(writeDb$), principal, input),

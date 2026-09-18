@@ -4224,8 +4224,9 @@ function IllustrationTemplateCard({
   );
 }
 
+/** `category` is null until an entry point or the member names one. */
 function resolveTemplatePickerCategory(
-  category: string,
+  category: string | null,
   customTemplatesEnabled: boolean,
 ): string {
   switch (category) {
@@ -4241,7 +4242,9 @@ function resolveTemplatePickerCategory(
       return category;
     }
     default: {
-      return "slides";
+      // Whatever leads the nav: Custom while the switch is on, and the first
+      // format below it otherwise.
+      return customTemplatesEnabled ? "custom" : "slides";
     }
   }
 }
