@@ -121,7 +121,10 @@ import {
 } from "../../lib/db-structured-result";
 import { generateSandboxToken } from "../auth/tokens";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
-import { transitionAgentRunsToTerminal } from "../services/agent-run-terminal-transition.service";
+import {
+  COMPUTE_CLOSURE_ERROR,
+  transitionAgentRunsToTerminal,
+} from "../services/agent-run-terminal-transition.service";
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { historyGenerationRunIdForStoredExecutionContext } from "../services/agent-run-queue-payload.service";
 import { resolvePiModelConfigForClaim } from "../services/pi-model-config-claim-capability";
@@ -1360,6 +1363,39 @@ function buildClaimTransitionSql(
           `;
 }
 
+async function deleteStaleClaimJob(
+  db: Pick<Db, "delete" | "select">,
+  args: {
+    readonly runId: string;
+    readonly owner: ComputeRunOwner;
+    readonly sessionId: string;
+  },
+): Promise<void> {
+  // Preserve legacy stale-job cleanup without locking the no-longer-pending
+  // run or its Session. Queued runs may still be promoted; erasure-stopped
+  // payloads must remain available for capture.
+  await db.delete(runnerJobQueue).where(
+    and(
+      eq(runnerJobQueue.runId, args.runId),
+      exists(
+        db
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.id, args.runId),
+              eq(agentRuns.userId, args.owner.userId),
+              eq(agentRuns.orgId, args.owner.orgId),
+              eq(agentRuns.sessionId, args.sessionId),
+              notInArray(agentRuns.status, ["queued", "pending"]),
+              sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
+            ),
+          ),
+      ),
+    ),
+  );
+}
+
 async function transitionClaimedJobToRunning(
   db: Db,
   args: {
@@ -1406,7 +1442,17 @@ async function transitionClaimedJobToRunning(
           .orderBy(chatThreads.id)
           .for("update");
       }
-      if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
+      if (!admission) {
+        return { status: "run-not-found" as const };
+      }
+      if (!(await validateComputeRunAdmission(tx, admission, "pending"))) {
+        if (!args.deferred && !admission.closed) {
+          await deleteStaleClaimJob(tx, {
+            runId,
+            owner,
+            sessionId: admission.sessionId,
+          });
+        }
         return { status: "run-not-found" as const };
       }
       if (admission.closed) {

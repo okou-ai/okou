@@ -168,11 +168,8 @@ export interface TransactionBarrier {
 }
 
 /** The row count `pg` reports for an executed statement. */
-function pausedRowCount(executed: unknown): number | null {
-  // Transaction-control statements such as ROLLBACK do not report a count.
-  const parsed = z
-    .object({ rowCount: z.number().nullable() })
-    .safeParse(executed);
+function pausedRowCount(executed: unknown): number {
+  const parsed = z.object({ rowCount: z.number() }).safeParse(executed);
   if (!parsed.success) {
     throw new Error(
       "Expected the paused statement result to carry a row count",

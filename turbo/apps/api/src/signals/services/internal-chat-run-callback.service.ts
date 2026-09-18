@@ -60,7 +60,6 @@ import { z } from "zod";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { logger } from "../../lib/log";
-import { isLockNotAvailable } from "../../lib/pg-errors";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -1575,25 +1574,6 @@ async function insertAssistantErrorEventTransaction(
   };
 }
 
-async function retryTerminalProjection<T>(
-  write: () => Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    signal.throwIfAborted();
-    const result = await settle(write(), signal);
-    if (result.ok) {
-      return result.value;
-    }
-    // A lock timeout has rolled back the entire content transaction. Re-enter
-    // ownership and erasure admission, keeping delivery and publication outside
-    // the retry so only uncommitted lifecycle writes can be repeated.
-    if (!isLockNotAvailable(result.error) || attempt === 2) {
-      throw result.error;
-    }
-  }
-}
-
 async function insertAssistantErrorEvent(
   args: AssistantErrorEventArgs,
   signal: AbortSignal,
@@ -1605,29 +1585,27 @@ async function insertAssistantErrorEvent(
     undefined,
     signal,
   );
-  const projection = await retryTerminalProjection(async () => {
-    return await withRunContentWrite(
-      args.db,
-      {
-        runId: args.runId,
-        ownership: args.ownership,
-        destination: {
-          threadId: args.threadId,
-          userId: args.userId,
-          orgId: args.orgId,
-        },
+  const projection = await withRunContentWrite(
+    args.db,
+    {
+      runId: args.runId,
+      ownership: args.ownership,
+      destination: {
+        threadId: args.threadId,
+        userId: args.userId,
+        orgId: args.orgId,
       },
-      async (tx) => {
-        return await insertAssistantErrorEventTransaction(
-          tx,
-          args,
-          displayErrorMessage,
-          goalId,
-        );
-      },
-      signal,
-    );
-  }, signal);
+    },
+    async (tx) => {
+      return await insertAssistantErrorEventTransaction(
+        tx,
+        args,
+        displayErrorMessage,
+        goalId,
+      );
+    },
+    signal,
+  );
   if (projection.outcome === "closed") {
     return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
   }
@@ -1934,29 +1912,27 @@ async function insertRunLifecycleMarker(
     undefined,
     signal,
   );
-  const projection = await retryTerminalProjection(async () => {
-    return await withRunContentWrite(
-      args.db,
-      {
-        runId: args.runId,
-        ownership: args.ownership,
-        destination: {
-          threadId: args.threadId,
-          userId: args.userId,
-          orgId: args.orgId,
-        },
+  const projection = await withRunContentWrite(
+    args.db,
+    {
+      runId: args.runId,
+      ownership: args.ownership,
+      destination: {
+        threadId: args.threadId,
+        userId: args.userId,
+        orgId: args.orgId,
       },
-      async (tx) => {
-        return await insertRunLifecycleMarkerTransaction({
-          tx,
-          input: args,
-          markerCreatedAt,
-          goalId,
-        });
-      },
-      signal,
-    );
-  }, signal);
+    },
+    async (tx) => {
+      return await insertRunLifecycleMarkerTransaction({
+        tx,
+        input: args,
+        markerCreatedAt,
+        goalId,
+      });
+    },
+    signal,
+  );
   if (projection.outcome === "closed") {
     return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
   }
