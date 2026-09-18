@@ -108,46 +108,40 @@ export function OnboardingStepLayout({
       </div>
       <main
         key={`${String(currentStep)}-${title}`}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6"
+        className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-6 py-6"
       >
-        {/* The step sits on one raised surface: the question on the left, the
-            cards that answer it grouped on the right. Every step starts on the
-            same line, so nothing moves as the flow advances. */}
-        <div className="flex w-full flex-1 items-start py-2">
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 rounded-3xl border border-border/60 bg-background px-8 py-10 shadow-surface lg:flex-row lg:items-start lg:gap-14 lg:px-12">
+        <div className="mx-auto flex w-full max-w-[1180px] flex-col">
+          {/* Where you are in the flow, and the way back, both on the canvas
+              above the card so the card itself keeps one height. */}
+          <div className="flex shrink-0 items-center gap-3 px-1 pb-4">
+            {onBack ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onBack}
+                className="shrink-0 gap-1.5"
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+                {t(($) => {
+                  return $.onboarding.sourcesFirst.common.back;
+                })}
+              </Button>
+            ) : null}
+            <OnboardingStepProgress current={currentStep} total={totalSteps} />
+          </div>
+          {/* The step sits on one raised surface: the question on the left, the
+              cards that answer it grouped on the right. */}
+          <div className="flex w-full flex-col gap-10 rounded-3xl border border-border/60 bg-background px-8 py-10 shadow-surface lg:min-h-[540px] lg:flex-row lg:items-start lg:gap-14 lg:px-12">
             <div className="w-full shrink-0 lg:w-[380px]">
-              {/* How far along you are, and the way back one step. The back
-                  control sits in the gutter every step reserves for it, so the
-                  track keeps the column's left edge on all of them. */}
-              <div className="relative flex h-8 items-center">
-                {onBack ? (
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="quiet"
-                    showTooltip
-                    onClick={onBack}
-                    className="absolute -left-10 shrink-0"
-                    aria-label={t(($) => {
-                      return $.onboarding.sourcesFirst.common.back;
-                    })}
-                  >
-                    <ChevronLeft size={18} aria-hidden="true" />
-                  </Button>
-                ) : null}
-                <OnboardingStepProgress
-                  current={currentStep}
-                  total={totalSteps}
-                />
-              </div>
-              <h1 className="mt-8 text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
+              <h1 className="text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
                 {title}
               </h1>
               <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
                 {description}
               </p>
               {/* The step's one filled action, with its opt-out beside it. */}
-              <div className="mt-14 flex flex-wrap items-center gap-2">
+              <div className="mt-10 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   size="lg"
@@ -184,7 +178,7 @@ export function OnboardingStepLayout({
             </div>
             <div
               className={cn(
-                "w-full min-w-0 lg:mt-20 lg:flex-1",
+                "w-full min-w-0 lg:flex-1",
                 CONTENT_WIDTHS[contentWidth],
               )}
             >
