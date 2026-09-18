@@ -282,6 +282,7 @@ interface Options {
   readonly viewportWidth: number;
   readonly viewportHeight: number;
   readonly normalize: boolean;
+  readonly wrap: boolean;
   readonly verify: boolean;
   readonly json?: boolean;
 }
@@ -578,7 +579,7 @@ function render(options: Options, bundle: string): Rendered {
     const { slides, length } = meta as { slides: number; length: number };
 
     return {
-      deck: postProcess(transfer(page, length), eastAsianFont),
+      deck: postProcess(transfer(page, length), eastAsianFont, options.wrap),
       eastAsianFont,
       selector,
       slides,
@@ -769,7 +770,11 @@ function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
  * Both edits exist because a .pptx is a set of instructions, not a picture: a
  * viewer follows what the file says rather than what the browser showed.
  */
-function postProcess(deck: Buffer, eastAsianFont: string): Buffer {
+function postProcess(
+  deck: Buffer,
+  eastAsianFont: string,
+  wrap: boolean,
+): Buffer {
   const entries = zipEntries(deck);
   let touched = false;
   for (const [name, content] of entries) {
@@ -794,10 +799,12 @@ function postProcess(deck: Buffer, eastAsianFont: string): Buffer {
     // wrap on top of that re-decides it against different font metrics, and a
     // line whose text is a few percent wider becomes two — which is how a
     // heading ends up overlapping whatever sits below it.
-    patched = patched.replace(
-      /(<a:bodyPr\b[^>]*?)\swrap="square"/gu,
-      '$1 wrap="none"',
-    );
+    if (!wrap) {
+      patched = patched.replace(
+        /(<a:bodyPr\b[^>]*?)\swrap="square"/gu,
+        '$1 wrap="none"',
+      );
+    }
 
     // Only the East Asian slot moves, so Latin runs keep the deck's display
     // face and a mixed run like "TED 演讲" renders both halves as intended.
@@ -965,6 +972,11 @@ export const presentationConvertCommand = new Command()
     "--no-normalize",
     "Keep CSS that OOXML cannot express instead of collapsing it",
   )
+  .option(
+    "--wrap",
+    "Let the viewer re-wrap text rather than holding the browser's line breaks",
+    false,
+  )
   .option("--verify", "Check the converted deck against the source text", false)
   .option("--json", "Print machine-readable JSON")
   .addHelpText(
@@ -986,6 +998,8 @@ Output:
 Notes:
   - The deck is opened and settled in the same browser session that renders it,
     because shells size type with a runtime autofit pass
+  - Text keeps the line breaks the browser settled on; --wrap hands wrapping
+    back to the viewer, which may re-flow a line that measures wider there
   - --verify reads the words back out of the .pptx and fails below ${(TEXT_COVERAGE_FLOOR * 100).toFixed(0)}% coverage
   - The renderer bundle is fetched on first use into ~/.cache/okou/presentation-convert
   - Use okou presentation screenshot for page images rather than an editable deck`,
