@@ -243,9 +243,8 @@ function admissionOf(args: {
   return {
     key: generationKeyOf(context),
     executionPurpose: args.purpose,
-    // The Slack-only input shape carries no Agent instruction context and no
-    // retained descriptor set. Recording nulls keeps it honest rather than
-    // asserting provenance nothing produced.
+    // The Slack compatibility writer has no instruction or retained-source
+    // provenance. Explicit nulls prevent it from claiming all-source proof.
     instructionsVersionId: null,
     instructionsDigest: null,
     retainedSources: null,
@@ -311,6 +310,19 @@ interface MorningBriefNativeGenerationAuthority {
   readonly leaseToken: string;
 }
 
+type MorningBriefGenerationRequest = {
+  readonly owner: MorningBriefCollectionOwner;
+  readonly scheduledFor: Date;
+} & (
+  | {
+      readonly purpose: "preview";
+      readonly nativeAuthority?: never;
+    }
+  | {
+      readonly purpose: "production";
+      readonly nativeAuthority: MorningBriefNativeGenerationAuthority;
+    }
+);
 async function admitGeneration(
   tx: Tx,
   purpose: MorningBriefExecutionPurpose,
@@ -1663,13 +1675,7 @@ async function collectForGeneration<T>(
 const executeMorningBriefGeneration$ = command(
   async (
     { set },
-    args: {
-      readonly owner: MorningBriefCollectionOwner;
-      readonly scheduledFor: Date;
-      readonly purpose: MorningBriefExecutionPurpose;
-      /** Required for `production`; bound to the reservation before any POST. */
-      readonly nativeAuthority?: MorningBriefNativeGenerationAuthority;
-    },
+    args: MorningBriefGenerationRequest,
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const db = set(writeDb$);

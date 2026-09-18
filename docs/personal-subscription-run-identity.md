@@ -224,22 +224,31 @@ advisory, then provider row, account rows ordered by ID, singleton secret rows
 ordered by ID, and account-secret rows ordered by ID. The new snapshot locks
 use `FOR NO KEY UPDATE`, which excludes the old Claude secret update but is
 compatible with the later provider insert's secret FK `KEY SHARE`. No secret
-trigger acquires a provider lock. Ordinary profile requests happen after the
-snapshot transaction commits. The second transaction compares the complete
+trigger acquires a provider lock. After the separately awaited advisory lock,
+one statement locks the provider and its ordered account inventory through
+correlated locking subqueries. The account subquery locks and returns the base
+rows directly; the outer left join preserves a provider with an empty inventory.
+Current account membership writers hold the advisory lock. Historical Codex
+post-seed identity hydration can update existing account metadata after its
+transaction commits; the locking account read follows that updated tuple.
+The mirror and account-secret reads remain subsequent statements, preserving
+fresh visibility of historical Claude's secret-first autocommit writes.
+Ordinary profile requests happen after the snapshot transaction commits. The
+second transaction compares the complete
 provider, active selection, account identities, secret IDs and ciphertext
 bundle; a winning write, activation or deletion discards the delayed result.
 Exact environment preparation reuses the existing coordinator's completed
 account, selected model and encrypted account-secret rows. It retains the initial
 scoped account lookup and filters the completed inventory by the fixed
 ID/org/user/type and connected state, including connected inactive accounts.
-The coherent fragment uses six SQL statements instead of nine, excluding
-transaction control. Metadata-only Codex reconciliation supplies its updated
+The coherent fragment uses five SQL statements instead of the original nine,
+excluding transaction control. Metadata-only Codex reconciliation supplies its updated
 account through `UPDATE RETURNING`. After a legacy import, this data reader
 refreshes the inventory inside the same transaction; it never returns the
 pre-import account or secrets. Compared with the account-only post-import read,
-that exceptional refresh adds four statements while replacing the three later
+that exceptional refresh adds three statements while replacing the three later
 environment reads for a surviving identity. Capture/readiness coordination
-callers retain their account-only result and existing SQL count.
+callers retain their account-only result.
 Environment builders preserve auth-method/required-secret checks and lazy
 firewall materialization; these encrypted observations are not persisted,
 logged, or retained for runtime auth or admission.
@@ -273,6 +282,11 @@ short encrypted-state transaction), `api_dispatch_subscription_prepare_bundle_pr
 Each carries only the bounded `subscription_provider_type` classification in
 addition to the collector's standard request metadata. These are nested spans;
 their percentiles must not be added to parent phase percentiles.
+`api_dispatch_pre_create_agent_capture_subscription_account` directly measures
+the pre-create capture call before session preparation and its bounded retries.
+It also covers the non-personal no-op branch and records no additional identity
+or credential fields. It is nested in pre-create; compare matched provider and
+account paths instead of adding it to the parent phase.
 Rotating refresh retains its existing single transaction/provider owner and
 checks the locked current bundle before spending the refresh token.
 
@@ -323,15 +337,24 @@ remain valid; an exact account retired by import cannot become its replacement.
 Connection preparation retains seed-only behavior so new authenticated credentials
 can repair an unavailable old bundle without first requiring successful import.
 
-For an initialized coherent provider, null-ID logical capture uses six SQL
-statements: provider lookup, provider advisory lock, locked provider, ordered
-accounts, ordered singleton secrets and ordered account secrets. BEGIN/COMMIT
-are additional transaction-control statements. Explicit logical IDs add the
-initial exact-ID probe; exact concrete capture uses that probe plus the five
+For an initialized coherent provider, null-ID logical capture uses five SQL
+statements: provider lookup, provider advisory lock, combined locked provider
+and ordered accounts, ordered singleton secrets and ordered account secrets.
+BEGIN/COMMIT are additional transaction-control statements. Explicit logical IDs add the
+initial exact-ID probe; exact concrete capture uses that probe plus the four
 snapshot statements. Real initialization/import paths include their necessary
 writes and post-write reads and must be measured separately. These counts are
 not a production latency claim. Environment resolution and the fresh final
 admission proof retain their independent validation boundaries.
+
+The #35234 batching reduces each initialized snapshot from five statements to
+four. Across concrete capture, exact environment preparation, fresh admission
+snapshot and final validation, the measured fragments therefore use 18 instead
+of 22 statements (19 instead of 23 for explicit logical-provider capture).
+These totals exclude transaction control and unrelated request work; none of
+the four consistency boundaries is removed. See the
+[finite coordination experiment](subscription-coordination-experiment.md) for
+matched stage measurements, generated-query evidence and interpretation limits.
 
 ### Management import boundaries (#34142)
 

@@ -48,7 +48,12 @@ function printRender(
 ): void {
   const presentation =
     result.status === "completed" && result.result
-      ? createArtifactPresentation(result.result.filename, result.result.url)
+      ? createArtifactPresentation(
+          result.result.filename,
+          result.result.url,
+          undefined,
+          result.result,
+        )
       : undefined;
   const resumeCommand = `okou video render resume ${result.generationId} --json`;
   if (json) {

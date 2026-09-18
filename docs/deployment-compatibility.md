@@ -186,6 +186,27 @@ capability, database migration, visibility change, or Worker protocol is added.
 Keep the endpoint in serving and supported rollback APIs while runs pinned to
 the new CLI remain active.
 
+#### Generated private artifact delivery hints
+
+Generation results add optional `privateArtifacts` metadata describing the
+storage mode used at creation. New CLIs use it with the requested visibility
+(defaulting to `only-me`) to add delivery guidance for non-public files. Older
+CLIs ignore the metadata; results from older APIs or persisted jobs without it
+retain their previous output. Hosted sites and HTML presentations keep their
+existing link presentation.
+
+Completed generation jobs survive run deletion and have no read-time age cutoff;
+successful batch directories also remain readable. These are existing public
+generation contracts. Requiring the new metadata would need an explicit
+migration or retirement of those retained results, plus compatible serving and
+rollback APIs; draining active runs alone is insufficient.
+
+New run contexts include `OKOU_CURRENT_INTEGRATION` in the existing trusted
+`platformEnvironment` map. Existing Runners already transport this map, so no
+Runner protocol change or database migration is required. Older contexts without
+the key receive a generic private-link notice, with no guessed integration
+command. Existing pinned CLIs ignore the key.
+
 #### Private attachment uploads
 
 CLI artifact output qualifies hostless references with its configured app origin

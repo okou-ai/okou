@@ -47,7 +47,12 @@ function resumeCommand(generationId: string): string {
 function printResult(result: IntroVideoAgentResponse, json?: boolean): void {
   const presentation =
     result.status === "completed" && result.url
-      ? createArtifactPresentation(result.filename ?? "Intro video", result.url)
+      ? createArtifactPresentation(
+          result.filename ?? "Intro video",
+          result.url,
+          undefined,
+          result,
+        )
       : undefined;
   const continuation =
     result.status === "queued" || result.status === "running"

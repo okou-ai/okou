@@ -59,7 +59,7 @@ export type MorningBriefSourceCoverage =
   | "failed";
 
 /** Where an item's instant came from, so a window edge is never rounded away. */
-type MorningBriefTimeSemantics =
+export type MorningBriefTimeSemantics =
   /** A precise instant inside the collected half-open window. */
   | "instant"
   /** A timed span that overlaps the window rather than starting inside it. */

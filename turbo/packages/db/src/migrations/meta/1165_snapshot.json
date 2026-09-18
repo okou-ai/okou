@@ -1,6 +1,6 @@
 {
-  "id": "ab5fb60a-c91f-4380-a031-981df57692c6",
-  "prevId": "9c0a0c94-8e31-4b13-9b08-66e2725f2127",
+  "id": "b07c6ea4-de44-4b66-82c8-667d303d8a63",
+  "prevId": "ab5fb60a-c91f-4380-a031-981df57692c6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -18698,13 +18698,13 @@
           "name": "slack_workspace_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "slack_user_id": {
           "name": "slack_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -18891,6 +18891,10 @@
         "chk_morning_brief_collection_occurrence_outcome": {
           "name": "chk_morning_brief_collection_occurrence_outcome",
           "value": "(\"morning_brief_collection_occurrences\".\"status\" = 'running') = (\"morning_brief_collection_occurrences\".\"outcome\" IS NULL)"
+        },
+        "chk_morning_brief_collection_occurrence_slack_binding": {
+          "name": "chk_morning_brief_collection_occurrence_slack_binding",
+          "value": "(\"morning_brief_collection_occurrences\".\"collection_kind\" = 'slack') =\n          (\"morning_brief_collection_occurrences\".\"slack_workspace_id\" IS NOT NULL AND \"morning_brief_collection_occurrences\".\"slack_user_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -19373,6 +19377,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "installation_id": {
+          "name": "installation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "automation_id": {
+          "name": "automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "model": {
           "name": "model",
           "type": "text",
@@ -19433,6 +19455,36 @@
           "primaryKey": false,
           "notNull": true
         },
+        "instructions_version_id": {
+          "name": "instructions_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "instructions_digest": {
+          "name": "instructions_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reported_language": {
+          "name": "reported_language",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retained_sources": {
+          "name": "retained_sources",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retained_until": {
+          "name": "retained_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "reserved_at": {
           "name": "reserved_at",
           "type": "timestamp",
@@ -19453,6 +19505,12 @@
         },
         "finished_at": {
           "name": "finished_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "content_purged_at": {
+          "name": "content_purged_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
@@ -19550,6 +19608,40 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "uq_morning_brief_generations_invoked_anchor": {
+          "name": "uq_morning_brief_generations_invoked_anchor",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scheduled_for",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "execution_purpose",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"morning_brief_generations\".\"state\" NOT IN ('not_invoked', 'skipped_empty', 'skipped_incomplete')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -19600,7 +19692,7 @@
         },
         "chk_morning_brief_generation_language_source": {
           "name": "chk_morning_brief_generation_language_source",
-          "value": "\"morning_brief_generations\".\"language_source\" IN ('member-locale', 'default')"
+          "value": "\"morning_brief_generations\".\"language_source\" IN ('agent-instructions', 'member-locale', 'default')"
         },
         "chk_morning_brief_generation_coverage": {
           "name": "chk_morning_brief_generation_coverage",
@@ -19620,7 +19712,7 @@
         },
         "chk_morning_brief_generation_decision": {
           "name": "chk_morning_brief_generation_decision",
-          "value": "(\"morning_brief_generations\".\"state\" = 'succeeded') = (\"morning_brief_generations\".\"decision\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"decision\" = 'deliver') =\n            (\"morning_brief_generations\".\"result_markdown\" IS NOT NULL\n             AND \"morning_brief_generations\".\"result_title\" IS NOT NULL\n             AND \"morning_brief_generations\".\"result_bytes\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"result_bytes\" IS NULL OR \"morning_brief_generations\".\"result_bytes\" > 0)"
+          "value": "(\"morning_brief_generations\".\"state\" = 'succeeded') = (\"morning_brief_generations\".\"decision\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"decision\" = 'deliver') =\n            ((\"morning_brief_generations\".\"result_markdown\" IS NOT NULL\n              AND \"morning_brief_generations\".\"result_title\" IS NOT NULL\n              AND \"morning_brief_generations\".\"result_bytes\" IS NOT NULL)\n             OR (\"morning_brief_generations\".\"content_purged_at\" IS NOT NULL\n              AND \"morning_brief_generations\".\"result_markdown\" IS NULL\n              AND \"morning_brief_generations\".\"result_title\" IS NULL\n              AND \"morning_brief_generations\".\"result_bytes\" IS NULL))\n          AND (\"morning_brief_generations\".\"content_purged_at\" IS NULL\n            OR (\"morning_brief_generations\".\"state\" = 'succeeded' AND \"morning_brief_generations\".\"decision\" = 'deliver'))\n          AND (\"morning_brief_generations\".\"result_bytes\" IS NULL OR \"morning_brief_generations\".\"result_bytes\" > 0)"
         },
         "chk_morning_brief_generation_included_items": {
           "name": "chk_morning_brief_generation_included_items",
@@ -19629,6 +19721,14 @@
         "chk_morning_brief_generation_reservation": {
           "name": "chk_morning_brief_generation_reservation",
           "value": "\"morning_brief_generations\".\"reservation_expires_at\" > \"morning_brief_generations\".\"reserved_at\"\n          AND \"morning_brief_generations\".\"expires_at\" > \"morning_brief_generations\".\"reserved_at\""
+        },
+        "chk_morning_brief_generation_retained_until": {
+          "name": "chk_morning_brief_generation_retained_until",
+          "value": "\"morning_brief_generations\".\"retained_until\" IS NULL\n          OR \"morning_brief_generations\".\"retained_until\" >= \"morning_brief_generations\".\"expires_at\""
+        },
+        "chk_morning_brief_generation_instructions": {
+          "name": "chk_morning_brief_generation_instructions",
+          "value": "(\"morning_brief_generations\".\"instructions_version_id\" IS NULL) =\n          (\"morning_brief_generations\".\"instructions_digest\" IS NULL)"
         }
       },
       "isRLSEnabled": false

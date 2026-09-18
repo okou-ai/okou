@@ -418,9 +418,10 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const usageEventValues = body.events
     .filter((event) => {
       return (
-        event.kind !== MODEL_USAGE_KIND ||
-        modelProviderType === null ||
-        isBuiltInModelProviderType(modelProviderType)
+        event.quantity > 0 &&
+        (event.kind !== MODEL_USAGE_KIND ||
+          modelProviderType === null ||
+          isBuiltInModelProviderType(modelProviderType))
       );
     })
     .map((event) => {

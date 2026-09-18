@@ -73,6 +73,9 @@ async function reserveUsageSources(
   runId: string,
   auth: SandboxAuth,
 ): Promise<Set<string>> {
+  if (events.length === 0) {
+    return new Set();
+  }
   // Reserve the whole sorted source set before any resource key. Zero
   // placeholders stay invisible to settlement until final quantities commit.
   const inserted = await tx
@@ -293,10 +296,11 @@ export async function ingestXResourceUsage(
 
       const billable = events.filter((event) => {
         return (
-          event.kind !== "model" ||
-          run.triggerSource === null ||
-          run.modelProvider === null ||
-          isBuiltInModelProviderType(run.modelProvider)
+          event.quantity > 0 &&
+          (event.kind !== "model" ||
+            run.triggerSource === null ||
+            run.modelProvider === null ||
+            isBuiltInModelProviderType(run.modelProvider))
         );
       });
       const owned = await reserveUsageSources(tx, billable, body.runId, auth);
@@ -310,8 +314,26 @@ export async function ingestXResourceUsage(
       // Locks acquired by INSERT may have crossed midnight. Cleanup is still
       // excluded; an expired batch rolls all sources and claims back together.
       await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
-      if (quantities.size > 0) {
-        const cases = [...quantities].map(([source, quantity]) => {
+      const positive = [...quantities].filter(([, quantity]) => {
+        return quantity > 0;
+      });
+      const zeroSources = [...quantities]
+        .filter(([, quantity]) => {
+          return quantity === 0;
+        })
+        .map(([source]) => {
+          return source;
+        });
+      // Discard zero results before commit, retaining the shared resource
+      // claims but no source receipt. A retry is evaluated with its current
+      // switch setting; only persisted positive usage is idempotent.
+      if (zeroSources.length > 0) {
+        await tx
+          .delete(usageEvent)
+          .where(inArray(usageEvent.idempotencyKey, zeroSources));
+      }
+      if (positive.length > 0) {
+        const cases = positive.map(([source, quantity]) => {
           return sql`WHEN ${source}::uuid THEN ${quantity}::bigint`;
         });
         await tx
@@ -319,7 +341,14 @@ export async function ingestXResourceUsage(
           .set({
             quantity: sql`CASE ${usageEvent.idempotencyKey} ${sql.join(cases, sql` `)} END`,
           })
-          .where(inArray(usageEvent.idempotencyKey, [...quantities.keys()]));
+          .where(
+            inArray(
+              usageEvent.idempotencyKey,
+              positive.map(([source]) => {
+                return source;
+              }),
+            ),
+          );
       }
       signal.throwIfAborted();
     },

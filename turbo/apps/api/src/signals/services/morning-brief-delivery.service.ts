@@ -154,16 +154,23 @@ interface MorningBriefNativeDeliveryAuthority {
   readonly membershipId: string;
 }
 
-interface MorningBriefDeliveryRequest {
+type MorningBriefDeliveryRequest = {
   readonly orgId: string;
   readonly userId: string;
   /** The opaque attempt the generation returned. Never an owner. */
   readonly resultAttemptId: string;
-  /** Which purpose's result this call may consume. Defaults to `preview`. */
-  readonly purpose?: MorningBriefDeliveryPurpose;
-  /** Required for `production`; rejected when absent or stale. */
-  readonly nativeAuthority?: MorningBriefNativeDeliveryAuthority;
-}
+} & (
+  | {
+      /** Preview is the compatibility default for the operator-only route. */
+      readonly purpose?: "preview";
+      readonly nativeAuthority?: never;
+    }
+  | {
+      /** Production effects always carry the occurrence authority that paid. */
+      readonly purpose: "production";
+      readonly nativeAuthority: MorningBriefNativeDeliveryAuthority;
+    }
+);
 
 function resultDigest(markdown: string): string {
   return createHash("sha256").update(markdown, "utf8").digest("hex");

@@ -279,6 +279,57 @@ describe("okou user-template publish", () => {
     );
   });
 
+  it("publishes an illustration template from the reference picture", async () => {
+    const uploads = installUploadRoutes();
+    const referencePath = join(tempDir, "market-day.png");
+    writeFileSync(referencePath, Buffer.from("png bytes"));
+
+    let published: PublishedBody | undefined;
+    server.use(
+      http.post(PUBLISH_URL, async ({ request }) => {
+        published = (await request.json()) as PublishedBody;
+        return HttpResponse.json({
+          id: TEMPLATE_ID,
+          title: published.title,
+          sourceFilename: "market-day.png",
+          kind: "illustration",
+          coverUrl: "https://example.com/market-day.png",
+          pageCount: null,
+          visibility: "private",
+          ownerUserId: "user_1",
+          canManage: true,
+          createdAt: "2026-09-18T00:00:00.000Z",
+          updatedAt: "2026-09-18T00:00:00.000Z",
+        });
+      }),
+    );
+
+    await userTemplateCommand.parseAsync([
+      "node",
+      "okou",
+      "publish",
+      "--kind",
+      "illustration",
+      "--title",
+      "Market day",
+      "--source",
+      referencePath,
+      "--package",
+      packageDir,
+    ]);
+
+    // The picture is uploaded as the source, not as a page: the catalog shows
+    // that file itself, so sending it twice would be sending the cover twice.
+    expect(published?.kind).toBe("illustration");
+    expect(published?.pageFileIds).toBeUndefined();
+    expect(uploads.filenameOf(published?.sourceFileId ?? "")).toBe(
+      "market-day.png",
+    );
+    expect(mockConsoleLog).toHaveBeenCalledWith(
+      `Published Market day (${TEMPLATE_ID})`,
+    );
+  });
+
   it("refuses a presentation with no pages directory", async () => {
     installUploadRoutes();
 
