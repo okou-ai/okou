@@ -940,30 +940,59 @@ describe("MCP chat discovery and creation", () => {
     expect((await listThreads(token)).threads).toHaveLength(1);
   });
 
-  it("rejects creation when the canonical account has been closed", async () => {
-    const f = await creationFixture();
-    // Infrastructure exception: account-erasure closure has no production
-    // ingress. Install only this test-owned dormant decision, without a worker.
-    const closed = await closeErasureSubjectFixture({
-      subjectKind: "user",
-      subjectId: f.auth.userId,
-    });
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([closed.jobId]);
-    });
-    const result = await callTool(
-      f.auth.token({ scope: defaultScopes }),
-      "create_chat_thread",
-      {
+  it.each([false, true])(
+    "rejects closed-account creation with cached membership %s",
+    async (cachedMembership) => {
+      const f = await creationFixture();
+      const token = f.auth.token({ scope: defaultScopes });
+      if (cachedMembership) {
+        expect((await listAgents(token)).agents).toContainEqual(
+          expect.objectContaining({ agentId: f.agent.agentId }),
+        );
+      }
+      // Infrastructure exception: account-erasure closure has no production
+      // ingress. Install only this test-owned dormant decision, without a worker.
+      const closed = await closeErasureSubjectFixture({
+        subjectKind: "user",
+        subjectId: f.auth.userId,
+      });
+      onTestFinished(async () => {
+        await removeErasureSubjectsFixture([closed.jobId]);
+      });
+      const args = {
         requestId: randomUUID(),
         agentId: f.agent.agentId,
         title: "Must not be created",
         model: "claude-sonnet-5",
-      },
-    );
-    expect(result.isError).toBeTruthy();
-    expect(result.structuredContent).toBeUndefined();
-  });
+      };
+      if (!cachedMembership) {
+        const response = await accept(
+          client().request({
+            extraHeaders: protocolHeaders(
+              token,
+              "tools/call",
+              true,
+              "create_chat_thread",
+            ),
+            body: requestBody("tools/call", true, {
+              name: "create_chat_thread",
+              arguments: args,
+            }),
+          }),
+          [401],
+        );
+        expect(response.body).toStrictEqual({ error: "invalid_token" });
+        return;
+      }
+      const result = await callTool(token, "create_chat_thread", args);
+      expect(result.isError).toBeTruthy();
+      expect(result.structuredContent).toBeUndefined();
+      expect(result.content).toContainEqual({
+        type: "text",
+        text: "Account content is closed.",
+      });
+    },
+  );
 
   it("requires explicit creation choices and rejects unrelated execution controls", async () => {
     const f = await creationFixture();
