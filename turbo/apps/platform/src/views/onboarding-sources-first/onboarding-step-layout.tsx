@@ -105,20 +105,40 @@ export function OnboardingStepLayout({
       </div>
       <main
         key={`${String(currentStep)}-${title}`}
-        className="min-h-0 flex-1 overflow-y-auto px-6 py-10"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-10 pt-3"
       >
-        <div className="mx-auto flex min-h-full w-full max-w-[1180px] flex-col items-center justify-center gap-10 lg:flex-row lg:items-center lg:gap-14">
-          <div className="w-full shrink-0 lg:w-[380px]">
+        {/* How far along you are belongs at the top of the page, over the
+            column it describes. */}
+        <div className="mx-auto w-full max-w-[1180px] shrink-0 pt-3">
+          <div className="w-full lg:w-[380px]">
             <OnboardingStepProgress current={currentStep} total={totalSteps} />
-            <h1 className="mt-10 text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:mt-14 lg:text-[40px]">
+          </div>
+        </div>
+        <div className="mx-auto flex w-full max-w-[1180px] flex-1 flex-col items-center justify-center gap-10 py-8 lg:flex-row lg:items-center lg:gap-14">
+          <div className="w-full shrink-0 lg:w-[380px]">
+            <h1 className="text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
               {title}
             </h1>
             <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
               {description}
             </p>
-            {/* One filled action, its opt-out beside it, and the way back
-                under both -- the same weights the app's other footers use. */}
+            {/* Navigation stays on one line: a step back, the one filled
+                action, and its opt-out. */}
             <div className="mt-9 flex flex-wrap items-center gap-2">
+              {onBack ? (
+                <Button
+                  type="button"
+                  size="icon-lg"
+                  variant="outline"
+                  showTooltip
+                  onClick={onBack}
+                  aria-label={t(($) => {
+                    return $.onboarding.sourcesFirst.common.back;
+                  })}
+                >
+                  <ChevronLeft size={18} aria-hidden="true" />
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 size="lg"
@@ -147,20 +167,6 @@ export function OnboardingStepLayout({
                 </Button>
               ) : null}
             </div>
-            {onBack ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="quiet"
-                onClick={onBack}
-                className="-ml-3 mt-3 gap-1"
-              >
-                <ChevronLeft size={16} aria-hidden="true" />
-                {t(($) => {
-                  return $.onboarding.sourcesFirst.common.back;
-                })}
-              </Button>
-            ) : null}
           </div>
           <div
             className={cn(
