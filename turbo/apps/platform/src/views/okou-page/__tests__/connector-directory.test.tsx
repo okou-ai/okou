@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
+  click,
   fill,
   queryAllByRoleFast,
   setupPage,
@@ -51,15 +52,13 @@ test("Show builtin tool service details without HTTP permission controls", async
     within(dialog).getByPlaceholderText("Find connectors..."),
     "public",
   );
-  await waitFor(() => {
-    expect(within(dialog).getByText("Public Tools")).toBeVisible();
-  });
-  await user.click(dialogButton(dialog, "Open Public Tools details"));
-  await waitFor(() => {
-    expect(
-      within(dialog).getByRole("heading", { name: "Public Tools" }),
-    ).toBeVisible();
-  });
+  await expect(
+    within(dialog).findByText("Public Tools"),
+  ).resolves.toBeInTheDocument();
+  click(dialogButton(dialog, "Open Public Tools details"));
+  await expect(
+    within(dialog).findByRole("heading", { name: "Public Tools" }),
+  ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("Permissions")).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button", dialog).some((button) => {
