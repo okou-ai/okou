@@ -18,7 +18,7 @@ import {
   withComputerUseCommandGetBarrierFixture,
   withComputerUseCompletionLockBarrierFixture,
 } from "../../../test-fixtures/computer-use-command-get-erasure";
-import { settleIncludingAbort } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import {
   createBddApi,
   expectApiError,
@@ -1381,6 +1381,121 @@ describe("GET /api/computer-use/commands/:commandId account-erasure fence", () =
   );
 
   it(
+    "owns B1 holder pre-abort, pending readiness, transaction failure and recovery",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const actor = orgScoped(bdd.user());
+      const command = await createNullableComputerUseCommandFixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        createdAt: new Date(STARTED_AT_MS),
+      });
+      const subject = {
+        subjectKind: "user" as const,
+        subjectId: actor.userId,
+      };
+
+      const preAbortReason = new DOMException(
+        "Cancelled before holder setup",
+        "AbortError",
+      );
+      const preAborted = new AbortController();
+      preAborted.abort(preAbortReason);
+      await expect(
+        holdOpenErasureSubjectLockFixture({
+          subject,
+          signal: preAborted.signal,
+          beforeReady: () => {
+            throw new Error("Pre-aborted holder started database work");
+          },
+        }),
+      ).rejects.toBe(preAbortReason);
+
+      const startupFailure = new Error("Controlled holder startup failure");
+      let failedHolderPid: number | undefined;
+      await expect(
+        holdOpenErasureSubjectLockFixture({
+          subject,
+          signal: context.signal,
+          beforeReady: (holderPid) => {
+            failedHolderPid = holderPid;
+            throw startupFailure;
+          },
+        }),
+      ).rejects.toBe(startupFailure);
+      expect(failedHolderPid).toStrictEqual(expect.any(Number));
+
+      const readinessEntered = createDeferredPromise<number>(context.signal);
+      const finishReadiness = createDeferredPromise<void>(context.signal);
+      const cancelled = new AbortController();
+      const cancellationReason = new DOMException(
+        "Cancelled during holder readiness",
+        "AbortError",
+      );
+      const transactionFailure = new Error(
+        "Controlled failure after readiness cancellation",
+      );
+
+      await withOperationOwnership(
+        () => {
+          if (!finishReadiness.settled()) {
+            finishReadiness.resolve(undefined);
+          }
+        },
+        async (owner) => {
+          owner.abortOnExit(cancelled);
+          const setup = owner.start(
+            holdOpenErasureSubjectLockFixture({
+              subject,
+              signal: cancelled.signal,
+              beforeReady: async (holderPid) => {
+                readinessEntered.resolve(holderPid);
+                await finishReadiness.promise;
+                throw transactionFailure;
+              },
+            }),
+          );
+          await expect(readinessEntered.promise).resolves.toStrictEqual(
+            expect.any(Number),
+          );
+          cancelled.abort(cancellationReason);
+          expect(finishReadiness.settled()).toBeFalsy();
+          finishReadiness.resolve(undefined);
+          await setup.acceptFailureAfter((error) => {
+            expect(error).toBeInstanceOf(AggregateError);
+            if (!(error instanceof AggregateError)) {
+              throw new Error("Expected distinct holder setup failures");
+            }
+            expect(error.errors).toStrictEqual([
+              cancellationReason,
+              transactionFailure,
+            ]);
+          });
+        },
+      );
+
+      const holder = await holdOpenErasureSubjectLockFixture({
+        subject,
+        signal: context.signal,
+      });
+      await withOperationOwnership(holder.release, async (owner) => {
+        const reading = owner.start(
+          computerUse.requestReadComputerUseCommand(
+            actor,
+            command.commandId,
+            [200],
+          ),
+        );
+        await expect
+          .poll(holder.blockedWaiterCount, BLOCKED)
+          .toBeGreaterThanOrEqual(1);
+        await holder.release();
+        expect(valueOf(await reading.settled)).toMatchObject({ status: 200 });
+      });
+    },
+  );
+
+  it(
     "pins open, missing, closed and variable-maintenance SQL/control sequences",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
@@ -1430,20 +1545,20 @@ describe("GET /api/computer-use/commands/:commandId account-erasure fence", () =
       const variableHost = await computerUse.startComputerUseHost(actor, {
         hostName: "Variable SQL Desktop",
       });
-      const variableCommands = await Promise.all([
-        computerUse.createComputerUseWriteCommand(
+      const variableCommands = [
+        await computerUse.createComputerUseWriteCommand(
           { bearer: agentTokenFor(actor, host.hostId) },
           { kind: "app.open", app: "Finder", timeoutMs: 1000 },
         ),
-        computerUse.createComputerUseWriteCommand(
+        await computerUse.createComputerUseWriteCommand(
           { bearer: agentTokenFor(actor, variableHost.hostId) },
           { kind: "app.open", app: "Notes", timeoutMs: 1000 },
         ),
-      ]);
-      const variableClaims = await Promise.all([
-        computerUse.claimNextComputerUseCommand(host.hostToken),
-        computerUse.claimNextComputerUseCommand(variableHost.hostToken),
-      ]);
+      ] as const;
+      const variableClaims = [
+        await computerUse.claimNextComputerUseCommand(host.hostToken),
+        await computerUse.claimNextComputerUseCommand(variableHost.hostToken),
+      ] as const;
       const variableClaimIds = new Set(
         variableClaims.map((claim) => {
           if (claim.status !== "command") {

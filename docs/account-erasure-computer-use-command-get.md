@@ -29,8 +29,10 @@ continues to accept the Agent-token shape that it accepted before this fence.
 ## Canonical B1 admission
 
 The service opens one explicit `READ COMMITTED` transaction and retains it
-through timeout maintenance, requested-command projection, response
-serialization, the final cancellation check, and `COMMIT`.
+through timeout maintenance, requested-command projection, complete public
+response-object construction, the final cancellation check, and `COMMIT`.
+The route's later HTTP JSON byte encoding occurs after this transaction; it
+performs no additional database reads or value conversion.
 
 Inside that transaction it performs, in order:
 
@@ -41,9 +43,10 @@ Inside that transaction it performs, in order:
 4. one fresh `nowDate()` sample;
 5. the complete existing exact-owner timeout sweep;
 6. the existing requested-command plus optional bound-host projection;
-7. the existing response serialization;
+7. the existing public response-object construction and value conversion;
 8. one final in-transaction cancellation check; and
-9. `COMMIT`, followed by the existing outer cancellation check.
+9. `COMMIT`, followed by the existing outer cancellation check and HTTP JSON
+   byte encoding.
 
 The user/organization subject order is passed to canonical
 `assertErasureSubjectWritable`; canonical B1 remains responsible for sorting,
@@ -193,12 +196,22 @@ The focused matrix covers:
 6. real completion-row locking with `SKIP LOCKED`, rollback of timeout plus
    audit on abort, and the post-final-check commit boundary; and
 7. real lock-timeout propagation, pre-entry failure/completion/cancellation,
-   rejected fixture setup, healthy recovery, and pinned SQL/control sequences.
+   rejected generic barrier setup, and healthy recovery;
+8. pre-aborted B1-holder setup without database startup, cancellation during a
+   controlled pending readiness point in a real PostgreSQL transaction, joined
+   release, distinct transaction-error preservation, and healthy holder/GET
+   recovery; and
+9. pinned SQL/control sequences, with creation and host-claim setup serialized
+   so an early failure cannot leave a still-running sibling.
 
 ## Deployment compatibility
 
-This is a code-only additive admission fence. It adds no table, column, index,
-contract field, feature switch, controller step, or release requirement. Mixed
+The original R19 runtime is a code-only additive admission fence. It adds no
+table, column, index, contract field, feature switch, or controller step. Mixed
 versions continue to use the same data and response shape; the fenced version
 only refuses command GET maintenance/projection for a canonically closed user
 or organization.
+
+The R19-V validation repair changes only tests, fixtures, and this evidence, so
+it needs no independent runtime release. The original R19 runtime still follows
+the normal release, deployment, and controller publication-verification gates.

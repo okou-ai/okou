@@ -231,10 +231,16 @@ export async function withComputerUseCompletionLockBarrierFixture<T>(
 export async function holdOpenErasureSubjectLockFixture(args: {
   readonly subject: ErasureSubject;
   readonly signal: AbortSignal;
+  /**
+   * Infrastructure-only readiness control. No production API can pause or fail
+   * this content-free holder after its real B1 lock and backend lookup.
+   */
+  readonly beforeReady?: (holderPid: number) => void | Promise<void>;
 }): Promise<{
   readonly release: () => Promise<void>;
   readonly blockedWaiterCount: () => Promise<number>;
 }> {
+  args.signal.throwIfAborted();
   const started = createDeferredPromise<
     | { readonly ok: true; readonly holderPid: number }
     | { readonly ok: false; readonly error: unknown }
@@ -245,17 +251,24 @@ export async function holdOpenErasureSubjectLockFixture(args: {
   const holding = onRejection(
     db().transaction(
       async (tx) => {
+        args.signal.throwIfAborted();
         await lockErasureSubjects(tx, [args.subject]);
+        args.signal.throwIfAborted();
         const pids = await executeRawRows(
           tx,
           sql`SELECT pg_backend_pid() AS "pid"`,
           databasePidRowSchema,
         );
+        args.signal.throwIfAborted();
         const holderPid = pids[0]?.pid;
         if (!holderPid) {
           throw new Error("Expected the B1 holder backend pid");
         }
-        started.resolve({ ok: true, holderPid });
+        await args.beforeReady?.(holderPid);
+        args.signal.throwIfAborted();
+        if (!started.settled()) {
+          started.resolve({ ok: true, holderPid });
+        }
         await released.promise;
       },
       { isolationLevel: "read committed" },
@@ -279,14 +292,28 @@ export async function holdOpenErasureSubjectLockFixture(args: {
       throw result.error;
     }
   };
+  const failSetup = async (error: unknown): Promise<never> => {
+    if (!released.settled()) {
+      released.resolve(undefined);
+    }
+    const transactionResult = await finished;
+    if (!transactionResult.ok && !Object.is(transactionResult.error, error)) {
+      throw new AggregateError(
+        [error, transactionResult.error],
+        "B1 holder readiness and transaction failed",
+      );
+    }
+    throw error;
+  };
   const setupResult = await setup;
   if (!setupResult.ok) {
-    await finished;
-    throw setupResult.error;
+    return await failSetup(setupResult.error);
   }
   if (!setupResult.value.ok) {
-    await finished;
-    throw setupResult.value.error;
+    return await failSetup(setupResult.value.error);
+  }
+  if (args.signal.aborted) {
+    return await failSetup(args.signal.reason);
   }
   const holderPid = setupResult.value.holderPid;
   onTestFinished(release);
