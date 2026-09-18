@@ -23,7 +23,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { hostedDeployments, hostedSites } from "@okouai/db/schema/hosted-site";
+import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import {
   assertHostedDeploymentScope,
   canonicalizeHostedSiteScope,
@@ -469,7 +469,6 @@ async function seedHostedPublication(
       runId: run.id,
       publicBrand: "vm0",
       status: "ready",
-      deploymentVersion: 1,
       artifactUrl: `https://storage.example/${hostedDeploymentId}.zip`,
       r2Prefix: `hosted/${hostedDeploymentId}`,
       manifest: {

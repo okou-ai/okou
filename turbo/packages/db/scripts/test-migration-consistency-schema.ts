@@ -1305,6 +1305,13 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
+      "CREATE TRIGGER mirror_hosted_site_active_version BEFORE UPDATE OF active_deployment_id ON public.hosted_sites FOR EACH ROW EXECUTE FUNCTION mirror_hosted_site_active_version()",
+    schemaName: "public",
+    tableName: "hosted_sites",
+    triggerName: "mirror_hosted_site_active_version",
+  },
+  {
+    definition:
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
     schemaName: "public",
     tableName: "agent_runs",
@@ -1432,6 +1439,13 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
+  {
+    bodyHash: "a59eea5918c16453c35e349862d6059d",
+    functionName: "mirror_hosted_site_active_version",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
   {
     bodyHash: "8838fc6fbf2d02e7ca8294efda788e90",
     functionName: "billing_usage_source",

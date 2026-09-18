@@ -173,6 +173,18 @@ values and binds immutable public content by deployment ID. Legacy API history,
 selectors, old upload completion and schema fields remain until the documented
 consumer, data and rollback gates; no physical schema cleanup runs in that step.
 
+The subsequent runtime cleanup reads retained historical versions from manifest
+metadata and derives the active version through the fixed public deployment ID.
+Its runtime Drizzle mappings omit the four relational version fields from every
+implicit selection and insertion. A guarded SQL migration normalizes the
+metadata from the old authoritative columns, rotates changed manifest CAS hashes,
+and keeps outgoing API readers working with temporary defaults and a pointer
+projection trigger. IDs, stored byte paths and share policies do not change.
+See the [runtime retirement matrix](database/hosted-publication-retirement.md#runtime-version-column-retirement).
+The later physical-drop release removes the projection and columns only after
+this runtime cleanup is serving and defines the supported API rollback floor;
+it must not be bundled into the same production release.
+
 New prepares bind each upload URL to its declared SHA-256 through the signed
 `x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
 `Content-Type`; identical-byte retries work, while different bytes fail R2's

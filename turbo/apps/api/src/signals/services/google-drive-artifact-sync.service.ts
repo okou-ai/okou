@@ -23,7 +23,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import {
   hostedDeployments,
   privateHostedDeployments,
-} from "@okouai/db/schema/hosted-site";
+} from "@okouai/db/runtime/hosted-site";
 import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,

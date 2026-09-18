@@ -201,16 +201,27 @@ try {
     status: "failed",
     user: "other-owner",
   });
-  for (const [siteId, deploymentId, version] of [
-    [mixed, first, 1],
-    [deleted, legacy, null],
-    [missingPointer, randomUUID(), 2],
-    [wrongPointer, first, 2],
-    [failed, failure, 1],
-  ]) {
+  // The audit must report corruption from before the compatibility trigger
+  // existed. Bypass it only while constructing that historical fixture.
+  await writer.query(
+    "ALTER TABLE hosted_sites DISABLE TRIGGER mirror_hosted_site_active_version",
+  );
+  try {
+    for (const [siteId, deploymentId, version] of [
+      [mixed, first, 1],
+      [deleted, legacy, null],
+      [missingPointer, randomUUID(), 2],
+      [wrongPointer, first, 2],
+      [failed, failure, 1],
+    ]) {
+      await writer.query(
+        "UPDATE hosted_sites SET active_deployment_id = $2, active_deployment_version = $3 WHERE id = $1",
+        [siteId, deploymentId, version],
+      );
+    }
+  } finally {
     await writer.query(
-      "UPDATE hosted_sites SET active_deployment_id = $2, active_deployment_version = $3 WHERE id = $1",
-      [siteId, deploymentId, version],
+      "ALTER TABLE hosted_sites ENABLE TRIGGER mirror_hosted_site_active_version",
     );
   }
   for (const target of [mixed, deleted, randomUUID()]) {

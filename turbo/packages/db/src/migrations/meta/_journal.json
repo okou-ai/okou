@@ -624,6 +624,20 @@
       "when": 1789725646020,
       "tag": "1166_feishu_platform_agent_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 1167,
+      "version": "7",
+      "when": 1789734152934,
+      "tag": "1167_hosted_publication_manifest_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1168,
+      "version": "7",
+      "when": 1789734203175,
+      "tag": "1168_hosted_publication_runtime_defaults",
+      "breakpoints": true
     }
   ]
 }

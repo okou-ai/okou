@@ -1,5 +1,5 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { hostedSites } from "@okouai/db/schema/hosted-site";
+import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { and, eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
