@@ -37,10 +37,12 @@ test("An unknown route offers a working home link", async () => {
     }
 
     expect(
-      screen.getByRole("heading", { name: "Page not found" }),
+      screen.getByRole("heading", { name: "That page isn't here." }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("The page you are looking for does not exist."),
+      screen.getByText(
+        "It may have moved, or the link may be old. Everything else is where you left it.",
+      ),
     ).toBeInTheDocument();
     expect(homeLink).toHaveAttribute("href", "/");
     return homeLink;
@@ -50,7 +52,7 @@ test("An unknown route offers a working home link", async () => {
 
   await waitFor(() => {
     expect(
-      screen.queryByRole("heading", { name: "Page not found" }),
+      screen.queryByRole("heading", { name: "That page isn't here." }),
     ).not.toBeInTheDocument();
     expect(
       within(screen.getByTestId("labeled-nav-rail")).getByText("Agents"),
