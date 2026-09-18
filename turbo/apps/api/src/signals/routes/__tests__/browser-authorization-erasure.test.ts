@@ -39,13 +39,13 @@ import {
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
-import { setAgentRunStatusFixture } from "../../../test-fixtures/agent-deletion";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   channelsPublishedTo,
   countPublishedTo,
@@ -59,6 +59,7 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const callbacks = createChatCallbacksApi(context);
+const webhooks = createWebhookCallbackApi(context);
 const computerUse = createComputerUseBddApi(context);
 
 const STARTED_AT_MS = Date.parse("2026-09-17T10:00:00.000Z");
@@ -1380,10 +1381,37 @@ describe("account erasure fences cloud browser authorization request creation", 
       );
 
       const agent = await createAuthorizationRunFixture();
-      // Creation has never required an active run. Keep that contract explicit:
-      // an Agent token with no browser capability can mint a link for the same
-      // retained completed run identity.
-      await setAgentRunStatusFixture(agent.runId, "completed");
+      // Creation has never required an active run. Complete this run through
+      // the production sandbox webhook, then prove a capability-free Agent
+      // token can still mint a link for the retained terminal identity.
+      const completed = await webhooks.requestAgentComplete(
+        {
+          runId: agent.runId,
+          exitCode: 0,
+          checkpoint: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: `browser-authorization-${agent.runId}`,
+            cliAgentSessionHistoryHash: createHash("sha256")
+              .update(`bdd chat session history ${agent.runId}`)
+              .digest("hex"),
+          },
+        },
+        {
+          authorization: `Bearer ${runs.sandboxTokenForRun(
+            agent.actor,
+            agent.runId,
+          )}`,
+        },
+        [200],
+      );
+      expect(completed.body).toStrictEqual({
+        success: true,
+        status: "completed",
+      });
+      await flushWaitUntilForTest();
+      await expect(
+        runs.readRun(agent.actor, agent.runId),
+      ).resolves.toMatchObject({ status: "completed" });
       const agentRequest = await createAndInspectOpenRequest(agent, {
         tokenType: "agent",
       });
