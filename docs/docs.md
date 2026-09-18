@@ -77,6 +77,9 @@ surface; the index does not replace their detailed rules.
 - [Canonical authorization reads](./account-erasure-authorization-read.md):
   deadlock-free Browser and Computer Use GET admission, same-thread concurrency,
   exact SQL counts and complete unbounded host projection.
+- [Single-thread chat metadata](./account-erasure-chat-thread-metadata.md):
+  exact user authorization, canonical ownership admission, SQL counts, response
+  measurement and failure-path lifecycle evidence.
 - [Standalone Computer Use host directory](./account-erasure-computer-use-host-directory.md):
   exact host-owner admission, complete online/offline projection, Agent-bound
   narrowing and unbounded host-cardinality evidence.
