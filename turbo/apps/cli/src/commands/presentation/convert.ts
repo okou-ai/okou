@@ -673,41 +673,36 @@ function deckText(deck: Buffer): { slides: number; text: string } {
 }
 
 /**
- * Finds a family in the deck's own font stacks that can draw Chinese, Japanese,
- * or Korean text.
+ * Names the East Asian family the deck itself asks for.
  *
- * A browser resolves `Fredoka, "PingFang SC", sans-serif` per character, so the
- * display face covers Latin and a later family covers CJK. A pptx run carries
- * one typeface per script slot instead, and the renderer copies the first
- * family into all of them, which leaves every CJK glyph without a face.
+ * A browser resolves `Lexend, "PingFang SC", "Noto Sans CJK SC", sans-serif`
+ * per character, so the display face covers Latin and a later family covers
+ * CJK. A pptx run carries one typeface per script slot instead, and the
+ * renderer copies the first family into all of them, leaving CJK glyphs
+ * without a face.
  *
- * Availability is decided by drawing the glyph, not by measuring it: a missing
- * CJK glyph is replaced by a box whose advance width matches a real one, so
- * width comparison reports every family as capable.
+ * The family is taken from the stack's own order rather than from what happens
+ * to be installed where conversion runs. Picking a locally available face
+ * writes the conversion machine's environment into the file: a Linux sandbox
+ * names the Noto entry, and a reader without it substitutes metrics wide
+ * enough to overflow every box measured against the original.
  */
 const RESOLVE_EAST_ASIAN = `(() => {
-  const canvas = document.createElement("canvas");
-  canvas.width = 48;
-  canvas.height = 48;
-  const context = canvas.getContext("2d");
-  const render = (family) => {
-    context.clearRect(0, 0, 48, 48);
-    context.font = '40px ' + family;
-    context.fillText("\u4e2d", 2, 40);
-    return canvas.toDataURL();
-  };
-  const absent = render('"okou-absent-family-probe"');
-  const seen = new Set();
-  const generic = new Set(["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"]);
-  for (const element of document.querySelectorAll("*")) {
-    const stack = getComputedStyle(element).fontFamily;
-    if (!stack || seen.has(stack)) continue;
-    seen.add(stack);
-    for (const entry of stack.split(",")) {
-      const family = entry.trim().replace(/^["']|["']$/gu, "");
-      if (!family || generic.has(family.toLowerCase())) continue;
-      if (render(JSON.stringify(family)) !== absent) return JSON.stringify(family);
+  const CJK = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/u;
+  const generic = new Set(["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui", "ui-sans-serif", "ui-serif"]);
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    if (CJK.test(node.nodeValue || "") && node.parentElement) {
+      const families = getComputedStyle(node.parentElement)
+        .fontFamily.split(",")
+        .map((entry) => entry.trim().replace(/^["']|["']$/gu, ""))
+        .filter((entry) => entry && !generic.has(entry.toLowerCase()));
+      // The first entry is the display face chosen for Latin; the next one is
+      // what the deck nominates for the characters the display face lacks.
+      if (families.length > 1) return JSON.stringify(families[1]);
     }
+    node = walker.nextNode();
   }
   return JSON.stringify("");
 })()`;
@@ -715,12 +710,23 @@ const RESOLVE_EAST_ASIAN = `(() => {
 const CJK =
   /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/u;
 
-/** Rebuilds a ZIP from its entries; a .pptx has no directory or stream entries. */
+/**
+ * Rebuilds a ZIP from its entries.
+ *
+ * Directory entries are dropped. An OPC part name cannot end in a slash, and
+ * repacking one as an ordinary deflated member produces a zero-byte part with
+ * an illegal name, which a strict reader is entitled to reject.
+ */
 function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
   const locals: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
+  let members = 0;
   for (const [name, content] of entries) {
+    if (name.endsWith("/")) {
+      continue;
+    }
+    members += 1;
     const rawName = Buffer.from(name, "utf8");
     const deflated = deflateRawSync(content);
     const sum = crc32(content);
@@ -750,8 +756,8 @@ function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
   const directory = Buffer.concat(central);
   const end = Buffer.alloc(22);
   end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(entries.size, 8);
-  end.writeUInt16LE(entries.size, 10);
+  end.writeUInt16LE(members, 8);
+  end.writeUInt16LE(members, 10);
   end.writeUInt32LE(directory.length, 12);
   end.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, directory, end]);
