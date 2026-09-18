@@ -173,6 +173,23 @@ function rateLimitedSnapshot(retryAfterSeconds?: string): SnapshotFixture {
   };
 }
 
+/**
+ * The action-stage timeout: HTTP 422 with `6002` and a `detail` that, unlike
+ * the navigation and selector timers, names no stage at all.
+ */
+function actionTimedOutSnapshot(): SnapshotFixture {
+  return {
+    error: {
+      code: 6002,
+      message:
+        "A timeout was reached. Check gotoOptions/waitForSelector/waitForTimeout/actionTimeout options.",
+      detail: "Request timed out",
+      status: 422,
+    },
+    headers: { "cf-ray": "9a1b2c3d4e5f6789-SJC" },
+  };
+}
+
 function mockCloudflareVideoFrame(
   userId: string,
   status = 200,
@@ -1171,6 +1188,85 @@ describe("hosted Artifact previews", () => {
         return put.key.endsWith(`/preview-v3-${artifact.deploymentId}.webp`);
       }),
     ).toBeFalsy();
+  }, 120_000);
+
+  it("replays an action timeout as a probe without storing its result", async () => {
+    const owner = await artifactActor("Artifacts API timeout replay agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      actionTimedOutSnapshot(),
+      {},
+    ]);
+    const site = `timeout-replay-${randomUUID().slice(0, 8)}`;
+
+    const artifact = await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(2);
+    // The replay has to be the identical request under a short budget, or a
+    // difference in it could explain the outcome instead of the session.
+    expect(snapshotRequests[1]?.body).toMatchObject({
+      formats: ["content", "screenshot"],
+      gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
+      actionTimeout: 20_000,
+    });
+    // A probe diagnoses; it never recovers. A replay that renders the page
+    // must still leave the artifact without a preview.
+    const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(unpreviewedArtifact?.thumbnail).toBeNull();
+    expect(
+      owner.objectStore.puts.some((put) => {
+        return put.key.endsWith(`/preview-v3-${artifact.deploymentId}.webp`);
+      }),
+    ).toBeFalsy();
+  }, 120_000);
+
+  it("isolates each format when the replay reproduces the action timeout", async () => {
+    const owner = await artifactActor("Artifacts API timeout stage agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      actionTimedOutSnapshot(),
+      actionTimedOutSnapshot(),
+      actionTimedOutSnapshot(),
+      actionTimedOutSnapshot(),
+    ]);
+    const site = `timeout-stage-${randomUUID().slice(0, 8)}`;
+
+    await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(4);
+    // The two stage probes run concurrently, so they are identified by the
+    // format each one asks for rather than by arrival order.
+    const stageProbes = snapshotRequests.slice(2).map((request) => {
+      return request.body;
+    });
+    const probeShape = {
+      gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
+      actionTimeout: 20_000,
+    };
+    expect(stageProbes).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ...probeShape, formats: ["screenshot"] }),
+        expect.objectContaining({ ...probeShape, formats: ["content"] }),
+      ]),
+    );
+    const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(unpreviewedArtifact?.thumbnail).toBeNull();
   }, 120_000);
 
   it("retries a rate-limited snapshot after the stated wait", async () => {

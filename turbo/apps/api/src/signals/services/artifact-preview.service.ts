@@ -15,7 +15,16 @@ import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
 import { putImmutableS3Object } from "../external/s3";
-import { safeJsonParse, tapError } from "../utils";
+import {
+  bestEffort,
+  joinAll,
+  readBoundedResponseText,
+  safeJsonParse,
+  safeUrlParse,
+  settleIncludingAbort,
+  startUntrackedBestEffortCleanup,
+  tapError,
+} from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
@@ -87,6 +96,28 @@ const RATE_LIMIT_TOTAL_DELAY_BUDGET_MS = 45_000;
 const RATE_LIMIT_BACKOFF_BASE_MS = 2000;
 const RATE_LIMIT_BACKOFF_FACTOR = 4;
 const RATE_LIMIT_MAX_JITTER_MS = 500;
+
+// The `detail` Cloudflare returns for the failure these probes diagnose. It
+// names no timer, unlike `Navigation timeout ...` and `Waiting for selector
+// ...`, which is why the stage has to be established from outside.
+const SNAPSHOT_REQUEST_TIMEOUT_DETAIL = "Request timed out";
+// Probes start only after a render already spent the full budget above, so
+// they have to fit in what is left of the function. The worst render is the
+// ~181s the retry budget documents; a 20s replay plus a concurrent 20s pair
+// puts the worst diagnosed render near 221s of the 300s function budget. A
+// probe that reaches this ceiling is the observation, not a cost to avoid:
+// what matters is which probes reach it, not how long they were given.
+const PROBE_ACTION_TIMEOUT_MS = 20_000;
+// The action budget plus dispatch, navigation and response transport. The
+// failures being diagnosed spend ~1.5s outside the action budget, so this
+// leaves the same margin an order of magnitude over.
+const PROBE_REQUEST_TIMEOUT_MS = 30_000;
+// Error bodies from this endpoint are a single short JSON object. Bounding the
+// read keeps a probe from pulling a full snapshot payload into memory when the
+// response is something other than the expected error shape.
+const PROBE_ERROR_BODY_MAX_BYTES = 16_384;
+
+const DEFAULT_SNAPSHOT_FORMATS = ["content", "screenshot"] as const;
 
 const browserSnapshotSchema = z.object({
   meta: z.object({
@@ -256,12 +287,18 @@ type SnapshotNavigationOptions =
   | typeof PRIMARY_NAVIGATION_OPTIONS
   | typeof NAVIGATION_TIMEOUT_RETRY_OPTIONS;
 
+type SnapshotFormat = (typeof DEFAULT_SNAPSHOT_FORMATS)[number];
+
 interface FetchArtifactSnapshotArgs {
   readonly token: string;
   readonly wafSecret: string;
   readonly url: string;
   readonly previewUrl: URL;
   readonly navigationOptions: SnapshotNavigationOptions;
+  // Only the stage probes vary these. A render always asks for both formats
+  // under the full action budget.
+  readonly formats?: readonly SnapshotFormat[];
+  readonly actionTimeout?: number;
 }
 
 function fetchArtifactSnapshot(
@@ -271,6 +308,8 @@ function fetchArtifactSnapshot(
     url,
     previewUrl,
     navigationOptions,
+    formats = DEFAULT_SNAPSHOT_FORMATS,
+    actionTimeout = SNAPSHOT_ACTION_TIMEOUT_MS,
   }: FetchArtifactSnapshotArgs,
   signal: AbortSignal,
 ): Promise<Response> {
@@ -295,10 +334,10 @@ function fetchArtifactSnapshot(
             sameSite: "Strict",
           },
         ],
-        formats: ["content", "screenshot"],
+        formats,
         viewport: PREVIEW_VIEWPORT,
         ...navigationOptions,
-        actionTimeout: SNAPSHOT_ACTION_TIMEOUT_MS,
+        actionTimeout,
         screenshotOptions: { type: "webp", quality: 80 },
       }),
       signal,
@@ -314,6 +353,10 @@ interface SnapshotFailure {
   readonly status: number;
   readonly elapsedMs: number;
   readonly body: string;
+  // The origin the render actually navigated to. A private hosted render mints
+  // its own `pv-` preview origin, so the caller's artifact URL cannot stand in
+  // for it when a probe has to reach the same page.
+  readonly url: string;
   // Present only on a rate-limited response, and only when Cloudflare sends
   // them: the wait it will honour, and the name of the quota that was hit.
   readonly retryAfterSeconds?: number;
@@ -387,6 +430,7 @@ class ArtifactSnapshotError extends Error {
   readonly attempt: SnapshotAttempt;
   readonly status: number;
   readonly elapsedMs: number;
+  readonly url: string;
   readonly errorCode: number | undefined;
   readonly errorDetail: string | undefined;
   readonly retryAfterSeconds: number | undefined;
@@ -400,6 +444,7 @@ class ArtifactSnapshotError extends Error {
     this.attempt = failure.attempt;
     this.status = failure.status;
     this.elapsedMs = failure.elapsedMs;
+    this.url = failure.url;
     this.retryAfterSeconds = failure.retryAfterSeconds;
     this.rateLimitPolicy = failure.rateLimitPolicy;
     const parsed = browserSnapshotErrorSchema.safeParse(
@@ -469,6 +514,7 @@ async function observeArtifactSnapshot(
       status: response.status,
       elapsedMs: Math.round(performance.now() - startedAt),
       body,
+      url: args.url,
       ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
       ...(rateLimitPolicy === null ? {} : { rateLimitPolicy }),
     },
@@ -699,6 +745,206 @@ const renderAndStoreArtifactPreview$ = command(
   },
 );
 
+/** A minted private preview origin is a capability, so it never reaches a log. */
+function redactPreviewToken(value: string): string {
+  return value.replace(/pv-[a-f0-9]{48}/gu, "pv-[redacted]");
+}
+
+/** What a probe observed, in the terms the timeout question needs. */
+type SnapshotProbeVerdict = "ok" | "timed-out" | "unfinished" | "other";
+
+interface SnapshotProbeResult {
+  readonly verdict: SnapshotProbeVerdict;
+  readonly elapsedMs: number;
+  readonly status?: number;
+  readonly errorCode?: number;
+  readonly errorDetail?: string;
+  readonly ray?: string;
+}
+
+/**
+ * One diagnostic request against the page a render already failed on. It never
+ * yields an image: the response is read only far enough to classify it, and a
+ * successful body is dropped, so a probe can never turn into a stored preview.
+ */
+async function probeArtifactSnapshot(
+  args: Omit<FetchArtifactSnapshotArgs, "navigationOptions">,
+  formats: readonly SnapshotFormat[],
+): Promise<SnapshotProbeResult> {
+  const startedAt = performance.now();
+  const settled = await settleIncludingAbort(
+    fetchArtifactSnapshot(
+      {
+        ...args,
+        // Hold navigation constant so only the requested formats vary between
+        // the probes; a differing navigation profile would confound them.
+        navigationOptions: PRIMARY_NAVIGATION_OPTIONS,
+        formats,
+        actionTimeout: PROBE_ACTION_TIMEOUT_MS,
+      },
+      AbortSignal.timeout(PROBE_REQUEST_TIMEOUT_MS),
+    ),
+  );
+  const elapsedMs = Math.round(performance.now() - startedAt);
+  if (!settled.ok) {
+    // No response inside the client deadline. Observationally this is the same
+    // answer as the provider's own timeout: the request did not finish.
+    return { verdict: "unfinished", elapsedMs };
+  }
+  const response = settled.value;
+  const ray = response.headers.get("cf-ray");
+  const rayField = ray === null ? {} : { ray };
+  if (response.ok) {
+    if (response.body) {
+      startUntrackedBestEffortCleanup(response.body.cancel());
+    }
+    return { verdict: "ok", elapsedMs, status: response.status, ...rayField };
+  }
+  const body = await readBoundedResponseText(
+    response,
+    PROBE_ERROR_BODY_MAX_BYTES,
+  );
+  const parsed = browserSnapshotErrorSchema.safeParse(
+    safeJsonParse(body.kind === "text" ? body.text : ""),
+  );
+  const error = parsed.success ? parsed.data.errors[0] : undefined;
+  const reproduced =
+    response.status === 422 &&
+    error?.code === 6002 &&
+    error.detail === SNAPSHOT_REQUEST_TIMEOUT_DETAIL;
+  return {
+    verdict: reproduced ? "timed-out" : "other",
+    elapsedMs,
+    status: response.status,
+    ...(error?.code === undefined ? {} : { errorCode: error.code }),
+    ...(error?.detail === undefined ? {} : { errorDetail: error.detail }),
+    ...rayField,
+  };
+}
+
+/**
+ * The stage the probes point at. `combined-only` and `page-unreachable` are the
+ * two answers a single-request failure record could never produce: the first
+ * says neither format stalls on its own, the second puts navigation back on the
+ * table after `Navigation timeout` never once appeared in the retained window.
+ */
+type SnapshotTimeoutStage =
+  | "transient"
+  | "screenshot"
+  | "content"
+  | "combined-only"
+  | "page-unreachable"
+  | "inconclusive";
+
+function probeStalled(result: SnapshotProbeResult): boolean {
+  return result.verdict === "timed-out" || result.verdict === "unfinished";
+}
+
+function snapshotTimeoutStage(
+  screenshot: SnapshotProbeResult,
+  content: SnapshotProbeResult,
+): SnapshotTimeoutStage {
+  if (screenshot.verdict === "other" || content.verdict === "other") {
+    return "inconclusive";
+  }
+  if (probeStalled(screenshot) && probeStalled(content)) {
+    return "page-unreachable";
+  }
+  if (probeStalled(screenshot)) {
+    return "screenshot";
+  }
+  if (probeStalled(content)) {
+    return "content";
+  }
+  return "combined-only";
+}
+
+function probeLogFields(
+  prefix: "replay" | "screenshot" | "content",
+  result: SnapshotProbeResult,
+): Record<string, string | number> {
+  return {
+    [`${prefix}Verdict`]: result.verdict,
+    [`${prefix}ElapsedMs`]: result.elapsedMs,
+    ...(result.status === undefined
+      ? {}
+      : { [`${prefix}Status`]: result.status }),
+    ...(result.errorCode === undefined
+      ? {}
+      : { [`${prefix}ErrorCode`]: result.errorCode }),
+    ...(result.errorDetail === undefined
+      ? {}
+      : { [`${prefix}ErrorDetail`]: result.errorDetail }),
+    ...(result.ray === undefined ? {} : { [`${prefix}Ray`]: result.ray }),
+  };
+}
+
+/** Only the action-stage timeout. A rate limit is a 429 and never matches. */
+function isRequestTimeoutFailure(
+  error: unknown,
+): error is ArtifactSnapshotError {
+  return (
+    error instanceof ArtifactSnapshotError &&
+    error.status === 422 &&
+    error.errorCode === 6002 &&
+    error.errorDetail === SNAPSHOT_REQUEST_TIMEOUT_DETAIL
+  );
+}
+
+/**
+ * Establish which stage stalled, since the failure record cannot. Replay the
+ * identical request first: a replay that succeeds settles the question without
+ * the format split, because it shows the page and the request shape are both
+ * fine and that session was not. Only a replay that reproduces the timeout
+ * earns the two format-isolating probes, which run together so the diagnosis
+ * costs one extra request round rather than two.
+ */
+async function probeSnapshotTimeoutStages(
+  failure: ArtifactSnapshotError,
+  artifactId: string,
+): Promise<void> {
+  const token = env("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN");
+  const wafSecret = env("ARTIFACT_PREVIEW_WAF_SECRET");
+  const previewUrl = safeUrlParse(failure.url);
+  if (!token || !wafSecret || !previewUrl) {
+    return;
+  }
+  const requestArgs = {
+    token,
+    wafSecret,
+    url: failure.url,
+    previewUrl,
+  } as const;
+  const replay = await probeArtifactSnapshot(
+    requestArgs,
+    DEFAULT_SNAPSHOT_FORMATS,
+  );
+  const record = {
+    artifactId,
+    url: redactPreviewToken(failure.url),
+    renderElapsedMs: failure.elapsedMs,
+  };
+  if (replay.verdict === "ok") {
+    log.warn("Artifact preview timeout stage probe", {
+      ...record,
+      stage: "transient",
+      ...probeLogFields("replay", replay),
+    });
+    return;
+  }
+  const [screenshot, content] = await joinAll([
+    probeArtifactSnapshot(requestArgs, ["screenshot"]),
+    probeArtifactSnapshot(requestArgs, ["content"]),
+  ]);
+  log.warn("Artifact preview timeout stage probe", {
+    ...record,
+    stage: snapshotTimeoutStage(screenshot, content),
+    ...probeLogFields("replay", replay),
+    ...probeLogFields("screenshot", screenshot),
+    ...probeLogFields("content", content),
+  });
+}
+
 /**
  * Fire-and-forget the creation-time preview render on a detached signal via
  * waitUntil, so it runs to completion after the response returns rather than
@@ -712,17 +958,20 @@ export const scheduleArtifactPreviewRender$ = command(
     waitUntil(
       tapError(
         set(renderAndStoreArtifactPreview$, args, new AbortController().signal),
-        (error) => {
+        async (error) => {
           log.warn("Failed to render artifact preview", {
             artifactId: args.id,
             url: args.url,
             contentType: args.contentType,
-            error: (error instanceof Error
-              ? error.message
-              : String(error)
-            ).replace(/pv-[a-f0-9]{48}/gu, "pv-[redacted]"),
+            error: redactPreviewToken(
+              error instanceof Error ? error.message : String(error),
+            ),
             ...snapshotFailureLogFields(error),
           });
+          if (isRequestTimeoutFailure(error)) {
+            // Diagnostics must not become a second way for this render to fail.
+            await bestEffort(probeSnapshotTimeoutStages(error, args.id));
+          }
         },
       ),
     );
