@@ -2696,21 +2696,29 @@ This PR does not select a floor or change production provider settings.
 The X producer always emits `x-resource-v1` observations for post and user reads.
 The claim and proxy registry no longer carry `xResourceBilling` or its fixed
 `startDate`; date-based and absent-capability count producers are retired.
-The API accepts X `posts.read` and `user.read` only in the resource form. X writes,
-other connector counts, model and image events retain their existing shapes.
+The API retains its existing generic count-event and resource-event contracts.
+X writes, other connector counts, model and image events keep their shapes.
 The deduplication feature switch still chooses Q or N+R, and neither direction
 changes the producer protocol or the two-UTC-date retention window.
 
 New Runners work with the preceding switch-based API: they ignore the old claim
-capability and that API accepts resource uploads. Old Runners receiving the new
-claim instead select count-only reads, which the new API rejects. Upgrade and
-drain the old Runner processes, their Runs and retained uploads before promoting
-the API cleanup. The normal API-before-Runner promotion order does not satisfy
-this prerequisite. Supported rollback Runners must retain the unconditional
-producer; the preceding switch-based API remains a compatible rollback target.
+capability and that API accepts resource uploads. During normal API-before-Runner
+promotion, old Runners receiving the new claim select count-only reads. The
+unchanged generic ingestion path accepts those events and bills their full
+quantity, so this overlap does not discard usage. Runs that already captured the
+preceding capability continue reporting resources.
+
+Count events carry no resource identities: reads from an old Runner in this
+overlap cannot populate the daily resource table or receive deduplication, even
+if the feature switch is enabled. Full producer coverage requires old Runner
+processes, Runs, streams and retained uploads to finish draining. If uninterrupted
+deduplication is required during the cutover, predeploy the unconditional Runner
+against the preceding API and verify that drain before promoting the API.
+The preceding switch-based API remains a compatible rollback target; rolling
+back the Runner can reduce resource coverage again.
 
 This is a requested protocol retirement, not a database migration. No stored
 execution context contains the claim-only capability, and no historical usage
 or resource row needs rewriting. A code merge and local tests do not prove the
-production drain. Record that evidence under #34615 as described in the
+production drain or full resource coverage. Record that evidence under #34615 as described in the
 [X rollout guide](x-resource-rollout.md).

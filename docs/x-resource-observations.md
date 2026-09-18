@@ -31,9 +31,11 @@ quantities for every usage kind, retain positive quantities and the existing BYO
 model filter, and share bounded write admission regardless of the switch.
 
 X post and user reads always use resource observations. Runner claims and the
-proxy registry carry no separate X capability or activation date. The API accepts
-`posts.read` and `user.read` for provider `x` only through the resource schema;
-X writes, other connectors, model and image usage keep their count-event format.
+proxy registry carry no separate X capability or activation date. The API retains
+its generic count-event contract alongside resource observations. Count events
+bill their supplied quantity; resource observations supply the identities needed
+for daily deduplication. X writes, other connectors, model and image usage keep
+their count-event format.
 A rejected resource batch must never be downgraded to a count event.
 
 Each event carries:
@@ -212,15 +214,16 @@ their source UUIDs instead of using the aggregate-count buffer. The API-only
 deduplication switch continues to choose Q or N+R after ingestion.
 
 This cleanup retires the capability/date-based producer and its count-only X
-read uploads. A new Runner can run against the preceding switch-based API,
+read branch. A new Runner can run against the preceding switch-based API,
 which already accepts resource observations; its tolerant claim projection
 ignores the old capability field. An old Runner against the cleaned-up API can
-instead emit count-only reads, which the API rejects. Upgrade and drain those
-old Runner processes, Runs and retained uploads before promoting the cleaned-up
-API. Keep supported rollback Runner artifacts on the unconditional producer.
-The normal API-before-Runner promotion order does not establish this prerequisite;
-see the [rollout guide](./x-resource-rollout.md). No production release or drain
-is performed by the cleanup PR itself.
+instead emit count-only reads. Those events continue through the existing generic
+ingestion path and bill their full quantity during the normal API-before-Runner
+overlap. They cannot record identities or participate in deduplication, even with
+the switch enabled. Complete resource coverage requires draining old Runner
+processes, Runs, streams and retained uploads; see the
+[rollout guide](./x-resource-rollout.md). No production release or drain is
+performed by the cleanup PR itself.
 
 The existing selective parser remains the authoritative count validator. An
 additional identity copy retains at most 256 KiB of a JSON document. Only a

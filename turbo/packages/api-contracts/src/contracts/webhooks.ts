@@ -1299,17 +1299,7 @@ const webhookUsageEventItemSchema = z
     category: z.string().min(1).max(100),
     quantity: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   })
-  .strict()
-  .refine(
-    (event) => {
-      return (
-        event.kind !== "connector" ||
-        event.provider !== "x" ||
-        (event.category !== "posts.read" && event.category !== "user.read")
-      );
-    },
-    { message: "X post and user reads require resource observations" },
-  );
+  .strict();
 
 export const webhookUsageEventContract = c.router({
   send: {

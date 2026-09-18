@@ -97,29 +97,34 @@ settlement, compaction and Run-deletion lock order described in the ingestion
 contract. This is a deployment compatibility floor, independent of the switch.
 
 The cleanup removes the entire claim/registry capability, its fixed activation
-date and the producer's count-only X read path. X reads always produce v1;
-the API rejects count-only X `posts.read` and `user.read` events. Other count
-categories remain supported, including X writes and other providers.
+date and the producer's count-only X read path. New Runners always produce v1
+for X reads. The API's generic count-event contract remains unchanged, including
+X counts, other connectors, model and image usage.
 
 The preceding switch-based API already accepts the unconditional producer's
-uploads. Deploy that new Runner against the preceding API first, then drain old
-Runner processes, Runs, streams and retained count-only uploads before promoting
-the cleaned-up API. The standard API-before-Runner release order cannot be used
-as evidence that this drain has happened. An old Runner receiving a cleaned-up
-claim without its capability falls back to count events and cannot bill those
-reads through the new API. A merge or this document does not authorize or prove
-the required production deployment/drain.
+uploads. During the standard API-before-Runner release, an old Runner receiving
+a cleaned-up claim without its capability emits ordinary count events. The
+existing ingestion path accepts and bills those events at their full quantity;
+already-claimed Runs with the capability continue reporting resources. This
+preserves base billing, but count-only reads cannot populate resource history or
+receive deduplication even if the switch is enabled.
 
-Supported rollback Runners must retain the unconditional resource producer.
-The preceding switch-based API remains a compatible rollback target; older
-date-gated APIs with the setting unset reject v1 uploads. Switching deduplication
-off repairs neither an incompatible producer nor an incompatible API.
+Full deduplication coverage requires old Runner processes, Runs, streams and
+retained uploads to finish draining. Where uninterrupted deduplication is needed,
+deploy the unconditional Runner against the preceding API first and verify that
+drain before the API cutover. A merge or successful ordinary promotion does not
+establish this stronger coverage guarantee or authorize a production operation.
+
+The preceding switch-based API remains a compatible rollback target. A Runner
+rollback may reduce resource coverage while generic count billing still works;
+older date-gated APIs with the setting unset reject v1 uploads. Switching
+deduplication off does not repair an incompatible API.
 
 ## Deduplication rollout and observation
 
 The unconditional producer no longer captures an X capability at claim time.
 Confirm the drain of previous date-gated or absent-capability Runs and their
-in-flight requests, streams and retained uploads before the API cutover;
+in-flight requests, streams and retained uploads before claiming full coverage;
 checking binary versions alone is insufficient to claim complete resource
 coverage. Record immutable artifact identities and actual drain outcomes.
 
