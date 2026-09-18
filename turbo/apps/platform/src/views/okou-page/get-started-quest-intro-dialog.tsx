@@ -80,10 +80,25 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
 const TILE_CLASS =
   "grid size-[104px] shrink-0 place-items-center overflow-hidden rounded-2xl";
 
-function Tile({ accent, children }: { accent: string; children: ReactNode }) {
+/**
+ * A step's tile sits beside two lines of text rather than alone on a band, so
+ * it is drawn to the height of that text instead of the figure's.
+ */
+const STEP_TILE_CLASS =
+  "grid size-[72px] shrink-0 place-items-center overflow-hidden rounded-xl";
+
+function Tile({
+  accent,
+  size = "figure",
+  children,
+}: {
+  accent: string;
+  size?: "figure" | "step";
+  children: ReactNode;
+}) {
   return (
     <span
-      className={TILE_CLASS}
+      className={size === "step" ? STEP_TILE_CLASS : TILE_CLASS}
       style={{ backgroundColor: `${accent}${TILE_ALPHA}` }}
     >
       {children}
@@ -320,7 +335,7 @@ function WorkflowStep({
   description: string;
 }) {
   return (
-    <div className="flex items-center gap-3 py-1.5">
+    <div className="flex items-center gap-4 py-2">
       {art}
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{title}</span>
@@ -560,7 +575,7 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
       <div>
         <WorkflowStep
           art={
-            <Tile accent={ILLUSTRATION_ACCENTS.illustration}>
+            <Tile accent={ILLUSTRATION_ACCENTS.illustration} size="step">
               <TemplateArt accent={ILLUSTRATION_ACCENTS.illustration} />
             </Tile>
           }
@@ -574,7 +589,7 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
         />
         <WorkflowStep
           art={
-            <Tile accent={ILLUSTRATION_ACCENTS.website}>
+            <Tile accent={ILLUSTRATION_ACCENTS.website} size="step">
               <RunArt accent={ILLUSTRATION_ACCENTS.website} />
             </Tile>
           }
@@ -588,7 +603,7 @@ function WorkflowStepsIntro({ onConfirm, onClose }: IntroProps) {
         />
         <WorkflowStep
           art={
-            <Tile accent={ILLUSTRATION_ACCENTS.slides}>
+            <Tile accent={ILLUSTRATION_ACCENTS.slides} size="step">
               <SaveArt accent={ILLUSTRATION_ACCENTS.slides} />
             </Tile>
           }
