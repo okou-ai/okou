@@ -32,6 +32,7 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
         heartbeatGeneration: runnerHeartbeatGenerationSchema.nullable(),
         triggerSource: triggerSourceSchema.nullable(),
         status: z.enum([
+          "queued",
           "running",
           "pending",
           "completed",

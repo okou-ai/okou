@@ -16,6 +16,8 @@ export const vncConnections = pgTable(
   "vnc_connections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    // Private incarnation fence: deleting/recreating a UUID resets generation.
+    instanceId: uuid("instance_id").defaultRandom().notNull(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     displayName: varchar("display_name", { length: 128 }).notNull(),

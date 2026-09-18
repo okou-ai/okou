@@ -1968,6 +1968,679 @@ pub mod runners {
             pub writeback: Option<bool>,
         }
     }
+
+    /// Private Runner VNC credentials and fenced control lease DTOs.
+    pub mod vnc {
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct AcquireRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Exact saved connection incarnation, policy and Agent grant.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct AcquireRequestAuthority {
+            /// Connection incarnation; changes after delete and recreate.
+            pub instance_id: String,
+            /// Current configuration generation.
+            pub generation: i64,
+            /// Current grant identity; changes after revoke and regrant.
+            pub grant_id: String,
+        }
+
+        /// Operate only under exact current Run and connection authority.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct AcquireRequest {
+            /// Exact saved connection UUID, not endpoint identity.
+            pub connection_id: String,
+            /// Winning process identity.
+            pub runner_identity: AcquireRequestRunnerIdentity,
+            /// Authority returned by credential resolution.
+            pub authority: AcquireRequestAuthority,
+            /// Fresh acquisition intent UUID; preserve on ambiguous retry.
+            pub holder_id: String,
+        }
+
+        /// Bounded authority snapshot; stop on failure or the conservative monotonic deadline.
+        /// Derive the deadline from request start plus validForMs, never response arrival.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
+        pub enum AcquireResponse {
+            /// Acquired or replayed the same unextended live acquisition.
+            #[serde(rename = "acquired")]
+            Acquired {
+                /// Exact holder token for check, renew and release.
+                lease_token: String,
+                /// Database clock after authority and lease lock waits.
+                server_time: String,
+                /// Database expiry; diagnostic, not a local wall-clock deadline.
+                expires_at: String,
+                /// Remaining validity, at most 30000 milliseconds.
+                valid_for_ms: u64,
+                /// Renew conservatively every 10000 milliseconds.
+                renew_after_ms: i64,
+            },
+            /// Another holder remains within its accepted lifetime.
+            #[serde(rename = "busy")]
+            Busy,
+            /// Current Run, owner or grant authority is unavailable.
+            #[serde(rename = "unavailable")]
+            Unavailable,
+            /// Saved connection incarnation or policy changed.
+            #[serde(rename = "configuration_changed")]
+            ConfigurationChanged,
+            /// Lease expired, was released or belongs to another holder.
+            #[serde(rename = "expired")]
+            Expired,
+        }
+
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct CheckRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Exact saved connection incarnation, policy and Agent grant.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct CheckRequestAuthority {
+            /// Connection incarnation; changes after delete and recreate.
+            pub instance_id: String,
+            /// Current configuration generation.
+            pub generation: i64,
+            /// Current grant identity; changes after revoke and regrant.
+            pub grant_id: String,
+        }
+
+        /// Operate only under exact current Run and connection authority.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct CheckRequest {
+            /// Exact saved connection UUID, not endpoint identity.
+            pub connection_id: String,
+            /// Winning process identity.
+            pub runner_identity: CheckRequestRunnerIdentity,
+            /// Authority returned by credential resolution.
+            pub authority: CheckRequestAuthority,
+            /// Exact random lease token; never adopt another holder.
+            pub lease_token: String,
+        }
+
+        /// Bounded authority snapshot; stop on failure or the conservative monotonic deadline.
+        /// Derive the deadline from request start plus validForMs, never response arrival.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
+        pub enum CheckResponse {
+            /// Exact lease is still authorized; only renew extends expiry.
+            #[serde(rename = "valid")]
+            Valid {
+                /// Exact holder token for check, renew and release.
+                lease_token: String,
+                /// Database clock after authority and lease lock waits.
+                server_time: String,
+                /// Database expiry; diagnostic, not a local wall-clock deadline.
+                expires_at: String,
+                /// Remaining validity, at most 30000 milliseconds.
+                valid_for_ms: u64,
+                /// Renew conservatively every 10000 milliseconds.
+                renew_after_ms: i64,
+            },
+            /// Current Run, owner or grant authority is unavailable.
+            #[serde(rename = "unavailable")]
+            Unavailable,
+            /// Saved connection incarnation or policy changed.
+            #[serde(rename = "configuration_changed")]
+            ConfigurationChanged,
+            /// Lease expired, was released or belongs to another holder.
+            #[serde(rename = "expired")]
+            Expired,
+        }
+
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ReleaseRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Exact saved connection incarnation, policy and Agent grant.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ReleaseRequestAuthority {
+            /// Connection incarnation; changes after delete and recreate.
+            pub instance_id: String,
+            /// Current configuration generation.
+            pub generation: i64,
+            /// Current grant identity; changes after revoke and regrant.
+            pub grant_id: String,
+        }
+
+        /// Operate only under exact current Run and connection authority.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ReleaseRequest {
+            /// Exact saved connection UUID, not endpoint identity.
+            pub connection_id: String,
+            /// Winning process identity.
+            pub runner_identity: ReleaseRequestRunnerIdentity,
+            /// Authority returned by credential resolution.
+            pub authority: ReleaseRequestAuthority,
+            /// Exact random lease token; never adopt another holder.
+            pub lease_token: String,
+        }
+
+        /// Release outcome; a lost response never restores control authority.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "outcome")]
+        pub enum ReleaseResponse {
+            /// Exact lease was released.
+            #[serde(rename = "released")]
+            Released,
+            /// Current authority is unavailable.
+            #[serde(rename = "unavailable")]
+            Unavailable,
+            /// Lease is expired or superseded; another holder is untouched.
+            #[serde(rename = "expired")]
+            Expired,
+        }
+
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct RenewRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Exact saved connection incarnation, policy and Agent grant.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct RenewRequestAuthority {
+            /// Connection incarnation; changes after delete and recreate.
+            pub instance_id: String,
+            /// Current configuration generation.
+            pub generation: i64,
+            /// Current grant identity; changes after revoke and regrant.
+            pub grant_id: String,
+        }
+
+        /// Operate only under exact current Run and connection authority.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct RenewRequest {
+            /// Exact saved connection UUID, not endpoint identity.
+            pub connection_id: String,
+            /// Winning process identity.
+            pub runner_identity: RenewRequestRunnerIdentity,
+            /// Authority returned by credential resolution.
+            pub authority: RenewRequestAuthority,
+            /// Exact random lease token; never adopt another holder.
+            pub lease_token: String,
+        }
+
+        /// Bounded authority snapshot; stop on failure or the conservative monotonic deadline.
+        /// Derive the deadline from request start plus validForMs, never response arrival.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
+        pub enum RenewResponse {
+            /// Exact lease is still authorized; only renew extends expiry.
+            #[serde(rename = "valid")]
+            Valid {
+                /// Exact holder token for check, renew and release.
+                lease_token: String,
+                /// Database clock after authority and lease lock waits.
+                server_time: String,
+                /// Database expiry; diagnostic, not a local wall-clock deadline.
+                expires_at: String,
+                /// Remaining validity, at most 30000 milliseconds.
+                valid_for_ms: u64,
+                /// Renew conservatively every 10000 milliseconds.
+                renew_after_ms: i64,
+            },
+            /// Current Run, owner or grant authority is unavailable.
+            #[serde(rename = "unavailable")]
+            Unavailable,
+            /// Saved connection incarnation or policy changed.
+            #[serde(rename = "configuration_changed")]
+            ConfigurationChanged,
+            /// Lease expired, was released or belongs to another holder.
+            #[serde(rename = "expired")]
+            Expired,
+        }
+
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ResolveRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// One supported authentication and security pair, never a cross-product.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ResolveRequestSupportedProfile {
+            /// Supported authentication method.
+            pub auth_method: String,
+            /// Supported security policy.
+            pub security_type: String,
+        }
+
+        /// Resolve one saved VNC policy supported by this Runner.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ResolveRequest {
+            /// Exact saved VNC connection UUID.
+            pub connection_id: String,
+            /// Winning process identity.
+            pub runner_identity: ResolveRequestRunnerIdentity,
+            /// Exact supported pairs; empty means no supported policy.
+            pub supported_profiles: Vec<ResolveRequestSupportedProfile>,
+        }
+
+        /// Exact saved connection incarnation, policy and Agent grant.
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        pub struct ResolveResponseResolvedAuthority {
+            /// Connection incarnation; changes after delete and recreate.
+            pub instance_id: String,
+            /// Current configuration generation.
+            pub generation: i64,
+            /// Current grant identity; changes after revoke and regrant.
+            pub grant_id: String,
+        }
+
+        /// Typed private VNC credential.
+        pub enum ResolveResponseResolvedAuthentication {
+            /// Classic VNC password challenge response.
+            VncPassword {
+                /// Bounded zeroizing classic VNC password, preserving spaces.
+                password: crate::SecretText<8>,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedAuthentication {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "vnc_password")]
+                    VncPassword,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "method")]
+                    Outcome,
+                    #[serde(rename = "password")]
+                    Password,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedAuthentication;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut password = None::<crate::SecretText<8>>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::Password => {
+                                    if password.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    password = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, password) {
+                            (Some(Kind::VncPassword), Some(password)) => {
+                                Ok(ResolveResponseResolvedAuthentication::VncPassword { password })
+                            }
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Exact trust source; insecure verification is not representable.
+        pub enum ResolveResponseResolvedSecurityX509VncTrust {
+            /// Use system trust roots.
+            System,
+            /// Use the explicitly saved custom CA bundle.
+            CustomCa {
+                /// Owner-provided CA bundle, private to this connection.
+                ca_bundle: String,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurityX509VncTrust {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "system")]
+                    System,
+                    #[serde(rename = "custom_ca")]
+                    CustomCa,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "mode")]
+                    Outcome,
+                    #[serde(rename = "caBundle")]
+                    CaBundle,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedSecurityX509VncTrust;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut ca_bundle = None::<String>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::CaBundle => {
+                                    if ca_bundle.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    ca_bundle = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, ca_bundle) {
+                            (Some(Kind::System), None) => {
+                                Ok(ResolveResponseResolvedSecurityX509VncTrust::System)
+                            }
+                            (Some(Kind::CustomCa), Some(ca_bundle)) => {
+                                Ok(ResolveResponseResolvedSecurityX509VncTrust::CustomCa {
+                                    ca_bundle,
+                                })
+                            }
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Saved security policy, independent of future engine capabilities.
+        pub enum ResolveResponseResolvedSecurity {
+            /// VeNCrypt X509Vnc with verified TLS.
+            X509Vnc {
+                /// Required verified TLS trust policy.
+                trust: ResolveResponseResolvedSecurityX509VncTrust,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurity {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "x509_vnc")]
+                    X509Vnc,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "type")]
+                    Outcome,
+                    #[serde(rename = "trust")]
+                    Trust,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponseResolvedSecurity;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut trust = None::<ResolveResponseResolvedSecurityX509VncTrust>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::Trust => {
+                                    if trust.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    trust = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, trust) {
+                            (Some(Kind::X509Vnc), Some(trust)) => {
+                                Ok(ResolveResponseResolvedSecurity::X509Vnc { trust })
+                            }
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+
+        /// Private credential handoff. Never Debug, clone, serialize, persist or send to guest.
+        pub enum ResolveResponse {
+            /// Current authority is unavailable; no credential delivered.
+            Unavailable,
+            /// Runner does not support the exact saved profile.
+            UnsupportedProfile,
+            /// Current credential and policy; control still requires a lease.
+            Resolved {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Exact authority for subsequent lease operations.
+                authority: ResolveResponseResolvedAuthority,
+                /// Credential for the explicitly saved method.
+                authentication: ResolveResponseResolvedAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedSecurity,
+            },
+        }
+
+        impl<'de> serde::Deserialize<'de> for ResolveResponse {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                // Decode fields directly: serde's internally tagged Content buffer would copy secrets.
+                #[derive(serde::Deserialize)]
+                enum Kind {
+                    #[serde(rename = "unavailable")]
+                    Unavailable,
+                    #[serde(rename = "unsupported_profile")]
+                    UnsupportedProfile,
+                    #[serde(rename = "resolved")]
+                    Resolved,
+                }
+                #[derive(serde::Deserialize)]
+                #[serde(field_identifier)]
+                enum Field {
+                    #[serde(rename = "outcome")]
+                    Outcome,
+                    #[serde(rename = "host")]
+                    Host,
+                    #[serde(rename = "port")]
+                    Port,
+                    #[serde(rename = "authority")]
+                    Authority,
+                    #[serde(rename = "authentication")]
+                    Authentication,
+                    #[serde(rename = "security")]
+                    Security,
+                }
+                struct Visitor;
+                impl<'de> serde::de::Visitor<'de> for Visitor {
+                    type Value = ResolveResponse;
+                    fn expecting(
+                        &self,
+                        formatter: &mut std::fmt::Formatter<'_>,
+                    ) -> std::fmt::Result {
+                        formatter.write_str("a private authority response object")
+                    }
+                    fn visit_map<M: serde::de::MapAccess<'de>>(
+                        self,
+                        mut map: M,
+                    ) -> Result<Self::Value, M::Error> {
+                        let mut outcome = None::<Kind>;
+                        let mut host = None::<String>;
+                        let mut port = None::<u64>;
+                        let mut authority = None::<ResolveResponseResolvedAuthority>;
+                        let mut authentication = None::<ResolveResponseResolvedAuthentication>;
+                        let mut security = None::<ResolveResponseResolvedSecurity>;
+                        while let Some(field) = map.next_key::<Field>()? {
+                            match field {
+                                Field::Outcome => {
+                                    if outcome.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    outcome = Some(map.next_value()?);
+                                }
+                                Field::Host => {
+                                    if host.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    host = Some(map.next_value()?);
+                                }
+                                Field::Port => {
+                                    if port.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    port = Some(map.next_value()?);
+                                }
+                                Field::Authority => {
+                                    if authority.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    authority = Some(map.next_value()?);
+                                }
+                                Field::Authentication => {
+                                    if authentication.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    authentication = Some(map.next_value()?);
+                                }
+                                Field::Security => {
+                                    if security.is_some() {
+                                        return Err(serde::de::Error::custom(
+                                            "duplicate authority field",
+                                        ));
+                                    }
+                                    security = Some(map.next_value()?);
+                                }
+                            }
+                        }
+                        match (outcome, host, port, authority, authentication, security) {
+                            (Some(Kind::Unavailable), None, None, None, None, None) => {
+                                Ok(ResolveResponse::Unavailable)
+                            }
+                            (Some(Kind::UnsupportedProfile), None, None, None, None, None) => {
+                                Ok(ResolveResponse::UnsupportedProfile)
+                            }
+                            (
+                                Some(Kind::Resolved),
+                                Some(host),
+                                Some(port),
+                                Some(authority),
+                                Some(authentication),
+                                Some(security),
+                            ) => Ok(ResolveResponse::Resolved {
+                                host,
+                                port,
+                                authority,
+                                authentication,
+                                security,
+                            }),
+                            _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
+                        }
+                    }
+                }
+                deserializer.deserialize_map(Visitor)
+            }
+        }
+    }
 }
 
 /// Webhook DTOs generated from TypeScript API contracts.
