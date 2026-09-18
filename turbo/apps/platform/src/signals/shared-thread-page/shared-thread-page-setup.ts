@@ -18,7 +18,12 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { pathParams$ } from "../route.ts";
 import { updatePage$ } from "../react-router.ts";
 import { setPageSignal$ } from "../page-signal.ts";
-import { createSharedThreadRichContentSignals } from "./shared-thread-rich-content.ts";
+import {
+  createSharedThreadArtifactSignals,
+  createSharedThreadRichContentSignals,
+} from "./shared-thread-rich-content.ts";
+import { createSharedThreadArtifactPreviewSignals } from "./shared-thread-artifact-preview.ts";
+import { classifyChatAttachment } from "../chat-page/parse-body-blocks.ts";
 
 export const setupSharedThreadPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -33,14 +38,31 @@ export const setupSharedThreadPage$ = command(
     );
     let sharedThread: SharedDisplayThread | null = null;
     if (result.status === 200) {
+      const artifactPreview = createSharedThreadArtifactPreviewSignals(signal);
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(artifactPreview.dispose$);
+        },
+        { once: true },
+      );
       const messages: SharedDisplayThread["messages"][number][] = [];
       const richMessages: (typeof result.body.messages)[number][] = [];
       for (const source of result.body.messages) {
         const message = {
           ...source,
           attachments: source.attachments?.map((attachment) => {
+            const kind = classifyChatAttachment(attachment);
             return {
               ...attachment,
+              ...(kind === "video" || kind === "html"
+                ? {
+                    artifact: createSharedThreadArtifactSignals(
+                      { ...attachment, kind },
+                      artifactPreview,
+                    ),
+                  }
+                : {}),
               preview: createAttachmentPreviewSignals(attachment.url, {
                 contentType: attachment.contentType,
               }),
@@ -69,8 +91,8 @@ export const setupSharedThreadPage$ = command(
       const richContent =
         richMessages.length === 0
           ? undefined
-          : createSharedThreadRichContentSignals(richMessages);
-      sharedThread = { ...result.body, messages, richContent };
+          : createSharedThreadRichContentSignals(richMessages, artifactPreview);
+      sharedThread = { ...result.body, messages, richContent, artifactPreview };
     }
     set(
       updateDocumentTitle$,

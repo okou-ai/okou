@@ -31,6 +31,10 @@ interface AttachmentPresignedToken {
   readonly token: string;
   readonly expiresAt: string;
   readonly contentType?: string;
+  /** Stable reference to the independent screenshot or video poster. */
+  readonly previewImageUrl?: string;
+  /** Signed bytes served as an attachment, distinct from a hosted preview. */
+  readonly downloadUrl?: string;
   /**
    * Stable URL that another viewer can open. A signature cannot be converted
    * into one, so null means that the attachment remains private.
@@ -65,6 +69,8 @@ function createArtifactReferencePresignedToken$(
       token: withFragment(response.body.url, reference.fragment),
       expiresAt: response.body.expiresAt,
       contentType: response.body.contentType,
+      previewImageUrl: response.body.previewImageUrl,
+      downloadUrl: response.body.downloadUrl,
       publicUrl: null,
     };
   });

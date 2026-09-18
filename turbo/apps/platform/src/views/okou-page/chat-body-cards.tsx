@@ -106,7 +106,7 @@ export const CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS = cn(
   CHAT_INLINE_MEDIA_THUMBNAIL_PREVIEW_CLASS,
   "bg-black",
 );
-const CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS = cn(
+export const CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS = cn(
   "aspect-[16/10] w-[min(100%,400px)] max-w-full cursor-pointer rounded-lg",
   CHAT_INLINE_MEDIA_PREVIEW_CHROME_CLASS,
   "bg-black",
@@ -201,6 +201,8 @@ type ChatVideoPreviewButtonProps = {
   posterLoad: ImageLoadSignals;
   previewImageUrl$: ArtifactSignals["previewImageUrl$"];
   videoClassName: string;
+  testId?: string;
+  unavailableLabel?: string;
 };
 
 function videoPosterFrameUrl(url: string): string {
@@ -219,6 +221,8 @@ export function ChatVideoPreviewButton({
   posterLoad,
   previewImageUrl$,
   videoClassName,
+  testId,
+  unavailableLabel,
 }: ChatVideoPreviewButtonProps) {
   const previewImageLoadable = useLastLoadable(previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
@@ -244,6 +248,7 @@ export function ChatVideoPreviewButton({
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={onPreview}
       title={filename}
       aria-label={ariaLabel}
@@ -256,7 +261,14 @@ export function ChatVideoPreviewButton({
         data-testid="chat-video-preview-poster"
         className={cn("block bg-black", posterClassName)}
       />
-      {previewImageUrl ? (
+      {unavailableLabel ? (
+        <span
+          role="status"
+          className="absolute inset-0 flex items-center justify-center p-3 text-sm text-white"
+        >
+          {unavailableLabel}
+        </span>
+      ) : previewImageUrl ? (
         <ArtifactThumbnailImage
           src={previewImageUrl}
           load={posterLoad}
@@ -267,11 +279,13 @@ export function ChatVideoPreviewButton({
       ) : previewImagePending ? null : (
         videoFallback
       )}
-      <span className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover/video-preview:bg-black/35">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white shadow-lg transition-transform group-hover/video-preview:scale-105">
-          <Play size={17} />
+      {!unavailableLabel && (
+        <span className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover/video-preview:bg-black/35">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white shadow-lg transition-transform group-hover/video-preview:scale-105">
+            <Play size={17} />
+          </span>
         </span>
-      </span>
+      )}
     </button>
   );
 }
