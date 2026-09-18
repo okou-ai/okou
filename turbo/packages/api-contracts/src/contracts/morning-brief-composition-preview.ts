@@ -92,6 +92,8 @@ const compositionResultSchema = z.object({
       ]),
     })
     .nullable(),
+  /** Exact UTF-8 bytes of the serialized descriptor array below. */
+  descriptorBytes: z.number().int().nonnegative(),
   /** Credential-free retained authority; never a token or a payload. */
   descriptors: z.array(
     z.object({
