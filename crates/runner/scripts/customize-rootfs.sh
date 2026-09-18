@@ -298,11 +298,12 @@ install_host_file "$ca_cert" "/${CA_ROOTFS_DEST}" 644
 
 # /etc/environment is read by PAM for all login sessions.
 # [sync:etc-environment] Keep in sync with:
-# - .github/scripts/runner-behavior-exec.sh (Test 10)
+# - .github/scripts/runner-behavior-exec-remote.sh (Test 10)
 # - crates/guest-control-server/src/user.rs
 printf '%s\n' \
   "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   "LANG=C.UTF-8" \
+  "RUSTUP_HOME=/usr/local/rustup" \
   "NPM_CONFIG_UPDATE_NOTIFIER=false" \
   "NODE_EXTRA_CA_CERTS=/${CA_ROOTFS_DEST}" \
   "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt" \
