@@ -83,6 +83,13 @@ runtime targets; later default changes cannot substitute another account. MCP
 credential values and aliases remain outside the sandbox environment and skill
 mounts. The proxy resolves the exact selected account at the network boundary,
 including for no-auth accounts. Shared MCP discovery supplies tools and schemas.
+Builtin MCP authorization is cached for at most 30 seconds from account
+validation, even when the provider credential has no expiry. Deleting an
+account removes it from discovery immediately; subsequent proxy requests can
+reuse cached authorization until its lease expires, then must validate the
+same account again. Lease expiry does not interrupt an in-flight request or
+stream. No-auth requests also perform this validation. HTTP and custom
+connector cache behavior is unchanged.
 
 ## Rollback and remaining integration
 

@@ -1790,7 +1790,7 @@ class TestHandleFirewallRequest:
         assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "auth_unavailable"
         body = json.loads(flow.response.content)
         assert body["error"] == "auth_unavailable"
-        assert body["message"] == "Auth secrets not configured"
+        assert body["message"] == "Auth context not configured"
         assert body["permission"] == "github"
         assert body["base"] == "https://api.github.com"
         assert "connectors" not in body

@@ -2,23 +2,28 @@
 
 import asyncio
 import json
+import threading
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 import auth
+import firewall_auth_cache as auth_cache
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import registry
+from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.firewall_helpers import cancel_pending_task
 from tests.registry_builtin_helpers import write_catalog_cache
 from tests.registry_helpers import write_multi_sandbox_registry
+from tests.requestheaders_helpers import await_requestheaders_result
 
 _CLIENT_IP = "10.200.0.5"
 _REMOVED = "removed"
 _RETAINED = "retained"
+_MCP_SOURCE_ID = "550e8400-e29b-41d4-a716-446655440001"
 
 
 def _firewall(name: str, base: str) -> dict[str, object]:
@@ -99,6 +104,261 @@ def _remove_from_catalog(cache_path: Path, *, retained_base: str) -> None:
         firewalls={_RETAINED: _firewall(_RETAINED, retained_base)},
     )
     next_path.replace(cache_path)
+
+
+def _write_account_mcp_state(
+    tmp_path: Path, *, credentialed: bool = False, account_bound: bool = True
+) -> tuple[Path, Path]:
+    registry_path = tmp_path / "registry.json"
+    cache_path = tmp_path / "builtin-firewall-catalog-cache.json"
+    sandbox = {
+        **_active_sandbox(tmp_path),
+        "captureNetworkBodies": True,
+        "firewalls": [
+            {
+                "kind": "builtin",
+                "name": _REMOVED,
+                **({"sourceId": _MCP_SOURCE_ID} if account_bound else {}),
+            },
+            {"kind": "builtin", "name": _RETAINED},
+        ],
+        "connectorRoutingVariables": {f"builtin:{_REMOVED}": {}},
+        "networkPolicies": {
+            name: {"allow": [], "deny": [], "ask": [], "unknownPolicy": "allow"}
+            for name in (_REMOVED, _RETAINED)
+        },
+    }
+    write_multi_sandbox_registry(registry_path, {_CLIENT_IP: sandbox})
+    write_catalog_cache(
+        cache_path,
+        digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        version="catalog-a",
+        firewalls={
+            _REMOVED: {
+                "name": _REMOVED,
+                "apis": [
+                    {
+                        "base": "https://shared.example.com",
+                        "auth": (
+                            {"headers": {"Authorization": "Bearer ${{ secrets.MCP_TOKEN }}"}}
+                            if credentialed
+                            else {}
+                        ),
+                        "permissions": [],
+                    }
+                ],
+            },
+            _RETAINED: _firewall(_RETAINED, "https://shared.example.com"),
+        },
+    )
+    return registry_path, cache_path
+
+
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+@pytest.mark.parametrize("credentialed", [False, True], ids=["none", "manual"])
+async def test_builtin_mcp_account_lease_rechecks_deleted_account(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first, credentialed
+):
+    registry_path, cache_path = _write_account_mcp_state(tmp_path, credentialed=credentialed)
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(
+        firewall_auth_success_response(
+            {"Authorization": "Bearer selected-account"} if credentialed else {},
+            expires_at=1030,
+        )
+    )
+    endpoint.queue_json_response(
+        {"error": {"code": "CONNECTOR_NOT_CONFIGURED", "message": "Account was deleted"}},
+        status=424,
+    )
+    flows = [
+        real_flow(
+            with_response=False,
+            client_ip=_CLIENT_IP,
+            host="shared.example.com",
+            path="/server",
+            method="POST",
+        )
+        for _ in range(3)
+    ]
+    for flow in flows:
+        flow.request.headers["X-Okou-Connector-Intent"] = _REMOVED
+        if requestheaders_first:
+            flow.request.headers["Content-Length"] = str(mitm_addon.STREAM_BUFFER_LIMIT + 1)
+
+    with (
+        endpoint.run(),
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url=endpoint.api_url,
+        ),
+        patch.object(auth_cache.time, "time", return_value=1000) as clock,
+    ):
+        for index, flow in enumerate(flows):
+            clock.return_value = 1031 if index == 2 else 1000
+            if requestheaders_first:
+                await await_requestheaders_result(mitm_addon.requestheaders(flow))
+            await mitm_addon.request(flow)
+
+    assert endpoint.request_count == 2
+    for request in endpoint.requests:
+        matched = request.json_body()["matchedFirewall"]
+        assert isinstance(matched, dict)
+        assert matched["sourceId"] == _MCP_SOURCE_ID
+        assert matched["connectorSlug"] == _REMOVED
+    for flow in flows[:2]:
+        assert flow.response is None
+        assert flow.error is None
+        assert flow.request.headers.get("Authorization") == (
+            "Bearer selected-account" if credentialed else None
+        )
+    denied = flows[2]
+    if requestheaders_first:
+        assert denied.error is not None
+    else:
+        assert denied.response is not None
+        assert denied.response.status_code == 424
+    assert denied.metadata[metadata_keys.FIREWALL_ERROR] == "connector_not_configured"
+    assert "Authorization" not in denied.request.headers
+
+
+@pytest.mark.parametrize("account_bound", [False, True], ids=["unbound-http", "bound-mcp"])
+async def test_no_auth_builtin_requires_account_authority_only_when_account_bound(
+    tmp_path, real_flow, mitm_ctx, account_bound
+):
+    registry_path, cache_path = _write_account_mcp_state(tmp_path, account_bound=account_bound)
+    endpoint = FakeAuthEndpoint()
+    endpoint.queue_json_response(
+        {"error": {"code": "CONNECTOR_NOT_CONFIGURED", "message": "Account was deleted"}},
+        status=424,
+    )
+    flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host="shared.example.com",
+        path="/server",
+        method="POST",
+    )
+    flow.request.headers["X-Okou-Connector-Intent"] = _REMOVED
+    with (
+        endpoint.run(),
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url=endpoint.api_url,
+        ),
+    ):
+        await mitm_addon.request(flow)
+
+    assert "Authorization" not in flow.request.headers
+    if account_bound:
+        assert endpoint.request_count == 1
+        assert flow.response is not None
+        assert flow.response.status_code == 424
+    else:
+        assert endpoint.request_count == 0
+        assert flow.response is None
+        assert flow.error is None
+
+
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+async def test_account_bound_no_auth_builtin_rejects_missing_routing_identity(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first
+):
+    registry_path, cache_path = _write_account_mcp_state(tmp_path)
+    registry_data = json.loads(registry_path.read_text())
+    registry_data["sandboxes"][_CLIENT_IP]["connectorRoutingVariables"] = {}
+    registry_path.write_text(json.dumps(registry_data))
+    endpoint = FakeAuthEndpoint()
+    flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host="shared.example.com",
+        path="/server",
+        method="POST",
+    )
+    flow.request.headers["X-Okou-Connector-Intent"] = _REMOVED
+    if requestheaders_first:
+        flow.request.headers["Content-Length"] = str(mitm_addon.STREAM_BUFFER_LIMIT + 1)
+
+    with (
+        endpoint.run(),
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url=endpoint.api_url,
+        ),
+    ):
+        if requestheaders_first:
+            await await_requestheaders_result(mitm_addon.requestheaders(flow))
+            assert flow.request.stream is False
+        await mitm_addon.request(flow)
+
+    assert endpoint.request_count == 0
+    assert flow.response is not None
+    assert flow.response.status_code == 502
+    assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "auth_unavailable"
+    assert json.loads(flow.response.content)["message"] == "Auth context not configured"
+    assert "Authorization" not in flow.request.headers
+
+
+@pytest.mark.parametrize("requestheaders_first", [False, True])
+async def test_no_auth_builtin_owner_removed_during_account_check_is_rejected(
+    tmp_path, real_flow, mitm_ctx, requestheaders_first
+):
+    registry_path, cache_path = _write_account_mcp_state(tmp_path)
+    endpoint = FakeAuthEndpoint()
+    release_auth = threading.Event()
+    endpoint.queue_json_response(firewall_auth_success_response({}), release_event=release_auth)
+    flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host="shared.example.com",
+        path="/server",
+        method="POST",
+    )
+    flow.request.headers["X-Okou-Connector-Intent"] = _REMOVED
+    if requestheaders_first:
+        flow.request.headers["Content-Length"] = str(mitm_addon.STREAM_BUFFER_LIMIT + 1)
+
+    hook_task: asyncio.Task[None] | None = None
+    with (
+        endpoint.run(),
+        mitm_ctx(
+            registry_path=str(registry_path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+            api_url=endpoint.api_url,
+        ),
+    ):
+        hook = (
+            await_requestheaders_result(mitm_addon.requestheaders(flow))
+            if requestheaders_first
+            else mitm_addon.request(flow)
+        )
+        hook_task = asyncio.create_task(hook)
+        try:
+            assert await asyncio.to_thread(endpoint.wait_for_request_count, 1)
+            registry_data = json.loads(registry_path.read_text())
+            sandbox = registry_data["sandboxes"][_CLIENT_IP]
+            sandbox["firewalls"] = [{"kind": "builtin", "name": _RETAINED}]
+            sandbox["connectorRoutingVariables"] = {}
+            next_path = registry_path.with_name("registry.next.json")
+            next_path.write_text(json.dumps(registry_data))
+            next_path.replace(registry_path)
+            release_auth.set()
+            await hook_task
+        finally:
+            release_auth.set()
+            await cancel_pending_task(hook_task)
+        if requestheaders_first:
+            assert flow.request.stream is False
+            await mitm_addon.request(flow)
+
+    assert endpoint.request_count == 1
+    assert flow.response is not None
+    assert flow.response.status_code == 409
+    assert "Authorization" not in flow.request.headers
 
 
 @pytest.mark.parametrize(

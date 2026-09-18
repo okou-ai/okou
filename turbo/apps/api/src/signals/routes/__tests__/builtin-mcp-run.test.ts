@@ -10,6 +10,7 @@ import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-conne
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { connectorsRoutes } from "../connectors";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -200,6 +201,8 @@ describe("builtin MCP Run admission", () => {
         routingVariables: {},
       },
     };
+    const authorizationTime = now();
+    mockNow(authorizationTime);
     const auth = await firewall.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
       authBody,
@@ -207,6 +210,7 @@ describe("builtin MCP Run admission", () => {
     );
     expect(auth.body).toMatchObject({
       headers: { Authorization: "Bearer admitted-mcp-token" },
+      expiresAt: Math.floor(authorizationTime / 1000) + 30,
     });
 
     const collidingAliasAuth = await firewall.requestFirewallAuth(
@@ -254,7 +258,10 @@ describe("builtin MCP Run admission", () => {
       publicAuthBody,
       [200],
     );
-    expect(publicAuth.body).toMatchObject({ headers: {} });
+    expect(publicAuth.body).toMatchObject({
+      headers: {},
+      expiresAt: Math.floor(authorizationTime / 1000) + 30,
+    });
     await connectors.deleteBuiltinConnectorAccount(
       actor,
       "public-mcp",

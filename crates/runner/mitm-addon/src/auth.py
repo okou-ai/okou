@@ -208,6 +208,7 @@ class _FirewallAuthPlan:
     """Pure firewall-auth policy shared by requestheaders and request hooks."""
 
     injects_credentials: bool
+    requires_current_authorization: bool
     needs_resolution: bool
     uses_auth_base: bool
     uses_aws_sigv4: bool
@@ -525,7 +526,21 @@ def _build_firewall_auth_plan(
         and bool(auth_config["awsSigv4"])
     )
     injects_credentials = auth_config_injects_credentials(auth_config)
-    needs_resolution = injects_credentials or is_billable_firewall(allow.name, sandbox_info)
+    has_builtin_account = (
+        isinstance(allow.api_entry.get("sourceId"), str)
+        and allow.api_entry.get("customConnectorId") is None
+    )
+    routing_variables = sandbox_info.get("connectorRoutingVariables", {})
+    missing_builtin_routing_identity = has_builtin_account and not (
+        isinstance(routing_variables, dict)
+        and isinstance(routing_variables.get(f"builtin:{allow.name}"), dict)
+    )
+    # An account still owns a no-auth connector. Resolve its current authority
+    # through the same bounded API/cache path before forwarding the request.
+    requires_current_authorization = injects_credentials or has_builtin_account
+    needs_resolution = requires_current_authorization or is_billable_firewall(
+        allow.name, sandbox_info
+    )
 
     failure = None
     if injects_credentials and _request_method_forbids_managed_credentials(flow.request.method):
@@ -536,11 +551,14 @@ def _build_firewall_auth_plan(
         failure = _FirewallAuthPlanFailure.METHOD_OVERRIDE
     elif injects_credentials and flow.request.scheme.lower() != "https":
         failure = _FirewallAuthPlanFailure.INSECURE_TRANSPORT
-    elif needs_resolution and not sandbox_info.get("encryptedSecrets"):
+    elif missing_builtin_routing_identity or (
+        needs_resolution and not sandbox_info.get("encryptedSecrets")
+    ):
         failure = _FirewallAuthPlanFailure.AUTH_UNAVAILABLE
 
     return _FirewallAuthPlan(
         injects_credentials=injects_credentials,
+        requires_current_authorization=requires_current_authorization,
         needs_resolution=needs_resolution,
         uses_auth_base=uses_auth_base,
         uses_aws_sigv4=uses_aws_sigv4,
@@ -1290,7 +1308,7 @@ def _preflight_firewall_auth(
         log_proxy_entry(
             context.proxy_log_path,
             "error",
-            f"No encryptedSecrets for firewall rule {context.firewall_base}",
+            f"Auth context not configured for firewall rule {context.firewall_base}",
             type="firewall",
             firewall_base=context.firewall_base,
         )
@@ -1299,7 +1317,7 @@ def _preflight_firewall_auth(
             status=502,
             action="ALLOW",
             error_code="auth_unavailable",
-            message="Auth secrets not configured",
+            message="Auth context not configured",
             permission=context.allow.name,
         )
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
@@ -1741,7 +1759,7 @@ async def handle_firewall_request(
             resolved_auth=resolved_auth,
         )
 
-        if plan.injects_credentials and not revalidate_current_firewall_authorization():
+        if plan.requires_current_authorization and not revalidate_current_firewall_authorization():
             return _finish_firewall_auth_result(
                 flow,
                 FirewallAuthHandlingResult.LOCAL_RESPONSE,
@@ -1821,7 +1839,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         )
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
-    if plan.injects_credentials and not revalidate_current_firewall_authorization():
+    if plan.requires_current_authorization and not revalidate_current_firewall_authorization():
         _restore_header_phase_probe_state(
             flow,
             metadata_snapshot=metadata_snapshot,

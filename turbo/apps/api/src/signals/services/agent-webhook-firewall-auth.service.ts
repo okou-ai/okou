@@ -145,6 +145,7 @@ type FirewallAuthFailureReason = "upstream_provider" | "reconnect_required";
 type SecretType = StorageSecretSource;
 const NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_LEASE_SECONDS = 5;
+const BUILTIN_MCP_AUTH_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
@@ -229,6 +230,7 @@ interface PreparedCustomFirewallAuth {
 
 interface PreparedNonCustomFirewallAuth {
   readonly kind: "non-custom";
+  readonly builtinMcpExpiresAt: number | null;
   readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string>;
@@ -5774,6 +5776,16 @@ async function prepareNonCustomFirewallAuth(args: {
   readonly forceRefreshStartedAtMicros: bigint | null;
 }): Promise<FirewallAuthPreparation<PreparedNonCustomFirewallAuth>> {
   const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
+  const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+  // Account deletion or reconnect must end cached MCP authorization, including
+  // no-auth and static credentials whose provider token has no expiry. Start
+  // the lease before reading the account so slow resolution cannot extend it.
+  const builtinMcpExpiresAt =
+    connectorSlug !== undefined &&
+    getConnectorRuntimeConnector(connectorCatalogSnapshot, connectorSlug)
+      ?.catalogConnector.mcp !== undefined
+      ? Math.floor(nowDate().getTime() / 1000) + BUILTIN_MCP_AUTH_LEASE_SECONDS
+      : null;
   const decrypted = await decryptFirewallAuthSecrets(
     args.db,
     args.auth,
@@ -5803,6 +5815,7 @@ async function prepareNonCustomFirewallAuth(args: {
     ok: true,
     prepared: {
       kind: "non-custom",
+      builtinMcpExpiresAt,
       connectorCatalogSnapshot,
       featureSwitchContext: decrypted.featureSwitchContext,
       secrets: decrypted.secrets,
@@ -5869,7 +5882,7 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
   readonly prepared: PreparedNonCustomFirewallAuth;
 }): Promise<FirewallAuthMaterialResolution> {
   const { connectorAccessBySlug, referenced } = args.prepared.context;
-  let expiresAt: number | null = null;
+  let expiresAt = args.prepared.builtinMcpExpiresAt;
   let refreshedConnectors: readonly string[] = [];
   let refreshedSecrets: readonly string[] = [];
   let failedConnectors: readonly string[] = [];
@@ -5891,7 +5904,7 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       forceRefresh: args.body.forceRefresh ?? false,
       forceRefreshStartedAtMicros: args.prepared.forceRefreshStartedAtMicros,
     });
-    expiresAt = result.expiresAt;
+    expiresAt = mergeExpiresAt(expiresAt, result.expiresAt ?? undefined);
     refreshedConnectors = result.refreshedConnectors;
     refreshedSecrets = result.refreshedSecrets;
     failedConnectors = result.failedConnectors;

@@ -1976,6 +1976,15 @@ new addon honors explicit owner intent and never injects another owner's
 credentials when the requested owner is absent, including overlapping
 builtin/custom destinations.
 
+Account-bound builtin proxy requests resolve authorization even when they
+inject no credentials. Builtin MCP auth responses use the existing `expiresAt`
+field to cap cached account authorization at 30 seconds from validation; this
+also bounds static-token cache reuse. Discovery immediately removes deleted
+accounts, while subsequent proxy requests may reuse an existing lease until
+expiry. Expiry does not interrupt an in-flight request or stream. After
+resolution, the addon rechecks the current owner before forwarding. No new
+Runner wire field or HTTP/custom cache policy is introduced.
+
 Before publishing an executable MCP method or enabling Automatic, every serving
 and supported rollback API must include this claim guard. An API predating it
 does not understand the new stored Run requirement and is not a supported
