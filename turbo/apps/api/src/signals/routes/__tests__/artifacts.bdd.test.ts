@@ -830,10 +830,7 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
     };
     const first = await chat.prepareHostedSiteWithBearer(bearer, body);
     await chat.completeHostedSiteWithBearer(bearer, first.deploymentId);
-    const second = await chat.prepareHostedSiteWithBearer(bearer, {
-      ...body,
-      site: `${site}-updated`,
-    });
+    const second = await chat.prepareHostedSiteWithBearer(bearer, body);
     await chat.completeHostedSiteWithBearer(bearer, second.deploymentId);
 
     expect(first).toMatchObject({
@@ -842,11 +839,12 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       aliasUrl: first.url,
     });
     expect(second).toMatchObject({
-      publicSlug: `${site}-updated`,
       deploymentVersion: 1,
       aliasUrl: second.url,
     });
+    expect(second.publicSlug).toMatch(new RegExp(`^${site}-[a-z0-9]{4}$`, "u"));
     expect(second.siteId).not.toBe(first.siteId);
+    expect(second.deploymentId).not.toBe(first.deploymentId);
     expect(second.artifactUrl).not.toBe(first.artifactUrl);
 
     const threadArtifacts = await chat.listThreadArtifacts(actor, run.threadId);

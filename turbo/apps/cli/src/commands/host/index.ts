@@ -39,7 +39,10 @@ export const hostCommand = new Command()
   .name("host")
   .description("Publish, inspect, and clone static hosted sites")
   .argument("<dir>", "Static build directory, for example ./dist")
-  .option("--site <slug>", "New site slug, e.g. my-product-demo")
+  .option(
+    "--site <slug>",
+    "Preferred site slug; collisions get an automatic suffix",
+  )
   .option("--slug-suffix <suffix>", "Site URL suffix for legacy API servers")
   .option(
     "--artifact-kind <kind>",
@@ -56,7 +59,7 @@ export const hostCommand = new Command()
     `
 Examples:
   Publish a Vite build:  okou host ./dist --site my-product-demo --spa
-  Publish an update:     okou host ./dist --site my-product-demo-updated --spa
+  Publish another copy:  okou host ./dist --site my-product-demo --spa
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Machine readable:     okou host ./dist --site my-product-demo --spa --json
@@ -69,8 +72,9 @@ Notes:
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
   - With private artifacts enabled, the result is an authenticated preview URL
-  - Every publication requires a new --site value; existing sites cannot be redeployed
-  - To update a site, publish under a new slug and return the new URL; the previous URL keeps its original content
+  - Every publication creates a new site; reusing --site automatically adds a suffix when the name is taken
+  - Return the new URL after each publication; previous URLs keep their original content and cannot be redeployed
+  - Use the returned Site slug with versions or clone to inspect that publication
   - With privateArtifacts enabled, new sites default to only-me; --visibility org or public explicitly shares the new site
   - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
   - The directory must include index.html

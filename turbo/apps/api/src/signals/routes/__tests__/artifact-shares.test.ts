@@ -1061,7 +1061,6 @@ describe("GET /api/artifact-references/:reference/read", () => {
       );
       const second = await host.prepareHostedSite(actor, {
         ...body,
-        site: `${body.site}-updated`,
         files: [hostedTextFile("/index.html", "<h1>Updated site</h1>")],
       });
       await host.completeHostedSite(actor, second.deploymentId);
@@ -1752,10 +1751,13 @@ test("new HTML sites keep independent sharing and resolve to isolated content", 
   expect(deliveryManifests[0]![1]).not.toContain("snapshotDependencies");
   const second = await host.prepareHostedSite(actor, {
     ...body,
-    site: `${body.site}-updated`,
     files: [hostedTextFile("/index.html", "<h1>Updated site</h1>")],
   });
   await host.completeHostedSite(actor, second.deploymentId);
+  expect(second.siteId).not.toBe(first.siteId);
+  expect(second.publicSlug).toMatch(
+    new RegExp(`^${body.site}-[a-z0-9]{4}$`, "u"),
+  );
   const newer = { kind: "html" as const, id: second.deploymentId };
   const before = await accept(
     api()(artifactSharesContract).status({ headers, body: newer }),
@@ -1872,7 +1874,6 @@ test("public site names are independent and rotate after their own revocation", 
   expect(published.shortUrl).toBe(published.url);
   const next = await host.prepareHostedSite(actor, {
     ...body,
-    site: `${body.site}-updated`,
     files: [hostedTextFile("/index.html", "<h1>Second</h1>")],
   });
   await host.completeHostedSite(actor, next.deploymentId);
@@ -2318,7 +2319,6 @@ test("public HTML preview metadata is independent for each published site", asyn
   await host.completeHostedSite(actor, first.deploymentId);
   const second = await host.prepareHostedSite(actor, {
     ...body,
-    site: `${body.site}-updated`,
     files: [hostedTextFile("/index.html", "<h1>Second</h1>")],
   });
   await host.completeHostedSite(actor, second.deploymentId);

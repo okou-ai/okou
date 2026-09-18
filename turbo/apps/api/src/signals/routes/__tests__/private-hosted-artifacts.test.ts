@@ -6,7 +6,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { hostRoutes } from "../host";
 import { mockEnv } from "../../../lib/env";
-import { createBddApi, expectApiError } from "./helpers/api-bdd";
+import { createBddApi } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
@@ -171,7 +171,7 @@ test("denies anonymous, other-owner and other-org preview, completion and clonin
   expect(capture.puts).toHaveLength(signedWrites);
 });
 
-test("requires separate slugs across public and private publication policies", async () => {
+test("allocates independent slugs across public and private publication policies", async () => {
   const { actor, body, capture } = await fixture(false);
   const published = await api.prepareHostedSite(actor, body);
   await api.completeHostedSite(actor, published.deploymentId);
@@ -185,14 +185,12 @@ test("requires separate slugs across public and private publication policies", a
   await billing.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.PrivateArtifacts]: true,
   });
-  const publicConflict = await api.requestPrepareHostedSite(actor, body, [409]);
-  expectApiError(publicConflict.body);
-  expect(publicConflict.body.error.message).toContain(
-    "Sites cannot be redeployed",
-  );
-  const privateBody = { ...body, site: `${body.site}-private` };
-  const draft = await api.prepareHostedSite(actor, privateBody);
+  const draft = await api.prepareHostedSite(actor, body);
   expect(draft.siteId).not.toBe(published.siteId);
+  expect(draft.deploymentId).not.toBe(published.deploymentId);
+  expect(draft.publicSlug).toMatch(
+    new RegExp(`^${body.site}-[a-z0-9]{4}$`, "u"),
+  );
   expect(draft.deploymentVersion).toBe(1);
   await api.completeHostedSite(actor, draft.deploymentId);
   expect(
@@ -214,23 +212,27 @@ test("requires separate slugs across public and private publication policies", a
   expect(
     (await api.readHostedSiteFiles(colleague, body.site)).deploymentId,
   ).toBe(published.deploymentId);
-  await api.requestHostedSiteFiles(colleague, privateBody.site, [404]);
-  await api.requestHostedSiteDeployments(colleague, privateBody.site, [404]);
+  await api.requestHostedSiteFiles(colleague, draft.publicSlug, [404]);
+  await api.requestHostedSiteDeployments(colleague, draft.publicSlug, [404]);
   await billing.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.PrivateArtifacts]: false,
   });
-  const privateConflict = await api.requestPrepareHostedSite(
-    actor,
-    privateBody,
-    [409],
+  const nextPublic = await api.prepareHostedSite(actor, body);
+  expect(nextPublic.publicSlug).toMatch(
+    new RegExp(`^${body.site}-[a-z0-9]{4}$`, "u"),
   );
-  expectApiError(privateConflict.body);
-  expect(privateConflict.body.error.message).toContain(
-    "Sites cannot be redeployed",
-  );
+  expect(nextPublic.publicSlug).not.toBe(draft.publicSlug);
+  expect(nextPublic.siteId).not.toBe(draft.siteId);
+  expect(nextPublic.siteId).not.toBe(published.siteId);
+  await api.completeHostedSite(actor, nextPublic.deploymentId);
   expect(
-    (await api.readHostedSiteFiles(actor, privateBody.site)).deploymentId,
+    (await api.readHostedSiteFiles(actor, draft.publicSlug)).deploymentId,
   ).toBe(draft.deploymentId);
+  expect(
+    (await api.readHostedSiteFiles(colleague, nextPublic.publicSlug))
+      .deploymentId,
+  ).toBe(nextPublic.deploymentId);
+  await api.requestHostedSiteFiles(colleague, draft.publicSlug, [404]);
 });
 
 test("creates hostless references without requiring an API hostname", async () => {

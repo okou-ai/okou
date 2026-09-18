@@ -1,4 +1,5 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -7,11 +8,13 @@ import { describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
+import { hostRoutes } from "../host";
 import { sharedThreadRoutes } from "../shared-threads";
 import {
   createBddApi,
@@ -674,20 +677,22 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
-  it("lists new hosted-site publications as separate artifacts", async () => {
+  it("lists repeated same-name hosted-site publications as separate artifacts", async () => {
     const owner = await catalogActor(
       "Artifact catalog hosted owner",
       bdd.user(),
     );
     const site = `catalog-site-${randomUUID().slice(0, 8)}`;
     const hosted = await publishHostedSite({ owner, site });
-    const updatedSite = `${site}-updated`;
-    await publishHostedSite({
+    const second = await publishHostedSite({
       owner,
-      site: updatedSite,
+      site,
       threadId: hosted.threadId,
       claimRun: false,
     });
+    expect(second.siteId).not.toBe(hosted.siteId);
+    expect(second.deploymentId).not.toBe(hosted.deploymentId);
+    expect(second.publicSlug).toMatch(new RegExp(`^${site}-[a-z0-9]{4}$`, "u"));
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
 
@@ -695,7 +700,10 @@ describe("GET /api/artifacts/catalog", () => {
     expect(catalog.artifacts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "hosted-site", title: site }),
-        expect.objectContaining({ kind: "hosted-site", title: updatedSite }),
+        expect.objectContaining({
+          kind: "hosted-site",
+          title: second.publicSlug,
+        }),
       ]),
     );
 
@@ -718,7 +726,7 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
-  it("isolates same-slug hosted sites by chat thread", async () => {
+  it("isolates same-name hosted sites by chat thread", async () => {
     const owner = await catalogActor(
       "Artifact catalog chat-scoped hosted owner",
       bdd.user(),
@@ -727,18 +735,6 @@ describe("GET /api/artifacts/catalog", () => {
     const site = `catalog-chat-scope-${randomUUID().slice(0, 8)}`;
 
     const first = await publishHostedSite({ owner, site });
-    const rejected = await chat.requestPrepareHostedSiteWithBearer(
-      `Bearer ${scopedOkouToken(owner, first.runId, ["host:write"])}`,
-      {
-        site,
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        files: [hostedTextFile("/index.html", `<main>${site}</main>`)],
-      },
-      [409],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toContain("Sites cannot be redeployed");
     const secondChat = await publishHostedSite({
       owner,
       site,
@@ -753,11 +749,11 @@ describe("GET /api/artifacts/catalog", () => {
 
     const firstHistory = await chat.readHostedSiteDeploymentsWithBearer(
       `Bearer ${scopedOkouToken(owner, first.runId, ["host:read"])}`,
-      site,
+      first.publicSlug,
     );
     const secondHistory = await chat.readHostedSiteDeploymentsWithBearer(
       `Bearer ${scopedOkouToken(owner, secondChat.runId, ["host:read"])}`,
-      site,
+      secondChat.publicSlug,
     );
     expect(firstHistory).toMatchObject({
       siteId: first.siteId,
@@ -805,7 +801,7 @@ describe("GET /api/artifacts/catalog", () => {
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
     const entries = catalog.artifacts.filter((artifact) => {
-      return artifact.title === site;
+      return [first.publicSlug, secondChat.publicSlug].includes(artifact.title);
     });
     expect(entries).toHaveLength(2);
     const details = await Promise.all(
@@ -823,7 +819,7 @@ describe("GET /api/artifacts/catalog", () => {
     ).toStrictEqual(expect.arrayContaining([first.siteId, secondChat.siteId]));
   }, 180_000);
 
-  it("rejects chat adoption of an organization-scoped site", async () => {
+  it("allocates new sites for a name already used by an organization-scoped site", async () => {
     const owner = await catalogActor(
       "Artifact catalog mixed-scope hosted owner",
       bdd.user(),
@@ -835,50 +831,65 @@ describe("GET /api/artifacts/catalog", () => {
       owner,
       site,
     });
-    const chatRun = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: `publish ${site} from a chat`,
+    const chatSite = await publishHostedSite({
+      owner,
+      site,
+      claimRun: false,
     });
-    const chatBearer = `Bearer ${scopedOkouToken(owner, chatRun.runId, [
-      "host:write",
-    ])}`;
-    const rejected = await chat.requestPrepareHostedSiteWithBearer(
-      chatBearer,
-      {
-        site,
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        files: [hostedTextFile("/index.html", `<main>${site}</main>`)],
-      },
-      [409],
+    const secondOrganizationSite = await publishHostedSiteFromDirectRun({
+      owner,
+      site,
+      runId: organizationSite.runId,
+    });
+    expect(
+      new Set([
+        organizationSite.siteId,
+        chatSite.siteId,
+        secondOrganizationSite.siteId,
+      ]).size,
+    ).toBe(3);
+    expect(chatSite.publicSlug).toMatch(
+      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
     );
-    const organizationRedeploy = await chat.requestPrepareHostedSiteWithBearer(
-      `Bearer ${scopedOkouToken(owner, organizationSite.runId, ["host:write"])}`,
-      {
-        site,
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        files: [hostedTextFile("/index.html", `<main>${site}</main>`)],
-      },
-      [409],
+    expect(secondOrganizationSite.publicSlug).toMatch(
+      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
     );
+    expect(secondOrganizationSite.publicSlug).not.toBe(chatSite.publicSlug);
 
-    expectApiError(rejected.body);
-    expect(rejected.body.error).toStrictEqual({
-      code: "CONFLICT",
-      message: `Hosted site slug "${site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
+    const originalHistory = await chat.readHostedSiteDeploymentsWithBearer(
+      `Bearer ${scopedOkouToken(owner, organizationSite.runId, ["host:read"])}`,
+      organizationSite.publicSlug,
+    );
+    expect(originalHistory).toMatchObject({
+      siteId: organizationSite.siteId,
+      publicSlug: organizationSite.publicSlug,
+      activeDeploymentVersion: 1,
     });
-    expectApiError(organizationRedeploy.body);
-    expect(organizationRedeploy.body.error.message).toContain(
-      "Sites cannot be redeployed",
+    expect(originalHistory.deployments).toHaveLength(1);
+    await accept(
+      setupApp({ context, routes: hostRoutes })(hostContract).deployments({
+        headers: {
+          authorization: `Bearer ${scopedOkouToken(owner, chatSite.runId, ["host:read"])}`,
+        },
+        params: { site: organizationSite.publicSlug },
+      }),
+      [404],
     );
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(
-      catalog.artifacts.filter((artifact) => {
-        return artifact.title === site;
-      }),
-    ).toHaveLength(1);
+    expect(catalog.artifacts).toHaveLength(3);
+    expect(catalog.artifacts).toStrictEqual(
+      expect.arrayContaining(
+        [organizationSite, chatSite, secondOrganizationSite].map(
+          (published) => {
+            return expect.objectContaining({
+              kind: "hosted-site",
+              title: published.publicSlug,
+            });
+          },
+        ),
+      ),
+    );
   }, 180_000);
 
   it("catalogues a published deck as a presentation", async () => {
@@ -914,7 +925,7 @@ describe("GET /api/artifacts/catalog", () => {
     });
     const presentation = await publishHostedSite({
       owner,
-      site: `${site}-presentation`,
+      site,
       artifactKind: "presentation-html",
       threadId: hosted.threadId,
       claimRun: false,
@@ -928,7 +939,7 @@ describe("GET /api/artifacts/catalog", () => {
         expect.objectContaining({ kind: "hosted-site", title: site }),
         expect.objectContaining({
           kind: "presentation",
-          title: `${site}-presentation`,
+          title: presentation.publicSlug,
         }),
       ]),
     );
@@ -950,31 +961,24 @@ describe("GET /api/artifacts/catalog", () => {
       owner: firstOwner,
       site,
     });
-    const secondSite = `${site}-colleague`;
     const secondDeployment = await publishHostedSiteFromDirectRun({
       owner: secondOwner,
-      site: secondSite,
+      site,
     });
-    const rejected = await chat.requestPrepareHostedSiteWithBearer(
-      `Bearer ${scopedOkouToken(secondOwner, secondDeployment.runId, ["host:write"])}`,
-      {
-        site,
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        files: [hostedTextFile("/index.html", "<main>Replacement</main>")],
-      },
-      [409],
-    );
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toContain("Sites cannot be redeployed");
     expect(secondDeployment.siteId).not.toBe(firstDeployment.siteId);
+    expect(secondDeployment.publicSlug).toMatch(
+      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
+    );
     const firstCatalog = await chat.listArtifactCatalog(firstOwner.actor);
     expect(firstCatalog.artifacts).toStrictEqual([
       expect.objectContaining({ kind: "hosted-site", title: site }),
     ]);
     const secondCatalog = await chat.listArtifactCatalog(secondOwner.actor);
     expect(secondCatalog.artifacts).toStrictEqual([
-      expect.objectContaining({ kind: "hosted-site", title: secondSite }),
+      expect.objectContaining({
+        kind: "hosted-site",
+        title: secondDeployment.publicSlug,
+      }),
     ]);
   }, 180_000);
 

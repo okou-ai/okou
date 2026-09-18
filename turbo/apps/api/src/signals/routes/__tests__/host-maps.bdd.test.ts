@@ -60,7 +60,7 @@ function geocodeOkHandler(requests: URL[]) {
 }
 
 describe("FILE-01: hosted-site deployments through host APIs", () => {
-  it("reserves a site once when concurrent publications use the same slug [HOST-A]", async () => {
+  it("allocates independent sites when concurrent publications use the same preferred slug [HOST-A]", async () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const actor = bdd.user();
@@ -73,34 +73,44 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     };
     const results = await Promise.all(
       Array.from({ length: 3 }, async () => {
-        return await api.requestPrepareHostedSite(actor, body, [200, 409]);
+        return await api.prepareHostedSite(actor, body);
       }),
     );
-    const prepared = results.filter((result) => {
-      return result.status === 200;
-    });
-    expect(prepared).toHaveLength(1);
-    const conflicts = results.filter((result) => {
-      return result.status === 409;
-    });
-    expect(conflicts).toHaveLength(2);
-    for (const conflict of conflicts) {
-      expectApiError(conflict.body);
-      expect(conflict.body.error.message).toBe(
-        `Hosted site slug "${body.site}" is already reserved. Sites cannot be redeployed. Choose a new --site value and publish again.`,
-      );
-    }
-    const history = await api.readHostedSiteDeployments(actor, body.site);
-    expect(history.deployments).toStrictEqual([
-      expect.objectContaining({
-        deploymentId: prepared[0]?.body.deploymentId,
-        deploymentVersion: 1,
-        status: "uploading",
+    expect(
+      new Set(
+        results.map((result) => {
+          return result.siteId;
+        }),
+      ).size,
+    ).toBe(3);
+    expect(
+      new Set(
+        results.map((result) => {
+          return result.publicSlug;
+        }),
+      ).size,
+    ).toBe(3);
+    expect(
+      results.map((result) => {
+        return result.publicSlug;
       }),
-    ]);
+    ).toContain(body.site);
+    for (const prepared of results) {
+      const history = await api.readHostedSiteDeployments(
+        actor,
+        prepared.publicSlug,
+      );
+      expect(history.deployments).toStrictEqual([
+        expect.objectContaining({
+          deploymentId: prepared.deploymentId,
+          deploymentVersion: 1,
+          status: "uploading",
+        }),
+      ]);
+    }
   });
 
-  it("requires a new slug while keeping published URLs and completion retries stable [HOST-A]", async () => {
+  it("adds a suffix for repeated publications while keeping previous URLs and completion retries stable [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou-public-sites.test");
     mockEnv("ZERO_HOST_DOMAIN", "zero-sites.test");
     mockEnv("OKOU_HOST_SCHEME", "http");
@@ -128,19 +138,21 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       api.completeHostedSite(actor, first.deploymentId),
     ).resolves.toStrictEqual(completed);
 
-    const rejected = await api.requestPrepareHostedSite(actor, body, [409]);
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toContain("Choose a new --site value");
     const replacement = await api.prepareHostedSite(actor, {
       ...body,
-      site: `${site}-updated`,
       files: [hostedTextFile("/index.html", "<main>updated</main>")],
     });
     await api.completeHostedSite(actor, replacement.deploymentId);
     expect(replacement.siteId).not.toBe(first.siteId);
     expect(replacement.publicSlug).not.toBe(first.publicSlug);
+    expect(replacement.publicSlug).toMatch(
+      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
+    );
     expect(replacement.artifactUrl).not.toBe(first.artifactUrl);
     expect(replacement.deploymentVersion).toBe(1);
+    await expect(
+      api.completeHostedSite(actor, first.deploymentId),
+    ).resolves.toStrictEqual(completed);
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/hosted-sites/download?sig=bdd",
@@ -152,12 +164,23 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         deploymentId: first.deploymentId,
         artifactUrl: first.artifactUrl,
         deploymentVersion: 1,
+        files: body.files,
       });
     }
     await expect(
       api.readHostedSiteFiles(actor, site, 1),
     ).resolves.toMatchObject({
       deploymentId: first.deploymentId,
+    });
+    await expect(
+      api.readHostedSiteFiles(actor, replacement.publicSlug),
+    ).resolves.toMatchObject({
+      deploymentId: replacement.deploymentId,
+      files: [
+        expect.objectContaining({
+          sha256: hostedTextFile("/index.html", "<main>updated</main>").sha256,
+        }),
+      ],
     });
     const history = await api.readHostedSiteDeployments(actor, site);
     expect(history.deployments).toStrictEqual([
@@ -167,6 +190,57 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         isActive: true,
       }),
     ]);
+  });
+
+  it("can publish the same preferred slug more times than the collision retry limit [HOST-A]", async () => {
+    const bdd = createBddApi(context);
+    const api = createHostMapsBddApi(context);
+    const actor = bdd.user();
+    api.captureHostedSitesS3();
+    const body = {
+      site: `bdd-repeat-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>copy</main>")],
+    };
+    const publications = [await api.prepareHostedSite(actor, body)];
+    for (let index = 1; index < 8; index += 1) {
+      publications.push(await api.prepareHostedSite(actor, body));
+    }
+    expect(
+      new Set(
+        publications.map((site) => {
+          return site.siteId;
+        }),
+      ).size,
+    ).toBe(8);
+    expect(
+      new Set(
+        publications.map((site) => {
+          return site.deploymentId;
+        }),
+      ).size,
+    ).toBe(8);
+    expect(
+      new Set(
+        publications.map((site) => {
+          return site.publicSlug;
+        }),
+      ).size,
+    ).toBe(8);
+    for (const publication of publications) {
+      expect(publication.deploymentVersion).toBe(1);
+      const history = await api.readHostedSiteDeployments(
+        actor,
+        publication.publicSlug,
+      );
+      expect(history.deployments).toStrictEqual([
+        expect.objectContaining({
+          deploymentId: publication.deploymentId,
+          deploymentVersion: 1,
+        }),
+      ]);
+    }
   });
 
   it("reserves historical hosted-site identities and creates new sites on Okou [HOST-A]", async () => {
@@ -197,9 +271,12 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       userId: actor.userId,
       site: vm0Site,
     });
-    const rejected = await api.requestPrepareHostedSite(actor, vm0Body, [409]);
-    expectApiError(rejected.body);
-    expect(rejected.body.error.message).toContain("Sites cannot be redeployed");
+    const replacement = await api.prepareHostedSite(actor, vm0Body);
+    expect(replacement.siteId).not.toBe(legacySiteId);
+    expect(replacement.publicSlug).toMatch(
+      new RegExp(`^${vm0Site}-[a-z0-9]{4}$`, "u"),
+    );
+    expect(replacement.url).toBe(`https://${replacement.publicSlug}.okou.app`);
     await expect(
       api.readHostedSiteDeployments(actor, vm0Site),
     ).resolves.toMatchObject({

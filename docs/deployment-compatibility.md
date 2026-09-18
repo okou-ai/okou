@@ -137,19 +137,32 @@ switching it to Only me; recipients lose access.
 
 #### Hosted-site publication identity
 
-Each new hosted-site publication reserves a new slug in its existing organization
-and chat scope. Preparing another deployment for an existing or deleted site
-returns `409 CONFLICT`; callers must publish changes under a new `--site` value.
-Concurrent requests cannot reuse the winning reservation. Completion retries for
-the same deployment remain idempotent, and historical deployment URLs, version
-listings, clone requests and share policies remain readable.
+Every hosted-site prepare creates an independent site. `--site` is a preferred
+name: the allocator tries that name first, then adds a four-character hash when
+it is reserved, including by a deleted site. Each publication's deployment ID
+seeds its suffix candidates, so repeated publications do not exhaust one fixed
+set of names. Atomic inserts and the existing unique indexes arbitrate concurrent
+requests; an exhausted bounded retry returns an actionable `409 CONFLICT`.
 
-Older pinned CLIs receive the actionable conflict response from the new API.
-The request and response shapes are unchanged; the CLI retains the legacy
-`--slug-suffix` request field for older API servers, but a suffix does not enable
-redeployment on the new API. Older API instances must finish serving before the
-new publication restriction is universal. No database migration or
-historical data rewrite runs here. Issue
+New rows store the allocated name in `slug`, `publicSlug` and `requestedSlug`,
+while the manifest retains the caller's preferred name. This preserves the
+existing database constraints and keeps each publication addressable by older
+readers. The catalog displays the allocated name; `host versions` and `host clone`
+use the returned site slug to inspect that publication. Historical rows and their
+requested-name reservations stay intact. No database migration or historical data
+rewrite runs here.
+
+Completion retries for the same deployment remain idempotent. Previous URLs,
+content, historical version listings and share policies remain unchanged when
+another publication uses the same preferred name, including across chat scopes.
+Existing authorization checks still govern reads and completion; name allocation
+never adopts an existing site.
+
+Older pinned CLIs can consume the allocated `publicSlug` and URL through the
+unchanged response shape. The CLI retains the legacy `--slug-suffix` request field
+for older API servers; the new API assigns suffixes automatically. Older API
+instances must leave serving and supported rollback targets before no-redeploy
+behavior is universal. Issue
 [#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
 site-version model after preserving existing links and metadata.
 
