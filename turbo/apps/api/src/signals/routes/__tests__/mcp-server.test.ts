@@ -880,31 +880,36 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
-  it("preserves unrelated reasoning, media and browser settings", async () => {
-    const f = await creationFixture();
-    const token = f.auth.token({ scope: defaultScopes });
-    const created = await createThread(token, {
-      requestId: randomUUID(),
+  it("preserves Fast, reasoning, media and browser settings", async () => {
+    const f = await threadFixture();
+    const model = await f.chat.getDefaultCreateThreadModel(f.actor);
+    const created = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
       title: "Preserve settings",
-      model: "claude-sonnet-5",
+      model,
     });
-    await f.chat.updateThreadModelSelection(
-      f.actor,
-      created.threadId,
-      "claude-sonnet-5",
-      { reasoningEffort: "high" },
-    );
-    const before = await f.chat.readThreadMetadata(f.actor, created.threadId);
+    await f.chat.updateThreadModelSelection(f.actor, created.id, model, {
+      reasoningEffort: "high",
+      codexServiceTier: "fast",
+    });
+    await f.chat.updateThreadImageModel(f.actor, created.id, "gpt-image-2");
+    await f.chat.updateThreadVideoModel(f.actor, created.id, "MiniMax-H3");
+    const before = await f.chat.readThreadMetadata(f.actor, created.id);
+    expect(before).toMatchObject({
+      modelSettings: { [model]: { effort: "high" } },
+      serviceTier: "priority",
+      selectedVideoModel: "MiniMax-H3",
+      selectedImageModel: "gpt-image-2",
+    });
 
-    await updateThread(token, {
+    await updateThread(f.auth.token({ scope: defaultScopes }), {
       requestId: randomUUID(),
-      threadId: created.threadId,
-      patch: { title: "Still preserved", model: "claude-sonnet-4-6" },
+      threadId: created.id,
+      patch: { title: "Still preserved", model },
     });
 
     await expect(
-      f.chat.readThreadMetadata(f.actor, created.threadId),
+      f.chat.readThreadMetadata(f.actor, created.id),
     ).resolves.toMatchObject({
       modelSettings: before.modelSettings,
       serviceTier: before.serviceTier,
@@ -981,6 +986,15 @@ describe("MCP chat discovery and creation", () => {
         ).isError,
       ).toBeTruthy();
     }
+    expect(
+      (
+        await callTool(token, "update_chat_thread", {
+          requestId: created.threadId,
+          threadId: created.threadId,
+          patch: { title: "Event collision must roll back" },
+        })
+      ).isError,
+    ).toBeTruthy();
     await expect(getThread(token, created.threadId)).resolves.toMatchObject({
       thread: {
         title: "Unchanged metadata",
