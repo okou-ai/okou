@@ -722,6 +722,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   StructuredRunErrorBehavior
 > = {
   session_history_limit: "generic",
+  guest_root_filesystem_full: "generic",
   execution_timeout: "execution-timeout",
   insufficient_credits: "insufficient-credits",
   provider_insufficient_credits: "provider-balance",

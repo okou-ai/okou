@@ -2280,6 +2280,9 @@ pub mod webhooks {
                 /// Session history exceeded its size limit.
                 #[serde(rename = "session_history_limit")]
                 SessionHistoryLimit,
+                /// The sandbox root filesystem ran out of free blocks or inodes.
+                #[serde(rename = "guest_root_filesystem_full")]
+                GuestRootFilesystemFull,
                 /// The run reached its execution time limit.
                 #[serde(rename = "execution_timeout")]
                 ExecutionTimeout,

@@ -108,6 +108,14 @@ fn completion_failure_reason(
     }
     let failure = failure?;
     match failure.kind {
+        executor::ExecutionFailureKind::Generic
+            if failure
+                .resource_diagnostics
+                .and_then(|diagnostics| diagnostics.failure_kind)
+                == Some(executor::ResourceFailureKind::GuestRootFilesystemFull) =>
+        {
+            Some(RequestFailureReason::GuestRootFilesystemFull)
+        }
         executor::ExecutionFailureKind::Generic => failure
             .diagnostic
             .as_ref()
@@ -1199,6 +1207,47 @@ mod tests {
     }
 
     #[test]
+    fn completion_reason_reports_proven_rootfs_exhaustion() {
+        let diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::ClaudeCode,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_failure_reason(FailureReason::UsageLimit);
+        for diagnostic in [None, Some(diagnostic)] {
+            let failure =
+                executor::ExecutionFailure::new(1, "Agent exited with code 1", diagnostic)
+                    .with_resource_diagnostics(Some(
+                        executor::ResourceFailureDiagnostics::from_failure_kind(
+                            executor::ResourceFailureKind::GuestRootFilesystemFull,
+                        ),
+                    ));
+            assert_eq!(
+                completion_failure_reason(1, false, Some(&failure)),
+                Some(RequestFailureReason::GuestRootFilesystemFull)
+            );
+            assert_eq!(completion_failure_reason(0, false, Some(&failure)), None);
+            assert_eq!(completion_failure_reason(1, true, Some(&failure)), None);
+        }
+    }
+
+    #[test]
+    fn completion_reason_does_not_infer_rootfs_exhaustion_from_error_text() {
+        let failure = executor::ExecutionFailure::new(1, "No space left on device", None);
+        assert_eq!(completion_failure_reason(1, false, Some(&failure)), None);
+        for kind in [
+            executor::ResourceFailureKind::GuestMemoryOomKilled,
+            executor::ResourceFailureKind::HostMemoryOomKilled,
+        ] {
+            let failure = executor::ExecutionFailure::new(1, "Agent process killed", None)
+                .with_resource_diagnostics(Some(
+                    executor::ResourceFailureDiagnostics::from_failure_kind(kind),
+                ));
+            assert_eq!(completion_failure_reason(1, false, Some(&failure)), None);
+        }
+    }
+
+    #[test]
     fn completion_reason_uses_runner_kind_for_timeout_and_overrides_diagnostic() {
         let failure = executor::ExecutionFailure::runner_job_timeout(
             124,
@@ -1227,7 +1276,12 @@ mod tests {
             Duration::from_secs(7200),
             Duration::from_secs(7200),
             None,
-        );
+        )
+        .with_resource_diagnostics(Some(
+            executor::ResourceFailureDiagnostics::from_failure_kind(
+                executor::ResourceFailureKind::GuestRootFilesystemFull,
+            ),
+        ));
 
         assert_eq!(
             completion_failure_reason(124, false, Some(&failure_with_conflicting_diagnostic)),

@@ -540,6 +540,7 @@ describe("agent completion failure reasons", () => {
   it("accepts known reasons, future tokens, and omission", () => {
     expect(knownRunFailureReasonSchema.options).toStrictEqual([
       "session_history_limit",
+      "guest_root_filesystem_full",
       "execution_timeout",
       "insufficient_credits",
       "provider_insufficient_credits",

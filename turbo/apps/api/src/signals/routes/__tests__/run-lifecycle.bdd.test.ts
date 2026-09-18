@@ -16271,6 +16271,19 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       },
     );
 
+    it.each(["anthropic-api-key", "built-in"] as const)(
+      "preserves failed completion when sandbox root storage fills on %s",
+      async (modelProvider) => {
+        const { runId } = await completeFailure({
+          modelProvider,
+          failureReason: "guest_root_filesystem_full",
+        });
+        await expect(readRunFailureReasonFixture(context, runId)).resolves.toBe(
+          "guest_root_filesystem_full",
+        );
+      },
+    );
+
     it("keeps the first failure when a duplicate repeats the capacity failure", async () => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
@@ -16355,6 +16368,14 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       },
       {
         firstReason: "unsupported_model",
+        lateReason: "provider_overloaded",
+      },
+      {
+        firstReason: "provider_overloaded",
+        lateReason: "guest_root_filesystem_full",
+      },
+      {
+        firstReason: "guest_root_filesystem_full",
         lateReason: "provider_overloaded",
       },
     ] as const)(
