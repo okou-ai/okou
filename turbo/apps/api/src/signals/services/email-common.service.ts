@@ -547,8 +547,9 @@ interface PreparedOutboxItem {
 
 type PrepareOutcome =
   | { readonly kind: "empty" }
-  // Left untouched this pass because its live-owner evidence was not resolved.
-  | { readonly kind: "deferred"; readonly itemId: string }
+  // Left untouched until this pass excludes the preflight candidate that
+  // prevented the selected row from receiving exact-owner evidence.
+  | { readonly kind: "deferred"; readonly excludedId: string }
   // Resolved without contacting the provider: expired, out of attempts, or
   // suppressed.
   | { readonly kind: "resolved" }
@@ -588,8 +589,9 @@ async function prepareNextOutboxItem(
           itemIds === undefined
             ? undefined
             : inArray(emailOutbox.id, [...itemIds]),
-          // Items this batch already deferred are skipped so a native intent
-          // without live owner evidence cannot stall its siblings.
+          // Items this pass already deferred are skipped here and excluded
+          // from the preflight above, so a native intent without live-owner
+          // evidence cannot stall its siblings.
           deferredIds.size === 0
             ? undefined
             : notInArray(emailOutbox.id, [...deferredIds]),
@@ -655,9 +657,14 @@ async function prepareNextOutboxItem(
         return await resolveWithoutSending(tx, itemId, admission.reason);
       }
       if (admission.kind === "deferred") {
-        // Neither sent nor failed: the row keeps its state and its attempt
-        // count, and the next pass resolves live evidence for it.
-        return { kind: "deferred", itemId };
+        // Neither sent nor failed: the row keeps its state and attempt count.
+        // When the unlocked claim skipped the preflight candidate and selected
+        // a sibling, exclude that stale/locked candidate rather than the
+        // sibling, so the sibling can obtain its own evidence this pass.
+        return {
+          kind: "deferred",
+          excludedId: nativeOwnerPreflight?.outboxId ?? itemId,
+        };
       }
     }
 
@@ -806,7 +813,7 @@ async function drainNextOutboxItem(
     return false;
   }
   if (prepared.kind === "deferred") {
-    deferredIds.add(prepared.itemId);
+    deferredIds.add(prepared.excludedId);
     return true;
   }
   if (prepared.kind === "resolved") {
@@ -848,7 +855,7 @@ async function drainEmailOutboxBatch(
       {
         db,
         clerk,
-        currentTime: new Date(context.currentTimeMs),
+        dueAt: new Date(context.currentTimeMs),
         deferredIds,
         ...(itemIds === undefined ? {} : { itemIds }),
       },
@@ -887,25 +894,29 @@ async function drainEmailOutboxBatch(
  *
  * Resolved outside the claim transaction because it reaches Clerk, and coupled
  * to the exact candidate it names so a claim that takes a different row is not
- * sent on somebody else's evidence.
+ * sent on somebody else's evidence. The candidate is chosen under the same
+ * bounds the claim admits against — this pass's deferrals, the row's original
+ * lifetime and the attempt ceiling — so one candidate the claim cannot admit
+ * does not leave an eligible native sibling without evidence of its own.
  */
 async function resolveNativeOwnerPreflight(
   args: {
     readonly db: Db;
     readonly clerk: ClerkClient;
-    readonly currentTime: Date;
+    readonly dueAt: Date;
     readonly deferredIds: ReadonlySet<string>;
     readonly itemIds?: readonly string[];
   },
   signal: AbortSignal,
 ): Promise<NativeMorningBriefOwnerPreflight | null> {
-  const candidate = await peekNativeMorningBriefEmailOwner(
-    args.db,
-    args.currentTime,
-    OUTBOX_TTL_MS,
-    args.deferredIds,
-    args.itemIds,
-  );
+  const candidate = await peekNativeMorningBriefEmailOwner(args.db, {
+    dueAt: args.dueAt,
+    observedAt: nowDate(),
+    outboxTtlMs: OUTBOX_TTL_MS,
+    maxAttempts: MAX_ATTEMPTS,
+    excludedIds: args.deferredIds,
+    ...(args.itemIds === undefined ? {} : { itemIds: args.itemIds }),
+  });
   signal.throwIfAborted();
   return candidate === null
     ? null

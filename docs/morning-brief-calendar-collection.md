@@ -265,9 +265,10 @@ credentials and provider error payloads are never logged or persisted.
 ## Authorization boundary
 
 This module owns Google Calendar semantics only. `admitMorningBriefCollection`
-derives the scope — owner, installation, Agent, thread, timezone and the frozen
-Clerk `membershipId` — and every request then goes through the shared Morning
-Brief connector reader, which resolves the exact selected account and
+derives the scope — owner, installation, exact automation, Agent, nullable
+thread, timezone and the frozen Clerk `membershipId` — and every request then
+goes through the shared Morning Brief connector reader, which resolves the exact
+selected account and
 re-authorizes before credentials, before each next request, and before the
 payload is released.
 
@@ -275,6 +276,10 @@ Nothing here widens that decision, and the anchor is the only caller-supplied
 value on the path — there is no caller-supplied owner, Agent, account, calendar
 ID, query or URL. The membership generation is what stops a member who left and
 rejoined from releasing content the previous membership started collecting.
+After each external membership answer, one short local transaction rechecks
+erasure, the complete canonical binding and Brief-Agent visibility; it contains
+no network call and does not promise cross-system atomicity or retroactive
+recall.
 
 ## Scope
 

@@ -241,3 +241,10 @@ day activation. No organization-by-organization cutover or full-count fallback
 for activated days. Legacy GA events remain necessary for existing producers
 and other providers. Followers/following and other unverified resource types
 remain outside this protocol.
+
+## Qualification and release evidence
+
+The [shared producer/consumer qualification and rollout evidence guide](./x-resource-rollout.md)
+maps repeatable tests to the remaining deployed checks for #34615. Matching
+Python webhook payloads and API billing results proves the shared examples;
+it does not prove a fleet-wide legacy drain or authorize the activation setting.
