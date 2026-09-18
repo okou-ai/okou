@@ -99,7 +99,7 @@ export function QuestConnectorPicker({
     <div
       // Every one-click connector is here, so the list scrolls rather than
       // growing the dialog past the window.
-      className="grid max-h-[268px] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
+      className="grid max-h-[278px] grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3"
       data-testid="quest-connector-picker"
     >
       {connectors.map((connector) => {

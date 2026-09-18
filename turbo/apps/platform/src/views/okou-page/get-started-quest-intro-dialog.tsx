@@ -39,7 +39,6 @@ import {
   LINE_ALPHA,
   NODE_CLASS,
   SOFT_ALPHA,
-  THUMBNAIL_CLASS,
   TILE_ALPHA,
 } from "./start-cards.tsx";
 
@@ -74,11 +73,17 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
  * The washed tile the start cards under the composer use: one accent from the
  * avatar palette laid down at five strengths, art built from bordered card
  * nodes, and space around a small object.
+ *
+ * It is drawn larger than the start-card tile because this shell is a page the
+ * reader stops on rather than a card in a row under the composer.
  */
+const TILE_CLASS =
+  "grid size-[88px] shrink-0 place-items-center overflow-hidden rounded-2xl";
+
 function Tile({ accent, children }: { accent: string; children: ReactNode }) {
   return (
     <span
-      className={THUMBNAIL_CLASS}
+      className={TILE_CLASS}
       style={{ backgroundColor: `${accent}${TILE_ALPHA}` }}
     >
       {children}
@@ -93,7 +98,9 @@ function Tile({ accent, children }: { accent: string; children: ReactNode }) {
  */
 function TileRow({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center justify-center gap-[10px] rounded-xl bg-state-hover px-4 py-5">
+    // The band is held to the width of the drawing inside it: stretched to the
+    // full shell, a small figure reads as something lost in a field.
+    <div className="mx-auto flex w-full max-w-[400px] items-center justify-center gap-3 rounded-2xl bg-state-hover px-5 py-7">
       {children}
     </div>
   );
@@ -168,7 +175,7 @@ function SlackFigure({ assistantName }: { assistantName: string }) {
   const { t } = useTranslation();
   return (
     <TileRow>
-      <span className="w-[268px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_10px_26px_-18px_rgba(0,0,0,0.45)]">
+      <span className="w-[320px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_10px_26px_-18px_rgba(0,0,0,0.45)]">
         <span className="flex items-center gap-[7px] border-b border-border px-[13px] py-[9px]">
           <WorkflowConnectorIcon connectorSlug="slack" size={14} />
           <span className="text-[11px] font-semibold leading-none text-foreground">
@@ -220,24 +227,24 @@ function InviteFigure() {
     <TileRow>
       <Tile accent={accent}>
         <span
-          className={`flex h-[32px] w-[44px] flex-col justify-center gap-[5px] px-[8px] ${NODE_CLASS}`}
+          className={`flex h-[40px] w-[54px] flex-col justify-center gap-[6px] px-[10px] ${NODE_CLASS}`}
           style={{ borderColor: `${accent}${LINE_ALPHA}` }}
         >
           <span
-            className="h-[3px] w-[18px] rounded-full"
+            className="h-[3px] w-[22px] rounded-full"
             style={{ backgroundColor: accent }}
           />
           <span
-            className="h-[3px] w-[28px] rounded-full"
+            className="h-[3px] w-[34px] rounded-full"
             style={{ backgroundColor: `${accent}${SOFT_ALPHA}` }}
           />
         </span>
       </Tile>
       <Joint accent={accent} />
       <Tile accent={accent}>
-        <span className="flex items-center gap-[4px]">
+        <span className="flex items-center gap-[5px]">
           {["a", "b", "c"].map((id) => {
-            return <Person key={id} accent={accent} size={20} />;
+            return <Person key={id} accent={accent} size={24} />;
           })}
         </span>
       </Tile>
@@ -249,7 +256,7 @@ function InviteFigure() {
 function TemplateArt({ accent }: { accent: string }) {
   return (
     <span
-      className={`flex h-[32px] w-[44px] flex-col justify-center gap-[4px] px-[8px] ${NODE_CLASS}`}
+      className={`flex h-[40px] w-[54px] flex-col justify-center gap-[5px] px-[10px] ${NODE_CLASS}`}
       style={{ borderColor: `${accent}${LINE_ALPHA}` }}
     >
       <span
@@ -272,14 +279,14 @@ function TemplateArt({ accent }: { accent: string }) {
 function RunArt({ accent }: { accent: string }) {
   return (
     <span
-      className={`grid h-[32px] w-[44px] place-items-center ${NODE_CLASS}`}
+      className={`grid h-[40px] w-[54px] place-items-center ${NODE_CLASS}`}
       style={{ borderColor: `${accent}${LINE_ALPHA}` }}
     >
       <span
-        className="grid size-[18px] place-items-center rounded-full"
+        className="grid size-[22px] place-items-center rounded-full"
         style={{ backgroundColor: `${accent}${SOFT_ALPHA}`, color: accent }}
       >
-        <Play size={8} fill="currentColor" />
+        <Play size={10} fill="currentColor" />
       </span>
     </span>
   );
@@ -289,10 +296,10 @@ function RunArt({ accent }: { accent: string }) {
 function SaveArt({ accent }: { accent: string }) {
   return (
     <span
-      className={`grid h-[32px] w-[44px] place-items-center ${NODE_CLASS}`}
+      className={`grid h-[40px] w-[54px] place-items-center ${NODE_CLASS}`}
       style={{ borderColor: `${accent}${LINE_ALPHA}`, color: accent }}
     >
-      <Clock size={18} strokeWidth={2} />
+      <Clock size={22} strokeWidth={2} />
     </span>
   );
 }
