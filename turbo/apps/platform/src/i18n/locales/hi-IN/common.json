@@ -647,7 +647,7 @@
       "importedSlides_one": "{{count}} स्लाइड",
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "अपनी फ़ाइल इंपोर्ट करें",
-      "importFileHint": "अपनी फ़ाइल के डिज़ाइन का दोबारा इस्तेमाल करें",
+      "importFileHint": "फ़ाइल के डिज़ाइन का पुन: उपयोग करें",
       "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
       "introVideo": "इंट्रो वीडियो",
       "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",
