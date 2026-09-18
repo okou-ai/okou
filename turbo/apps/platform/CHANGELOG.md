@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.914.1](https://github.com/vm0-ai/okou/compare/app-v0.914.0...app-v0.914.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **app:** keep archived current chat visible ([#35103](https://github.com/vm0-ai/okou/issues/35103)) ([8bcc69d](https://github.com/vm0-ai/okou/commit/8bcc69d9e52cb8ea2f9012002a23c39426a61cb9))
+
+
+### Refactoring
+
+* remove team usage breakdown feature switch ([#35098](https://github.com/vm0-ai/okou/issues/35098)) ([4939996](https://github.com/vm0-ai/okou/commit/49399969ea1bcc428000cfced32effa669ce74cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.464.0
+    * @okouai/core bumped to 8.680.0
+
 ## [0.914.0](https://github.com/vm0-ai/okou/compare/app-v0.913.0...app-v0.914.0) (2026-09-18)
 
 

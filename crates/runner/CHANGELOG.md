@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.198.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.6...runner-rs-v0.198.0) (2026-09-18)
+
+
+### Features
+
+* **runner:** report x resources for daily billing deduplication ([#35108](https://github.com/vm0-ai/okou/issues/35108)) ([96047fc](https://github.com/vm0-ai/okou/commit/96047fc9cc3ec7e50779708e01ffbb8b28789af0))
+
 ## [0.197.6](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.5...runner-rs-v0.197.6) (2026-09-18)
 
 ## [0.197.5](https://github.com/vm0-ai/okou/compare/runner-rs-v0.197.4...runner-rs-v0.197.5) (2026-09-17)

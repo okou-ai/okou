@@ -8,6 +8,24 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.627.0](https://github.com/vm0-ai/okou/compare/api-v1.626.0...api-v1.627.0) (2026-09-18)
+
+
+### Features
+
+* add owner-scoped vnc configuration ([#34990](https://github.com/vm0-ai/okou/issues/34990)) ([fe59c96](https://github.com/vm0-ai/okou/commit/fe59c96ec2d3baab99cf6c219962656661bfd13e))
+* **runner:** report x resources for daily billing deduplication ([#35108](https://github.com/vm0-ai/okou/issues/35108)) ([96047fc](https://github.com/vm0-ai/okou/commit/96047fc9cc3ec7e50779708e01ffbb8b28789af0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.464.0
+    * @okouai/core bumped to 8.680.0
+    * @okouai/db bumped to 1.271.0
+    * @okouai/pi-agent-runtime bumped to 1.33.10
+
 ## [1.626.0](https://github.com/vm0-ai/okou/compare/api-v1.625.0...api-v1.626.0) (2026-09-18)
 
 

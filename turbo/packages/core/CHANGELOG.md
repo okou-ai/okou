@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.680.0](https://github.com/vm0-ai/okou/compare/core-v8.679.0...core-v8.680.0) (2026-09-18)
+
+
+### Features
+
+* add owner-scoped vnc configuration ([#34990](https://github.com/vm0-ai/okou/issues/34990)) ([fe59c96](https://github.com/vm0-ai/okou/commit/fe59c96ec2d3baab99cf6c219962656661bfd13e))
+
+
+### Refactoring
+
+* remove team usage breakdown feature switch ([#35098](https://github.com/vm0-ai/okou/issues/35098)) ([4939996](https://github.com/vm0-ai/okou/commit/49399969ea1bcc428000cfced32effa669ce74cf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.464.0
+
 ## [8.679.0](https://github.com/vm0-ai/okou/compare/core-v8.678.0...core-v8.679.0) (2026-09-18)
 
 
