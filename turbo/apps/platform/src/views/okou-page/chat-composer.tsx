@@ -41,6 +41,7 @@ import { useTranslation } from "react-i18next";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { PaidToolNotice, TemplatePaidToolNotice } from "./paid-tool-notice.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
@@ -6453,6 +6454,7 @@ function TemplatePickerDialog({
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+                <TemplatePaidToolNotice category={selectedCategory} />
                 <div
                   className={cn(
                     "relative h-[68px] shrink-0 items-center px-6 pr-14",
@@ -11061,6 +11063,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
+  const paidToolHints = useGet(signals.paidToolHints$);
   const dragOver = useGet(signals.draft.dragOver$);
   const setDragOver = useSet(signals.draft.setDragOver$);
   const uploadFile = useComposerFileUpload(signals);
@@ -11111,6 +11114,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
           />
+          <PaidToolNotice tools={paidToolHints} />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
           <ComposerFooter

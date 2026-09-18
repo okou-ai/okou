@@ -18,6 +18,7 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { generateWebImage } from "../../lib/api/domains/web";
 import { absoluteArtifactUrl } from "../../lib/artifact-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { generatedImageAsset } from "../shared/generated-image-asset";
 import {
   ARTIFACT_PRESENTATION_CONTEXT,
@@ -298,6 +299,7 @@ async function runInternal(
   stateDirectoryValue: string,
   options: ImageBatchGenerationOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("image-generation");
   const manifestPath = resolve(manifestPathValue);
   const stateDirectory = resolve(stateDirectoryValue);
   let exitCode = 0;
@@ -347,6 +349,7 @@ async function startBatch(
   stateDirectoryValue: string,
   options: ImageBatchGenerationOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("image-generation");
   const manifestPath = resolve(manifestPathValue);
   const stateDirectory = resolve(stateDirectoryValue);
   await readManifest(manifestPath);
@@ -557,7 +560,7 @@ const runCommand = new Command("__run")
   .argument("<manifest.tsv>")
   .argument("<state-dir>")
   .addOption(createArtifactVisibilityOption())
-  .action(runInternal);
+  .action(withErrorHandler(runInternal));
 
 export const imageBatchCommand = new Command("image-batch")
   .description(

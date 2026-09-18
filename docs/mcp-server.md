@@ -2,11 +2,13 @@
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
 official MCP SDK and serves `list_chat_threads`, `get_chat_thread`,
-`get_chat_messages` and `search_chat_messages`. These
-read-only tools query current user/organization-owned conversations. The OAuth
+`get_chat_messages`, `search_chat_messages`, `send_chat_message`,
+`revoke_queued_message` and `cancel_run`. The read tools query current
+user/organization-owned conversations; mutations reuse the existing input queue
+and run lifecycle. The OAuth
 foundation shipped in #34931; discovery and current context are tracked by
 #34932 under #34890. Message history is delivered in #34933 and search in
-#35100; mutations are separate slices. Results include both structured content and a
+#35100; sending and cancellation are delivered in #34934. Results include both structured content and a
 JSON text representation.
 
 ## Conversation discovery
@@ -225,8 +227,103 @@ rejected before hashing. Structured pages are capped at 160 KiB, keeping the
 SDK's duplicate text/JSON output within 512 KiB. Resource errors recommend
 narrowing thread/Agent/time filters or retrying; reducing page size cannot make
 one oversized history readable. These source-size caps are not absolute process
-memory limits. Existing lexical indexes are reused; no new index or migration
-is introduced.
+memory limits. Search reuses existing lexical indexes and adds no migration.
+
+## Sending and cancellation
+
+`send_chat_message` sends text to an existing conversation. It requires
+`threadId`, nonblank `text` of at most 32,000 UTF-16 units, and a caller-generated
+UUID `requestId`. Text is preserved exactly, including surrounding whitespace.
+UUID letter case is normalized; uppercase and lowercase identifiers resolve to
+the same submission. Withdrawal and run cancellation normalize their UUID
+inputs in the same way before applying lifecycle locks or selecting an active
+cancellation controller.
+The 64 KiB HTTP request-body limit also applies. The server derives the Agent
+from the authorized thread and uses its current model configuration and ordinary
+admission checks. This tool does not accept Agent/model overrides, attachments,
+or an explicit choice between a new run and steering an active run.
+
+The existing scheduler can leave the input queued, associate it with a new run,
+or reserve it for delivery to an active run. The response returns:
+
+| Field                      | Meaning                                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `inputRef`                 | Original durable `{threadId,eventId,seqId}` input reference; `eventId` equals `requestId`.                |
+| `acceptedAt`, `retryUntil` | Input persistence time and the absolute end of its 24-hour retry window.                                  |
+| `replayed`                 | Whether this request resolved a previously persisted matching submission.                                 |
+| `disposition`              | Current bounded observation: `queued`, `reserved`, `associated`, `rejected`, `revoked`, or `unavailable`. |
+| `runId`                    | Known associated/reserving run, or null.                                                                  |
+| `url`                      | Authenticated conversation URL.                                                                           |
+
+Acceptance means an input was persisted. It does not guarantee model admission,
+delivery, compliance, completion, or a new run. `reserved` does not prove the
+runner received the input, and `associated` does not prove successful execution.
+A definitive admission failure after input persistence can leave its disposition
+`rejected` or `revoked`. `unavailable` means retained live evidence cannot resolve
+its current disposition; it does not mean the input was never accepted.
+This call does not wait for the whole run. A later read can observe a newer state.
+
+`inputRef` identifies the original submission for withdrawal and future input
+status reads. Queue dispatch or active-input delivery can append a replacement
+event, so the currently visible message from `get_chat_messages` can have a
+different reference. Do not assume the original input is a valid visible
+`around` anchor after association. Use message-reader references for visible
+history and retain the original `inputRef` separately.
+
+For a retry after timeout or a lost response, use the **same requestId, threadId
+and exact text within 24 hours of acceptance**. A matching authorized request
+reuses the original input without submitting it again. Changed text, thread,
+user or organization conflicts. The UUID shares the existing `clientEventId`
+namespace: an equivalent authorized original text-only input can be reused
+regardless of which client submitted it; an input with different structured
+content conflicts. Refreshing an OAuth token does not change the retry identity.
+To intentionally submit another message, generate a new request ID.
+
+There is no deduplication guarantee after 24 hours. A retained original input
+past that window is rejected as expired. Once its live event has been removed
+by retention, its old request ID may be treated as a new submission. Inspect
+the conversation before intentionally submitting new work after the window;
+do not retry an uncertain old request automatically.
+
+Retry protection covers input creation and dispatch. Ordinary send preparation
+can reconcile obsolete model settings with current policy before a later
+admission failure or concurrent identity conflict, as it does for first-party
+sends. MCP does not accept explicit model or service-tier changes here.
+
+Retry resolution reads the original immutable `chat_events` input, compares its
+full canonical text-only user document and derives the receipt from its ID,
+sequence and creation time. The existing 30-day live-event retention covers the
+24-hour retry window. A locked recheck and the event's unique ID prevent
+concurrent duplicate enqueue; losing writes roll back. No extra table,
+fingerprint, permanent identity record or migration is added. Current thread
+ownership is checked before resolving a receipt; deleting the thread ends the
+retry contract. The default-off `McpServer` feature and OAuth configuration are
+unchanged.
+
+`revoke_queued_message` takes `threadId` and the original `inputId` (the
+`inputRef.eventId`). It returns those identifiers, a nullable `runId`, and
+`outcome`: `revoked`, `already_revoked`, `not_revocable`, or `unavailable`.
+Withdrawal uses the canonical queue lock and appends a revocation event; it
+does not delete history or cancel a run. Only a pending, unreserved input can be
+withdrawn. If reservation or association wins the race, the result is
+`not_revocable` with reason `reserved_or_associated`; this is not delivery
+confirmation. Other nonqueued inputs use reason `not_queued`. An inaccessible
+thread or unavailable input returns `unavailable`. Repeated withdrawal of a
+retained revoked input returns `already_revoked`.
+
+`cancel_run` takes `runId` and returns `{runId,status:"cancelled",alreadyCancelled}`.
+It cancels the whole authorized user's run in the selected organization through
+the existing cooperative cancellation path. Already-cancelled runs succeed
+idempotently and can redrive retry-safe recovery effects. Other terminal runs
+return a tool error. The response confirms canonical cancellation, not that the
+executor has physically stopped or that callback/queue recovery has finished.
+Cancelling a run can allow queued input to proceed; use `revoke_queued_message`
+to withdraw a specific input that has not been reserved or associated.
+
+After a mutation is admitted, its finite business operation and cancellation
+effects are tracked independently of the HTTP response. Disconnecting stops
+waiting for a response; it does not undo accepted input or cancel a business run.
+Use the same send identity to recover an ambiguous outcome.
 
 ## Configuration and authorization
 
@@ -289,15 +386,24 @@ openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manag
 
 Protected-resource metadata advertises the same nine scopes for clients that
 select scopes through discovery. The defaults include identity information,
-organization selection, the planned chat operations and refresh-token access, so
+organization selection, chat operations and refresh-token access, so
 clients can request them in one consent flow without relying on incremental
 authorization support.
 
-Only `user:org:read` and `okou:chat:read` are required for the current endpoint and
-all four conversation read tools. Tokens with just these two scopes remain valid. A
-`403 insufficient_scope` challenge names those required scopes. Each future tool
-must enforce its own permissions; listing a scope does not
-implement or authorize that operation. A tool argument cannot select or override
+Only `user:org:read` and `okou:chat:read` are required for the endpoint and
+all four conversation read tools. Tokens with just these two scopes remain valid
+for reads. A `403 insufficient_scope` challenge names those required scopes.
+Mutation permissions are checked on every tool invocation:
+
+| Tool                                  | Additional required scope |
+| ------------------------------------- | ------------------------- |
+| `send_chat_message`                   | `okou:chat:send`          |
+| `revoke_queued_message`, `cancel_run` | `okou:run:cancel`         |
+
+Tools requiring a missing mutation scope are not advertised. Direct invocation
+is rejected and performs no operation.
+`okou:chat:manage` remains reserved for conversation metadata operations;
+advertising it does not implement those tools. A tool argument cannot select or override
 the organization. Existing grants do not automatically gain scopes; clients must
 reauthorize to obtain additional permissions.
 
@@ -365,8 +471,8 @@ HTTP with SSE responses. The 2026-07-28 protocol uses the SDK's envelope and
 should use a conforming SDK instead of implementing these envelopes themselves.
 No persistent MCP session, standalone event feed, subscription, or resumability
 is offered; stateless GET/DELETE requests return 405. POST bodies are limited to
-64 KiB. Transport/request cancellation stops request work and never cancels a
-business run.
+64 KiB. Transport/request cancellation stops reads or waiting for an admitted
+mutation response; it never acts as business-run cancellation.
 
 Browser Origins must exactly match the fixed allowlist in
 [`mcp-server-config.ts`](../turbo/apps/api/src/lib/mcp-server-config.ts). The list

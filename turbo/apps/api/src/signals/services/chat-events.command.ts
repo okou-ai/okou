@@ -155,7 +155,7 @@ import {
   buildWebChatAppendSystemPrompt,
   type WebChatSessionPromptContext,
 } from "./web-chat-session-prompt.service";
-import { bestEffort } from "../utils";
+import { bestEffort, settle } from "../utils";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -184,6 +184,10 @@ import {
 } from "../../lib/template-usage-log";
 import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
+import {
+  resolveMcpSubmission,
+  type McpSubmissionIdentity,
+} from "./mcp-chat-submission.service";
 
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
 
@@ -271,6 +275,7 @@ type OrganizationAuthContext = AuthContext & { readonly orgId: string };
 type CanonicalNormalSendBody = NormalSendBody;
 
 interface NormalSendArgs {
+  readonly mcpSubmission?: McpSubmissionIdentity;
   readonly body: CanonicalNormalSendBody;
   readonly auth: OrganizationAuthContext;
   readonly userId: string;
@@ -529,6 +534,7 @@ type NormalSendFailure =
   | ReturnType<typeof badRequestMessage>;
 
 interface CreatedChatEventResponse {
+  readonly mcpReplayed?: boolean;
   readonly status: 201;
   readonly body: {
     readonly runId: string | null;
@@ -947,7 +953,34 @@ async function resolveClientEventSend(params: {
   readonly userId: string;
   readonly threadId: string;
   readonly clientEventId: string | undefined;
+  readonly mcpSubmission?: McpSubmissionIdentity;
 }): Promise<ClientSendResolution | undefined> {
+  if (params.mcpSubmission) {
+    const existing = await resolveMcpSubmission(
+      params.db,
+      params.mcpSubmission,
+      params,
+    );
+    if (existing.kind === "accepted") {
+      return {
+        status: 201,
+        mcpReplayed: true,
+        body: {
+          threadId: params.threadId,
+          runId: null,
+          createdAt: existing.receipt.acceptedAt.toISOString(),
+        },
+      };
+    }
+    if (existing.kind !== "missing") {
+      return conflict(
+        existing.kind === "expired"
+          ? "Submission retry window has expired; inspect the original input before submitting new work"
+          : "requestId is already in use for a different submission",
+      );
+    }
+    return undefined;
+  }
   if (!params.clientEventId) {
     return undefined;
   }
@@ -1900,6 +1933,7 @@ async function resolveThread(params: {
 }
 
 interface AppendUnassociatedUserMessageParams {
+  readonly mcpSubmission?: McpSubmissionIdentity;
   readonly db: Db;
   readonly timing?: ApiDispatchTimingCollector;
   readonly threadId: string;
@@ -1924,6 +1958,23 @@ async function resolveExistingUnassociatedClientEventId(
   params: AppendUnassociatedUserMessageParams,
   explicitId: string,
 ): Promise<ClientEventIdResolution> {
+  if (params.mcpSubmission) {
+    const existing = await resolveMcpSubmission(
+      tx,
+      params.mcpSubmission,
+      params,
+    );
+    // Roll back writes preceding a cross-thread or first-party UUID collision.
+    throw new McpEnqueueCollision(
+      existing.kind === "accepted"
+        ? {
+            kind: "queued",
+            createdAt: existing.receipt.acceptedAt,
+            inserted: false,
+          }
+        : { kind: "conflict" },
+    );
+  }
   const [existing] = await tx
     .select({
       chatThreadId: chatEvents.chatThreadId,
@@ -2007,10 +2058,52 @@ async function recordOfficialSourceThreadProvenance(
   });
 }
 
+async function resolveLockedMcpSubmission(
+  tx: ChatThreadEventTransaction,
+  params: AppendUnassociatedUserMessageParams,
+): Promise<ClientEventIdResolution | undefined> {
+  if (params.mcpSubmission) {
+    const [thread] = await tx
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, params.threadId),
+          eq(chatThreads.userId, params.userId),
+          chatThreadOrganizationCondition(tx, params.orgId),
+        ),
+      )
+      .for("update");
+    if (!thread) {
+      return { kind: "conflict" };
+    }
+    const existing = await resolveMcpSubmission(
+      tx,
+      params.mcpSubmission,
+      params,
+    );
+    if (existing.kind === "accepted") {
+      return {
+        kind: "queued",
+        createdAt: existing.receipt.acceptedAt,
+        inserted: false,
+      };
+    }
+    if (existing.kind !== "missing") {
+      return { kind: "conflict" };
+    }
+  }
+  return undefined;
+}
+
 async function appendUnassociatedUserMessageTransaction(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
 ): Promise<ClientEventIdResolution> {
+  const existing = await resolveLockedMcpSubmission(tx, params);
+  if (existing) {
+    return existing;
+  }
   await measureApiDispatchTiming(
     params.timing,
     "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
@@ -2130,6 +2223,12 @@ async function appendUnassociatedUserMessageTransaction(
   return await resolveExistingUnassociatedClientEventId(tx, params, explicitId);
 }
 
+class McpEnqueueCollision extends Error {
+  constructor(readonly resolution: ClientEventIdResolution) {
+    super("MCP input identity was committed concurrently");
+  }
+}
+
 function appendUnassociatedUserMessage(
   params: AppendUnassociatedUserMessageParams,
 ): Promise<ClientEventIdResolution> {
@@ -2137,10 +2236,19 @@ function appendUnassociatedUserMessage(
     params.timing,
     "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_transaction",
     "nested",
-    () => {
-      return params.db.transaction((tx) => {
-        return appendUnassociatedUserMessageTransaction(tx, params);
-      });
+    async () => {
+      const result = await settle(
+        params.db.transaction((tx) => {
+          return appendUnassociatedUserMessageTransaction(tx, params);
+        }),
+      );
+      if (result.ok) {
+        return result.value;
+      }
+      if (result.error instanceof McpEnqueueCollision) {
+        return result.error.resolution;
+      }
+      throw result.error;
     },
   );
 }
@@ -2873,6 +2981,7 @@ async function resolveTimedPreflightClientEvent(
             userId: args.userId,
             threadId,
             clientEventId: args.body.clientEventId,
+            mcpSubmission: args.mcpSubmission,
           });
         },
       )
@@ -2980,8 +3089,9 @@ const prepareNormalSend$ = command(
     }
     const preflight = await resolveTimedPreflightClientEvent(args, db);
     signal.throwIfAborted();
-    if (preflight.response?.status === 201) {
-      return preflight.response;
+    const prior = preflight.response;
+    if (prior && (prior.status === 201 || args.mcpSubmission)) {
+      return prior;
     }
     const featureSwitches = await resolveTimedNormalSendFeatureSwitches(
       args,
@@ -3091,7 +3201,7 @@ const prepareNormalSend$ = command(
       attachFileMetadata,
       runConfiguration,
       clientEventPrechecked: preflight.prechecked,
-      preflightClientEventConflict: preflight.response,
+      preflightClientEventConflict: prior,
       triggerSource: normalSendTriggerSource(args.auth),
       agentRunSource,
       piExecution,
@@ -3100,6 +3210,7 @@ const prepareNormalSend$ = command(
 );
 
 async function queueUnassociatedNormalEvent(params: {
+  readonly mcpSubmission?: McpSubmissionIdentity;
   readonly prepared: PreparedNormalSend;
   readonly timing?: ApiDispatchTimingCollector;
   readonly body: RuntimeNormalSendBody;
@@ -3117,6 +3228,7 @@ async function queueUnassociatedNormalEvent(params: {
   readonly queuedEventId: string | undefined;
 }> {
   const resolution = await appendUnassociatedUserMessage({
+    mcpSubmission: params.mcpSubmission,
     db: params.prepared.db,
     timing: params.timing,
     threadId: params.prepared.thread.threadId,
@@ -3159,7 +3271,13 @@ async function queueUnassociatedNormalEvent(params: {
       queuedEventId,
     };
   }
-  return { response, queuedEventId };
+  return {
+    response:
+      params.mcpSubmission && response.status === 201
+        ? { ...response, mcpReplayed: queuedEventId === undefined }
+        : response,
+    queuedEventId,
+  };
 }
 
 function scheduleChatTitleGeneration(params: {
@@ -3989,6 +4107,7 @@ export const sendNormalEvent$ = command(
                 userId: args.userId,
                 threadId: prepared.thread.threadId,
                 clientEventId: args.body.clientEventId,
+                mcpSubmission: args.mcpSubmission,
               });
             },
           )
@@ -4056,6 +4175,7 @@ const sendQueueFirstNormalEvent$ = command(
       "nested",
       async () => {
         return await queueUnassociatedNormalEvent({
+          mcpSubmission: args.mcpSubmission,
           prepared,
           timing: args.timing,
           body: prepared.body,

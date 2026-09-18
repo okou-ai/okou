@@ -13,6 +13,8 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
+import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
+import { checkPaidToolForCreation$, templatePaidTool } from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -266,6 +268,7 @@ interface ComposerTemplateSignals
 }
 
 export interface ComposerSignals {
+  readonly paidToolHints$: Computed<readonly PaidToolId[]>;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
@@ -550,6 +553,31 @@ function createComposerVoiceInput(
   );
 }
 
+function createPaidToolHints(
+  create: ComposerCreateSignals,
+  draft: DraftSignals,
+  composer: WorkflowComposerSignals,
+) {
+  return computed((get) => {
+    const mode = get(create.mode$);
+    const tools = new Set<PaidToolId>();
+    if (mode === "image" || mode === "video") {
+      tools.add(mode === "image" ? "image-generation" : "video-generation");
+    }
+    const selectedTemplate = get(draft.generationTemplate$);
+    const templates = get(composer.templateRequests$);
+    for (const template of selectedTemplate
+      ? [...templates, selectedTemplate]
+      : templates) {
+      const tool = templatePaidTool(template);
+      if (tool) {
+        tools.add(tool);
+      }
+    }
+    return [...tools];
+  });
+}
+
 export function createComposerSignals(
   options: CreateComposerSignalsOptions,
 ): ComposerSignals {
@@ -634,6 +662,7 @@ export function createComposerSignals(
 
   return {
     agentId: options.agentId,
+    paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
     editor: composerEditorSignals(workflowComposer, options.singleLineOnMobile),
@@ -921,20 +950,25 @@ function createSubmitCurrentInput({
             additionalInfo,
           )
         : submission.editorDocument;
+      const nextSubmission: ComposerSubmission = {
+        prompt: visiblePrompt,
+        generationTemplate: get(draft.generationTemplate$),
+        editorDocument,
+        videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+        taskSelection: {
+          task: get(taskChips.task$) ?? mode,
+          presentationSlideCount: get(create.presentationSlideCount$),
+          visualization: get(taskChips.visualization.preferences$),
+        },
+      };
+      if (!(await set(checkPaidToolForCreation$, mode, signal))) {
+        return false;
+      }
+      signal.throwIfAborted();
       const submitted = await set(
         options.submitMessage$,
         action,
-        {
-          prompt: visiblePrompt,
-          generationTemplate: get(draft.generationTemplate$),
-          editorDocument,
-          videoRunOptions: additionalInfo ? undefined : videoRunOptions,
-          taskSelection: {
-            task: get(taskChips.task$) ?? mode,
-            presentationSlideCount: get(create.presentationSlideCount$),
-            visualization: get(taskChips.visualization.preferences$),
-          },
-        },
+        nextSubmission,
         signal,
       );
       if (submitted) {

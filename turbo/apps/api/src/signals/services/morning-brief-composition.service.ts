@@ -158,7 +158,10 @@ interface MorningBriefSourceReport {
   readonly items: number;
   /** Of those, the ones the request could actually carry. */
   readonly includedInRequest: number;
-  /** Null when a rejected source could not return collector accounting. */
+  /**
+   * Exact provider reads issued, or null only when the source job rejected
+   * before returning its collector accounting.
+   */
   readonly requests: number | null;
   readonly timeSemantics: MorningBriefTimeSemanticsCount;
   readonly omitted: MorningBriefSourceOmissions;
@@ -1677,7 +1680,7 @@ async function readSlackSource(
         source: "slack",
         coverage: "failed",
         items: [],
-        requests: 0,
+        requests: collected.requests,
         provenance: MORNING_BRIEF_NO_PROVENANCE,
         omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
       },

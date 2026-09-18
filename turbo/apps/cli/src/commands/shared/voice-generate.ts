@@ -2,6 +2,7 @@ import { Command, Option } from "commander";
 import chalk from "chalk";
 import { generateWebVoice } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { createArtifactPresentation } from "./artifact-return";
 import {
   applyArtifactVisibility,
@@ -83,6 +84,7 @@ Notes:
               : undefined,
         });
         if (dispatch.outcome === "handled") return;
+        await assertPaidToolEnabled("voice-generation");
         const text = dispatch.prompt;
 
         const requirePrivateArtifact = await prepareArtifactVisibility(
