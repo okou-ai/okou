@@ -32,7 +32,7 @@ function OnboardingStepProgress({
 
   return (
     <div
-      className="h-2 w-full overflow-hidden rounded-full bg-foreground/10"
+      className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"
       role="progressbar"
       aria-valuenow={current}
       aria-valuemin={1}
@@ -113,17 +113,17 @@ export function OnboardingStepLayout({
         {/* Centred while the step fits, scrollable from the top when it does
             not: a centred flex child would otherwise clip its own top. */}
         <div className="flex min-h-full flex-col justify-center">
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col">
-            {/* Where you are in the flow, and the way back, both on the canvas
-              above the card so the card itself keeps one height. */}
-            <div className="flex shrink-0 items-center gap-3 px-1 pb-4">
+          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14">
+            {/* The question, its progress and its action live on the canvas;
+                only the answers are grouped on a surface. */}
+            <div className="w-full shrink-0 lg:w-[380px] lg:pt-2">
               {onBack ? (
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   onClick={onBack}
-                  className="shrink-0 gap-1.5"
+                  className="mb-5 gap-1.5"
                 >
                   <ChevronLeft size={16} aria-hidden="true" />
                   {t(($) => {
@@ -135,61 +135,55 @@ export function OnboardingStepLayout({
                 current={currentStep}
                 total={totalSteps}
               />
-            </div>
-            {/* The step sits on one raised surface: the question on the left, the
-              cards that answer it grouped on the right. */}
-            <div className="flex w-full flex-col gap-10 rounded-3xl border border-border/60 bg-background px-8 py-10 shadow-surface lg:min-h-[540px] lg:flex-row lg:items-start lg:gap-14 lg:px-12">
-              <div className="w-full shrink-0 lg:w-[380px]">
-                <h1 className="text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
-                  {title}
-                </h1>
-                <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
-                  {description}
-                </p>
-                {/* The step's one filled action, with its opt-out beside it. */}
-                <div className="mt-10 flex flex-wrap items-center gap-2">
+              <h1 className="mt-8 text-[32px] font-semibold leading-[1.12] tracking-[-0.02em] lg:text-[40px]">
+                {title}
+              </h1>
+              <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
+                {description}
+              </p>
+              {/* The step's one filled action, with its opt-out beside it. */}
+              <div className="mt-10 flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={onPrimary}
+                  disabled={primaryDisabled || primaryBusy}
+                  aria-busy={primaryBusy}
+                  className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
+                >
+                  {primaryBusy ? (
+                    <Loader2
+                      size={16}
+                      className="animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  {primaryLabel}
+                </Button>
+                {secondaryLabel && onSecondary ? (
                   <Button
                     type="button"
                     size="lg"
-                    onClick={onPrimary}
-                    disabled={primaryDisabled || primaryBusy}
-                    aria-busy={primaryBusy}
-                    className="min-w-[132px] gap-2 disabled:bg-[hsl(var(--primary-100))]"
+                    variant="ghost"
+                    onClick={onSecondary}
                   >
-                    {primaryBusy ? (
-                      <Loader2
-                        size={16}
-                        className="animate-spin"
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                    {primaryLabel}
+                    {secondaryLabel}
                   </Button>
-                  {secondaryLabel && onSecondary ? (
-                    <Button
-                      type="button"
-                      size="lg"
-                      variant="ghost"
-                      onClick={onSecondary}
-                    >
-                      {secondaryLabel}
-                    </Button>
-                  ) : null}
-                </div>
-                {footnote ? (
-                  <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                    {footnote}
-                  </p>
                 ) : null}
               </div>
-              <div
-                className={cn(
-                  "w-full min-w-0 lg:flex-1",
-                  CONTENT_WIDTHS[contentWidth],
-                )}
-              >
-                {children}
-              </div>
+              {footnote ? (
+                <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                  {footnote}
+                </p>
+              ) : null}
+            </div>
+            <div
+              className={cn(
+                "flex w-full min-w-0 flex-col justify-center rounded-3xl border border-border/60 bg-muted/30 p-6 shadow-surface lg:min-h-[520px] lg:flex-1",
+                CONTENT_WIDTHS[contentWidth],
+              )}
+            >
+              {children}
             </div>
           </div>
         </div>
