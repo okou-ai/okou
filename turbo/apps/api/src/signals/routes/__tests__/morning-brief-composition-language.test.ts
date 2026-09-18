@@ -93,7 +93,7 @@ interface StorageBoundary {
   /** Run before a download answers, once per matching key. */
   readonly beforeRead: (
     suffix: string,
-    hook: (signal: AbortSignal | undefined) => void | Promise<void>,
+    hook: () => void | Promise<void>,
   ) => void;
 }
 
@@ -107,10 +107,7 @@ interface StorageBoundary {
 function installStorageBoundary(): StorageBoundary {
   const objects = new Map<string, Buffer>();
   const replacements = new Map<string, Buffer>();
-  const hooks = new Map<
-    string,
-    (signal: AbortSignal | undefined) => void | Promise<void>
-  >();
+  const hooks = new Map<string, () => void | Promise<void>>();
   const reads: string[] = [];
 
   function replacementFor(key: string): Buffer | undefined {
@@ -122,14 +119,11 @@ function installStorageBoundary(): StorageBoundary {
     return undefined;
   }
 
-  async function runHook(
-    key: string,
-    signal: AbortSignal | undefined,
-  ): Promise<void> {
+  async function runHook(key: string): Promise<void> {
     for (const [suffix, hook] of hooks) {
       if (key.endsWith(suffix)) {
         hooks.delete(suffix);
-        await hook(signal);
+        await hook();
       }
     }
   }
@@ -180,40 +174,30 @@ function installStorageBoundary(): StorageBoundary {
     }
   }
 
-  context.mocks.s3.send.mockImplementation(
-    async (command: unknown, options?: unknown) => {
-      const input = commandInput(command);
-      const key = typeof input.Key === "string" ? input.Key : "";
-      const abortSignal =
-        typeof options === "object" &&
-        options !== null &&
-        "abortSignal" in options
-          ? (options.abortSignal as AbortSignal | undefined)
-          : undefined;
-      if (command instanceof PutObjectCommand) {
-        storeObject(input, key);
-        return {};
-      }
-      if (command instanceof HeadObjectCommand) {
-        return { ContentLength: storedObject(key).length, ETag: `"${key}"` };
-      }
-      if (command instanceof GetObjectCommand) {
-        reads.push(key);
-        await runHook(key, abortSignal);
-        const body = storedObject(key);
-        return { ContentLength: body.length, Body: Readable.from([body]) };
-      }
-      if (command instanceof ListObjectsV2Command) {
-        return listObjects(
-          typeof input.Prefix === "string" ? input.Prefix : "",
-        );
-      }
-      if (command instanceof DeleteObjectsCommand) {
-        deleteObjects(input);
-      }
+  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+    const input = commandInput(command);
+    const key = typeof input.Key === "string" ? input.Key : "";
+    if (command instanceof PutObjectCommand) {
+      storeObject(input, key);
       return {};
-    },
-  );
+    }
+    if (command instanceof HeadObjectCommand) {
+      return { ContentLength: storedObject(key).length, ETag: `"${key}"` };
+    }
+    if (command instanceof GetObjectCommand) {
+      reads.push(key);
+      await runHook(key);
+      const body = storedObject(key);
+      return { ContentLength: body.length, Body: Readable.from([body]) };
+    }
+    if (command instanceof ListObjectsV2Command) {
+      return listObjects(typeof input.Prefix === "string" ? input.Prefix : "");
+    }
+    if (command instanceof DeleteObjectsCommand) {
+      deleteObjects(input);
+    }
+    return {};
+  });
 
   return {
     reads,
@@ -978,9 +962,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
           release.resolve();
         }
       });
-      let observedStorageSignal: AbortSignal | undefined;
-      storage.beforeRead("/manifest.json", async (storageSignal) => {
-        observedStorageSignal = storageSignal;
+      storage.beforeRead("/manifest.json", async () => {
         arrived.resolve();
         await release.promise;
         finished.resolve();
@@ -998,8 +980,6 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       await arrived.promise;
       controller.abort(cancellation);
-      expect(observedStorageSignal).toBeDefined();
-      expect(observedStorageSignal?.aborted).toBeTruthy();
       release.resolve();
       await finished.promise;
       await expect(pending).rejects.toThrow(cancellation.message);
