@@ -51,6 +51,8 @@ export type AttachmentArtifactMetadata = {
 interface AttachmentNamedLightboxBase {
   readonly url: string;
   readonly filename: string;
+  /** Reuse the initiating thread artifact's already resolved credential. */
+  readonly preview?: AttachmentPreviewSignals;
   readonly artifact?: AttachmentArtifactMetadata;
   readonly shareAvailable?: boolean;
   readonly showSizeInSubtitle?: boolean;
@@ -355,7 +357,7 @@ export const openDocumentLightbox$ = command(
     set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
-    const preview = createAttachmentPreviewSignals(value.url);
+    const preview = value.preview ?? createAttachmentPreviewSignals(value.url);
     if (isAttachmentTextDocumentLightboxInput(value)) {
       const text$ =
         value.text$ ??

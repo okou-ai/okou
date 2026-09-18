@@ -20,6 +20,7 @@ export const createHostedPreviewGrant$ = command(
       readonly deploymentId: string;
       readonly publicBrand: PublicBrand;
       readonly snapshotId?: string;
+      readonly immutableContent?: true;
     },
     signal: AbortSignal,
   ) => {
@@ -55,6 +56,7 @@ export const createHostedPreviewGrant$ = command(
           publicBrand: args.publicBrand,
           deploymentId: args.deploymentId,
           ...(args.snapshotId ? { snapshotId: args.snapshotId } : {}),
+          ...(args.immutableContent ? { immutableContent: true } : {}),
           expiresAt,
         }),
         "application/json",
@@ -108,6 +110,7 @@ export const createPrivateHostedPreview$ = command(
         deploymentId: deployment.id,
         publicBrand: deployment.publicBrand,
         snapshotId: args.snapshotId,
+        immutableContent: deployment.manifest.immutableContent,
       },
       signal,
     );

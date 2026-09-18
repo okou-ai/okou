@@ -1009,7 +1009,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
   });
 
   it.each(["organization", "public"] as const)(
-    "%s HTML reads expose only the selected deployment version to recipients",
+    "%s HTML reads require independent sharing for each new site",
     async (audience) => {
       const { owner, org, actor, members } = await hostedFixture();
       const host = createHostMapsBddApi(context);
@@ -1061,7 +1061,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
       );
       const second = await host.prepareHostedSite(actor, {
         ...body,
-        files: [hostedTextFile("/index.html", "<h1>Version two</h1>")],
+        files: [hostedTextFile("/index.html", "<h1>Updated site</h1>")],
       });
       await host.completeHostedSite(actor, second.deploymentId);
       const secondTarget = { kind: "html" as const, id: second.deploymentId };
@@ -1103,7 +1103,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
           headers: recipientHeaders,
           params: { reference: firstReference },
         }),
-        [404],
+        [200],
       );
       const current = await accept(
         api()(artifactReferencesContract).read({
@@ -1680,7 +1680,7 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
   });
 });
 
-test("html sharing pins the selected version until an explicit update and resolves to isolated content", async () => {
+test("new HTML sites keep independent sharing and resolve to isolated content", async () => {
   const { owner, org, actor, objects, members, session } =
     await hostedFixture();
   const host = createHostMapsBddApi(context);
@@ -1751,9 +1751,13 @@ test("html sharing pins the selected version until an explicit update and resolv
   expect(deliveryManifests[0]![1]).not.toContain("snapshotDependencies");
   const second = await host.prepareHostedSite(actor, {
     ...body,
-    files: [hostedTextFile("/index.html", "<h1>Version two</h1>")],
+    files: [hostedTextFile("/index.html", "<h1>Updated site</h1>")],
   });
   await host.completeHostedSite(actor, second.deploymentId);
+  expect(second.siteId).not.toBe(first.siteId);
+  expect(second.publicSlug).toMatch(
+    new RegExp(`^${body.site}-[a-z0-9]{4}$`, "u"),
+  );
   const newer = { kind: "html" as const, id: second.deploymentId };
   const before = await accept(
     api()(artifactSharesContract).status({ headers, body: newer }),
@@ -1761,10 +1765,11 @@ test("html sharing pins the selected version until an explicit update and resolv
   );
   expect(before.body).toMatchObject({
     ownerUrl: `https://app.okou.ai${second.url}`,
-    selectedTarget: target,
-    selectedVersion: 1,
-    candidateVersion: 2,
-    url: share.body.url,
+    audience: "private",
+    selectedTarget: null,
+    selectedVersion: null,
+    candidateVersion: 1,
+    url: null,
   });
   expect(share.body.shortUrl).toBe(`https://app.okou.ai${first.url}`);
   expect(share.body.url).toBe(share.body.shortUrl);
@@ -1806,7 +1811,7 @@ test("html sharing pins the selected version until an explicit update and resolv
   );
   expect(changed.body).toMatchObject({
     selectedTarget: newer,
-    selectedVersion: 2,
+    selectedVersion: 1,
     url: `https://app.okou.ai${second.url}`,
   });
   expect(changed.body.shortUrl).toBe(`https://app.okou.ai${second.url}`);
@@ -1816,7 +1821,7 @@ test("html sharing pins the selected version until an explicit update and resolv
       headers,
       params: { reference: first.url.slice("/artifacts/".length) },
     }),
-    [404],
+    [200],
   );
   const current = await accept(
     api()(artifactReferencesContract).resolve({
@@ -1841,7 +1846,7 @@ test("html sharing pins the selected version until an explicit update and resolv
   });
 });
 
-test("public site names stay on the selected version and rotate after revocation", async () => {
+test("public site names are independent and rotate after their own revocation", async () => {
   const { actor } = await hostedFixture();
   const host = createHostMapsBddApi(context);
   const body = {
@@ -1880,13 +1885,13 @@ test("public site names stay on the selected version and rotate after revocation
     [200],
   );
   expect(pending.body).toMatchObject({
-    url: published.url,
-    selectedVersion: 1,
-    candidateVersion: 2,
+    url: null,
+    selectedVersion: null,
+    candidateVersion: 1,
   });
   await expect(publish(next.deploymentId)).resolves.toMatchObject({
-    url: published.url,
-    selectedVersion: 2,
+    url: `https://${next.publicSlug}.okou.app/`,
+    selectedVersion: 1,
   });
   await accept(
     api()(artifactSharesContract).update({
@@ -1895,7 +1900,7 @@ test("public site names stay on the selected version and rotate after revocation
     }),
     [200],
   );
-  const republished = await publish(next.deploymentId);
+  const republished = await publish();
   expect(new URL(republished.url!).hostname).toMatch(
     new RegExp(`^${first.publicSlug}-[a-z0-9]{4}\\.okou\\.app$`, "u"),
   );
@@ -2297,7 +2302,7 @@ test("canonical file links disclose public previews only while explicitly public
   );
 });
 
-test("public HTML preview metadata follows only the explicitly selected version", async () => {
+test("public HTML preview metadata is independent for each published site", async () => {
   const { owner, org, session } = await fixture();
   const memberships =
     context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
@@ -2372,9 +2377,9 @@ test("public HTML preview metadata follows only the explicitly selected version"
     api()(artifactReferencesContract).publicUrl({
       params: { reference: first.url.split("/").at(-1)! },
     }),
-    [404],
+    [200],
   );
-  expect(previous.body).toStrictEqual(unselected.body);
+  expect(previous.body).toStrictEqual(result.body);
   const selected = await accept(
     api()(artifactReferencesContract).publicUrl({
       params: { reference: second.url.split("/").at(-1)! },

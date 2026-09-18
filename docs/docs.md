@@ -68,6 +68,9 @@ surface; the index does not replace their detailed rules.
 - [Computer Use authorization request creation](./account-erasure-computer-use-authorization-creation.md):
   account-erasure admission, retained canonical identity, compatibility source
   semantics and failure boundaries for Computer Use authorization links.
+- [Computer Use authorization Apply](./account-erasure-computer-use-authorization-apply.md):
+  canonical chat admission, retained request and thread identity, atomic sidebar
+  completion, bounded SQL inventory and explicit host/legacy residuals.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { expect, test } from "vitest";
@@ -26,47 +26,53 @@ import {
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
+import {
+  composerModelTrigger,
+  composerModelTriggerIn,
+} from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 const HOST_ID = "a7000000-0000-4000-a000-000000000001";
 
-/**
- * These cases read the model through the legacy select's controls, which the
- * switch's off lever still serves.
- */
-async function setupLegacyPickerPage(
-  options: Parameters<typeof setupPage>[0],
-): Promise<void> {
-  await setupPage({
-    ...options,
-    featureSwitches: {
-      [FeatureSwitchKey.ModelPickerFlyout]: false,
-      ...options.featureSwitches,
-    },
+async function openMediaCategory(
+  name: "Image" | "Video",
+): Promise<HTMLElement> {
+  if (!screen.queryByRole("tablist", { name: "Models" })) {
+    click(await waitFor(composerModelTriggerOrThrow));
+  }
+  const types = await screen.findByRole("tablist", { name: "Models" });
+  const type = queryAllByRoleFast("tab", types).find((candidate) => {
+    return candidate.textContent?.startsWith(name);
   });
+  if (!type) {
+    throw new Error(`${name} models are not on the flyout's type rail`);
+  }
+  click(type);
+  return await screen.findByRole("listbox", { name: `${name} models` });
 }
 
-async function openMediaCategory(name: "Image" | "Video"): Promise<void> {
-  if (!screen.queryByRole("radiogroup", { name: "Models" })) {
-    const picker = await waitFor(() => {
-      return screen.getByRole("combobox");
+/**
+ * A row reads as its model followed by a price tier. Compare the complete model
+ * name so models with a shared prefix remain distinct.
+ */
+function expectSelectedMediaModel(panel: HTMLElement, label: string): void {
+  const row = within(panel)
+    .getAllByRole("option")
+    .find((option) => {
+      return option.textContent?.replace(/\$+$/u, "").trim() === label;
     });
-    click(picker);
-    await screen.findByRole("radiogroup", { name: "Models" });
+  if (!row) {
+    throw new Error(`Expected a ${label} row in the open model panel`);
   }
+  expect(row).toHaveAttribute("aria-selected", "true");
+}
 
-  const category = await waitFor(() => {
-    const matchingCategory = queryAllByRoleFast("radio", document).find(
-      (candidate) => {
-        return candidate.getAttribute("aria-label") === name;
-      },
-    );
-    if (!matchingCategory) {
-      throw new Error(`${name} model category not found`);
-    }
-    return matchingCategory;
-  });
-  click(category);
+function composerModelTriggerOrThrow(): HTMLElement {
+  const trigger = composerModelTriggerIn(document);
+  if (!trigger) {
+    throw new Error("The composer model trigger is not visible");
+  }
+  return trigger;
 }
 
 function computerMenuIsOpen(): boolean {
@@ -92,21 +98,7 @@ async function openComputerMenu(): Promise<void> {
 }
 
 async function expectSelectedModel(modelLabel: string): Promise<void> {
-  await waitFor(() => {
-    const modelControls = screen.queryAllByRole("combobox");
-    const matchingControl = modelControls.find((candidate) => {
-      return candidate.getAttribute("aria-label") === modelLabel;
-    });
-    if (!matchingControl) {
-      const visibleLabels = modelControls.map((candidate) => {
-        return candidate.getAttribute("aria-label");
-      });
-      throw new Error(
-        `Expected selected model ${modelLabel}; visible model controls: ${visibleLabels.join(", ")}`,
-      );
-    }
-    expect(matchingControl).toBeVisible();
-  });
+  await expect(composerModelTrigger(modelLabel)).resolves.toBeVisible();
 }
 
 async function findThreadLink(threadId: string): Promise<HTMLAnchorElement> {
@@ -216,7 +208,7 @@ test("Conversation configuration arriving before creation is retained", async ()
   });
   installActiveChatBoundaries(context, { hosts: [host] });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -236,10 +228,8 @@ test("Conversation configuration arriving before creation is retained", async ()
   });
   expect(configuredHost).toBeChecked();
 
-  await openMediaCategory("Image");
-  expect(fastButton("GPT Image 2")).toHaveAttribute("aria-pressed", "true");
-  await openMediaCategory("Video");
-  expect(fastButton("MiniMax H3")).toHaveAttribute("aria-pressed", "true");
+  expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
+  expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
 });
 
 test("Media models do not overwrite one another or the run model", async () => {
@@ -262,24 +252,20 @@ test("Media models do not overwrite one another or the run model", async () => {
   });
   installActiveChatBoundaries(context, { metadata: thread });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/chats/${thread.id}`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(6, [thread]),
   });
 
-  const runModel = await screen.findByRole("combobox", {
-    name: "Claude Sonnet 4.6",
-  });
-  expect(runModel).toBeVisible();
-  await openMediaCategory("Image");
-  expect(fastButton("GPT Image 2")).toHaveAttribute("aria-pressed", "true");
-  await openMediaCategory("Video");
-  expect(fastButton("MiniMax H3")).toHaveAttribute("aria-pressed", "true");
-  expect(
-    screen.getByRole("combobox", { name: "Claude Sonnet 4.6" }),
-  ).toBeVisible();
+  await expectSelectedModel("Claude Sonnet 4.6");
+  expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
+  expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
+  // Picking either media model must leave the run model where it was.
+  await expect(
+    composerModelTrigger("Claude Sonnet 4.6"),
+  ).resolves.toBeVisible();
 });
 
 test("Service tier and Computer Use settings update independently", async () => {
@@ -315,10 +301,7 @@ test("Service tier and Computer Use settings update independently", async () => 
     path: `/chats/${target.id}`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(14, [target, newer]),
-    featureSwitches: {
-      [FeatureSwitchKey.CodexFastMode]: true,
-      [FeatureSwitchKey.ModelPickerFlyout]: false,
-    },
+    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   const order = ["Newer conversation", "Configured conversation"];

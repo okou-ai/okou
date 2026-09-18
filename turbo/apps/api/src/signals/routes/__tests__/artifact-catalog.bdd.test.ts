@@ -1,4 +1,5 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -7,11 +8,13 @@ import { describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
+import { hostRoutes } from "../host";
 import { sharedThreadRoutes } from "../shared-threads";
 import {
   createBddApi,
@@ -336,7 +339,6 @@ async function publishHostedSite(args: {
   readonly owner: CatalogActor;
   readonly site: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
-  readonly deployments?: number;
   readonly threadId?: string;
   readonly claimRun?: boolean;
 }): Promise<{
@@ -368,12 +370,8 @@ async function publishHostedSite(args: {
     files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
   };
 
-  let prepared = await chat.prepareHostedSiteWithBearer(bearer, body);
+  const prepared = await chat.prepareHostedSiteWithBearer(bearer, body);
   await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-  for (let index = 1; index < (args.deployments ?? 1); index += 1) {
-    prepared = await chat.prepareHostedSiteWithBearer(bearer, body);
-    await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-  }
   if (claimed !== null) {
     await completeChatRunOk(run.runId, claimed.sandboxHeaders);
   }
@@ -679,23 +677,39 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
-  it("collapses every deployment of a hosted site into one artifact", async () => {
+  it("lists repeated same-name hosted-site publications as separate artifacts", async () => {
     const owner = await catalogActor(
       "Artifact catalog hosted owner",
       bdd.user(),
     );
     const site = `catalog-site-${randomUUID().slice(0, 8)}`;
-    const hosted = await publishHostedSite({ owner, site, deployments: 2 });
+    const hosted = await publishHostedSite({ owner, site });
+    const second = await publishHostedSite({
+      owner,
+      site,
+      threadId: hosted.threadId,
+      claimRun: false,
+    });
+    expect(second.siteId).not.toBe(hosted.siteId);
+    expect(second.deploymentId).not.toBe(hosted.deploymentId);
+    expect(second.publicSlug).toMatch(new RegExp(`^${site}-[a-z0-9]{4}$`, "u"));
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
 
-    expect(catalog.artifacts).toHaveLength(1);
-    expect(catalog.artifacts[0]).toMatchObject({
-      kind: "hosted-site",
-      title: site,
-    });
+    expect(catalog.artifacts).toHaveLength(2);
+    expect(catalog.artifacts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "hosted-site", title: site }),
+        expect.objectContaining({
+          kind: "hosted-site",
+          title: second.publicSlug,
+        }),
+      ]),
+    );
 
-    const artifactId = catalog.artifacts[0]?.id;
+    const artifactId = catalog.artifacts.find((artifact) => {
+      return artifact.title === site;
+    })?.id;
     if (!artifactId) {
       throw new Error("Expected the catalog to list the hosted site");
     }
@@ -706,13 +720,13 @@ describe("GET /api/artifacts/catalog", () => {
     expect(detail.site).toMatchObject({
       id: hosted.siteId,
       slug: site,
-      deploymentVersion: 2,
+      deploymentVersion: 1,
       entrypoint: "/index.html",
       spaFallback: false,
     });
   }, 180_000);
 
-  it("isolates same-slug hosted sites by chat thread", async () => {
+  it("isolates same-name hosted sites by chat thread", async () => {
     const owner = await catalogActor(
       "Artifact catalog chat-scoped hosted owner",
       bdd.user(),
@@ -721,26 +735,12 @@ describe("GET /api/artifacts/catalog", () => {
     const site = `catalog-chat-scope-${randomUUID().slice(0, 8)}`;
 
     const first = await publishHostedSite({ owner, site });
-    const firstRedeploy = await publishHostedSite({
-      owner,
-      site,
-      threadId: first.threadId,
-      claimRun: false,
-    });
     const secondChat = await publishHostedSite({
       owner,
       site,
       claimRun: false,
     });
 
-    expect(firstRedeploy).toMatchObject({
-      siteId: first.siteId,
-      publicSlug: first.publicSlug,
-      url: first.url,
-      deploymentVersion: 2,
-      threadId: first.threadId,
-    });
-    expect(firstRedeploy.deploymentId).not.toBe(first.deploymentId);
     expect(secondChat).toMatchObject({ deploymentVersion: 1 });
     expect(secondChat.siteId).not.toBe(first.siteId);
     expect(secondChat.publicSlug).not.toBe(first.publicSlug);
@@ -748,18 +748,18 @@ describe("GET /api/artifacts/catalog", () => {
     expect(secondChat.threadId).not.toBe(first.threadId);
 
     const firstHistory = await chat.readHostedSiteDeploymentsWithBearer(
-      `Bearer ${scopedOkouToken(owner, firstRedeploy.runId, ["host:read"])}`,
-      site,
+      `Bearer ${scopedOkouToken(owner, first.runId, ["host:read"])}`,
+      first.publicSlug,
     );
     const secondHistory = await chat.readHostedSiteDeploymentsWithBearer(
       `Bearer ${scopedOkouToken(owner, secondChat.runId, ["host:read"])}`,
-      site,
+      secondChat.publicSlug,
     );
     expect(firstHistory).toMatchObject({
       siteId: first.siteId,
       publicSlug: first.publicSlug,
     });
-    expect(firstHistory.deployments).toHaveLength(2);
+    expect(firstHistory.deployments).toHaveLength(1);
     expect(secondHistory).toMatchObject({
       siteId: secondChat.siteId,
       publicSlug: secondChat.publicSlug,
@@ -768,7 +768,7 @@ describe("GET /api/artifacts/catalog", () => {
 
     const crossChatComplete = await chat.requestCompleteHostedSiteWithBearer(
       `Bearer ${scopedOkouToken(owner, secondChat.runId, ["host:write"])}`,
-      firstRedeploy.deploymentId,
+      first.deploymentId,
       [409],
     );
     expectApiError(crossChatComplete.body);
@@ -790,8 +790,8 @@ describe("GET /api/artifacts/catalog", () => {
     );
     expect(firstActive).toMatchObject({
       siteId: first.siteId,
-      deploymentId: firstRedeploy.deploymentId,
-      deploymentVersion: 2,
+      deploymentId: first.deploymentId,
+      deploymentVersion: 1,
     });
     expect(secondActive).toMatchObject({
       siteId: secondChat.siteId,
@@ -801,7 +801,7 @@ describe("GET /api/artifacts/catalog", () => {
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
     const entries = catalog.artifacts.filter((artifact) => {
-      return artifact.title === site;
+      return [first.publicSlug, secondChat.publicSlug].includes(artifact.title);
     });
     expect(entries).toHaveLength(2);
     const details = await Promise.all(
@@ -819,7 +819,7 @@ describe("GET /api/artifacts/catalog", () => {
     ).toStrictEqual(expect.arrayContaining([first.siteId, secondChat.siteId]));
   }, 180_000);
 
-  it("rejects chat adoption of an organization-scoped site", async () => {
+  it("allocates new sites for a name already used by an organization-scoped site", async () => {
     const owner = await catalogActor(
       "Artifact catalog mixed-scope hosted owner",
       bdd.user(),
@@ -831,45 +831,65 @@ describe("GET /api/artifacts/catalog", () => {
       owner,
       site,
     });
-    const chatRun = await sendChatRun(owner.actor, {
-      agentId: owner.agentId,
-      prompt: `publish ${site} from a chat`,
+    const chatSite = await publishHostedSite({
+      owner,
+      site,
+      claimRun: false,
     });
-    const chatBearer = `Bearer ${scopedOkouToken(owner, chatRun.runId, [
-      "host:write",
-    ])}`;
-    const rejected = await chat.requestPrepareHostedSiteWithBearer(
-      chatBearer,
-      {
-        site,
-        artifactKind: "hosted-site",
-        spaFallback: false,
-        files: [hostedTextFile("/index.html", `<main>${site}</main>`)],
-      },
-      [409],
-    );
-    const organizationRedeploy = await publishHostedSiteFromDirectRun({
+    const secondOrganizationSite = await publishHostedSiteFromDirectRun({
       owner,
       site,
       runId: organizationSite.runId,
     });
+    expect(
+      new Set([
+        organizationSite.siteId,
+        chatSite.siteId,
+        secondOrganizationSite.siteId,
+      ]).size,
+    ).toBe(3);
+    expect(chatSite.publicSlug).toMatch(
+      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
+    );
+    expect(secondOrganizationSite.publicSlug).toMatch(
+      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
+    );
+    expect(secondOrganizationSite.publicSlug).not.toBe(chatSite.publicSlug);
 
-    expectApiError(rejected.body);
-    expect(rejected.body.error).toStrictEqual({
-      code: "CONFLICT",
-      message: `Hosted site slug "${site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
-    });
-    expect(organizationRedeploy).toMatchObject({
+    const originalHistory = await chat.readHostedSiteDeploymentsWithBearer(
+      `Bearer ${scopedOkouToken(owner, organizationSite.runId, ["host:read"])}`,
+      organizationSite.publicSlug,
+    );
+    expect(originalHistory).toMatchObject({
       siteId: organizationSite.siteId,
       publicSlug: organizationSite.publicSlug,
+      activeDeploymentVersion: 1,
     });
+    expect(originalHistory.deployments).toHaveLength(1);
+    await accept(
+      setupApp({ context, routes: hostRoutes })(hostContract).deployments({
+        headers: {
+          authorization: `Bearer ${scopedOkouToken(owner, chatSite.runId, ["host:read"])}`,
+        },
+        params: { site: organizationSite.publicSlug },
+      }),
+      [404],
+    );
 
     const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(
-      catalog.artifacts.filter((artifact) => {
-        return artifact.title === site;
-      }),
-    ).toHaveLength(1);
+    expect(catalog.artifacts).toHaveLength(3);
+    expect(catalog.artifacts).toStrictEqual(
+      expect.arrayContaining(
+        [organizationSite, chatSite, secondOrganizationSite].map(
+          (published) => {
+            return expect.objectContaining({
+              kind: "hosted-site",
+              title: published.publicSlug,
+            });
+          },
+        ),
+      ),
+    );
   }, 180_000);
 
   it("catalogues a published deck as a presentation", async () => {
@@ -892,7 +912,7 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
-  it("keeps one card when a hosted site becomes a presentation", async () => {
+  it("keeps the original site when publishing an updated presentation", async () => {
     const owner = await catalogActor(
       "Artifact catalog hosted transition owner",
       bdd.user(),
@@ -911,17 +931,21 @@ describe("GET /api/artifacts/catalog", () => {
       claimRun: false,
     });
 
-    expect(presentation.siteId).toBe(hosted.siteId);
+    expect(presentation.siteId).not.toBe(hosted.siteId);
     const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "presentation",
-        title: site,
-      }),
-    ]);
+    expect(catalog.artifacts).toHaveLength(2);
+    expect(catalog.artifacts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "hosted-site", title: site }),
+        expect.objectContaining({
+          kind: "presentation",
+          title: presentation.publicSlug,
+        }),
+      ]),
+    );
   }, 180_000);
 
-  it("transfers one hosted artifact across same-org member redeploys", async () => {
+  it("keeps hosted artifacts with their original owner when a colleague publishes", async () => {
     const orgId = `org_${randomUUID()}`;
     const firstOwner = await catalogActor(
       "Artifact catalog first org member",
@@ -941,41 +965,19 @@ describe("GET /api/artifacts/catalog", () => {
       owner: secondOwner,
       site,
     });
-
-    expect(secondDeployment.siteId).toBe(firstDeployment.siteId);
-    await expect(
-      chat.listArtifactCatalog(firstOwner.actor),
-    ).resolves.toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-    });
+    expect(secondDeployment.siteId).not.toBe(firstDeployment.siteId);
+    expect(secondDeployment.publicSlug).toMatch(
+      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
+    );
+    const firstCatalog = await chat.listArtifactCatalog(firstOwner.actor);
+    expect(firstCatalog.artifacts).toStrictEqual([
+      expect.objectContaining({ kind: "hosted-site", title: site }),
+    ]);
     const secondCatalog = await chat.listArtifactCatalog(secondOwner.actor);
     expect(secondCatalog.artifacts).toStrictEqual([
       expect.objectContaining({
         kind: "hosted-site",
-        title: site,
-      }),
-    ]);
-
-    const presentation = await publishHostedSiteFromDirectRun({
-      owner: firstOwner,
-      site,
-      artifactKind: "presentation-html",
-      runId: firstDeployment.runId,
-    });
-
-    expect(presentation.siteId).toBe(firstDeployment.siteId);
-    await expect(
-      chat.listArtifactCatalog(secondOwner.actor),
-    ).resolves.toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-    });
-    const finalCatalog = await chat.listArtifactCatalog(firstOwner.actor);
-    expect(finalCatalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "presentation",
-        title: site,
+        title: secondDeployment.publicSlug,
       }),
     ]);
   }, 180_000);

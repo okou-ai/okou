@@ -871,7 +871,7 @@ test("downloads and clones a complete conversation site snapshot independently o
   );
   expect(originalStatus.body.audience).toBe("private");
   const second = await f.site(
-    [{ path: "/index.html", content: "<h1>Private version two</h1>" }],
+    [{ path: "/index.html", content: "<h1>Another private site</h1>" }],
     site.name,
   );
   for (const audience of ["public", "private"] as const) {
@@ -889,7 +889,9 @@ test("downloads and clones a complete conversation site snapshot independently o
     const retainedDownload = await accept(download(), [200]);
     expect(retainedDownload.body).toStrictEqual(downloaded.body);
   }
-  expect(second.deploymentVersion).toBe(2);
+  expect(second.deploymentVersion).toBe(1);
+  expect(second.siteId).not.toBe(site.siteId);
+  expect(second.publicSlug).not.toBe(site.publicSlug);
   const wrongVersion = await accept(clone(2), [404]);
   expect(wrongVersion.body).not.toHaveProperty("files");
 

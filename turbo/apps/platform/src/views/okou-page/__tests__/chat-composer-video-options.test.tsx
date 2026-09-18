@@ -64,23 +64,6 @@ function installVideoEnvironment(): void {
   });
 }
 
-/**
- * These cases reach the video catalog through the legacy select's category
- * control, which the switch's off lever still serves. The cases that never open
- * the picker call `setupPage` directly.
- */
-async function setupLegacyPickerPage(
-  options: Parameters<typeof setupPage>[0],
-): Promise<void> {
-  await setupPage({
-    ...options,
-    featureSwitches: {
-      [FeatureSwitchKey.ModelPickerFlyout]: false,
-      ...options.featureSwitches,
-    },
-  });
-}
-
 function pickerTrigger(label: string): HTMLElement {
   const trigger = queryComposerModelTrigger(label);
   if (!trigger) {
@@ -98,14 +81,16 @@ async function closeTemplatePicker(): Promise<void> {
 }
 
 function fastControl(
-  role: "button" | "radio",
+  role: "button" | "radio" | "tab",
   label: string,
   container: ParentNode = document,
 ): HTMLElement {
   const control = queryAllByRoleFast(role, container).find((candidate) => {
     return (
       candidate.getAttribute("aria-label") === label ||
-      candidate.textContent?.trim() === label
+      candidate.textContent?.trim() === label ||
+      // A type row in the flyout's rail reads as its type over its model.
+      (role === "tab" && candidate.textContent?.startsWith(label) === true)
     );
   });
   if (!control) {
@@ -119,13 +104,15 @@ async function enterVideoMode(triggerLabel: string): Promise<void> {
     expect(pickerTrigger(triggerLabel)).toBeInTheDocument();
   });
   click(pickerTrigger(triggerLabel));
-  await screen.findByRole("radiogroup", { name: "Models" });
-  click(fastControl("radio", "Video"));
+  const types = await screen.findByRole("tablist", { name: "Models" });
+  click(fastControl("tab", "Video", types));
+  const videoModels = await screen.findByRole("listbox", {
+    name: "Video models",
+  });
   await waitFor(() => {
-    expect(fastControl("button", "Seedance 2.0")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      within(videoModels).getByRole("option", { name: /Seedance 2\.0/u }),
+    ).toHaveAttribute("aria-selected", "true");
   });
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
 }
@@ -285,7 +272,7 @@ test.each([false, true])(
   "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupLegacyPickerPage({
+    await setupPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -351,7 +338,7 @@ test.each([false, true])(
   "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupLegacyPickerPage({
+    await setupPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -469,7 +456,7 @@ test("Submit the current model's defaults without a template through the video t
 
 test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
   const submissions = installVideoSubmissionCapture();
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });

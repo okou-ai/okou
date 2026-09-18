@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.634.0](https://github.com/vm0-ai/okou/compare/api-v1.633.0...api-v1.634.0) (2026-09-18)
+
+
+### Features
+
+* **api:** drive native morning briefs through durable ownership, scheduling, and rollback ([#34887](https://github.com/vm0-ai/okou/issues/34887)) ([505ab56](https://github.com/vm0-ai/okou/commit/505ab568051d80dcbc92682909514073014122f4))
+
+
+### Bug Fixes
+
+* **api:** bound unread chat database work by remaining budget ([#35172](https://github.com/vm0-ai/okou/issues/35172)) ([8c4518a](https://github.com/vm0-ai/okou/commit/8c4518abebe68db551249e957214e2c201f462da))
+* **api:** own authorization fixture failure cleanup ([#35263](https://github.com/vm0-ai/okou/issues/35263)) ([e42de4a](https://github.com/vm0-ai/okou/commit/e42de4ae73fc6493fa75cb08cbaaadef8ae5c5da))
+* **billing:** discard zero-quantity usage events ([#35260](https://github.com/vm0-ai/okou/issues/35260)) ([8e2ee68](https://github.com/vm0-ai/okou/commit/8e2ee686f9f3b5236f6f603cb0121aea94dd94e6))
+
+
+### Refactoring
+
+* remove the model picker flyout feature switch ([#35191](https://github.com/vm0-ai/okou/issues/35191)) ([4ef1c13](https://github.com/vm0-ai/okou/commit/4ef1c138fd7a337026383435491707e0392adeed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.471.0
+    * @okouai/core bumped to 8.681.1
+    * @okouai/db bumped to 1.275.0
+    * @okouai/pi-agent-runtime bumped to 1.33.18
+
 ## [1.633.0](https://github.com/vm0-ai/okou/compare/api-v1.632.1...api-v1.633.0) (2026-09-18)
 
 

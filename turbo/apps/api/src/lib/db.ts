@@ -43,6 +43,19 @@ const pool = singleton((): Pool => {
   pgPool.on("error", (error: Error) => {
     log.warn("idle database client error", { error: error.message });
   });
+  const activeClientError = (error: Error) => {
+    // PostgreSQL can terminate an in-flight session (for example when
+    // transaction_timeout expires) after rejecting its active query. The query
+    // promise still owns that failure; this listener prevents the separate
+    // connection event from becoming an uncaught process error.
+    log.warn("active database client error", { error: error.message });
+  };
+  pgPool.on("acquire", (client) => {
+    client.on("error", activeClientError);
+  });
+  pgPool.on("release", (_error, client) => {
+    client.removeListener("error", activeClientError);
+  });
 
   attachDatabasePool(pgPool);
 

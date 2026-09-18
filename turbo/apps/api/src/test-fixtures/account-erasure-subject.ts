@@ -153,6 +153,7 @@ export interface TransactionBarrier {
   readonly entered: Promise<{
     readonly lockTimeout: string;
     readonly statementTimeout: string;
+    readonly transactionTimeout: string;
     /**
      * Rows the chosen statement itself reported. It carries a number only in
      * `pauseAfter` mode, where that statement has already run (and its
@@ -164,6 +165,8 @@ export interface TransactionBarrier {
   /** Backends currently blocked by the paused backend, so a test never guesses
    * at timing with a sleep. */
   readonly blockedWaiterCount: () => Promise<number>;
+  /** Whether the selected statement was ever reached. */
+  readonly enteredYet: () => boolean;
   readonly release: () => void;
 }
 
@@ -182,6 +185,7 @@ interface TransactionBarrierEntry {
   readonly pid: number;
   readonly lockTimeout: string;
   readonly statementTimeout: string;
+  readonly transactionTimeout: string;
   readonly rowCount: number | null;
 }
 
@@ -198,6 +202,7 @@ const transactionBarrierSettingsSchema = z.object({
         pid: z.number(),
         lock_timeout: z.string(),
         statement_timeout: z.string(),
+        transaction_timeout: z.string(),
       }),
     )
     .length(1),
@@ -209,9 +214,10 @@ async function readTransactionBarrierSettings(
   readonly pid: number;
   readonly lockTimeout: string;
   readonly statementTimeout: string;
+  readonly transactionTimeout: string;
 }> {
   const settings = await execute([
-    "SELECT pg_backend_pid() AS pid, current_setting('lock_timeout') AS lock_timeout, current_setting('statement_timeout') AS statement_timeout",
+    "SELECT pg_backend_pid() AS pid, current_setting('lock_timeout') AS lock_timeout, current_setting('statement_timeout') AS statement_timeout, current_setting('transaction_timeout') AS transaction_timeout",
   ]);
   const row = transactionBarrierSettingsSchema.parse(settings).rows[0];
   if (!row) {
@@ -221,6 +227,7 @@ async function readTransactionBarrierSettings(
     pid: row.pid,
     lockTimeout: row.lock_timeout,
     statementTimeout: row.statement_timeout,
+    transactionTimeout: row.transaction_timeout,
   };
 }
 
@@ -310,8 +317,12 @@ export async function withDatabaseTransactionBarrierFixture<T>(
     readonly pid: number;
     readonly lockTimeout: string;
     readonly statementTimeout: string;
+    readonly transactionTimeout: string;
     readonly rowCount: number | null;
   }>(signal);
+  // Own the entry promise even for negative observations where the selected
+  // statement correctly never starts before `work` returns.
+  const enteredSettlement = settleIncludingAbort(entered.promise);
   const blocked = async () => {
     return await blockedWaiterCount((await entered.promise).pid);
   };
@@ -399,10 +410,15 @@ export async function withDatabaseTransactionBarrierFixture<T>(
     args.work({
       entered: entered.promise,
       blockedWaiterCount: blocked,
+      enteredYet: entered.settled,
       release,
     }),
   );
+  if (!entered.settled()) {
+    entered.reject(new Error("Selected transaction statement was not reached"));
+  }
   release();
+  await enteredSettlement;
   const closed = await settleIncludingAbort(closeDbPool());
   Client.prototype.query = original;
   if (!result.ok) {

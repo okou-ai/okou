@@ -45,7 +45,6 @@ export enum FeatureSwitchKey {
   ZoomConnector = "zoomConnector",
   WorkdayConnector = "workdayConnector",
   CodexFastMode = "_fastModel",
-  ModelPickerFlyout = "modelPickerFlyout",
   ChatPreference = "chatPreference",
   PaidToolControls = "paidToolControls",
   RealAgentInPreview = "_realAgentInPreview",
@@ -77,4 +76,5 @@ export enum FeatureSwitchKey {
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
+  GoogleSlidesConversion = "googleSlidesConversion",
 }

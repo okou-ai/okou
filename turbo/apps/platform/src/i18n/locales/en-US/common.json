@@ -541,12 +541,14 @@
       "synced": "Synced to Google Drive",
       "syncedFiles_one": "Synced to Google Drive",
       "syncedFiles_other": "Synced {{count}} files to Google Drive",
+      "syncedSlides": "Synced to Google Slides",
       "syncFailed": "Failed to sync to Google Drive",
       "syncingArtifact": "Syncing artifact...",
       "syncingFiles_one": "Syncing {{count}} file...",
       "syncingFiles_other": "Syncing {{count}} files...",
       "syncingNamed": "Syncing {{filename}}...",
-      "upload": "Upload to Google Drive"
+      "upload": "Upload to Google Drive",
+      "uploadSlides": "Upload to Google Slides"
     },
     "kinds": {
       "audio": "Audio",

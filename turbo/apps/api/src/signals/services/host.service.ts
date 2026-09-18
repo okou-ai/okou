@@ -282,10 +282,6 @@ function deploymentPrefix(
   return `sites/orgs/${encodeURIComponent(orgId)}/${site}/versions/${deploymentVersion}`;
 }
 
-function hostedSiteScopeKey(args: ScopedPrepareDeploymentArgs): string {
-  return args.chatThreadId ?? "organization";
-}
-
 function hostedSiteRequestedSlug(site: HostedSiteRow): string {
   return site.requestedSlug ?? site.slug;
 }
@@ -392,64 +388,6 @@ async function resolveHostedDeploymentForCompletion(
   );
 }
 
-async function findScopedHostedSite(
-  db: Db,
-  args: ScopedPrepareDeploymentArgs,
-  lock: boolean,
-): Promise<HostedSiteRow | undefined> {
-  const scopeCondition =
-    args.chatThreadId === null
-      ? isNull(hostedSites.chatThreadId)
-      : eq(hostedSites.chatThreadId, args.chatThreadId);
-  const query = db
-    .select()
-    .from(hostedSites)
-    .where(
-      and(
-        eq(hostedSites.orgId, args.orgId),
-        eq(hostedSites.requestedSlug, args.body.site),
-        scopeCondition,
-        isNull(hostedSites.deletedAt),
-      ),
-    );
-  const [site] = lock
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
-  return site;
-}
-
-async function hasUnscopedHostedSiteConflict(
-  db: Db,
-  args: ScopedPrepareDeploymentArgs,
-): Promise<boolean> {
-  if (args.chatThreadId === null) {
-    return false;
-  }
-  const scopedSite = await findScopedHostedSite(db, args, false);
-  if (scopedSite) {
-    return false;
-  }
-  const [unscopedSite] = await db
-    .select({ id: hostedSites.id })
-    .from(hostedSites)
-    .where(
-      and(
-        eq(hostedSites.orgId, args.orgId),
-        isNull(hostedSites.chatThreadId),
-        or(
-          eq(hostedSites.requestedSlug, args.body.site),
-          and(
-            isNull(hostedSites.requestedSlug),
-            eq(hostedSites.slug, args.body.site),
-          ),
-        ),
-        isNull(hostedSites.deletedAt),
-      ),
-    )
-    .limit(1);
-  return unscopedSite !== undefined;
-}
-
 function deploymentVersionResponseFields(deployment: HostedDeploymentRow): {
   readonly deploymentVersion?: number;
   readonly artifactUrl?: string;
@@ -515,6 +453,9 @@ function validateFiles(
     if (!isSafeSitePath(file.path)) {
       return `Invalid hosted-site path: ${file.path}`;
     }
+    if (file.path === "/manifest.json") {
+      return "Hosted-site path is reserved: /manifest.json";
+    }
     if (seen.has(file.path)) {
       return `Duplicate hosted-site path: ${file.path}`;
     }
@@ -557,6 +498,7 @@ function buildManifest(args: {
   }
   return {
     version: 1,
+    immutableContent: true,
     publicBrand: args.publicBrand,
     deploymentId: args.deploymentId,
     siteId: args.siteId,
@@ -618,33 +560,26 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
   };
 }
 
-async function findOrCreateHostedSite(
+async function createHostedSite(
   db: Tx,
   args: ScopedPrepareDeploymentArgs,
-  now: Date,
+  context: CreateHostedSiteDeploymentContext,
 ): Promise<HostedSiteRow | null> {
-  const existingSite = await findScopedHostedSite(db, args, true);
-  if (existingSite) {
-    return args.privateArtifacts && existingSite.userId !== args.userId
-      ? null
-      : existingSite;
-  }
-
-  const scopeKey = hostedSiteScopeKey(args);
-  const scope = await canonicalizeHostedSiteScope(db, {
-    orgId: args.orgId,
-    slug: args.body.site,
-    requestedSlug: args.body.site,
-    chatThreadId: args.chatThreadId,
-    createdFromRunId: args.runId,
-  });
   for (let attempt = 0; attempt < MAX_PUBLIC_SLUG_ATTEMPTS; attempt += 1) {
     const publicSlug = publicSlugCandidate(
       args.body.site,
       args.orgId,
-      scopeKey,
+      context.deploymentId,
       attempt,
     );
+    const scope = await canonicalizeHostedSiteScope(db, {
+      orgId: args.orgId,
+      slug: publicSlug,
+      // Each publication owns its resolved name, including for older readers.
+      requestedSlug: publicSlug,
+      chatThreadId: args.chatThreadId,
+      createdFromRunId: args.runId,
+    });
     const [createdSite] = await db
       .insert(hostedSites)
       .values({
@@ -655,19 +590,12 @@ async function findOrCreateHostedSite(
         publicBrand: args.publicBrand,
         publicSlug,
         createdFromRunId: args.runId,
-        updatedAt: now,
+        updatedAt: context.now,
       })
       .onConflictDoNothing()
       .returning();
     if (createdSite) {
       return createdSite;
-    }
-
-    const concurrentSite = await findScopedHostedSite(db, args, true);
-    if (concurrentSite) {
-      return args.privateArtifacts && concurrentSite.userId !== args.userId
-        ? null
-        : concurrentSite;
     }
   }
   return null;
@@ -676,9 +604,9 @@ async function findOrCreateHostedSite(
 async function allocateHostedSite(
   db: Tx,
   args: ScopedPrepareDeploymentArgs,
-  now: Date,
+  context: CreateHostedSiteDeploymentContext,
 ): Promise<HostedSiteAllocation | null> {
-  const site = await findOrCreateHostedSite(db, args, now);
+  const site = await createHostedSite(db, args, context);
   if (!site) {
     return null;
   }
@@ -687,7 +615,7 @@ async function allocateHostedSite(
     .update(hostedSites)
     .set({
       nextDeploymentVersion: deploymentVersion + 1,
-      updatedAt: now,
+      updatedAt: context.now,
     })
     .where(eq(hostedSites.id, site.id))
     .returning();
@@ -784,13 +712,7 @@ export async function createHostedSiteDeployment(
       // FOR SHARE also blocks non-key metadata updates and run cleanup.
       const chatThreadId = await lockHostedRunChatThreadId(tx, args.runId);
       const scopedArgs = { ...args, chatThreadId };
-      if (await hasUnscopedHostedSiteConflict(tx, scopedArgs)) {
-        return {
-          kind: "scope_conflict",
-          message: `Hosted site slug "${args.body.site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
-        };
-      }
-      const allocation = await allocateHostedSite(tx, scopedArgs, context.now);
+      const allocation = await allocateHostedSite(tx, scopedArgs, context);
       if (!allocation) {
         return { kind: "slug_conflict" };
       }
@@ -860,7 +782,7 @@ export const prepareHostedSiteDeployment$ = command(
     if (siteAndDeployment.kind === "slug_conflict") {
       return {
         status: "conflict",
-        message: "Unable to allocate a unique hosted site slug",
+        message: `Unable to allocate a unique hosted site slug for "${args.body.site}". Retry publishing or choose a different --site value.`,
       };
     }
     const publicSlug = siteAndDeployment.site.publicSlug;
@@ -874,6 +796,7 @@ export const prepareHostedSiteDeployment$ = command(
               hostedR2.config.bucket,
               fileKey(siteAndDeployment.deployment.r2Prefix, file.path),
               file.contentType,
+              file.sha256,
               true,
             ),
           );
