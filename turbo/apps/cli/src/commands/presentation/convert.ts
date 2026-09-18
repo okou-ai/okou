@@ -116,6 +116,163 @@ const NORMALIZE = `(() => {
   return 1;
 })()`;
 
+
+/**
+ * Prepares the live deck for export, carrying over the fixes the retired in-app
+ * exporter accumulated against real decks. Each step exists because a deck
+ * shipped without it lost something visible.
+ *
+ * Runs after NORMALIZE, because pinning line breaks must observe the wrapping
+ * that the normalised styles actually produce.
+ */
+const PREPARE = `((selector) => {
+  const slides = Array.from(document.querySelectorAll(selector));
+  const ancestorsUntilBody = (node) => {
+    const chain = [];
+    let ancestor = node.parentElement;
+    while (ancestor && ancestor !== document.body) {
+      chain.push(ancestor);
+      ancestor = ancestor.parentElement;
+    }
+    return chain;
+  };
+
+  // A scroll-snap deck keeps every slide but the active one hidden, and a
+  // hidden slide exports as a blank page.
+  const reveal = (element) => {
+    if (getComputedStyle(element).display === "none") {
+      element.style.setProperty("display", "block", "important");
+    }
+    element.style.setProperty("visibility", "visible", "important");
+    element.style.setProperty("opacity", "1", "important");
+    element.style.setProperty("clip-path", "none", "important");
+    element.removeAttribute("hidden");
+    element.removeAttribute("inert");
+  };
+  for (const slide of slides) {
+    reveal(slide);
+    for (const ancestor of ancestorsUntilBody(slide)) reveal(ancestor);
+  }
+
+  // A slide that paints no background of its own inherits one from an ancestor
+  // on screen, but exports onto white.
+  const transparent = (color) => {
+    const value = (color || "").trim().toLowerCase();
+    return value === "" || value === "transparent" || value.replace(/\\s/gu, "") === "rgba(0,0,0,0)";
+  };
+  const painted = (style) =>
+    !transparent(style.backgroundColor) ||
+    (style.backgroundImage && style.backgroundImage !== "none");
+  for (const slide of slides) {
+    if (painted(getComputedStyle(slide))) continue;
+    const source = [...ancestorsUntilBody(slide), document.body, document.documentElement]
+      .filter(Boolean)
+      .map((element) => getComputedStyle(element))
+      .find(painted);
+    if (!source) continue;
+    if (!transparent(source.backgroundColor)) {
+      slide.style.setProperty("background-color", source.backgroundColor, "important");
+    }
+    if (source.backgroundImage && source.backgroundImage !== "none") {
+      for (const property of ["image", "position", "repeat", "size"]) {
+        const key = "background" + property.charAt(0).toUpperCase() + property.slice(1);
+        slide.style.setProperty("background-" + property, source[key], "important");
+      }
+    }
+  }
+
+  // Corner rounding and margins on the page element survive into the export as
+  // a shape inset from the slide edge.
+  for (const slide of slides) {
+    slide.style.setProperty("margin", "0", "important");
+    slide.style.setProperty("border-radius", "0", "important");
+    slide.style.setProperty("overflow", "hidden", "important");
+  }
+
+  // Pin the browser's line breaks. A pptx text frame re-wraps with the viewer's
+  // font metrics, which never match the browser's exactly, so a line that just
+  // fits here spills or clips there.
+  const CJK = /[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uac00-\\ud7af]/u;
+  const breakCandidates = (text) => {
+    const offsets = [];
+    // Latin wraps at word starts; CJK has no spaces and wraps between glyphs.
+    const words = /\\S+/gu;
+    let match = words.exec(text);
+    while (match) {
+      offsets.push(match.index);
+      match = words.exec(text);
+    }
+    if (CJK.test(text)) {
+      for (let index = 0; index < text.length; index += 1) {
+        if (CJK.test(text[index])) offsets.push(index);
+      }
+    }
+    return [...new Set(offsets)].sort((left, right) => left - right);
+  };
+  const topAt = (node, offset) => {
+    const range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, Math.min(offset + 1, node.nodeValue.length));
+    const rect = Array.from(range.getClientRects()).find((box) => box.width > 0 && box.height > 0);
+    return rect ? rect.top : null;
+  };
+
+  const skip = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEXTAREA", "SVG"]);
+  const targets = [];
+  for (const slide of slides) {
+    const walker = document.createTreeWalker(slide, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      const text = node.nodeValue || "";
+      if (parent && text.trim().length > 1 && !skip.has(parent.tagName)) {
+        const style = getComputedStyle(parent);
+        if (
+          style.display !== "none" && style.visibility !== "hidden" &&
+          style.whiteSpace !== "nowrap" && style.whiteSpace !== "pre"
+        ) {
+          // Only text that actually wrapped can gain a break, and checking the
+          // rect count first avoids a per-character layout flush on the
+          // single-line labels that make up most of a deck.
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          if (range.getClientRects().length > 1) targets.push(node);
+        }
+      }
+      node = walker.nextNode();
+    }
+  }
+
+  let inserted = 0;
+  for (const node of targets) {
+    const text = node.nodeValue || "";
+    let previousTop = null;
+    const breaks = [];
+    for (const offset of breakCandidates(text)) {
+      const top = topAt(node, offset);
+      if (top === null) continue;
+      if (previousTop !== null && Math.abs(top - previousTop) > 1 && offset > 0) {
+        breaks.push(offset);
+      }
+      previousTop = top;
+    }
+    if (breaks.length === 0) continue;
+    const parent = node.parentNode;
+    if (!parent) continue;
+    const fragment = document.createDocumentFragment();
+    let start = 0;
+    for (const offset of breaks) {
+      fragment.append(document.createTextNode(text.slice(start, offset)));
+      fragment.append(document.createElement("br"));
+      start = offset;
+    }
+    fragment.append(document.createTextNode(text.slice(start)));
+    parent.replaceChild(fragment, node);
+    inserted += breaks.length;
+  }
+  return inserted;
+})`;
+
 interface Options {
   readonly input: string;
   readonly out?: string;
@@ -366,6 +523,7 @@ function render(options: Options, bundle: string): Rendered {
 
     if (options.normalize) {
       page.call(["eval", NORMALIZE]);
+      page.call(["eval", `${PREPARE}(${JSON.stringify(selector)})`]);
     }
 
     page.call([
