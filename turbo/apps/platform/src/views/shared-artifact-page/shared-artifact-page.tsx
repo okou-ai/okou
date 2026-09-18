@@ -64,22 +64,6 @@ function ArtifactViewerActions({
   );
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Button
-        ref={enterButtonRef}
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-        showTooltip
-        disabled={enterLoadable.state === "loading"}
-        aria-label={t(($) => {
-          return $.artifacts.actions.enterFullscreen;
-        })}
-        onClick={() => {
-          detach(enterFullscreen(pageSignal), Reason.DomCallback);
-        }}
-      >
-        <Maximize2 aria-hidden />
-      </Button>
       {artifact.publicUrl === null && !artifact.sharedThreadSnapshot ? (
         <ArtifactShareMenu
           surface="viewer"
@@ -115,6 +99,22 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
+      <Button
+        ref={enterButtonRef}
+        variant="quiet"
+        size="icon-sm"
+        iconSize="md"
+        showTooltip
+        disabled={enterLoadable.state === "loading"}
+        aria-label={t(($) => {
+          return $.artifacts.actions.enterFullscreen;
+        })}
+        onClick={() => {
+          detach(enterFullscreen(pageSignal), Reason.DomCallback);
+        }}
+      >
+        <Maximize2 aria-hidden />
+      </Button>
       <ArtifactActionSeparator />
       <Button
         size="sm"
