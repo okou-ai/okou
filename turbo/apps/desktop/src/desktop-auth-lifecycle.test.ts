@@ -24,7 +24,6 @@ import {
   type ComputerUseDriver,
 } from "./computer-use-driver";
 import { ComputerUseRuntimeController } from "./computer-use-runtime-controller";
-import { UNAVAILABLE_RECORDER_STATE } from "./desktop-recorder-types";
 
 const native = vi.hoisted(() => ({
   application: [] as MenuItemConstructorOptions[][],
@@ -129,7 +128,6 @@ async function desktop() {
     fetchFeatureSwitches: () =>
       own(session.fetchWithSessionAuth(new URL(`${api}/api/feature-switches`))),
     setFilesystemPluginFeatureEnabled: () => {},
-    setScreenRecordingFeatureEnabled: () => {},
     onChange: () => {
       menu.refresh();
     },
@@ -192,10 +190,6 @@ async function desktop() {
     openAccessibilitySettings: () => {},
     openScreenRecordingSettings: () => {},
     setKeepAwakeEnabled: async () => {},
-    getRecorderState: () => UNAVAILABLE_RECORDER_STATE,
-    startScreenRecording: async () => {},
-    stopScreenRecording: async () => {},
-    retryScreenRecordingDelivery: async () => {},
     quit: () => menu.dispose(),
   });
   server.use(

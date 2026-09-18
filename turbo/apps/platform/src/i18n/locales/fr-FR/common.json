@@ -640,7 +640,6 @@
       "categories": "Catégories de modèles",
       "category": "Catégorie de modèle",
       "chooseVoice": "Choisir une voix pour {{title}}",
-      "creativeVideo": "Vidéo créative",
       "filters": {
         "age": "Âge",
         "all": "Tous",
@@ -666,8 +665,6 @@
       "importFile": "Importer votre propre fichier",
       "importFileHint": "({{formats}})",
       "importUnsupported": "Choisissez un fichier {{formats}} pour créer un modèle.",
-      "introVideo": "Vidéo d’intro",
-      "introVideoUnavailable": "Ce modèle vidéo n’est plus disponible. Retirez-le pour envoyer votre message.",
       "multiAccent": "Multi-accents",
       "needPro": "Pro requis",
       "nextSlide": "Aperçu de la diapositive suivante",
@@ -685,7 +682,6 @@
       "renameImportedTemplate": "Renommer le modèle",
       "searchConnector": "Rechercher des modèles",
       "searchConnectors": "Rechercher des modèles",
-      "selected": "Sélectionné",
       "selectStyle": "Sélectionner le style {{style}}",
       "selectTemplate": "Sélectionner le modèle {{title}}",
       "selectVideo": "Sélectionner le modèle vidéo {{title}}",
@@ -1919,71 +1915,6 @@
       "sent": "Transfert réussi",
       "threads": "Chats",
       "title": "Transférer vers"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "Choisir un avatar",
-        "label": "Avatar",
-        "none": "Aucun avatar",
-        "noneDetail": "Style seul",
-        "previewLook": "Aperçu de l’apparence {{name}}"
-      },
-      "catalog": {
-        "error": "Le catalogue n’a pas pu être chargé.",
-        "loading": "Chargement d’autres options",
-        "reload": "Recharger le catalogue",
-        "retry": "Réessayer"
-      },
-      "footer": {
-        "cancel": "Annuler"
-      },
-      "picker": {
-        "allPresenters": "Tous les présentateurs",
-        "allPresentersCount": "Tous les présentateurs ({{total}})",
-        "allVoices": "Toutes les voix",
-        "allVoicesCount": "Toutes les voix ({{total}})",
-        "autoVoiceDescription": "Une voix adaptée à votre style",
-        "avatarVoice": "Voix de l’avatar",
-        "back": "Retour",
-        "closeOptions": "Fermer les options",
-        "done": "Terminé",
-        "moreOptions": "Plus d’options",
-        "noMatches": "Aucun résultat.",
-        "optionsNote": "Vous pouvez les modifier à tout moment depuis la puce dans le chat.",
-        "pickStyle": "Choisir un style",
-        "reset": "Réinitialiser",
-        "searchPresenters": "Rechercher des présentateurs",
-        "searchStyles": "Rechercher des styles",
-        "searchVoices": "Rechercher des voix",
-        "selectedStyle": "Sélectionné : {{name}}",
-        "settings": "Paramètres de la vidéo d’intro",
-        "styleCount_one": "{{count}} style",
-        "styleCount_many": "{{count}} styles",
-        "styleCount_other": "{{count}} styles",
-        "styleCountOf": "{{shown}} sur {{total}}",
-        "useStyle": "Utiliser {{name}}"
-      },
-      "style": {
-        "auto": "Laisser Okou choisir",
-        "browseGroups": "Parcourir par style",
-        "groups": {
-          "cinematic": "Cinéma et photographie",
-          "handmade": "Artisanat et matières",
-          "iconic-artist": "Art et design",
-          "other": "Autres styles",
-          "pop-culture": "Culture pop",
-          "print": "Impression et édition",
-          "retro-tech": "Technologie rétro et interfaces"
-        },
-        "preview": "Aperçu de {{title}}"
-      },
-      "voice": {
-        "auto": "Laisser Okou choisir",
-        "defaultDescription": "Utiliser la voix par défaut de l’avatar choisi",
-        "label": "Voix",
-        "none": "Sans voix off",
-        "noneShortDescription": "Conserver le son d’origine"
-      }
     },
     "mail": {
       "bcc": "bcc",

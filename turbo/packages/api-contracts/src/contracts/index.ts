@@ -1783,14 +1783,6 @@ export {
   type BuiltInGenerationResponse,
 } from "./built-in-generation";
 export {
-  introVideoAgentContract,
-  introVideoAgentGenerateRequestSchema,
-  introVideoAgentResponseSchema,
-  type IntroVideoAgentContract,
-  type IntroVideoAgentGenerateRequest,
-  type IntroVideoAgentResponse,
-} from "./intro-video-agent";
-export {
   voiceIoPolishContract,
   voiceIoPolishRequestSchema,
   voiceIoPolishResponseSchema,
@@ -1905,11 +1897,3 @@ export {
   activitySummaryResponseSchema,
   type ActivitySummaryResponse,
 } from "./chat-thread-activity-summary";
-
-export {
-  introVideoRenderContract,
-  introVideoRenderRequestSchema,
-  introVideoRenderResponseSchema,
-  type IntroVideoRenderRequest,
-  type IntroVideoRenderResponse,
-} from "./intro-video-render";

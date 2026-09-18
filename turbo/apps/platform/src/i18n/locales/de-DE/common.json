@@ -622,7 +622,6 @@
       "categories": "Vorlagenkategorien",
       "category": "Vorlagenkategorie",
       "chooseVoice": "Stimme für {{title}} auswählen",
-      "creativeVideo": "Kreatives Video",
       "filters": {
         "age": "Alter",
         "all": "Alle",
@@ -647,8 +646,6 @@
       "importFile": "Eigene Datei importieren",
       "importFileHint": "({{formats}})",
       "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
-      "introVideo": "Intro-Video",
-      "introVideoUnavailable": "Diese Videovorlage ist nicht mehr verfügbar. Entferne sie, um deine Nachricht zu senden.",
       "multiAccent": "Multi-Akzent",
       "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
@@ -666,7 +663,6 @@
       "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
-      "selected": "Ausgewählt",
       "selectStyle": "Stil auswählen {{style}}",
       "selectTemplate": "Wählen Sie die Vorlage {{title}} aus.",
       "selectVideo": "Wählen Sie die Videovorlage {{title}} aus.",
@@ -1881,70 +1877,6 @@
       "sent": "Erfolgreich weitergeleitet",
       "threads": "Chats",
       "title": "Weiterleiten an"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "Avatar auswählen",
-        "label": "Avatar",
-        "none": "Kein Avatar",
-        "noneDetail": "Nur Stil",
-        "previewLook": "Look {{name}} ansehen"
-      },
-      "catalog": {
-        "error": "Der Katalog konnte nicht geladen werden.",
-        "loading": "Weitere Optionen werden geladen",
-        "reload": "Katalog neu laden",
-        "retry": "Erneut versuchen"
-      },
-      "footer": {
-        "cancel": "Abbrechen"
-      },
-      "picker": {
-        "allPresenters": "Alle Moderatoren",
-        "allPresentersCount": "Alle Moderatoren ({{total}})",
-        "allVoices": "Alle Stimmen",
-        "allVoicesCount": "Alle Stimmen ({{total}})",
-        "autoVoiceDescription": "Eine Stimme, die zu deinem Stil passt",
-        "avatarVoice": "Stimme des Avatars",
-        "back": "Zurück",
-        "closeOptions": "Optionen schließen",
-        "done": "Fertig",
-        "moreOptions": "Weitere Optionen",
-        "noMatches": "Keine Treffer.",
-        "optionsNote": "Du kannst das jederzeit über den Chip im Chat ändern.",
-        "pickStyle": "Stil wählen",
-        "reset": "Zurücksetzen",
-        "searchPresenters": "Moderatoren suchen",
-        "searchStyles": "Stile suchen",
-        "searchVoices": "Stimmen suchen",
-        "selectedStyle": "Ausgewählt: {{name}}",
-        "settings": "Einstellungen für Intro-Videos",
-        "styleCount_one": "{{count}} Stil",
-        "styleCount_other": "{{count}} Stile",
-        "styleCountOf": "{{shown}} von {{total}}",
-        "useStyle": "{{name}} verwenden"
-      },
-      "style": {
-        "auto": "Okou wählen lassen",
-        "browseGroups": "Nach Stil durchsuchen",
-        "groups": {
-          "cinematic": "Film und Fotografie",
-          "handmade": "Handarbeit und Materialien",
-          "iconic-artist": "Kunst und Design",
-          "other": "Weitere Stile",
-          "pop-culture": "Popkultur",
-          "print": "Druck und Verlagswesen",
-          "retro-tech": "Retro-Technik und Oberflächen"
-        },
-        "preview": "Vorschau von {{title}}"
-      },
-      "voice": {
-        "auto": "Okou wählen lassen",
-        "defaultDescription": "Die Standardstimme des gewählten Avatars verwenden",
-        "label": "Stimme",
-        "none": "Kein Voiceover",
-        "noneShortDescription": "Originalton beibehalten"
-      }
     },
     "mail": {
       "bcc": "BCC",

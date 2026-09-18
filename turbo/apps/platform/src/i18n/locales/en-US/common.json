@@ -622,7 +622,6 @@
       "categories": "Template categories",
       "category": "Template category",
       "chooseVoice": "Choose a voice for {{title}}",
-      "creativeVideo": "Creative video",
       "filters": {
         "age": "Age",
         "all": "All",
@@ -647,8 +646,6 @@
       "importFile": "Import your own file",
       "importFileHint": "({{formats}})",
       "importUnsupported": "Choose a {{formats}} file to make a template.",
-      "introVideo": "Intro video",
-      "introVideoUnavailable": "This video template is no longer available. Remove it to send your message.",
       "multiAccent": "Multi-accent",
       "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
@@ -666,7 +663,6 @@
       "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
-      "selected": "Selected",
       "selectStyle": "Select style {{style}}",
       "selectTemplate": "Select template {{title}}",
       "selectVideo": "Select video template {{title}}",
@@ -1881,70 +1877,6 @@
       "sent": "Forwarded successfully",
       "threads": "Chats",
       "title": "Forward to"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "Choose an avatar",
-        "label": "Avatar",
-        "none": "No avatar",
-        "noneDetail": "Style only",
-        "previewLook": "Preview look {{name}}"
-      },
-      "catalog": {
-        "error": "The catalog could not be loaded.",
-        "loading": "Loading more options",
-        "reload": "Reload catalog",
-        "retry": "Try again"
-      },
-      "footer": {
-        "cancel": "Cancel"
-      },
-      "picker": {
-        "allPresenters": "All presenters",
-        "allPresentersCount": "All presenters ({{total}})",
-        "allVoices": "All voices",
-        "allVoicesCount": "All voices ({{total}})",
-        "autoVoiceDescription": "A voice that fits your style",
-        "avatarVoice": "Avatar’s voice",
-        "back": "Back",
-        "closeOptions": "Close options",
-        "done": "Done",
-        "moreOptions": "More options",
-        "noMatches": "No matches found.",
-        "optionsNote": "Change these any time from the chip in the chat.",
-        "pickStyle": "Pick a style",
-        "reset": "Reset",
-        "searchPresenters": "Search presenters",
-        "searchStyles": "Search styles",
-        "searchVoices": "Search voices",
-        "selectedStyle": "Selected: {{name}}",
-        "settings": "Intro video settings",
-        "styleCount_one": "{{count}} style",
-        "styleCount_other": "{{count}} styles",
-        "styleCountOf": "{{shown}} of {{total}}",
-        "useStyle": "Use {{name}}"
-      },
-      "style": {
-        "auto": "Let Okou choose",
-        "browseGroups": "Browse by style",
-        "groups": {
-          "cinematic": "Film and photography",
-          "handmade": "Handmade and materials",
-          "iconic-artist": "Art and design",
-          "other": "Other styles",
-          "pop-culture": "Pop culture",
-          "print": "Print and publishing",
-          "retro-tech": "Retro tech and interfaces"
-        },
-        "preview": "Preview {{title}}"
-      },
-      "voice": {
-        "auto": "Let Okou choose",
-        "defaultDescription": "Use the chosen avatar's default voice",
-        "label": "Voice",
-        "none": "No voiceover",
-        "noneShortDescription": "Keep the source audio"
-      }
     },
     "mail": {
       "bcc": "bcc",

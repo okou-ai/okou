@@ -34,7 +34,6 @@ const SCHEMA = {
   GCP_LLM_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   JOGGAI_API_KEY: z.string().min(1).optional(),
   JOGGAI_WEBHOOK_SECRET: z.string().min(1).optional(),
-  HEYGEN_API_KEY: z.string().min(1).optional(),
   BYTEPLUS_API_KEY: z.string().min(1).optional(),
   MINIMAX_API_KEY: z.string().min(1).optional(),
   BYTEPLUS_STT_API_KEY: z.string().min(1).optional(),

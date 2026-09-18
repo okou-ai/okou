@@ -621,7 +621,6 @@
       "categories": "テンプレートのカテゴリ",
       "category": "テンプレートカテゴリ",
       "chooseVoice": "{{title}}の音声を選択",
-      "creativeVideo": "クリエイティブ動画",
       "filters": {
         "age": "年齢",
         "all": "すべて",
@@ -646,8 +645,6 @@
       "importFile": "自分のファイルをインポート",
       "importFileHint": "({{formats}})",
       "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
-      "introVideo": "イントロ動画",
-      "introVideoUnavailable": "この動画テンプレートは現在利用できません。削除してメッセージを送信してください。",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -665,7 +662,6 @@
       "renameImportedTemplate": "テンプレート名を変更",
       "searchConnector": "テンプレートを検索",
       "searchConnectors": "テンプレートを検索",
-      "selected": "選択中",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
       "selectVideo": "ビデオ テンプレート {{title}} を選択してください",
@@ -1873,69 +1869,6 @@
       "sent": "転送しました",
       "threads": "チャット",
       "title": "転送先"
-    },
-    "introVideo": {
-      "avatar": {
-        "heading": "アバターを選択",
-        "label": "アバター",
-        "none": "アバターなし",
-        "noneDetail": "スタイルのみ",
-        "previewLook": "{{name}} の外見をプレビュー"
-      },
-      "catalog": {
-        "error": "カタログを読み込めませんでした。",
-        "loading": "さらに読み込み中",
-        "reload": "一覧を再読み込み",
-        "retry": "再試行"
-      },
-      "footer": {
-        "cancel": "キャンセル"
-      },
-      "picker": {
-        "allPresenters": "すべてのプレゼンター",
-        "allPresentersCount": "すべてのプレゼンター ({{total}})",
-        "allVoices": "すべての音声",
-        "allVoicesCount": "すべての音声 ({{total}})",
-        "autoVoiceDescription": "スタイルに合う音声",
-        "avatarVoice": "アバターの音声",
-        "back": "戻る",
-        "closeOptions": "オプションを閉じる",
-        "done": "完了",
-        "moreOptions": "その他のオプション",
-        "noMatches": "見つかりませんでした。",
-        "optionsNote": "チャットのチップからいつでも変更できます。",
-        "pickStyle": "スタイルを選択",
-        "reset": "リセット",
-        "searchPresenters": "プレゼンターを検索",
-        "searchStyles": "スタイルを検索",
-        "searchVoices": "音声を検索",
-        "selectedStyle": "選択中: {{name}}",
-        "settings": "イントロ動画の設定",
-        "styleCount_other": "{{count}} 件のスタイル",
-        "styleCountOf": "{{total}} 件中 {{shown}} 件",
-        "useStyle": "{{name}} を使用"
-      },
-      "style": {
-        "auto": "Okou におまかせ",
-        "browseGroups": "スタイルから探す",
-        "groups": {
-          "cinematic": "映画と写真",
-          "handmade": "手作りと素材",
-          "iconic-artist": "アートとデザイン",
-          "other": "その他のスタイル",
-          "pop-culture": "ポップカルチャー",
-          "print": "印刷と出版",
-          "retro-tech": "レトロテックとインターフェース"
-        },
-        "preview": "{{title}} のプレビュー"
-      },
-      "voice": {
-        "auto": "Okou におまかせ",
-        "defaultDescription": "選択したアバターのデフォルト音声を使用",
-        "label": "音声",
-        "none": "ナレーションなし",
-        "noneShortDescription": "元の音声を残す"
-      }
     },
     "mail": {
       "bcc": "BCC",

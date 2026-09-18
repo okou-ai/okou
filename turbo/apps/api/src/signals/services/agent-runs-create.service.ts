@@ -94,8 +94,7 @@ type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
 // rather than a restatement that this is an agent run.
 type AgentRunOrigin = "direct" | "workflow_automation";
 export type AgentRunPreCreateSource =
-  | "chat_callback_auto_send"
-  | "workflow_slash_command";
+  "chat_callback_auto_send" | "workflow_slash_command";
 
 const DISALLOWED_TOOLS = [
   "CronCreate",
@@ -211,8 +210,7 @@ interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 }
 
 type AnyCreateAgentRunCommandArgs =
-  | CreateAgentRunCommandArgs
-  | CreateQueueFirstAgentRunCommandArgs;
+  CreateAgentRunCommandArgs | CreateQueueFirstAgentRunCommandArgs;
 
 export interface OfficialWorkflowBootstrapRequirement {
   readonly workflowIds: readonly string[];
@@ -452,7 +450,6 @@ function buildAgentToolsPrompt(args: {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
-  readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
 }): string {
   const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou`;
@@ -473,12 +470,6 @@ function buildAgentToolsPrompt(args: {
     '- Workflow and automation requests use the `workflow-setup` skill first, then follow its guidance. This covers creating, editing, inspecting, running, scheduling, enabling, disabling, copying, or deleting a workflow or automation, and any recurring or event-driven request (for example "every morning", "when a new email arrives", "whenever X happens", "monitor", "remind me", "keep this in sync") even when the user does not say the word "workflow".',
     "- Manage recurring workflow automations: `okou workflow automation --help`. Do NOT use /loop, cron tools (CronCreate, CronList, CronDelete), or ScheduleWakeup — they are not available.",
     `- ${presentationTemplateSkillInstruction()}`,
-    ...(args.introVideoEnabled
-      ? [
-          "- Intro-video creation: read and follow the `intro-video` skill for requests from the Create an intro video flow.",
-          "- Click-driven intro-video camera moves: when a screen recording includes a synchronized same-stem `.clicks.json` sidecar, run `okou video camera --help` and follow its plan/review workflow.",
-        ]
-      : []),
     "- Browser access: `agent-browser` provides rendered-page inspection and interaction. For one known public URL when you only need page content, prefer `okou scrape <url> --format markdown`; use `agent-browser` when you need browser state, authentication, JavaScript, screenshots, or interaction.",
     ...(args.cloudBrowserEnabled === true
       ? [
@@ -610,7 +601,6 @@ function buildAppendSystemPrompt(args: {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
-  readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
 }): string {
   const identity = buildAgentIdentityPrompt(args.agent);
@@ -624,7 +614,6 @@ function buildAppendSystemPrompt(args: {
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
       larkEnabled: args.larkEnabled,
-      introVideoEnabled: args.introVideoEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
     }),
     buildCurrentUserPrompt(args.userInfo),
@@ -800,7 +789,6 @@ function createRunBody(args: {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
-  readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
 }) {
   const triggerSource = args.triggerSource ?? "web";
@@ -812,7 +800,6 @@ function createRunBody(args: {
     cloudBrowserEnabled: args.cloudBrowserEnabled,
     bankingEnabled: args.bankingEnabled,
     larkEnabled: args.larkEnabled,
-    introVideoEnabled: args.introVideoEnabled,
     deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
   });
   return {
@@ -993,10 +980,6 @@ function buildCreateAgentRunArgs(args: {
   const command = args.command;
   const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
   const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
-  const introVideoEnabled = isFeatureEnabled(
-    FeatureSwitchKey.IntroVideo,
-    args.featureSwitchContext,
-  );
   const productAgentExecutionPlan = {
     identity: "agent" as const,
     content: buildAgentExecutionConfig(args.agent.name),
@@ -1028,7 +1011,6 @@ function buildCreateAgentRunArgs(args: {
         FeatureSwitchKey.DeliveryFormatGuidance,
         args.featureSwitchContext,
       ),
-      introVideoEnabled,
     }),
     apiStartTime: command.apiStartTime,
     modelProviderId: command.modelProviderId ?? agentModelProviderId,
@@ -1059,7 +1041,6 @@ function buildCreateAgentRunArgs(args: {
     productAgentExecutionPlan,
     okouTokenComputerUseHostId: command.computerUseHostId,
     okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
-    introVideoEnabled,
     enforceBuiltInCredits: true,
     queueOnConcurrencyLimit: true,
     injectSkillVolumes: { workflows: args.workflows },

@@ -599,7 +599,6 @@ async function restoreTemplateDraft(
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.IntroVideo]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });
@@ -621,16 +620,4 @@ test("A restored Creative Video draft keeps settings collapsed until requested",
   ).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   await expect(openVideoOptions("16:9 · 8s · 720p")).resolves.toBeVisible();
-});
-
-test("An Intro Video draft excludes settings even after choosing Create video", async () => {
-  await restoreTemplateDraft({ type: "intro-video", selection: {} });
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  click(fastControl("button", "Video", tasks));
-  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.getAttribute("aria-label")?.startsWith("Video options ");
-    }),
-  ).toBeFalsy();
 });

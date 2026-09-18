@@ -2,12 +2,15 @@
  * A scroller whose content is clipped by a hard edge reads as a mistake: half a
  * pill, or a card sliced flat. These mask the scroller on whichever edge still
  * has content under it, and on neither edge when nothing overflows — the state
- * comes from `ScrollFade` in the picker's signals.
+ * state comes from `ScrollFade` below.
  *
  * A mask rather than an overlay, because both scrollers sit on surfaces the
  * options layer slides over: an opaque gradient strip would show its own colour
  * against whatever ends up behind it.
  */
+
+/** Which edges of a scroller still have content under them. */
+export type ScrollFade = "none" | "start" | "end" | "both";
 export const SCROLL_FADE_X =
   "data-[fade=end]:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)] data-[fade=start]:[mask-image:linear-gradient(to_right,transparent,#000_24px)] data-[fade=both]:[mask-image:linear-gradient(to_right,transparent,#000_24px,#000_calc(100%-24px),transparent)]";
 

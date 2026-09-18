@@ -4,7 +4,6 @@ import {
   generationTemplateKind,
   type GenerationTemplateKind,
 } from "./generation-template-kind";
-import { INTRO_VIDEO_TEMPLATE_ID } from "./intro-video-template";
 import { isUserPresentationTemplateId } from "./presentation-template-selection";
 import { findWorkflowTemplateItem } from "./workflow-template-items";
 
@@ -25,7 +24,6 @@ export type GenerationTemplateCategory =
   | "avatar"
   | "custom"
   | "illustration"
-  | "intro-video"
   | "presentation"
   | "video"
   | "website"
@@ -173,12 +171,6 @@ export function generationTemplateIdentity(
     }
     case "video": {
       return videoIdentity(request.selection);
-    }
-    case "intro-video": {
-      // One template, so the product name is the identifier. Selections stored
-      // before the wire split reported `explainer-video` in the `video`
-      // category; neither is rewritten.
-      return builtinIdentity("intro-video", INTRO_VIDEO_TEMPLATE_ID);
     }
     case "illustration": {
       return builtinIdentity(

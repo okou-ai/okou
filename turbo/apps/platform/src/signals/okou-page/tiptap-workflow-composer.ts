@@ -258,7 +258,6 @@ export type ComposerTemplateAttachmentType =
   | "illustration"
   | "video"
   | "avatar"
-  | "intro-video"
   | "workflow"
   | "website";
 
@@ -801,7 +800,6 @@ function templateAttachmentNodeAttributes(
       type !== "illustration" &&
       type !== "video" &&
       type !== "avatar" &&
-      type !== "intro-video" &&
       type !== "workflow" &&
       type !== "website") ||
     typeof title !== "string" ||
@@ -1826,8 +1824,7 @@ function workflowComposerDocumentForDraft(
   draft: {
     readonly input: string;
     readonly userMessage:
-      | Parameters<DraftInputSyncTarget["syncUserMessage"]>[0]
-      | null;
+      Parameters<DraftInputSyncTarget["syncUserMessage"]>[0] | null;
     readonly editorDocument: EditorDocumentSnapshot | null;
   },
 ): ProseMirrorNode {

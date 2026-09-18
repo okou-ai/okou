@@ -13,8 +13,6 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { generationTemplateKind } from "@okouai/core/generation-template-kind";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -136,9 +134,7 @@ export interface ComposerSubmission {
 export type ComposerSubmissionAction = "send" | "queue";
 
 export type ComposerPrimaryAction =
-  | ComposerSubmissionAction
-  | "stop"
-  | "disabled";
+  ComposerSubmissionAction | "stop" | "disabled";
 
 export interface ComposerPendingEvent {
   readonly kind: "message" | "automation";
@@ -890,26 +886,6 @@ function createSubmitCurrentInput({
         signal,
       );
       signal.throwIfAborted();
-      if (get(featureSwitch$)[FeatureSwitchKey.IntroVideo] !== true) {
-        const message = submission.editorDocument.toMessageDocument({
-          selectedTemplate: get(draft.generationTemplate$),
-        });
-        if (
-          message?.parts.some((part) => {
-            return (
-              part.type === "template" &&
-              generationTemplateKind(part.template) === "intro-video"
-            );
-          })
-        ) {
-          toast.error(
-            i18n.t(($) => {
-              return $.artifacts.templates.introVideoUnavailable;
-            }),
-          );
-          return false;
-        }
-      }
       const visiblePrompt = submission.prompt.trim();
       if (visiblePrompt.length === 0 && get(draft.attachments$).length === 0) {
         return false;

@@ -282,10 +282,9 @@ original nodes, so folding does not change links into cards.
 CLI artifact producers return `inlineMarkdownLink`, `previewMarkdownBlock`, and
 `artifactPresentationContext` alongside successful JSON results. Text output
 shows the same forms and explains their presentation. This applies to file
-uploads, hosting, built-in image/video/voice/avatar generation, completed social
-downloads, and internal Intro Video media. The forms use the stable artifact
-reference; an image's HTML embed URL has a separate authoring purpose. Pending
-Intro Video jobs return continuation guidance until a completed artifact exists.
+uploads, hosting, built-in image/video/voice/avatar generation, and completed
+social downloads. The forms use the stable artifact reference; an image's HTML
+embed URL has a separate authoring purpose.
 
 Image batches keep their authoring assets in `results.tsv` and record stable
 chat references plus both Markdown forms in `artifacts.json`, outside the

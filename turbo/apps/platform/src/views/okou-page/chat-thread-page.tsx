@@ -6103,11 +6103,6 @@ function generationTemplateTypeLabel(
         return $.artifacts.templates.avatar;
       });
     }
-    case "intro-video": {
-      return i18n.t(($) => {
-        return $.artifacts.templates.introVideo;
-      });
-    }
     case "video": {
       return i18n.t(($) => {
         return $.chat.templates.categories.video;

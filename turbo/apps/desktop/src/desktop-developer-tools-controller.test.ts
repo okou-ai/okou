@@ -14,7 +14,6 @@ function createController(
 ) {
   const onChange = vi.fn();
   const setFilesystemPluginFeatureEnabled = vi.fn();
-  const setScreenRecordingFeatureEnabled = vi.fn();
   const logRefreshError = vi.fn();
   const fetchSwitches = vi.fn(fetchFeatureSwitches);
   const sessionAuthority = {};
@@ -22,7 +21,6 @@ function createController(
     getSessionAuthority: () => sessionAuthority,
     fetchFeatureSwitches: fetchSwitches,
     setFilesystemPluginFeatureEnabled,
-    setScreenRecordingFeatureEnabled,
     onChange,
     logRefreshError,
   });
@@ -31,7 +29,6 @@ function createController(
     fetchSwitches,
     onChange,
     setFilesystemPluginFeatureEnabled,
-    setScreenRecordingFeatureEnabled,
     logRefreshError,
   };
 }
@@ -66,61 +63,6 @@ describe("DeveloperToolsController", () => {
 
     expect(onChange).toHaveBeenCalled();
     expect(setFilesystemPluginFeatureEnabled).toHaveBeenCalledWith(true);
-  });
-
-  it("enables native screen recording when intro video is on", async () => {
-    const { controller, setScreenRecordingFeatureEnabled } = createController(
-      async () =>
-        jsonResponse({
-          effectiveSwitches: {
-            _debug: false,
-            introVideo: true,
-          },
-        }),
-    );
-
-    controller.requestRefresh();
-    await vi.waitFor(() => {
-      expect(setScreenRecordingFeatureEnabled).toHaveBeenCalledWith(true);
-    });
-
-    expect(controller.getState().available).toBeFalsy();
-  });
-
-  it("keeps native screen recording off when intro video is off", async () => {
-    const { controller, setScreenRecordingFeatureEnabled } = createController(
-      async () => jsonResponse({ effectiveSwitches: { introVideo: false } }),
-    );
-
-    controller.requestRefresh();
-    await vi.waitFor(() => {
-      expect(setScreenRecordingFeatureEnabled).toHaveBeenCalledWith(false);
-    });
-  });
-
-  it("releases screen recording when the session is unauthorized", async () => {
-    const responses = [
-      jsonResponse({
-        effectiveSwitches: {
-          _debug: true,
-          introVideo: true,
-        },
-      }),
-      new Response(null, { status: 401 }),
-    ];
-    const { controller, setScreenRecordingFeatureEnabled } = createController(
-      async () => responses.shift() ?? jsonResponse({}),
-    );
-
-    controller.requestRefresh();
-    await vi.waitFor(() => {
-      expect(setScreenRecordingFeatureEnabled).toHaveBeenLastCalledWith(true);
-    });
-
-    controller.requestRefresh();
-    await vi.waitFor(() => {
-      expect(setScreenRecordingFeatureEnabled).toHaveBeenLastCalledWith(false);
-    });
   });
 
   it("reads the legacy switches shape", async () => {
@@ -168,21 +110,16 @@ describe("DeveloperToolsController", () => {
         effectiveSwitches: {
           _debug: true,
           computerUseDesktopPlugins: true,
-          introVideo: true,
         },
       }),
       new Response(null, { status: 500 }),
     ];
-    const {
-      controller,
-      logRefreshError,
-      setFilesystemPluginFeatureEnabled,
-      setScreenRecordingFeatureEnabled,
-    } = createController(async () => responses.shift() ?? jsonResponse({}));
+    const { controller, logRefreshError, setFilesystemPluginFeatureEnabled } =
+      createController(async () => responses.shift() ?? jsonResponse({}));
 
     controller.requestRefresh();
     await vi.waitFor(() => {
-      expect(setScreenRecordingFeatureEnabled).toHaveBeenLastCalledWith(true);
+      expect(setFilesystemPluginFeatureEnabled).toHaveBeenLastCalledWith(true);
     });
 
     controller.requestRefresh();
@@ -191,7 +128,6 @@ describe("DeveloperToolsController", () => {
     });
     expect(controller.getState()).toEqual({ available: false, enabled: false });
     expect(setFilesystemPluginFeatureEnabled).toHaveBeenLastCalledWith(false);
-    expect(setScreenRecordingFeatureEnabled).toHaveBeenLastCalledWith(false);
   });
 
   it("coalesces refreshes requested while one is in flight", async () => {

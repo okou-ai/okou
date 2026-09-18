@@ -4,7 +4,6 @@ import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/
 import { avatarTemplateStylePresetId } from "../avatar-template";
 import { generationTemplateKind } from "../generation-template-kind";
 import { generationTemplateIdentity } from "../generation-template-identity";
-import { INTRO_VIDEO_TEMPLATE_ID } from "../intro-video-template";
 
 function videoTemplate(stylePresetId: string): GenerationTemplateRequest {
   return { type: "video", selection: { stylePresetId } };
@@ -30,18 +29,10 @@ describe("generationTemplateKind", () => {
       type: "website",
       selection: { websiteTemplateId: "website-template:landing" },
     };
-    const introVideo: GenerationTemplateRequest = {
-      type: "intro-video",
-      selection: { options: undefined },
-    };
-
     expect(generationTemplateKind(presentation)).toBe("presentation");
     expect(generationTemplateKind(illustration)).toBe("illustration");
     expect(generationTemplateKind(workflow)).toBe("workflow");
     expect(generationTemplateKind(website)).toBe("website");
-    // Classified by `type`, so a picker selection whose style, avatar, and
-    // voice are not chosen yet is still Intro Video.
-    expect(generationTemplateKind(introVideo)).toBe("intro-video");
   });
 
   it("splits the two products that still share the video envelope", () => {
@@ -64,20 +55,6 @@ describe("generationTemplateKind", () => {
 });
 
 describe("generationTemplateIdentity reporting", () => {
-  it("reports Intro Video as its own category and product identifier", () => {
-    expect(
-      generationTemplateIdentity({
-        type: "intro-video",
-        selection: { options: undefined },
-      }),
-    ).toStrictEqual({
-      category: "intro-video",
-      templateId: INTRO_VIDEO_TEMPLATE_ID,
-      templateSlug: INTRO_VIDEO_TEMPLATE_ID,
-      source: "builtin",
-    });
-  });
-
   it("keeps creative video and avatar apart inside the video envelope", () => {
     expect(
       generationTemplateIdentity(videoTemplate("video-template:kinetic"))

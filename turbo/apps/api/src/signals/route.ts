@@ -1,5 +1,4 @@
 import { getStartedRoutes } from "./routes/get-started";
-import { introVideoRenderRoutes } from "./routes/intro-video-render";
 import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
 import { authMeRoutes } from "./routes/auth-me";
 import { cliAuthRoutes } from "./routes/cli-auth";
@@ -210,8 +209,6 @@ import { userPreferencesRoutes } from "./routes/user-preferences";
 import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { avatarVideoRoutes } from "./routes/avatar-video";
-import { introVideoAgentRoutes } from "./routes/intro-video-agent";
-import { introVideoPresenterRoutes } from "./routes/intro-video-presenter";
 import { voiceIoQuotaRoutes } from "./routes/voice-io-quota";
 import { voiceIoPolishRoutes } from "./routes/voice-io-polish";
 import { voiceIoSpeechRoutes } from "./routes/voice-io-speech";
@@ -326,9 +323,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...builtInGenerationRoutes,
   ...imageIoGenerateRoutes,
   ...avatarVideoRoutes,
-  ...introVideoPresenterRoutes,
-  ...introVideoAgentRoutes,
-  ...introVideoRenderRoutes,
   ...videoIoGenerateRoutes,
   ...logsRoutes,
   ...mailRoutes,

@@ -25,7 +25,7 @@ interface ClientTelemetryMeasurement {
   readonly startedAtMonotonic: number;
 }
 
-type IndexedDbDatabase = "chat" | "intro_video_drafts" | "voice_drafts";
+type IndexedDbDatabase = "chat" | "voice_drafts";
 
 interface IndexedDbOpenTelemetry {
   readonly event_name: "indexeddb.open";

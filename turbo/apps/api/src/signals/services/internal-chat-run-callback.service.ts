@@ -6,7 +6,6 @@ import {
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { loadIntroVideoTemplateAccess } from "./intro-video-access.service";
 import { randomBytes } from "node:crypto";
 
 import { command, createStore } from "ccstate";
@@ -871,8 +870,7 @@ interface TerminalChatCallbackWork {
 }
 
 type DrainOutcome =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly error: unknown };
+  { readonly ok: true } | { readonly ok: false; readonly error: unknown };
 
 function isCreatedQueuedRunStatus(
   status: string,
@@ -3176,9 +3174,7 @@ function queuedIntegrationPrompt(args: {
 function resolveQueuedMessageGenerationTemplatePrompt(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly userMessageProjection:
-    | ReturnType<typeof projectUserMessage>
-    | undefined;
-  readonly introVideoEnabled: boolean;
+    ReturnType<typeof projectUserMessage> | undefined;
   readonly mountedUserPresentationTemplateIds: readonly string[];
   readonly mountedUserTemplates: readonly MountedUserTemplate[];
 }) {
@@ -3188,7 +3184,6 @@ function resolveQueuedMessageGenerationTemplatePrompt(args: {
     "nested",
     () => {
       return resolveThreadGenerationTemplatePrompt({
-        introVideoEnabled: args.introVideoEnabled,
         explicit: args.userMessageProjection?.primaryTemplate,
         explicitTemplates: args.userMessageProjection?.templates,
         mountedUserPresentationTemplateIds:
@@ -3244,10 +3239,6 @@ async function resolveQueuedMessageTemplateContext(args: {
     await resolveQueuedMessageGenerationTemplatePrompt({
       input: args.input,
       userMessageProjection: args.userMessageProjection,
-      introVideoEnabled: loadIntroVideoTemplateAccess(
-        selectedTemplates,
-        args.featureSwitchContext,
-      ),
       mountedUserPresentationTemplateIds,
       mountedUserTemplates,
     });
