@@ -1,4 +1,4 @@
-import { createAttachmentResourceUrl$ } from "../attachment-resource-url.ts";
+import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import {
@@ -18,6 +18,7 @@ import { allVisibleWorkflows$ } from "../workflows-page/workflows-signals.ts";
 import { chatListQuery$ } from "./sidebar-state.ts";
 
 const MAX_RESOURCE_SEARCH_RESULTS = 25;
+const SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX = 64;
 
 interface ThreeColumnAgentSearchResult {
   readonly query: string;
@@ -107,7 +108,13 @@ export const threeColumnArtifactSearchResults$ = computed(
           thumbnailLoad: createImageLoadSignals(),
           thumbnailUrl$: computed(async (get) => {
             return artifact.thumbnail
-              ? await get(createAttachmentResourceUrl$(artifact.thumbnail.url))
+              ? await get(
+                  createAttachmentPreviewSignals(artifact.thumbnail.url, {
+                    thumbnailSize: {
+                      width: SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX,
+                    },
+                  }).thumbnailUrl$,
+                )
               : null;
           }),
         };

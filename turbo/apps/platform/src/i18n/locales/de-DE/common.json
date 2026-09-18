@@ -541,12 +541,14 @@
       "synced": "Mit Google Drive synchronisiert",
       "syncedFiles_one": "Mit Google Drive synchronisiert",
       "syncedFiles_other": "{{count}} Dateien mit Google Drive synchronisiert",
+      "syncedSlides": "Mit Google Slides synchronisiert",
       "syncFailed": "Synchronisierung mit Google Drive fehlgeschlagen",
       "syncingArtifact": "Artefakt wird synchronisiert...",
       "syncingFiles_one": "{{count}} Datei wird synchronisiert...",
       "syncingFiles_other": "{{count}} Dateien werden synchronisiert...",
       "syncingNamed": "{{filename}} wird synchronisiert...",
-      "upload": "Auf Google Drive hochladen"
+      "upload": "Auf Google Drive hochladen",
+      "uploadSlides": "Auf Google Slides hochladen"
     },
     "kinds": {
       "audio": "Audio",
@@ -5816,6 +5818,73 @@
         "resetTimePassedTitle": "Die Rücksetzzeit ist abgelaufen"
       }
     },
+    "paidTools": {
+      "description": "Wähle, welche kostenpflichtigen integrierten Tools du verwenden kannst.",
+      "disabledForCreation": "{{tool}} ist in deinen Einstellungen für kostenpflichtige Tools deaktiviert.",
+      "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
+      "loading": "Deine Tool-Einstellungen werden geladen…",
+      "openSettings": "Einstellungen für kostenpflichtige Tools öffnen",
+      "retry": "Erneut versuchen",
+      "saveError": "Deine Änderung wurde nicht gespeichert.",
+      "saving": "Wird gespeichert…",
+      "scope": "Diese Einstellungen gelten nur für dich in {{workspace}}.",
+      "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
+      "title": "Kostenpflichtige Tools",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "Videos mit sprechenden Avataren erstellen.",
+          "name": "Avatar-Videoerzeugung"
+        },
+        "finance": {
+          "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
+          "name": "Finanzdaten"
+        },
+        "image-generation": {
+          "description": "Bilder mit integrierten Modellen erstellen.",
+          "name": "Bilderzeugung"
+        },
+        "image-recognition": {
+          "description": "Lies und analysiere Bilder.",
+          "name": "Bilderkennung"
+        },
+        "maps": {
+          "description": "Finde Orte, Adressen und Wegbeschreibungen.",
+          "name": "Karten und Orte"
+        },
+        "people-search": {
+          "description": "Finde öffentliche berufliche Profile.",
+          "name": "Personensuche"
+        },
+        "scrape": {
+          "description": "Lies und extrahiere Inhalte von Webseiten.",
+          "name": "Seitenextraktion"
+        },
+        "seo": {
+          "description": "Recherchiere Suchrankings, Keywords und Backlinks.",
+          "name": "SEO-Recherche"
+        },
+        "social": {
+          "description": "Recherchiere öffentliche Beiträge und sammle Medien.",
+          "name": "Social-Media-Recherche"
+        },
+        "video-generation": {
+          "description": "Videos mit integrierten Modellen erstellen.",
+          "name": "Videoerzeugung"
+        },
+        "video-rendering": {
+          "description": "Videokompositionen in der Cloud rendern.",
+          "name": "Video-Rendering"
+        },
+        "voice-generation": {
+          "description": "Sprache mit integrierten Stimmen erstellen.",
+          "name": "Spracherzeugung"
+        },
+        "web-search": {
+          "description": "Finde aktuelle Informationen im Web.",
+          "name": "Websuche"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Verwalten",
@@ -6371,8 +6440,6 @@
       "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
     },
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
-    "pageCount_one": "{{count}} Seite",
-    "pageCount_other": "{{count}} Seiten",
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",
     "sharedBy": "Geteilt von {{owner}}",

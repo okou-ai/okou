@@ -558,13 +558,15 @@
       "syncedFiles_one": "Sincronizzato con Google Drive",
       "syncedFiles_many": "{{count}} file sincronizzati con Google Drive",
       "syncedFiles_other": "{{count}} file sincronizzati con Google Drive",
+      "syncedSlides": "Sincronizzato con Google Slides",
       "syncFailed": "Impossibile sincronizzare con Google Drive",
       "syncingArtifact": "Sincronizzazione dell'artefatto...",
       "syncingFiles_one": "Sincronizzazione di {{count}} file...",
       "syncingFiles_many": "Sincronizzazione di {{count}} file...",
       "syncingFiles_other": "Sincronizzazione di {{count}} file...",
       "syncingNamed": "Sincronizzazione {{filename}}...",
-      "upload": "Carica su Google Drive"
+      "upload": "Carica su Google Drive",
+      "uploadSlides": "Carica su Google Slides"
     },
     "kinds": {
       "audio": "Audio",
@@ -5878,6 +5880,73 @@
         "resetTimePassedTitle": "È trascorso il tempo di ripristino"
       }
     },
+    "paidTools": {
+      "description": "Scegli quali strumenti integrati a pagamento puoi usare.",
+      "disabledForCreation": "{{tool}} è disattivato nelle impostazioni degli strumenti a pagamento.",
+      "loadError": "Impossibile caricare le impostazioni.",
+      "loading": "Caricamento delle impostazioni…",
+      "openSettings": "Apri le impostazioni degli strumenti a pagamento",
+      "retry": "Riprova",
+      "saveError": "La modifica non è stata salvata.",
+      "saving": "Salvataggio…",
+      "scope": "Queste impostazioni si applicano solo a te in {{workspace}}.",
+      "timing": "Le modifiche valgono per le esecuzioni future. Le attività in corso o già preparate potrebbero mantenere le impostazioni precedenti.",
+      "title": "Strumenti a pagamento",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "Crea video con avatar parlanti.",
+          "name": "Generazione di video con avatar"
+        },
+        "finance": {
+          "description": "Consulta aziende, quotazioni e dati di mercato.",
+          "name": "Dati finanziari"
+        },
+        "image-generation": {
+          "description": "Crea immagini con i modelli integrati.",
+          "name": "Generazione di immagini"
+        },
+        "image-recognition": {
+          "description": "Leggi e analizza le immagini.",
+          "name": "Riconoscimento immagini"
+        },
+        "maps": {
+          "description": "Trova luoghi, indirizzi e indicazioni.",
+          "name": "Mappe e luoghi"
+        },
+        "people-search": {
+          "description": "Trova profili professionali pubblici.",
+          "name": "Ricerca di persone"
+        },
+        "scrape": {
+          "description": "Leggi ed estrai contenuti dalle pagine web.",
+          "name": "Estrazione di pagine"
+        },
+        "seo": {
+          "description": "Analizza posizionamenti, parole chiave e backlink.",
+          "name": "Ricerca SEO"
+        },
+        "social": {
+          "description": "Analizza post pubblici e raccogli contenuti multimediali.",
+          "name": "Ricerca sui social"
+        },
+        "video-generation": {
+          "description": "Crea video con i modelli integrati.",
+          "name": "Generazione di video"
+        },
+        "video-rendering": {
+          "description": "Esegui il rendering di composizioni video nel cloud.",
+          "name": "Rendering video"
+        },
+        "voice-generation": {
+          "description": "Crea parlato con le voci integrate.",
+          "name": "Generazione vocale"
+        },
+        "web-search": {
+          "description": "Trova informazioni aggiornate sul web.",
+          "name": "Ricerca web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Gestisci",
@@ -6441,9 +6510,6 @@
       "description": "Okou trasforma il design del tuo file in un modello che puoi riutilizzare."
     },
     "loadFailed": "Impossibile caricare i modelli.",
-    "pageCount_one": "{{count}} pagina",
-    "pageCount_many": "{{count}} pagine",
-    "pageCount_other": "{{count}} pagine",
     "renameFailed": "Impossibile rinominare il modello.",
     "retry": "Riprova",
     "sharedBy": "Condiviso da {{owner}}",

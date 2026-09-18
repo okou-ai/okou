@@ -115,6 +115,7 @@ test("keeps runless deployments private across switch rollback and only issues o
       version: 1,
       publicBrand: "okou",
       deploymentId: draft.deploymentId,
+      immutableContent: true,
       expiresAt: preview.body.expiresAt,
     }),
   });
@@ -170,7 +171,7 @@ test("denies anonymous, other-owner and other-org preview, completion and clonin
   expect(capture.puts).toHaveLength(signedWrites);
 });
 
-test("does not move the existing public version when the same site gets a private draft", async () => {
+test("allocates independent slugs across public and private publication policies", async () => {
   const { actor, body, capture } = await fixture(false);
   const published = await api.prepareHostedSite(actor, body);
   await api.completeHostedSite(actor, published.deploymentId);
@@ -185,8 +186,13 @@ test("does not move the existing public version when the same site gets a privat
     [FeatureSwitchKey.PrivateArtifacts]: true,
   });
   const draft = await api.prepareHostedSite(actor, body);
-  expect(draft.siteId).toBe(published.siteId);
-  expect(draft.deploymentVersion).toBe(2);
+  expect(draft.siteId).not.toBe(published.siteId);
+  expect(draft.deploymentId).not.toBe(published.deploymentId);
+  expect(draft.publicSlug.startsWith(`${body.site}-`)).toBeTruthy();
+  expect(draft.publicSlug.slice(body.site.length + 1)).toMatch(
+    /^[a-z0-9]{4}$/u,
+  );
+  expect(draft.deploymentVersion).toBe(1);
   await api.completeHostedSite(actor, draft.deploymentId);
   expect(
     capture.puts.filter(({ key }) => {
@@ -199,37 +205,36 @@ test("does not move the existing public version when the same site gets a privat
     activeDeploymentId: published.deploymentId,
     activeDeploymentVersion: 1,
   });
+  expect(history.deployments).toHaveLength(1);
   expect((await api.readHostedSiteFiles(actor, body.site)).deploymentId).toBe(
-    draft.deploymentId,
+    published.deploymentId,
   );
-  expect(
-    (await api.readHostedSiteFiles(actor, body.site, 1)).deploymentId,
-  ).toBe(published.deploymentId);
   const colleague = bdd.user({ orgId: actor.orgId });
   expect(
     (await api.readHostedSiteFiles(colleague, body.site)).deploymentId,
   ).toBe(published.deploymentId);
-  await api.requestHostedSiteFiles(colleague, body.site, [404], 2);
-  const colleagueHistory = await api.readHostedSiteDeployments(
-    colleague,
-    body.site,
-  );
-  expect(
-    colleagueHistory.deployments.map(({ deploymentId }) => {
-      return deploymentId;
-    }),
-  ).toStrictEqual([published.deploymentId]);
+  await api.requestHostedSiteFiles(colleague, draft.publicSlug, [404]);
+  await api.requestHostedSiteDeployments(colleague, draft.publicSlug, [404]);
   await billing.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.PrivateArtifacts]: false,
   });
-  const laterPublic = await api.prepareHostedSite(actor, body);
-  await api.completeHostedSite(actor, laterPublic.deploymentId);
-  expect((await api.readHostedSiteFiles(actor, body.site)).deploymentId).toBe(
-    laterPublic.deploymentId,
+  const nextPublic = await api.prepareHostedSite(actor, body);
+  expect(nextPublic.publicSlug.startsWith(`${body.site}-`)).toBeTruthy();
+  expect(nextPublic.publicSlug.slice(body.site.length + 1)).toMatch(
+    /^[a-z0-9]{4}$/u,
   );
+  expect(nextPublic.publicSlug).not.toBe(draft.publicSlug);
+  expect(nextPublic.siteId).not.toBe(draft.siteId);
+  expect(nextPublic.siteId).not.toBe(published.siteId);
+  await api.completeHostedSite(actor, nextPublic.deploymentId);
   expect(
-    (await api.readHostedSiteFiles(actor, body.site, 2)).deploymentId,
+    (await api.readHostedSiteFiles(actor, draft.publicSlug)).deploymentId,
   ).toBe(draft.deploymentId);
+  expect(
+    (await api.readHostedSiteFiles(colleague, nextPublic.publicSlug))
+      .deploymentId,
+  ).toBe(nextPublic.deploymentId);
+  await api.requestHostedSiteFiles(colleague, draft.publicSlug, [404]);
 });
 
 test("creates hostless references without requiring an API hostname", async () => {

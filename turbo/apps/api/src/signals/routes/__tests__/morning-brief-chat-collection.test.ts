@@ -7,22 +7,40 @@ import {
 } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
+import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, now, nowDate } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  mockNow,
+  monotonicNow,
+  now,
+  nowDate,
+} from "../../../lib/time";
+import {
+  barrierQueryText,
+  closeErasureSubjectFixture,
+  removeErasureSubjectsFixture,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/account-erasure-subject";
 import {
   bindMorningBriefThreadFixture,
   clearChatThreadProvenanceFixture,
   countMorningBriefChatWritesFixture,
   deleteSeededChatThreadFixture,
   excludeMorningBriefChatThreadFixture,
+  holdActiveRunReadFixture,
   holdAgentRowFixture,
+  holdChatCandidateDiscoveryFixture,
   holdChatThreadReadBarrierFixture,
   holdMorningBriefChatMembershipLookupFixture,
+  holdMorningBriefOwnershipReadFixture,
   markChatThreadReadFixture,
   renameChatThreadFixture,
+  replaceMorningBriefAutomationFixture,
   replaceMorningBriefInstallationFixture,
   restrictAgentAccessFixture,
   seedFinishedChatRunFixture$,
@@ -150,6 +168,19 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     return member;
   }
 
+  /** Project one dormant lifecycle closure and retire only that owned row. */
+  function closeSubject(subject: {
+    readonly subjectKind: "organization" | "user";
+    readonly subjectId: string;
+  }) {
+    const closing = closeErasureSubjectFixture(subject);
+    onTestFinished(async () => {
+      const { jobId } = await closing;
+      await removeErasureSubjectsFixture([jobId]);
+    });
+    return closing;
+  }
+
   async function seedUnreadThread(
     member: MorningBriefChatMember,
     args: {
@@ -208,8 +239,19 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
    * to an exact instant instead of waiting for one. `clearMockNow` runs in the
    * shared afterEach.
    */
+  let advanceAttemptIoClock: ((elapsedMs: number) => void) | undefined;
+
   function freezeAttemptClock(): number {
     const startedAt = now() + 1000;
+    const ioStartedAt = monotonicNow();
+    mockMonotonicNow(ioStartedAt);
+    advanceAttemptIoClock = (elapsedMs) => {
+      mockMonotonicNow(ioStartedAt + elapsedMs);
+    };
+    onTestFinished(() => {
+      advanceAttemptIoClock = undefined;
+      clearMockMonotonicNow();
+    });
     mockNow(startedAt);
     return startedAt;
   }
@@ -221,6 +263,15 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs
     );
   };
+
+  function isExcerptContentQuery(queryArgs: unknown[]): boolean {
+    const text = barrierQueryText(queryArgs);
+    return (
+      text.includes('from "chat_events"') &&
+      text.includes('"chat_events"."run_id" =') &&
+      text.includes('order by "chat_events"."seq_id" asc')
+    );
+  }
 
   it("does not exist in production, even with the switch on", async () => {
     const member = await briefMember();
@@ -633,6 +684,98 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       ).toStrictEqual([neighbourThread.threadId]);
     }, 60_000);
 
+    it("rejects an automation-only replacement and admits a fresh request under it", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        title: "Automation-only secret",
+        prompt: "prompt the old automation read",
+        reply: "reply the old automation read",
+      });
+      const barrier = await holdChatThreadReadBarrierFixture(
+        threadId,
+        context.signal,
+      );
+
+      const pending = collectRequest(member);
+      await barrier.waitForBlocked();
+      const replacement = await replaceMorningBriefAutomationFixture(member);
+      await barrier.release();
+      const refused = await accept(pending, [403]);
+
+      expect(replacement.automationId).not.toBe(member.automationId);
+      const serialized = JSON.stringify(refused.body);
+      expect(serialized).not.toContain(threadId);
+      expect(serialized).not.toContain("old automation");
+      expect(serialized).not.toContain("Automation-only secret");
+
+      // The replacement is itself canonical and enabled; only the stale scope
+      // is refused. A request admitted afterwards still collects normally.
+      const fresh = await collect(member);
+      expect(
+        fresh.items.map((item) => {
+          return item.threadId;
+        }),
+      ).toStrictEqual([threadId]);
+    }, 60_000);
+
+    it.each([
+      { name: "null to non-null", initiallyBound: false },
+      { name: "non-null to null", initiallyBound: true },
+    ])(
+      "rejects a $name destination rebind while preserving fresh collection",
+      async ({ initiallyBound }) => {
+        const member = await briefMember();
+        const destination = await store.set(
+          seedOrdinaryChatThreadFixture$,
+          { member, title: "Destination only" },
+          context.signal,
+        );
+        if (initiallyBound) {
+          await bindMorningBriefThreadFixture({
+            orgId: member.orgId,
+            userId: member.userId,
+            workflowId: member.workflowId,
+            chatThreadId: destination,
+          });
+        }
+        const { threadId } = await seedUnreadThread(member, {
+          title: "Rebinding secret",
+          prompt: "prompt the old destination read",
+          reply: "reply the old destination read",
+        });
+        const barrier = await holdChatThreadReadBarrierFixture(
+          threadId,
+          context.signal,
+        );
+
+        const pending = collectRequest(member);
+        await barrier.waitForBlocked();
+        await bindMorningBriefThreadFixture({
+          orgId: member.orgId,
+          userId: member.userId,
+          workflowId: member.workflowId,
+          chatThreadId: initiallyBound ? null : destination,
+        });
+        await barrier.release();
+        const refused = await accept(pending, [403]);
+
+        const serialized = JSON.stringify(refused.body);
+        expect(serialized).not.toContain(threadId);
+        expect(serialized).not.toContain("old destination");
+        expect(serialized).not.toContain("Rebinding secret");
+
+        // The same source thread remains eligible under the newly admitted
+        // binding, whether the new destination is null or non-null.
+        const fresh = await collect(member);
+        expect(
+          fresh.items.map((item) => {
+            return item.threadId;
+          }),
+        ).toStrictEqual([threadId]);
+      },
+      60_000,
+    );
+
     it("releases nothing once the canonical installation is replaced mid-request", async () => {
       const member = await briefMember();
       const { threadId } = await seedUnreadThread(member, {
@@ -654,6 +797,42 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
       expect(replacement.workflowId).not.toBe(member.workflowId);
       expect(JSON.stringify(response.body)).not.toContain(threadId);
+    }, 60_000);
+
+    it("rechecks local erasure after the final external membership answer", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        title: "Erasure-window secret",
+        prompt: "prompt collected before closure",
+        reply: "reply collected before closure",
+      });
+      // Positive control: the same real route, database state and authorizer
+      // release the data while the owner remains open.
+      await expect(collect(member)).resolves.toMatchObject({
+        result: "collected",
+      });
+      // Admission resolves membership once, and the pre-collection owner fence
+      // once. Holding the third answer suspends the final external wait after
+      // its earlier local work has already completed.
+      const held = holdMorningBriefChatMembershipLookupFixture(
+        { owner: member, skip: 2 },
+        context.signal,
+      );
+
+      const pending = collectRequest(member);
+      await held.waitForArrival();
+      expect(held.lookupsBefore()).toBe(2);
+      // B1 has no public closure ingress. This is its actual lifecycle writer,
+      // projected for the uniquely owned test subject while Clerk is held.
+      await closeSubject({ subjectKind: "user", subjectId: member.userId });
+      held.release();
+      const response = await accept(pending, [403]);
+
+      expect(response.body.error.code).toBe("FORBIDDEN");
+      const serialized = JSON.stringify(response.body);
+      expect(serialized).not.toContain(threadId);
+      expect(serialized).not.toContain("before closure");
+      expect(serialized).not.toContain("Erasure-window secret");
     }, 60_000);
 
     it("releases nothing once the brief's own Agent becomes inaccessible", async () => {
@@ -794,6 +973,161 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       // Neither the excerpts nor the refusal reason for an expired read escape.
       expect(JSON.stringify(response.body)).not.toContain(threadId);
       expect(JSON.stringify(response.body)).not.toContain("too late");
+    }, 60_000);
+
+    it("spends successive PostgreSQL waits without starting content after the candidate deadline", async () => {
+      await withDatabaseTransactionBarrierFixture(
+        {
+          select: isExcerptContentQuery,
+          stopAt: (_queryArgs, selectingStatement) => {
+            return selectingStatement;
+          },
+          work: async (contentQuery) => {
+            const member = await briefMember();
+            const { threadId } = await seedUnreadThread(member, {
+              prompt: "prompt beyond the cumulative budget",
+              reply: "reply beyond the cumulative budget",
+            });
+            const discovery = await holdChatCandidateDiscoveryFixture(
+              context.signal,
+            );
+            const agent = await holdAgentRowFixture(
+              member.agentId,
+              context.signal,
+            );
+            const startedAt = freezeAttemptClock();
+
+            const pending = collectRequest(member);
+            await discovery.waitForBlocked();
+            // Discovery consumed most of the candidate allowance while queued
+            // in PostgreSQL, but stayed within its individual cap.
+            mockNow(candidateDeadline(startedAt) - 500);
+            await discovery.release();
+            await agent.waitForBlocked();
+
+            // Acquire the final-query blocker only after discovery committed;
+            // candidate selection itself also reads agent_runs.
+            const activeRun = await holdActiveRunReadFixture(context.signal);
+            await agent.release();
+            await activeRun.waitForBlocked();
+            mockNow(candidateDeadline(startedAt));
+            await activeRun.release();
+
+            const response = await accept(pending, [200]);
+            expect(response.body).toMatchObject({
+              result: "no-eligible-content",
+              coverage: "partial",
+              items: [],
+              skipped: [],
+              truncations: ["deadline_exceeded"],
+            });
+            expect(JSON.stringify(response.body)).not.toContain(threadId);
+            expect(contentQuery.enteredYet()).toBeFalsy();
+
+            // Guard-removal control: a fresh healthy request reaches this exact
+            // content statement. The selected transaction exposes all three
+            // real server settings, including the whole-transaction bound.
+            const healthy = collectRequest(member);
+            const healthyContentQuery = await contentQuery.entered;
+            expect(healthyContentQuery).toMatchObject({
+              lockTimeout: "2s",
+              statementTimeout: "5s",
+            });
+            // PostgreSQL renders the conservatively floored monotonic remainder
+            // in milliseconds when fractional clock origins leave it 1ms shy.
+            expect(["11999ms", "12s"]).toContain(
+              healthyContentQuery.transactionTimeout,
+            );
+            contentQuery.release();
+            const recovered = await accept(healthy, [200]);
+            expect(recovered.body.result).toBe("collected");
+            expect(recovered.body.items).toHaveLength(1);
+          },
+        },
+        context.signal,
+      );
+    }, 60_000);
+
+    it("lets PostgreSQL cancel an in-flight transaction at its remaining absolute deadline", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        prompt: "prompt behind the server deadline",
+        reply: "reply behind the server deadline",
+      });
+      const discovery = await holdChatCandidateDiscoveryFixture(context.signal);
+      const agent = await holdAgentRowFixture(member.agentId, context.signal);
+      const startedAt = freezeAttemptClock();
+
+      const pending = collectRequest(member);
+      await discovery.waitForBlocked();
+      // The per-thread transaction starts with only 100ms left. Its Agent read
+      // then remains genuinely blocked; no test timer releases the lock.
+      mockNow(candidateDeadline(startedAt) - 100);
+      advanceAttemptIoClock?.(
+        MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs -
+          MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs -
+          100,
+      );
+      await discovery.release();
+      await agent.waitForBlocked();
+      // Arrival proves the real query is already in flight under the 100 ms
+      // server setting. Move the application clock to the same absolute
+      // boundary, but do not release the lock: PostgreSQL alone must end it.
+      mockNow(candidateDeadline(startedAt));
+      const response = await accept(pending, [200]);
+
+      expect(response.body).toMatchObject({
+        result: "no-eligible-content",
+        coverage: "partial",
+        items: [],
+        skipped: [],
+        truncations: ["deadline_exceeded"],
+      });
+      expect(JSON.stringify(response.body)).not.toContain(threadId);
+      await agent.release();
+
+      // The timed-out transaction was awaited and rolled back (PostgreSQL may
+      // replace its terminated session); the same route and pool remain usable.
+      const recovered = await collect(member);
+      expect(recovered.result).toBe("collected");
+    }, 60_000);
+
+    it("bounds the local final-authority query after the external fence", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        prompt: "prompt waiting on final local authority",
+        reply: "reply waiting on final local authority",
+      });
+      // Admission and the pre-read fence use the first two lookups. Hold the
+      // final external answer after content has already been collected.
+      const membership = holdMorningBriefChatMembershipLookupFixture(
+        { owner: member, skip: 2 },
+        context.signal,
+      );
+      const startedAt = freezeAttemptClock();
+      const pending = collectRequest(member);
+      await membership.waitForArrival();
+      expect(membership.lookupsBefore()).toBe(2);
+
+      const ownership = await holdMorningBriefOwnershipReadFixture(
+        context.signal,
+      );
+      mockNow(
+        startedAt + MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs - 500,
+      );
+      membership.release();
+      await ownership.waitForBlocked();
+      mockNow(startedAt + MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs);
+      await ownership.release();
+
+      const response = await accept(pending, [503]);
+      expect(response.body.error.code).toBe("REQUEST_DEADLINE_EXCEEDED");
+      expect(JSON.stringify(response.body)).not.toContain(threadId);
+
+      // Final local work committed or rolled back before the response; no lock
+      // or detached query prevents the next valid request.
+      const recovered = await collect(member);
+      expect(recovered.result).toBe("collected");
     }, 60_000);
 
     it("refuses an attempt whose final authority check outlived the budget", async () => {

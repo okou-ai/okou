@@ -1,11 +1,9 @@
 import { normalizeGoogleAdsAttribution } from "./google-ads-attribution";
 
+// Historical migration validation only; App/API delivery is owned by Marketing.
 // Campaign ownership verified against Google Ads on 2026-09-09. Keep in sync
 // with vm0-marketing/vite-ssr/app/lib/googleAdsAccounts.ts. Provider IDs are
 // attribution identifiers, so do not rename them with the product brand.
-export const GOOGLE_ADS_LEGACY_ACCOUNT_ID = "1001302527";
-export const GOOGLE_ADS_ADSMARCH_ACCOUNT_ID = "7935750692";
-
 const CAMPAIGN_ACCOUNTS: Readonly<Record<string, string>> = {
   "23843514859": "1001302527",
   "23843604937": "1001302527",

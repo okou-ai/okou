@@ -832,7 +832,7 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
 
     if (
         classification.kind == "firewall_allow"
-        and connector_diagnostics.maybe_make_firewall_allow_local_response(
+        and connector_diagnostics.maybe_make_connector_owner_local_response(
             flow,
             classification,
             commit=False,
@@ -1282,6 +1282,10 @@ def _block_request_classification(
         http_local_responses.block_gmail_send(flow)
         return
     if classification.kind == "firewall_ambiguous":
+        if connector_diagnostics.maybe_make_connector_owner_local_response(
+            flow, classification, commit=True
+        ):
+            return
         _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return
     if classification.kind == "firewall_block":
@@ -1433,7 +1437,7 @@ async def request(flow: http.HTTPFlow) -> None:
         if classification.kind == "firewall_allow":
             allow = classification.firewall_allow
             sandbox_info = classification.sandbox_info
-            if connector_diagnostics.maybe_make_firewall_allow_local_response(
+            if connector_diagnostics.maybe_make_connector_owner_local_response(
                 flow,
                 classification,
                 commit=True,

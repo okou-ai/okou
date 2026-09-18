@@ -259,6 +259,185 @@ enrollment materialization, the durable ownership above, and the cutover. The
 production counts below are automation inventory: they are not a native-row
 census, and they do not show that any preference has been migrated.
 
+## The legacy schedule claim journal
+
+The legacy poller destroys the occurrence it fires. It clears `next_run_at`,
+stamps the poll clock into `last_run_at`, and only afterwards creates the queue
+event and the Run. Nothing records which scheduled instant that work belonged
+to, so a completion callback can advance the schedule twice, or advance it after
+a newer execution already took ownership. Comparing `last_run_id` cannot fix it:
+that column is written after the Run transaction returns.
+
+`morning_brief_schedule_claims` records the occurrence the poller actually
+claimed. One row is written per fired occurrence, inside the transaction that
+clears `next_run_at` and inserts the queue event, holding:
+
+- the authenticated owner, organization, workflow and automation;
+- a server-generated execution identity and the exact pre-claim `next_run_at`
+  as `scheduled_anchor_at`;
+- a monotonic `claim_sequence` and the actual `claimed_at` poll clock;
+- the exact original queue event and, once the launch transaction creates it,
+  the exact Run;
+- a bounded queue disposition and a bounded settlement state and time.
+
+`(automation_id, scheduled_anchor_at)` is unique, and the queue-event and Run
+bindings are unique where present, so retrying the same admission can never
+produce a second occurrence, queue item or Run binding. `fired_at` keeps its
+existing meaning: it is the real fire time, never relabelled as the scheduled
+instant.
+
+Only the installation this document's canonical selection reports as a member's
+installed Morning Brief is journaled. Additional installations, manual runs and
+every other automation kind keep their existing untracked behavior, and the
+journal activates no native work: the `simpleMorningBrief` switch stays off and
+is not consulted here. The table is additive and unconditional — it has no
+feature-gated creation, and it is written only on the legacy path.
+
+### What the claim sequence does and does not prove
+
+The highest `claim_sequence` for an automation is the current claim. A callback
+from any lower sequence settles nothing. That fences newer journaled claims
+only. It does not prove that Settings, enrollment, reconciliation, a generic
+enable/disable, a thread deletion and recreation, or a rollback writer did not
+replace ownership and restore the same values in between, so it is not a
+complete schedule-replacement or ABA fence. S7b has to make those writers
+consume a durable owner and revocation epoch together with the current user
+choice.
+
+### Settlement
+
+One operation advances the schedule. The completion callback and the outer
+pre-run failure path both call it. Under the automation and occurrence row
+locks it verifies the exact execution or Run binding, that the occurrence is
+the current claim, that it is still unsettled, that the automation is enabled,
+and that `next_run_at` is still NULL. It then reads the current schedule and
+timezone, applies the existing recurrence and failure policy, and commits the
+schedule update and the settlement together.
+
+The recurrence clock is sampled after those locks, never at arrival. Waiting on
+a real schedule writer can outlast a cron boundary, and an instant read taken
+before the wait would publish a successor that is already in the past and fire
+again immediately.
+
+The late `last_run_id` write that follows the launch transaction has the same
+shape of hazard and the same answer. It cannot be expressed as one UPDATE with a
+"no newer claim" subquery: under READ COMMITTED a statement keeps the snapshot
+it started with, so an UPDATE that begins before a newer claimant commits, waits
+on the automation row and then proceeds would still evaluate that subquery
+against its pre-wait snapshot and overwrite the newer value. The write therefore
+takes the automation row lock first and re-reads the current claim in later
+statements, which observe everything the wait let through.
+
+That makes a duplicate callback, a failed-Run callback overlapping the outer
+pre-run error path, and a callback from a superseded claim all no-ops. A user
+action that already published a non-null `next_run_at` keeps that schedule, and
+a timezone edited while the claim was active is the timezone its own completion
+uses. Insufficient-credit handling and the existing failure-count and
+auto-disable behavior are unchanged.
+
+### A tick without a claim has no schedule authority
+
+Two ticks can resolve the same due row. The one that loses, or that fails at the
+queue admission boundary before any claim exists, must not behave like the old
+unjournaled writer: that writer computes recurrence and failure counts from its
+own stale snapshot and updates by id and enabled state alone, so it could
+republish a schedule the winner already consumed, raise a failure count or
+disable the automation the winner owns.
+
+A journal-aware tick that failed before acquiring a claim therefore restricts
+its failure update to the exact unconsumed occurrence it resolved. Absence of a
+local claim id is not mutation authority. Genuinely unjournaled legacy ticks
+pass no such restriction and keep their exact previous behavior, and a tick that
+did acquire a claim settles through the shared settlement operation instead.
+
+### Compatibility branches and their removal gates
+
+- **Unjournaled callback.** A callback whose Run has no journal binding keeps
+  the exact previous behavior. It carries no journaled protection and never
+  infers an anchor for an execution it does not recognize. Remove it when no
+  unjournaled legacy execution can still call back.
+- **Untracked pending event.** A coalescing tick that finds a pending event
+  belonging to no recorded occurrence does not attach its anchor to it and does
+  not consume the schedule. `next_run_at` keeps the same due instant and the
+  existing cron rereads the row on its next tick. Remove it when every pending
+  legacy event is journaled.
+- **Old code, new schema.** The table is additive, so an API instance running
+  older code during a rolling deployment ignores it and keeps claiming and
+  settling unjournaled work through the path above. This slice gives forward
+  identity on the new path only; it does not make a mixed fleet safe for native
+  activation. Native switch rollback stays a later protocol and cannot simply
+  re-enable the legacy path alongside unresolved native work.
+
+### Evidence lifetime
+
+Rows are content-free execution and dedupe history: no prompt, provider payload,
+result, email address, credential or free-form error string is stored. There is
+deliberately no shorter TTL: deleting a row while its callback can still arrive
+would restore exactly the double-advance this table prevents, and losing a known
+record must never reclassify it as an old untracked execution that may advance
+again. Nothing here authorizes historical deletion or backfill, and missing
+historical evidence is not proof of a drain. S7b and S9 have to account for this
+retained history before removing it.
+
+Two removal paths exist, and the `automation_id` cascade is not sufficient on
+its own. `workflows.owner_user_id` and `workflow_automations.owner_user_id` are
+plain text with no users foreign key, and user cleanup only cascades the Agents
+the departing user owns, so a member whose Morning Brief runs on a colleague's
+shared or default Agent would otherwise keep both the automation and this
+journal after deletion. `revokeMorningBriefScheduleOwnership` therefore runs at
+the same owner, organization and membership revocation points the rest of
+Morning Brief already uses:
+
+- the `automation_id` cascade removes occurrences with their automation,
+  including uninstall;
+- owner, organization and membership revocation scrubs that scope's
+  occurrences: `org_id` and `owner_user_id` become NULL and the settlement
+  becomes the terminal `revoked`.
+
+Revocation deliberately scrubs rather than deletes. Deleting would make a
+callback that is still in flight look like an execution this table never
+recorded, which is exactly the untracked legacy branch that may advance a
+schedule. What survives is content-free — automation, workflow, occurrence
+identity and timestamps — and its terminal settlement makes any later callback a
+no-op. No automation, workflow or other owner is touched, which is what keeps
+other Morning Brief surfaces unchanged.
+
+### Executed boundary evidence
+
+The focused API regression suite drives the production cron route, shared queue
+drain, Run transaction and callback dispatcher against PostgreSQL. It observes:
+
+- two real launchers reaching the same queue claim, with one Run and one binding;
+- a PostgreSQL `AFTER INSERT` fault rolling the Run and its earlier journal
+  binding back together;
+- the Pi launch composition reaching its API-first ownership transfer with the
+  same bound occurrence;
+- a completion callback settling after the Run transaction commits but before
+  the late `last_run_id` write starts;
+- a failed-Run callback whose first settlement is rolled back by PostgreSQL,
+  then retried while the outer pre-run failure enters the same settlement
+  operation;
+- the untracked pending-event compatibility branch being consumed through the
+  shared queue drain before the next real cron tick journals recovery; and
+- three journaled failures preserving the legacy auto-disable threshold.
+
+The generic scheduler regression suite remains the authority for unchanged
+insufficient-credit behavior: credit failures neither increment the failure
+count nor disable recurring schedules. At a representative retained-history
+scale of 80,000 rows (slightly above one year at the measured 215 daily
+schedules), PostgreSQL uses the dedicated owner-user index for global user
+erasure, the org-leading owner index for membership erasure, and the sequence
+index for the current-claim read. These are executed boundaries, not an
+assertion that `claim_sequence` is the later S7b choice or rollback epoch.
+
+### What this slice does not do
+
+It does not transfer Morning Brief to native execution, create a Run for the
+native pipeline, change legacy billing, or establish a native user-choice
+authority. It adds no email disposition field and does not touch the outbox: a
+late result callback can still create fresh email and a provider request can
+already be in flight. Global callback and outbox counts are not drain proof.
+
 ## Observed production scale
 
 A paginated MaskDB read on 2026-09-16 at 09:50:15–09:50:17 UTC, including

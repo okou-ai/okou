@@ -31,7 +31,7 @@ mod workspace_session_history;
 
 pub(crate) use archive_size_mismatch::ArchiveSizeMismatch;
 pub(crate) use history_transfer::{
-    HistoryCodecReason, HistoryTransferMeasurements, HistoryTransferSource,
+    HistoryCodecDecision, HistoryTransferMeasurements, HistoryTransferSource,
 };
 pub(crate) use workspace_session_history::WorkspaceSessionHistoryTelemetry;
 
@@ -1210,7 +1210,7 @@ mod tests {
                     .body_includes(r#""session_history_transfer_source":"workspace_cache""#)
                     .body_includes(r#""session_history_framework":"codex""#)
                     .body_includes(r#""session_history_wire_codec":"zstd""#)
-                    .body_includes(r#""session_history_codec_reason":"sample_accepted""#)
+                    .body_includes(r#""session_history_codec_decision":"above_threshold""#)
                     .body_includes(r#""session_history_restore_representation":"raw""#)
                     .body_includes(r#""session_history_transfer_bytes":17825792"#)
                     .body_includes(r#""session_history_wire_bytes":2048"#)
@@ -1236,7 +1236,7 @@ mod tests {
             "codex",
             Some(HistoryTransferMeasurements::new(
                 FileCompression::Zstd,
-                HistoryCodecReason::SampleAccepted,
+                HistoryCodecDecision::AboveThreshold,
                 Duration::from_millis(1),
                 17 * 1024 * 1024,
                 false,

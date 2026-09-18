@@ -1,10 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import {
+  getInstructionsStorageName,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
+import { storages } from "@okouai/db/schema/storage";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
@@ -197,32 +202,31 @@ export async function readMorningBriefCollectionOccurrences(
     .orderBy(asc(morningBriefCollectionOccurrences.scheduledFor));
 }
 
-/**
- * Delete the Agent an installation runs on.
- *
- * The Agent lifecycle deletion this stands in for is what the occurrence's
- * foreign key is for, so the test exercises the constraint directly rather than
- * asserting that some other service would have removed the row.
- */
+/** Hold the Agent row that begins final local authority admission. */
+export async function holdMorningBriefAdmissionAgent(
+  agentId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .for("update");
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/** Delete an Agent directly for endpoint-less foreign-key fixture cases. */
 export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
   await db().delete(agents).where(eq(agents.id, agentId));
 }
 
-/**
- * Move the installation's Agent out of this member's reach without deleting it.
- *
- * Deletion cascades the occurrence away, which hides every fence behind a
- * foreign key. An access change does not: the Agent row survives, so only a
- * real re-resolution of the installation's authority can notice that the member
- * may no longer act through it.
- *
- * This is a deliberate external-behavior exception. The Agent only stops
- * resolving when it is private *and* owned by somebody else, and no production
- * endpoint transfers Agent ownership — `agentRequestSchema` and
- * `agentMetadataRequestSchema` expose visibility but never an owner — so the
- * state cannot be constructed through the real API. Turning visibility private
- * alone leaves the member as the owner, which still resolves.
- */
+/** Construct a private foreign-owned Agent for canonical-reader unit cases. */
 export async function restrictMorningBriefAgent(
   agentId: string,
 ): Promise<void> {
@@ -262,6 +266,55 @@ export async function repointMorningBriefInstallationAgent(installation: {
     await db().delete(agents).where(eq(agents.id, agentId));
   });
   return agentId;
+}
+
+/**
+ * Leave this Agent's instructions volume with nothing published.
+ *
+ * An Agent created through the product API always owns an instructions volume,
+ * but a member who never wrote instructions has no published head — the shape
+ * the language reader records as absence, with no archive to download. The
+ * Agent API exposes no way to unpublish, so the row is written directly; every
+ * later read still goes through the canonical storage reader.
+ */
+export async function clearMorningBriefInstructionsHead(
+  agentId: string,
+): Promise<void> {
+  const [agent] = await db()
+    .select({ name: agents.name, orgId: agents.orgId })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  if (!agent) {
+    throw new Error("Expected the Agent whose instructions are cleared");
+  }
+  await db()
+    .update(storages)
+    .set({ headVersionId: null })
+    .where(
+      and(
+        eq(storages.orgId, agent.orgId),
+        eq(storages.userId, VOLUME_ORG_USER_ID),
+        eq(storages.name, getInstructionsStorageName(agent.name)),
+      ),
+    );
+}
+
+/**
+ * Hold the final canonical instruction-version SELECT at PostgreSQL itself.
+ *
+ * There is no product input that pauses a read after retained-source authority
+ * and before request admission. The regression needs that exact infrastructure
+ * boundary, so it takes a short table lock only after the initial language read
+ * has completed and proves the production query is waiting through
+ * `pg_blocking_pids`. The fixture owns and releases the transaction at test end.
+ */
+export async function holdMorningBriefInstructionVersionRead(
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${storages} IN ACCESS EXCLUSIVE MODE`);
+  });
 }
 
 /** Pause the seeded schedule the way the Settings surface would. */

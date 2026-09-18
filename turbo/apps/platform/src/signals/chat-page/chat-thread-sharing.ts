@@ -1,8 +1,18 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { writeToClipboard } from "../okou-page/clipboard.ts";
 import type { ChatEventGroup } from "./chat-event.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
 import { buildRunWorkFolding } from "./run-work-folding.ts";
@@ -103,6 +113,56 @@ function filterSelectedGroups(
   return changed ? next : selected;
 }
 
+function createShareCommand(
+  threadId: string,
+  selectedGroups$: Computed<ReadonlyMap<string, SelectedGroup>>,
+  internalCreatedSharedThreadId$: State<string | null>,
+  internalPhase$: State<SharedThreadSelectionPhase>,
+): ChatThreadSharingSignals["create$"] {
+  return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const eventIds = [...get(selectedGroups$).values()].flatMap((group) => {
+      return group.events.map((event) => {
+        return event.id;
+      });
+    });
+    if (eventIds.length === 0) {
+      return;
+    }
+    const client = get(apiClient$)(sharedThreadsContract);
+    const result = await accept(
+      client.create({
+        params: { threadId },
+        body: { eventIds },
+        fetchOptions: { signal },
+      }),
+      [201, 400, 413],
+      signal,
+    );
+    if (result.status !== 201) {
+      throw new Error(result.body.error.message);
+    }
+    set(internalCreatedSharedThreadId$, result.body.id);
+    set(internalPhase$, "created");
+    const copied = await writeToClipboard(
+      `${window.location.origin}/share/threads/${result.body.id}`,
+    );
+    signal.throwIfAborted();
+    if (copied) {
+      toast.success(
+        i18n.t(($) => {
+          return $.chat.sharing.linkCopied;
+        }),
+      );
+    } else {
+      toast.error(
+        i18n.t(($) => {
+          return $.chat.sharing.copyFailed;
+        }),
+      );
+    }
+  });
+}
+
 export function createChatThreadSharingSignals(
   threadId: string,
   scroll: Pick<
@@ -190,32 +250,11 @@ export function createChatThreadSharingSignals(
     },
   );
 
-  const create$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const eventIds = [...get(selectedGroups$).values()].flatMap((group) => {
-        return group.events.map((event) => {
-          return event.id;
-        });
-      });
-      if (eventIds.length === 0) {
-        return;
-      }
-      const client = get(apiClient$)(sharedThreadsContract);
-      const result = await accept(
-        client.create({
-          params: { threadId },
-          body: { eventIds },
-          fetchOptions: { signal },
-        }),
-        [201, 400, 413],
-        signal,
-      );
-      if (result.status !== 201) {
-        throw new Error(result.body.error.message);
-      }
-      set(internalCreatedSharedThreadId$, result.body.id);
-      set(internalPhase$, "created");
-    },
+  const create$ = createShareCommand(
+    threadId,
+    selectedGroups$,
+    internalCreatedSharedThreadId$,
+    internalPhase$,
   );
 
   return {

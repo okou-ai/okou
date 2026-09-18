@@ -25,6 +25,7 @@ import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-en
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -82,6 +83,7 @@ import {
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
@@ -888,6 +890,9 @@ async function deleteOrgData(
   await db
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.orgId, orgId));
+  await db
+    .delete(userDisabledPaidTools)
+    .where(eq(userDisabledPaidTools.orgId, orgId));
   await db.delete(orgCache).where(eq(orgCache.orgId, orgId));
   await db
     .delete(morningBriefEnrollments)
@@ -962,6 +967,9 @@ async function deleteUserData(
   await db
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.userId, userId));
+  await db
+    .delete(userDisabledPaidTools)
+    .where(eq(userDisabledPaidTools.userId, userId));
   await db.delete(userCache).where(eq(userCache.userId, userId));
   signal.throwIfAborted();
   await db.transaction(async (tx) => {
@@ -981,6 +989,11 @@ export const cleanupClerkDeletedOrg$ = command(
     await cancelOrgRuns(db, orgId, {
       cascadeOwnedAgents: true,
       revokeMorningBriefCollection: true,
+    });
+    signal.throwIfAborted();
+    await revokeMorningBriefScheduleOwnership(db, {
+      kind: "organization",
+      orgId,
     });
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, {
@@ -1019,6 +1032,8 @@ export const cleanupClerkDeletedUser$ = command(
       revokeMorningBriefCollection: true,
     });
     signal.throwIfAborted();
+    await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
+    signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
     signal.throwIfAborted();
     await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
@@ -1038,6 +1053,11 @@ export const cleanupClerkDeletedUser$ = command(
       await cancelOrgRuns(db, orgId, {
         cascadeOwnedAgents: true,
         revokeMorningBriefCollection: true,
+      });
+      signal.throwIfAborted();
+      await revokeMorningBriefScheduleOwnership(db, {
+        kind: "organization",
+        orgId,
       });
       signal.throwIfAborted();
       await assertPiInferenceScopeErasureReady(db, {

@@ -558,13 +558,15 @@
       "syncedFiles_one": "Sincronizado con Google Drive",
       "syncedFiles_many": "Se sincronizaron {{count}} archivos con Google Drive",
       "syncedFiles_other": "Se sincronizaron {{count}} archivos con Google Drive",
+      "syncedSlides": "Sincronizado con Google Slides",
       "syncFailed": "No se pudo sincronizar con Google Drive",
       "syncingArtifact": "Sincronizando artefacto...",
       "syncingFiles_one": "Sincronizando {{count}} archivo...",
       "syncingFiles_many": "Sincronizando {{count}} archivos...",
       "syncingFiles_other": "Sincronizando {{count}} archivos...",
       "syncingNamed": "Sincronizando {{filename}}...",
-      "upload": "Subir a Google Drive"
+      "upload": "Subir a Google Drive",
+      "uploadSlides": "Subir a Google Slides"
     },
     "kinds": {
       "audio": "Audio",
@@ -5878,6 +5880,73 @@
         "resetTimePassedTitle": "Ya pasó la hora de restablecimiento"
       }
     },
+    "paidTools": {
+      "description": "Elige qué herramientas de pago integradas puedes usar.",
+      "disabledForCreation": "{{tool}} está desactivado en tus ajustes de herramientas de pago.",
+      "loadError": "No se pudieron cargar tus ajustes.",
+      "loading": "Cargando tus ajustes…",
+      "openSettings": "Abrir ajustes de herramientas de pago",
+      "retry": "Reintentar",
+      "saveError": "No se ha guardado tu cambio.",
+      "saving": "Guardando…",
+      "scope": "Estos ajustes solo se aplican a ti en {{workspace}}.",
+      "timing": "Los cambios se aplican a las próximas ejecuciones. Las tareas en curso o ya preparadas pueden mantener los ajustes anteriores.",
+      "title": "Herramientas de pago",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "Crea vídeos con avatares que hablan.",
+          "name": "Generación de vídeos con avatar"
+        },
+        "finance": {
+          "description": "Consulta empresas, cotizaciones y datos del mercado.",
+          "name": "Datos financieros"
+        },
+        "image-generation": {
+          "description": "Crea imágenes con modelos integrados.",
+          "name": "Generación de imágenes"
+        },
+        "image-recognition": {
+          "description": "Lee y analiza imágenes.",
+          "name": "Reconocimiento de imágenes"
+        },
+        "maps": {
+          "description": "Encuentra lugares, direcciones y rutas.",
+          "name": "Mapas y lugares"
+        },
+        "people-search": {
+          "description": "Encuentra perfiles profesionales públicos.",
+          "name": "Búsqueda de personas"
+        },
+        "scrape": {
+          "description": "Lee y extrae contenido de páginas web.",
+          "name": "Extracción de páginas"
+        },
+        "seo": {
+          "description": "Investiga posiciones, palabras clave y enlaces entrantes.",
+          "name": "Investigación SEO"
+        },
+        "social": {
+          "description": "Investiga publicaciones públicas y recopila contenido multimedia.",
+          "name": "Investigación social"
+        },
+        "video-generation": {
+          "description": "Crea vídeos con modelos integrados.",
+          "name": "Generación de vídeos"
+        },
+        "video-rendering": {
+          "description": "Renderiza composiciones de vídeo en la nube.",
+          "name": "Renderizado de vídeo"
+        },
+        "voice-generation": {
+          "description": "Crea audio con voces integradas.",
+          "name": "Generación de voz"
+        },
+        "web-search": {
+          "description": "Encuentra información actual en la web.",
+          "name": "Búsqueda web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Gestionar",
@@ -6441,9 +6510,6 @@
       "description": "Okou convierte el diseño de tu archivo en una plantilla que puedes reutilizar."
     },
     "loadFailed": "No se pudieron cargar las plantillas.",
-    "pageCount_one": "{{count}} página",
-    "pageCount_many": "{{count}} páginas",
-    "pageCount_other": "{{count}} páginas",
     "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",
     "sharedBy": "Compartida por {{owner}}",

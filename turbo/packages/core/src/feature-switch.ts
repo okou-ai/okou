@@ -45,6 +45,17 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.XResourceDeduplication]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Deduplicate daily X resource charges; observations are always recorded",
+    enabled: false,
+  },
+  [FeatureSwitchKey.PaidToolControls]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Show personal paid-tool controls in Settings",
+    enabled: false,
+  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
@@ -277,27 +288,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Workday HCM and finance connector",
     enabled: false,
   },
-
-  // Effort's run controls carry Fast, so Fast reaches every user the moment
-  // Effort does. Keep this switch enabled for as long as Effort is enabled:
-  // the client send path still reads it directly to attach the run's tier.
-  [FeatureSwitchKey.CodexFastMode]: {
-    maintainer: "lancy@okou.ai",
-    description: "Enable Codex fast mode for GPT 5.6 runs.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.Effort]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Set Fast mode and chat reasoning effort from the composer's run controls.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.ModelPickerFlyout]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Pick a model from a detached flyout: model types on the left, that type's models in a panel beside it.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatPreference]: {
     maintainer: "lancy@okou.ai",
     description:
@@ -429,13 +419,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.CustomConnectorMcp]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Enable remote Streamable HTTP MCP definitions for organization Custom Connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.McpServer]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -466,7 +449,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
@@ -502,6 +484,16 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Replace the hosted-HTML-first delivery guidance with a rule that picks docx, xlsx, PDF, CSV, a hosted view or a chat reply from what the user will do with the result.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.GoogleSlidesConversion]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Sync presentation artifacts to Drive as native Google Slides decks instead of storing the uploaded file.",
+    enabled: false,
+    // Narrowed to the maintainer while conversion fidelity is only measured
+    // against hand-built decks; the template corpus has not been checked yet.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
 };
 

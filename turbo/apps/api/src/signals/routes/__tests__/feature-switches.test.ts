@@ -77,30 +77,8 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
-  it("defaults the composer run controls to every organization", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const userId = `user_${randomUUID()}`;
-
-    clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
-    const staff = await accept(client().get({ headers }), [200]);
-    expect(staff.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBeTruthy();
-
-    clerk.session(userId, `org_${randomUUID()}`, "org:member");
-    const ordinary = await accept(client().get({ headers }), [200]);
-    expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.Effort],
-    ).toBeTruthy();
-    expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.CodexFastMode],
-    ).toBeTruthy();
-    expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.ModelPickerFlyout],
-    ).toBeTruthy();
-  });
-
   it.each([true, false])(
-    "persists the unified model selection override as %s for a non-staff org",
+    "echoes and persists a stored override as %s for a non-staff org",
     async (enabled) => {
       createRouteMocks(context).clerk.session(
         `user_${randomUUID()}`,
@@ -114,7 +92,7 @@ describe("/api/feature-switches", () => {
           headers,
           body: {
             switches: {
-              [FeatureSwitchKey.Effort]: enabled,
+              [FeatureSwitchKey.PersonalSubscriptionPriority]: enabled,
             },
           },
         }),
@@ -122,19 +100,23 @@ describe("/api/feature-switches", () => {
       );
 
       expect(updated.body.switches).toStrictEqual({
-        [FeatureSwitchKey.Effort]: enabled,
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: enabled,
       });
-      expect(updated.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBe(
-        enabled,
-      );
+      expect(
+        updated.body.effectiveSwitches[
+          FeatureSwitchKey.PersonalSubscriptionPriority
+        ],
+      ).toBe(enabled);
 
       const current = await accept(client().get({ headers }), [200]);
       expect(current.body.switches).toStrictEqual({
-        [FeatureSwitchKey.Effort]: enabled,
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: enabled,
       });
-      expect(current.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBe(
-        enabled,
-      );
+      expect(
+        current.body.effectiveSwitches[
+          FeatureSwitchKey.PersonalSubscriptionPriority
+        ],
+      ).toBe(enabled);
     },
   );
 });

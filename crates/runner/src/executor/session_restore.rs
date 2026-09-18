@@ -238,7 +238,7 @@ async fn write_session_history_file(
     session: &MaterializedResumeSession,
 ) -> RunnerResult<HistoryTransferMeasurements> {
     let selection_started = Instant::now();
-    let (compression, reason) = compression::select(session).await?;
+    let (compression, decision) = compression::select(session);
     let selection_elapsed = selection_started.elapsed();
     let wire = sandbox
         .write_file_with_compression(session_path, session.history_bytes(), compression)
@@ -246,7 +246,7 @@ async fn write_session_history_file(
         .map_err(RunnerError::Sandbox)?;
     Ok(HistoryTransferMeasurements::new(
         compression,
-        reason,
+        decision,
         selection_elapsed,
         session.history_bytes().len(),
         session.codex_zstd_history().is_some(),

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.2](https://github.com/vm0-ai/okou/compare/sandbox-v0.23.1...sandbox-v0.23.2) (2026-09-18)
+
+
+### Performance Improvements
+
+* **runner:** deflate before park and transfer running sandboxes ([#35177](https://github.com/vm0-ai/okou/issues/35177)) ([e70762c](https://github.com/vm0-ai/okou/commit/e70762c0c7e82681048048d394399ec459fa374f))
+
 ## [0.23.1](https://github.com/vm0-ai/okou/compare/sandbox-v0.23.0...sandbox-v0.23.1) (2026-09-17)
 
 

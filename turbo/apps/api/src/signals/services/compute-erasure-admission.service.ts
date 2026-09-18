@@ -2,12 +2,13 @@ import {
   assertErasureSubjectWritable,
   type ErasureSubject,
 } from "@okouai/db/operations/account-erasure";
+import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
@@ -440,6 +441,7 @@ export async function prepareComputeRunAdmission(
 export async function validateComputeRunCleanupOwnership(
   tx: Tx,
   admission: ComputeRunAdmission,
+  requiredStatus?: RunStatus,
 ): Promise<boolean> {
   const [current] = await tx
     .select({
@@ -448,8 +450,20 @@ export async function validateComputeRunCleanupOwnership(
       sessionId: agentRuns.sessionId,
     })
     .from(agentRuns)
-    .where(eq(agentRuns.id, admission.runId))
+    .where(
+      and(
+        eq(agentRuns.id, admission.runId),
+        requiredStatus === undefined
+          ? undefined
+          : eq(agentRuns.status, requiredStatus),
+      ),
+    )
     .for("update");
+  // A stale claim must not lock a terminal run while waiting for its Session.
+  // PostgreSQL rechecks this predicate if cancellation wins the row-lock race.
+  if (!current && requiredStatus !== undefined) {
+    return false;
+  }
   if (
     !current ||
     !sameOwner(current, admission.owner) ||
@@ -479,9 +493,10 @@ export async function validateComputeRunCleanupOwnership(
 export async function validateComputeRunAdmission(
   tx: Tx,
   admission: ComputeRunAdmission,
+  requiredStatus?: RunStatus,
 ): Promise<boolean> {
   return (
-    (await validateComputeRunCleanupOwnership(tx, admission)) &&
+    (await validateComputeRunCleanupOwnership(tx, admission, requiredStatus)) &&
     (admission.owner.agentId !== null ||
       (await lockPiMemoryPhase2MaintenanceCleanupProtection(tx, {
         runId: admission.runId,

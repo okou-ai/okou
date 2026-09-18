@@ -52,7 +52,9 @@ XRandR helper has a ten-second execution limit and the same parent-death guard.
 ## Assertions and limits
 
 The test runs both ZRLE and Raw, using a module-private SetEncodings adapter only
-in the test. Production does not gain an encoding override. For each mode it:
+in the test. Production does not gain an encoding override. Every connection
+explicitly requests `SharingMode::Shared`; this harness does not establish
+exclusive-mode behavior for any server policy. For each encoding it:
 
 - Checks exact initial framebuffer pixels and a changed rectangle.
 - Uses an actual X11 `CopyArea` and an incremental update to verify copied

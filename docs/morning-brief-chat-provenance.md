@@ -113,9 +113,9 @@ Selection covers unread threads across every Agent the member is authorized for
 in the current organization, using the existing terminal marker, read watermark
 and no-active-Run semantics, without the sidebar's seven-day presentation limit.
 At most 51 candidates are read so overflow is observed, and at most 50 are
-processed. Each thread is then read in its own short transaction with a bounded
-`lock_timeout` and `statement_timeout`; nothing holds a lock across the whole
-collection.
+processed. Candidate discovery and each thread are read in their own short
+transactions with bounded `lock_timeout`, `statement_timeout` and
+`transaction_timeout`; nothing holds a lock across the whole collection.
 
 Only a thread classified `ordinary` releases content. `NULL` and any
 unrecognised value skip the **whole** thread and report partial coverage — a
@@ -149,23 +149,36 @@ attempt:
 | `orgId` / `userId` | The authenticated caller. Never accepted as input.                               |
 | `membershipId`     | The immutable Clerk membership generation. A removal and rejoin issues a new id. |
 | `installationId`   | The canonical Morning Brief installation this attempt speaks for.                |
+| `automationId`     | The exact enabled daily-delivery automation inside that installation.            |
 | `agentId`          | The Agent that installation runs on.                                             |
-| `chatThreadId`     | The destination thread, excluded from its own collection.                        |
+| `chatThreadId`     | The nullable destination identity, including the decision that none exists yet.  |
 
 Before any envelope is released, `morningBriefScopeIsCurrent` re-derives all of
-it live: the subjects are still open, the member still holds **that same**
-membership generation, the canonical brief is still **that same** installed and
-enabled installation on **that same** Agent, and the Agent is still visible to
-them. A different enabled installation, a membership that left and rejoined, and
-a brief Agent that became private under another owner all withhold the payload.
-The same function runs once at admission, so an admitted scope is one the
+it live. It first observes the immutable membership generation through Clerk,
+with no database transaction or lock held across that network wait. It then
+opens one short local transaction: sorted shared erasure admission comes first,
+followed by the existing canonical migration-state reader and Brief-Agent
+visibility read. That final local decision compares the exact installation,
+automation, Agent and nullable destination. A changed `null`/non-`null`
+destination is a changed binding; absence is not a wildcard.
+
+The transaction is the local linearization point. A subject closure committed
+while Clerk was answering is visible to its erasure admission. A closure that
+arrives after admission waits for the short local decision to finish. The
+canonical reader and Agent check run while those subject locks remain held, and
+no network call runs in the transaction. A different enabled automation or
+installation, a rebound destination, a membership that left and rejoined, and a
+Brief Agent that became private under another owner all withhold the payload.
+The same function runs once before collection, so an admitted scope is one the
 release check would accept; that costs one extra membership read per attempt and
 is deliberate.
 
-This is admission and release fencing, not instantaneous revocation. Work
-already executing inside PostgreSQL is not retracted, and a collection that
-already returned a body is not recalled by a later change — the guarantee is
-that nothing is _released_ under authority that no longer holds.
+This does not promise a Clerk/PostgreSQL atomic transaction. Clerk can revoke a
+membership after its answer, and local authority can change after the local
+transaction commits. Work already executing inside PostgreSQL is not retracted,
+and a collection that already returned a body is not recalled by a later
+change. The guarantee is an external observation followed by a final local
+fence, not retroactive recall.
 
 The per-thread erasure admission, the source-Agent and thread-owner checks and
 the thread row lock below are unchanged and still authoritative for the thread
@@ -183,20 +196,30 @@ one of its own; the attempt adds the candidate reserve below on top of it.
 - The last 3 seconds are reserved for the final authority check. Candidate work
   stops there, because content that cannot be re-authorized may not be released
   at all, and a loop that spent the whole budget would leave the fence nothing.
-- The clock is re-read _after_ every blocking boundary and before content is
-  accepted, including at equality: a thread read that returns exactly at the
-  boundary is expired. Neither its excerpts nor its refusal reason is reported;
-  the attempt records `deadline_exceeded` and partial coverage instead.
-- Each transaction takes the smaller of its own cap and the remaining budget as
-  its `lock_timeout` and `statement_timeout`, so a wait is cancelled by
-  PostgreSQL rather than abandoned behind a promise race.
+- The clock is re-read _after_ every blocking boundary and before the next SQL
+  statement, especially before the event-body query. At equality no new query
+  starts. Neither excerpts nor a late refusal reason is reported; the attempt
+  records `deadline_exceeded` and partial coverage instead.
+- `lock_timeout` and `statement_timeout` cap one lock wait or statement only;
+  they are not a transaction or attempt deadline. Every local transaction also
+  receives the remaining absolute allowance as `transaction_timeout`, so
+  several individually-short waits cannot cumulatively run past the boundary.
+  Before each later statement the individual caps are shortened again from the
+  then-current remainder. The budget can shorten an existing cap, never extend
+  it.
+- The same database wrapper bounds candidate discovery and the shared local
+  admission/final-authority reads (feature state, canonical ownership, erasure
+  admission and Agent visibility). No local transaction spans the external
+  Clerk membership call, and no phase starts a fresh budget.
 - An attempt that cannot finish admission, discovery or the final check inside
   the budget answers `503 REQUEST_DEADLINE_EXCEEDED` and releases nothing — not
   items, and not the thread ids that would describe them. A deadline is never
   reported as a healthy empty inbox: `result: "empty"` with complete coverage
   only ever describes an attempt that finished.
 - Caller cancellation still propagates and fails the request; it is not
-  converted into an envelope.
+  converted into an envelope. Started database work remains owned and awaited
+  through its server-side timeout and transaction rollback. No response race
+  detaches a query.
 
 ### The linearization point
 
@@ -219,25 +242,49 @@ transition. The guarantee is about which side of the boundary the data came
 from, not about revoking data afterwards.
 
 Erasure uses the shared subject admission. The collector writes nothing, but a
-closed subject must not release that subject's Chat content either, and taking
-the same shared admission means a closure waits for an in-flight collection
-instead of completing while one is still reading. A whole-owner invalidation
-discards the entire payload rather than part of it.
+closed subject must not release that subject's Chat content either. Per-thread
+reads retain their own short admission transactions. At whole-owner release,
+the final local transaction reacquires admission **after** the last Clerk wait
+and retains it through canonical binding and Brief-Agent validation. A closure
+that already committed is denied; a later closure waits for that decision. A
+whole-owner invalidation discards the entire payload rather than part of it.
 
 ### What the tests do and do not establish
 
 Every authority and budget case runs through the registered preview route with a
-real request, a real PostgreSQL wait and the real authorizer; only Clerk's own
-HTTP answers are doubled. The limits worth stating:
+real request, real PostgreSQL state and the real authorizer; only Clerk's own
+HTTP answers are doubled. Automation replacement and nullable destination
+rebinding are committed while a request is blocked at its real thread-read
+boundary. The erasure case holds the final Clerk answer, commits a dormant B1
+closure through the lifecycle projector, and only then releases the answer. B1
+has no public closure ingress, so that uniquely owned closure is the necessary
+fixture exception. Removing the automation/destination comparisons or the
+post-Clerk local transaction makes the corresponding route regression release
+stale content again. The limits worth stating:
 
-- Suspension points are the ones a request really has — the Agent row lock, the
-  thread row lock and the live membership lookup. There is no test that stalls
-  candidate discovery itself; discovery's wait is bounded by its transaction's
-  budget-derived timeouts rather than staged in a case of its own.
-- The budget cases advance the process clock at a proven-blocked boundary
-  instead of waiting 15 real seconds. That exercises every clock comparison the
-  service makes, including equality, but not the wall-clock `AbortSignal`
-  timeout that bounds a genuinely hung network read in production.
+- The database budget case stages real PostgreSQL waits at candidate discovery,
+  the Agent lock and the final active-Run query. Each arrives and is released in
+  order. Their cumulative controlled-clock cost reaches the candidate boundary,
+  and a query-level observer proves the body SELECT did not start. A fresh
+  request then reaches that exact SELECT and exposes `2s` lock, `5s` statement
+  and `12s` transaction settings, so the absence check is not vacuous.
+- A separate case starts the per-thread transaction with 100 ms remaining. Once
+  `pg_blocking_pids` proves its Agent query is in flight, the controlled
+  application clock advances to the same boundary, but the test never releases
+  the lock. PostgreSQL's `transaction_timeout` alone ends the transaction; the
+  checked-out client owns the resulting connection event, the route awaits
+  cleanup, and the wrapper retains the callback's `25P04` when Drizzle's later
+  rollback observes the already-terminated connection. A following healthy
+  request proves the pool remains usable. This is the real server-side
+  cancellation proof, distinct from merely discarding a late result.
+- Final authority coverage holds the last external membership response, then
+  blocks the subsequent canonical ownership query in PostgreSQL. Releasing it
+  at exact whole-attempt equality withholds every item and identifier, and a
+  following request proves settlement. Clerk remains the only doubled external
+  system; local authority is never replaced with an always-allow mock.
+- Other equality cases advance the process clock at a proven-blocked boundary
+  instead of waiting 15 real seconds. They exercise application clock checks,
+  not the wall-clock `AbortSignal` that bounds a hung external network read.
 - `payloadBytes === null` — a stored event with no payload at all — is
   unreachable through the content filter, which already requires decodable text,
   so it stays a defensive branch rather than a covered case. The oversized
@@ -247,6 +294,7 @@ HTTP answers are doubled. The limits worth stating:
 
 ## Migration and rollout
 
+`1152_chat_thread_morning_brief_provenance` adds one nullable `varchar(32)`
 `1153_chat_thread_morning_brief_provenance` adds one nullable `varchar(32)`
 column with no default. Live production metadata at 2026-09-17 04:04:51 UTC
 counted 158,927 `chat_threads` rows, including internal owners; that is total

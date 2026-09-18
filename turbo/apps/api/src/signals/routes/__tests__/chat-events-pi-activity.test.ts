@@ -159,7 +159,6 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.ThreadActivitySummary]: enabled,
-        [FeatureSwitchKey.CodexFastMode]: true,
       },
     );
     mockPiResourceArchiveDownloads();

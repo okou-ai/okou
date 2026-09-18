@@ -45,6 +45,7 @@ export const imageIoGenerateResponseSchema = z.object({
   contentType: z.string(),
   size: z.number(),
   url: z.string(),
+  privateArtifacts: z.boolean().optional(),
   // Private outputs omit this; public outputs retain their optimized CDN URL.
   embedUrl: z.string().optional(),
   creditsCharged: z.number(),

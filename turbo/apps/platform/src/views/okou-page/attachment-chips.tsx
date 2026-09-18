@@ -1504,6 +1504,7 @@ export function FileAttachmentChip({
 export function PreviewableFileAttachmentChip({
   filename,
   kind,
+  preview,
   shareAvailable,
   splitViewAvailable,
   text$,
@@ -1511,6 +1512,7 @@ export function PreviewableFileAttachmentChip({
 }: {
   filename: string;
   kind: "markdown" | "text" | "json" | "csv" | "pdf" | "html";
+  preview?: AttachmentPreviewSignals;
   shareAvailable?: boolean;
   splitViewAvailable?: boolean;
   text$?: TextPreviewComputed;
@@ -1551,6 +1553,7 @@ export function PreviewableFileAttachmentChip({
           kind,
           url,
           filename,
+          ...(preview ? { preview } : {}),
           ...(shareAvailable === undefined ? {} : { shareAvailable }),
           ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
           ...(text$ ? { text$ } : {}),

@@ -20,7 +20,6 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { SupportedFramework } from "@okouai/core/frameworks";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderConnections,
@@ -41,7 +40,6 @@ import {
   loadOrgPlanCapabilities,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 export const MODEL_FIRST_SELECTION_PROVIDER_ID =
@@ -202,18 +200,13 @@ export async function resolveDefaultModelFirstPin(
         selectedModel: preference.selectedModel,
       });
       if (preferredRoute) {
-        const featureSwitchContext =
-          preference.serviceTier === "priority"
-            ? await loadUserFeatureSwitchContext(db, orgId, userId)
+        const serviceTier =
+          preference.serviceTier === "priority" &&
+          isCodexFastServiceTierSupported({
+            selectedModel: preferredRoute.selectedModel,
+          })
+            ? "priority"
             : null;
-        const serviceTier = isCodexFastServiceTierSupported({
-          selectedModel: preferredRoute.selectedModel,
-          codexFastModeEnabled:
-            featureSwitchContext !== null &&
-            isCodexFastModeEnabled(featureSwitchContext),
-        })
-          ? "priority"
-          : null;
         return { ...modelFirstPinFromRoute(preferredRoute), serviceTier };
       }
     }
@@ -540,38 +533,19 @@ export async function resolveModelFirstProviderAdmission(params: {
 
 export function isCodexFastServiceTierSupported(params: {
   readonly selectedModel: string | null | undefined;
-  readonly codexFastModeEnabled: boolean;
 }): boolean {
-  return (
-    params.codexFastModeEnabled && isCodexFastModeModel(params.selectedModel)
-  );
+  return isCodexFastModeModel(params.selectedModel);
 }
 
-export async function validateCodexServiceTier(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
+export function validateCodexServiceTier(params: {
   readonly pin: ModelFirstPin;
   readonly codexServiceTier: "fast" | null;
-}): Promise<ReturnType<typeof badRequestMessage> | undefined> {
+}): ReturnType<typeof badRequestMessage> | undefined {
   if (params.codexServiceTier !== "fast") {
     return undefined;
   }
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    params.db,
-    params.orgId,
-    params.userId,
-  );
-  if (!isCodexFastModeEnabled(featureSwitchContext)) {
-    return badRequestMessage(
-      "Codex fast mode is not enabled for this workspace",
-    );
-  }
   if (
-    isCodexFastServiceTierSupported({
-      selectedModel: params.pin.selectedModel,
-      codexFastModeEnabled: true,
-    })
+    isCodexFastServiceTierSupported({ selectedModel: params.pin.selectedModel })
   ) {
     return undefined;
   }

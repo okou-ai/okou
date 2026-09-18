@@ -660,6 +660,7 @@ interface RecordedImage {
   readonly contentType: string;
   readonly size: number;
   readonly url: string;
+  readonly privateArtifacts: boolean;
   readonly embedUrl: string | undefined;
   readonly creditsCharged: number;
   readonly model: string;
@@ -2700,6 +2701,7 @@ export const recordGeneratedImage$ = command(
       contentType,
       size: params.generation.imageBytes.byteLength,
       url,
+      privateArtifacts: artifact.isPrivate,
       // Models such as seedream4 only emit PNG. Serving the stored object
       // through Cloudflare Image Resizing negotiates AVIF/WebP per request, so
       // pages embedding this image download a fraction of the PNG bytes.

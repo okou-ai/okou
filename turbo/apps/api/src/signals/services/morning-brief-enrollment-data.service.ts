@@ -3,6 +3,7 @@ import {
   morningBriefRollout,
 } from "@okouai/db/schema/morning-brief-enrollment";
 import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 
@@ -88,7 +89,7 @@ export async function recordMorningBriefMembership(
 }
 
 export async function recordMorningBriefChoice(
-  db: Db,
+  db: Db | Tx,
   identity: MorningBriefMemberIdentity,
   enabled: boolean,
 ): Promise<void> {

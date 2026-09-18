@@ -15,6 +15,7 @@ import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
   MORNING_BRIEF_GENERATION_SOURCE_COVERAGES,
+  morningBriefGenerations,
 } from "@okouai/db/schema/morning-brief-generation";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
@@ -23,6 +24,7 @@ import { and, eq } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import { bindNativeGenerationAttempt } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db } from "../external/db";
 import {
   lookupPlatformGenerationCost,
@@ -33,11 +35,11 @@ import {
   type PlatformGenerationOutcome,
   type PlatformGenerationTokens,
 } from "../external/openrouter-platform-generation";
-import { settleIncludingAbort } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import {
+  admitMorningBriefLocalAuthority,
   currentMorningBriefCollectionAuthority$,
   executeMorningBriefSlackCollection$,
-  morningBriefLocalAuthorityStillCurrent,
   type MorningBriefCollectionConflict,
   type MorningBriefCollectionHandoffContext,
   type MorningBriefLocalAuthority,
@@ -62,6 +64,7 @@ import { interpretGenerationOutput } from "./morning-brief-generation-result";
 import {
   acceptMorningBriefGenerationResult,
   holdMorningBriefGenerationSlot,
+  lockMorningBriefGeneration,
   readMorningBriefGeneration,
   readPlatformGenerationReceipt,
   recordMorningBriefGenerationOutcome,
@@ -125,13 +128,22 @@ const GENERATION_COST_LOOKUP_MS = 5000;
 
 const GENERATION_OPERATION = "morning_brief_generation";
 const GENERATION_PROVIDER = "openrouter";
-const GENERATION_PURPOSE = "preview" as const;
+/**
+ * The purposes this engine can execute for.
+ *
+ * `preview` is the operator endpoint's. `production` is the native scheduler's,
+ * reached only through a validated native occurrence authority. They share the
+ * reservation, single-POST, cost and validation engine and can never read each
+ * other's results, because every read filters on the purpose it asked for.
+ */
+type MorningBriefExecutionPurpose =
+  (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
 
 export type MorningBriefGenerationConflict =
   | MorningBriefCollectionConflict
   | "generation-in-progress";
 
-type MorningBriefGenerationExecution =
+export type MorningBriefGenerationExecution =
   | {
       readonly kind: "not-executed";
       readonly reason: MorningBriefGenerationSkipReason;
@@ -224,11 +236,13 @@ function admissionOf(args: {
   readonly plan: GenerationRequestPlan;
   readonly locale: string | null;
   readonly bundle: MorningBriefSlackBundle;
+  readonly purpose: MorningBriefExecutionPurpose;
 }): MorningBriefGenerationAdmission {
   const { context, plan } = args;
   const language = resolveGenerationLanguage(args.locale);
   return {
     key: generationKeyOf(context),
+    executionPurpose: args.purpose,
     attemptId: randomUUID(),
     membershipId: context.admission.membershipId,
     agentId: context.admission.agentId,
@@ -256,9 +270,55 @@ function admissionOf(args: {
  * and a bounded read that happened to find nothing are recorded under distinct
  * terminal states, so an incomplete read can never be reported as an empty day.
  */
+/**
+ * The native execution authority a production generation is admitted under.
+ *
+ * It is supplied by the scheduler that claimed the occurrence and is bound to
+ * the reserved attempt inside this same transaction, before the sole platform
+ * request. Binding it afterwards would leave a window in which a possibly
+ * invoked attempt has no durable association with the slot that paid for it.
+ */
+/**
+ * The claim that admitted this generation is no longer the member's.
+ *
+ * Thrown inside the reservation transaction so the reservation, the collection
+ * finalization and the native binding all roll back together, and no platform
+ * request is ever made under a claim that moved.
+ */
+class NativeGenerationAuthorityLost extends Error {
+  constructor() {
+    super(
+      "Morning Brief native generation authority was lost before the request",
+    );
+    this.name = "NativeGenerationAuthorityLost";
+  }
+}
+
+interface MorningBriefNativeGenerationAuthority {
+  readonly ownerEpoch: number;
+  readonly membershipId: string;
+  readonly leaseToken: string;
+}
+
+type MorningBriefGenerationRequest = {
+  readonly owner: MorningBriefCollectionOwner;
+  readonly scheduledFor: Date;
+} & (
+  | {
+      readonly purpose: "preview";
+      readonly nativeAuthority?: never;
+    }
+  | {
+      readonly purpose: "production";
+      readonly nativeAuthority: MorningBriefNativeGenerationAuthority;
+    }
+);
+
 async function admitGeneration(
   tx: Tx,
+  purpose: MorningBriefExecutionPurpose,
   context: MorningBriefCollectionHandoffContext,
+  nativeAuthority: MorningBriefNativeGenerationAuthority | undefined,
 ): Promise<AdmittedGeneration> {
   const { bundle } = context;
   const locale = await loadMemberLocale(tx, context.admission.owner);
@@ -266,7 +326,7 @@ async function admitGeneration(
     bundle,
     language: resolveGenerationLanguage(locale).language,
   });
-  const admission = admissionOf({ context, plan, locale, bundle });
+  const admission = admissionOf({ context, plan, locale, bundle, purpose });
 
   if (bundle.entries.length === 0) {
     const state: Extract<
@@ -283,6 +343,27 @@ async function admitGeneration(
     // never be re-claimed, so reaching this means an invariant is broken rather
     // than that a second caller legitimately arrived.
     throw new Error("Morning Brief generation slot was already taken");
+  }
+  if (nativeAuthority !== undefined) {
+    // The reserved attempt and the native slot become durable together, in the
+    // reservation's own transaction and before the sole platform request. A
+    // claimant whose epoch or lease moved while collection ran fails here, the
+    // reservation rolls back with it, and no request is made at all.
+    const bound = await bindNativeGenerationAttempt(
+      tx,
+      context.admission.owner,
+      {
+        scheduledFor: context.admission.scheduledFor,
+        generationAttemptId: admission.attemptId,
+        expectedEpoch: nativeAuthority.ownerEpoch,
+        expectedMembershipId: nativeAuthority.membershipId,
+        leaseToken: nativeAuthority.leaseToken,
+        at: context.at,
+      },
+    );
+    if (!bound) {
+      throw new NativeGenerationAuthorityLost();
+    }
   }
   return { kind: "reserved", admission, plan };
 }
@@ -554,7 +635,7 @@ function viewOfRow(
     throw new Error("Morning Brief generation stores an incomplete result");
   }
   return {
-    purpose: GENERATION_PURPOSE,
+    purpose: row.executionPurpose,
     state: row.state,
     attemptId: row.attemptId,
     model: row.model,
@@ -604,7 +685,7 @@ function viewOfUncommittedAttempt(
   failureReason: MorningBriefGenerationFailureReason,
 ): MorningBriefGenerationView {
   return {
-    purpose: GENERATION_PURPOSE,
+    purpose: admission.executionPurpose,
     state: "reserved",
     attemptId: admission.attemptId,
     model: admission.model,
@@ -645,25 +726,22 @@ type OwnerWriteResult =
  * The outcome this write may actually commit, decided where it is admitted.
  *
  * The canonical authority was proved before persistence began, outside any
- * transaction, because it waits on Clerk. That proof describes the past: the
- * writes below then wait for the owner lock and the slot row, and a Settings
- * disable, an Agent transfer or a Slack rebinding can commit during exactly
- * that wait. Re-resolving the *local* half here, under the locks those mutators
- * really take, is what stops a decision made before the wait from turning into
- * owner content after it. The remote half is deliberately not re-resolved: a
+ * transaction, because it waits on Clerk. That proof describes the past: a
+ * Settings disable, an Agent deletion or a Slack rebinding can commit while
+ * this write waits for its locks. Re-resolving the *local* half here — through
+ * the shared admission point, which holds the rows those mutators really write
+ * — is what stops a decision made before the wait from turning into owner
+ * content after it. The remote half is deliberately not re-resolved: a
  * transaction is never held open across a network round trip.
+ *
+ * A write that stores no content skips it. Such a write only records why this
+ * already-observed invocation produced nothing, so it neither needs nor should
+ * take another owner's authority rows.
  */
-async function admittedOutcome(
-  tx: Tx,
+function admittedOutcome(
   args: PersistenceArgs,
-): Promise<InterpretedOutcome> {
-  if (args.interpreted.kind !== "accept") {
-    return args.interpreted;
-  }
-  const authority = await morningBriefLocalAuthorityStillCurrent(
-    tx,
-    args.occurrenceRow,
-  );
+  authority: MorningBriefLocalAuthority,
+): InterpretedOutcome {
   return authority.kind === "current"
     ? args.interpreted
     : lapsedAuthorityOutcome(authority);
@@ -673,35 +751,57 @@ async function admittedOutcome(
  * Write the owner-scoped outcome under the fence the reservation was admitted
  * with.
  *
- * The slot is taken first, and the two things only this layer can decide happen
- * at that instant rather than before it: a caller that cancelled commits
- * nothing at all, and a result whose authority lapsed during the wait is
- * recorded as discarded instead of accepted. Acceptance additionally requires
- * an unexpired reservation, so content that arrived too late is never stored;
- * when it does arrive too late the honest `result_discarded` outcome is
+ * The order is the whole point. The owner fence and the local authority rows
+ * are taken first, then this attempt's own slot, and only then is the authority
+ * resolved — so every wait this transaction performs is already behind it when
+ * the decision is made. The three things only this layer can decide then happen
+ * at that one instant: a caller that cancelled commits nothing at all, a result
+ * whose authority lapsed while it waited is recorded as discarded instead of
+ * accepted, and the reservation deadline is compared against the clock read
+ * there rather than against an earlier reading. Content that became late during
+ * those waits is never stored; the honest `result_discarded` outcome is
  * recorded instead, because refusing both would leave the slot looking merely
  * stale. A revoked owner matches neither write, and nothing here recreates an
  * owner row.
+ *
+ * Cancellation after this transaction commits cannot retract it. The guarantee
+ * is that nothing is committed for a caller that had already cancelled when its
+ * write was admitted, not that accepted bytes can be taken back afterwards.
  */
 async function commitOwnerOutcome(
   tx: Tx,
   args: PersistenceArgs,
   signal: AbortSignal,
 ): Promise<OwnerWriteResult> {
-  const held = await holdMorningBriefGenerationSlot(tx, args.fence);
-  if (!held) {
+  let interpreted = args.interpreted;
+  if (interpreted.kind === "accept") {
+    if (!(await lockCollectionOwner(tx, args.fence.key.owner))) {
+      return { kind: "owner-revoked" };
+    }
+    const admission = await admitMorningBriefLocalAuthority(
+      tx,
+      args.occurrenceRow,
+      async () => {
+        return await lockMorningBriefGeneration(tx, args.fence.key);
+      },
+    );
+    if (!admission.guarded) {
+      return { kind: "owner-revoked" };
+    }
+    interpreted = admittedOutcome(args, admission.authority);
+  } else if (!(await holdMorningBriefGenerationSlot(tx, args.fence))) {
     return { kind: "owner-revoked" };
   }
-  // Admitted after every real wait and before any mutation is issued. Throwing
-  // here unwinds the whole transaction, so a cancelled caller leaves the slot
-  // exactly as its reservation left it.
+  // Admitted after every wait this transaction performs and before any mutation
+  // is issued. Throwing here unwinds the whole transaction, so a cancelled
+  // caller leaves the slot exactly as its reservation left it.
   signal.throwIfAborted();
-  const interpreted = await admittedOutcome(tx, args);
+  const at = nowDate();
   if (interpreted.kind === "accept") {
     const accepted = await acceptMorningBriefGenerationResult(
       tx,
       args.fence,
-      held,
+      at,
       {
         decision: interpreted.decision,
         skipReason: interpreted.skipReason,
@@ -716,7 +816,7 @@ async function commitOwnerOutcome(
     const discarded = await recordMorningBriefGenerationOutcome(
       tx,
       args.fence,
-      held,
+      at,
       {
         state: "result_discarded",
         failureReason: "reservation_expired",
@@ -729,7 +829,7 @@ async function commitOwnerOutcome(
   const written = await recordMorningBriefGenerationOutcome(
     tx,
     args.fence,
-    held,
+    at,
     {
       state: interpreted.state,
       failureReason: interpreted.failureReason,
@@ -922,10 +1022,19 @@ type GenerationRelease =
  * Every earlier check describes an instant that has already passed: the Clerk
  * membership resolution waits on the network, and the receipt lookup waits on
  * the database. A deletion, a Settings disable, a rebinding or the retention
- * deadline can all land during those waits, so the row is read again here
- * rather than served from the copy the request started with, and the clock is
- * sampled only after every wait this fence itself performs. Equality with the
- * retention deadline is already expired: a result becomes unreadable at its
+ * deadline can all land during those waits, so this fence takes every authority
+ * parent before it re-reads the row `FOR UPDATE`. The copy it returns therefore
+ * cannot be deleted out from under it while canonical authority is re-resolved.
+ * The maintenance purge selects `SKIP LOCKED` and simply leaves a held row for
+ * its next pass; the owner sweep, the member cleanup cascade and the Agent
+ * deletion cascade all have to wait for this transaction. Reading the row a
+ * second time afterwards would reopen exactly the interval that lock closes, so
+ * the pinned copy is what is returned.
+ *
+ * The shared admission point holds Agent, Settings and Slack rows, then the
+ * caller's generation row, then reuses the canonical reader. The clock is
+ * sampled last — after every wait this fence performs. Equality with
+ * the retention deadline is already expired: a result becomes unreadable at its
  * deadline, whether or not the maintenance purge has physically removed it yet.
  *
  * Nothing here writes. A result that may not be released is simply not
@@ -937,32 +1046,36 @@ async function releaseStoredGeneration(
     readonly key: MorningBriefGenerationKey;
     readonly attemptId: string;
     readonly occurrenceRow: MorningBriefCollectionOccurrenceRow;
+    readonly purpose: MorningBriefExecutionPurpose;
   },
 ): Promise<GenerationRelease> {
   if (!(await lockCollectionOwner(tx, args.key.owner))) {
     return { kind: "owner-revoked" };
   }
-  const row = await readMorningBriefGeneration(
+  const admission = await admitMorningBriefLocalAuthority(
     tx,
-    args.key,
-    GENERATION_PURPOSE,
+    args.occurrenceRow,
+    async () => {
+      return await lockMorningBriefGeneration(tx, args.key);
+    },
   );
-  if (!row || row.attemptId !== args.attemptId) {
+  const row = admission.guarded;
+  if (
+    !row ||
+    row.attemptId !== args.attemptId ||
+    row.executionPurpose !== args.purpose
+  ) {
     return { kind: "gone" };
   }
-  // Sampled after the lock and after the row itself was read, so the deadline
+  // Sampled after every lock and every read this fence performs, so the deadline
   // comparison describes the instant this release is really decided.
   if (row.expiresAt.getTime() <= nowDate().getTime()) {
     return { kind: "gone" };
   }
-  const authority = await morningBriefLocalAuthorityStillCurrent(
-    tx,
-    args.occurrenceRow,
-  );
-  if (authority.kind === "not-executed") {
-    return { kind: "not-executed", reason: authority.reason };
+  if (admission.authority.kind === "not-executed") {
+    return { kind: "not-executed", reason: admission.authority.reason };
   }
-  if (authority.kind === "binding-changed") {
+  if (admission.authority.kind === "binding-changed") {
     return { kind: "binding-changed" };
   }
   return { kind: "released", row };
@@ -982,6 +1095,7 @@ const resolveExistingGeneration$ = command(
   async (
     { set },
     args: {
+      readonly purpose: MorningBriefExecutionPurpose;
       readonly db: Db;
       readonly key: MorningBriefGenerationKey;
       readonly occurrence: MorningBriefCollectionOccurrenceView;
@@ -989,7 +1103,7 @@ const resolveExistingGeneration$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const { db, key, occurrence } = args;
-    const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
+    const row = await readMorningBriefGeneration(db, key, args.purpose);
     signal.throwIfAborted();
     if (!row) {
       return { kind: "collection-completed-without-generation", occurrence };
@@ -1053,6 +1167,7 @@ const resolveExistingGeneration$ = command(
         key,
         attemptId: row.attemptId,
         occurrenceRow,
+        purpose: args.purpose,
       });
     });
     signal.throwIfAborted();
@@ -1268,11 +1383,12 @@ async function recordUninvokedAttempt(
   failureReason: MorningBriefGenerationFailureReason,
 ): Promise<MorningBriefGenerationExecution> {
   const written = await args.db.transaction(async (tx) => {
-    const held = await holdMorningBriefGenerationSlot(tx, fence);
-    if (!held) {
+    if (!(await holdMorningBriefGenerationSlot(tx, fence))) {
       return { kind: "not-owned" } as const;
     }
-    return await recordMorningBriefGenerationOutcome(tx, fence, held, {
+    // Sampled after the locks this transaction waited on, so the instant
+    // recorded is the one the write is really admitted at.
+    return await recordMorningBriefGenerationOutcome(tx, fence, nowDate(), {
       state: "not_invoked",
       failureReason,
     });
@@ -1429,13 +1545,41 @@ const invokeAndPersist$ = command(
   },
 );
 
-export const executeMorningBriefPreviewGeneration$ = command(
+/**
+ * Run the collection that a generation reservation joins, turning a lost native
+ * claim into an outcome rather than a thrown tick failure.
+ *
+ * The reservation refuses inside its own transaction, which is what rolls the
+ * collection finalization back with it. Reporting that as a non-executing
+ * outcome keeps one member's moved claim from failing the whole cron tick.
+ */
+async function collectForGeneration<T>(
+  run: Promise<T>,
+  signal: AbortSignal,
+): Promise<T | { readonly kind: "native-authority-lost" }> {
+  const settled = await settle(run, signal);
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (settled.error instanceof NativeGenerationAuthorityLost) {
+    return { kind: "native-authority-lost" };
+  }
+  throw settled.error;
+}
+
+/**
+ * The one generation engine, executed for an explicit purpose.
+ *
+ * `preview` is the operator endpoint's. `production` is the native scheduler's
+ * and is reached only after that scheduler validated its own occurrence
+ * authority against the durable native row. Both share this
+ * reservation-before-single-POST protocol, the same platform cost accounting
+ * and the same output validation.
+ */
+export const executeMorningBriefGeneration$ = command(
   async (
     { set },
-    args: {
-      readonly owner: MorningBriefCollectionOwner;
-      readonly scheduledFor: Date;
-    },
+    args: MorningBriefGenerationRequest,
     signal: AbortSignal,
   ): Promise<MorningBriefGenerationExecution> => {
     const db = set(writeDb$);
@@ -1456,26 +1600,37 @@ export const executeMorningBriefPreviewGeneration$ = command(
     let occurrenceRow: MorningBriefCollectionOccurrenceRow | undefined;
     let bundleCoverage: MorningBriefSlackBundle["coverage"] = "empty";
     let sources: ReadonlyMap<string, GenerationSource> = new Map();
-    const execution = await set(
-      executeMorningBriefSlackCollection$,
-      {
-        owner: args.owner,
-        scheduledFor: args.scheduledFor,
-        handoff: {
-          onCollected: async (tx, context) => {
-            bundleCoverage = context.bundle.coverage;
-            occurrenceRow = context.occurrence;
-            admitted = await admitGeneration(tx, context);
-            if (admitted.kind === "reserved") {
-              sources = admitted.plan.sources;
-            }
+    const execution = await collectForGeneration(
+      set(
+        executeMorningBriefSlackCollection$,
+        {
+          owner: args.owner,
+          scheduledFor: args.scheduledFor,
+          handoff: {
+            onCollected: async (tx, context) => {
+              bundleCoverage = context.bundle.coverage;
+              occurrenceRow = context.occurrence;
+              admitted = await admitGeneration(
+                tx,
+                args.purpose,
+                context,
+                args.nativeAuthority,
+              );
+              if (admitted.kind === "reserved") {
+                sources = admitted.plan.sources;
+              }
+            },
           },
         },
-      },
+        signal,
+      ),
       signal,
     );
     signal.throwIfAborted();
 
+    if (execution.kind === "native-authority-lost") {
+      return { kind: "not-executed", reason: "native-authority-lost" };
+    }
     if (
       execution.kind === "not-executed" ||
       execution.kind === "invalid-anchor" ||
@@ -1503,7 +1658,7 @@ export const executeMorningBriefPreviewGeneration$ = command(
     if (execution.kind === "already-completed") {
       return await set(
         resolveExistingGeneration$,
-        { db, key, occurrence: execution.occurrence },
+        { db, key, occurrence: execution.occurrence, purpose: args.purpose },
         signal,
       );
     }
@@ -1512,7 +1667,7 @@ export const executeMorningBriefPreviewGeneration$ = command(
       throw new Error("Morning Brief collection finalized without a handoff");
     }
     if (admitted.kind === "skipped") {
-      const row = await readMorningBriefGeneration(db, key, GENERATION_PURPOSE);
+      const row = await readMorningBriefGeneration(db, key, args.purpose);
       signal.throwIfAborted();
       if (!row) {
         throw new Error("Morning Brief generation skip was not recorded");
@@ -1536,6 +1691,24 @@ export const executeMorningBriefPreviewGeneration$ = command(
         occurrence: execution.occurrence,
         occurrenceRow,
       },
+      signal,
+    );
+  },
+);
+
+/** The operator preview entry point. */
+export const executeMorningBriefPreviewGeneration$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: MorningBriefCollectionOwner;
+      readonly scheduledFor: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<MorningBriefGenerationExecution> => {
+    return await set(
+      executeMorningBriefGeneration$,
+      { ...args, purpose: "preview" },
       signal,
     );
   },

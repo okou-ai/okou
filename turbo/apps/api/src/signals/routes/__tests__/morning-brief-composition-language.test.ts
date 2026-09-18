@@ -294,6 +294,22 @@ async function compose(member: Member, anchor = new Date(now()).toISOString()) {
   return response.body;
 }
 
+/** The exact language failure plus the composition's required source facts. */
+function languageUnavailableExpectation(detail: string) {
+  return {
+    result: "incomplete",
+    reason: "language-context-unavailable",
+    detail,
+    sources: expect.arrayContaining([
+      expect.objectContaining({
+        source: "chat",
+        coverage: "complete",
+        items: 1,
+      }),
+    ]),
+  };
+}
+
 function composeRequest(
   member: Member,
   anchor = new Date(now()).toISOString(),
@@ -566,11 +582,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       const body = await compose(member);
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "too-large",
-      });
+      expect(body).toStrictEqual(languageUnavailableExpectation("too-large"));
     });
 
     it("keeps the legacy profile-block behaviour of the canonical reader", async () => {
@@ -618,11 +630,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a symlink that follows it", async () => {
@@ -640,11 +650,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a symlink that precedes it", async () => {
@@ -662,11 +670,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses a canonical file shadowed by a directory", async () => {
@@ -680,11 +686,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-ambiguous",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-ambiguous"),
+      );
     });
 
     it("refuses an archive that omits the promised canonical target", async () => {
@@ -695,11 +699,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "target-missing",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("target-missing"),
+      );
     });
 
     it("refuses an instruction file that is not valid UTF-8", async () => {
@@ -712,11 +714,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "not-utf8",
-      });
+      expect(body).toStrictEqual(languageUnavailableExpectation("not-utf8"));
     });
 
     it("refuses an archive that does not decompress", async () => {
@@ -724,11 +722,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         storage.replace("/archive.tar.gz", Buffer.from("not a gzip", "utf8"));
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "archive-corrupt",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("archive-corrupt"),
+      );
     });
 
     it("refuses an archive that decompresses past the ceiling as oversized", async () => {
@@ -741,11 +737,7 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         );
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "too-large",
-      });
+      expect(body).toStrictEqual(languageUnavailableExpectation("too-large"));
     });
 
     it("refuses a manifest that is not valid UTF-8 instead of reading absence", async () => {
@@ -758,11 +750,9 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
         storage.replace("/manifest.json", corrupted);
       });
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "storage-unavailable",
-      });
+      expect(body).toStrictEqual(
+        languageUnavailableExpectation("storage-unavailable"),
+      );
     });
   });
 
@@ -854,22 +844,77 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
   });
 
   describe("the absolute storage deadline", () => {
-    async function composeWithReadAt(elapsedMs: number) {
+    function timedOutExpectation() {
+      return languageUnavailableExpectation("timed-out");
+    }
+
+    function archiveReads(storage: StorageBoundary): readonly string[] {
+      return storage.reads.filter((key) => {
+        return key.endsWith("/archive.tar.gz");
+      });
+    }
+
+    async function composeNoTargetAfterParseAt(elapsedMs: number) {
+      const storage = installStorageBoundary();
+      const member = await briefMember();
+      await publishInstructions(member, "Write in Finnish.");
+      storage.replace(
+        "/manifest.json",
+        manifestOf([{ path: "NOTES.md", size: 4 }]),
+      );
+      const base = now();
+      mockNow(base);
+      storage.beforeRead("/manifest.json", () => {
+        // This is the nearest real external boundary to synchronous decode,
+        // JSON parse and target filtering. The pure production admission
+        // helper covers the exact post-parse clock edge.
+        mockNow(base + elapsedMs);
+      });
+      const body = await compose(member, new Date(base).toISOString());
+      return { body, storage };
+    }
+
+    it.each([
+      ["before", STORAGE_PHASE_MS - 1, true],
+      ["at", STORAGE_PHASE_MS, false],
+      ["after", STORAGE_PHASE_MS + 10, false],
+    ] as const)(
+      "releases no-target absence only when manifest parsing finishes %s the deadline",
+      async (_boundary, elapsedMs, accepted) => {
+        const { body, storage } = await composeNoTargetAfterParseAt(elapsedMs);
+
+        if (accepted) {
+          expect(body.result).toBe("composed");
+          if (body.result !== "composed") {
+            return;
+          }
+          expect(body.composition.language?.instructions).toMatchObject({
+            state: "no-target",
+          });
+        } else {
+          expect(body).toStrictEqual(timedOutExpectation());
+        }
+        expect(archiveReads(storage)).toStrictEqual([]);
+      },
+    );
+
+    async function composeAfterExtractionAt(elapsedMs: number) {
       const storage = installStorageBoundary();
       const member = await briefMember();
       await publishInstructions(member, "Write in Finnish.");
       const base = now();
       mockNow(base);
       storage.beforeRead("/archive.tar.gz", () => {
-        // The storage phase timer is a real timer and has not fired: only the
-        // absolute clock says this successful response is too late.
+        // The route cannot yield inside synchronous extraction; this storage
+        // response is its nearest real boundary, while the production helper
+        // pins equality for the check immediately after extraction.
         mockNow(base + elapsedMs);
       });
       return await compose(member, new Date(base).toISOString());
     }
 
-    it("accepts a response that arrives just before the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS - 1);
+    it("accepts extraction just before the deadline", async () => {
+      const body = await composeAfterExtractionAt(STORAGE_PHASE_MS - 1);
 
       expect(body.result).toBe("composed");
       if (body.result !== "composed") {
@@ -880,31 +925,19 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       });
     });
 
-    it("expires a response that arrives exactly at the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS);
-
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
-      });
+    it("expires extraction exactly at the deadline", async () => {
+      await expect(
+        composeAfterExtractionAt(STORAGE_PHASE_MS),
+      ).resolves.toStrictEqual(timedOutExpectation());
     });
 
-    it("expires a response that arrives after the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS + 10);
-
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
-      });
+    it("expires extraction after the deadline", async () => {
+      await expect(
+        composeAfterExtractionAt(STORAGE_PHASE_MS + 10),
+      ).resolves.toStrictEqual(timedOutExpectation());
     });
 
-    /**
-     * The storage phase is the tighter of its own five seconds and what is
-     * left of the collection budget, and once that is spent it stops asking
-     * storage for anything else.
-     */
+    /** The storage phase cannot outlive the tighter collection budget. */
     it("expires on the collection budget and stops reading storage", async () => {
       const storage = installStorageBoundary();
       const member = await briefMember();
@@ -912,8 +945,6 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       const base = now();
       mockNow(base);
       storage.beforeRead("/manifest.json", () => {
-        // Barely a second of the storage phase is gone, but the collection
-        // phase this read has to finish inside is over.
         mockNow(base + COLLECTION_PHASE_MS);
       });
 
@@ -921,14 +952,57 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       expect(body).toStrictEqual({
         result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
+        reason: "deadline-exceeded",
+        detail: `language context reached ${new Date(
+          base + COLLECTION_PHASE_MS,
+        ).toISOString()}`,
+        sources: expect.arrayContaining([
+          expect.objectContaining({
+            source: "chat",
+            coverage: "complete",
+            items: 1,
+          }),
+        ]),
       });
-      expect(
-        storage.reads.filter((key) => {
-          return key.endsWith("/archive.tar.gz");
-        }),
-      ).toStrictEqual([]);
+      expect(archiveReads(storage)).toStrictEqual([]);
     });
+
+    it("joins held storage work when the caller cancels", async () => {
+      const storage = installStorageBoundary();
+      const member = await briefMember();
+      await publishInstructions(member, "Write in Danish.");
+      const controller = new AbortController();
+      const cancellation = new Error("language storage caller cancelled");
+      const arrived = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const finished = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve();
+        }
+      });
+      storage.beforeRead("/manifest.json", async () => {
+        arrived.resolve();
+        await release.promise;
+        finished.resolve();
+      });
+
+      const pending = setupApp({
+        context,
+        routes: morningBriefCompositionPreviewRoutes,
+        signal: controller.signal,
+        rethrowErrors: true,
+      })(morningBriefCompositionPreviewContract).compose({
+        headers: sessionHeaders(member),
+        body: { anchor: new Date(now()).toISOString() },
+      });
+
+      await arrived.promise;
+      controller.abort(cancellation);
+      release.resolve();
+      await finished.promise;
+      await expect(pending).rejects.toThrow(cancellation.message);
+      expect(archiveReads(storage)).toStrictEqual([]);
+    }, 60_000);
   });
 });

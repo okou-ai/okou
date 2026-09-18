@@ -653,7 +653,6 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
     },
   });
 
@@ -788,7 +787,6 @@ test("Chat setting controls disable while their saves settle", async () => {
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
     },
   });
 

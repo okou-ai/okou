@@ -318,7 +318,6 @@ describe("CHAT-02: run-level model overrides", () => {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: organizationApi,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
         [FeatureSwitchKey.PiLoop]: true,
-        [FeatureSwitchKey.CodexFastMode]: true,
       });
 
       mockPiResourceArchiveDownloads();
@@ -675,7 +674,6 @@ describe("CHAT-02: run-level model overrides", () => {
           scenario.organizationApi,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
         [FeatureSwitchKey.PiLoop]: true,
-        [FeatureSwitchKey.CodexFastMode]: true,
       });
       if (scenario.organizationApi) {
         mockCodexDeviceAuthProvider({

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use common_framebuffer::*;
 use flate2::{Compress, Compression, FlushCompress};
-use rfb_client::Error;
+use rfb_client::{Error, SharingMode};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     time::Instant,
@@ -24,6 +24,48 @@ fn compress_with(stream: &mut Compress, data: &[u8]) -> Vec<u8> {
 
 fn compress(data: &[u8]) -> Vec<u8> {
     compress_with(&mut Compress::new(Compression::default(), true), data)
+}
+
+#[tokio::test]
+async fn sends_the_selected_sharing_request_before_initializing_the_framebuffer() {
+    for (sharing_mode, shared_flag) in [(SharingMode::Shared, 1), (SharingMode::Exclusive, 0)] {
+        let (client, mut peer) = authenticated().await;
+        let init = server_init(1, 1, RGBX, b"sharing fixture");
+        let (client, ()) = bounded(async {
+            tokio::join!(
+                client.initialize(sharing_mode, deadline()),
+                negotiate_framebuffer(&mut peer, &init, shared_flag)
+            )
+        })
+        .await;
+        let client = apply(
+            client.unwrap(),
+            &mut peer,
+            false,
+            &[raw(0, 0, 1, 1, &[RED])],
+        )
+        .await;
+        assert_eq!(client.pixels().unwrap(), RED);
+        drop(client);
+        disconnected(&mut peer).await;
+    }
+}
+
+#[tokio::test]
+async fn propagates_server_disconnect_after_either_sharing_request_without_fallback() {
+    for (sharing_mode, shared_flag) in [(SharingMode::Shared, 1), (SharingMode::Exclusive, 0)] {
+        let (client, mut peer) = authenticated().await;
+        let server = async {
+            assert_eq!(peer.read_u8().await.unwrap(), shared_flag);
+            peer.shutdown().await.unwrap();
+            // No replacement ClientInit or other data may follow the refusal.
+            disconnected(&mut peer).await;
+        };
+        let (result, ()) =
+            bounded(async { tokio::join!(client.initialize(sharing_mode, deadline()), server) })
+                .await;
+        assert!(matches!(error(result), Error::Io(_)));
+    }
 }
 
 #[tokio::test]
@@ -125,8 +167,8 @@ async fn accepts_the_exact_remote_name_limit_without_exposing_name_in_errors() {
     let init = server_init(1, 1, RGBX, &name);
     let (client, ()) = bounded(async {
         tokio::join!(
-            client.initialize(deadline()),
-            negotiate_framebuffer(&mut peer, &init)
+            client.initialize(SharingMode::Shared, deadline()),
+            negotiate_framebuffer(&mut peer, &init, 1)
         )
     })
     .await;
@@ -539,7 +581,7 @@ async fn rejects_compressed_output_bombs_before_retaining_unbounded_data() {
 #[tokio::test]
 async fn rejects_truncated_initialization_and_framebuffer_wire_data() {
     let (client, mut peer) = authenticated().await;
-    let caller = client.initialize(deadline());
+    let caller = client.initialize(SharingMode::Shared, deadline());
     let server = async {
         assert_eq!(peer.read_u8().await.unwrap(), 1);
         peer.write_all(&[0, 1, 0]).await.unwrap();
@@ -569,7 +611,7 @@ async fn rejects_truncated_initialization_and_framebuffer_wire_data() {
 async fn cancels_initialization_and_update_by_dropping_the_owned_future() {
     let (client, mut peer) = authenticated().await;
     {
-        let pending = client.initialize(deadline());
+        let pending = client.initialize(SharingMode::Shared, deadline());
         tokio::pin!(pending);
         bounded(async {
             tokio::select! {

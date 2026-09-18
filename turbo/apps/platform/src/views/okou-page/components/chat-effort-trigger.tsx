@@ -1,11 +1,10 @@
 import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
 import { isCodexFastModeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
-import { useGet, useLastResolved } from "ccstate-react";
+import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { codexFastModeEnabled$ } from "../../../signals/external/feature-switch.ts";
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
 import {
   ChatEffortSettings,
@@ -40,7 +39,6 @@ export function ChatEffortTrigger({
 }) {
   const { t } = useTranslation();
   const { efforts, effort } = useChatEffort(value);
-  const codexFastModeEnabled = useGet(codexFastModeEnabled$);
   const policies = useLastResolved(orgModelPolicies$);
   const policy = policies?.policies.find((entry) => {
     return entry.model === value.selectedModel;
@@ -56,7 +54,6 @@ export function ChatEffortTrigger({
   const disabled =
     policy === undefined || !isMemberModelPolicyConfigurable(policy);
   const fastAvailable =
-    codexFastModeEnabled &&
     policy !== undefined &&
     isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);

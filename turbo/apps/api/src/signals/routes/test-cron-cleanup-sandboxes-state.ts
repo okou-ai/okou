@@ -33,7 +33,9 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
 import { and, eq, inArray, notExists, sql } from "drizzle-orm";
+import { z } from "zod";
 
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
@@ -97,6 +99,7 @@ type CronCleanupSandboxesActionHandler = (
 
 interface HeldPiTestLock {
   held: boolean;
+  pid: number | undefined;
   readonly release: {
     readonly promise: Promise<void>;
     readonly resolve: (value: void) => void;
@@ -1411,8 +1414,7 @@ async function holdPiInferenceTestLockForAction(
   if (
     !lockId ||
     !key ||
-    (lockKind !== "org-sandbox-capacity" &&
-      lockKind !== "run-output-projection")
+    (lockKind !== "org-sandbox-capacity" && lockKind !== "agent-run-row")
   ) {
     return actionBadRequest("lock_id, lock_kind, and key are required");
   }
@@ -1420,17 +1422,31 @@ async function holdPiInferenceTestLockForAction(
     return actionBadRequest("test lock already exists");
   }
   const release = createDeferredPromise<void>(signal);
-  const state: HeldPiTestLock = { held: false, release };
+  const state: HeldPiTestLock = { held: false, pid: undefined, release };
   heldPiTestLocks().set(lockId, state);
   const held = await settle(
     db.transaction(async (tx) => {
       if (lockKind === "org-sandbox-capacity") {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
       } else {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${key}`}, 0))`,
-        );
+        const [run] = await tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(eq(agentRuns.id, key))
+          .for("update");
+        if (!run) {
+          throw new Error("Expected the Pi test run row to exist");
+        }
       }
+      const [backend] = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS pid`,
+        z.object({ pid: z.number() }),
+      );
+      if (!backend) {
+        throw new Error("Expected the Pi test lock backend");
+      }
+      state.pid = backend.pid;
       state.held = true;
       await release.promise;
       signal.throwIfAborted();
@@ -1454,8 +1470,9 @@ function getPiInferenceTestLockForAction(
   if (!lockId) {
     return Promise.resolve(actionBadRequest("lock_id is required"));
   }
+  const state = heldPiTestLocks().get(lockId);
   return Promise.resolve(
-    actionOk({ held: heldPiTestLocks().get(lockId)?.held === true }),
+    actionOk({ held: state?.held === true, pid: state?.pid ?? null }),
   );
 }
 

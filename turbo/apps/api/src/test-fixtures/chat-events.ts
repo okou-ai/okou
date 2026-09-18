@@ -77,6 +77,7 @@ const BDD_BUILT_IN_MODEL_KEY_PREFIXES = [
   "built-in-key-bdd-fake-",
   "built-in-key-bdd-dev-seed-",
 ] as const;
+const cancelledBackendRowSchema = z.object({ cancelled: z.boolean() });
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
 const blockedByPidRowSchema = z.object({ blocked: z.boolean() });
@@ -1912,6 +1913,7 @@ export async function holdChatEventQueueAdmissionLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly directWaiterCount: () => Promise<number>;
+  readonly cancelBlockedWaiters: () => Promise<number>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
@@ -1944,6 +1946,23 @@ export async function holdChatEventQueueAdmissionLockFixture(args: {
     done,
     directWaiterCount: async () => {
       return await directBlockedWaiterCount(holderPid);
+    },
+    // A real database failure at the admission boundary cannot be requested
+    // through any API. Only queries blocked on this fixture's own lock are
+    // cancelled, which is the production failure a waiting tick can observe.
+    cancelBlockedWaiters: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT pg_cancel_backend(activity.pid) AS "cancelled"
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        cancelledBackendRowSchema,
+      );
+      return rows.filter((row) => {
+        return row.cancelled;
+      }).length;
     },
   };
 }

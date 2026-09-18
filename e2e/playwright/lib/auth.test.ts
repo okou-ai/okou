@@ -77,6 +77,31 @@ test("auth fixtures require a loaded Clerk test instance", async (context) => {
   }
 });
 
+test(
+  "email-code sign-in fails promptly when the app bootstrap is unavailable",
+  { timeout: 15_000 },
+  async (context) => {
+    const browser = await chromium.launch();
+    context.after(() => browser.close());
+    const page = await browser.newPage();
+    const appUrl = "https://clerk-auth-fixture.test";
+    await page.route(`${appUrl}/**`, (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<!doctype html><p>Application bootstrap did not load</p>",
+      }),
+    );
+
+    await assert.rejects(
+      () =>
+        signInWithClerkEmailCode(page, "fixture@example.com", appUrl, {
+          activeOrganizationId: "org_fixture",
+        }),
+      /Clerk core bootstrap is unavailable before email-code sign-in/u,
+    );
+  },
+);
+
 test("email-code sign-in waits for preparation before submitting a visible code", async (context) => {
   const browser = await chromium.launch();
   context.after(() => browser.close());
@@ -94,6 +119,7 @@ test("email-code sign-in waits for preparation before submitting a visible code"
         <button onclick="showCode()">Continue</button>
         <script>
           let prepared = false;
+          window.__okouClerkBootstrap = { runtime: Promise.resolve() };
           window.Clerk = {
             loaded: true,
             publishableKey: 'pk_test_fixture',

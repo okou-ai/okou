@@ -39,6 +39,7 @@ import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import {
   closeCustomTemplate$,
   customTemplateSearchQuery$,
+  customTemplateSurface,
   deleteCustomTemplate$,
   openCustomTemplate$,
   openCustomTemplateDetail$,
@@ -69,10 +70,10 @@ const IMPORT_FORMATS = CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ");
  * One meta line: who can see it — or, for a colleague's template, whose it is,
  * because a visibility the reader cannot change is not worth the row.
  *
- * The page count is dropped when there is none. A document template is its
- * styles, so the API reports `null` rather than a zero; printing "0 pages"
- * would describe it as an empty deck instead of a kind that never had pages.
- * The row still names the file it was compiled from.
+ * It carries nothing else. Which file the template was compiled from and how
+ * many pages it has describe the template rather than distinguish it, and a
+ * grid is read by what tells its tiles apart; both are still answered by the
+ * detail column, which is where they are asked for.
  */
 function CustomTemplateMeta({
   template,
@@ -81,7 +82,7 @@ function CustomTemplateMeta({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+    <div className="min-w-0 text-xs text-muted-foreground">
       {template.canManage ? (
         <VisibilityLabel visibility={template.visibility} />
       ) : (
@@ -95,17 +96,6 @@ function CustomTemplateMeta({
           )}
         </span>
       )}
-      {template.pageCount === null ? null : (
-        <span>
-          {t(
-            ($) => {
-              return $.templates.pageCount;
-            },
-            { count: template.pageCount },
-          )}
-        </span>
-      )}
-      <span className="truncate">{template.sourceFilename}</span>
     </div>
   );
 }
@@ -352,6 +342,16 @@ function CustomTemplateUploadCard({
   const label = t(($) => {
     return $.artifacts.templates.importFile;
   });
+  // Every accepted extension is more than one tile-width of this line, so it
+  // is the truncated one that needs the whole list reachable on hover. The
+  // file picker enforces the list either way; this is only what tells the
+  // member before they open it.
+  const hint = t(
+    ($) => {
+      return $.artifacts.templates.importFileHint;
+    },
+    { formats: IMPORT_FORMATS },
+  );
   return (
     <label className="group/tile flex cursor-pointer flex-col gap-2">
       <span
@@ -371,13 +371,8 @@ function CustomTemplateUploadCard({
         <span className="truncate text-sm font-medium text-foreground">
           {label}
         </span>
-        <span className="truncate text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.artifacts.templates.importFileHint;
-            },
-            { formats: IMPORT_FORMATS },
-          )}
+        <span className="truncate text-xs text-muted-foreground" title={hint}>
+          {hint}
         </span>
       </span>
     </label>
@@ -549,9 +544,13 @@ export function CustomTemplatePickerPane({
   const templatesLoadable = useLoadable(visibleCustomTemplates$);
 
   // A deck takes the panel over, because its pages are a column this panel can
-  // scroll. A document stays on the catalog and opens a dialog instead: it is
-  // read inside a viewer that needs a viewport of its own.
-  if (openTemplateId !== null && openTemplateKind === "presentation") {
+  // scroll. Every other kind stays on the catalog and opens a dialog instead:
+  // it is one file, read at a size of its own.
+  if (
+    openTemplateId !== null &&
+    openTemplateKind !== null &&
+    customTemplateSurface(openTemplateKind) === "panel"
+  ) {
     return <CustomTemplateDetail onSelect={onSelect} />;
   }
 

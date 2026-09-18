@@ -14,10 +14,11 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { z } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
@@ -29,6 +30,7 @@ import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
+import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { settle } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -89,6 +91,7 @@ interface SandboxOperationDimensionInput {
   readonly session_history_restore_reason?: string;
   readonly session_history_transfer_source?: string;
   readonly session_history_wire_codec?: string;
+  readonly session_history_codec_decision?: string;
   readonly session_history_codec_reason?: string;
   readonly session_history_transfer_bytes?: number;
   readonly session_history_wire_bytes?: number;
@@ -256,6 +259,7 @@ function historyTransferDimensions(
   for (const key of [
     "session_history_transfer_source",
     "session_history_wire_codec",
+    "session_history_codec_decision",
     "session_history_codec_reason",
     "session_history_transfer_bytes",
     "session_history_wire_bytes",
@@ -366,12 +370,14 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
       return "protocol" in event;
     })
   ) {
-    const startDate = env("X_RESOURCE_BILLING_START_DATE");
-    if (!startDate) {
-      return badRequestMessage("X resource observations are not enabled");
-    }
+    const db = set(writeDb$);
+    const deduplicationEnabled = isFeatureEnabled(
+      FeatureSwitchKey.XResourceDeduplication,
+      await loadUserFeatureSwitchContext(db, auth.orgId, auth.userId),
+    );
+    signal.throwIfAborted();
     const result = await settle(
-      ingestXResourceUsage(set(writeDb$), body, auth, startDate, signal),
+      ingestXResourceUsage(db, body, auth, deduplicationEnabled, signal),
     );
     signal.throwIfAborted();
     if (!result.ok) {
@@ -414,9 +420,10 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const usageEventValues = body.events
     .filter((event) => {
       return (
-        event.kind !== MODEL_USAGE_KIND ||
-        modelProviderType === null ||
-        isBuiltInModelProviderType(modelProviderType)
+        event.quantity > 0 &&
+        (event.kind !== MODEL_USAGE_KIND ||
+          modelProviderType === null ||
+          isBuiltInModelProviderType(modelProviderType))
       );
     })
     .map((event) => {
@@ -440,23 +447,16 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const insertResult = await settle(
     (async () => {
       if (usageEventValues.length > 0) {
-        if (env("X_RESOURCE_BILLING_START_DATE") !== undefined) {
-          await db.transaction(async (tx) => {
-            await setXResourceTransactionTimeouts(tx);
-            // Legacy retries share the account-cleanup fence with v1 batches.
-            await lockXResourceAdmission(tx, "shared");
-            await tx
-              .insert(usageEvent)
-              .values(usageEventValues)
-              .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
-            signal.throwIfAborted();
-          });
-        } else {
-          await db
+        await db.transaction(async (tx) => {
+          await setXResourceTransactionTimeouts(tx);
+          // Legacy retries share the account-cleanup fence with v1 batches.
+          await lockXResourceAdmission(tx, "shared");
+          await tx
             .insert(usageEvent)
             .values(usageEventValues)
             .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
-        }
+          signal.throwIfAborted();
+        });
       }
     })(),
   );

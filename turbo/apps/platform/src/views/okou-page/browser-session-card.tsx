@@ -1,10 +1,12 @@
 import { AppWindow } from "lucide-react";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 
 import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
+import { resolveArtifactImageTransformOrigin } from "../../lib/platform-host.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import {
   activeSidebarBrowserThreadId$,
@@ -92,7 +94,11 @@ function BrowserSessionPreview({
     <span className="relative block aspect-[16/10] w-full overflow-hidden bg-muted/30">
       {screenshotUrl && load ? (
         <ArtifactThumbnailImage
-          src={screenshotUrl}
+          src={r2ImageTransformUrl(
+            screenshotUrl,
+            { width: 800 },
+            resolveArtifactImageTransformOrigin(),
+          )}
           load={load}
           testId="browser-session-thumbnail"
           className="absolute inset-0 h-full w-full object-cover object-top"

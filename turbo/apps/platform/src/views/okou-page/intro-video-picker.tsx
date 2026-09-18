@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { PaidToolNotice } from "./paid-tool-notice.tsx";
 import type { IntroVideoPickerSignals } from "../../signals/okou-page/intro-video-picker.ts";
 import { introVideoStyleGallerySignals } from "../../signals/okou-page/intro-video-style-gallery.ts";
 import { introVideoAvatarPickerSignals } from "../../signals/okou-page/intro-video-catalog-picker.ts";
@@ -1060,6 +1061,7 @@ export function IntroVideoPicker({
 }) {
   const { t } = useTranslation();
   const template = useGet(signals.template$);
+  const voice = useGet(signals.voice$);
   const style = useGet(signals.style$);
   const group = useGet(signals.group$);
   const query = useGet(signals.query$).trim().toLowerCase();
@@ -1113,6 +1115,11 @@ export function IntroVideoPicker({
           items={items}
           loading={catalog.state === "loading"}
           error={catalog.state === "hasError"}
+        />
+        <PaidToolNotice
+          tools={[
+            voice.kind === "none" ? "video-rendering" : "video-generation",
+          ]}
         />
         <footer className="flex h-[60px] shrink-0 items-center gap-2 border-t border-border px-4 sm:px-6">
           {panelOpen ? null : <SelectionSummary signals={signals} />}

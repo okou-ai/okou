@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 
@@ -17,7 +18,7 @@ beforeEach(() => {
 
 describe("agent usage event webhook", () => {
   it.each([false, true])(
-    "rejects prepared resource observations before count billing (mixed=%s)",
+    "requires an existing authenticated run for resource observations (mixed=%s)",
     async (mixed) => {
       const runId = randomUUID();
       const token = generateSandboxToken(
@@ -32,7 +33,7 @@ describe("agent usage event webhook", () => {
         provider: "x" as const,
         category: "posts.read" as const,
         quantity: 1,
-        observedAt: "2026-09-16T00:00:00.000Z",
+        observedAt: nowDate().toISOString(),
         resources: [{ id: "9007199254740993", occurrences: 1 }],
         remainder: [],
       };
@@ -59,11 +60,9 @@ describe("agent usage event webhook", () => {
               : [resourceEvent],
           },
         }),
-        [400],
+        [404],
       );
-      expect(response.body.error.message).toBe(
-        "X resource observations are not enabled",
-      );
+      expect(response.body.error.code).toBe("NOT_FOUND");
 
       const unauthorized = await accept(
         client.send({

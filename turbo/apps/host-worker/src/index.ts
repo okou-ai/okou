@@ -6,6 +6,10 @@ import {
   type ArtifactDeliveryRecord,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
+  PRIVATE_ARTIFACT_CACHE_CONTROL,
+  PRIVATE_NO_STORE_CACHE_CONTROL,
+} from "@okouai/api-contracts/contracts/artifact-cache";
+import {
   artifactSharePolicySchema,
   type ArtifactSharePolicy,
 } from "@okouai/api-contracts/contracts/artifact-shares";
@@ -81,6 +85,7 @@ interface ManifestFile {
 
 interface HostedSiteManifest {
   readonly version: 1;
+  readonly immutableContent?: true;
   readonly access?: "owner-private-v1";
   readonly publicBrand?: PublicBrand;
   readonly deploymentId: string;
@@ -788,7 +793,11 @@ async function serveManifestFile(
   }
 
   const headers = new Headers();
-  object.writeHttpMetadata(headers);
+  // Upload checksums bind bytes, but not arbitrary object metadata such as
+  // Content-Encoding. Immutable delivery uses server-owned manifest headers.
+  if (!manifest.immutableContent) {
+    object.writeHttpMetadata(headers);
+  }
   headers.set("Content-Type", file.contentType);
   headers.set("Cache-Control", cacheControl(file));
   headers.set("ETag", object.httpEtag);
@@ -881,15 +890,26 @@ async function serveArtifactFile(
 
 interface PrivatePreviewGrant {
   readonly snapshotId?: string;
+  // Legacy credentials stay uncached until #35240 seals old content and old
+  // writers/grants leave serving. Uploadable manifests cannot assert this.
+  readonly immutableContent?: true;
   readonly version: 1;
   readonly publicBrand: PublicBrand;
   readonly deploymentId: string;
   readonly expiresAt: string;
 }
 
-function privateResponse(response: Response): Response {
+function privateResponse(
+  response: Response,
+  immutableContent = false,
+): Response {
   const headers = new Headers(response.headers);
-  headers.set("Cache-Control", "private, no-store");
+  headers.set(
+    "Cache-Control",
+    immutableContent && response.ok
+      ? PRIVATE_ARTIFACT_CACHE_CONTROL
+      : PRIVATE_NO_STORE_CACHE_CONTROL,
+  );
   // Let this isolated origin identify its own CSS/JS/image requests to the
   // hosted-site WAF. Cross-origin requests must not disclose preview tokens.
   headers.set("Referrer-Policy", "same-origin");
@@ -1000,7 +1020,8 @@ async function servePrivatePreview(
   ) {
     return privateResponse(notFoundResponse());
   }
-  // Authorize every request before reading content; no shared content cache.
+  // Authorize every network request before reading content. Browser caching
+  // matches files only when the bytes cannot change under this credential.
   const response = await serveManifestFile(
     request,
     env,
@@ -1011,7 +1032,7 @@ async function servePrivatePreview(
   if (expiresAt <= Date.now()) {
     return privateResponse(notFoundResponse());
   }
-  return privateResponse(response);
+  return privateResponse(response, shared || grant.immutableContent === true);
 }
 
 async function readPublicShare(
@@ -1045,7 +1066,7 @@ async function readPublicShare(
     // Unavailable authorization state never falls through to cached bytes.
     return new Response("Artifact unavailable", {
       status: 503,
-      headers: { "Cache-Control": "private, no-store" },
+      headers: { "Cache-Control": PRIVATE_NO_STORE_CACHE_CONTROL },
     });
   }
   if (records.length === 0) return null;
@@ -1180,7 +1201,7 @@ export default {
         // A registry/policy/storage failure is unavailable, never anonymous access.
         return new Response("Artifact unavailable", {
           status: 503,
-          headers: { "Cache-Control": "private, no-store" },
+          headers: { "Cache-Control": PRIVATE_NO_STORE_CACHE_CONTROL },
         });
       })
       .then((response) => {

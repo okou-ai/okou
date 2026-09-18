@@ -32,7 +32,6 @@ import {
   openCustomConnectorEditDialog$,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
 import { isOrgAdmin$ } from "../../../../signals/org.ts";
-import { customConnectorMcpEnabled$ } from "../../../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { CustomConnectorIcon } from "./custom-connector-icon.tsx";
@@ -78,7 +77,6 @@ function connectsDirectlyWithAuthorization(
 interface CustomConnectorRowProps {
   readonly connector: CustomConnectorResponse;
   readonly isAdmin: boolean;
-  readonly mcpEnabled: boolean;
   readonly onConnect: () => void;
   readonly onEdit: () => void;
   readonly onManageAccess: () => void;
@@ -323,7 +321,6 @@ function CustomConnectorActions({
 function CustomConnectorRow({
   connector,
   isAdmin,
-  mcpEnabled,
   onConnect,
   onEdit,
   onManageAccess,
@@ -336,13 +333,8 @@ function CustomConnectorRow({
   const directoryEnabled = useGet(connectorDirectoryEnabled$);
   const connecting = useGet(connectorConnectionPending$);
   const adminCanDelete = isAdmin;
-  const mcpActionsEnabled = connector.kind === "http" || mcpEnabled;
-  const connectionActionsEnabled = mcpActionsEnabled;
-  const adminCanEdit = adminCanDelete && mcpActionsEnabled;
   const accountCount = accountSummary?.accountCount ?? 0;
-  const canActivate =
-    accountSummaryStatus === "ready" &&
-    (accountCount > 0 || connectionActionsEnabled);
+  const canActivate = accountSummaryStatus === "ready";
   const activate = accountCount > 0 ? onManageAccounts : onConnect;
   const managesAccounts = accountCount > 0;
   const hasActions = adminCanDelete;
@@ -350,7 +342,7 @@ function CustomConnectorRow({
     <CustomConnectorCardContent
       connector={connector}
       hasActions={hasActions}
-      allowAccessIncrease={connectionActionsEnabled && accountCount > 0}
+      allowAccessIncrease={accountCount > 0}
       onManageAccess={onManageAccess}
       accountSummary={accountSummary}
       accountSummaryStatus={accountSummaryStatus}
@@ -375,7 +367,7 @@ function CustomConnectorRow({
       </CustomConnectorActivationCard>
       <CustomConnectorActions
         hasActions={hasActions}
-        adminCanEdit={adminCanEdit}
+        adminCanEdit={isAdmin}
         adminCanDelete={adminCanDelete}
         onEdit={onEdit}
         onDelete={onDelete}
@@ -385,10 +377,8 @@ function CustomConnectorRow({
 }
 
 function CustomConnectorDialogs({
-  mcpEnabled,
   onCreated,
 }: {
-  readonly mcpEnabled: boolean;
   readonly onCreated?: (connector: CustomConnectorResponse) => void;
 }) {
   const dialog = useGet(customConnectorDialog$);
@@ -402,7 +392,6 @@ function CustomConnectorDialogs({
       : undefined;
   const allowAccessIncrease =
     dialog.kind === "access" &&
-    (dialog.connector.kind === "http" || mcpEnabled) &&
     accountSummariesLoadable.state === "hasData" &&
     (accessAccountSummary?.accountCount ?? 0) > 0;
   return (
@@ -461,12 +450,10 @@ function CustomConnectorEmptyState({ isAdmin }: { readonly isAdmin: boolean }) {
 export function CustomConnectorGrid({
   connectors,
   isAdmin,
-  mcpEnabled,
   className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3",
 }: {
   readonly connectors: readonly CustomConnectorResponse[];
   readonly isAdmin: boolean;
-  readonly mcpEnabled: boolean;
   /**
    * The grid this owns, or `contents` when the caller has a grid of its own and
    * wants these cards to sit in it beside connectors of another kind.
@@ -539,7 +526,6 @@ export function CustomConnectorGrid({
             key={connector.id}
             connector={connector}
             isAdmin={isAdmin}
-            mcpEnabled={mcpEnabled}
             onConnect={() => {
               return handleConnect(connector);
             }}
@@ -564,11 +550,7 @@ export function CustomConnectorGrid({
   );
 }
 
-function CustomAccountDialogs({
-  mcpEnabled,
-}: {
-  readonly mcpEnabled: boolean;
-}) {
+function CustomAccountDialogs() {
   const managedAccounts = useGet(customAccountManager$);
   const accountConnect = useGet(customAccountConnectDialog$);
   const closeAccountManager = useSet(closeCustomAccountManager$);
@@ -622,9 +604,6 @@ function CustomAccountDialogs({
               size={20}
             />
           }
-          connectionActionsEnabled={
-            managedAccounts.kind === "http" || mcpEnabled
-          }
           onClose={closeAccountManager}
           onAdd={() => {
             closeAccountManager();
@@ -675,7 +654,6 @@ export function CustomConnectorsPanel() {
     return !isIntegrationManagedCustomConnector(connector);
   });
   const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
 
   return (
     <section className="flex flex-col gap-3">
@@ -686,11 +664,10 @@ export function CustomConnectorsPanel() {
         <CustomConnectorGrid
           connectors={userManagedConnectors}
           isAdmin={isAdmin}
-          mcpEnabled={mcpEnabled}
         />
       ) : null}
-      <CustomConnectorDialogs mcpEnabled={mcpEnabled} />
-      <CustomAccountDialogs mcpEnabled={mcpEnabled} />
+      <CustomConnectorDialogs />
+      <CustomAccountDialogs />
     </section>
   );
 }
@@ -700,11 +677,10 @@ export function CustomConnectorDirectoryDialogs({
 }: {
   readonly onCreated: (connector: CustomConnectorResponse) => void;
 }) {
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   return (
     <>
-      <CustomConnectorDialogs mcpEnabled={mcpEnabled} onCreated={onCreated} />
-      <CustomAccountDialogs mcpEnabled={mcpEnabled} />
+      <CustomConnectorDialogs onCreated={onCreated} />
+      <CustomAccountDialogs />
     </>
   );
 }

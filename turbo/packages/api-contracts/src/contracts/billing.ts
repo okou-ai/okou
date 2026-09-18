@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { adAttributionMetadataSchema } from "./acquisition-attribution";
 
 const c = initContract();
 
@@ -140,17 +139,10 @@ const usagePackPurchasePreviewResponseSchema =
     purchaseType: z.literal("usage_pack"),
   });
 
-const googleAdsPaidConversionSchema = z.object({
-  googleAdsAccountId: z.string(),
-  transactionId: z.string().min(1),
-  valueUsd: z.number().positive(),
-});
-
 const billingPurchaseConfirmResponseSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("completed"),
     hostedInvoiceUrl: z.null(),
-    googleAdsConversion: googleAdsPaidConversionSchema.optional(),
   }),
   z.object({
     status: z.literal("pending_payment"),
@@ -164,7 +156,6 @@ const billingPurchaseConfirmResponseSchema = z.discriminatedUnion("status", [
 
 const checkoutCompleteResponseSchema = z.object({
   completed: z.boolean(),
-  googleAdsConversion: googleAdsPaidConversionSchema.optional(),
 });
 
 const redeemCodeResponseSchema = z.object({
@@ -209,7 +200,6 @@ const checkoutRequestSchema = z.object({
   successUrl: stripeRedirectUrlSchema,
   cancelUrl: stripeRedirectUrlSchema,
   trialDays: z.literal(7).optional(),
-  adAttribution: adAttributionMetadataSchema.optional(),
 });
 
 export const USAGE_PACKS_USD = [20, 50, 100, 200] as const;
@@ -277,7 +267,6 @@ const usagePackCheckoutRequestSchema = z.object({
   memberUsagePacks: z.array(memberUsagePackSchema).min(1).max(1000),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
-  adAttribution: adAttributionMetadataSchema.optional(),
 });
 
 const usagePackChangeStatusSchema = z.enum([
@@ -1421,9 +1410,6 @@ export type UsagePackPurchasePreviewResponse = z.infer<
 >;
 export type BillingPurchaseConfirmResponse = z.infer<
   typeof billingPurchaseConfirmResponseSchema
->;
-export type GoogleAdsPaidConversion = z.infer<
-  typeof googleAdsPaidConversionSchema
 >;
 export type RedeemCodeResponse = z.infer<typeof redeemCodeResponseSchema>;
 export type ConcurrencyCheckoutRequest = z.infer<

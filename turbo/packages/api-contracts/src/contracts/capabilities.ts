@@ -46,6 +46,8 @@ export const CAPABILITIES = [
   "host:write",
   "ssh:read",
   "ssh:write",
+  "vnc:read",
+  "vnc:write",
   "presentation-template:write",
   "presentation-convert:write",
   "user-template:write",
@@ -197,6 +199,8 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
     group: "SSH",
     label: "Execute commands on authorized SSH hosts",
   },
+  "vnc:read": { group: "VNC", label: "List authorized VNC hosts" },
+  "vnc:write": { group: "VNC", label: "Control authorized VNC hosts" },
   "presentation-template:write": {
     group: "Presentation Templates",
     label: "Publish a presentation template",

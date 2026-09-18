@@ -14,6 +14,7 @@ import {
   MORNING_BRIEF_COLLECTION_VERSION,
   type morningBriefCollectionOccurrences,
 } from "@okouai/db/schema/morning-brief-collection-occurrence";
+import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
@@ -38,12 +39,17 @@ import {
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
 import {
+  resolveMorningBriefChoiceAuthority,
+  type MorningBriefNativeScheduleRow,
+} from "./morning-brief-native-schedule.service";
+import {
   collectMorningBriefSlackBundle,
   MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
   type MorningBriefSlackCollectionResult,
 } from "./morning-brief-slack-collection.service";
 import {
   loadSlackUserBinding,
+  lockSlackUserBindingRows,
   slackUserInstallation,
 } from "./slack-data.service";
 
@@ -226,7 +232,7 @@ async function loadInstallationAgentId(
  * The exact-member lookup and its immutable-id pin are shared with the
  * Simple Morning Brief connector reader, so both admit on one authority.
  */
-const currentMembershipId$ = command(
+export const currentMembershipId$ = command(
   async (
     { get },
     owner: MorningBriefCollectionOwner,
@@ -261,6 +267,40 @@ type LocalMorningBriefInstallation =
  * Nothing here reads the disposable installed-preference projection — the
  * canonical installation and its schedule decide whether a brief is enabled.
  */
+/**
+ * The durable native choice for this member, when one owns the brief.
+ *
+ * Split out of {@link resolveLocalMorningBriefInstallation} so the legacy path
+ * there keeps its own shape. A `null` row means the member is not native and
+ * the legacy installation still decides.
+ */
+async function resolveNativeMorningBriefChoice(
+  db: Pick<ReadonlyDb, "select">,
+  owner: MorningBriefCollectionOwner,
+): Promise<
+  | { readonly kind: "row"; readonly row: MorningBriefNativeScheduleRow | null }
+  | {
+      readonly kind: "not-executed";
+      readonly reason: MorningBriefCollectionSkipReason;
+    }
+> {
+  const authority = await resolveMorningBriefChoiceAuthority(db, owner);
+  if (authority.kind !== "native") {
+    return { kind: "row", row: null };
+  }
+  const row = authority.row;
+  if (!row.enabled) {
+    return { kind: "not-executed", reason: "brief-paused" };
+  }
+  if (row.legacyWorkflowId === null || row.legacyAutomationId === null) {
+    // Every migrated member carries its lineage. A native row without it has no
+    // provenance to record on the occurrence, so admission refuses explicitly
+    // rather than inventing one.
+    return { kind: "not-executed", reason: "brief-inconsistent" };
+  }
+  return { kind: "row", row };
+}
+
 async function resolveLocalMorningBriefInstallation(
   db: Pick<ReadonlyDb, "select">,
   owner: MorningBriefCollectionOwner,
@@ -276,20 +316,33 @@ async function resolveLocalMorningBriefInstallation(
     return { kind: "not-executed", reason: "feature-disabled" };
   }
 
-  const state = await loadMorningBriefMigrationState(db, owner);
-  if (state.kind !== "installed") {
-    return {
-      kind: "not-executed",
-      reason:
-        state.kind === "absent"
-          ? "brief-absent"
-          : state.kind === "pending"
-            ? "brief-pending"
-            : "brief-inconsistent",
-    };
+  // Once a member is in the native phase the durable native row is the whole
+  // choice: no live installation, catalog reconciliation or legacy enabled bit
+  // is consulted, which is what lets the legacy scheduler be disabled without
+  // disabling the brief. Every other phase keeps reading the canonical legacy
+  // installation exactly as before.
+  const nativeChoice = await resolveNativeMorningBriefChoice(db, owner);
+  if (nativeChoice.kind === "not-executed") {
+    return nativeChoice;
   }
-  if (!state.automation.enabled) {
-    return { kind: "not-executed", reason: "brief-paused" };
+  const native = nativeChoice.row;
+
+  const state = await loadMorningBriefMigrationState(db, owner);
+  if (native === null) {
+    if (state.kind !== "installed") {
+      return {
+        kind: "not-executed",
+        reason:
+          state.kind === "absent"
+            ? "brief-absent"
+            : state.kind === "pending"
+              ? "brief-pending"
+              : "brief-inconsistent",
+      };
+    }
+    if (!state.automation.enabled) {
+      return { kind: "not-executed", reason: "brief-paused" };
+    }
   }
 
   // One read of the durable member row supplies both the timezone an enabled
@@ -303,13 +356,35 @@ async function resolveLocalMorningBriefInstallation(
   ) {
     return { kind: "not-executed", reason: "missing-timezone" };
   }
-  const agentId = await loadInstallationAgentId(
-    db,
-    owner,
-    state.installation.agentId,
-  );
+  const installedAgentId =
+    native !== null
+      ? native.agentId
+      : state.kind === "installed"
+        ? state.installation.agentId
+        : null;
+  if (installedAgentId === null) {
+    return { kind: "not-executed", reason: "missing-agent" };
+  }
+  const agentId = await loadInstallationAgentId(db, owner, installedAgentId);
   if (agentId === null) {
     return { kind: "not-executed", reason: "missing-agent" };
+  }
+  if (native !== null) {
+    return {
+      kind: "resolved",
+      // The frozen execution context is the native row's, and its legacy ids
+      // are lineage recorded on the occurrence, never admission authority.
+      timezone: isValidTimeZone(native.timezone)
+        ? native.timezone
+        : member.timezone,
+      memberCreatedAt: member.memberCreatedAt,
+      workflowId: native.legacyWorkflowId ?? "",
+      automationId: native.legacyAutomationId ?? "",
+      agentId,
+    };
+  }
+  if (state.kind !== "installed") {
+    return { kind: "not-executed", reason: "brief-inconsistent" };
   }
   return {
     kind: "resolved",
@@ -401,19 +476,121 @@ const admitMorningBriefCollection$ = command(
 );
 
 /**
+ * Take the rows this occurrence's local authority is actually decided by.
+ *
+ * The resolution below is a plain read, and a plain read in `READ COMMITTED`
+ * serializes with nothing: a Settings disable, a schedule mutation or a Slack
+ * rebinding may commit after it and before the caller's own COMMIT, and the
+ * caller would then act on an authority that no longer exists. Holding the
+ * rows those mutators write is what makes the resolution describe the instant
+ * the caller commits at rather than the instant it read at.
+ *
+ * The rows taken are exactly the ones the occurrence itself pinned, by primary
+ * key, in **parent-before-child order** — Agent, installation, schedule, then
+ * the organization's Slack installation and this member's connection in it.
+ * `FOR SHARE` is the weakest mode that conflicts with the `FOR NO KEY UPDATE`
+ * an ordinary `UPDATE` takes, so a visibility change, disable or rebinding
+ * either commits before these statements and is read, or waits for this
+ * transaction and loses.
+ *
+ * Agent must come first. Visibility is live authority even when the installation
+ * belongs to another member's public Agent, and Agent deletion cascades through
+ * both the workflow and occurrence/generation branches. Taking generation
+ * before Agent or workflow can deadlock that cascade; taking Agent first agrees
+ * with the real update and delete services and leaves generation to the
+ * caller-provided final lock below.
+ *
+ * The caller must already hold the owner fence (`lockCollectionOwner`), which
+ * is what serializes membership, user and organization cleanup.
+ */
+async function lockMorningBriefLocalAuthorityRows(
+  tx: Tx,
+  occurrence: MorningBriefCollectionOccurrenceRow,
+): Promise<void> {
+  await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, occurrence.agentId),
+        eq(agents.orgId, occurrence.orgId),
+      ),
+    )
+    .limit(1)
+    .for("share");
+  await tx
+    .select({ id: workflows.id })
+    .from(workflows)
+    .where(eq(workflows.id, occurrence.workflowId))
+    .limit(1)
+    .for("share");
+  await tx
+    .select({ id: workflowAutomations.id })
+    .from(workflowAutomations)
+    .where(eq(workflowAutomations.id, occurrence.automationId))
+    .limit(1)
+    .for("share");
+  await lockSlackUserBindingRows(tx, {
+    orgId: occurrence.orgId,
+    userId: occurrence.userId,
+  });
+}
+
+/**
+ * The final local admission point for anything acting on an occurrence.
+ *
+ * It is one function because acceptance and release need the same thing at the
+ * same moment: the local authority proved while the rows that could revoke it
+ * are held, inside the caller's own transaction. The caller resolves the remote
+ * Clerk half outside any transaction and then admits here, so no transaction is
+ * ever open across a network round trip.
+ *
+ * The guarded row lock is supplied by the caller because generation acceptance
+ * and readback guard different copies of the same slot. It runs after all
+ * authority parents and before canonical resolution. This exact interface keeps
+ * generation last in the lock order without creating a second authority reader.
+ *
+ * The authority answer and guarded copy stay stable until the caller commits.
+ * What the caller still owes is the rest of its admission — cancellation and
+ * the decision clock — sampled after this returns and immediately before its
+ * mutation or release.
+ */
+export async function admitMorningBriefLocalAuthority<T>(
+  tx: Tx,
+  occurrence: MorningBriefCollectionOccurrenceRow,
+  lockGuardedRow: () => Promise<T>,
+): Promise<{
+  readonly authority: MorningBriefLocalAuthority;
+  readonly guarded: T;
+}> {
+  await lockMorningBriefLocalAuthorityRows(tx, occurrence);
+  const guarded = await lockGuardedRow();
+  const authority = await morningBriefLocalAuthorityStillCurrent(
+    tx,
+    occurrence,
+  );
+  return { authority, guarded };
+}
+
+/**
  * Whether the local half of an occurrence's authority still holds, right now.
  *
  * It exists because remote evidence and local state expire differently. A
  * caller that already proved the Clerk membership outside a transaction still
- * has to survive a Settings disable, an Agent transfer or a Slack rebinding
+ * has to survive a Settings disable, an Agent deletion or a Slack rebinding
  * that committed while it waited for a lock, and those are all local rows. This
  * re-resolves exactly the installation resolution admission uses and compares
  * it against the occurrence with the shared binding comparator, so there is no
  * second adoption algorithm and no always-allow path. The membership generation
  * is carried over from the occurrence rather than re-resolved: holding a
  * transaction open across a Clerk round trip is never acceptable.
+ *
+ * On its own it is only a read. It describes the instant it ran at, and it is
+ * the lock above — not this comparison — that makes that instant last until the
+ * caller commits, so callers that act on the result go through
+ * `admitMorningBriefLocalAuthority`.
  */
-export async function morningBriefLocalAuthorityStillCurrent(
+async function morningBriefLocalAuthorityStillCurrent(
   db: Pick<ReadonlyDb, "select">,
   occurrence: MorningBriefCollectionOccurrenceRow,
 ): Promise<MorningBriefLocalAuthority> {

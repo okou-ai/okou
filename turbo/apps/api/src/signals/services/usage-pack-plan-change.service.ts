@@ -1,4 +1,4 @@
-import { retireImpactMetadata } from "../../lib/impact-marketing";
+import { retireMarketingMetadata } from "../../lib/marketing-metadata";
 import type { UsagePackDeferredSchedule } from "@okouai/db/jsonb-contracts/usage-pack-deferred-schedule";
 import type {
   MemberUsagePack,
@@ -2619,7 +2619,9 @@ function schedulePhaseItem(
     price,
     quantity,
     ...(discounts.length > 0 ? { discounts } : {}),
-    ...(item.metadata ? { metadata: retireImpactMetadata(item.metadata) } : {}),
+    ...(item.metadata
+      ? { metadata: retireMarketingMetadata(item.metadata) }
+      : {}),
     ...(taxRates.length > 0 ? { tax_rates: taxRates } : {}),
   };
 }
@@ -2749,7 +2751,7 @@ function schedulePhaseParamWithItems(
       : { end_date: args.endDate }),
     ...(phase.currency ? { currency: phase.currency } : {}),
     items: [...args.items],
-    ...(metadata ? { metadata: retireImpactMetadata(metadata) } : {}),
+    ...(metadata ? { metadata: retireMarketingMetadata(metadata) } : {}),
     proration_behavior: phase.proration_behavior ?? "none",
     ...(discounts.length > 0 ? { discounts } : {}),
   };
@@ -2983,7 +2985,7 @@ function restoredUsagePackScheduleParams(
         ],
         ...(phase.metadata || metadataOverlay
           ? {
-              metadata: retireImpactMetadata({
+              metadata: retireMarketingMetadata({
                 ...phase.metadata,
                 ...metadataOverlay,
               }),

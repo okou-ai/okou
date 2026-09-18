@@ -135,6 +135,140 @@ protocol change is required. Previously copied URLs remain valid under their
 existing policy. Owner resolution of an old organization alias continues after
 switching it to Only me; recipients lose access.
 
+#### Hosted-site publication identity
+
+Every hosted-site prepare creates an independent site. `--site` is a preferred
+name: the allocator tries that name first, then adds a four-character hash when
+it is reserved, including by a deleted site. Each publication's deployment ID
+seeds its suffix candidates, so repeated publications do not exhaust one fixed
+set of names. Atomic inserts and the existing unique indexes arbitrate concurrent
+requests; an exhausted bounded retry returns an actionable `409 CONFLICT`.
+
+New rows store the allocated name in `slug`, `publicSlug` and `requestedSlug`,
+while the manifest retains the caller's preferred name. This preserves the
+existing database constraints and keeps each publication addressable by older
+readers. The catalog displays the allocated name; `host versions` and `host clone`
+use the returned site slug to inspect that publication. Historical rows and their
+requested-name reservations stay intact. No database migration or historical data
+rewrite runs here.
+
+Completion retries for the same deployment remain idempotent. Previous URLs,
+content, historical version listings and share policies remain unchanged when
+another publication uses the same preferred name, including across chat scopes.
+Existing authorization checks still govern reads and completion; name allocation
+never adopts an existing site.
+
+Older pinned CLIs can consume the allocated `publicSlug` and URL through the
+unchanged response shape. The CLI retains the legacy `--slug-suffix` request field
+for older API servers; the new API assigns suffixes automatically. Older API
+instances must leave serving and supported rollback targets before no-redeploy
+behavior is universal. Issue
+[#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
+site-version model after preserving existing links and metadata.
+
+New prepares bind each upload URL to its declared SHA-256 through the signed
+`x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
+`Content-Type`; identical-byte retries work, while different bytes fail R2's
+checksum validation. The root `/manifest.json` path is reserved for the server's
+delivery manifest. New database manifests carry `immutableContent: true`, which
+the API copies into its server-issued preview grants. The Worker trusts the grant
+for cache eligibility because old uploads could target `/manifest.json`. Completion of
+older drafts does not add that marker because their outstanding upload URLs
+were not checksum-bound.
+
+The host Worker uses the shared `PRIVATE_ARTIFACT_CACHE_CONTROL` for successful
+private previews of marked deployments and immutable organization snapshots.
+It retains `private, no-store` for unmarked deployments, authorization errors,
+and standalone publication responses that must recheck the current share policy.
+New APIs with older Workers remain conservatively uncached; new Workers with
+older API grants likewise retain `no-store`. The optional manifest field is
+preserved by older completion readers without a schema migration. Immutable
+delivery derives HTTP headers from the manifest, so replayed upload credentials
+cannot change presentation through unsigned object metadata.
+
+Retiring the unmarked-deployment path belongs to #35240: legacy content must
+first become immutable through migration or sealing after its last upload
+credential expires, older writers must leave serving and supported rollback
+targets, and old preview grants must finish their lifetime.
+
+Thread HTML cards, links and attachment viewers reuse the existing preview
+signals as images do. No expiry-driven re-resolution or retry is added. A
+48-hour credential controls new network access; the browser may keep already
+cached bytes for the configured cache lifetime. Iframe remounting still restarts
+the document, and catalog reload behavior is unchanged.
+
+#### CLI artifact content reads
+
+`GET /api/artifact-references/:reference/read` requires `artifact:read` and
+authorizes content using the same owner, current organization membership,
+public publication, revocation, and selected-version rules as the App viewer.
+It returns `{ url, filename, contentType }` for the authorized delivery. The
+existing typed owner resolver and sharing-management endpoints retain their
+owner checks.
+
+The additive `GET /api/artifact-references/:reference/download` uses the same
+`artifact:read` and visibility boundary. It returns either
+`{ kind: "file", url, filename, contentType }` or
+`{ kind: "html", site: HostedSiteFilesResponse }`. The latter includes the full
+authorized deployment manifest and per-file delivery URLs. Shared sites use
+the selected version's immutable snapshot, rather than the owner's latest
+deployment. Standalone HTML uploads remain file downloads.
+Conversation references selecting a non-HTML hosted file also retain their
+single-file bytes and MIME type; HTML/page references return the full site.
+
+`okou artifact download` and `okou web download-file` use the download endpoint
+for short and long artifact references, including same-origin App URLs. For
+sites, `--out` now names a new or empty directory and the JSON result adds
+`fileCount` and `entrypoint` to `{ path, mimetype, size }`; `path` denotes that
+directory and `size` totals all downloaded files. They fetch delivery URLs
+without forwarding the agent token. Raw file IDs and authenticated web download
+URLs keep their existing `file:read` path and output shape.
+
+`okou host clone` uses the additive
+`GET /api/artifact-references/:reference/files` for artifact references. This
+returns `HostedSiteFilesResponse` through the same visibility resolver and
+retains the existing `host:read` capability; it rejects standalone files.
+Hosted URLs and slugs continue to use the existing `host:read` files endpoint,
+whose authorization now follows current site visibility rather than requiring
+ownership. An optional `hostname` query disambiguates public aliases against
+the configured hosted domains. The existing files response remains compatible
+with older clients. Version requests never bypass the selected shared version.
+Public conversation resources follow their live shared-thread policy and
+independent snapshot, including after the original artifact changes.
+Bare canonical slugs preserve owner/latest-version cloning; explicit public
+URLs follow the selected publication, including for owners and after revocation.
+Owner-only management and version-listing endpoints remain unchanged.
+
+Deploy the additive API endpoint before selecting the matching CLI artifact.
+Older pinned CLIs retain their existing download behavior against the new API;
+the existing read endpoint continues to return entry-page delivery metadata.
+The new CLI needs the download endpoint and the existing `artifact:read` capability,
+issued under `privateArtifacts`. No tolerant reader for an older API, new
+capability, database migration, visibility change, or Worker protocol is added.
+Keep the endpoint in serving and supported rollback APIs while runs pinned to
+the new CLI remain active.
+
+#### Generated private artifact delivery hints
+
+Generation results add optional `privateArtifacts` metadata describing the
+storage mode used at creation. New CLIs use it with the requested visibility
+(defaulting to `only-me`) to add delivery guidance for non-public files. Older
+CLIs ignore the metadata; results from older APIs or persisted jobs without it
+retain their previous output. Hosted sites and HTML presentations keep their
+existing link presentation.
+
+Completed generation jobs survive run deletion and have no read-time age cutoff;
+successful batch directories also remain readable. These are existing public
+generation contracts. Requiring the new metadata would need an explicit
+migration or retirement of those retained results, plus compatible serving and
+rollback APIs; draining active runs alone is insufficient.
+
+New run contexts include `OKOU_CURRENT_INTEGRATION` in the existing trusted
+`platformEnvironment` map. Existing Runners already transport this map, so no
+Runner protocol change or database migration is required. Older contexts without
+the key receive a generic private-link notice, with no guessed integration
+command. Existing pinned CLIs ignore the key.
+
 #### Private attachment uploads
 
 CLI artifact output qualifies hostless references with its configured app origin
@@ -165,9 +299,10 @@ retain their original long URL, and no bulk rewrite or database migration runs.
 
 CLI owner resolution adds optional `kind=file|html` to the existing reference
 endpoint. Each mode requires its existing read capability and denies recipient
-access; the browser resolver retains its sharing authorization. Deploy the
-matching API and CLI before relying on short references in clone/download or
-generation-input commands. Existing file IDs and deployment IDs remain valid.
+access; generation inputs, owned-site cloning, and older pinned download
+commands use these modes. Current download commands use the content-read
+endpoint described above. Deploy the matching API and CLI before relying on
+short references. Existing file IDs and deployment IDs remain valid.
 An older API cannot resolve new version-2 indexes; keep capable readers in
 serving and rollback targets once the new writer is enabled.
 
@@ -1944,6 +2079,37 @@ bridge cleanup after every serving source and supported bootstrap target has
 accepted v4 and the deployment/rollback window no longer needs the bridge.
 Historical v3 object and row retention for old binaries remains independent.
 
+### Builtin MCP execution
+
+Builtin MCP uses the current App, CLI and Runner contract directly. There is no
+MCP-specific request-header negotiation, old-client HTTP projection, upgrade
+response or Runner claim capability flag. Agent connector replacement applies
+to the complete submitted list, including MCP grants. The CLI is kept current;
+its package URL does not need to match the serving API commit for MCP admission.
+Custom and builtin MCP use the same typed discovery response.
+
+Queued Runs retain their captured CLI package and exact account mapping.
+Builtin MCP admission requires the Run's Okou token for authenticated MCP
+discovery. None/manual methods are executable; the published Plaud Automatic
+method remains unavailable until its handler lands. The addon honors explicit
+owner intent and never injects another owner's credentials when the requested
+owner is absent, including overlapping builtin/custom destinations.
+
+No-auth builtin and custom MCP requests skip credential validity checks and
+proxy auth resolution, including Automatic custom MCP resolved to no
+authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
+field to cap cached account authorization at 30 seconds from validation; this
+also bounds static-token cache reuse. Discovery immediately removes deleted
+accounts, while subsequent proxy requests may reuse an existing lease until
+expiry. Expiry does not interrupt an in-flight request or stream. After
+resolution, the addon rechecks the current owner before forwarding. No new
+Runner wire field or HTTP/custom cache policy is introduced.
+
+The v3 catalog read bridge and its cleanup under
+[#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.
+This execution change adds no environment variable, release workflow change or
+per-service skill.
+
 ## PostHog CIMD OAuth
 
 PostHog OAuth uses a public client identified by
@@ -2223,51 +2389,54 @@ lease semantics, finite budgets and declared coverage limits.
 
 ## Marketing browser funnel events
 
-The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
-Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
-origin. The owner confirmed this feature has not launched and requested removal
-of `/api/marketing/finish-onboarding` without an alias, with a client force
-upgrade as the supported-client boundary.
+The App sends both onboarding entry and actual Stripe redirect actions to
+`POST /api/events` on the environment-matched Marketing origin
+(`https://www.okou.ai` in production). The owner explicitly requested removing
+the previous onboarding-start and checkout-start receivers without aliases.
+Both repositories must ship the matching event contract as a coordinated
+cutover; a new App against an old Marketing deployment receives a failed event
+request, and an old App against the new receiver uses a retired route. Neither
+combination is supported by this prelaunch change. Event failures never block
+the onboarding or checkout flow and are not retried by the App.
 
-Deploy the Marketing receiver before this App. Verify the production App version
-and commit contain the new callers, then raise `minimumSupportedVersion` in
+Verify the production App version and commit contain the new caller, then raise
+`minimumSupportedVersion` in
 `turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
 in a separate release. Do not guess a version from this PR or raise the floor
 with the first replacement App deployment: production promotes the API first,
-so a refresh could still load an unsupported build. This PR does not activate
-the floor increase before the replacement App is live.
+so a refresh could still load an unsupported build. This PR does not change the
+floor or authorize a production rollout.
 
 The existing App API check prompts old clients to refresh on their next handled
 API request. Direct Marketing requests do not pass through that middleware;
 cached old callers before the floor takes effect are outside this prelaunch
 support boundary. Do not roll the App back below the floor or Marketing back
-behind the new receivers while those App builds are supported.
+behind the unified receiver while those App builds are supported.
 
-Onboarding remains bodyless and preserves the existing
-`marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
-not replay past attempts, including failed attempts. Checkout sends only a fresh
-UUID, its UTC occurrence time and the bounded source `onboarding_video` or
-`paywall`; Marketing derives identity from the bearer token and attribution from
-its own consented cookies. Both requests include credentials, run under the App
-root with a ten-second deadline and never delay navigation for their response.
-There is no periodic check or browser retry.
+`sendEvent$(tag)` sends only `tag` (`onboarding-start` or `checkout-start`) and a
+fresh UUID `eventId`. Marketing derives identity from the bearer token, supplies
+the event timestamp, preserves existing first-touch attribution, and records
+events even without attribution cookies. A recorded event returns 200 with
+`{code: "EVENT_RECORDED"}` when usable attribution is available, otherwise an
+empty 204. Errors return their HTTP status with `{code, error}`. The App does
+not consume the response body or add outcome telemetry.
 
-App-side Marketing diagnostics are retired without changing either request
-contract. Marketing owns these logs and correlates authenticated requests by
-`userId` and `orgId`. The optional `X-Marketing-Request-Id` response header has
-no business consumer: older App builds already accept an absent header, and
-new builds do not read it. Its removal can deploy independently of this App
-cleanup and requires no additional client-version floor.
+Requests include credentials and keepalive and belong to the App root, so
+navigation never waits for them and a session change cancels pending work.
+There is no ten-second deadline, local attempt marker, deferred onboarding
+handoff, retry, or fallback. Each actual POST is preceded by one Axiom
+`marketing.event.send` record with tag, userId, and orgId; `outcome: started`
+means a send attempt, not server acceptance. No browser request ID header is
+introduced. PostHog product and funnel events remain in the App; advertising
+account selection and delivery belong to Marketing.
 
-The new receiver records Google Ads funnel shadows only. Marketing deduplicates
-onboarding by user/org and checkout by user/org/event UUID. These counts differ
-intentionally from the legacy gtag browser-session/account deduplication: another
-checkout action produces another event. A shadow acknowledgement is neither
-proof of eligible consent nor a Google Ads delivery receipt. Existing App gtag
-and PostHog reporting remain active; this change adds no GA4/PostHog sender,
-provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
-matches the existing `RedirectToStripe` producers, excluding previews and other
-payment paths without that producer.
+Marketing deduplicates onboarding by user/org and checkout by user/org/event
+UUID. These counts differ intentionally from the legacy gtag browser-session/
+account deduplication: another checkout action produces another event. A
+successful event response is not a provider delivery receipt. This change
+retains existing provider sending gates, adds no provider activation or replay,
+and leaves checkout coverage at the existing `RedirectToStripe` producers,
+excluding previews and other payment paths without that producer.
 
 ## Morning Brief collection revocation stamp (#34860)
 
@@ -2308,3 +2477,35 @@ schedule, Run, credit, Chat or email behavior, and it does not activate the
 still-unregistered Clerk erasure bridge. It is a local serialization boundary
 for one owner's collection authority; durable membership and materialization
 ownership and global deletion finality remain S7 gates.
+
+## Marketing attribution cutover (#33886)
+
+The App no longer loads gtag, sends Google Ads conversions, looks up an Ads
+account, or polls attribution milestones. Marketing owns the unified business
+events and provider delivery. The API removes the old signup, account and
+milestone attribution routes without aliases, as explicitly requested for this
+prelaunch cutover. Existing pages may lose those retired telemetry calls during
+the API-before-App promotion window; the replacement App removes their callers.
+
+Billing remains operational across that window. Checkout request schemas use
+Zod's default unknown-key stripping, so an older App's extra `adAttribution` is
+ignored rather than rejecting a purchase. The removed `googleAdsConversion`
+response property was optional in the preceding App contract. Both Apps still
+use `completed` and the original purchase response statuses. The retained
+`completePaidCheckout$` polls actual payment reconciliation before continuing
+onboarding or showing billing success. No payment endpoint or fulfillment is
+removed.
+
+The API stops writing Clerk signup attribution and org acquisition columns and
+stops attaching acquisition snapshots to new Stripe billing objects. New
+customers keep `orgId`; sessions and subscriptions retain financial identity,
+tier, price, purchase timestamps and preview routing. Existing metadata copied
+through plan or schedule changes is filtered to avoid reintroducing marketing
+fields, including old privacy receipts; Marketing retains authoritative
+withdrawal state. Historical rows and external objects are not erased in this
+change.
+
+Coordinate the Marketing single-sender cutover with this App/API deployment.
+Verify the replacement App is live before setting a later client floor; an
+already-open old bundle can otherwise continue sending browser conversions.
+This PR does not select a floor or change production provider settings.

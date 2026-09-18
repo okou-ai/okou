@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import chalk from "chalk";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import {
@@ -366,6 +367,50 @@ describe("okou generate lister", () => {
     );
   });
 
+  it.each([
+    { type: "image", tool: "image-generation", provider: "fal" },
+    { type: "video", tool: "video-generation", provider: "fal" },
+    { type: "voice", tool: "voice-generation", provider: "elevenlabs" },
+    {
+      type: "avatar-video",
+      tool: "avatar-video-generation",
+      provider: "joggai",
+    },
+  ])(
+    "explains disabled built-in $type while retaining a ready connector",
+    async ({ type, tool, provider }) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
+      server.use(
+        ...stubRunConnectors(contextPath, [connector(provider)]),
+        stubUserConnectors([provider]),
+      );
+
+      await generateCommand.parseAsync(["node", "cli", type]);
+
+      expect(output()).toContain(
+        `Paid tool "${tool}" is disabled for this run.`,
+      );
+      expect(output()).toContain("http://localhost:3000/?settings=paid-tools");
+      expect(output()).toContain(`@${provider}-user`);
+      expect(output()).not.toContain("Available on the current plan");
+      expect(mockConsoleError).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps provider discovery available with invalid policy", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, "invalid");
+    server.use(
+      ...stubRunConnectors(contextPath, [connector("fal")]),
+      stubUserConnectors(["fal"]),
+    );
+
+    await generateCommand.parseAsync(["node", "cli", "image"]);
+
+    expect(output()).toContain("Paid tool configuration is invalid");
+    expect(output()).toContain("@fal-user");
+    expect(mockConsoleError).not.toHaveBeenCalled();
+  });
+
   it("shows not-ready candidates and action links with --all", async () => {
     let defaultStatusRequests = 0;
     server.use(
@@ -473,6 +518,7 @@ describe("okou generate lister", () => {
   });
 
   it("prints connector guidance from the public catalog when --provider supports the generation type", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["image-generation"]');
     server.use(
       stubConnectorCatalog([
         catalogItem({

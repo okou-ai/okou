@@ -68,6 +68,7 @@ import {
 import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
 import { apiRunsHandlers } from "./api-runs.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
+import { apiPaidToolsHandlers, resetMockPaidTools } from "./api-paid-tools.ts";
 import { apiGetStartedHandlers } from "./api-get-started.ts";
 import { apiRealtimeHandlers } from "./api-realtime.ts";
 import { resetAblySubscriptions } from "../ably.ts";
@@ -92,7 +93,7 @@ import {
   resetMockOnboardingStatus,
 } from "./api-onboarding.ts";
 import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
-import { apiAttributionHandlers } from "./api-attribution.ts";
+import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
 import { resetMockWorkflowAutomations } from "./workflow-automations-store.ts";
 import { apiQueuePositionHandlers } from "./api-queue-position.ts";
 import {
@@ -110,6 +111,7 @@ import { localeResourceHandlers } from "./locale-resources.ts";
 import { clerkLocalizationHandlers } from "./clerk-localizations.ts";
 
 export const handlers = [
+  ...apiMarketingEventsHandlers,
   ...clerkLocalizationHandlers,
   ...localeResourceHandlers,
   ...apiBuildInfoHandlers,
@@ -133,12 +135,12 @@ export const handlers = [
   ...apiWorkflowsHandlers,
   ...apiRunsHandlers,
   ...apiUserPreferencesHandlers,
+  ...apiPaidToolsHandlers,
   ...apiMorningBriefPreferenceHandlers,
   ...apiEmailSubscriptionHandlers,
   ...apiUserModelPreferenceHandlers,
   ...apiOnboardingHandlers,
   ...apiBillingHandlers,
-  ...apiAttributionHandlers,
   ...apiIntegrationsSlackConnectHandlers,
   ...apiFeatureSwitchesHandlers,
   ...apiGetStartedHandlers,
@@ -157,6 +159,7 @@ export function resetAllMockHandlers(): void {
   resetMockAgentPhoneIntegration();
   resetMockGithubIntegration();
   resetMockUserPreferences();
+  resetMockPaidTools();
   resetMockMorningBriefPreference();
   resetMockEmailSubscription();
   resetMockUserModelPreference();

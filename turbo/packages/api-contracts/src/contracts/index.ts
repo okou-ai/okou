@@ -47,6 +47,22 @@ export {
   type ChatRunFoldState,
 } from "./chat-events";
 export {
+  groupSemanticChatEvents,
+  isFollowupsEvent,
+  isGoalMarkerEvent,
+  isGoalQueueEvent,
+  isInterruptControlEvent,
+  isInterruptedAssistantCancellation,
+  isQueueMarkerEvent,
+  isRecallControlEvent,
+  isUsageEvent,
+  semanticChatEventsFromChatEvents,
+  type SemanticChatEventGroup,
+  type SemanticChatEventState,
+  type SemanticChatGroups,
+  orderSemanticEventsByRunTurn,
+} from "./chat-event-semantics";
+export {
   ACTIONABLE_RUN_ERROR_SNIPPETS,
   apiErrorSchema,
   ApiError,
@@ -1305,11 +1321,7 @@ export {
 } from "./github-oauth";
 export {
   adAttributionMetadataSchema,
-  acquisitionAttributionContract,
   type AdAttributionMetadata,
-  type RecordSignupAttributionRequest,
-  type RecordSignupAttributionResponse,
-  type AcquisitionAttributionContract,
 } from "./acquisition-attribution";
 export {
   billingStatusContract,

@@ -166,14 +166,13 @@ describe("shared SDK ingestion", () => {
       session_history_source_bytes: 0,
       session_history_guest_bytes: 0,
     };
-    const transfer = {
+    const transferMeasurements = {
       ...operation,
       action_type: "session_history_transfer",
       session_history_framework: "codex",
       session_history_restore_representation: "raw",
       session_history_transfer_source: "workspace_cache",
       session_history_wire_codec: "zstd",
-      session_history_codec_reason: "sample_accepted",
       session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
       session_history_wire_bytes: 1024,
       session_history_write_requests: 9,
@@ -183,6 +182,14 @@ describe("shared SDK ingestion", () => {
       session_history_encoder_pipeline_ms: 1000,
       session_history_publication_ms: 0,
     } as const;
+    const transfer = {
+      ...transferMeasurements,
+      session_history_codec_decision: "above_threshold",
+    } as const;
+    const legacyTransfer = {
+      ...transferMeasurements,
+      session_history_codec_reason: "sample_accepted",
+    } as const;
     const emptyTransfer = {
       ...transfer,
       session_history_transfer_source: "inline",
@@ -190,7 +197,15 @@ describe("shared SDK ingestion", () => {
       session_history_wire_bytes: 0,
       session_history_write_requests: 1,
       session_history_wire_codec: "none",
-      session_history_codec_reason: "below_threshold",
+      session_history_codec_decision: "below_threshold",
+      session_history_encoder_pipeline_ms: 0,
+    } as const;
+    const nativeZstdTransfer = {
+      ...transfer,
+      session_history_restore_representation: "codex_zstd",
+      session_history_wire_codec: "none",
+      session_history_codec_decision: "native_zstd",
+      session_history_wire_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
       session_history_encoder_pipeline_ms: 0,
     } as const;
     const failedTransfer = {
@@ -220,7 +235,9 @@ describe("shared SDK ingestion", () => {
             { ...operation, ...zero },
             { ...operation, action_type: "legacy_operation" },
             transfer,
+            legacyTransfer,
             emptyTransfer,
+            nativeZstdTransfer,
             failedTransfer,
             largeInlineTransfer,
           ],
@@ -256,7 +273,9 @@ describe("shared SDK ingestion", () => {
     }
     for (const { ts: transferTime, action_type: opType, ...fields } of [
       transfer,
+      legacyTransfer,
       emptyTransfer,
+      nativeZstdTransfer,
       failedTransfer,
       largeInlineTransfer,
     ]) {

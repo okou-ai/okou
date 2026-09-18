@@ -113,8 +113,8 @@ CACHE_TMP_TAR=""
 
 # Pinned versions (changes here invalidate the template cache via script hash)
 GO_VERSION="1.27.1"
-CLAUDE_CODE_VERSION="2.1.274"
-CODEX_CLI_VERSION="0.154.0"
+CLAUDE_CODE_VERSION="2.1.276"
+CODEX_CLI_VERSION="0.155.0"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.1"
 AGENT_BROWSER_VERSION="0.33.0-vm0.1"
@@ -356,7 +356,7 @@ install_packages() {
     fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
     libnss3 p11-kit-modules tzdata-legacy unzip \
     nodejs \
-    python3 python3-pip \
+    python3 python3-pip python3-venv \
     ruby-full bundler \
     php php-cli php-common php-curl php-mbstring php-xml php-zip \
     default-jdk maven gradle \

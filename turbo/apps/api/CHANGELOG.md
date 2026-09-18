@@ -8,6 +8,163 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.634.0](https://github.com/vm0-ai/okou/compare/api-v1.633.0...api-v1.634.0) (2026-09-18)
+
+
+### Features
+
+* **api:** drive native morning briefs through durable ownership, scheduling, and rollback ([#34887](https://github.com/vm0-ai/okou/issues/34887)) ([505ab56](https://github.com/vm0-ai/okou/commit/505ab568051d80dcbc92682909514073014122f4))
+
+
+### Bug Fixes
+
+* **api:** bound unread chat database work by remaining budget ([#35172](https://github.com/vm0-ai/okou/issues/35172)) ([8c4518a](https://github.com/vm0-ai/okou/commit/8c4518abebe68db551249e957214e2c201f462da))
+* **api:** own authorization fixture failure cleanup ([#35263](https://github.com/vm0-ai/okou/issues/35263)) ([e42de4a](https://github.com/vm0-ai/okou/commit/e42de4ae73fc6493fa75cb08cbaaadef8ae5c5da))
+* **billing:** discard zero-quantity usage events ([#35260](https://github.com/vm0-ai/okou/issues/35260)) ([8e2ee68](https://github.com/vm0-ai/okou/commit/8e2ee686f9f3b5236f6f603cb0121aea94dd94e6))
+
+
+### Refactoring
+
+* remove the model picker flyout feature switch ([#35191](https://github.com/vm0-ai/okou/issues/35191)) ([4ef1c13](https://github.com/vm0-ai/okou/commit/4ef1c138fd7a337026383435491707e0392adeed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.471.0
+    * @okouai/core bumped to 8.681.1
+    * @okouai/db bumped to 1.275.0
+    * @okouai/pi-agent-runtime bumped to 1.33.18
+
+## [1.633.0](https://github.com/vm0-ai/okou/compare/api-v1.632.1...api-v1.633.0) (2026-09-18)
+
+
+### Features
+
+* **app:** retire legacy advertising and attribution storage ([#35246](https://github.com/vm0-ai/okou/issues/35246)) ([4a9ca58](https://github.com/vm0-ai/okou/commit/4a9ca58c930903cb1fbf5cccf6c67d95610bc9c6))
+* **templates:** add the illustration kind to custom templates ([#35248](https://github.com/vm0-ai/okou/issues/35248)) ([ebd7039](https://github.com/vm0-ai/okou/commit/ebd70395f808ff7bd21ddc453789c76d712d7fe6))
+
+
+### Refactoring
+
+* remove effort feature switch ([#35189](https://github.com/vm0-ai/okou/issues/35189)) ([9b0dff2](https://github.com/vm0-ai/okou/commit/9b0dff2c1cc1c4f8a2a10d4cbfb7fea263585bfe))
+
+
+### Performance Improvements
+
+* **api:** reduce subscription snapshot database round trips ([#35251](https://github.com/vm0-ai/okou/issues/35251)) ([3040eca](https://github.com/vm0-ai/okou/commit/3040ecaaf163464635af9faf44683718004ff95d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.470.0
+    * @okouai/core bumped to 8.681.0
+    * @okouai/db bumped to 1.274.0
+    * @okouai/pi-agent-runtime bumped to 1.33.17
+
+## [1.632.1](https://github.com/vm0-ai/okou/compare/api-v1.632.0...api-v1.632.1) (2026-09-18)
+
+
+### Bug Fixes
+
+* **api:** remove redundant run output advisory lock ([#35239](https://github.com/vm0-ai/okou/issues/35239)) ([e379489](https://github.com/vm0-ai/okou/commit/e379489060f8c1a91ec6f47e4c79aba79a5ef9b0))
+* download complete sites with visibility-aware cloning ([#35220](https://github.com/vm0-ai/okou/issues/35220)) ([1707f8b](https://github.com/vm0-ai/okou/commit/1707f8b786945a00deb1da9597ba2ab4a3488b71))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.1
+    * @okouai/core bumped to 8.680.6
+    * @okouai/db bumped to 1.273.2
+    * @okouai/pi-agent-runtime bumped to 1.33.16
+
+## [1.632.0](https://github.com/vm0-ai/okou/compare/api-v1.631.0...api-v1.632.0) (2026-09-18)
+
+
+### Features
+
+* **api:** add canonical mcp message search ([#35207](https://github.com/vm0-ai/okou/issues/35207)) ([e2731e0](https://github.com/vm0-ai/okou/commit/e2731e0d28ad5e80604efb0b149a37d2dd697bd3))
+
+
+### Bug Fixes
+
+* resolve shared thread artifacts through full app references ([#35206](https://github.com/vm0-ai/okou/issues/35206)) ([afe3553](https://github.com/vm0-ai/okou/commit/afe355360b5c12e71446f3358fdf61f21f776de7))
+
+
+### Refactoring
+
+* remove custom connector mcp feature switch ([#35202](https://github.com/vm0-ai/okou/issues/35202)) ([2a24579](https://github.com/vm0-ai/okou/commit/2a24579fecd98b9933a2c75589d4502e7af0a298))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.0
+    * @okouai/core bumped to 8.680.5
+    * @okouai/db bumped to 1.273.1
+    * @okouai/pi-agent-runtime bumped to 1.33.15
+
+## [1.631.0](https://github.com/vm0-ai/okou/compare/api-v1.630.0...api-v1.631.0) (2026-09-18)
+
+
+### Features
+
+* **api:** journal legacy morning brief schedule claims and settle once ([#34857](https://github.com/vm0-ai/okou/issues/34857)) ([3710eeb](https://github.com/vm0-ai/okou/commit/3710eeb2d27ec1fb1110f17adce845cdeeab489a))
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+
+### Bug Fixes
+
+* **api:** bound calendar envelope identity and coverage ([#35163](https://github.com/vm0-ai/okou/issues/35163)) ([6bcb0d3](https://github.com/vm0-ai/okou/commit/6bcb0d32fe4e0fd81676ee14304a493e8ea764ea))
+* **api:** revalidate complete morning brief source set ([#35184](https://github.com/vm0-ai/okou/issues/35184)) ([d473d0d](https://github.com/vm0-ai/okou/commit/d473d0d290f3a6c121614ee0e51ef2995e6b660e))
+* **platform:** refresh native delivery read state ([#35179](https://github.com/vm0-ai/okou/issues/35179)) ([09999f9](https://github.com/vm0-ai/okou/commit/09999f93b4aab05b3f247a37b0602ee05ecb6dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.468.0
+    * @okouai/connectors bumped to 3.13.0
+    * @okouai/core bumped to 8.680.4
+    * @okouai/db bumped to 1.273.0
+    * @okouai/pi-agent-runtime bumped to 1.33.14
+
+## [1.630.0](https://github.com/vm0-ai/okou/compare/api-v1.629.0...api-v1.630.0) (2026-09-18)
+
+
+### Features
+
+* add vnc agent authorization and native sharing modes ([#35143](https://github.com/vm0-ai/okou/issues/35143)) ([381535e](https://github.com/vm0-ai/okou/commit/381535e0cd7879c6859f20312dfcdf9419252b9f))
+
+
+### Bug Fixes
+
+* **api:** align native email claim lock order ([#35174](https://github.com/vm0-ai/okou/issues/35174)) ([0060d40](https://github.com/vm0-ai/okou/commit/0060d4060418bc21b6198dc458d258a620cbcb30))
+* **api:** clarify private artifact download guidance ([#35151](https://github.com/vm0-ai/okou/issues/35151)) ([8189d0c](https://github.com/vm0-ai/okou/commit/8189d0c4f5928a82c87ee58fb1351f87bb3c1e5d))
+* **api:** keep native email siblings progressing ([#35160](https://github.com/vm0-ai/okou/issues/35160)) ([d9c0684](https://github.com/vm0-ai/okou/commit/d9c0684816b6e7a5a6ceb09f60b42789a5a94c50))
+* **api:** preserve morning brief source facts and bounded allocation ([#35064](https://github.com/vm0-ai/okou/issues/35064)) ([eb6317d](https://github.com/vm0-ai/okou/commit/eb6317d7dbdd4ba536251770caa212d0bcbb615e))
+* **api:** revalidate complete morning brief binding ([#35168](https://github.com/vm0-ai/okou/issues/35168)) ([c92b6dd](https://github.com/vm0-ai/okou/commit/c92b6dd710788056d23ea802b2591573eb234469))
+* **api:** validate github check-run lifecycle ([#35161](https://github.com/vm0-ai/okou/issues/35161)) ([e308b65](https://github.com/vm0-ai/okou/commit/e308b6523af131d3277781b89415346aeef4b02f))
+* honor artifact sharing permissions in cli downloads ([#35162](https://github.com/vm0-ai/okou/issues/35162)) ([5bbdb8a](https://github.com/vm0-ai/okou/commit/5bbdb8a2220c110497afe59ff25d8a18e45896e0))
+* use the refreshed quick start deck in welcome threads ([#35181](https://github.com/vm0-ai/okou/issues/35181)) ([9065172](https://github.com/vm0-ai/okou/commit/9065172e555179e161d907cd9af4a6cc5e4feff0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.467.0
+    * @okouai/core bumped to 8.680.3
+    * @okouai/db bumped to 1.272.0
+    * @okouai/pi-agent-runtime bumped to 1.33.13
+
 ## [1.629.0](https://github.com/vm0-ai/okou/compare/api-v1.628.0...api-v1.629.0) (2026-09-18)
 
 
