@@ -339,42 +339,44 @@ const runDeliveryRecoveryPass$ = command(
         // mutation boundary rather than widening a malformed obligation.
         continue;
       }
-      const closed = await db.transaction(async (tx) => {
+      const closure = await db.transaction(async (tx) => {
         // S6 holds this same row until its delivery receipt commits. Take it
         // before the final receipt read so a delivery that was in flight during
         // `resolve` wins over that pre-wait snapshot.
         if ((await lockMorningBriefNativeSchedule(tx, owner)) === undefined) {
-          return "absent" as const;
+          return {
+            status: "absent" as const,
+            effectiveOutcome: resolution.outcome,
+          };
         }
         const receiptCommitted = await deps.delivery.hasCommittedReceipt(
           tx,
           owner,
           occurrence,
         );
-        return await closeRecoveredMorningBriefDelivery(tx, owner, {
+        const effectiveOutcome = receiptCommitted
+          ? "delivered"
+          : resolution.outcome;
+        const status = await closeRecoveredMorningBriefDelivery(tx, owner, {
           scheduledFor: occurrence.scheduledFor,
           expectedEpoch: occurrence.ownerEpoch,
           expectedGenerationAttemptId: generationAttemptId,
           leaseToken: occurrence.leaseToken,
           // A slot that bound its attempt but crashed before its own settlement
           // still owes that settlement; one already settled only owes the clear.
-          settleAs:
-            occurrence.settledAt !== null
-              ? null
-              : receiptCommitted
-                ? "delivered"
-                : resolution.outcome,
+          settleAs: occurrence.settledAt === null ? effectiveOutcome : null,
           at: nowDate(),
         });
+        return { status, effectiveOutcome };
       });
       signal.throwIfAborted();
-      if (closed !== "closed") {
+      if (closure.status !== "closed") {
         // Reclaimed or revoked between the receipt read and this mutation. The
         // new owner keeps its own obligation; nothing is cleared behind it.
         continue;
       }
       counters.deliveriesRecovered += 1;
-      if (resolution.outcome === "generation-unknown") {
+      if (closure.effectiveOutcome === "generation-unknown") {
         log.warn("Morning Brief generation recovery resolved unknown", {
           orgId: occurrence.orgId,
           scheduledFor: occurrence.scheduledFor.toISOString(),
