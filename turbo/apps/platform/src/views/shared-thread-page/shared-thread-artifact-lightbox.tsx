@@ -7,7 +7,14 @@ import {
 } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Copy, Download, Loader2, Maximize2, Minimize2, X } from "lucide-react";
+import {
+  Download,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Share2,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -153,7 +160,7 @@ function SharedThreadArtifactActions({
           detach(copyLink(pageSignal), Reason.DomCallback);
         }}
       >
-        <Copy size={18} />
+        <Share2 size={18} />
       </Button>
       <Button
         variant="quiet"
