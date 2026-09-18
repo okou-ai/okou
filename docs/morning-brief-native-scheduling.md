@@ -192,8 +192,8 @@ Rollback restores legacy from the **current** logical preference, timezone and
 cron, and the next future unconsumed slot — never an old S3a copy and never the
 original enabled bit. If Official reconciliation has temporarily paused, removed
 or superseded the retained automation, rollback stays `rollback-draining` with
-`legacy-target-not-ready`; it transfers only after a locked `current` row carries
-the same intended/enabled choice. Occurrence rows are not deleted on revocation:
+`legacy-target-not-ready`; it transfers only after locking a `current` row, then
+writes that row from the durable current choice. Occurrence rows are not deleted on revocation:
 content-free deduplication and drain facts must outlive content retention.
 
 ## The cron

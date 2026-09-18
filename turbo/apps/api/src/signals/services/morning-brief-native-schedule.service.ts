@@ -1619,8 +1619,6 @@ async function restoreReconciledLegacyMorningBriefAdmission(
 ): Promise<boolean> {
   const [legacy] = await tx
     .select({
-      enabled: workflowAutomations.enabled,
-      intendedEnabled: workflowAutomations.officialIntendedEnabled,
       kind: workflowAutomations.kind,
       blueprintKey: workflowAutomations.officialBlueprintKey,
       reconciliationStatus: workflowAutomations.officialReconciliationStatus,
@@ -1639,25 +1637,24 @@ async function restoreReconciledLegacyMorningBriefAdmission(
     legacy === undefined ||
     legacy.kind !== "schedule" ||
     legacy.blueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
-    legacy.reconciliationStatus !== "current" ||
-    legacy.intendedEnabled !== schedule.enabled ||
-    legacy.enabled !== schedule.enabled
+    legacy.reconciliationStatus !== "current"
   ) {
     return false;
   }
   const [restored] = await tx
     .update(workflowAutomations)
     .set({
+      enabled: schedule.enabled,
+      officialIntendedEnabled: schedule.enabled,
       cronExpression: schedule.cronExpression,
       timezone: schedule.timezone,
       nextRunAt: args.nextRunAt,
+      ...(schedule.enabled ? { consecutiveFailures: 0 } : {}),
       updatedAt: args.at,
     })
     .where(
       and(
         eq(workflowAutomations.id, automationId),
-        eq(workflowAutomations.enabled, schedule.enabled),
-        eq(workflowAutomations.officialIntendedEnabled, schedule.enabled),
         eq(workflowAutomations.officialReconciliationStatus, "current"),
       ),
     )
