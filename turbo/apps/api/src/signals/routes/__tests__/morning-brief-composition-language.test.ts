@@ -950,7 +950,20 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
 
       const body = await compose(member, new Date(base).toISOString());
 
-      expect(body).toStrictEqual(timedOutExpectation());
+      expect(body).toStrictEqual({
+        result: "incomplete",
+        reason: "deadline-exceeded",
+        detail: `language context reached ${new Date(
+          base + COLLECTION_PHASE_MS,
+        ).toISOString()}`,
+        sources: expect.arrayContaining([
+          expect.objectContaining({
+            source: "chat",
+            coverage: "complete",
+            items: 1,
+          }),
+        ]),
+      });
       expect(archiveReads(storage)).toStrictEqual([]);
     });
 
