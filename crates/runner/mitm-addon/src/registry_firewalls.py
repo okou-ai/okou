@@ -108,6 +108,32 @@ def _connector_runtime_target_ids(sandbox: dict) -> tuple[set[str], set[str]]:
     return builtin_slugs, custom_connector_ids
 
 
+def _registered_inline_builtin_name(entry: dict, builtin_slugs: set[str]) -> str | None:
+    if entry.get("kind") != "inline" or entry.get("customConnectorId") is not None:
+        return None
+    firewall = entry.get("firewall")
+    if not isinstance(firewall, dict):
+        return None
+    name = firewall.get("name")
+    return name if isinstance(name, str) and name in builtin_slugs else None
+
+
+def has_builtin_catalog_dependency(sandbox: dict) -> bool:
+    """Include account-dependent inline builtins in catalog snapshot ownership."""
+    entries = sandbox.get("firewalls")
+    if not isinstance(entries, list):
+        return False
+    builtin_slugs, _ = _connector_runtime_target_ids(sandbox)
+    return any(
+        isinstance(entry, dict)
+        and (
+            entry.get("kind") == "builtin"
+            or _registered_inline_builtin_name(entry, builtin_slugs) is not None
+        )
+        for entry in entries
+    )
+
+
 @dataclass(frozen=True)
 class ResolvedFirewallEntries:
     """Resolved registry firewall configs and aligned builtin cache keys.
@@ -120,7 +146,7 @@ class ResolvedFirewallEntries:
     with them: `builtin_cache_keys[i]` describes `firewalls[i]`. A per-entry
     cache key of `None` means that firewall came from an inline entry and must
     bypass builtin compiled-core cache reuse. `omitted_builtin_names` records
-    compact builtin references absent from the otherwise valid current catalog.
+    named or registered inline builtins absent from the valid current catalog.
     """
 
     firewalls: list[dict] | None
@@ -317,7 +343,9 @@ def resolve_firewall_entries(
     registry pass cannot mix catalog versions.
 
     Inline firewalls are deep-copied, must contain a list-valued `apis` field,
-    and receive per-entry `None` builtin cache keys. Builtin catalog API IDs are
+    and receive per-entry `None` builtin cache keys. Registered builtin inline
+    entries retain their account-specific auth but require catalog membership.
+    Builtin catalog API IDs are
     discarded during expansion, so builtin APIs receive generated run-scoped
     IDs. Inline APIs preserve an existing non-empty string ID; absent, empty, or
     non-string IDs are generated. Generated IDs use `<runId>:<index>`, where the
@@ -424,10 +452,17 @@ def resolve_firewall_entries(
                 for api in raw_apis:
                     if isinstance(api, dict):
                         api["customConnectorId"] = custom_connector_id
-            elif (
-                isinstance(resolved_firewall.get("name"), str)
-                and resolved_firewall["name"] in builtin_target_slugs
-            ):
+            elif builtin_name := _registered_inline_builtin_name(entry, builtin_target_slugs):
+                if builtin_firewall_catalog_snapshot is None:
+                    builtin_firewall_catalog_snapshot = load_catalog_snapshot(
+                        builtin_firewall_catalog_cache_path
+                    )
+                if (
+                    _catalog_source_for_name(builtin_name, builtin_firewall_catalog_snapshot)
+                    is None
+                ):
+                    omitted_builtin_names.add(builtin_name)
+                    continue
                 connector_runtime_metadata.mark_connector_runtime_kind(resolved_firewall, "builtin")
             resolved.append(resolved_firewall)
             builtin_cache_keys.append(None)

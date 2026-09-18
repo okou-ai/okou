@@ -18,8 +18,11 @@ from tests.registry_helpers import inline_sandbox, write_multi_sandbox_registry
 
 class TestRegistryInlineFirewalls:
     @pytest.mark.parametrize("oauth", [False, True])
-    def test_registered_inline_builtin_preserves_account_and_auth_type(self, tmp_path, oauth):
+    def test_registered_inline_builtin_preserves_account_and_auth_type(
+        self, tmp_path, mitm_ctx, oauth
+    ):
         path = tmp_path / "registry.json"
+        cache_path = tmp_path / "catalog.json"
         source_id = "550e8400-e29b-41d4-a716-446655440001"
         sandbox = inline_sandbox("run-automatic")
         entry = sandbox["firewalls"][0]
@@ -34,8 +37,15 @@ class TestRegistryInlineFirewalls:
         sandbox["connectorRuntimeTargets"] = [{"kind": "builtin", "connectorSlug": "automatic-mcp"}]
         sandbox["connectorRoutingVariables"] = {"builtin:automatic-mcp": {}}
         write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
+        write_catalog_cache(
+            cache_path,
+            digest="sha256:" + "a" * 64,
+            version="catalog-a",
+            firewalls={"automatic-mcp": cache_firewall("automatic-mcp", "https://api.example.com")},
+        )
 
-        context = registry.get_sandbox_context("10.200.0.1", str(path))
+        with mitm_ctx(builtin_firewall_catalog_cache_path=str(cache_path)):
+            context = registry.get_sandbox_context("10.200.0.1", str(path))
 
         assert context is not None
         sandbox_info, compiled_firewalls, policies = context
@@ -88,12 +98,20 @@ class TestRegistryInlineFirewalls:
         assert first_result.api_entry is first_sandbox_info["firewalls"][0]["apis"][0]
         assert second_result.api_entry is second_sandbox_info["firewalls"][0]["apis"][0]
 
-    def test_inline_only_registry_ignores_catalog_cache_changes(self, tmp_path, mitm_ctx):
+    @pytest.mark.parametrize("custom", [False, True])
+    def test_inline_only_registry_ignores_catalog_cache_changes(self, tmp_path, mitm_ctx, custom):
         registry_path = tmp_path / "registry.json"
         cache_path = tmp_path / "builtin-firewall-catalog-cache.json"
+        sandbox = inline_sandbox("run-inline")
+        if custom:
+            custom_id = "550e8400-e29b-41d4-a716-446655440000"
+            sandbox["firewalls"][0]["customConnectorId"] = custom_id
+            sandbox["connectorRuntimeTargets"] = [
+                {"kind": "custom", "customConnectorId": custom_id}
+            ]
         write_multi_sandbox_registry(
             registry_path,
-            {"10.200.0.1": inline_sandbox("run-inline")},
+            {"10.200.0.1": sandbox},
         )
         write_catalog_cache(
             cache_path,

@@ -112,6 +112,10 @@ Run receives an account-specific inline firewall; runtime sync updates it when
 the same account is reconnected between OAuth and no-auth. Switching to an
 explicit no-auth or manual method also replaces the previous Automatic firewall
 with the current catalog configuration, preserving the exact account binding.
+Accepted catalog changes wake affected builtin MCP Runs to refresh their endpoint
+and auth template. The proxy also treats builtin-owned inline firewalls as catalog
+consumers: removing their catalog entry removes that owner from request matching,
+without selecting another connector's credentials at the same destination.
 
 The existing auth-method discovery switch `plaudConnector` defaults off and
 controls only `plaud-mcp / automatic`. It does not gate existing account
