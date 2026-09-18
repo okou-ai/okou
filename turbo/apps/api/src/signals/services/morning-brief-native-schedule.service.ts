@@ -202,7 +202,7 @@ async function replaceMorningBriefMembershipGeneration(
     timezone: args.installed.automation.timezone,
     from: args.at,
   });
-  await restoreLegacyMorningBriefAdmission(
+  await restoreLegacyMorningBriefObligation(
     tx,
     args.installed.automation.id,
     nextRunAt,
@@ -835,14 +835,27 @@ async function commitTransfer(
     timezone: current.timezone,
     from: args.at,
   });
-  if (current.legacyAutomationId !== null) {
-    // Exactly one owner holds the successor after this commits: legacy gets the
-    // instant back only when legacy is the destination.
-    await restoreLegacyMorningBriefAdmission(
-      args.tx,
-      current.legacyAutomationId,
-      to === "legacy" ? nextRunAt : null,
-    );
+  if (to === "legacy") {
+    const restored =
+      current.legacyAutomationId !== null &&
+      (await restoreReconciledLegacyMorningBriefAdmission(
+        args.tx,
+        current,
+        current.legacyAutomationId,
+        { nextRunAt, at: args.at },
+      ));
+    if (!restored) {
+      const reason = "legacy-target-not-ready";
+      const [held] = await settled(current.phase, {
+        drainUnresolvedReason: reason,
+      });
+      return held === undefined
+        ? { kind: "absent" }
+        : { kind: "held", row: held, reason };
+    }
+  } else if (current.legacyAutomationId !== null) {
+    // Native receives the successor only after legacy admission is closed.
+    await closeLegacyMorningBriefAdmission(args.tx, current.legacyAutomationId);
   }
   const [row] = await settled(to, {
     ownerEpoch: current.ownerEpoch + 1,
@@ -1586,7 +1599,7 @@ async function closeLegacyMorningBriefAdmission(
  * It writes the same instant the native row records, so exactly one owner holds
  * the member's next occurrence after the transaction commits.
  */
-async function restoreLegacyMorningBriefAdmission(
+async function restoreLegacyMorningBriefObligation(
   tx: MorningBriefNativeWriter,
   automationId: string,
   nextRunAt: Date | null,
@@ -1595,6 +1608,58 @@ async function restoreLegacyMorningBriefAdmission(
     .update(workflowAutomations)
     .set({ nextRunAt })
     .where(eq(workflowAutomations.id, automationId));
+}
+
+/** Restore rollback only into a reconciled row carrying the current choice. */
+async function restoreReconciledLegacyMorningBriefAdmission(
+  tx: MorningBriefNativeWriter,
+  schedule: MorningBriefNativeScheduleRow,
+  automationId: string,
+  args: { readonly nextRunAt: Date | null; readonly at: Date },
+): Promise<boolean> {
+  const [legacy] = await tx
+    .select({
+      kind: workflowAutomations.kind,
+      blueprintKey: workflowAutomations.officialBlueprintKey,
+      reconciliationStatus: workflowAutomations.officialReconciliationStatus,
+    })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.id, automationId),
+        eq(workflowAutomations.orgId, schedule.orgId),
+        eq(workflowAutomations.ownerUserId, schedule.userId),
+      ),
+    )
+    .for("update")
+    .limit(1);
+  if (
+    legacy === undefined ||
+    legacy.kind !== "schedule" ||
+    legacy.blueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    legacy.reconciliationStatus !== "current"
+  ) {
+    return false;
+  }
+  const [restored] = await tx
+    .update(workflowAutomations)
+    .set({
+      enabled: schedule.enabled,
+      officialIntendedEnabled: schedule.enabled,
+      cronExpression: schedule.cronExpression,
+      timezone: schedule.timezone,
+      nextRunAt: args.nextRunAt,
+      ...(schedule.enabled ? { consecutiveFailures: 0 } : {}),
+      updatedAt: args.at,
+    })
+    .where(
+      and(
+        eq(workflowAutomations.id, automationId),
+        eq(workflowAutomations.officialReconciliationStatus, "current"),
+      ),
+    )
+    .returning({ id: workflowAutomations.id });
+  return restored !== undefined;
 }
 
 /**

@@ -12,9 +12,16 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import {
+  bindMorningBriefThreadFixture,
+  seedOrdinaryChatThreadFixture$,
+} from "../../../test-fixtures/morning-brief-chat-collection";
 import { seedInstalledMorningBrief } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
-import { drainEmailOutbox } from "../../../test-fixtures/morning-brief-delivery";
+import {
+  drainEmailOutbox,
+  readEmailOutboxRow,
+} from "../../../test-fixtures/morning-brief-delivery";
 import {
   abandonClaimedOccurrence,
   countEmailOutboxRows,
@@ -33,7 +40,9 @@ import {
   revokeNativeAuthorityForTest,
   resumableOccurrenceAnchors,
   seedRecipientAddress,
+  setLegacyReconciliationState,
 } from "../../../test-fixtures/morning-brief-native-schedule";
+import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
 import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -219,11 +228,19 @@ interface ProviderCalls {
 }
 
 /** Script both provider boundaries and count every crossing request. */
-function scriptProviders(): { readonly calls: ProviderCalls } {
+function scriptProviders(outcome: "deliver" | "provider-failure" = "deliver"): {
+  readonly calls: ProviderCalls;
+} {
   const calls: ProviderCalls = { generation: [] };
   server.use(
     http.post(OPENROUTER_URL, async ({ request }) => {
       calls.generation.push(await request.text());
+      if (outcome === "provider-failure") {
+        return HttpResponse.json(
+          { error: { message: "upstream unavailable" } },
+          { status: 503 },
+        );
+      }
       return HttpResponse.json({
         id: "gen-01HNATIVECRON",
         model: "google/gemini-3.8-flash",
@@ -324,6 +341,39 @@ describe("native Morning Brief cron", () => {
     // The user's own choice is untouched by the cutover.
     expect((await readLegacyAutomation(f.automationId))?.enabled).toBeTruthy();
     expect(cutover?.enabled).toBeTruthy();
+  });
+
+  it("holds cutover for an unjournaled legacy queue event instead of guessing its anchor", async () => {
+    const f = await fixture();
+    const chatThreadId = await store.set(
+      seedOrdinaryChatThreadFixture$,
+      { member: f, title: "Legacy Morning Brief queue" },
+      context.signal,
+    );
+    await bindMorningBriefThreadFixture({
+      orgId: f.orgId,
+      userId: f.userId,
+      workflowId: f.workflowId,
+      chatThreadId,
+    });
+    await admitWorkflowAutomationEventFixture({
+      automationId: f.automationId,
+      chatThreadId,
+      triggerBrief: "unjournaled-legacy-queue-event",
+    });
+
+    // The first tick closes legacy admission; the next bounded transition pass
+    // resolves the actual queue relationship and records why ownership stays.
+    await accept(tick(f), [200]);
+    await accept(tick(f), [200]);
+
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      phase: "draining",
+      scheduleOwner: "legacy",
+      drainUnresolvedReason: "legacy-queue-event-pending",
+    });
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
+    expect((await readLegacyAutomation(f.automationId))?.nextRunAt).toBeNull();
   });
 
   it("runs collection, one platform generation, Chat and shared email with the legacy scheduler disabled", async () => {
@@ -440,6 +490,28 @@ describe("native Morning Brief cron", () => {
   // would call S5 first, and after the real result sweep a completed collection
   // with no generation reads as a healthy empty day, bypassing a Chat receipt
   // that has already committed. It must therefore never be resumable.
+  it("settles a known provider failure once without another POST", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders("provider-failure");
+    await tickUntilNative(f);
+    await makeNativeOccurrenceDue(f);
+
+    await accept(tick(f), [200]);
+    await accept(tick(f), [200]);
+
+    expect(calls.generation).toHaveLength(1);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        state: "settled",
+        outcome: "generation-failed",
+        settledAt: expect.any(Date),
+        deliveryPending: false,
+      },
+    ]);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
+  });
+
   it("never resumes a bound unsettled slot into generation", async () => {
     const f = await fixture();
     scriptSlack();
@@ -511,6 +583,29 @@ describe("native Morning Brief cron", () => {
     expect(calls.generation).toHaveLength(1);
     await expect(countOrgAgentRuns(f.orgId)).resolves.toBe(0);
     await expect(countOrgUsageEvents(f.orgId)).resolves.toBe(0);
+  });
+
+  it("fences a queued native email after its owner epoch is revoked", async () => {
+    const f = await fixture();
+    scriptSlack();
+    scriptProviders();
+    await tickUntilNative(f);
+    await makeNativeOccurrenceDue(f);
+    await accept(tick(f), [200]);
+
+    const [delivery] = await readNativeDeliveries(f);
+    const outboxId = delivery?.emailOutboxId;
+    if (!outboxId) {
+      throw new Error("Expected the native delivery to queue an email");
+    }
+    await revokeNativeAuthorityForTest(f);
+    await drainEmailOutbox([outboxId], context.signal);
+
+    expect(emailSends()).toHaveLength(0);
+    await expect(readEmailOutboxRow(outboxId)).resolves.toMatchObject({
+      status: "failed",
+      lastError: expect.stringContaining("authority was revoked"),
+    });
   });
 
   it("commits a native Settings pause with the retained rollback choice", async () => {
@@ -664,6 +759,52 @@ describe("native Morning Brief cron", () => {
   // Clearing the legacy poller's due instant stops new claims but cannot retract
   // mail the old path already queued. An unsent legacy intent is reachable work,
   // so the cutover has to hold rather than hand the schedule to native.
+  it("holds rollback until the retained legacy target is reconciled", async () => {
+    const f = await fixture();
+    scriptSlack();
+    scriptProviders();
+    await tickUntilNative(f);
+
+    // Official reconciliation can temporarily pause the retained legacy row
+    // while native remains authoritative. Switch-off must not hand an enabled
+    // choice to that unusable target or silently expose the pause as user intent.
+    await setLegacyReconciliationState(f.automationId, "paused");
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: f.orgId, userId: f.userId },
+      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+    );
+    await accept(tick(f), [200]);
+    await accept(tick(f), [200]);
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      enabled: true,
+      phase: "rollback-draining",
+      target: "legacy",
+      scheduleOwner: "native",
+      drainUnresolvedReason: "legacy-target-not-ready",
+    });
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
+
+    await setLegacyReconciliationState(f.automationId, "current");
+    await accept(tick(f), [200]);
+    const rolledBack = await readNativeSchedule(f);
+    const legacy = await readLegacyAutomation(f.automationId);
+    expect(rolledBack).toMatchObject({
+      enabled: true,
+      phase: "legacy",
+      target: "legacy",
+      scheduleOwner: "legacy",
+      nextRunAt: expect.any(Date),
+    });
+    expect(legacy).toMatchObject({
+      enabled: true,
+      officialIntendedEnabled: true,
+      cronExpression: rolledBack?.cronExpression,
+      timezone: rolledBack?.timezone,
+      nextRunAt: rolledBack?.nextRunAt,
+    });
+  });
+
   it("holds the cutover while a legacy email intent is still unsent", async () => {
     const f = await fixture();
     scriptSlack();

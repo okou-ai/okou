@@ -104,6 +104,33 @@ export async function readLegacyAutomation(automationId: string) {
   return row;
 }
 
+/**
+ * Reproduce the durable pause/restore states written by Official reconciliation.
+ * The cron remains the public boundary under test; no endpoint exposes a way to
+ * stop between those two production transactions.
+ */
+export async function setLegacyReconciliationState(
+  automationId: string,
+  state: "paused" | "current",
+): Promise<void> {
+  await db()
+    .update(workflowAutomations)
+    .set(
+      state === "paused"
+        ? {
+            enabled: false,
+            nextRunAt: null,
+            officialReconciliationStatus: "needs_reconfiguration",
+          }
+        : {
+            enabled: true,
+            nextRunAt: null,
+            officialReconciliationStatus: "current",
+          },
+    )
+    .where(eq(workflowAutomations.id, automationId));
+}
+
 export async function readThreadEventTypes(
   chatThreadId: string,
 ): Promise<readonly string[]> {

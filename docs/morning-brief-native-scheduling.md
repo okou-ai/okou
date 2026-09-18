@@ -90,7 +90,7 @@ compensation cannot restore an older epoch's state over a newer writer.
 | Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**      |
 | Enrollment adoption / materialization     | Bootstrap insert only; an existing row is authority           |
 | Generic automation enable/disable/update  | Logical choice, same rules as Settings                        |
-| Official reconciliation pause / restore   | Logical choice; a stale restore fails its epoch predicate     |
+| Official reconciliation pause / restore   | Retained legacy readiness only; native choice is unchanged    |
 | Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded    |
 | Native cron claim                         | Takes the obligation; owes exactly one settlement             |
 | Native settlement                         | Installs the next obligation from the **current** recurrence  |
@@ -170,12 +170,19 @@ records the exact scheduled anchor with its queue-event and Run bindings.
 - An **unsettled** journalled claim keeps the drain unresolved. A lapsed lease,
   an empty outbox, a completed agent status and one 15-minute TTL are **not**
   proof.
-- A member with **no journal rows at all** has unknown history. The journal only
-  starts recording at S7a's deployment, so earlier work has no recoverable
-  scheduled identity and must not be reconstructed from `firedAt`, a Run's
-  context or an automation title. That is reported as
-  `legacy-history-unjournalled` and the phase stays draining.
-- Only a member whose journalled claims are all settled is proven drained.
+- A member with **no journal rows at all** has unknown historical identity. The
+  journal only starts recording at S7a's deployment, so an anchor is never
+  reconstructed from `firedAt`, a Run context, an automation title or a TTL.
+  Instead, the drain reads the actual automation queue events, Runs, callback
+  rows and shared-outbox intents. It stays draining while any producer remains
+  reachable, and may transfer only after all of those concrete rows are
+  terminal. The historical identity limit remains explicit; absence of a
+  journal is never treated as an invented occurrence.
+- A journalled queue binding that is still unconsumed, a live Run, a pending or
+  failed result callback, or an unsent mail intent keeps the drain unresolved
+  even when the claim itself is settled.
+- Only a member whose journalled claims and actual reachable legacy producers
+  are all terminal is proven drained.
 
 A held drain records a bounded reason in `drain_unresolved_reason` and keeps an
 owned retry obligation. `drain_deadline_at` is an operational reporting signal;
@@ -183,8 +190,11 @@ expiry never advances the phase.
 
 Rollback restores legacy from the **current** logical preference, timezone and
 cron, and the next future unconsumed slot — never an old S3a copy and never the
-original enabled bit. Occurrence rows are not deleted on revocation: content-free
-deduplication and drain facts must outlive content retention.
+original enabled bit. If Official reconciliation has temporarily paused, removed
+or superseded the retained automation, rollback stays `rollback-draining` with
+`legacy-target-not-ready`; it transfers only after locking a `current` row, then
+writes that row from the durable current choice. Occurrence rows are not deleted on revocation:
+content-free deduplication and drain facts must outlive content retention.
 
 ## The cron
 
@@ -203,9 +213,9 @@ cannot block it.
 
 ## Deployment compatibility
 
-Both tables are additive, in the generated next migration
-(`1156_morning_brief_native_schedules`). There is no backfill and no source or
-history rewrite.
+The two tables, production generation-purpose constraint and delivery
+`native_owner_epoch` are additive in generated migration
+`1163_sad_pretty_boy`. There is no backfill and no source or history rewrite.
 
 - **Migration before code.** Two unread tables. Every existing reader and writer
   is unchanged; Settings continues to answer from the live legacy state.
@@ -232,9 +242,9 @@ This PR is explicitly an **incomplete product rollout candidate**.
    into the **same single** generation invocation, preserving one stable
    production occurrence identity when they are added.
 2. Legacy language preservation must be validated.
-3. S5 and S6 must admit a **production execution purpose**; until then the tick
-   takes the honest pre-reservation configuration branch and makes zero provider
-   calls. Preview routes stay production-disabled and a preview result may never
-   be promoted to a production result.
+3. Every mixed-version Settings, scheduler, queue, runner, callback and outbox
+   writer that ignores native phase/epoch must be drained or concretely fenced.
+   Preview routes remain production-disabled and a preview result may never be
+   promoted to a production result.
 4. Parent S8 must supply the exact release, cohort, production and rollback
    evidence. S9 legacy removal stays separate.

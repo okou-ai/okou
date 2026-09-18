@@ -431,14 +431,16 @@ async function lockOwnerBinding(
   tx: Tx,
   delivery: NativeMorningBriefDelivery,
 ): Promise<NativeMorningBriefEmailAdmission | null> {
-  const discovered = await loadMorningBriefMigrationState(tx, {
-    orgId: delivery.orgId,
-    userId: delivery.userId,
-  });
-  if (!stateMatchesDelivery(discovered, delivery)) {
-    return rejected(
-      "Morning Brief is no longer installed on the binding this delivery used",
-    );
+  if (delivery.executionPurpose !== "production") {
+    const discovered = await loadMorningBriefMigrationState(tx, {
+      orgId: delivery.orgId,
+      userId: delivery.userId,
+    });
+    if (!stateMatchesDelivery(discovered, delivery)) {
+      return rejected(
+        "Morning Brief is no longer installed on the binding this delivery used",
+      );
+    }
   }
 
   const [destination] = await tx
@@ -455,6 +457,12 @@ async function lockOwnerBinding(
     .for("update");
   if (!destination) {
     return rejected("Morning Brief delivery destination is no longer owned");
+  }
+  if (delivery.executionPurpose === "production") {
+    // Native authority was locked first. Once the canonical destination is
+    // pinned too, a deleted legacy Workflow is no longer part of delivery
+    // authority and cannot suppress an already-admitted native obligation.
+    return null;
   }
 
   const [binding] = await tx

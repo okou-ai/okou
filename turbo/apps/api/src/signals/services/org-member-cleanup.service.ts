@@ -199,13 +199,7 @@ async function revokeOrgMemberRunAuthority(
       orgId: args.orgId,
       userId: args.userId,
     });
-    // The departing member's legacy schedule occurrences lose the same
-    // authority here, before the rows they hang from are torn down.
-    await revokeMorningBriefScheduleOwnership(tx, {
-      kind: "membership",
-      orgId: args.orgId,
-      userId: args.userId,
-    });
+
     await tx
       .delete(agentRunQueue)
       .where(
