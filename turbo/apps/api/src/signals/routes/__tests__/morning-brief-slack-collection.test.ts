@@ -31,7 +31,7 @@ import { rebindMorningBriefSlackAccount } from "../../../test-fixtures/morning-b
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userPreferencesRoutes } from "../user-preferences";
@@ -1694,12 +1694,17 @@ describe("Morning Brief collection completion admission", () => {
     const cancellation = new Error(`cancelled ${randomUUID()}`);
     const controller = new AbortController();
     const held = await heldCompletion(f, controller);
+    const settled = settleIncludingAbort(held.pending);
 
     // The caller goes away only once the completion is genuinely blocked on the
     // row, which is the window a check after the commit reaches too late.
     controller.abort(cancellation);
     await held.release();
-    await expect(held.pending).rejects.toThrow(cancellation.message);
+    const result = await settled;
+    expect(result.ok).toBeFalsy();
+    if (!result.ok) {
+      expect(result.error).toBe(cancellation);
+    }
 
     const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
     expect(extra).toStrictEqual([]);
