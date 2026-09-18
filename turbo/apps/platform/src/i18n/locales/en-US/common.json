@@ -925,7 +925,8 @@
     },
     "viewer": {
       "continuePrompt": "Help me work with this artifact: {{url}}",
-      "continueWithBrand": "Continue with {{brandName}}"
+      "continueWithBrand": "Continue with {{brandName}}",
+      "escapeKey": "Esc"
     }
   },
   "auth": {

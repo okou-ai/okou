@@ -944,7 +944,8 @@
     },
     "viewer": {
       "continuePrompt": "Aide-moi à travailler avec cet artefact : {{url}}",
-      "continueWithBrand": "Continuer avec {{brandName}}"
+      "continueWithBrand": "Continuer avec {{brandName}}",
+      "escapeKey": "Esc"
     }
   },
   "auth": {

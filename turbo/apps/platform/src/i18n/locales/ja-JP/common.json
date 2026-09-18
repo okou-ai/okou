@@ -924,7 +924,8 @@
     },
     "viewer": {
       "continuePrompt": "この成果物を使った作業を手伝ってください: {{url}}",
-      "continueWithBrand": "{{brandName}} で続ける"
+      "continueWithBrand": "{{brandName}} で続ける",
+      "escapeKey": "Esc"
     }
   },
   "auth": {
