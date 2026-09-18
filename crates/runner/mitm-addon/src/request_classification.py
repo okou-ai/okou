@@ -172,6 +172,7 @@ class GmailSendBlocked:
 class FirewallAmbiguous:
     sandbox_info: dict
     firewall_ambiguous: matching.FirewallAmbiguous
+    builtin_firewall_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None
     kind: Literal["firewall_ambiguous"] = field(init=False, default="firewall_ambiguous")
 
 
@@ -510,6 +511,7 @@ def _classify_request(
             return FirewallAmbiguous(
                 sandbox_info=sandbox_info,
                 firewall_ambiguous=result,
+                builtin_firewall_catalog_snapshot=registry_state.builtin_firewall_catalog_snapshot,
             )
         if isinstance(result, matching.FirewallBlock):
             return FirewallBlock(

@@ -103,6 +103,7 @@ import { financeRoutes } from "./routes/finance";
 import { seoRoutes } from "./routes/seo";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
+import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { hostRoutes } from "./routes/host";
 import { builtInGenerationRoutes } from "./routes/built-in-generation";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
@@ -143,6 +144,8 @@ import { webSearchRoutes } from "./routes/web-search";
 import { socialRoutes } from "./routes/social";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
+import { vncAccessRoutes } from "./routes/vnc-access";
+import { runnerVncRoutes } from "./routes/runner-vnc";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
@@ -323,6 +326,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,
+  ...artifactDownloadRoutes,
   ...builtInGenerationRoutes,
   ...imageIoGenerateRoutes,
   ...avatarVideoRoutes,
@@ -346,6 +350,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...socialRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
+  ...vncAccessRoutes,
+  ...runnerVncRoutes,
   ...cloudflareAccessRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,

@@ -28,14 +28,16 @@ import { createComposerFeedbackModel } from "./chat-feedback.ts";
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
 import {
   deriveRunIndicatorStateFromChatEvents,
-  groupSemanticChatEvents,
-  isUsageEvent,
   lastAssistantCancelledFromGroups,
   queuedEventsFromSemanticEvents,
   runningModelSelectionFromChatEvents,
-  semanticChatEventsFromChatEvents,
   type ChatRunModelSelection,
 } from "../chat-page/chat-event-state.ts";
+import {
+  groupSemanticChatEvents,
+  isUsageEvent,
+  semanticChatEventsFromChatEvents,
+} from "@okouai/api-contracts/contracts/chat-event-semantics";
 import {
   createEditorDocumentSnapshot,
   messageDocumentToDisplayText,

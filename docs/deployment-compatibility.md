@@ -144,16 +144,43 @@ It returns `{ url, filename, contentType }` for the authorized delivery. The
 existing typed owner resolver and sharing-management endpoints retain their
 owner checks.
 
-`okou artifact download` and `okou web download-file` use this endpoint for
-short and long artifact references, including same-origin App URLs. They fetch
-the returned delivery URL without forwarding the agent token. Hosted HTML
-downloads contain the entry document; complete owned-site source downloads
-remain the responsibility of `okou host clone`. Raw file IDs and authenticated
-web download URLs keep their existing `file:read` path.
+The additive `GET /api/artifact-references/:reference/download` uses the same
+`artifact:read` and visibility boundary. It returns either
+`{ kind: "file", url, filename, contentType }` or
+`{ kind: "html", site: HostedSiteFilesResponse }`. The latter includes the full
+authorized deployment manifest and per-file delivery URLs. Shared sites use
+the selected version's immutable snapshot, rather than the owner's latest
+deployment. Standalone HTML uploads remain file downloads.
+Conversation references selecting a non-HTML hosted file also retain their
+single-file bytes and MIME type; HTML/page references return the full site.
+
+`okou artifact download` and `okou web download-file` use the download endpoint
+for short and long artifact references, including same-origin App URLs. For
+sites, `--out` now names a new or empty directory and the JSON result adds
+`fileCount` and `entrypoint` to `{ path, mimetype, size }`; `path` denotes that
+directory and `size` totals all downloaded files. They fetch delivery URLs
+without forwarding the agent token. Raw file IDs and authenticated web download
+URLs keep their existing `file:read` path and output shape.
+
+`okou host clone` uses the additive
+`GET /api/artifact-references/:reference/files` for artifact references. This
+returns `HostedSiteFilesResponse` through the same visibility resolver and
+retains the existing `host:read` capability; it rejects standalone files.
+Hosted URLs and slugs continue to use the existing `host:read` files endpoint,
+whose authorization now follows current site visibility rather than requiring
+ownership. An optional `hostname` query disambiguates public aliases against
+the configured hosted domains. The existing files response remains compatible
+with older clients. Version requests never bypass the selected shared version.
+Public conversation resources follow their live shared-thread policy and
+independent snapshot, including after the original artifact changes.
+Bare canonical slugs preserve owner/latest-version cloning; explicit public
+URLs follow the selected publication, including for owners and after revocation.
+Owner-only management and version-listing endpoints remain unchanged.
 
 Deploy the additive API endpoint before selecting the matching CLI artifact.
-Older pinned CLIs keep their existing owner-only behavior against the new API;
-the new CLI needs the new endpoint and the existing `artifact:read` capability,
+Older pinned CLIs retain their existing download behavior against the new API;
+the existing read endpoint continues to return entry-page delivery metadata.
+The new CLI needs the download endpoint and the existing `artifact:read` capability,
 issued under `privateArtifacts`. No tolerant reader for an older API, new
 capability, database migration, visibility change, or Worker protocol is added.
 Keep the endpoint in serving and supported rollback APIs while runs pinned to
@@ -1969,6 +1996,37 @@ bridge cleanup after every serving source and supported bootstrap target has
 accepted v4 and the deployment/rollback window no longer needs the bridge.
 Historical v3 object and row retention for old binaries remains independent.
 
+### Builtin MCP execution
+
+Builtin MCP uses the current App, CLI and Runner contract directly. There is no
+MCP-specific request-header negotiation, old-client HTTP projection, upgrade
+response or Runner claim capability flag. Agent connector replacement applies
+to the complete submitted list, including MCP grants. The CLI is kept current;
+its package URL does not need to match the serving API commit for MCP admission.
+Custom and builtin MCP use the same typed discovery response.
+
+Queued Runs retain their captured CLI package and exact account mapping.
+Builtin MCP admission requires the Run's Okou token for authenticated MCP
+discovery. None/manual methods are executable; the published Plaud Automatic
+method remains unavailable until its handler lands. The addon honors explicit
+owner intent and never injects another owner's credentials when the requested
+owner is absent, including overlapping builtin/custom destinations.
+
+No-auth builtin and custom MCP requests skip credential validity checks and
+proxy auth resolution, including Automatic custom MCP resolved to no
+authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
+field to cap cached account authorization at 30 seconds from validation; this
+also bounds static-token cache reuse. Discovery immediately removes deleted
+accounts, while subsequent proxy requests may reuse an existing lease until
+expiry. Expiry does not interrupt an in-flight request or stream. After
+resolution, the addon rechecks the current owner before forwarding. No new
+Runner wire field or HTTP/custom cache policy is introduced.
+
+The v3 catalog read bridge and its cleanup under
+[#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.
+This execution change adds no environment variable, release workflow change or
+per-service skill.
+
 ## PostHog CIMD OAuth
 
 PostHog OAuth uses a public client identified by
@@ -2248,51 +2306,53 @@ lease semantics, finite budgets and declared coverage limits.
 
 ## Marketing browser funnel events
 
-The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
-Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
-origin. The owner confirmed this feature has not launched and requested removal
-of `/api/marketing/finish-onboarding` without an alias, with a client force
-upgrade as the supported-client boundary.
+The App sends both onboarding entry and actual Stripe redirect actions to
+`POST /api/events` on the environment-matched Marketing origin
+(`https://www.okou.ai` in production). The owner explicitly requested removing
+the previous onboarding-start and checkout-start receivers without aliases.
+Both repositories must ship the matching event contract as a coordinated
+cutover; a new App against an old Marketing deployment receives a failed event
+request, and an old App against the new receiver uses a retired route. Neither
+combination is supported by this prelaunch change. Event failures never block
+the onboarding or checkout flow and are not retried by the App.
 
-Deploy the Marketing receiver before this App. Verify the production App version
-and commit contain the new callers, then raise `minimumSupportedVersion` in
+Verify the production App version and commit contain the new caller, then raise
+`minimumSupportedVersion` in
 `turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
 in a separate release. Do not guess a version from this PR or raise the floor
 with the first replacement App deployment: production promotes the API first,
-so a refresh could still load an unsupported build. This PR does not activate
-the floor increase before the replacement App is live.
+so a refresh could still load an unsupported build. This PR does not change the
+floor or authorize a production rollout.
 
 The existing App API check prompts old clients to refresh on their next handled
 API request. Direct Marketing requests do not pass through that middleware;
 cached old callers before the floor takes effect are outside this prelaunch
 support boundary. Do not roll the App back below the floor or Marketing back
-behind the new receivers while those App builds are supported.
+behind the unified receiver while those App builds are supported.
 
-Onboarding remains bodyless and preserves the existing
-`marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
-not replay past attempts, including failed attempts. Checkout sends only a fresh
-UUID, its UTC occurrence time and the bounded source `onboarding_video` or
-`paywall`; Marketing derives identity from the bearer token and attribution from
-its own consented cookies. Both requests include credentials, run under the App
-root with a ten-second deadline and never delay navigation for their response.
-There is no periodic check or browser retry.
+`sendEvent$(tag)` sends only `tag` (`onboarding-start` or `checkout-start`) and a
+fresh UUID `eventId`. Marketing derives identity from the bearer token, supplies
+the event timestamp, preserves existing first-touch attribution, and records
+events even without attribution cookies. A recorded event returns 200 with
+`{code: "EVENT_RECORDED"}` when usable attribution is available, otherwise an
+empty 204. Errors return their HTTP status with `{code, error}`. The App does
+not consume the response body or add outcome telemetry.
 
-App-side Marketing diagnostics are retired without changing either request
-contract. Marketing owns these logs and correlates authenticated requests by
-`userId` and `orgId`. The optional `X-Marketing-Request-Id` response header has
-no business consumer: older App builds already accept an absent header, and
-new builds do not read it. Its removal can deploy independently of this App
-cleanup and requires no additional client-version floor.
+Requests include credentials and keepalive and belong to the App root, so
+navigation never waits for them and a session change cancels pending work.
+There is no ten-second deadline, local attempt marker, deferred onboarding
+handoff, retry, or fallback. Each actual POST is preceded by one Axiom
+`marketing.event.send` record with tag, userId, and orgId; `outcome: started`
+means a send attempt, not server acceptance. No browser request ID header is
+introduced. Existing legacy gtag/PostHog event and account routing is unchanged.
 
-The new receiver records Google Ads funnel shadows only. Marketing deduplicates
-onboarding by user/org and checkout by user/org/event UUID. These counts differ
-intentionally from the legacy gtag browser-session/account deduplication: another
-checkout action produces another event. A shadow acknowledgement is neither
-proof of eligible consent nor a Google Ads delivery receipt. Existing App gtag
-and PostHog reporting remain active; this change adds no GA4/PostHog sender,
-provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
-matches the existing `RedirectToStripe` producers, excluding previews and other
-payment paths without that producer.
+Marketing deduplicates onboarding by user/org and checkout by user/org/event
+UUID. These counts differ intentionally from the legacy gtag browser-session/
+account deduplication: another checkout action produces another event. A
+successful event response is not a provider delivery receipt. This change
+retains existing provider sending gates, adds no provider activation or replay,
+and leaves checkout coverage at the existing `RedirectToStripe` producers,
+excluding previews and other payment paths without that producer.
 
 ## Morning Brief collection revocation stamp (#34860)
 

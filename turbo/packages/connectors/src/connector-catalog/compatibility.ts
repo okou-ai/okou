@@ -45,7 +45,7 @@ export const connectorCatalogCompatibilityEvaluationSchema = z
   })
   .strict();
 
-const EXECUTABLE_CAPABILITY_EVALUATOR_VERSION = 3;
+const EXECUTABLE_CAPABILITY_EVALUATOR_VERSION = 4;
 
 export interface ExecutableCapabilityState {
   readonly digest: string;
@@ -205,13 +205,13 @@ function addProviderReasons(
   registration: ConnectorAuthProviderRegistrationCapability | undefined,
 ): void {
   if (
+    method.grant.kind !== "none" &&
     method.grant.kind !== "manual" &&
     registration?.handlers.grant !== method.grant.kind
   ) {
     reasons.add("missing-grant-provider");
   }
   if (
-    method.access.kind === "none" ||
     method.access.kind === "automatic" ||
     (method.access.kind === "refresh-token" &&
       registration?.handlers.access !== "refresh-token")
@@ -291,7 +291,14 @@ export function evaluateConnectorCatalogCompatibility(args: {
   const filtered = args.artifact.connectors.flatMap((connector) => {
     return connector.authMethods.flatMap((method) => {
       const reasons = evaluateMethod({
-        unsupportedProtocol: connector.mcp !== undefined,
+        unsupportedProtocol:
+          connector.mcp !== undefined &&
+          !(
+            method.revoke.kind === "none" &&
+            ((method.grant.kind === "none" && method.access.kind === "none") ||
+              (method.grant.kind === "manual" &&
+                method.access.kind === "static"))
+          ),
         method,
         registration: registrations.get(
           registrationKey(connector.slug, method.id),

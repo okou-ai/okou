@@ -12,6 +12,7 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
@@ -185,6 +186,34 @@ describe("GET /api/connector-catalog", () => {
 
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
+
+  it.each(["get", "permissions"] as const)(
+    "returns 503 for %s when the configured catalog has no accepted snapshot",
+    async (endpoint) => {
+      mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+      // A newly configured catalog source has no accepted publication yet.
+      mockEnv(
+        "R2_USER_STORAGES_BUCKET_NAME",
+        `test-catalog-unavailable-${randomUUID()}`,
+      );
+      const client = setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      );
+      const request = {
+        params: { connectorSlug: "openai" },
+        headers: { authorization: "Bearer clerk-session" },
+      };
+      const response =
+        endpoint === "get"
+          ? await accept(client.get(request), [503])
+          : await accept(client.permissions(request), [503]);
+
+      expect(response.body.error).toMatchObject({
+        code: "PROVIDER_UNAVAILABLE",
+        message: "Connector catalog is temporarily unavailable",
+      });
+    },
+  );
 
   it.each(["posthog", "calendly"])(
     "returns public catalog metadata including %s OAuth",

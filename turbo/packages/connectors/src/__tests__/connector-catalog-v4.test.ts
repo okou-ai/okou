@@ -304,7 +304,7 @@ describe("v4 connector catalog reader", () => {
     }).toThrow("invalid-artifact");
   });
 
-  it("recognizes no-auth metadata without making its grant or access executable", () => {
+  it("executes no-auth MCP without a provider registration", () => {
     const artifact = publishedCatalog();
     const plaud = requiredConnector(artifact, "plaud-mcp");
     plaud.authMethods = [
@@ -322,31 +322,22 @@ describe("v4 connector catalog reader", () => {
     expect(
       filteredMethods(decode(artifact)).find((method) => {
         return method.connectorSlug === "plaud-mcp";
-      })?.reasons,
-    ).toEqual([
-      "unsupported-protocol",
-      "missing-grant-provider",
-      "missing-access-provider",
-    ]);
+      }),
+    ).toBeUndefined();
     plaud.mcp = undefined;
     expect(() => {
       decode(artifact);
     }).toThrow("invalid-artifact");
   });
 
-  it("does not execute MCP merely because its manual authentication is supported", () => {
+  it("executes manual MCP through the shared credential capability", () => {
     const artifact = publishedCatalog();
     const plaud = requiredConnector(artifact, "plaud-mcp");
     const http = requiredConnector(artifact, "019sms");
     plaud.authMethods = http.authMethods;
     artifact.connectors = [plaud];
     const filtered = filteredMethods(decode(artifact));
-    expect(filtered.length).toBeGreaterThan(0);
-    expect(
-      filtered.every((method) => {
-        return method.reasons.includes("unsupported-protocol");
-      }),
-    ).toBe(true);
+    expect(filtered).toEqual([]);
   });
 
   it("rejects mismatched Automatic token storage and access bindings", () => {
@@ -389,5 +380,29 @@ describe("v4 connector catalog reader", () => {
     expect(() => {
       decode(artifact);
     }).toThrow("public-leakage");
+  });
+
+  it("rejects manual MCP authentication that rewrites the fixed endpoint", () => {
+    const artifact = publishedCatalog();
+    const plaud = requiredConnector(artifact, "plaud-mcp");
+    const http = requiredConnector(artifact, "019sms");
+    plaud.authMethods = http.authMethods;
+    plaud.firewall = http.firewall;
+    artifact.connectors = [plaud];
+    if (plaud.firewall.kind !== "generated" || !plaud.mcp) {
+      throw new Error("Expected generated MCP firewall fixture");
+    }
+    const api = plaud.firewall.config.apis[0];
+    if (!api) {
+      throw new Error("Expected MCP endpoint API fixture");
+    }
+    api.base = plaud.mcp.endpoint;
+    delete api.hostPolicy;
+    expect(decode(artifact).connectors).toHaveLength(1);
+
+    api.auth.base = "https://other.example.com/mcp";
+    expect(() => {
+      decode(artifact);
+    }).toThrow("relationship-mismatch");
   });
 });

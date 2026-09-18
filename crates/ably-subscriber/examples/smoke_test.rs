@@ -369,10 +369,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Lifecycle: token renewal
     // =====================================================================
     //
-    // Connect with a short-TTL token (15s). Since TOKEN_RENEWAL_MARGIN (5min)
-    // exceeds the TTL, the SDK triggers renewal immediately. After waiting
-    // longer than the original token's lifetime, publish a message — if
-    // renewal worked the message arrives; if not, the connection is dead.
+    // Connect with a short-TTL token (15s). For a still-valid token, the
+    // five-minute renewal margin is capped at half its remaining lifetime,
+    // so renewal is scheduled roughly halfway to expiry. After waiting longer
+    // than the original token's lifetime, publish a message — if renewal
+    // worked the message arrives; if not, the connection is dead.
 
     eprintln!();
     eprintln!("--- lifecycle: token renewal ---");
@@ -389,8 +390,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let cc = call_count.clone();
             Box::pin(async move {
                 let n = cc.fetch_add(1, Ordering::Relaxed);
-                // First token: short TTL forces immediate renewal.
-                // Subsequent: normal TTL avoids a tight renewal loop.
+                // First token: a still-valid short TTL schedules renewal
+                // roughly halfway through its remaining validity.
+                // Subsequent: the one-hour TTL places the next renewal outside
+                // this smoke test's 20-second observation window.
                 let ttl = if n == 0 {
                     15_000
                 } else {

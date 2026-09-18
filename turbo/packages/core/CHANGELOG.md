@@ -1,5 +1,43 @@
 # Changelog
 
+## [8.680.5](https://github.com/vm0-ai/okou/compare/core-v8.680.4...core-v8.680.5) (2026-09-18)
+
+
+### Refactoring
+
+* remove custom connector mcp feature switch ([#35202](https://github.com/vm0-ai/okou/issues/35202)) ([2a24579](https://github.com/vm0-ai/okou/commit/2a24579fecd98b9933a2c75589d4502e7af0a298))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.0
+
+## [8.680.4](https://github.com/vm0-ai/okou/compare/core-v8.680.3...core-v8.680.4) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.468.0
+
+## [8.680.3](https://github.com/vm0-ai/okou/compare/core-v8.680.2...core-v8.680.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **core:** disable thread archiving for staff ([#35171](https://github.com/vm0-ai/okou/issues/35171)) ([34bbfbe](https://github.com/vm0-ai/okou/commit/34bbfbe279dc5da52386b4ebecab1b367a0bb7df))
+* use the refreshed quick start deck in welcome threads ([#35181](https://github.com/vm0-ai/okou/issues/35181)) ([9065172](https://github.com/vm0-ai/okou/commit/9065172e555179e161d907cd9af4a6cc5e4feff0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.467.0
+
 ## [8.680.2](https://github.com/vm0-ai/okou/compare/core-v8.680.1...core-v8.680.2) (2026-09-18)
 
 

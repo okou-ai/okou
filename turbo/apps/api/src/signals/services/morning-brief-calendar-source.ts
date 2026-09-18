@@ -22,11 +22,12 @@ import {
   type MorningBriefSourceAuthorityProof,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import type {
-  MorningBriefSourceCollection,
-  MorningBriefSourceCoverage,
-  MorningBriefSourceItem,
-  MorningBriefTimeSemantics,
+import {
+  morningBriefItemFacts,
+  type MorningBriefSourceCollection,
+  type MorningBriefSourceCoverage,
+  type MorningBriefSourceItem,
+  type MorningBriefSourceProvenance,
 } from "./morning-brief-source-item";
 
 /**
@@ -39,10 +40,7 @@ import type {
  */
 function calendarTimeSemantics(
   item: MorningBriefCalendarItem,
-): MorningBriefTimeSemantics {
-  if (item.allDay) {
-    return "date-only";
-  }
+): "instant" | "overlap" {
   return item.localDayOffset === null ? "overlap" : "instant";
 }
 
@@ -59,15 +57,56 @@ function calendarCoverage(
 }
 
 /**
- * The instant an item is ordered and reported by.
+ * The window this collection's evidence is only true within.
  *
- * An all-day event's `start` is a calendar date, so parsing it yields that
- * date's UTC midnight. That is acceptable for ordering precisely because
- * `timeSemantics` already tells the reader it is a date rather than a moment;
- * the exclusive `end` travels separately and is not rounded away.
+ * The frozen local dates and the owner timezone are the whole reason an all-day
+ * date is readable: `2026-09-17` with an exclusive end of `2026-09-18` is one
+ * day in Asia/Shanghai and a different range of instants in America/Los_Angeles.
+ * Each enumerated calendar keeps its own outcome, so a calendar that answered
+ * with busy blocks only is not reported as fully read.
  */
-function calendarInstant(value: string): Date {
-  return new Date(value);
+function calendarProvenance(
+  collection: MorningBriefCalendarCollection,
+): MorningBriefSourceProvenance {
+  return {
+    startAt: collection.window.startAt,
+    endAt: collection.window.endAt,
+    startDate: collection.window.startDate,
+    endDateExclusive: collection.window.endDateExclusive,
+    timezone: collection.timezone,
+    observedAt: null,
+    collectedAt: collection.collectedAt,
+    branches: [
+      {
+        name: "calendar-list",
+        status: collection.coverage.calendarList,
+        startAt: null,
+        endAt: null,
+        observedAt: null,
+      },
+      ...collection.coverage.calendars.map((calendar) => {
+        return {
+          name: calendar.calendarId,
+          status: calendar.outcome,
+          startAt: null,
+          endAt: null,
+          observedAt: null,
+        };
+      }),
+    ],
+    limitations: collection.coverage.truncations,
+  };
+}
+
+/**
+ * Private ordering key only; never serialized as an event instant.
+ *
+ * `Date.parse` is used only to rank ISO values. Its UTC interpretation never
+ * becomes evidence: only real timed values become model-visible instants, while
+ * a date-only event stays an exclusive-end range in the frozen local timezone.
+ */
+function calendarOrderValue(item: MorningBriefCalendarItem): number {
+  return Date.parse(item.start);
 }
 
 /**
@@ -82,16 +121,13 @@ export function normalizeMorningBriefCalendar(
   account: string,
 ): MorningBriefSourceCollection {
   const ranked = [...collection.items].sort((left, right) => {
-    return (
-      calendarInstant(left.start).getTime() -
-      calendarInstant(right.start).getTime()
-    );
+    return calendarOrderValue(left) - calendarOrderValue(right);
   });
-  const items: MorningBriefSourceItem[] = ranked.map((event, index) => {
+  const items = ranked.map((event, index): MorningBriefSourceItem => {
     const link = event.link;
-    return {
+    const common = {
       identity: {
-        source: "calendar",
+        source: "calendar" as const,
         account,
         container: event.calendarId,
         record: event.eventId,
@@ -102,23 +138,66 @@ export function normalizeMorningBriefCalendar(
           event.recurringEventId === null ? null : event.originalStartTime,
       },
       priority: index,
-      occurredAt: calendarInstant(event.start),
-      timeSemantics: calendarTimeSemantics(event),
-      endsAt: calendarInstant(event.end),
       title: event.summary ?? "",
       body: event.descriptionExcerpt ?? "",
       // The collector declares when it clipped an attendee list; the excerpt
       // itself is bounded by that same read.
       truncated: event.attendeesTruncated,
       links: link === null ? [] : [{ label: "Open in Calendar", url: link }],
+      facts: morningBriefItemFacts({
+        startedAtRaw: event.start,
+        endsAtRaw: event.end,
+        timezone: event.eventTimezone,
+        containerTimezone: event.calendarTimezone,
+        localDayOffset: event.localDayOffset,
+        seriesId: event.recurringEventId,
+        state: event.selfResponseStatus,
+        actor: event.organizer,
+        limitations: event.attendeesTruncated ? ["attendees"] : [],
+      }),
+    };
+    if (event.allDay) {
+      return {
+        ...common,
+        timeSemantics: "date-only",
+        occurredAt: null,
+        endsAt: null,
+        dateRange: {
+          startDate: event.start,
+          endDateExclusive: event.end,
+          timezone: collection.timezone,
+        },
+      };
+    }
+    return {
+      ...common,
+      timeSemantics: calendarTimeSemantics(event),
+      occurredAt: new Date(event.start),
+      endsAt: new Date(event.end),
+      dateRange: null,
     };
   });
   return {
     source: "calendar",
     coverage: calendarCoverage(collection),
     items,
-    requests: collection.coverage.calendars.length,
-    omittedBySource: 0,
+    // The reads the collector actually issued. The number of enumerated
+    // calendars is not that number: one calendar can cost a list page and
+    // several event pages, and four requests reported as one envelope makes a
+    // budget report that cannot be reconciled with the provider's own.
+    requests: collection.coverage.requests,
+    provenance: calendarProvenance(collection),
+    // No cap here counts the events it did not read, so the remainder is
+    // explicitly unknown rather than a fabricated zero.
+    omittedBySource: {
+      known: 0,
+      unknownRemaining:
+        collection.coverage.truncations.length > 0 ||
+        collection.coverage.calendarList !== "complete" ||
+        collection.coverage.calendars.some((calendar) => {
+          return calendar.outcome !== "complete";
+        }),
+    },
   };
 }
 

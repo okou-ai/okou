@@ -24,14 +24,18 @@ All distinct subjects go to the real `assertErasureSubjectWritable`, which
 sorts domain-separated transaction advisory locks. Its locks remain held until
 COMMIT, including when closure is concurrently waiting.
 
-The complete order is **subjects -> resources -> output projection -> thread ->
-run -> session**. Agent and Storage composite owner keys receive KEY SHARE;
-thread/run/session rows are locked before ownership is re-read. Resource IDs are
-sorted. No subject lock is acquired after any business lock. Only an observed
-ownership race rolls back and retries, at most three fresh transactions. Each
-attempt resolves the complete subject set again. Prepared content remains pinned
-to its original ownership snapshot; a transfer cannot redirect it to a new owner
-or destination, even if that new owner is open.
+The complete order is **subjects -> resources -> thread -> run -> session**.
+Agent and Storage composite owner keys receive KEY SHARE; thread/run/session rows
+are locked before ownership is re-read. The exact `agent_runs` row is the
+mandatory same-run mutex before every caller write and remains locked through
+COMMIT. The earlier per-run output advisory mutex is redundant with that row lock
+and is no longer acquired. During a rolling deployment, old and new writers
+still serialize through the run row they both lock. Resource IDs are sorted. No subject lock is acquired
+after any business lock. Only an observed ownership race rolls back and retries,
+at most three fresh transactions. Each attempt resolves the complete subject set
+again. Prepared content remains pinned to its original ownership snapshot; a
+transfer cannot redirect it to a new owner or destination, even if that new owner
+is open.
 
 Existing assistant balance-error presentation receives `modelProvider` from
 the locked run after ownership is revalidated.
@@ -105,8 +109,8 @@ cover result fallback/retries through both callback implementations, ordinary
 cancellation, domain separation, surviving owners, missing optional users,
 threadless completed maintenance after job/lease retirement, infrastructure
 failure and no optional effects after denial. Existing compute, settlement,
-callback and output-locking regressions are retained. Full suites belong to PR
-CI; no full local Vitest or development server is required.
+callback and run-row serialization regressions are retained. Full suites belong
+to PR CI; no full local Vitest or development server is required.
 
 Controller-provided read-only MaskDB observations, **2026-09-15
 09:13:53–09:14:08 UTC**, are non-atomic whole-table counts: `chat_events`
@@ -170,8 +174,8 @@ create a permanent non-billing audit exception.
 
 `outputPhase` is a fixed operation-group enum: `preparation`,
 `transaction_setup`, `ownership_snapshot`, `subject_admission`,
-`resource_identity_locks`, `output_advisory_lock`, `thread_lock`, `run_lock`,
-`session_lock`, `ownership_recheck`, `projection_write`, `transaction_finalize`.
+`resource_identity_locks`, `thread_lock`, `run_lock`, `session_lock`,
+`ownership_recheck`, `projection_write`, `transaction_finalize`.
 The subject group includes the unchanged shared B1 advisory acquisition and its
 single closure lookup, so it waits behind an exclusive erasure or first-closure
 holder rather than behind another ordinary writer.
@@ -197,7 +201,7 @@ the handler consumes a failure receipt once. No timer, added query, timeout,
 retry, disposition or billing decision uses these measurements.
 
 The existing PostgreSQL infrastructure harness covers held user/org, resource,
-output, thread, run, session and projection locks, rollback without partial output,
+thread, run, session and projection-table locks, rollback without partial output,
 HTTP 503 followed by an idempotent retry, both closure orders, shared-org and
 unrelated liveness, ownership retries, abort identity and ordinary errors. Its
 exception also permits connection-local deferred constraints and terminating a

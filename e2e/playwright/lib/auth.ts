@@ -33,8 +33,37 @@ export async function signInWithClerkEmailCode(
 ): Promise<string> {
   const signInUrl = new URL("/sign-in", appUrl);
   await page.goto(signInUrl.toString(), { waitUntil: "domcontentloaded" });
+  const signInFormDeadline = performance.now() + 30_000;
+  // The shared runtime stays pending while the core script retries. Await its
+  // final outcome before the form so a terminal failure does not become an
+  // unrelated email-input timeout. Both waits retain one 30-second deadline.
+  const runtimeReady = await page.waitForFunction(
+    async () => {
+      const bootstrap = window.__okouClerkBootstrap;
+      if (!bootstrap) {
+        throw new Error(
+          "Clerk core bootstrap is unavailable before email-code sign-in",
+        );
+      }
+      try {
+        await bootstrap.runtime;
+      } catch {
+        // SDK errors may include sensitive request details; the runner captures
+        // allowlisted network evidence separately.
+        throw new Error(
+          "Clerk core bootstrap failed before email-code sign-in",
+        );
+      }
+      return true;
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
+  await runtimeReady.dispose();
   const emailAddress = page.getByLabel("Email address", { exact: true });
-  await expect(emailAddress).toBeVisible({ timeout: 30_000 });
+  await expect(emailAddress).toBeVisible({
+    timeout: Math.max(1, signInFormDeadline - performance.now()),
+  });
   await emailAddress.fill(email);
   await page.getByRole("button", { exact: true, name: "Continue" }).click();
   await submitClerkEmailCode(page);
@@ -62,8 +91,8 @@ export async function signInWithClerkEmailCode(
         (organizationId) => {
           return Boolean(
             window.Clerk?.loaded &&
-              window.Clerk.session &&
-              window.Clerk.organization?.id === organizationId,
+            window.Clerk.session &&
+            window.Clerk.organization?.id === organizationId,
           );
         },
         options.activeOrganizationId,

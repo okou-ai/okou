@@ -5,9 +5,7 @@ use std::time::Instant;
 use sandbox::SandboxFinalExecParkHandoff;
 use tokio::sync::{Notify, oneshot, watch};
 
-use crate::idle_pool::{
-    FinalizingHandoffCandidate, ImmediateHandoffCandidate, ParkedIdleCandidate,
-};
+use crate::idle_pool::{FinalizingHandoffCandidate, IdleParkCandidate};
 use crate::ids::RunId;
 
 #[derive(Clone)]
@@ -159,10 +157,10 @@ pub(super) struct ActiveRunReusePublisher {
     handoff: Arc<Mutex<ActiveRunHandoffBroker>>,
 }
 
-pub(super) enum ActiveRunHandoffDeliveryResult<C> {
+pub(super) enum ActiveRunHandoffDeliveryResult {
     Delivered,
-    NotRequested(C),
-    Failed(C),
+    NotRequested(IdleParkCandidate),
+    Failed(IdleParkCandidate),
 }
 
 impl ActiveRunReusePublisher {
@@ -190,46 +188,9 @@ impl ActiveRunReusePublisher {
 
     pub(super) fn deliver_exact_handoff(
         &self,
-        candidate: ParkedIdleCandidate,
+        candidate: IdleParkCandidate,
         predecessor_run_id: RunId,
-    ) -> ActiveRunHandoffDeliveryResult<ParkedIdleCandidate> {
-        self.deliver_handoff(
-            candidate,
-            predecessor_run_id,
-            |candidate, successor_run_id, predecessor_run_id| {
-                candidate.into_finalizing_handoff(successor_run_id, predecessor_run_id)
-            },
-            FinalizingHandoffCandidate::into_parked_candidate,
-        )
-    }
-
-    pub(super) fn deliver_exact_immediate_handoff(
-        &self,
-        candidate: ImmediateHandoffCandidate,
-        predecessor_run_id: RunId,
-    ) -> ActiveRunHandoffDeliveryResult<ImmediateHandoffCandidate> {
-        let handoff_point = candidate.handoff_point();
-        self.deliver_handoff(
-            candidate,
-            predecessor_run_id,
-            |candidate, successor_run_id, predecessor_run_id| {
-                candidate.into_finalizing_handoff(successor_run_id, predecessor_run_id)
-            },
-            |candidate| {
-                candidate
-                    .into_parked_candidate()
-                    .into_immediate_handoff(handoff_point)
-            },
-        )
-    }
-
-    fn deliver_handoff<C>(
-        &self,
-        candidate: C,
-        predecessor_run_id: RunId,
-        bind: impl FnOnce(C, RunId, RunId) -> FinalizingHandoffCandidate,
-        recover: impl FnOnce(Box<FinalizingHandoffCandidate>) -> C,
-    ) -> ActiveRunHandoffDeliveryResult<C> {
+    ) -> ActiveRunHandoffDeliveryResult {
         let mut broker = lock_handoff(&self.handoff);
         if !broker.signal.accept_if_requested() {
             return ActiveRunHandoffDeliveryResult::NotRequested(candidate);
@@ -237,17 +198,15 @@ impl ActiveRunReusePublisher {
         let Some(delivery) = broker.delivery.take() else {
             return ActiveRunHandoffDeliveryResult::Failed(candidate);
         };
-        let candidate = Box::new(bind(
-            candidate,
-            delivery.successor_run_id,
-            predecessor_run_id,
-        ));
+        let candidate = Box::new(
+            candidate.into_finalizing_handoff(delivery.successor_run_id, predecessor_run_id),
+        );
         match delivery.sender.send(candidate) {
             Ok(()) => {
                 self.resolve_publishable(ActiveRunReuseState::ExactSandboxHandedOff);
                 ActiveRunHandoffDeliveryResult::Delivered
             }
-            Err(candidate) => ActiveRunHandoffDeliveryResult::Failed(recover(candidate)),
+            Err(candidate) => ActiveRunHandoffDeliveryResult::Failed(candidate.into_candidate()),
         }
     }
 
@@ -652,7 +611,9 @@ mod tests {
         let candidate = ParkedIdleCandidateBuilder::new("thread:closed-handoff", lease)
             .with_history_generation_run_id(predecessor_run_id)
             .build();
-        let recovered = match publisher.deliver_exact_handoff(candidate, predecessor_run_id) {
+        let recovered = match publisher
+            .deliver_exact_handoff(IdleParkCandidate::Ordinary(candidate), predecessor_run_id)
+        {
             ActiveRunHandoffDeliveryResult::Failed(candidate) => candidate,
             ActiveRunHandoffDeliveryResult::Delivered => {
                 panic!("closed receiver must not take sandbox ownership")
@@ -701,16 +662,15 @@ mod tests {
             .with_history_generation_run_id(predecessor_run_id)
             .build();
         assert!(matches!(
-            publisher.deliver_exact_handoff(candidate, predecessor_run_id),
+            publisher
+                .deliver_exact_handoff(IdleParkCandidate::Ordinary(candidate), predecessor_run_id),
             ActiveRunHandoffDeliveryResult::Delivered
         ));
 
         let recovered = request
             .cancel_and_recover_delivery()
             .expect("cancellation must recover a candidate sent before receiver closure");
-        let (payload, lease) = recovered
-            .into_parked_candidate()
-            .into_active_destroy_parts();
+        let (payload, lease) = recovered.into_candidate().into_active_destroy_parts();
         drop(payload);
         drop(lease);
         assert_eq!(budget.allocated(), (0, 0, 0));
@@ -743,16 +703,15 @@ mod tests {
             .with_history_generation_run_id(predecessor_run_id)
             .build();
         assert!(matches!(
-            publisher.deliver_exact_handoff(candidate, predecessor_run_id),
+            publisher
+                .deliver_exact_handoff(IdleParkCandidate::Ordinary(candidate), predecessor_run_id),
             ActiveRunHandoffDeliveryResult::Delivered
         ));
         let candidate = request
             .receive()
             .await
             .expect("accepted handoff should remain deliverable after its deadline");
-        let (payload, lease) = candidate
-            .into_parked_candidate()
-            .into_active_destroy_parts();
+        let (payload, lease) = candidate.into_candidate().into_active_destroy_parts();
         drop(payload);
         drop(lease);
         assert_eq!(budget.allocated(), (0, 0, 0));

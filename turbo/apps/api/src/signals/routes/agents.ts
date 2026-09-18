@@ -774,9 +774,6 @@ const updateAgentCustomConnectorsInner$ = command(
     if (updated.status === "invalidCustomConnectorPermissions") {
       return validationError(updated.message);
     }
-    if (updated.status === "mcpFeatureDisabled") {
-      return forbidden("MCP custom connector management is not enabled");
-    }
 
     return {
       status: 200 as const,

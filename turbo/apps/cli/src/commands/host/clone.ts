@@ -2,10 +2,7 @@ import { Command, InvalidArgumentError } from "commander";
 import chalk from "chalk";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import {
-  cloneHostedSite,
-  publicSlugFromSite,
-} from "../../lib/host/clone-hosted-site";
+import { cloneHostedSite } from "../../lib/host/clone-hosted-site";
 import { formatBytes } from "../../lib/utils/file-utils";
 
 interface CloneOptions {
@@ -28,10 +25,10 @@ function jsonOption(options: CloneOptions, command: Command): boolean {
 
 export const cloneHostedSiteCommand = new Command()
   .name("clone")
-  .description("Clone an owned hosted-site version to a local directory")
+  .description("Clone a visible hosted-site version to a local directory")
   .argument(
     "<site>",
-    "Hosted site slug, public URL, or authenticated artifact URL",
+    "Hosted site slug, public URL, or authorized artifact reference",
   )
   .argument("[destination]", "Destination directory (default: public slug)")
   .option(
@@ -47,13 +44,14 @@ Examples:
   Clone by public slug:  okou host clone my-site
   Clone by hosted URL:   okou host clone https://my-site.sites.example.com ./site
   Clone an artifact URL: okou host clone https://dpl-<deployment-id>.sites.example.com ./site
+  Clone a shared site:  okou host clone /artifacts/abc123def4.html ./site
   Clone version 2:       okou host clone my-site --version 2
   Machine readable:      okou host clone my-site --json
 
 Notes:
   - Authenticates via OKOU_TOKEN (requires host:read capability)
-  - Only hosted sites owned by the active org can be cloned
-  - Private deployments also require their original owner's credentials
+  - Uses the site's current only-me, organization, or public visibility
+  - Shared sites download only the selected shared version, including its snapshot assets
   - Downloads files directly from R2 and verifies size/hash
   - The destination directory must be empty or not exist`,
   )
@@ -66,10 +64,9 @@ Notes:
         command: Command,
       ) => {
         const json = jsonOption(options, command);
-        const targetDir = destination ?? (await publicSlugFromSite(site));
         const result = await cloneHostedSite({
           site,
-          destination: targetDir,
+          destination,
           ...(options.version === undefined
             ? {}
             : { version: options.version }),

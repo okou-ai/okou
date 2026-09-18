@@ -13,8 +13,9 @@ const remainderReasonSchema = z.enum([
   "parse_fallback",
 ]);
 
-/** Resource-aware billing input. The webhook requires a configured global
- * start date and applies atomic accounting and two-date lifecycle admission. */
+/** Resource-aware billing input. Validation, resource recording and atomic
+ * accounting always apply; the feature switch controls billing deduplication.
+ * Observations are admitted for the current and previous UTC dates. */
 export const xResourceUsageEventSchema = z
   .object({
     protocol: z.literal("x-resource-v1"),

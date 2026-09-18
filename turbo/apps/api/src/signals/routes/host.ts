@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { hostPrivatePreviewRoutes } from "./host-private-preview";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 
-import { organizationAuthContext$ } from "../auth/auth-context";
+import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
@@ -129,7 +129,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const filesInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  const auth = get(organizationAuthContext$);
+  const auth = get(authContext$);
   const params = get(filesParams$);
   const query = get(filesQuery$);
 
@@ -140,6 +140,7 @@ const filesInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       publicSlug: params.publicSlug,
       version: query.version,
+      hostname: query.hostname,
     },
     signal,
   );
@@ -147,6 +148,9 @@ const filesInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (result.status === "conflict") {
     return conflict(result.message);
+  }
+  if (result.status === "bad_request") {
+    return badRequestMessage(result.message);
   }
   if (result.status === "not_found") {
     return notFound(result.message);
@@ -223,8 +227,6 @@ export const hostRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       {
         requiredCapability: "host:read",
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
       },
       filesInner$,
     ),
