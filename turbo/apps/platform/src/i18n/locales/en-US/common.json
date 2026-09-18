@@ -3149,6 +3149,7 @@
         "connected": "No connected connectors",
         "matching": "{{message}} matching \"{{search}}\"",
         "notConnected": "No connectors left to connect",
+        "oneClick": "No one-click connectors match.",
         "search": "No connectors matching \"{{search}}\"",
         "unshared": "Every connector is shared with an agent"
       },
@@ -3160,6 +3161,7 @@
         "aria": "Filter connectors",
         "connected": "Connected",
         "notConnected": "Not connected",
+        "oneClick": "One-click connect",
         "status": "Status",
         "unshared": "Not shared with any agent"
       },

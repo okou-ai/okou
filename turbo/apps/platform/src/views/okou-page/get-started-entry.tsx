@@ -530,7 +530,12 @@ function useQuestHandoffs(
   const introEnabled = useQuestIntroEnabled();
   return {
     connector: () => {
-      navigate("/connectors");
+      // The reward pays on one-click connectors only, so the quest lands on
+      // that view of the catalog rather than on four thousand services whose
+      // first screen is the ones it does not pay for.
+      navigate("/connectors", {
+        searchParams: new URLSearchParams({ connection: "one-click" }),
+      });
     },
     slack: () => {
       navigate("/works");

@@ -672,6 +672,11 @@ test("The connector step says what it costs the user before it hands them off", 
   await waitFor(() => {
     expect(pathname()).toBe("/connectors");
   });
+  // The reward only pays on connectors that finish in the browser, so the
+  // quest lands on that view of the catalog rather than on all of it.
+  expect(new URLSearchParams(location.search).get("connection")).toBe(
+    "one-click",
+  );
 });
 
 test("Declining an introduced step costs the user nothing", async () => {

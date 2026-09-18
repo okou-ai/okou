@@ -14,9 +14,10 @@ import { Search, Plus, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type {
-  PublicConnectorCatalogCategoryMetadata,
-  PublicConnectorCatalogDiscoveryResponse,
+import {
+  isOneClickConnectorGrantKind,
+  type PublicConnectorCatalogCategoryMetadata,
+  type PublicConnectorCatalogDiscoveryResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
@@ -391,19 +392,23 @@ function ConnectorFilterDropdown({
         })
       : undefined;
   const triggerLabel =
-    value.kind === "connected"
+    value.kind === "one-click"
       ? t(($) => {
-          return $.connectors.catalog.filters.connected;
+          return $.connectors.catalog.filters.oneClick;
         })
-      : value.kind === "not-connected"
+      : value.kind === "connected"
         ? t(($) => {
-            return $.connectors.catalog.filters.notConnected;
+            return $.connectors.catalog.filters.connected;
           })
-        : value.kind === "agent" && activeAgent
-          ? connectorAgentName(activeAgent)
-          : t(($) => {
-              return $.connectors.catalog.filters.all;
-            });
+        : value.kind === "not-connected"
+          ? t(($) => {
+              return $.connectors.catalog.filters.notConnected;
+            })
+          : value.kind === "agent" && activeAgent
+            ? connectorAgentName(activeAgent)
+            : t(($) => {
+                return $.connectors.catalog.filters.all;
+              });
 
   return (
     <DropdownMenu>
@@ -441,6 +446,16 @@ function ConnectorFilterDropdown({
         >
           {t(($) => {
             return $.connectors.catalog.filters.all;
+          })}
+        </ConnectorFilterOption>
+        <ConnectorFilterOption
+          active={value.kind === "one-click"}
+          onSelect={() => {
+            onChange({ kind: "one-click" });
+          }}
+        >
+          {t(($) => {
+            return $.connectors.catalog.filters.oneClick;
           })}
         </ConnectorFilterOption>
         <DropdownMenuSeparator />
@@ -1282,6 +1297,16 @@ function buildConnectorsBrowseModel({
     search.trim().length > 0 ||
     categoryFilter !== null ||
     connectionFilter.kind !== "all";
+  // One-click is a property of the connector, not of this workspace's
+  // connections, so it narrows the catalog before anything else groups it.
+  const visibleItems =
+    connectionFilter.kind === "one-click"
+      ? catalogItems.filter((connector) => {
+          return connector.authMethods.some((authMethod) => {
+            return isOneClickConnectorGrantKind(authMethod.grantKind);
+          });
+        })
+      : catalogItems;
   const sectionsOf = (
     items: readonly PlatformConnectorCatalogStatusItem[],
   ): ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[] => {
@@ -1297,7 +1322,7 @@ function buildConnectorsBrowseModel({
     // Shelves cover the whole catalog, connected included: a connector this
     // workspace already has is still the answer to "what talks to Slack", and
     // its card says so by showing the account instead of an add button.
-    sections: sectionsOf(catalogItems),
+    sections: sectionsOf(visibleItems),
     categoryCounts,
     headLabel,
     // The page's card grid is three wide, so six is two whole rows.
@@ -1323,11 +1348,11 @@ function buildConnectorsBrowseModel({
     // fill one falls through to the plain list.
     showShelves: ready && !filtered && layout.shelves.length > 0,
     categoryConnectors:
-      ready && categoryFilter !== null && catalogItems.length > 0
-        ? catalogItems
+      ready && categoryFilter !== null && visibleItems.length > 0
+        ? visibleItems
         : null,
     layout,
-    connected: catalogItems.filter((connector) => {
+    connected: visibleItems.filter((connector) => {
       return connector.connected;
     }),
     // Chips come from the whole catalog, not the filtered view: a chip row
@@ -1443,19 +1468,23 @@ function renderBuiltinList({
     }
     const trimmedSearch = search.trim();
     const base =
-      connectionFilter.kind === "connected"
+      connectionFilter.kind === "one-click"
         ? i18n.t(($) => {
-            return $.connectors.catalog.empty.connected;
+            return $.connectors.catalog.empty.oneClick;
           })
-        : connectionFilter.kind === "not-connected"
+        : connectionFilter.kind === "connected"
           ? i18n.t(($) => {
-              return $.connectors.catalog.empty.notConnected;
+              return $.connectors.catalog.empty.connected;
             })
-          : connectionFilter.kind === "agent"
+          : connectionFilter.kind === "not-connected"
             ? i18n.t(($) => {
-                return $.connectors.catalog.empty.agent;
+                return $.connectors.catalog.empty.notConnected;
               })
-            : null;
+            : connectionFilter.kind === "agent"
+              ? i18n.t(($) => {
+                  return $.connectors.catalog.empty.agent;
+                })
+              : null;
     const message = base
       ? trimmedSearch
         ? i18n.t(

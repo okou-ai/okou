@@ -3208,6 +3208,7 @@
         "connected": "Sin conectores conectados",
         "matching": "{{message}} \"{{search}}\" que coincida",
         "notConnected": "No quedan conectores para conectar",
+        "oneClick": "No hay conectores de un clic que coincidan.",
         "search": "No hay conectores que coincidan con \"{{search}}\"",
         "unshared": "Todos los conectores están compartidos con un agente"
       },
@@ -3219,6 +3220,7 @@
         "aria": "Conectores de filtro",
         "connected": "Conectados",
         "notConnected": "No conectado",
+        "oneClick": "Conexión con un clic",
         "status": "Estado",
         "unshared": "No compartido con ningún agente"
       },

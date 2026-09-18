@@ -3144,6 +3144,7 @@
         "connected": "연결된 커넥터가 없습니다",
         "matching": "\"{{search}}\"와(과) 일치하는 {{message}}",
         "notConnected": "연결할 커넥터가 남아 있지 않습니다",
+        "oneClick": "원클릭으로 연결할 수 있는 커넥터가 없습니다.",
         "search": "\"{{search}}\"와(과) 일치하는 커넥터가 없습니다",
         "unshared": "모든 커넥터가 에이전트와 공유되어 있습니다"
       },
@@ -3155,6 +3156,7 @@
         "aria": "커넥터 필터",
         "connected": "연결됨",
         "notConnected": "연결 안 됨",
+        "oneClick": "원클릭 연결",
         "status": "상태",
         "unshared": "어떤 에이전트와도 공유되지 않음"
       },

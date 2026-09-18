@@ -452,6 +452,9 @@ const CONNECTORS_AGENT_FILTER_PREFIX = "agent:";
 // status, or the connectors a given agent is authorized to use.
 export type ConnectorsConnectionFilter =
   | { readonly kind: "all" }
+  // Everything that connects with one press, which is also everything the Get
+  // started connector reward pays on.
+  | { readonly kind: "one-click" }
   | { readonly kind: "connected" }
   | { readonly kind: "not-connected" }
   | { readonly kind: "unshared" }
@@ -466,9 +469,17 @@ export const connectorsConnectionFilter$ = computed(
       get(connectorDirectoryEnabled$) &&
       get(connectorsScope$) !== "connected"
     ) {
-      return { kind: "all" };
+      // Connection status describes what you already own, so the directory
+      // drops it. One-click describes the catalog itself, so it survives.
+      return get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM) ===
+        "one-click"
+        ? { kind: "one-click" }
+        : { kind: "all" };
     }
     const raw = get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM);
+    if (raw === "one-click") {
+      return { kind: "one-click" };
+    }
     if (raw === "connected") {
       return { kind: "connected" };
     }

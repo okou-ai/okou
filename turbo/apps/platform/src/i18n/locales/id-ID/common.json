@@ -3144,6 +3144,7 @@
         "connected": "Tidak ada konektor yang terhubung",
         "matching": "{{message}} yang cocok dengan \"{{search}}\"",
         "notConnected": "Tidak ada konektor lagi untuk dihubungkan",
+        "oneClick": "Tidak ada konektor sekali klik yang cocok.",
         "search": "Tidak ada konektor yang cocok dengan \"{{search}}\"",
         "unshared": "Setiap konektor sudah dibagikan ke sebuah agen"
       },
@@ -3155,6 +3156,7 @@
         "aria": "Filter konektor",
         "connected": "Terhubung",
         "notConnected": "Tidak terhubung",
+        "oneClick": "Hubungkan sekali klik",
         "status": "Status",
         "unshared": "Tidak dibagikan ke agen mana pun"
       },

@@ -3157,6 +3157,7 @@
         "connected": "Keine verbundenen Integrationen",
         "matching": "{{message}} passend zu „{{search}}“",
         "notConnected": "Keine weiteren Integrationen verfügbar",
+        "oneClick": "Keine Ein-Klick-Connectors gefunden.",
         "search": "Keine Integrationen passend zu „{{search}}“",
         "unshared": "Jede Integration ist mit einem Agenten geteilt"
       },
@@ -3168,6 +3169,7 @@
         "aria": "Integrationen filtern",
         "connected": "Verbunden",
         "notConnected": "Nicht verbunden",
+        "oneClick": "Ein-Klick-Verbindung",
         "status": "Status",
         "unshared": "Mit keinem Agenten geteilt"
       },
