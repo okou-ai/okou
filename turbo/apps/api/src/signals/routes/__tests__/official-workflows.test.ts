@@ -94,6 +94,7 @@ import {
   observeMorningBriefSettlementAttemptsFixture,
   readMorningBriefScheduleClaimsFixture,
   removeMorningBriefScheduleClaimForCompatibilityFixture,
+  removeRetainedMorningBriefAutomationFixture,
   readWorkflowAutomationLastRunFixture,
   recordWorkflowAutomationLastRunFixture,
 } from "../../../test-fixtures/morning-brief-schedule-claim";
@@ -13456,14 +13457,17 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await flushWaitUntilForTest();
   }
 
-  async function runMorningBriefReconciliationUntilTerminal(): Promise<void> {
+  async function runMorningBriefReconciliationUntilAutomationRestored(
+    automationId: string,
+  ): Promise<void> {
     for (let page = 0; page < 100; page += 1) {
-      const worker = await runOfficialWorkflowReconciliationWorker();
-      if (worker.retried > 0 || worker.completed > 0) {
+      await makeOfficialWorkflowReconciliationWorkDue("morning-brief");
+      await runOfficialWorkflowReconciliationWorker();
+      if ((await readLegacyAutomation(automationId)) !== undefined) {
         return;
       }
     }
-    throw new Error("Morning Brief reconciliation did not terminate");
+    throw new Error("Morning Brief automation was not restored");
   }
 
   it("orders a selected unjournaled callback before disable and re-enable", async () => {
@@ -13569,8 +13573,11 @@ describe("Morning Brief legacy schedule claim journal", () => {
     };
     const runId = await startUnjournaledCompatibilityRun(brief, brief.anchor);
 
-    await syncCatalog(morningBriefCatalog([]));
-    await runMorningBriefReconciliationUntilTerminal();
+    await simulateDormantMaterializationDiscardCrash({
+      definitionName: "morning-brief",
+      automationId: brief.automationId,
+    });
+    await removeRetainedMorningBriefAutomationFixture(brief.automationId);
     await expect(
       readLegacyAutomation(brief.automationId),
     ).resolves.toBeUndefined();
@@ -13590,23 +13597,22 @@ describe("Morning Brief legacy schedule claim journal", () => {
     const callback = flushWaitUntilForTest();
     await held.arrival;
 
-    await syncCatalog(
-      morningBriefCatalog([morningBriefScheduleBlueprint("0 10 * * *")]),
+    await runMorningBriefReconciliationUntilAutomationRestored(
+      brief.automationId,
     );
-    await runMorningBriefReconciliationUntilTerminal();
     const legacyBefore = await readLegacyAutomation(brief.automationId);
     const nativeBefore = await readNativeSchedule(owner);
     expect(legacyBefore).toMatchObject({
       id: brief.automationId,
       enabled: true,
-      cronExpression: "0 10 * * *",
+      cronExpression: "0 7 * * *",
       consecutiveFailures: 0,
       nextRunAt: expect.any(Date),
     });
     expect(nativeBefore).toMatchObject({
       phase: "legacy",
       enabled: true,
-      cronExpression: "0 10 * * *",
+      cronExpression: "0 7 * * *",
       legacyAutomationId: brief.automationId,
       nextRunAt: expect.any(Date),
       scheduleOwner: "legacy",
