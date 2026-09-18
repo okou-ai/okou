@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { initContract } from "./base";
+import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
@@ -83,11 +84,12 @@ export const testWorkflowAutomationExecutionContract = c.router({
           .array(
             z.object({ orgId: z.string().min(1), userId: z.string().min(1) }),
           )
-          .optional(),
+          .min(1),
       })
       .strict(),
     responses: {
       200: z.object({ purged: z.number().int().nonnegative() }),
+      400: apiErrorSchema,
       404: z.string(),
     },
     summary:

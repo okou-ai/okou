@@ -506,7 +506,7 @@ export async function purgeExpiredMorningBriefGenerations(
   const cutoff = timestampWithoutTimeZone(at);
   const ownerScope =
     owners === undefined
-      ? sql``
+      ? sql.empty()
       : sql` AND (generation.org_id, generation.user_id) IN (${sql.join(
           owners.map((owner) => {
             return sql`(${owner.orgId}, ${owner.userId})`;

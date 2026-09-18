@@ -2695,6 +2695,16 @@ describe("Morning Brief platform-funded generation release fence", () => {
 });
 
 describe("Morning Brief platform-funded generation retention", () => {
+  it("requires an explicit test-owned scope", async () => {
+    const response = await accept(
+      setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
+        testWorkflowAutomationExecutionContract,
+      ).retainMorningBriefGenerations({ body: { owners: [] } }),
+      [400],
+    );
+    expect(response.body.error.code).toBe("BAD_REQUEST");
+  });
+
   it("purges an idle owner's expired content without that owner invoking again", async () => {
     const f = await fixture();
     const other = await fixture();
