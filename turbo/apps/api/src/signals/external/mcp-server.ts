@@ -1,5 +1,11 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import {
+  mcpGetChatMessagesInputSchema,
+  mcpGetChatMessagesOutputSchema,
+  type McpGetChatMessagesInput,
+  type McpMessageReadResult,
+} from "@okouai/api-contracts/contracts/mcp-chat-messages";
+import {
   mcpGetChatThreadInputSchema,
   mcpGetChatThreadOutputSchema,
   mcpListChatThreadsInputSchema,
@@ -23,6 +29,10 @@ interface McpChatAccess {
     input: McpGetChatThreadInput,
     signal: AbortSignal,
   ) => Promise<McpThreadReadResult<McpGetChatThreadOutput>>;
+  readonly getMessages: (
+    input: McpGetChatMessagesInput,
+    signal: AbortSignal,
+  ) => Promise<McpMessageReadResult>;
 }
 
 const readAnnotations = Object.freeze({
@@ -41,8 +51,12 @@ function toolError(message: string) {
 
 async function readTool<T extends Record<string, unknown>>(
   access: McpChatAccess,
-  operation: () => Promise<McpThreadReadResult<T>>,
+  operation: () => Promise<
+    | { readonly kind: "ok"; readonly data: T }
+    | { readonly kind: string; readonly message: string }
+  >,
   signal: AbortSignal,
+  unavailableMessage = "Thread information is temporarily unavailable. Retry, or narrow the Agent/time filters for a large search.",
 ) {
   if (!access.scopes.includes(access.readScope)) {
     return toolError("Insufficient scope");
@@ -50,11 +64,9 @@ async function readTool<T extends Record<string, unknown>>(
   signal.throwIfAborted();
   const result = await settle(operation(), signal);
   if (!result.ok) {
-    return toolError(
-      "Thread information is temporarily unavailable. Retry, or narrow the Agent/time filters for a large search.",
-    );
+    return toolError(unavailableMessage);
   }
-  if (result.value.kind !== "ok") {
+  if (!("data" in result.value)) {
     return toolError(result.value.message);
   }
   return {
@@ -65,6 +77,104 @@ async function readTool<T extends Record<string, unknown>>(
   };
 }
 
+function registerMessageTool(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  server.registerTool(
+    "get_chat_messages",
+    {
+      description:
+        "Read visible messages in your conversation in the authorized organization. Defaults to the latest 20 " +
+        "messages, presented in conversation run-turn order. Filter by runId, or use around with a real " +
+        "eventId/seqId reference for context. Follow olderCursor/newerCursor with the same threadId, runId " +
+        "and limit, omitting around. Follow each message's nextContentCursor to finish its text/files. " +
+        "Offsets count UTF-16 text units and file entries. History changes require restarting page cursors; " +
+        "unrelated appends preserve content cursors. References and private artifact links retain their " +
+        "existing authorization. This does not mark messages read. Supports histories within 8 MiB gzip, " +
+        "32 MiB decoded plus database tail, 50,000 events and 15 seconds; larger histories fail explicitly.",
+      inputSchema: mcpGetChatMessagesInputSchema,
+      outputSchema: mcpGetChatMessagesOutputSchema,
+      annotations: readAnnotations,
+    },
+    async (args, context) => {
+      const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+      return await readTool(
+        access,
+        () => {
+          return access.getMessages(args, signal);
+        },
+        signal,
+        "Conversation history is temporarily unavailable. Retry later.",
+      );
+    },
+  );
+}
+
+function createReadServer(
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): McpServer {
+  const server = new McpServer(
+    { name: "okou", version: "1.0.0" },
+    { capabilities: { tools: { listChanged: false } } },
+  );
+  if (access.scopes.includes(access.readScope)) {
+    registerMessageTool(server, access, requestSignal);
+    server.registerTool(
+      "list_chat_threads",
+      {
+        description:
+          "Find your conversations in the authorized organization, newest message first. " +
+          "Filter by Agent, literal title substring, last-message since (inclusive)/before (exclusive), " +
+          "activity or unread. Follow nextCursor with the same filters. Pagination reads live metadata; " +
+          "restart to refresh conversations that move while paging. Unread covers retained terminal " +
+          "events and native deliveries, not all archived history. Activity is not run completion. " +
+          "Reading does not mark conversations read. Use get_chat_thread to inspect one result.",
+        inputSchema: mcpListChatThreadsInputSchema,
+        outputSchema: mcpListChatThreadsOutputSchema,
+        annotations: readAnnotations,
+      },
+      async (args, context) => {
+        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+        return await readTool(
+          access,
+          () => {
+            return access.listThreads(args, signal);
+          },
+          signal,
+        );
+      },
+    );
+    server.registerTool(
+      "get_chat_thread",
+      {
+        description:
+          "Read a conversation's current title, Agent, selected/effective model, activity and unread " +
+          "state by threadId. Only your conversations in the authorized organization are accessible. " +
+          "Model metadata describes current policy; actual run admission is checked when sending. " +
+          "Unread covers retained terminal events and native deliveries. This does not read messages " +
+          "or mark the conversation read, and idle activity does not establish execution success.",
+        inputSchema: mcpGetChatThreadInputSchema,
+        outputSchema: mcpGetChatThreadOutputSchema,
+        annotations: readAnnotations,
+      },
+      async (args, context) => {
+        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+        return await readTool(
+          access,
+          () => {
+            return access.getThread(args, signal);
+          },
+          signal,
+        );
+      },
+    );
+  }
+  return server;
+}
+
 /** SDK types and per-request transport state remain within this gateway. */
 export async function serveMcpRequest(
   request: Request,
@@ -73,68 +183,7 @@ export async function serveMcpRequest(
 ): Promise<Response> {
   const handler = createMcpHandler(
     () => {
-      const server = new McpServer(
-        { name: "okou", version: "1.0.0" },
-        { capabilities: { tools: { listChanged: false } } },
-      );
-      if (access.scopes.includes(access.readScope)) {
-        server.registerTool(
-          "list_chat_threads",
-          {
-            description:
-              "Find your conversations in the authorized organization, newest message first. " +
-              "Filter by Agent, literal title substring, last-message since (inclusive)/before (exclusive), " +
-              "activity or unread. Follow nextCursor with the same filters. Pagination reads live metadata; " +
-              "restart to refresh conversations that move while paging. Unread covers retained terminal " +
-              "events and native deliveries, not all archived history. Activity is not run completion. " +
-              "Reading does not mark conversations read. Use get_chat_thread to inspect one result.",
-            inputSchema: mcpListChatThreadsInputSchema,
-            outputSchema: mcpListChatThreadsOutputSchema,
-            annotations: readAnnotations,
-          },
-          async (args, context) => {
-            const signal = AbortSignal.any([
-              requestSignal,
-              context.mcpReq.signal,
-            ]);
-            return await readTool(
-              access,
-              () => {
-                return access.listThreads(args, signal);
-              },
-              signal,
-            );
-          },
-        );
-        server.registerTool(
-          "get_chat_thread",
-          {
-            description:
-              "Read a conversation's current title, Agent, selected/effective model, activity and unread " +
-              "state by threadId. Only your conversations in the authorized organization are accessible. " +
-              "Model metadata describes current policy; actual run admission is checked when sending. " +
-              "Unread covers retained terminal events and native deliveries. This does not read messages " +
-              "or mark the conversation read, and idle activity does not establish execution success.",
-            inputSchema: mcpGetChatThreadInputSchema,
-            outputSchema: mcpGetChatThreadOutputSchema,
-            annotations: readAnnotations,
-          },
-          async (args, context) => {
-            const signal = AbortSignal.any([
-              requestSignal,
-              context.mcpReq.signal,
-            ]);
-            return await readTool(
-              access,
-              () => {
-                return access.getThread(args, signal);
-              },
-              signal,
-            );
-          },
-        );
-      }
-      return server;
+      return createReadServer(access, requestSignal);
     },
     {
       legacy: "stateless",
