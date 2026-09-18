@@ -203,13 +203,16 @@ export function observeMorningBriefSettlementAttemptsFixture(args: {
   readonly release: () => void;
 } {
   let arrivals = 0;
-  setMorningBriefSettlementAttemptHookForTest(async (snapshot) => {
+  setMorningBriefSettlementAttemptHookForTest((snapshot) => {
     if (snapshot.automationId === args.automationId) {
       arrivals += 1;
     }
+    return Promise.resolve();
   });
   return {
-    readArrivals: () => arrivals,
+    readArrivals: () => {
+      return arrivals;
+    },
     release: clearMorningBriefSettlementAttemptHookForTest,
   };
 }
@@ -226,9 +229,10 @@ export async function installMorningBriefSettlementFailureFixture(args: {
   readonly release: () => Promise<void>;
 }> {
   const suffix = randomUUID().replaceAll("-", "");
-  const sequenceName = `mb_settlement_failure_attempts_${suffix}`;
+  const suffixKey = suffix.slice(0, 10);
+  const sequenceName = `mb_settlement_failure_attempts_${suffixKey}`;
   const functionName = `fail_mb_settlement_once_${suffix}`;
-  const triggerName = `fail_mb_settlement_${suffix}_${args.automationId.replaceAll("-", "")}`;
+  const triggerName = `fail_mb_settlement_${suffixKey}_${args.automationId.replaceAll("-", "")}`;
 
   await db().execute(sql`CREATE SEQUENCE ${sql.identifier(sequenceName)}`);
   await db().execute(sql`
@@ -237,10 +241,10 @@ export async function installMorningBriefSettlementFailureFixture(args: {
     LANGUAGE plpgsql
     AS $function$
     BEGIN
-      IF NEW.automation_id = TG_ARGV[1]::uuid
+      IF replace(NEW.automation_id::text, '-', '') = split_part(TG_NAME, '_', 5)
          AND OLD.settlement = 'unsettled'
          AND NEW.settlement <> OLD.settlement THEN
-        IF nextval(TG_ARGV[0]::regclass) = 1 THEN
+        IF nextval(('mb_settlement_failure_attempts_' || split_part(TG_NAME, '_', 4))::regclass) = 1 THEN
           RAISE EXCEPTION 'forced Morning Brief settlement failure';
         END IF;
       END IF;
@@ -251,10 +255,7 @@ export async function installMorningBriefSettlementFailureFixture(args: {
   await db().execute(sql`
     CREATE TRIGGER ${sql.identifier(triggerName)}
       AFTER UPDATE ON morning_brief_schedule_claims
-      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}(
-        ${sql.raw(`'${sequenceName}'`)},
-        ${sql.raw(`'${args.automationId}'`)}
-      )
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
   `);
 
   let released = false;
@@ -305,8 +306,9 @@ export async function installWorkflowAutomationRunInsertFailureFixture(args: {
   const suffix = randomUUID().replaceAll("-", "");
   const automationKey = args.automationId.replaceAll("-", "");
   const functionName = `test_mb_run_insert_fn_${suffix}`;
-  const triggerName = `test_mb_run_insert_${automationKey}_${suffix.slice(0, 8)}`;
-  const sequenceName = `test_mb_run_insert_seq_${suffix}`;
+  const suffixKey = suffix.slice(0, 8);
+  const triggerName = `test_mb_run_insert_${automationKey}_${suffixKey}`;
+  const sequenceName = `test_mb_run_insert_seq_${suffixKey}`;
   await db().transaction(async (tx) => {
     await tx.execute(sql`CREATE SEQUENCE ${sql.identifier(sequenceName)}`);
     await tx.execute(sql`
@@ -315,7 +317,7 @@ export async function installWorkflowAutomationRunInsertFailureFixture(args: {
       BEGIN
         IF NEW.workflow_automation_id IS NOT NULL
            AND replace(NEW.workflow_automation_id::text, '-', '') = split_part(TG_NAME, '_', 5) THEN
-          PERFORM nextval(TG_ARGV[0]::regclass);
+          PERFORM nextval(('test_mb_run_insert_seq_' || split_part(TG_NAME, '_', 6))::regclass);
           RAISE EXCEPTION 'forced Morning Brief Run INSERT rollback';
         END IF;
         RETURN NEW;
@@ -325,9 +327,7 @@ export async function installWorkflowAutomationRunInsertFailureFixture(args: {
     await tx.execute(sql`
       CREATE TRIGGER ${sql.identifier(triggerName)}
       AFTER INSERT ON agent_runs
-      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}(
-        ${sql.raw(`'${sequenceName}'`)}
-      )
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
     `);
   });
 

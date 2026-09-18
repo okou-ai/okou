@@ -13393,7 +13393,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     onTestFinished(fault.release);
 
     await pollAt(brief.automationId, brief.anchor + 60_000);
-    expect(await fault.readAttempts()).toBeGreaterThan(0);
+    await expect(fault.readAttempts()).resolves.toBeGreaterThan(0);
     await fault.release();
 
     const claims = await readMorningBriefScheduleClaimsFixture(
