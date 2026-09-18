@@ -97,6 +97,20 @@ mkdir "$marker/rust-toolchain-smoke"
   cargo --version
   cargo fmt --version
 )
+# A Python version check does not exercise the separately packaged ensurepip.
+python3 -m venv "$marker/python-venv-smoke"
+"$marker/python-venv-smoke/bin/python" - <<'PY'
+import pathlib
+import sys
+
+import pip
+
+if sys.prefix == sys.base_prefix:
+    raise RuntimeError("venv Python is not isolated from the base interpreter")
+if not pathlib.Path(pip.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()):
+    raise RuntimeError("venv Python imported pip from outside its environment")
+PY
+"$marker/python-venv-smoke/bin/python" -m pip --version
 if sudo find /run/vm0-exec -mindepth 1 -maxdepth 2 -print -quit | grep -q .; then
   echo "Guest Agent startup left a generic environment script" >&2
   exit 1
