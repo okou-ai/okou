@@ -11,6 +11,47 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.919.0](https://github.com/vm0-ai/okou/compare/app-v0.918.0...app-v0.919.0) (2026-09-18)
+
+
+### Features
+
+* **templates:** offer image sources in the custom template picker ([#35258](https://github.com/vm0-ai/okou/issues/35258)) ([83dbdf0](https://github.com/vm0-ai/okou/commit/83dbdf0e9850e6c3a8d4e56a09e42ab67dded603))
+
+
+### Refactoring
+
+* remove the model picker flyout feature switch ([#35191](https://github.com/vm0-ai/okou/issues/35191)) ([4ef1c13](https://github.com/vm0-ai/okou/commit/4ef1c138fd7a337026383435491707e0392adeed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.471.0
+    * @okouai/core bumped to 8.681.1
+
+## [0.918.0](https://github.com/vm0-ai/okou/compare/app-v0.917.1...app-v0.918.0) (2026-09-18)
+
+
+### Features
+
+* **app:** retire legacy advertising and attribution storage ([#35246](https://github.com/vm0-ai/okou/issues/35246)) ([4a9ca58](https://github.com/vm0-ai/okou/commit/4a9ca58c930903cb1fbf5cccf6c67d95610bc9c6))
+* **templates:** add the illustration kind to custom templates ([#35248](https://github.com/vm0-ai/okou/issues/35248)) ([ebd7039](https://github.com/vm0-ai/okou/commit/ebd70395f808ff7bd21ddc453789c76d712d7fe6))
+
+
+### Refactoring
+
+* remove effort feature switch ([#35189](https://github.com/vm0-ai/okou/issues/35189)) ([9b0dff2](https://github.com/vm0-ai/okou/commit/9b0dff2c1cc1c4f8a2a10d4cbfb7fea263585bfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.470.0
+    * @okouai/core bumped to 8.681.0
+
 ## [0.917.1](https://github.com/vm0-ai/okou/compare/app-v0.917.0...app-v0.917.1) (2026-09-18)
 
 

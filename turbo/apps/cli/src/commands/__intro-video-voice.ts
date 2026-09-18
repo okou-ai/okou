@@ -43,6 +43,7 @@ async function runIntroVideoVoiceCommand(
     result.filename,
     result.url,
     "This result is narration audio that can be used in subsequent video composition.",
+    result,
   );
   if (options.json) {
     console.log(JSON.stringify({ ...result, ...presentation.json }));

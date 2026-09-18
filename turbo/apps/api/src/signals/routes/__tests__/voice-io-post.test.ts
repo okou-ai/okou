@@ -1232,6 +1232,7 @@ describe("POST /api/voice-io/*", () => {
     expect(body).toMatchObject({
       contentType: SPEECH_CONTENT_TYPE,
       size: wav.byteLength,
+      privateArtifacts: false,
       durationSeconds: 2,
       creditsCharged: expectedCredits(2, SPEECH_PRICING_ROW),
       model: VOICE_IO_TTS_MODEL,

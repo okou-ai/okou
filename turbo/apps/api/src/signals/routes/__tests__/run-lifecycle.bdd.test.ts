@@ -13115,6 +13115,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     expect(claim.platformEnvironment).toMatchObject({
       OKOU_APP_URL: appUrl,
       OKOU_AGENT_ID: agent.agentId,
+      OKOU_CURRENT_INTEGRATION: "web",
       OKOU_TOKEN: claim.platformEnvironment.OKOU_TOKEN,
       CLI_PKG_URL: "https://static.okou.io/okou-cli/test-commit/package.tgz",
     });

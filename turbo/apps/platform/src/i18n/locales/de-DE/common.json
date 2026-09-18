@@ -541,12 +541,14 @@
       "synced": "Mit Google Drive synchronisiert",
       "syncedFiles_one": "Mit Google Drive synchronisiert",
       "syncedFiles_other": "{{count}} Dateien mit Google Drive synchronisiert",
+      "syncedSlides": "Mit Google Slides synchronisiert",
       "syncFailed": "Synchronisierung mit Google Drive fehlgeschlagen",
       "syncingArtifact": "Artefakt wird synchronisiert...",
       "syncingFiles_one": "{{count}} Datei wird synchronisiert...",
       "syncingFiles_other": "{{count}} Dateien werden synchronisiert...",
       "syncingNamed": "{{filename}} wird synchronisiert...",
-      "upload": "Auf Google Drive hochladen"
+      "upload": "Auf Google Drive hochladen",
+      "uploadSlides": "Auf Google Slides hochladen"
     },
     "kinds": {
       "audio": "Audio",

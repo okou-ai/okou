@@ -361,47 +361,204 @@ async function teamsScopeExists(args: {
   return connection !== undefined;
 }
 
-async function applyChatAuthorizationScope(args: {
-  readonly db: Db;
-  readonly request: AuthorizationRequestRow;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly computerUseHostId: string;
-  readonly now: Date;
-}): Promise<boolean> {
-  return await args.db.transaction(async (tx) => {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        computerUseHostId: args.computerUseHostId,
-        cloudBrowserEnabled: false,
-        updatedAt: args.now,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, requiredChatThreadId(args.request)),
-          eq(chatThreads.userId, args.userId),
+/**
+ * Retains the exact admitted thread identity with the write-compatible lock the
+ * selection UPDATE below already needs. The shared helper's KEY SHARE protects
+ * deletion but permits non-key user/Agent changes; a stronger SHARE lock would
+ * make concurrent applies upgrade against one another and can deadlock. NO KEY
+ * UPDATE instead serializes those writers without an avoidable lock upgrade.
+ */
+async function retainComputerUseAuthorizationApplyThread(
+  tx: Tx,
+  identity: ChatThreadContentIdentity,
+): Promise<void> {
+  const [thread] = await tx
+    .select({
+      userId: chatThreads.userId,
+      agentId: chatThreads.agentId,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, identity.chatThreadId))
+    .limit(1)
+    .for("no key update");
+  if (
+    !thread ||
+    thread.userId !== identity.userId ||
+    thread.agentId !== identity.agentId
+  ) {
+    throw new ChatThreadContentOwnershipChangedError();
+  }
+}
+
+/**
+ * Revalidates and pins the exact canonical-chat request only after B1 subject,
+ * Agent and thread admission. The request labels are a locator rather than
+ * authority; the fixed id/hash/user/org/source/thread tuple can never retarget
+ * this apply while it waits. Thread selection, sidebar sequence/event and
+ * request completion then share this transaction and one accepted timestamp.
+ */
+async function applyAuthorizedComputerUseSelection(
+  tx: Tx,
+  args: {
+    readonly identity: ChatThreadContentIdentity & {
+      readonly agentId: string;
+    };
+    readonly request: AuthorizationRequestRow;
+    readonly requestToken: string;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly computerUseHostId: string;
+  },
+  signal: AbortSignal,
+): Promise<ApplyComputerUseAuthorizationRequestResult> {
+  await retainComputerUseAuthorizationApplyThread(tx, args.identity);
+  signal.throwIfAborted();
+
+  const [request] = await tx
+    .select({ expiresAt: computerUseAuthorizationRequests.expiresAt })
+    .from(computerUseAuthorizationRequests)
+    .where(
+      and(
+        eq(computerUseAuthorizationRequests.id, args.request.id),
+        eq(
+          computerUseAuthorizationRequests.requestTokenHash,
+          hashSecret(args.requestToken),
         ),
-      )
-      .returning({
-        id: chatThreads.id,
-        agentId: chatThreads.agentId,
-      });
-    if (!thread?.agentId) {
-      return false;
-    }
-    await appendChatThreadEvent(tx, {
-      kind: "computer_use_host_updated",
-      userId: args.userId,
-      orgId: args.orgId,
-      chatThreadId: thread.id,
-      agentId: thread.agentId,
+        eq(computerUseAuthorizationRequests.orgId, args.orgId),
+        eq(computerUseAuthorizationRequests.userId, args.userId),
+        eq(computerUseAuthorizationRequests.source, "chat"),
+        eq(
+          computerUseAuthorizationRequests.chatThreadId,
+          args.identity.chatThreadId,
+        ),
+      ),
+    )
+    .limit(1)
+    .for("no key update");
+  signal.throwIfAborted();
+  if (!request) {
+    return { status: "not_found" };
+  }
+
+  // The request pin can wait. Read the clock afterwards so a link that lapses
+  // during that wait cannot update the thread or complete the request.
+  const appliedAt = nowDate();
+  if (request.expiresAt.getTime() <= appliedAt.getTime()) {
+    return { status: "expired" };
+  }
+  // Completed requests intentionally remain repeatable.
+
+  const [thread] = await tx
+    .update(chatThreads)
+    .set({
       computerUseHostId: args.computerUseHostId,
       cloudBrowserEnabled: false,
-      createdAt: args.now,
-    });
-    return true;
+      updatedAt: appliedAt,
+    })
+    .where(
+      and(
+        eq(chatThreads.id, args.identity.chatThreadId),
+        eq(chatThreads.userId, args.identity.userId),
+        eq(chatThreads.agentId, args.identity.agentId),
+      ),
+    )
+    .returning({ id: chatThreads.id, agentId: chatThreads.agentId });
+  signal.throwIfAborted();
+  if (!thread?.agentId) {
+    return { status: "scope_not_found" };
+  }
+
+  await appendChatThreadEvent(tx, {
+    kind: "computer_use_host_updated",
+    userId: args.userId,
+    orgId: args.orgId,
+    chatThreadId: thread.id,
+    agentId: thread.agentId,
+    computerUseHostId: args.computerUseHostId,
+    cloudBrowserEnabled: false,
+    createdAt: appliedAt,
   });
+  signal.throwIfAborted();
+
+  const completed = await tx
+    .update(computerUseAuthorizationRequests)
+    .set({ completedAt: appliedAt, updatedAt: appliedAt })
+    .where(
+      and(
+        eq(computerUseAuthorizationRequests.id, args.request.id),
+        eq(
+          computerUseAuthorizationRequests.requestTokenHash,
+          hashSecret(args.requestToken),
+        ),
+        eq(computerUseAuthorizationRequests.orgId, args.orgId),
+        eq(computerUseAuthorizationRequests.userId, args.userId),
+        eq(computerUseAuthorizationRequests.source, "chat"),
+        eq(
+          computerUseAuthorizationRequests.chatThreadId,
+          args.identity.chatThreadId,
+        ),
+      ),
+    )
+    .returning({ id: computerUseAuthorizationRequests.id });
+  signal.throwIfAborted();
+  if (completed.length !== 1) {
+    throw new Error("Failed to complete Computer Use authorization request");
+  }
+  return {
+    status: "applied",
+    source: "chat",
+    computerUseHostId: args.computerUseHostId,
+  };
+}
+
+async function applyChatAuthorizationScope(
+  args: {
+    readonly db: Db;
+    readonly request: AuthorizationRequestRow;
+    readonly requestToken: string;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly computerUseHostId: string;
+  },
+  signal: AbortSignal,
+): Promise<ApplyComputerUseAuthorizationRequestResult> {
+  const chatThreadId = requiredChatThreadId(args.request);
+  const result = await withChatThreadContentWrite(
+    args.db,
+    {
+      chatThreadId,
+      authorize: (identity) => {
+        return (
+          identity.userId === args.userId &&
+          identity.agentId !== null &&
+          identity.orgId === args.orgId
+        );
+      },
+    },
+    async (tx, identity) => {
+      if (identity.agentId === null) {
+        return { status: "scope_not_found" as const };
+      }
+      return await applyAuthorizedComputerUseSelection(
+        tx,
+        {
+          identity: { ...identity, agentId: identity.agentId },
+          request: args.request,
+          requestToken: args.requestToken,
+          orgId: args.orgId,
+          userId: args.userId,
+          computerUseHostId: args.computerUseHostId,
+        },
+        signal,
+      );
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (result.outcome !== "written") {
+    return { status: "scope_not_found" };
+  }
+  return result.value;
 }
 
 async function applyTeamsAuthorizationScope(args: {
@@ -660,9 +817,36 @@ export const applyComputerUseAuthorizationRequest$ = command(
     signal.throwIfAborted();
 
     const request = loaded.request;
+    if (request.source === "chat") {
+      const applied = await applyChatAuthorizationScope(
+        {
+          db,
+          request,
+          requestToken: args.requestToken,
+          orgId: args.orgId,
+          userId: args.userId,
+          computerUseHostId: args.computerUseHostId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (applied.status !== "applied") {
+        return applied;
+      }
+      await publishThreadListChanged({
+        userId: args.userId,
+        orgId: args.orgId,
+      });
+      signal.throwIfAborted();
+      return applied;
+    }
+
+    // Legacy Teams authorization retains its existing route/connection
+    // authority and two-transaction completion semantics. R14 changes only the
+    // canonical source:chat path shared by web, Slack and Teams runs.
     const applied =
-      request.source === "chat"
-        ? await applyChatAuthorizationScope({
+      request.source === "teams"
+        ? await applyTeamsAuthorizationScope({
             db,
             request,
             orgId: args.orgId,
@@ -670,18 +854,8 @@ export const applyComputerUseAuthorizationRequest$ = command(
             computerUseHostId: args.computerUseHostId,
             now,
           })
-        : request.source === "teams"
-          ? await applyTeamsAuthorizationScope({
-              db,
-              request,
-              orgId: args.orgId,
-              userId: args.userId,
-              computerUseHostId: args.computerUseHostId,
-              now,
-            })
-          : false;
+        : false;
     signal.throwIfAborted();
-
     if (!applied) {
       return { status: "scope_not_found" };
     }
@@ -691,13 +865,8 @@ export const applyComputerUseAuthorizationRequest$ = command(
       .set({ completedAt: now, updatedAt: now })
       .where(eq(computerUseAuthorizationRequests.id, request.id));
     signal.throwIfAborted();
-
-    await publishThreadListChanged({
-      userId: args.userId,
-      orgId: args.orgId,
-    });
+    await publishThreadListChanged({ userId: args.userId, orgId: args.orgId });
     signal.throwIfAborted();
-
     return {
       status: "applied",
       source: request.source as ComputerUseAuthorizationSource,

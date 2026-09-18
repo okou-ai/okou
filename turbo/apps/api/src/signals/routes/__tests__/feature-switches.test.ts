@@ -87,9 +87,6 @@ describe("/api/feature-switches", () => {
     expect(
       ordinary.body.effectiveSwitches[FeatureSwitchKey.CodexFastMode],
     ).toBeTruthy();
-    expect(
-      ordinary.body.effectiveSwitches[FeatureSwitchKey.ModelPickerFlyout],
-    ).toBeTruthy();
   });
 
   it.each([true, false])(

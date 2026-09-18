@@ -540,12 +540,14 @@
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",
+      "syncedSlides": "Tersinkron ke Google Slides",
       "syncFailed": "Gagal menyinkronkan ke Google Drive",
       "syncingArtifact": "Menyinkronkan artefak...",
       "syncingFiles_one": "Menyinkronkan {{count}} file...",
       "syncingFiles_other": "Menyinkronkan {{count}} file...",
       "syncingNamed": "Menyinkronkan {{filename}}...",
-      "upload": "Unggah ke Google Drive"
+      "upload": "Unggah ke Google Drive",
+      "uploadSlides": "Unggah ke Google Slides"
     },
     "kinds": {
       "audio": "Audio",

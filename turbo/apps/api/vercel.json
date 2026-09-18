@@ -33,6 +33,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/execute-morning-briefs",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/renew-gmail-watches",
       "schedule": "0 */12 * * *"
     },

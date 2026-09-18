@@ -813,6 +813,8 @@ const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
   "https://www.googleapis.com/upload/drive/v3/files";
+const GOOGLE_SLIDES_PRESENTATIONS_URL =
+  "https://slides.googleapis.com/v1/presentations";
 const GOOGLE_OPENID_USERINFO_URL =
   "https://openidconnect.googleapis.com/v1/userinfo";
 
@@ -1102,6 +1104,83 @@ export function mockGoogleDriveArtifactUpload(
   );
 
   return recorded;
+}
+
+interface GoogleSlidesReadbackRecorder {
+  readonly presentationIds: string[];
+  readonly trashedFileIds: string[];
+}
+
+/**
+ * Slides read-back boundary for converted uploads, plus the Drive patch the
+ * service uses to discard a deck that converted to nothing.
+ */
+export function mockGoogleSlidesReadback(
+  slides: readonly { readonly pageElementCount: number }[],
+  options: { readonly trashAccepted?: boolean } = {},
+): GoogleSlidesReadbackRecorder {
+  const trashAccepted = options.trashAccepted ?? true;
+  const recorded: GoogleSlidesReadbackRecorder = {
+    presentationIds: [],
+    trashedFileIds: [],
+  };
+  server.use(
+    http.get(
+      `${GOOGLE_SLIDES_PRESENTATIONS_URL}/:presentationId`,
+      ({ params }) => {
+        recorded.presentationIds.push(String(params["presentationId"]));
+        return HttpResponse.json({
+          slides: slides.map((slide) => {
+            return {
+              pageElements: Array.from(
+                { length: slide.pageElementCount },
+                () => {
+                  return {};
+                },
+              ),
+            };
+          }),
+        });
+      },
+    ),
+    http.patch(`${GOOGLE_DRIVE_FILES_URL}/:fileId`, ({ params }) => {
+      const fileId = String(params["fileId"]);
+      recorded.trashedFileIds.push(fileId);
+      return trashAccepted
+        ? HttpResponse.json({ id: fileId })
+        : HttpResponse.json(
+            { error: { code: 403, message: "Insufficient permissions" } },
+            { status: 403 },
+          );
+    }),
+  );
+  return recorded;
+}
+
+/** Drive folder lookup plus an upload the provider refuses to convert. */
+export function mockGoogleDriveArtifactUploadRejection(reason: string): void {
+  server.use(
+    http.get(GOOGLE_DRIVE_FILES_URL, () => {
+      return HttpResponse.json({
+        files: [
+          { id: "drive-artifact-thread-folder", name: "thread-artifacts" },
+        ],
+      });
+    }),
+    http.post(GOOGLE_DRIVE_UPLOAD_URL, () => {
+      return HttpResponse.json(
+        {
+          error: {
+            code: 400,
+            message:
+              "Conversion of the uploaded content to the requested output type is not supported.",
+            errors: [{ reason, domain: "global" }],
+          },
+        },
+        { status: 400 },
+      );
+    }),
+  );
 }
 
 function newGithubAppPrivateKeyBase64(): string {

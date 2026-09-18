@@ -465,13 +465,29 @@ async function loadAgent(
 
 function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
+  readonly triggerSource: TriggerSource;
+  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly chatThreadId: string | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
 }): Record<string, string> {
+  const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
+    web: "web",
+    agent: "web",
+    slack: "slack",
+    teams: "teams",
+    feishu: args.feishuPlatform ?? "feishu",
+    telegram: "telegram",
+    agentphone: "phone",
+    github: "github",
+  };
+  const currentIntegration = integrationByTriggerSource[args.triggerSource];
   return {
     OKOU_APP_URL: env("APP_URL"),
     OKOU_AGENT_ID: args.agentId,
+    ...(currentIntegration
+      ? { OKOU_CURRENT_INTEGRATION: currentIntegration }
+      : {}),
     ...(args.reasoningEffort !== null && args.reasoningEffort !== undefined
       ? { OKOU_REASONING_EFFORT: args.reasoningEffort }
       : {}),
@@ -930,6 +946,8 @@ function buildCreateAgentRunArgs(
       : {}),
     platformEnvironment: buildAgentRunPlatformEnvironment({
       agentId: args.agent.id,
+      triggerSource: command.triggerSource ?? "web",
+      feishuPlatform: userInfo.feishuPlatform,
       chatThreadId: command.chatThreadId,
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,

@@ -102,23 +102,6 @@ async function findComposerFor(threadId: string): Promise<HTMLElement> {
   });
 }
 
-/**
- * These cases read the catalog from the legacy select's category control, which
- * the switch's off lever still serves. The menu and flyout cases below call
- * `setupPage` directly.
- */
-async function setupLegacyPickerPage(
-  options: Parameters<typeof setupPage>[0],
-): Promise<void> {
-  await setupPage({
-    ...options,
-    featureSwitches: {
-      [FeatureSwitchKey.ModelPickerFlyout]: false,
-      ...options.featureSwitches,
-    },
-  });
-}
-
 function pickerTrigger(container: ParentNode = document): HTMLElement {
   const trigger = composerModelTriggerIn(container);
   if (!trigger) {
@@ -127,6 +110,10 @@ function pickerTrigger(container: ParentNode = document): HTMLElement {
   return trigger;
 }
 
+/**
+ * The flyout's type rail. A desktop has the room for the rail and its panel;
+ * the menu's pages are reached through `menuRow` instead.
+ */
 async function openPicker(
   container: ParentNode = document,
 ): Promise<HTMLElement> {
@@ -134,12 +121,13 @@ async function openPicker(
     expect(pickerTrigger(container)).toBeInTheDocument();
   });
   click(pickerTrigger(container));
-  return await screen.findByRole("radiogroup", { name: "Models" });
+  return await screen.findByRole("tablist", { name: "Models" });
 }
 
+/** A type row in the rail, which reads as its type over its current model. */
 function category(name: "Chat" | "Image" | "Video"): HTMLElement {
-  const control = queryAllByRoleFast("radio").find((candidate) => {
-    return candidate.getAttribute("aria-label") === name;
+  const control = queryAllByRoleFast("tab").find((candidate) => {
+    return candidate.textContent?.startsWith(name);
   });
   if (!control) {
     throw new Error(`${name} model category not found`);
@@ -147,10 +135,21 @@ function category(name: "Chat" | "Image" | "Video"): HTMLElement {
   return control;
 }
 
+/** A row reads as its model followed by a price tier of one or more `$`. */
+function mediaModelRowLabel(option: HTMLElement): string {
+  return (option.textContent ?? "").replace(/\$+$/u, "");
+}
+
+function mediaModelRowOrNull(label: string): HTMLElement | null {
+  return (
+    queryAllByRoleFast("option").find((candidate) => {
+      return mediaModelRowLabel(candidate) === label;
+    }) ?? null
+  );
+}
+
 function mediaModelRow(label: string): HTMLElement {
-  const row = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
+  const row = mediaModelRowOrNull(label);
   if (!row) {
     throw new Error(`${label} media model row not found`);
   }
@@ -158,8 +157,67 @@ function mediaModelRow(label: string): HTMLElement {
 }
 
 function expectSelected(label: string): void {
-  expect(mediaModelRow(label)).toHaveAttribute("aria-pressed", "true");
-  expect(mediaModelRow(label)).toHaveAttribute("aria-current", "true");
+  expect(mediaModelRow(label)).toHaveAttribute("aria-selected", "true");
+}
+
+/**
+ * The menu's overview page. Its rows are what drive the composer's active media
+ * category, so the temporary-model card is a narrow viewport's behaviour.
+ */
+async function openMenu(
+  container: ParentNode = document,
+): Promise<HTMLElement> {
+  await waitFor(() => {
+    expect(pickerTrigger(container)).toBeInTheDocument();
+  });
+  click(pickerTrigger(container));
+  return await screen.findByRole("region", { name: "Models" });
+}
+
+async function openMenuCategory(
+  name: "Chat" | "Image" | "Video",
+): Promise<HTMLElement> {
+  if (!screen.queryByRole("region", { name: `${name} models` })) {
+    const overview =
+      screen.queryByRole("region", { name: "Models" }) ?? (await openMenu());
+    const row = queryAllByRoleFast("button", overview).find((candidate) => {
+      return candidate
+        .getAttribute("aria-label")
+        ?.startsWith(`Change ${name} model,`);
+    });
+    if (!row) {
+      throw new Error(`${name} models are not on the menu's overview`);
+    }
+    click(row);
+  }
+  return await screen.findByRole("region", { name: `${name} models` });
+}
+
+async function chooseMenuMediaModel(
+  name: "Image" | "Video",
+  label: string,
+): Promise<void> {
+  await openMenuCategory(name);
+  click(menuRow(label));
+  await waitFor(() => {
+    expect(screen.queryByRole("region", { name: `${name} models` })).toBeNull();
+  });
+}
+
+/** The menu's rows, which name themselves for a narrow viewport's pages. */
+function menuRow(label: string): HTMLElement {
+  const row = queryAllByRoleFast("button").find((candidate) => {
+    return candidate.getAttribute("aria-label") === label;
+  });
+  if (!row) {
+    throw new Error(`${label} menu row not found`);
+  }
+  return row;
+}
+
+function expectMenuSelected(label: string): void {
+  expect(menuRow(label)).toHaveAttribute("aria-pressed", "true");
+  expect(menuRow(label)).toHaveAttribute("aria-current", "true");
 }
 
 async function chooseMediaModel(
@@ -174,7 +232,7 @@ async function chooseMediaModel(
   });
   click(mediaModelRow(label));
   await waitFor(() => {
-    expect(screen.queryByRole("radiogroup", { name: "Models" })).toBeNull();
+    expect(screen.queryByRole("tablist", { name: "Models" })).toBeNull();
   });
 }
 
@@ -221,22 +279,13 @@ function assertCatalogRows(
   omittedLabels: readonly string[],
 ): void {
   for (const label of labels) {
-    const matchingRows = queryAllByRoleFast("button").filter((button) => {
-      return button.getAttribute("aria-label") === label;
-    });
-    expect(matchingRows).toHaveLength(1);
-    const row = matchingRows[0];
-    if (!row) {
-      throw new Error(`${label} catalog row not found`);
-    }
+    const row = mediaModelRow(label);
     expect(row.querySelector("svg, img")).not.toBeNull();
     expect(row).toHaveTextContent(/\$+/u);
   }
-  const availableLabels = queryAllByRoleFast("button").map((button) => {
-    return button.getAttribute("aria-label");
-  });
+  const available = queryAllByRoleFast("option").map(mediaModelRowLabel);
   for (const omittedLabel of omittedLabels) {
-    expect(availableLabels).not.toContain(omittedLabel);
+    expect(available).not.toContain(omittedLabel);
   }
 }
 
@@ -247,18 +296,14 @@ test("Show the curated image model catalog", async () => {
     selectedImageModel: null,
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
   });
 
   await openCategory("Image");
   expect(mediaModelRow("Nano Banana 2")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(mediaModelRow("Nano Banana 2")).toHaveAttribute(
-    "aria-current",
+    "aria-selected",
     "true",
   );
   assertCatalogRows(
@@ -296,7 +341,7 @@ test.each([
     },
   );
 
-  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   await chooseMediaModel("Image", label);
   await openCategory("Image");
@@ -304,22 +349,6 @@ test.each([
     expectSelected(label);
     expect(updates).toStrictEqual([model]);
   });
-});
-
-test("Keep image model choices clear on mobile", async () => {
-  setMobileViewport();
-  installModelEnvironment();
-  mockThread({ selectedModel: DEFAULT_RUN_MODEL, selectedImageModel: null });
-
-  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
-
-  const models = await openPicker();
-  expect(queryAllByRoleFast("radio", models)).toHaveLength(3);
-  expect(category("Chat")).toHaveAttribute("aria-checked", "true");
-  click(category("Image"));
-  expect(category("Image")).toHaveAttribute("aria-checked", "true");
-  expect(category("Video")).toBeInTheDocument();
-  expectSelected("Nano Banana 2");
 });
 
 test("Keep image model pins independent in split chats", async () => {
@@ -352,7 +381,7 @@ test("Keep image model pins independent in split chats", async () => {
     },
   );
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/chats/${THREAD_ID}?sidebar=${SPLIT_THREAD_ID}`,
   });
@@ -364,9 +393,9 @@ test("Keep image model pins independent in split chats", async () => {
   await openCategory("Image", mainComposer);
   expectSelected("FLUX.2 Pro");
   click(category("Chat"));
-  await waitFor(() => {
-    expect(screen.queryByText("FLUX.2 Pro")).not.toBeInTheDocument();
-  });
+  // The panel swaps in place, so the image rows leave with it.
+  await screen.findByRole("listbox", { name: "Chat models" });
+  expect(mediaModelRowOrNull("FLUX.2 Pro")).toBeNull();
   await userEvent.setup().keyboard("{Escape}");
 
   await openCategory("Image", sideComposer);
@@ -383,12 +412,12 @@ test("Do not select an available image model for an unavailable pin", async () =
     selectedImageModel: "fal-ai/flux-pro/v1.1",
   });
 
-  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   await openCategory("Image");
   for (const model of PUBLIC_IMAGE_MODELS) {
     expect(mediaModelRow(IMAGE_MODEL_CONFIGS[model].label)).toHaveAttribute(
-      "aria-pressed",
+      "aria-selected",
       "false",
     );
   }
@@ -408,7 +437,7 @@ test("Follow the live image model default in an untouched new chat", async () =>
     },
   });
 
-  await setupLegacyPickerPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   await openCategory("Image");
   expectSelected("Nano Banana 2");
@@ -450,7 +479,7 @@ test("Follow the live video model default in an untouched new chat", async () =>
     },
   });
 
-  await setupLegacyPickerPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   await openCategory("Video");
   expectSelected("MiniMax H3");
@@ -480,7 +509,7 @@ test("Follow the live video model default in an untouched new chat", async () =>
 
 async function browseNewChatModelCategories(): Promise<void> {
   await openPicker();
-  expect(category("Chat")).toHaveAttribute("aria-checked", "true");
+  expect(category("Chat")).toHaveAttribute("aria-selected", "true");
   await expect(
     screen.findByRole("option", { name: /Claude Fable 5/u }),
   ).resolves.toBeInTheDocument();
@@ -503,28 +532,26 @@ async function browseNewChatModelCategories(): Promise<void> {
 }
 
 async function selectModelsAcrossNewChatCategories(): Promise<void> {
-  click(mediaModelRow("Veo 3.1 fast"));
-
-  await chooseMediaModel("Image", "GPT Image 2");
-  await openPicker();
-  click(category("Chat"));
-  click(await screen.findByRole("option", { name: /Claude Sonnet 4\.6/u }));
+  await chooseMenuMediaModel("Video", "Veo 3.1 fast");
+  await chooseMenuMediaModel("Image", "GPT Image 2");
+  await openMenuCategory("Chat");
+  click(menuRow("Claude Sonnet 4.6"));
 
   await waitFor(() => {
     expect(scopeCard("Model for this chat")).not.toBeNull();
     expect(scopeCard("Image model for this chat")).toBeNull();
     expect(scopeCard("Video model for this chat")).toBeNull();
   });
-  await openCategory("Image");
-  expectSelected("GPT Image 2");
+  await openMenuCategory("Image");
+  expectMenuSelected("GPT Image 2");
   await userEvent.setup().keyboard("{Escape}");
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
     expect(scopeCard("Model for this chat")).toBeNull();
     expect(scopeCard("Video model for this chat")).toBeNull();
   });
-  await openCategory("Video");
-  expectSelected("Veo 3.1 fast");
+  await openMenuCategory("Video");
+  expectMenuSelected("Veo 3.1 fast");
   await userEvent.setup().keyboard("{Escape}");
   expect(scopeCard("Video model for this chat")).not.toBeNull();
   expect(scopeCard("Image model for this chat")).toBeNull();
@@ -535,7 +562,7 @@ async function openDesktopNewChatModelPicker() {
   installModelEnvironment();
   mockChatLifecycle(context, { threadId: "desktop-new-model-modes" });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -547,22 +574,19 @@ async function openDesktopNewChatModelPicker() {
 test("Browse Chat, Image, and Video catalogs in a desktop new chat", async () => {
   await openDesktopNewChatModelPicker();
   await browseNewChatModelCategories();
-  expect(category("Video")).toHaveAttribute("aria-checked", "true");
+  expect(category("Video")).toHaveAttribute("aria-selected", "true");
 });
 
-test("Retain independent Chat, Image, and Video selections in a desktop new chat", async () => {
-  await openDesktopNewChatModelPicker();
-  await openCategory("Video");
-  await selectModelsAcrossNewChatCategories();
-  expect(scopeCard("Video model for this chat")).not.toBeNull();
-});
-
-test("Switch Chat, Image, and Video from one model picker in a mobile new chat", async () => {
+/**
+ * The menu's overview is what points the composer at a media category, so the
+ * per-chat cards that follow a selection are a narrow viewport's behaviour.
+ */
+test("Retain independent Chat, Image, and Video selections in a new chat", async () => {
   setMobileViewport();
   installModelEnvironment();
-  mockChatLifecycle(context, { threadId: "mobile-new-model-modes" });
+  mockChatLifecycle(context, { threadId: "new-model-modes" });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -570,14 +594,13 @@ test("Switch Chat, Image, and Video from one model picker in a mobile new chat",
     },
   });
 
-  await browseNewChatModelCategories();
   await selectModelsAcrossNewChatCategories();
   expect(scopeCard("Video model for this chat")).not.toBeNull();
 });
 
 async function exerciseExistingChatThreeModePicker(): Promise<void> {
   await openPicker();
-  expect(category("Chat")).toHaveAttribute("aria-checked", "true");
+  expect(category("Chat")).toHaveAttribute("aria-selected", "true");
   await expect(
     screen.findByRole("option", { name: /Claude Sonnet 4\.6/u }),
   ).resolves.toHaveAttribute("aria-selected", "true");
@@ -607,28 +630,21 @@ test("Switch Chat, Image, and Video from one model picker in a desktop existing 
     selectedVideoModel: DEFAULT_VIDEO_MODEL,
   });
 
-  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   await exerciseExistingChatThreeModePicker();
-  expect(category("Chat")).toHaveAttribute("aria-checked", "true");
+  expect(category("Chat")).toHaveAttribute("aria-selected", "true");
 });
 
-test("Switch Chat, Image, and Video from one model picker in a mobile existing chat", async () => {
-  setMobileViewport();
-  installModelEnvironment();
-  mockThread({
-    selectedModel: "claude-sonnet-4-6",
-    selectedImageModel: "gpt-image-2",
-    selectedVideoModel: DEFAULT_VIDEO_MODEL,
-  });
-
-  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
-
-  await exerciseExistingChatThreeModePicker();
-  expect(category("Chat")).toHaveAttribute("aria-checked", "true");
-});
-
-async function openTemporaryImageModelChat() {
+/**
+ * The card that names a temporary media model follows the composer's active
+ * category, and only the menu's overview sets one, so the two cases differ by
+ * viewport rather than by assertion.
+ */
+async function openTemporaryImageModelChat(layout: "menu" | "flyout") {
+  if (layout === "menu") {
+    setMobileViewport();
+  }
   const creates: ({ readonly imageModel?: string } | undefined)[] = [];
   const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
   let currentPreference = preference();
@@ -654,7 +670,7 @@ async function openTemporaryImageModelChat() {
     },
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -666,13 +682,9 @@ async function openTemporaryImageModelChat() {
 }
 
 test("A temporary image model applies to one new chat and resets for the next", async () => {
-  const { creates, preferenceUpdates } = await openTemporaryImageModelChat();
+  const { creates, preferenceUpdates } =
+    await openTemporaryImageModelChat("flyout");
   await chooseMediaModel("Image", "GPT Image 2");
-  await waitFor(() => {
-    expect(scopeCard("Image model for this chat")).toHaveTextContent(
-      "GPT Image 2",
-    );
-  });
   expect(preferenceUpdates).toStrictEqual([]);
   await sendNewMessage("Create with a temporary image model");
   await waitFor(() => {
@@ -701,8 +713,8 @@ test("A temporary image model applies to one new chat and resets for the next", 
 });
 
 test("Save a temporary image model as the default for future chats", async () => {
-  const { preferenceUpdates } = await openTemporaryImageModelChat();
-  await chooseMediaModel("Image", "GPT Image 2");
+  const { preferenceUpdates } = await openTemporaryImageModelChat("menu");
+  await chooseMenuMediaModel("Image", "GPT Image 2");
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
   });
@@ -732,6 +744,7 @@ test("Save a temporary image model as the default for future chats", async () =>
 });
 
 test("Temporarily choose a video model for a new chat", async () => {
+  setMobileViewport();
   const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
   let currentPreference = preference();
   installModelEnvironment(currentPreference);
@@ -751,7 +764,7 @@ test("Temporarily choose a video model for a new chat", async () => {
   });
   mockChatLifecycle(context, { threadId: "temporary-video-choice" });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -759,7 +772,7 @@ test("Temporarily choose a video model for a new chat", async () => {
     },
   });
 
-  await chooseMediaModel("Video", "Veo 3.1 fast");
+  await chooseMenuMediaModel("Video", "Veo 3.1 fast");
   await waitFor(() => {
     expect(scopeCard("Video model for this chat")).toHaveTextContent(
       /Veo 3\.1 fast/iu,
@@ -801,6 +814,7 @@ test("Temporarily choose a video model for a new chat", async () => {
 });
 
 test("Persist a new-chat video choice when temporary choices are unavailable", async () => {
+  setMobileViewport();
   const creates: ({ readonly videoModel?: string } | undefined)[] = [];
   const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
   installModelEnvironment();
@@ -818,7 +832,7 @@ test("Persist a new-chat video choice when temporary choices are unavailable", a
     },
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
@@ -826,7 +840,7 @@ test("Persist a new-chat video choice when temporary choices are unavailable", a
     },
   });
 
-  await chooseMediaModel("Video", "Veo 3.1 fast");
+  await chooseMenuMediaModel("Video", "Veo 3.1 fast");
   await waitFor(() => {
     expect(preferenceUpdates).toStrictEqual([
       {
@@ -859,7 +873,7 @@ test("Choose a video model for the current thread", async () => {
     },
   );
 
-  await setupLegacyPickerPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   await openCategory("Video");
   expectSelected("Seedance 2.0");
@@ -911,18 +925,17 @@ test("Choose image and video models from the compact overview", async () => {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },
   });
   await findComposerEditor();
   await waitFor(() => {
-    expect(mediaModelRow("Claude Fable 5.1")).toBeVisible();
+    expect(menuRow("Claude Fable 5.1")).toBeVisible();
   });
-  click(mediaModelRow("Claude Fable 5.1"));
+  click(menuRow("Claude Fable 5.1"));
   await screen.findByRole("region", { name: "Models" });
-  click(mediaModelRow("Change Image model, Nano Banana 2"));
+  click(menuRow("Change Image model, Nano Banana 2"));
   await screen.findByRole("region", { name: "Image models" });
-  expectSelected("Nano Banana 2");
-  click(mediaModelRow("GPT Image 1"));
+  expectMenuSelected("Nano Banana 2");
+  click(menuRow("GPT Image 1"));
   await waitFor(() => {
     expect(images).toStrictEqual(["gpt-image-1"]);
   });
@@ -931,16 +944,16 @@ test("Choose image and video models from the compact overview", async () => {
       screen.queryByRole("region", { name: "Image models" }),
     ).not.toBeInTheDocument();
   });
-  click(mediaModelRow("Claude Fable 5.1"));
+  click(menuRow("Claude Fable 5.1"));
   await screen.findByRole("region", { name: "Models" });
-  expect(mediaModelRow("Change Image model, GPT Image 1")).toBeVisible();
+  expect(menuRow("Change Image model, GPT Image 1")).toBeVisible();
   click(
-    mediaModelRow(
+    menuRow(
       `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
     ),
   );
   await screen.findByRole("region", { name: "Video models" });
-  click(mediaModelRow("Seedance 2.0"));
+  click(menuRow("Seedance 2.0"));
   await waitFor(() => {
     expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
   });
@@ -949,10 +962,10 @@ test("Choose image and video models from the compact overview", async () => {
       screen.queryByRole("region", { name: "Video models" }),
     ).not.toBeInTheDocument();
   });
-  click(mediaModelRow("Claude Fable 5.1"));
+  click(menuRow("Claude Fable 5.1"));
   await screen.findByRole("region", { name: "Models" });
-  expect(mediaModelRow("Change Video model, Seedance 2.0")).toBeVisible();
-  expect(mediaModelRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
+  expect(menuRow("Change Video model, Seedance 2.0")).toBeVisible();
+  expect(menuRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
 });
 
 test("Switch model type in the flyout without leaving the panel", async () => {
@@ -966,7 +979,6 @@ test("Switch model type in the flyout without leaving the panel", async () => {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },
   });
 
   // The flyout trigger is a popover button inside the composer, not the
@@ -1024,7 +1036,6 @@ test("Hovering a model type opens its panel only once the pointer settles", asyn
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },
   });
 
   const flyoutTrigger = await waitFor(() => {

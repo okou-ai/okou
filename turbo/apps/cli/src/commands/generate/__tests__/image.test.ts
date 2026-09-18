@@ -84,6 +84,7 @@ describe("okou generate image command", () => {
     "creates a private image and presents its requested %s visibility",
     async (visibility) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
       const artifact = serveGenerationVisibility("image.png", visibility);
       server.use(
         http.post(`${IMAGE_URL}/private`, async ({ request }) => {
@@ -92,6 +93,7 @@ describe("okou generate image command", () => {
           });
           return HttpResponse.json({
             ...IMAGE_RESULT,
+            privateArtifacts: true,
             id: GENERATION_ARTIFACT_ID,
             url: artifact.reference,
           });
@@ -117,9 +119,135 @@ describe("okou generate image command", () => {
         visibility,
         inlineMarkdownLink: `[${IMAGE_RESULT.filename}](<${artifact.url}>)`,
         previewMarkdownBlock: `![${IMAGE_RESULT.filename}](<${artifact.url}>)`,
+        artifactPresentationContext:
+          visibility === "public"
+            ? expect.not.stringContaining("upload-file")
+            : expect.stringContaining("okou slack upload-file"),
       });
+      if (visibility === "org") {
+        expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+          "organization-only",
+        );
+      }
     },
   );
+
+  it.each([
+    "web",
+    "slack",
+    "feishu",
+    "lark",
+    "teams",
+    "telegram",
+    "github",
+    "phone",
+  ])(
+    "guides private image delivery to %s when visibility is omitted",
+    async (integration) => {
+      vi.stubEnv("OKOU_CURRENT_INTEGRATION", integration);
+      server.use(
+        http.post(IMAGE_URL, () => {
+          return HttpResponse.json({
+            ...IMAGE_RESULT,
+            privateArtifacts: true,
+            url: "/artifacts/abcxyz1234.png",
+          });
+        }),
+        http.get(AVAILABILITY_URL, () => {
+          throw new Error("Delivery guidance must not query availability");
+        }),
+        http.post("http://localhost:3000/api/artifact-shares/status", () => {
+          throw new Error("Delivery guidance must not query visibility");
+        }),
+      );
+
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A kitten",
+        "--json",
+      ]);
+
+      expect(
+        JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])),
+      ).toMatchObject({
+        artifactPresentationContext: expect.stringContaining(
+          `okou ${integration} upload-file`,
+        ),
+      });
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(output).toContain("private artifact link (only-me)");
+      expect(output).toContain("okou artifact download");
+    },
+  );
+
+  it.each([undefined, "automation-event"])(
+    "reports a private link without guessing a destination for integration %s",
+    async (integration) => {
+      vi.stubEnv("OKOU_CURRENT_INTEGRATION", integration);
+      server.use(
+        http.post(IMAGE_URL, () => {
+          return HttpResponse.json({ ...IMAGE_RESULT, privateArtifacts: true });
+        }),
+      );
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A kitten",
+        "--json",
+      ]);
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(output).toContain("private artifact link (only-me)");
+      expect(output).not.toContain("upload-file");
+    },
+  );
+
+  it.each([false, undefined])(
+    "omits private delivery guidance when creation metadata is %s",
+    async (privateArtifacts) => {
+      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
+      server.use(
+        http.post(IMAGE_URL, () => {
+          return HttpResponse.json({ ...IMAGE_RESULT, privateArtifacts });
+        }),
+      );
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A kitten",
+        "--json",
+      ]);
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(output).not.toContain("private artifact link");
+      expect(output).not.toContain("upload-file");
+    },
+  );
+
+  it("prints private delivery guidance with a generated image in text output", async () => {
+    vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
+    server.use(
+      http.post(IMAGE_URL, () => {
+        return HttpResponse.json({ ...IMAGE_RESULT, privateArtifacts: true });
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image",
+      "--raw-prompt",
+      "A kitten",
+    ]);
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Image generated:");
+    expect(output).toContain("private artifact link (only-me)");
+    expect(output).toContain("okou slack upload-file");
+  });
 
   it("rejects explicit visibility before billing when private artifacts are disabled", async () => {
     let generated = false;
@@ -942,6 +1070,8 @@ describe("okou generate image command", () => {
     "waits for an async generation and prints a complete URL for %s",
     async (url) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
+      const privateArtifacts = url.startsWith("/artifacts/");
       const expectedUrl = url.startsWith("/artifacts/")
         ? `https://app.okou.ai${url}`
         : url;
@@ -978,7 +1108,7 @@ describe("okou generate image command", () => {
             generationId: IMAGE_GENERATION_ID,
             type: "image",
             status: "completed",
-            result: { ...IMAGE_RESULT, url },
+            result: { ...IMAGE_RESULT, url, privateArtifacts },
             createdAt: "2026-05-15T00:00:00.000Z",
             startedAt: "2026-05-15T00:00:01.000Z",
             completedAt: "2026-05-15T00:00:02.000Z",
@@ -998,6 +1128,11 @@ describe("okou generate image command", () => {
       expect(statusRequested).toBe(true);
       expect(stdout).toContain(`Image generated: ${expectedUrl}`);
       expect(stdout).toContain(`![${IMAGE_RESULT.filename}](<${expectedUrl}>)`);
+      if (privateArtifacts) {
+        expect(stdout).toContain("okou slack upload-file");
+      } else {
+        expect(stdout).not.toContain("upload-file");
+      }
     },
   );
 

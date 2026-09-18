@@ -307,6 +307,7 @@ export const recordGeneratedIntroVideoPresenter$ = command(
       contentType: "video/webm",
       size: params.generation.videoBytes.byteLength,
       url: artifact.url,
+      privateArtifacts: artifact.isPrivate,
       durationSeconds: params.generation.durationSeconds,
       creditsCharged: estimateCredits(
         params.generation.billingQuantity,

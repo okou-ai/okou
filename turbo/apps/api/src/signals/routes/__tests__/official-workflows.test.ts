@@ -78,6 +78,7 @@ import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
+import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
 import {
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
@@ -3060,6 +3061,10 @@ describe("Morning Brief native preference projection", () => {
     const { actor } = await workflowBdd.setupWorkflowOrg({
       timezone: "Asia/Shanghai",
     });
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected organization-scoped actor");
+    }
     await selectBuiltInDefaultModel(actor);
     const { agentId } = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
@@ -3108,6 +3113,13 @@ describe("Morning Brief native preference projection", () => {
       readMorningBriefAutomations(actor, workflowId),
     ).resolves.toMatchObject([{ enabled: false, chatThreadId: null }]);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+    await expect(
+      readNativeSchedule({ orgId, userId: actor.userId }),
+    ).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+      scheduleOwner: null,
+    });
   });
 
   it("invalidates the projection when the owning Agent is deleted", async () => {
@@ -3116,7 +3128,8 @@ describe("Morning Brief native preference projection", () => {
     const { actor } = await workflowBdd.setupWorkflowOrg({
       timezone: "Asia/Shanghai",
     });
-    if (!actor.orgId) {
+    const orgId = actor.orgId;
+    if (!orgId) {
       throw new Error("Expected organization-scoped actor");
     }
     onTestFinished(async () => {
@@ -3142,7 +3155,7 @@ describe("Morning Brief native preference projection", () => {
     // Repoint the org default so the Agent holding the brief can be deleted.
     const replacement = await workflowBdd.createAgent(actor);
     await setOrgDefaultAgentFixture({
-      orgId: actor.orgId,
+      orgId,
       agentId: replacement.agentId,
     });
     await bdd.deleteAgent(actor, onboarding.defaultAgentId);
@@ -3155,6 +3168,13 @@ describe("Morning Brief native preference projection", () => {
       unavailableReason: null,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    await expect(
+      readNativeSchedule({ orgId, userId: actor.userId }),
+    ).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+      scheduleOwner: null,
+    });
   });
 
   it("returns the committed choice when its projection write fails after that commit", async () => {
@@ -3352,6 +3372,47 @@ describe("Morning Brief native preference projection", () => {
     const settled = await readBriefPreference(actor);
     expect(settled.body).toStrictEqual(paused.body);
     await expectChoiceSurvivesImplementationSwitch(actor, settled.body);
+  });
+
+  it("commits generic automation toggles into the durable choice", async () => {
+    const { actor, headers } = await prepareProjectedBrief();
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected the Morning Brief installation");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation) {
+      throw new Error("Expected the Morning Brief automation");
+    }
+
+    await accept(
+      automationClient().disable({
+        headers,
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      nextRunAt: null,
+    });
+
+    await accept(
+      automationClient().enable({
+        headers,
+        params: { id: automation.id },
+      }),
+      [200],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      nextRunAt: expect.any(String),
+    });
   });
 });
 

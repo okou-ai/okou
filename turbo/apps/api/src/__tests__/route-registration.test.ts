@@ -7,7 +7,10 @@ import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/con
 import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 
+import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
+
 import { ROUTES } from "../signals/route";
+import { cronExecuteMorningBriefsRoutes } from "../signals/routes/cron-execute-morning-briefs";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { morningBriefCalendarCollectionPreviewRoutes } from "../signals/routes/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
@@ -137,6 +140,25 @@ describe("API route registrations", () => {
         return (
           registered.route.path ===
           morningBriefDeliveryPreviewContract.preview.path
+        );
+      }),
+    ).toStrictEqual([entry]);
+  });
+
+  // The native cron is not a preview: it is the deployed scheduling entry point
+  // the platform invokes every minute, and its own suite composes an app from
+  // this route slice. Asserting the exact entry object keeps that suite's
+  // results statements about the endpoint the deployed table actually holds.
+  it("registers the native Morning Brief cron the platform invokes", () => {
+    const [entry, ...extra] = cronExecuteMorningBriefsRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(cronExecuteMorningBriefsContract.execute);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          cronExecuteMorningBriefsContract.execute.path
         );
       }),
     ).toStrictEqual([entry]);

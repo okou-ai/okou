@@ -409,17 +409,14 @@ describe("getAllFeatureStates", () => {
   it("releases the composer run controls to every org and keeps the off lever", () => {
     const states = getAllFeatureStates({ orgId: "org_nonexistent" });
     expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
-    expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(true);
 
     const reverted = getAllFeatureStates({
       orgId: "org_nonexistent",
       overrides: {
         [FeatureSwitchKey.CodexFastMode]: false,
-        [FeatureSwitchKey.ModelPickerFlyout]: false,
       },
     });
     expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
-    expect(reverted[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {
