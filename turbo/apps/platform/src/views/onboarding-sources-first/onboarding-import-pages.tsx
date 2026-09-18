@@ -1,6 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check } from "lucide-react";
+import { Check, FileText } from "lucide-react";
 import {
   Button,
   Card,
@@ -100,7 +100,12 @@ function ImportedSkillRow({ name }: { readonly name: string }) {
 
   return (
     <div className="flex w-full max-w-[420px] items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-left">
-      <OnboardingIllustration name="skill-import" alt="" size="header" />
+      <span
+        className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground"
+        aria-hidden="true"
+      >
+        <FileText size={18} />
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">
           {name}

@@ -138,7 +138,7 @@ function OnboardingWelcomeDialog() {
             }}
           />
         </section>
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-5 flex items-center justify-between gap-4">
           <p className="min-w-0 text-xs leading-5 text-muted-foreground">
             {t(($) => {
               return $.onboarding.sourcesFirst.welcome.offerTitle;
@@ -153,7 +153,7 @@ function OnboardingWelcomeDialog() {
           <Button
             type="button"
             size="lg"
-            className="gap-2"
+            className="shrink-0 gap-2"
             disabled={text.trim().length === 0}
             onClick={() => {
               runPrompt(text.trim());
