@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.28](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.27...guest-control-server-v0.21.28) (2026-09-18)
+
+
+### Bug Fixes
+
+* **runner:** include user executable directories in agent path ([#35238](https://github.com/vm0-ai/okou/issues/35238)) ([6411ef7](https://github.com/vm0-ai/okou/commit/6411ef741aff60fdd40ed8c450ab891bee6d21d3))
+
 ## [0.21.27](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.26...guest-control-server-v0.21.27) (2026-09-18)
 
 

@@ -40,9 +40,6 @@ describe("CHAT effort: thread configuration", () => {
         };
       }),
     );
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: true,
-    });
     const thread = await chat.createThread(actor, {
       agentId,
       title: "Saved effort",
@@ -113,9 +110,6 @@ describe("CHAT effort: thread configuration", () => {
         };
       }),
     );
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: true,
-    });
     const thread = await chat.createThread(actor, {
       agentId,
       title: "Concurrent effort patches",
@@ -223,7 +217,6 @@ describe("CHAT effort: thread configuration", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: pi,
       });
       if (pi) {
@@ -273,43 +266,32 @@ describe("CHAT effort: thread configuration", () => {
 
   it.each([
     {
-      enabled: true,
       requestedEffort: "high",
       effectiveEffort: "high",
       pi: false,
     },
     {
-      enabled: true,
       requestedEffort: "high",
       effectiveEffort: "high",
       pi: true,
     },
     {
-      enabled: true,
       requestedEffort: "ultra",
       effectiveEffort: "max",
       pi: true,
     },
     {
-      enabled: false,
-      requestedEffort: "high",
-      effectiveEffort: undefined,
-      pi: false,
-    },
-    {
-      enabled: true,
       requestedEffort: "ultracode",
       effectiveEffort: "high",
       pi: false,
     },
   ] as const)(
-    "uses current thread settings when a queued message starts with rollout $enabled, Pi $pi and $requestedEffort effort",
-    async ({ enabled, requestedEffort, effectiveEffort, pi }) => {
+    "uses current thread settings when a queued message starts with Pi $pi and $requestedEffort effort",
+    async ({ requestedEffort, effectiveEffort, pi }) => {
       const { actor, agentId, providerId, runnerGroup } =
         await entitledChatActor();
       chatCallbacks.failIfChatCallbackRouteIsFetched();
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: false,
       });
       const selectedModel = pi ? "gpt-5.6-sol" : "claude-opus-4-8";
@@ -382,7 +364,6 @@ describe("CHAT effort: thread configuration", () => {
       );
       expect(retry.body).toStrictEqual(queued.body);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.Effort]: enabled,
         [FeatureSwitchKey.PiLoop]: pi,
       });
       if (pi) {
@@ -437,71 +418,9 @@ describe("CHAT effort: thread configuration", () => {
     90_000,
   );
 
-  it("ignores saved effort while disabled without erasing it on normal or explicit-model sends", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: true,
-    });
-    const thread = await chat.createThread(actor, {
-      agentId,
-      title: "Dormant effort preference",
-    });
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-sonnet-5", {
-      reasoningEffort: "high",
-    });
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: false,
-    });
-    for (const model of [undefined, "claude-sonnet-5"] as const) {
-      const sent = await sendChatRun(actor, {
-        agentId,
-        threadId: thread.id,
-        prompt: "Use native defaults while rollout is disabled",
-        model,
-      });
-      const claimed = await claimChatRun(runnerGroup, sent.runId);
-      expect(claimed.claim.platformEnvironment).not.toHaveProperty(
-        "OKOU_REASONING_EFFORT",
-      );
-      await expect(
-        chat.readThreadMetadata(actor, thread.id),
-      ).resolves.toMatchObject({
-        modelSettings: { "claude-sonnet-5": { effort: "high" } },
-      });
-      await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
-    }
-    const disabledReset = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: thread.id,
-        prompt: "Do not accept gated fields",
-        runOptions: { reasoningEffort: "low" },
-      },
-      [400],
-    );
-    expect(disabledReset.body).toMatchObject({
-      error: { message: "Reasoning effort selection is not enabled" },
-    });
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: true,
-    });
-    const enabled = await sendChatRun(actor, {
-      agentId,
-      threadId: thread.id,
-      prompt: "Saved effort is active again",
-    });
-    const enabledClaim = await claimChatRun(runnerGroup, enabled.runId);
-    expect(enabledClaim.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-      "high",
-    );
-    await cancelChatRun(actor, enabled.runId, enabledClaim.sandboxHeaders);
-  }, 90_000);
-
   it("preserves Fast when changing effort", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
     });
     const { providerId } = await upsertOrgModelProvider(actor, {

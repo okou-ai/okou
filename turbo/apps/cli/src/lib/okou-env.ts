@@ -18,6 +18,10 @@ export function getOkouChatThreadId(): string | undefined {
   return okouEnvironmentValue("CHAT_THREAD_ID");
 }
 
+export function getOkouCurrentIntegration(): string | undefined {
+  return okouEnvironmentValue("CURRENT_INTEGRATION");
+}
+
 export function getOkouAppUrl(): string | undefined {
   return okouEnvironmentValue("APP_URL");
 }

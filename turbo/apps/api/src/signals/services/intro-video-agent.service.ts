@@ -606,6 +606,7 @@ const persistAgentCompletion$ = command(
       contentType: "video/mp4",
       size: downloaded.videoBytes.byteLength,
       url: artifact.url,
+      privateArtifacts: artifact.isPrivate,
       durationSeconds: downloaded.durationSeconds,
       creditsCharged: Math.ceil(
         (quantity * pricing.unitPrice) / pricing.unitSize,

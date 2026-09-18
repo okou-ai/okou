@@ -248,6 +248,27 @@ capability, database migration, visibility change, or Worker protocol is added.
 Keep the endpoint in serving and supported rollback APIs while runs pinned to
 the new CLI remain active.
 
+#### Generated private artifact delivery hints
+
+Generation results add optional `privateArtifacts` metadata describing the
+storage mode used at creation. New CLIs use it with the requested visibility
+(defaulting to `only-me`) to add delivery guidance for non-public files. Older
+CLIs ignore the metadata; results from older APIs or persisted jobs without it
+retain their previous output. Hosted sites and HTML presentations keep their
+existing link presentation.
+
+Completed generation jobs survive run deletion and have no read-time age cutoff;
+successful batch directories also remain readable. These are existing public
+generation contracts. Requiring the new metadata would need an explicit
+migration or retirement of those retained results, plus compatible serving and
+rollback APIs; draining active runs alone is insufficient.
+
+New run contexts include `OKOU_CURRENT_INTEGRATION` in the existing trusted
+`platformEnvironment` map. Existing Runners already transport this map, so no
+Runner protocol change or database migration is required. Older contexts without
+the key receive a generic private-link notice, with no guessed integration
+command. Existing pinned CLIs ignore the key.
+
 #### Private attachment uploads
 
 CLI artifact output qualifies hostless references with its configured app origin
@@ -2406,7 +2427,8 @@ There is no ten-second deadline, local attempt marker, deferred onboarding
 handoff, retry, or fallback. Each actual POST is preceded by one Axiom
 `marketing.event.send` record with tag, userId, and orgId; `outcome: started`
 means a send attempt, not server acceptance. No browser request ID header is
-introduced. Existing legacy gtag/PostHog event and account routing is unchanged.
+introduced. PostHog product and funnel events remain in the App; advertising
+account selection and delivery belong to Marketing.
 
 Marketing deduplicates onboarding by user/org and checkout by user/org/event
 UUID. These counts differ intentionally from the legacy gtag browser-session/
@@ -2455,3 +2477,35 @@ schedule, Run, credit, Chat or email behavior, and it does not activate the
 still-unregistered Clerk erasure bridge. It is a local serialization boundary
 for one owner's collection authority; durable membership and materialization
 ownership and global deletion finality remain S7 gates.
+
+## Marketing attribution cutover (#33886)
+
+The App no longer loads gtag, sends Google Ads conversions, looks up an Ads
+account, or polls attribution milestones. Marketing owns the unified business
+events and provider delivery. The API removes the old signup, account and
+milestone attribution routes without aliases, as explicitly requested for this
+prelaunch cutover. Existing pages may lose those retired telemetry calls during
+the API-before-App promotion window; the replacement App removes their callers.
+
+Billing remains operational across that window. Checkout request schemas use
+Zod's default unknown-key stripping, so an older App's extra `adAttribution` is
+ignored rather than rejecting a purchase. The removed `googleAdsConversion`
+response property was optional in the preceding App contract. Both Apps still
+use `completed` and the original purchase response statuses. The retained
+`completePaidCheckout$` polls actual payment reconciliation before continuing
+onboarding or showing billing success. No payment endpoint or fulfillment is
+removed.
+
+The API stops writing Clerk signup attribution and org acquisition columns and
+stops attaching acquisition snapshots to new Stripe billing objects. New
+customers keep `orgId`; sessions and subscriptions retain financial identity,
+tier, price, purchase timestamps and preview routing. Existing metadata copied
+through plan or schedule changes is filtered to avoid reintroducing marketing
+fields, including old privacy receipts; Marketing retains authoritative
+withdrawal state. Historical rows and external objects are not erased in this
+change.
+
+Coordinate the Marketing single-sender cutover with this App/API deployment.
+Verify the replacement App is live before setting a later client floor; an
+already-open old bundle can otherwise continue sending browser conversions.
+This PR does not select a floor or change production provider settings.

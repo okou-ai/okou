@@ -41,10 +41,13 @@ export function packageLimitsFor(
   });
 }
 
-function checkSource(source: ResolvedUpload): string | null {
-  const accepted: readonly string[] = USER_TEMPLATE_SOURCE_CONTENT_TYPES;
+function checkSource(
+  kind: PublishUserTemplateBody["kind"],
+  source: ResolvedUpload,
+): string | null {
+  const accepted = USER_TEMPLATE_SOURCE_CONTENT_TYPES[kind];
   if (!accepted.includes(source.contentType)) {
-    return `The source file must be one of: ${accepted.join(", ")}`;
+    return `The source file for a ${kind} template must be one of: ${accepted.join(", ")}`;
   }
   if (source.sizeBytes > MAX_USER_TEMPLATE_SOURCE_BYTES) {
     return `The source file must be ${MAX_USER_TEMPLATE_SOURCE_BYTES.toString()} bytes or smaller`;
@@ -87,7 +90,8 @@ function publishedPageFileIds(
     case "presentation": {
       return body.pageFileIds;
     }
-    case "document": {
+    case "document":
+    case "illustration": {
       return [];
     }
   }
@@ -101,9 +105,10 @@ function checkPagesFor(
     case "presentation": {
       return checkPages(pages);
     }
-    case "document": {
-      // The document arm carries no page ids, so the contract already refused
-      // any that were sent and there is nothing left to check.
+    case "document":
+    case "illustration": {
+      // Neither arm carries page ids, so the contract already refused any that
+      // were sent and there is nothing left to check.
       return null;
     }
   }
@@ -124,6 +129,9 @@ function publishedManifest(
     }
     case "document": {
       return { kind: "document" };
+    }
+    case "illustration": {
+      return { kind: "illustration" };
     }
   }
 }
@@ -180,7 +188,7 @@ export const publishUserTemplate$ = command(
       return uploads.get(id)!;
     });
 
-    const sourceError = checkSource(source);
+    const sourceError = checkSource(body.kind, source);
     if (sourceError) {
       return rejected(sourceError);
     }

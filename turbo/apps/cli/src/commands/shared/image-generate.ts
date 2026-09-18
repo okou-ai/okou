@@ -513,6 +513,7 @@ ${formatRegistryListing(styles, "image styles")}`;
           result.embedUrl !== undefined && result.embedUrl !== result.url
             ? `${result.url} is the artifact reference for chat. ${result.embedUrl} is for embedding the image in authored HTML.`
             : undefined,
+          result,
         );
         if (options.json) {
           console.log(JSON.stringify({ ...result, ...presentation.json }));

@@ -161,6 +161,7 @@ describe("okou generate video command", () => {
 
   it("publishes a generated video using the selected public URL", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
     const artifact = serveGenerationVisibility("video.mp4", "public");
     server.use(
       http.post(`${VIDEO_URL}/private`, async ({ request }) => {
@@ -169,6 +170,7 @@ describe("okou generate video command", () => {
         });
         return HttpResponse.json({
           ...VIDEO_RESULT,
+          privateArtifacts: true,
           id: GENERATION_ARTIFACT_ID,
           url: artifact.reference,
         });
@@ -191,6 +193,7 @@ describe("okou generate video command", () => {
       ownerUrl: artifact.ownerUrl,
       visibility: "public",
       previewMarkdownBlock: `![${VIDEO_RESULT.filename}](<${artifact.url}>)`,
+      artifactPresentationContext: expect.not.stringContaining("upload-file"),
     });
   });
 

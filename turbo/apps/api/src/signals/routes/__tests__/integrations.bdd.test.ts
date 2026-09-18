@@ -4090,6 +4090,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     const run1Id = await pollSlackRun(runnerGroup);
     const claim1 = await runs.claimRunnerJob(run1Id);
     expect(claim1.prompt).toBe("summarize this thread");
+    expect(claim1.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("slack");
     expect(claim1.appendSystemPrompt ?? "").toContain(
       "You are currently running inside: Slack",
     );

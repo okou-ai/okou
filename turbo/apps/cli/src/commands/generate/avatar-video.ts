@@ -370,10 +370,17 @@ async function handleResourceListing(
 }
 
 function printAvatarVideoResult(
-  result: Awaited<ReturnType<typeof generateWebAvatarVideo>>,
+  result: Awaited<ReturnType<typeof generateWebAvatarVideo>> & {
+    readonly visibility?: ArtifactVisibility;
+  },
   json: boolean,
 ): void {
-  const presentation = createArtifactPresentation(result.filename, result.url);
+  const presentation = createArtifactPresentation(
+    result.filename,
+    result.url,
+    undefined,
+    result,
+  );
   if (json) {
     console.log(JSON.stringify({ ...result, ...presentation.json }));
     return;

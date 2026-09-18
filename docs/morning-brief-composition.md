@@ -61,6 +61,34 @@ GitHub has no GitHub evidence; a connected GitHub account with nothing
 outstanding is a healthy answer about their day. Only the second one may be
 described as empty.
 
+The composition adds one more value of its own, `not-started`: the source was
+applicable and the attempt's budget ran out before it could be admitted. Nothing
+was observed about it, so it is neither a healthy empty nor a failed read, and a
+report that dropped it would make an exhausted attempt look exactly like an owner
+whose morning was quiet. The connector-backed collectors report "never connected"
+through the same unavailable envelope they use for a broken credential, so the
+composition translates that one failure reason back to `unconfigured`: a Calendar
+nobody connected is silent, a Calendar whose credential broke is not.
+
+### What the attempt answers
+
+| Outcome                                                                                   | Meaning                                                                             |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `composed`                                                                                | Authorized evidence survived and a single model request was assembled               |
+| `empty`                                                                                   | Every applicable source answered affirmatively and none of them had anything        |
+| `incomplete/all-sources-failed`                                                           | Nothing contributed and every source that could have answered failed                |
+| `incomplete/incomplete-coverage`                                                          | Nothing contributed and some applicable source failed, was partial or never started |
+| `incomplete/deadline-exceeded`                                                            | The one absolute deadline was reached before the attempt could finish               |
+| `incomplete/no-item-fits`, `language-context-unavailable`, `retained-authority-unbounded` | Usable evidence existed and no request could be made                                |
+| `denied`, `authority-changed`                                                             | The owner may not run this attempt, or their authority moved while it was reading   |
+
+Healthy empty requires an affirmative answer from **every** applicable source;
+unconfigured sources stay silent. Every `incomplete` outcome carries the
+per-source outcomes the attempt did establish, because "Chat was never started"
+and "Chat was quiet" have to stay different facts for the attempt to be recovered
+rather than delivered as silence. None of them assembles a request, calls a model
+or delivers anything.
+
 All five sources are attempted. Only a source's own reader knows whether the
 member has a usable selected connection, and each reports an unconfigured source
 as an unavailable or not-executed read rather than throwing — so an owner with
@@ -94,6 +122,35 @@ a grace period: a source that has not started by the 40-second cutoff does not
 start at all, because a read finishing after the commit window has nowhere to be
 finalized. Cancellation stops new admissions and joins work already owned —
 there are no detached readers, no sleeping retries and no unbounded queue.
+
+### One deadline, sampled after every wait
+
+The attempt resolves **one absolute deadline before admission**, from the 45-second
+phase and the caller's own budget, and the earlier instant wins. A caller may
+only tighten it: a scheduled occurrence hands in what is left of its lease rather
+than receiving a fresh phase, and a caller asking for more keeps the phase.
+
+That deadline covers admission itself, Slack-binding discovery, every source job,
+the language read and the final authority and version checks. It is sampled from
+the clock **after each wait and immediately before the attempt commits to a
+request**, and equality is expired. Checking once in the middle is the failure
+this replaces: an admission that spent the whole phase would leave every source a
+zero budget and the attempt would then report a quiet morning, and a final
+authority check that started before the deadline would commit a request after it.
+
+A timeout signal is the backstop, never the fence. Its callback can be delivered
+arbitrarily late under load, so an undelivered timeout is not evidence of
+remaining time and only the sampled clock decides.
+
+### Joining, not racing
+
+Every source job a wave starts is **settled** before the wave is joined. Racing
+them returns on the first rejection and leaves an authorized sibling reading a
+provider with nobody waiting for it — and discards what the siblings that already
+answered had collected. A rejected job is that one source's failure: it records
+`failed` and the rest of the attempt continues on the evidence that survived.
+Caller cancellation is raised once the work this attempt started has settled, so
+cancelling never orphans a reader.
 
 ### Measuring, not estimating
 

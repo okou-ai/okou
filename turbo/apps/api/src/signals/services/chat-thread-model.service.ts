@@ -59,7 +59,6 @@ interface ResolvePersistedChatThreadModelParams {
   readonly threadSnapshot?: PersistedChatThreadModelSnapshot;
   readonly requestedCodexServiceTier?: CodexServiceTier;
   readonly requestedReasoningEffort?: ReasoningEffort;
-  readonly reasoningEffortEnabled?: boolean;
   readonly persistRequestedCodexServiceTier: boolean;
   readonly codexFastModeEnabled: boolean;
 }
@@ -385,7 +384,6 @@ async function evaluatePersistedChatThreadModel(
     selectedModel: pin.selectedModel,
     modelSettings,
     requested: params.requestedReasoningEffort,
-    enabled: params.reasoningEffortEnabled ?? false,
   });
   if ("status" in effort) {
     return { kind: "error", error: effort };

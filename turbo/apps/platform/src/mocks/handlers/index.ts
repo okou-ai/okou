@@ -93,7 +93,7 @@ import {
   resetMockOnboardingStatus,
 } from "./api-onboarding.ts";
 import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
-import { apiAttributionHandlers } from "./api-attribution.ts";
+import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
 import { resetMockWorkflowAutomations } from "./workflow-automations-store.ts";
 import { apiQueuePositionHandlers } from "./api-queue-position.ts";
 import {
@@ -111,6 +111,7 @@ import { localeResourceHandlers } from "./locale-resources.ts";
 import { clerkLocalizationHandlers } from "./clerk-localizations.ts";
 
 export const handlers = [
+  ...apiMarketingEventsHandlers,
   ...clerkLocalizationHandlers,
   ...localeResourceHandlers,
   ...apiBuildInfoHandlers,
@@ -140,7 +141,6 @@ export const handlers = [
   ...apiUserModelPreferenceHandlers,
   ...apiOnboardingHandlers,
   ...apiBillingHandlers,
-  ...apiAttributionHandlers,
   ...apiIntegrationsSlackConnectHandlers,
   ...apiFeatureSwitchesHandlers,
   ...apiGetStartedHandlers,

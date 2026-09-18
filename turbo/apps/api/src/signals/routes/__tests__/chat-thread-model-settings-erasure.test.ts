@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ErasureSubject } from "@okouai/db/operations/account-erasure";
 import { createStore } from "ccstate";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -24,7 +23,6 @@ import {
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
@@ -173,12 +171,6 @@ async function readSettings(fixture: SettingsFixture): Promise<{
   };
 }
 
-async function enableEffort(fixture: SettingsFixture): Promise<void> {
-  await updateFeatureSwitchesForUser(context, fixture, {
-    [FeatureSwitchKey.Effort]: true,
-  });
-}
-
 /**
  * Documented external-behavior exception, shared with `model-policies.test.ts`.
  * An uninitialized or default-less `org_model_policies` state cannot be built
@@ -214,7 +206,6 @@ async function policyModels(
 describe("account erasure fences chat-thread model settings writes", () => {
   it("denies a model-selection update for a closed thread user and keeps the pin, effort and sidebar sequence", async () => {
     const fixture = await createSettingsFixture("Closed user settings");
-    await enableEffort(fixture);
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
@@ -431,7 +422,6 @@ describe("account erasure fences chat-thread model settings writes", () => {
 
   it("rolls the pin, effort, the first sidebar event and both sequences back when the second event fails", async () => {
     const fixture = await createSettingsFixture("Rolled back settings");
-    await enableEffort(fixture);
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
@@ -720,7 +710,6 @@ describe("account erasure fences the model-policy bootstrap this route performs"
 describe("the fenced model-selection route keeps its own write semantics", () => {
   it("serializes concurrent same-thread efforts for different models without losing either", async () => {
     const fixture = await createSettingsFixture("Concurrent efforts");
-    await enableEffort(fixture);
     const lastSeqId = await lastStreamSeqId(fixture);
 
     // Both writers hold the helper's retained `FOR KEY SHARE` on this thread.
