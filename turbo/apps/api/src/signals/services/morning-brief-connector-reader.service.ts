@@ -1833,7 +1833,7 @@ async function admitNativeWithinDeadline(
   if (
     membershipId === null ||
     membershipId !== args.authority.membershipId ||
-    !(await subjectIsWritable(args.db, args))
+    !(await subjectIsWritable(args.db, args, args.deadline, signal))
   ) {
     return { kind: "denied", reason: "no-membership" };
   }
