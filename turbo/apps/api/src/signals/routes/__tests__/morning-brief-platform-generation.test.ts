@@ -38,7 +38,6 @@ import {
   holdMorningBriefFeatureSwitchRead,
   holdMorningBriefGenerationReservation,
   holdMorningBriefGenerationRow,
-  holdMorningBriefReceiptRead,
   holdMorningBriefOwnerRow,
   interceptPlatformGenerationReceiptWrites,
   readMorningBriefGenerations,
@@ -3478,11 +3477,16 @@ describe("Morning Brief platform-funded generation final local admission", () =>
       }),
     );
     await providerArrived.promise;
-    const held = await holdMorningBriefAuthorityRead(context.signal);
+    const owner = await holdMorningBriefOwnerRow(f, context.signal);
     releaseProvider.resolve();
-    await held.waitForArrival();
+    // This is the persistence transaction: both post-provider authority passes
+    // and the receipt write have already completed before it reaches owner.
+    await owner.waitForArrival();
+    const authority = await holdMorningBriefAuthorityRead(context.signal);
+    await owner.release();
+    await authority.waitForArrival();
     controller.abort();
-    await held.release();
+    await authority.release();
 
     const outcome = await pending;
     expect(outcome.ok && outcome.value.status === 200).toBeFalsy();
@@ -3540,14 +3544,17 @@ describe("Morning Brief platform-funded generation final local admission", () =>
       if (!reserved) {
         throw new Error("Expected a committed reservation");
       }
-      const held = await holdMorningBriefAuthorityRead(context.signal);
+      const owner = await holdMorningBriefOwnerRow(f, context.signal);
       releaseProvider.resolve();
-      await held.waitForArrival();
+      await owner.waitForArrival();
+      const authority = await holdMorningBriefAuthorityRead(context.signal);
+      await owner.release();
+      await authority.waitForArrival();
       // Equality with the reservation deadline is already expired, and the
       // decision has to use the instant the write is really admitted at rather
       // than one sampled before this real relation-lock wait.
       mockNow(reserved.reservationExpiresAt.getTime() + offsetMs);
-      await held.release();
+      await authority.release();
 
       const response = await accept(pending, [200]);
       const { generation } = expectGenerated(response.body);
@@ -3796,14 +3803,14 @@ describe("Morning Brief platform-funded generation readback admission", () => {
     if (!stored) {
       throw new Error("Expected a stored result");
     }
-    // Stage the request after its earlier authority proof and exactly at its
-    // receipt read. Then hold a still-unread authority relation so the final
-    // transaction cannot reach generation until after the real purge commits.
-    const receipt = await holdMorningBriefReceiptRead(context.signal);
+    // Stage after the earlier authority proof and receipt lookup at the final
+    // transaction's owner fence. Then hold a still-unread authority relation so
+    // that transaction cannot reach generation until the real purge commits.
+    const owner = await holdMorningBriefOwnerRow(f, context.signal);
     const pending = generate(f);
-    await receipt.waitForArrival();
+    await owner.waitForArrival();
     const authority = await holdMorningBriefAuthorityRead(context.signal);
-    await receipt.release();
+    await owner.release();
     await authority.waitForArrival();
     mockNow(stored.expiresAt.getTime());
     await expect(runRetentionMaintenance([f])).resolves.toBe(1);

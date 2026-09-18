@@ -368,22 +368,6 @@ export async function holdMorningBriefFeatureSwitchRead(
   return { waitForArrival: held.waitForBlocked, release: held.release };
 }
 
-/** Hold readback at its last pre-transaction receipt lookup. */
-export async function holdMorningBriefReceiptRead(
-  signal: AbortSignal,
-): Promise<{
-  readonly waitForArrival: (minimum?: number) => Promise<number>;
-  readonly release: () => Promise<void>;
-}> {
-  const held = await holdDeferredRow(signal, async (tx) => {
-    await tx.execute(
-      sql`LOCK TABLE morning_brief_platform_generation_receipts IN ACCESS EXCLUSIVE MODE`,
-    );
-  });
-  onTestFinished(held.release);
-  return { waitForArrival: held.waitForBlocked, release: held.release };
-}
-
 function ownerDigest(owner: MorningBriefGenerationOwner): string {
   return createHash("sha256")
     .update(`${owner.orgId}:${owner.userId}`, "utf8")
