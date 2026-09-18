@@ -891,6 +891,10 @@ describe("durable Pi API producer", () => {
     await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
+    // Cancellation deliberately keeps the technical reservation until its
+    // bounded grace expires. Move that clock past the deadline so this test's
+    // completed ownership proof cannot consume the next test's global slot.
+    await expirePiInference(run.runId);
   }, 90_000);
 
   it("rejects fleet-wide org overload before a second provider attempt", async () => {
