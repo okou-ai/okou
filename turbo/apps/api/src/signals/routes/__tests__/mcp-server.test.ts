@@ -968,12 +968,15 @@ describe("MCP chat discovery and creation", () => {
       title: "Unchanged metadata",
       model: "claude-sonnet-5",
     });
+    const eventsBefore = (await f.chat.requestThreadEvents(f.actor, {}, [200]))
+      .body;
     for (const patch of [
       {},
       { title: " " },
       { title: "x".repeat(201) },
       { model: "not-a-supported-model" },
       { title: "Must roll back", model: "not-a-supported-model" },
+      { title: "Must roll back denied model", model: "claude-opus-4-8" },
       { title: "Unknown field", extra: true },
     ]) {
       expect(
@@ -1001,6 +1004,9 @@ describe("MCP chat discovery and creation", () => {
         model: { selectedModel: "claude-sonnet-5" },
       },
     });
+    await expect(
+      f.chat.requestThreadEvents(f.actor, {}, [200]),
+    ).resolves.toMatchObject({ body: eventsBefore });
   });
 
   it("deduplicates simultaneous identical thread updates", async () => {
