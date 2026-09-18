@@ -789,6 +789,16 @@ function postProcess(deck: Buffer, eastAsianFont: string): Buffer {
     // measured box and adjusts the text instead.
     patched = patched.replace(/<a:spAutoFit\/>/gu, "<a:normAutofit/>");
 
+    // Line structure is already settled: every break the browser made was
+    // pinned before export and arrives as its own paragraph. Letting the viewer
+    // wrap on top of that re-decides it against different font metrics, and a
+    // line whose text is a few percent wider becomes two — which is how a
+    // heading ends up overlapping whatever sits below it.
+    patched = patched.replace(
+      /(<a:bodyPr\b[^>]*?)\swrap="square"/gu,
+      '$1 wrap="none"',
+    );
+
     // Only the East Asian slot moves, so Latin runs keep the deck's display
     // face and a mixed run like "TED 演讲" renders both halves as intended.
     if (eastAsianFont !== "") {
