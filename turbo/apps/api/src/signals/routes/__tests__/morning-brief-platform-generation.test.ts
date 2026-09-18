@@ -3819,7 +3819,14 @@ describe("Morning Brief platform-funded generation readback admission", () => {
     const [row] = await readMorningBriefGenerations(f);
     expect(row?.state).toBe("succeeded");
     await expect(runRetentionMaintenance([f])).resolves.toBe(1);
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.attemptId).toBe(attemptId);
+    expect(purged?.state).toBe("succeeded");
+    expect(purged?.decision).toBe("deliver");
+    expect(purged?.resultTitle).toBeNull();
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.resultBytes).toBeNull();
+    expect(purged?.contentPurgedAt?.getTime()).toBe(stored.expiresAt.getTime());
     await expect(
       readPlatformGenerationReceipts([attemptId]),
     ).resolves.toHaveLength(1);
@@ -3849,7 +3856,14 @@ describe("Morning Brief platform-funded generation readback admission", () => {
     expect(response.body.result).toBe(
       "collection-completed-without-generation",
     );
-    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [purged] = await readMorningBriefGenerations(f);
+    expect(purged?.attemptId).toBe(attemptId);
+    expect(purged?.state).toBe("succeeded");
+    expect(purged?.decision).toBe("deliver");
+    expect(purged?.resultTitle).toBeNull();
+    expect(purged?.resultMarkdown).toBeNull();
+    expect(purged?.resultBytes).toBeNull();
+    expect(purged?.contentPurgedAt?.getTime()).toBe(stored.expiresAt.getTime());
     await expect(
       readPlatformGenerationReceipts([attemptId]),
     ).resolves.toHaveLength(1);

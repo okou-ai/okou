@@ -945,6 +945,46 @@ async function resolveNativeDestinationThread(
   return thread.id;
 }
 
+/** Persist the immutable S6 receipt after every authority wait has completed. */
+async function insertDeliveryReceipt(
+  tx: Tx,
+  args: {
+    readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
+    readonly anchor: ResultAnchor;
+    readonly current: MorningBriefCollectionAdmission;
+    readonly chatThreadId: string;
+    readonly chatEventId: string;
+    readonly deliveredAt: Date;
+    readonly resultMarkdown: string;
+    readonly emailResolution: Awaited<
+      ReturnType<typeof resolveEmailIntent>
+    >["resolution"];
+    readonly emailOutboxId: string | null;
+  },
+): Promise<void> {
+  await tx.insert(morningBriefDeliveries).values({
+    orgId: args.request.orgId,
+    userId: args.request.userId,
+    scheduledFor: args.anchor.scheduledFor,
+    collectionKind: args.anchor.collectionKind,
+    collectionVersion: args.anchor.collectionVersion,
+    executionPurpose: args.purpose,
+    resultAttemptId: args.request.resultAttemptId,
+    membershipId: args.current.membershipId,
+    nativeOwnerEpoch: args.request.nativeAuthority?.ownerEpoch ?? null,
+    workflowId: args.current.workflowId,
+    automationId: args.current.automationId,
+    agentId: args.current.agentId,
+    chatThreadId: args.chatThreadId,
+    chatEventId: args.chatEventId,
+    resultDigest: resultDigest(args.resultMarkdown),
+    emailResolution: args.emailResolution,
+    emailOutboxId: args.emailOutboxId,
+    deliveredAt: args.deliveredAt,
+  });
+}
+
 async function deliverInTransaction(
   tx: Tx,
   args: {
@@ -957,7 +997,6 @@ async function deliverInTransaction(
 ): Promise<CommittedDelivery> {
   const { request, anchor, current } = args;
   const owner = { orgId: request.orgId, userId: request.userId };
-
   const admitted = await admitDelivery(tx, args, signal);
   if (admitted.kind !== "admitted") {
     return admitted;
@@ -1075,25 +1114,17 @@ async function deliverInTransaction(
     }
   }
 
-  await tx.insert(morningBriefDeliveries).values({
-    orgId: request.orgId,
-    userId: request.userId,
-    scheduledFor: anchor.scheduledFor,
-    collectionKind: anchor.collectionKind,
-    collectionVersion: anchor.collectionVersion,
-    executionPurpose: args.purpose,
-    resultAttemptId: request.resultAttemptId,
-    membershipId: current.membershipId,
-    nativeOwnerEpoch: request.nativeAuthority?.ownerEpoch ?? null,
-    workflowId: current.workflowId,
-    automationId: current.automationId,
-    agentId: current.agentId,
+  await insertDeliveryReceipt(tx, {
+    request,
+    purpose: args.purpose,
+    anchor,
+    current,
     chatThreadId,
     chatEventId: appended.id,
-    resultDigest: resultDigest(result.markdown),
+    deliveredAt: appended.createdAt,
+    resultMarkdown: result.markdown,
     emailResolution: intent.resolution,
     emailOutboxId: intent.outboxId,
-    deliveredAt: appended.createdAt,
   });
 
   return {

@@ -372,7 +372,7 @@ describe("composed Morning Brief generation", () => {
     const request = JSON.parse(provider.bodies[0] ?? "{}") as {
       readonly messages?: readonly { readonly content?: string }[];
     };
-    const document = JSON.parse(request.messages?.[1]?.content ?? "{}") as {
+    const document = JSON.parse(request.messages?.[0]?.content ?? "{}") as {
       readonly items?: readonly { readonly source?: string }[];
     };
     expect(
@@ -542,22 +542,37 @@ describe("composed Morning Brief generation", () => {
     // The ceiling is on the bytes that actually travelled, escaping included.
     expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(128 * 1024);
 
-    // The instructions state the precedence, in the one call.
-    const system = sent.messages[0]?.content ?? "";
-    expect(system).toContain("Pipeline constraints");
-    expect(system).toContain("OUTPUT LANGUAGE ONLY");
-    expect(system).toContain("language.fallbackLanguage");
-
-    // Evidence travels under opaque ids only: no provider identity, no link.
-    const document = JSON.parse(sent.messages[1]?.content ?? "{}") as {
+    // The complete policy, schema, language authority, source coverage and
+    // evidence travel in the exact one serialized provider message.
+    expect(sent.messages).toHaveLength(1);
+    const content = sent.messages[0]?.content ?? "{}";
+    const document = JSON.parse(content) as {
+      readonly policy: string;
+      readonly schema: Record<string, unknown>;
+      readonly language: {
+        readonly authority: string;
+        readonly fallbackLanguage: string;
+      };
       readonly items: readonly Record<string, unknown>[];
       readonly coverage: readonly { readonly source: string }[];
     };
+    expect(document.policy).toContain("untrusted data");
+    expect(document.policy).toContain("never invent facts");
+    expect(document.policy).toContain("exact opaque `id` values");
+    expect(document.policy).toContain(
+      "Agent instructions may steer output language only",
+    );
+    expect(document.schema).toHaveProperty("deliver");
+    expect(document.schema).toHaveProperty("skip");
+    expect(document.language.authority).toBe("default");
+    expect(document.language.fallbackLanguage).toBe("en-US");
+
+    // Evidence travels under opaque ids only: no provider identity, no link.
     expect(document.items.length).toBeGreaterThan(0);
     expect(document.items[0]?.id).toBe("c1");
     expect(document.items[0]).not.toHaveProperty("identity");
     expect(document.items[0]).not.toHaveProperty("links");
-    expect(sent.messages[1]?.content).not.toContain("https://");
+    expect(content).not.toContain("https://");
     expect(
       document.coverage
         .map((entry) => {

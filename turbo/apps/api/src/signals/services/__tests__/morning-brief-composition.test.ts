@@ -53,6 +53,7 @@ import {
 } from "../morning-brief-source-authority";
 import {
   morningBriefEnvelopeBytes,
+  buildMorningBriefProviderRequest,
   buildMorningBriefRequest,
   morningBriefCoverageReport,
   packMorningBriefRequest,
@@ -1116,7 +1117,8 @@ describe("request packing against the final report", () => {
     });
 
     expect(packed.allocation.omittedItems).toBeGreaterThan(0);
-    expect(Buffer.byteLength(JSON.stringify(packed.request), "utf8")).toBe(
+    expect(packed.providerRequest.bodyBytes).toBe(packed.totalBytes);
+    expect(Buffer.byteLength(packed.providerRequest.body, "utf8")).toBe(
       packed.totalBytes,
     );
     expect(packed.totalBytes).toBeLessThanOrEqual(
@@ -1571,19 +1573,17 @@ describe("request ceiling measured on the consumed serialization", () => {
       }),
     });
     const baseCollections = [collection("gmail", [baseItem])];
-    const baseBytes = Buffer.byteLength(
-      JSON.stringify(assemble(baseCollections, [baseItem], {})),
-      "utf8",
-    );
+    const baseBytes = buildMorningBriefProviderRequest(
+      assemble(baseCollections, [baseItem], {}),
+    ).bodyBytes;
     const only = {
       ...baseItem,
       body: prefix + "x".repeat(MORNING_BRIEF_REQUEST_MAX_BYTES - baseBytes),
     };
     const collections = [collection("gmail", [only])];
-    const oracle = Buffer.byteLength(
-      JSON.stringify(assemble(collections, [only], {})),
-      "utf8",
-    );
+    const oracle = buildMorningBriefProviderRequest(
+      assemble(collections, [only], {}),
+    ).bodyBytes;
     expect(oracle).toBe(MORNING_BRIEF_REQUEST_MAX_BYTES);
 
     const fitted = packMorningBriefRequest({
@@ -1594,7 +1594,8 @@ describe("request ceiling measured on the consumed serialization", () => {
     });
     expect(fitted.allocation.items).toHaveLength(1);
     expect(fitted.totalBytes).toBe(MORNING_BRIEF_REQUEST_MAX_BYTES);
-    expect(Buffer.byteLength(JSON.stringify(fitted.request), "utf8")).toBe(
+    expect(fitted.providerRequest.bodyBytes).toBe(fitted.totalBytes);
+    expect(Buffer.byteLength(fitted.providerRequest.body, "utf8")).toBe(
       fitted.totalBytes,
     );
 

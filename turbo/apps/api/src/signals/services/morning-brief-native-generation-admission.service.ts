@@ -4,9 +4,7 @@ import {
 } from "@okouai/db/schema/morning-brief-native-schedule";
 import { and, eq, isNull } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
 import type { Db, ReadonlyDb } from "../external/db";
-import { lockMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 
 /** The live claim consumed before the sole provider POST. */
 export interface MorningBriefNativeActiveAuthority {
@@ -28,7 +26,7 @@ export type MorningBriefNativeCollectionAuthority =
   | MorningBriefNativeActiveAuthority
   | MorningBriefNativeRetainedAuthority;
 
-export interface MorningBriefNativeCollectionBinding {
+interface MorningBriefNativeCollectionBinding {
   readonly orgId: string;
   readonly userId: string;
   readonly scheduledFor: Date;
@@ -40,10 +38,9 @@ export interface MorningBriefNativeCollectionBinding {
 }
 
 type NativeAuthorityReader = Pick<ReadonlyDb, "select">;
-type NativeAuthorityWriter = Pick<Tx, "select">;
 
 function scheduleMatches(
-  schedule: Awaited<ReturnType<typeof lockMorningBriefNativeSchedule>>,
+  schedule: typeof morningBriefNativeSchedules.$inferSelect | undefined,
   binding: MorningBriefNativeCollectionBinding,
 ): boolean {
   return (
@@ -71,9 +68,8 @@ function authorityCanReadSettledResult(args: {
 }
 
 async function occurrenceMatches(
-  db: NativeAuthorityReader | NativeAuthorityWriter,
+  db: NativeAuthorityReader,
   binding: MorningBriefNativeCollectionBinding,
-  lock: boolean,
 ): Promise<boolean> {
   const authority = binding.authority;
   const query = db
@@ -100,7 +96,7 @@ async function occurrenceMatches(
       ),
     )
     .limit(1);
-  const [occurrence] = lock ? await query.for("update") : await query;
+  const [occurrence] = await query;
   return (
     occurrence?.ownerEpoch === authority.ownerEpoch &&
     occurrence.membershipId === authority.membershipId &&
@@ -174,19 +170,6 @@ export async function morningBriefNativeCollectionAuthorityIsCurrent(
     )
     .limit(1);
   return (
-    scheduleMatches(schedule, binding) &&
-    (await occurrenceMatches(db, binding, false))
-  );
-}
-
-/** Lock the native schedule then occurrence in the scheduler's canonical order. */
-export async function lockMorningBriefNativeCollectionAuthority(
-  tx: Tx,
-  binding: MorningBriefNativeCollectionBinding,
-): Promise<boolean> {
-  const schedule = await lockMorningBriefNativeSchedule(tx, binding);
-  return (
-    scheduleMatches(schedule, binding) &&
-    (await occurrenceMatches(tx, binding, true))
+    scheduleMatches(schedule, binding) && (await occurrenceMatches(db, binding))
   );
 }

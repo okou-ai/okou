@@ -831,7 +831,10 @@ describe("Morning Brief exact source selection and retained authority", () => {
     "proves a source introduced by reallocation before releasing the final request",
     async () => {
       const fixture = await setupOwner(objectStorage, {
-        instructions: '"'.repeat(62_000),
+        // Quote-heavy instructions exercise the complete transport-body bound.
+        // This size leaves room for one evidence source after nested JSON
+        // escaping, but not both, so revocation forces a real reallocation.
+        instructions: '"'.repeat(30_000),
       });
       const providerShape = {
         gmailBody: "g".repeat(10_000),

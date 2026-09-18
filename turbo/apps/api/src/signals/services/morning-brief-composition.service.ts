@@ -84,6 +84,7 @@ import { loadMorningBriefMemberLocale } from "./morning-brief-member-locale.serv
 import {
   morningBriefCitationLinks,
   packMorningBriefRequest,
+  type MorningBriefOmissionStages,
   type MorningBriefProviderRequest,
 } from "./morning-brief-request-envelope";
 import { collectMorningBriefSlackBundle } from "./morning-brief-slack-collection.service";
@@ -95,10 +96,16 @@ import {
   boundMorningBriefDescriptors,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-revalidation.service";
+import {
+  revalidateMorningBriefRetainedSources,
+  startMorningBriefRetainedCheckDeadline,
+} from "./morning-brief-source-revalidation.service";
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
+  morningBriefEvidenceDigest,
+  morningBriefSourceOmissions,
+  MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
   MORNING_BRIEF_NO_OMISSIONS,
   MORNING_BRIEF_NO_PROVENANCE,
   type MorningBriefDisplayLink,
@@ -153,10 +160,21 @@ interface MorningBriefCompositionResult {
     readonly source: MorningBriefSourceKind;
     readonly coverage: string;
     readonly items: number;
+    readonly includedInRequest: number;
     readonly requests: number;
+    readonly timeSemantics: {
+      readonly instant: number;
+      readonly overlap: number;
+      readonly dateOnly: number;
+      readonly outstanding: number;
+    };
+    readonly omitted: ReturnType<typeof morningBriefSourceOmissions>;
+    readonly provenance: MorningBriefSourceCollection["provenance"];
+    readonly evidenceDigest: string;
   }[];
   readonly waves: readonly (readonly MorningBriefSourceKind[])[];
   readonly normalizedBytes: number;
+  readonly normalizedMaxBytes: number;
   readonly omittedByNormalizedCap: number;
   readonly request: {
     readonly envelopeBytes: number;
@@ -165,8 +183,10 @@ interface MorningBriefCompositionResult {
     readonly items: number;
     readonly omittedItems: number;
     readonly omittedBytes: number;
+    readonly digest: string;
   } | null;
   readonly language: MorningBriefLanguagePlan | null;
+  readonly descriptorBytes: number;
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
 }
 
@@ -231,11 +251,19 @@ const finishMorningBriefComposition$ = command(
       return {
         kind: "empty",
         result: {
-          sources: sourceSummary(bounded.collections),
+          sources: sourceSummary(bounded.collections, [], {
+            byNormalizedCap: bounded.omittedBySource,
+            byRequest: {},
+          }),
           waves,
           normalizedBytes: bounded.bytes,
+          normalizedMaxBytes: MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
           omittedByNormalizedCap: bounded.omitted,
           descriptors: retained.descriptors,
+          descriptorBytes: Buffer.byteLength(
+            JSON.stringify(retained.descriptors),
+            "utf8",
+          ),
           request: null,
           language: null,
         },
@@ -249,6 +277,7 @@ const finishMorningBriefComposition$ = command(
         collections: bounded.collections,
         descriptors,
         slack: args.slackBinding,
+        omittedByNormalizedCap: bounded.omittedBySource,
         phaseDeadline: args.phaseDeadline,
       },
       signal,
@@ -267,11 +296,19 @@ const finishMorningBriefComposition$ = command(
     return {
       kind: "composed",
       result: {
-        sources: sourceSummary(planned.collections),
+        sources: sourceSummary(planned.collections, planned.allocation.items, {
+          byNormalizedCap: bounded.omittedBySource,
+          byRequest: planned.allocation.omittedBySource,
+        }),
         waves,
         normalizedBytes: bounded.bytes,
+        normalizedMaxBytes: MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
         omittedByNormalizedCap: bounded.omitted,
         descriptors: retained.descriptors,
+        descriptorBytes: Buffer.byteLength(
+          JSON.stringify(retained.descriptors),
+          "utf8",
+        ),
         language: planned.language,
         request: {
           envelopeBytes: planned.envelopeBytes,
@@ -280,6 +317,7 @@ const finishMorningBriefComposition$ = command(
           items: planned.allocation.items.length,
           omittedItems: planned.allocation.omittedItems,
           omittedBytes: planned.allocation.omittedBytes,
+          digest: request.inputDigest,
         },
       },
       transport: {
@@ -640,6 +678,7 @@ const planMorningBriefRequest$ = command(
       readonly collections: readonly MorningBriefSourceCollection[];
       readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
       readonly slack: SlackBinding | null;
+      readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
       readonly phaseDeadline: MorningBriefSourceDeadline;
     },
     signal: AbortSignal,
@@ -695,6 +734,7 @@ const planMorningBriefRequest$ = command(
     const first = allocateForCollections(bounded.collections, {
       language,
       instructions,
+      omittedByNormalizedCap: input.omittedByNormalizedCap,
     });
     if (first.allocation.items.length === 0) {
       // Evidence existed and none of it fits beside the fixed context. That is
@@ -718,6 +758,7 @@ const planMorningBriefRequest$ = command(
         planned: first,
         language,
         instructions,
+        omittedByNormalizedCap: input.omittedByNormalizedCap,
         deadline: phaseDeadline,
       },
       signal,
@@ -787,12 +828,17 @@ async function proveRetainedAuthority(
     readonly planned: MorningBriefAllocated;
     readonly language: MorningBriefLanguagePlan;
     readonly instructions: string | null;
+    readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
     /** The attempt's own reservation; the check never outlives it. */
     readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<RetainedAuthorityOutcome> {
-  if (nowDate().getTime() >= input.deadline.at) {
+  const retainedDeadline = startMorningBriefRetainedCheckDeadline(
+    input.deadline.at,
+    input.deadline.signal,
+  );
+  if (nowDate().getTime() >= retainedDeadline.at) {
     return { kind: "withdrawn" };
   }
   const supplied = new Set(
@@ -816,7 +862,7 @@ async function proveRetainedAuthority(
               workspaceId: input.slack.workspaceId,
               slackUserId: input.slack.slackUserId,
             },
-      deadline: input.deadline,
+      deadline: retainedDeadline,
     },
     signal,
   );
@@ -844,6 +890,7 @@ async function proveRetainedAuthority(
   const replanned = allocateForCollections(collections, {
     language: input.language,
     instructions: input.instructions,
+    omittedByNormalizedCap: input.omittedByNormalizedCap,
   });
   // The owner had material and every piece of it lost its authority. That is an
   // authority change, never a quiet morning.
@@ -902,13 +949,14 @@ function allocateForCollections(
   context: {
     readonly language: MorningBriefLanguagePlan;
     readonly instructions: string | null;
+    readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
   },
 ): MorningBriefAllocated {
   const packed = packMorningBriefRequest({
     collections,
     language: context.language,
     instructions: context.instructions,
-    omittedByNormalizedCap: {},
+    omittedByNormalizedCap: context.omittedByNormalizedCap,
   });
   return {
     envelopeBytes: packed.envelopeBytes,
@@ -946,13 +994,40 @@ function withdrawRevokedSources(
 /** What each source contributed, with no evidence in it. */
 function sourceSummary(
   collections: readonly MorningBriefSourceCollection[],
+  includedItems: readonly MorningBriefSourceCollection["items"][number][],
+  omissions: MorningBriefOmissionStages,
 ): MorningBriefCompositionResult["sources"] {
   return collections.map((collection) => {
+    const included = includedItems.filter((item) => {
+      return item.identity.source === collection.source;
+    });
+    const timeSemantics = {
+      instant: 0,
+      overlap: 0,
+      dateOnly: 0,
+      outstanding: 0,
+    };
+    for (const item of included) {
+      if (item.timeSemantics === "date-only") {
+        timeSemantics.dateOnly += 1;
+      } else {
+        timeSemantics[item.timeSemantics] += 1;
+      }
+    }
     return {
       source: collection.source,
       coverage: collection.coverage,
       items: collection.items.length,
+      includedInRequest: included.length,
       requests: collection.requests,
+      timeSemantics,
+      omitted: morningBriefSourceOmissions({
+        bySource: collection.omittedBySource,
+        byNormalizedCap: omissions.byNormalizedCap[collection.source] ?? 0,
+        byRequest: omissions.byRequest[collection.source] ?? 0,
+      }),
+      provenance: collection.provenance,
+      evidenceDigest: morningBriefEvidenceDigest(included),
     };
   });
 }

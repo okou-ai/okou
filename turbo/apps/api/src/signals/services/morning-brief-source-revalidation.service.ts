@@ -110,7 +110,7 @@ export function startMorningBriefRetainedCheckDeadline(
 }
 
 /** Equality is expired even before the timeout callback gets a turn. */
-export function morningBriefRetainedCheckExpired(
+function morningBriefRetainedCheckExpired(
   deadlineAt: number,
   deadlineSignal: AbortSignal,
 ): boolean {

@@ -271,6 +271,11 @@ function checkPreflight(
       reason: "Morning Brief email has no live-owner evidence for this pass",
     };
   }
+  if (preflight.sourceRefusal !== undefined) {
+    return rejected(
+      `Morning Brief retained source authority was revoked: ${preflight.sourceRefusal}`,
+    );
+  }
   if (preflight.membershipId === null) {
     return rejected(
       "Morning Brief recipient is no longer an organization member",

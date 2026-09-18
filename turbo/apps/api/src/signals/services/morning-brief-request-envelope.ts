@@ -242,13 +242,6 @@ export function morningBriefCitationLinks(
   return links;
 }
 
-/** The exact serialized size of a built request. */
-export function morningBriefRequestBytes(
-  request: MorningBriefModelRequest,
-): number {
-  return Buffer.byteLength(JSON.stringify(request), "utf8");
-}
-
 /**
  * What the envelope costs before a single item is added.
  *
