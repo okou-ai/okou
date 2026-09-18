@@ -290,13 +290,12 @@ export const createBrowserAuthorizationRequest$ = command(
 );
 
 /**
- * Retains every non-key thread identity field while a read waits for its exact
- * request pin. `FOR UPDATE` is deliberate even though this is a read: browser
- * Apply pins its request before its thread UPDATE, while the shared admission
- * holds only KEY SHARE on the thread. A weaker SHARE/NO KEY UPDATE lock could
- * therefore deadlock as GET held thread -> waited request and Apply held
- * request -> waited thread. UPDATE conflicts with Apply's earlier KEY SHARE, so
- * one operation waits before it can acquire the second business-row lock.
+ * Rechecks every non-key thread identity field and reads the browser flag under
+ * the UPDATE lock already acquired by the shared helper's read-only opt-in.
+ * Acquiring that mode on the first thread lock is deliberate: browser Apply
+ * retains KEY SHARE before its request pin, so delaying UPDATE until this query
+ * would let two GETs retain KEY SHARE and deadlock while both upgraded. The
+ * repeated UPDATE is same-transaction lock retention, not an upgrade.
  *
  * The read never locks a host, so this thread-first lock introduces no inverse
  * with Computer Use lifecycle paths that lock host -> clear thread bindings.
@@ -426,6 +425,7 @@ export const readBrowserAuthorizationRequest$ = command(
             identity.orgId === args.orgId
           );
         },
+        threadLock: "update",
       },
       async (tx, identity) => {
         if (identity.agentId === null) {

@@ -29,7 +29,9 @@ import {
   expireBrowserAuthorizationRequestFixture,
   readBrowserAuthorizationRequestFixture,
   setBrowserAuthorizationRunTriggerFixture,
+  withBrowserAuthorizationApplyBarrierFixture,
 } from "../../../test-fixtures/browser-authorization";
+import { withComputerUseAuthorizationApplyBarrierFixture } from "../../../test-fixtures/computer-use-authorization-apply";
 import {
   readComputerUseAuthorizationRequestFixture,
   setComputerUseAuthorizationRunTriggerFixture,
@@ -215,6 +217,38 @@ async function createAuthorizationReadFixture(args: {
   };
 }
 
+async function createAuthorizationRequestForKind(
+  fixture: AuthorizationReadFixture,
+  kind: ReadKind,
+): Promise<AuthorizationReadFixture> {
+  const bearer = runs.sandboxTokenForRun(fixture.actor, fixture.runId);
+  const created =
+    kind === "browser"
+      ? await accept(
+          browserAuthorizationClient().create({
+            headers: { authorization: `Bearer ${bearer}` },
+            body: {},
+          }),
+          [200],
+        )
+      : await accept(
+          computerUseAuthorizationClient().create({
+            headers: { authorization: `Bearer ${bearer}` },
+            body: {},
+          }),
+          [200],
+        );
+  if (kind === "computer-use") {
+    expect("source" in created.body && created.body.source).toBe("chat");
+  }
+  return {
+    ...fixture,
+    kind,
+    requestToken: requestTokenFromUrl(created.body.authorizationUrl),
+    expiresAt: created.body.expiresAt,
+  };
+}
+
 async function readAuthorization(
   fixture: AuthorizationReadFixture,
   statuses: readonly (200 | 401 | 403 | 404 | 410)[],
@@ -269,6 +303,42 @@ async function applyAuthorization(
   );
 }
 
+function expectFoundProjection(
+  response: Awaited<ReturnType<typeof readAuthorization>>,
+  fixture: AuthorizationReadFixture,
+  completed: boolean,
+): void {
+  expect(response.status).toBe(200);
+  if (response.status !== 200) {
+    throw new Error("Expected a successful authorization projection");
+  }
+  expect(response.body.expiresAt).toBe(fixture.expiresAt);
+  if (completed) {
+    expect(response.body.completedAt).not.toBeNull();
+  } else {
+    expect(response.body.completedAt).toBeNull();
+  }
+  if (fixture.kind === "browser") {
+    expect("cloudBrowserEnabled" in response.body).toBeTruthy();
+    if ("cloudBrowserEnabled" in response.body) {
+      expect(response.body.cloudBrowserEnabled).toBe(completed);
+    }
+    return;
+  }
+  expect("hosts" in response.body).toBeTruthy();
+  if ("hosts" in response.body) {
+    expect(response.body.source).toBe("chat");
+    expect(response.body.computerUseHostId).toBe(
+      completed ? fixture.hostId : null,
+    );
+    if (fixture.hostId) {
+      expect(response.body.hosts).toContainEqual(
+        expect.objectContaining({ id: fixture.hostId, status: "online" }),
+      );
+    }
+  }
+}
+
 async function sidebarSequence(fixture: AuthorizationReadFixture) {
   const response = await chat.requestThreadEvents(fixture.actor, {}, [200]);
   if (!("events" in response.body)) {
@@ -290,6 +360,9 @@ async function durableReadState(fixture: AuthorizationReadFixture) {
     fixture.kind === "browser"
       ? await readBrowserAuthorizationRequestFixture(fixture.requestToken)
       : await readComputerUseAuthorizationRequestFixture(fixture.requestToken);
+  if (!request) {
+    throw new Error("Expected the authorization request durable state");
+  }
   const metadata = await chat.readThreadMetadata(
     fixture.actor,
     fixture.threadId,
@@ -354,6 +427,96 @@ function valueOf<T>(outcome: Settled<T>): T {
     throw outcome.error;
   }
   return outcome.value;
+}
+
+interface OwnedOperationScope {
+  readonly start: <T>(
+    operation: Promise<T>,
+    inspect?: (outcome: Settled<T>) => void,
+  ) => Promise<Settled<T>>;
+  readonly own: <T>(
+    operation: Promise<T>,
+    inspect?: (outcome: Settled<T>) => void,
+  ) => void;
+  readonly release: () => Promise<void>;
+}
+
+/**
+ * Owns every finite operation started around a database barrier. The barrier is
+ * released before joins on every exit, and all settled outcomes are inspected
+ * even when the work body throws first.
+ */
+async function withOwnedOperations<T>(
+  release: () => void | Promise<void>,
+  work: (scope: OwnedOperationScope) => Promise<T>,
+): Promise<T> {
+  const joins: (() => Promise<void>)[] = [];
+  let released: Promise<void> | undefined;
+  const releaseOnce = async () => {
+    released ??= Promise.resolve(release());
+    await released;
+  };
+  const worked = await settleIncludingAbort(
+    work({
+      start: <T>(
+        operation: Promise<T>,
+        inspect: (outcome: Settled<T>) => void = valueOf,
+      ) => {
+        const outcome = settleIncludingAbort(operation);
+        joins.push(async () => {
+          inspect(await outcome);
+        });
+        return outcome;
+      },
+      own: <T>(
+        operation: Promise<T>,
+        inspect: (outcome: Settled<T>) => void = valueOf,
+      ) => {
+        const outcome = settleIncludingAbort(operation);
+        joins.push(async () => {
+          inspect(await outcome);
+        });
+      },
+      release: releaseOnce,
+    }),
+  );
+  const releaseOutcome = await settleIncludingAbort(releaseOnce());
+  const joined = await Promise.all(
+    joins.map(async (join) => {
+      return await settleIncludingAbort(join());
+    }),
+  );
+  const errors: unknown[] = [];
+  if (!worked.ok) {
+    errors.push(worked.error);
+  }
+  if (!releaseOutcome.ok) {
+    errors.push(releaseOutcome.error);
+  }
+  for (const outcome of joined) {
+    if (!outcome.ok) {
+      errors.push(outcome.error);
+    }
+  }
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "Owned authorization operations failed");
+  }
+  if (!worked.ok) {
+    throw worked.error;
+  }
+  return worked.value;
+}
+
+function expectOperationFailure(pattern: RegExp) {
+  return <T>(outcome: Settled<T>): void => {
+    expect(outcome.ok).toBeFalsy();
+    if (!outcome.ok) {
+      expect(String(outcome.error)).toMatch(pattern);
+    }
+  };
 }
 
 async function expectNextProductionWrite(
@@ -534,25 +697,25 @@ describe.each(["browser", "computer-use"] as const)(
           readonly entered: Promise<unknown>;
           readonly release: () => void;
         }) => {
-          const reading = settleIncludingAbort(
-            readAuthorization(fixture, [404]),
-          );
-          await barrier.entered;
-          await setChatThreadAgentFixture({
-            chatThreadId: fixture.threadId,
-            agentId: rebound.agentId,
+          await withOwnedOperations(barrier.release, async (scope) => {
+            const reading = scope.start(readAuthorization(fixture, [404]));
+            await barrier.entered;
+            await setChatThreadAgentFixture({
+              chatThreadId: fixture.threadId,
+              agentId: rebound.agentId,
+            });
+            await scope.release();
+            const denied = valueOf(await reading);
+            expect(denied.status).toBe(404);
+            expectDeniedBody(denied.body, fixture);
           });
-          barrier.release();
-          const denied = valueOf(await reading);
-          expect(denied.status).toBe(404);
-          expectDeniedBody(denied.body, fixture);
         };
         if (kind === "browser") {
           await withBrowserAuthorizationReadBarrierFixture(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-thread-pin",
+              stopAt: "before-identity-thread-lock",
               work: run,
             },
             context.signal,
@@ -562,7 +725,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-thread-pin",
+              stopAt: "before-identity-thread-lock",
               work: run,
             },
             context.signal,
@@ -581,24 +744,24 @@ describe.each(["browser", "computer-use"] as const)(
           readonly entered: Promise<unknown>;
           readonly release: () => void;
         }) => {
-          const reading = settleIncludingAbort(
-            readAuthorization(fixture, [404]),
-          );
-          await barrier.entered;
-          await setChatThreadUserFixture({
-            chatThreadId: fixture.threadId,
-            userId: movedUserId,
+          await withOwnedOperations(barrier.release, async (scope) => {
+            const reading = scope.start(readAuthorization(fixture, [404]));
+            await barrier.entered;
+            await setChatThreadUserFixture({
+              chatThreadId: fixture.threadId,
+              userId: movedUserId,
+            });
+            await scope.release();
+            const denied = valueOf(await reading);
+            expect(denied.status).toBe(404);
           });
-          barrier.release();
-          const denied = valueOf(await reading);
-          expect(denied.status).toBe(404);
         };
         if (kind === "browser") {
           await withBrowserAuthorizationReadBarrierFixture(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-thread-pin",
+              stopAt: "before-identity-thread-lock",
               work: run,
             },
             context.signal,
@@ -608,7 +771,7 @@ describe.each(["browser", "computer-use"] as const)(
             {
               chatThreadId: fixture.threadId,
               requestToken: fixture.requestToken,
-              stopAt: "before-thread-pin",
+              stopAt: "before-identity-thread-lock",
               work: run,
             },
             context.signal,
@@ -630,16 +793,16 @@ describe.each(["browser", "computer-use"] as const)(
           readonly entered: Promise<unknown>;
           readonly release: () => void;
         }) => {
-          const reading = settleIncludingAbort(
-            readAuthorization(fixture, [200]),
-          );
-          await barrier.entered;
-          await transferAgentOwnerFixture({
-            agentId: fixture.agentId,
-            owner: nextOwner.userId,
+          await withOwnedOperations(barrier.release, async (scope) => {
+            const reading = scope.start(readAuthorization(fixture, [200]));
+            await barrier.entered;
+            await transferAgentOwnerFixture({
+              agentId: fixture.agentId,
+              owner: nextOwner.userId,
+            });
+            await scope.release();
+            expect(valueOf(await reading).status).toBe(200);
           });
-          barrier.release();
-          expect(valueOf(await reading).status).toBe(200);
         };
         if (kind === "browser") {
           await withBrowserAuthorizationReadBarrierFixture(
@@ -681,16 +844,16 @@ describe.each(["browser", "computer-use"] as const)(
           readonly entered: Promise<unknown>;
           readonly release: () => void;
         }) => {
-          const reading = settleIncludingAbort(
-            readAuthorization(fixture, [404]),
-          );
-          await barrier.entered;
-          await transferAgentOrganizationFixture({
-            agentId: fixture.agentId,
-            orgId: `org_${randomUUID()}`,
+          await withOwnedOperations(barrier.release, async (scope) => {
+            const reading = scope.start(readAuthorization(fixture, [404]));
+            await barrier.entered;
+            await transferAgentOrganizationFixture({
+              agentId: fixture.agentId,
+              orgId: `org_${randomUUID()}`,
+            });
+            await scope.release();
+            expect(valueOf(await reading).status).toBe(404);
           });
-          barrier.release();
-          expect(valueOf(await reading).status).toBe(404);
         };
         if (kind === "browser") {
           await withBrowserAuthorizationReadBarrierFixture(
@@ -731,25 +894,29 @@ describe.each(["browser", "computer-use"] as const)(
                 requestToken: fixture.requestToken,
                 signal: context.signal,
               });
-        const reading = settleIncludingAbort(readAuthorization(fixture, [200]));
-        await expect
-          .poll(holder.blockedRequestPinCount, BLOCKED)
-          .toBeGreaterThanOrEqual(1);
-        const moving = settleIncludingAbort(
-          setChatThreadUserFixture({
-            chatThreadId: fixture.threadId,
-            userId: `user_${randomUUID()}`,
-          }),
-        );
-        const blocked = await settleIncludingAbort(
-          expect
-            .poll(holder.blockedIdentityMutationCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1),
-        );
-        await holder.release();
-        valueOf(blocked);
-        expect(valueOf(await reading).status).toBe(200);
-        valueOf(await moving);
+        await withOwnedOperations(holder.release, async (scope) => {
+          const reading = scope.start(readAuthorization(fixture, [200]));
+          await expect
+            .poll(holder.blockedRequestPinCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          const moving = scope.start(
+            setChatThreadUserFixture({
+              chatThreadId: fixture.threadId,
+              userId: `user_${randomUUID()}`,
+            }),
+          );
+          const blocked = scope.start(
+            (async () => {
+              await expect
+                .poll(holder.blockedIdentityMutationCount, BLOCKED)
+                .toBeGreaterThanOrEqual(1);
+            })(),
+          );
+          valueOf(await blocked);
+          await scope.release();
+          expect(valueOf(await reading).status).toBe(200);
+          valueOf(await moving);
+        });
         await expect(readAuthorization(fixture, [404])).resolves.toMatchObject({
           status: 404,
         });
@@ -773,14 +940,16 @@ describe.each(["browser", "computer-use"] as const)(
                 signal: context.signal,
                 mutateBeforeCommit: "hash",
               });
-        const reading = settleIncludingAbort(readAuthorization(fixture, [404]));
-        await expect
-          .poll(holder.blockedRequestPinCount, BLOCKED)
-          .toBeGreaterThanOrEqual(1);
-        await holder.release();
-        const denied = valueOf(await reading);
-        expect(denied.status).toBe(404);
-        expectDeniedBody(denied.body, fixture);
+        await withOwnedOperations(holder.release, async (scope) => {
+          const reading = scope.start(readAuthorization(fixture, [404]));
+          await expect
+            .poll(holder.blockedRequestPinCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          await scope.release();
+          const denied = valueOf(await reading);
+          expect(denied.status).toBe(404);
+          expectDeniedBody(denied.body, fixture);
+        });
       },
     );
 
@@ -799,13 +968,15 @@ describe.each(["browser", "computer-use"] as const)(
                 requestToken: fixture.requestToken,
                 signal: context.signal,
               });
-        const reading = settleIncludingAbort(readAuthorization(fixture, [410]));
-        await expect
-          .poll(holder.blockedRequestPinCount, BLOCKED)
-          .toBeGreaterThanOrEqual(1);
-        mockNow(STARTED_AT_MS + HOUR_MS + 1);
-        await holder.release();
-        expect(valueOf(await reading).status).toBe(410);
+        await withOwnedOperations(holder.release, async (scope) => {
+          const reading = scope.start(readAuthorization(fixture, [410]));
+          await expect
+            .poll(holder.blockedRequestPinCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          mockNow(STARTED_AT_MS + HOUR_MS + 1);
+          await scope.release();
+          expect(valueOf(await reading).status).toBe(410);
+        });
       },
     );
 
@@ -824,32 +995,32 @@ describe.each(["browser", "computer-use"] as const)(
           readonly blockedWaiterCount: () => Promise<number>;
           readonly release: () => void;
         }) => {
-          const reading = settleIncludingAbort(
-            readAuthorization(fixture, [200]),
-          );
-          const entered = await barrier.entered;
-          expect(entered).toMatchObject({
-            lockTimeout: "1s",
-            statementTimeout: "5s",
-            transactionTimeout: "0",
+          await withOwnedOperations(barrier.release, async (scope) => {
+            const reading = scope.start(readAuthorization(fixture, [200]));
+            const entered = await barrier.entered;
+            expect(entered).toMatchObject({
+              lockTimeout: "1s",
+              statementTimeout: "5s",
+              transactionTimeout: "0",
+            });
+            const closing = scope.start(
+              closeSubject({
+                subjectKind: "user",
+                subjectId: fixture.actor.userId,
+              }),
+            );
+            await expect
+              .poll(barrier.blockedWaiterCount, BLOCKED)
+              .toBeGreaterThanOrEqual(1);
+            await expect(
+              readAuthorization(unrelated, [200]),
+            ).resolves.toMatchObject({
+              status: 200,
+            });
+            await scope.release();
+            expect(valueOf(await reading).status).toBe(200);
+            valueOf(await closing);
           });
-          const closing = settleIncludingAbort(
-            closeSubject({
-              subjectKind: "user",
-              subjectId: fixture.actor.userId,
-            }),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          await expect(
-            readAuthorization(unrelated, [200]),
-          ).resolves.toMatchObject({
-            status: 200,
-          });
-          barrier.release();
-          expect(valueOf(await reading).status).toBe(200);
-          valueOf(await closing);
         };
         if (kind === "browser") {
           await withBrowserAuthorizationReadBarrierFixture(
@@ -883,24 +1054,24 @@ describe.each(["browser", "computer-use"] as const)(
       async () => {
         const fixture = await createAuthorizationReadFixture({ kind });
         await withErasureSubjectClosureCommitBarrierFixture(async (barrier) => {
-          const closing = settleIncludingAbort(
-            closeSubject({
-              subjectKind: "organization",
-              subjectId: fixture.actor.orgId,
-            }),
-          );
-          await barrier.entered;
-          const reading = settleIncludingAbort(
-            readAuthorization(fixture, [404]),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          barrier.release();
-          valueOf(await closing);
-          const denied = valueOf(await reading);
-          expect(denied.status).toBe(404);
-          expectDeniedBody(denied.body, fixture);
+          await withOwnedOperations(barrier.release, async (scope) => {
+            const closing = scope.start(
+              closeSubject({
+                subjectKind: "organization",
+                subjectId: fixture.actor.orgId,
+              }),
+            );
+            await barrier.entered;
+            const reading = scope.start(readAuthorization(fixture, [404]));
+            await expect
+              .poll(barrier.blockedWaiterCount, BLOCKED)
+              .toBeGreaterThanOrEqual(1);
+            await scope.release();
+            valueOf(await closing);
+            const denied = valueOf(await reading);
+            expect(denied.status).toBe(404);
+            expectDeniedBody(denied.body, fixture);
+          });
         }, context.signal);
       },
     );
@@ -922,23 +1093,22 @@ describe.each(["browser", "computer-use"] as const)(
                 requestToken: fixture.requestToken,
                 signal: context.signal,
               });
-        const reading = settleIncludingAbort(
-          readAuthorization(fixture, [200, 404]),
-        );
-        await expect
-          .poll(holder.blockedRequestPinCount, BLOCKED)
-          .toBeGreaterThanOrEqual(1);
-        await expect(
-          readAuthorization(unrelated, [200]),
-        ).resolves.toMatchObject({
-          status: 200,
+        await withOwnedOperations(holder.release, async (scope) => {
+          const reading = scope.start(
+            readAuthorization(fixture, [200, 404]),
+            expectOperationFailure(/Unknown response status 500/),
+          );
+          await expect
+            .poll(holder.blockedRequestPinCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          await expect(
+            readAuthorization(unrelated, [200]),
+          ).resolves.toMatchObject({
+            status: 200,
+          });
+          const failed = await reading;
+          expectOperationFailure(/Unknown response status 500/)(failed);
         });
-        const failed = await reading;
-        expect(failed.ok).toBeFalsy();
-        if (!failed.ok) {
-          expect(String(failed.error)).toMatch(/Unknown response status 500/);
-        }
-        await holder.release();
         await expect(durableReadState(fixture)).resolves.toStrictEqual(
           baseline,
         );
@@ -956,19 +1126,20 @@ describe.each(["browser", "computer-use"] as const)(
           readonly entered: Promise<unknown>;
           readonly release: () => void;
         }) => {
-          const reading = settleIncludingAbort(
-            readAuthorization(fixture, [200], { signal: cancelled.signal }),
-          );
-          await barrier.entered;
-          cancelled.abort(new DOMException("Operation ended", "AbortError"));
-          barrier.release();
-          const outcome = await reading;
-          expect(outcome.ok).toBeFalsy();
-          if (!outcome.ok) {
-            expect(String(outcome.error)).toMatch(
-              /Unknown response status 500/,
+          await withOwnedOperations(barrier.release, async (scope) => {
+            const reading = scope.start(
+              readAuthorization(fixture, [200], {
+                signal: cancelled.signal,
+              }),
+              expectOperationFailure(/Unknown response status 500/),
             );
-          }
+            await barrier.entered;
+            cancelled.abort(new DOMException("Operation ended", "AbortError"));
+            await scope.release();
+            expectOperationFailure(/Unknown response status 500/)(
+              await reading,
+            );
+          });
         };
         if (kind === "browser") {
           await withBrowserAuthorizationReadBarrierFixture(
@@ -1002,6 +1173,247 @@ describe.each(["browser", "computer-use"] as const)(
   },
 );
 
+describe("authorization GET same-thread concurrency and operation ownership", () => {
+  it.each([
+    ["browser/browser", "browser", "browser"],
+    ["computer-use/computer-use", "computer-use", "computer-use"],
+    ["mixed", "computer-use", "browser"],
+  ] as const)(
+    "serializes %s before the caller-local thread pin without writes",
+    { timeout: 60_000 },
+    async (_label, firstKind, secondKind) => {
+      const first = await createAuthorizationReadFixture({ kind: firstKind });
+      const second =
+        firstKind === secondKind
+          ? first
+          : await createAuthorizationRequestForKind(first, secondKind);
+      const unrelated = await createAuthorizationReadFixture({
+        kind: firstKind,
+      });
+      const baseline = await durableReadState(first);
+      clearPublications();
+      const run = async (barrier: {
+        readonly entered: Promise<{
+          readonly lockTimeout: string;
+          readonly statementTimeout: string;
+          readonly transactionTimeout: string;
+        }>;
+        readonly blockedWaiterCount: () => Promise<number>;
+        readonly release: () => void;
+      }) => {
+        await withOwnedOperations(barrier.release, async (scope) => {
+          const firstRead = scope.start(readAuthorization(first, [200]));
+          const entered = await barrier.entered;
+          expect(entered).toMatchObject({
+            lockTimeout: "1s",
+            statementTimeout: "5s",
+            transactionTimeout: "0",
+          });
+          const secondRead = scope.start(readAuthorization(second, [200]));
+          await expect
+            .poll(barrier.blockedWaiterCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          await expect(
+            readAuthorization(unrelated, [200]),
+          ).resolves.toMatchObject({ status: 200 });
+          await scope.release();
+          expectFoundProjection(valueOf(await firstRead), first, false);
+          expectFoundProjection(valueOf(await secondRead), second, false);
+        });
+      };
+      if (first.kind === "browser") {
+        await withBrowserAuthorizationReadBarrierFixture(
+          {
+            chatThreadId: first.threadId,
+            requestToken: first.requestToken,
+            stopAt: "before-thread-pin",
+            work: run,
+          },
+          context.signal,
+        );
+      } else {
+        await withComputerUseAuthorizationReadBarrierFixture(
+          {
+            chatThreadId: first.threadId,
+            requestToken: first.requestToken,
+            stopAt: "before-thread-pin",
+            work: run,
+          },
+          context.signal,
+        );
+      }
+      await expect(durableReadState(first)).resolves.toStrictEqual(baseline);
+      expectNoPublications();
+    },
+  );
+
+  it.each(["browser", "computer-use"] as const)(
+    "lets %s GET finish before a waiting Apply without an upgrade cycle",
+    { timeout: 60_000 },
+    async (kind) => {
+      const fixture = await createAuthorizationReadFixture({ kind });
+      const baseline = await durableReadState(fixture);
+      const run = async (barrier: {
+        readonly entered: Promise<unknown>;
+        readonly blockedWaiterCount: () => Promise<number>;
+        readonly release: () => void;
+      }) => {
+        await withOwnedOperations(barrier.release, async (scope) => {
+          const reading = scope.start(readAuthorization(fixture, [200]));
+          await barrier.entered;
+          const applying = scope.start(applyAuthorization(fixture));
+          await expect
+            .poll(barrier.blockedWaiterCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          await scope.release();
+          expectFoundProjection(valueOf(await reading), fixture, false);
+          valueOf(await applying);
+        });
+      };
+      if (kind === "browser") {
+        await withBrowserAuthorizationReadBarrierFixture(
+          {
+            chatThreadId: fixture.threadId,
+            requestToken: fixture.requestToken,
+            stopAt: "before-thread-pin",
+            work: run,
+          },
+          context.signal,
+        );
+      } else {
+        await withComputerUseAuthorizationReadBarrierFixture(
+          {
+            chatThreadId: fixture.threadId,
+            requestToken: fixture.requestToken,
+            stopAt: "before-thread-pin",
+            work: run,
+          },
+          context.signal,
+        );
+      }
+      const after = await durableReadState(fixture);
+      expect(after.sidebar.lastSeqId).toBe(baseline.sidebar.lastSeqId + 1);
+      expect(after.request.completedAt).not.toBeNull();
+    },
+  );
+
+  it.each(["browser", "computer-use"] as const)(
+    "lets %s Apply finish before a waiting GET without an upgrade cycle",
+    { timeout: 60_000 },
+    async (kind) => {
+      const fixture = await createAuthorizationReadFixture({ kind });
+      const baseline = await durableReadState(fixture);
+      const run = async (barrier: {
+        readonly entered: Promise<unknown>;
+        readonly blockedWaiterCount: () => Promise<number>;
+        readonly release: () => void;
+      }) => {
+        await withOwnedOperations(barrier.release, async (scope) => {
+          const applying = scope.start(applyAuthorization(fixture));
+          await barrier.entered;
+          const reading = scope.start(readAuthorization(fixture, [200]));
+          await expect
+            .poll(barrier.blockedWaiterCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          await scope.release();
+          valueOf(await applying);
+          expectFoundProjection(valueOf(await reading), fixture, true);
+        });
+      };
+      if (kind === "browser") {
+        await withBrowserAuthorizationApplyBarrierFixture(
+          {
+            chatThreadId: fixture.threadId,
+            stopAt: "request-pin",
+            work: run,
+          },
+          context.signal,
+        );
+      } else {
+        await withComputerUseAuthorizationApplyBarrierFixture(
+          {
+            chatThreadId: fixture.threadId,
+            stopAt: "request-pin",
+            work: run,
+          },
+          context.signal,
+        );
+      }
+      const after = await durableReadState(fixture);
+      expect(after.sidebar.lastSeqId).toBe(baseline.sidebar.lastSeqId + 1);
+      expect(after.request.completedAt).not.toBeNull();
+    },
+  );
+
+  it.each(["browser", "computer-use"] as const)(
+    "releases and joins a blocked %s GET after a deliberate early exit",
+    { timeout: 60_000 },
+    async (kind) => {
+      const fixture = await createAuthorizationReadFixture({ kind });
+      const holder =
+        kind === "browser"
+          ? await holdBrowserAuthorizationReadRequestFixture({
+              requestToken: fixture.requestToken,
+              signal: context.signal,
+            })
+          : await holdComputerUseAuthorizationReadRequestFixture({
+              requestToken: fixture.requestToken,
+              signal: context.signal,
+            });
+      const earlyExit = new Error("deliberate authorization read early exit");
+      let joined = false;
+      const outcome = await settleIncludingAbort(
+        withOwnedOperations(holder.release, async (scope) => {
+          scope.own(readAuthorization(fixture, [200]), (read) => {
+            expectFoundProjection(valueOf(read), fixture, false);
+            joined = true;
+          });
+          await expect
+            .poll(holder.blockedRequestPinCount, BLOCKED)
+            .toBeGreaterThanOrEqual(1);
+          throw earlyExit;
+        }),
+      );
+      expect(outcome.ok).toBeFalsy();
+      if (!outcome.ok) {
+        expect(outcome.error).toBe(earlyExit);
+      }
+      expect(joined).toBeTruthy();
+      await expect(readAuthorization(fixture, [200])).resolves.toMatchObject({
+        status: 200,
+      });
+    },
+  );
+
+  it.each(["browser", "computer-use"] as const)(
+    "joins a %s request holder whose readiness fails",
+    { timeout: CASE_TIMEOUT_MS },
+    async (kind) => {
+      const fixture = await createAuthorizationReadFixture({ kind });
+      const holding =
+        kind === "browser"
+          ? holdBrowserAuthorizationReadRequestFixture({
+              requestToken: `${fixture.requestToken}-missing`,
+              signal: context.signal,
+            })
+          : holdComputerUseAuthorizationReadRequestFixture({
+              requestToken: `${fixture.requestToken}-missing`,
+              signal: context.signal,
+            });
+      const failed = await settleIncludingAbort(holding);
+      expect(failed.ok).toBeFalsy();
+      if (!failed.ok) {
+        expect(String(failed.error)).toMatch(
+          /Expected the authorization read request row/,
+        );
+      }
+      await expect(readAuthorization(fixture, [200])).resolves.toMatchObject({
+        status: 200,
+      });
+    },
+  );
+});
+
 describe("authorization GET exact locator and host projection", () => {
   it.each(["delete", "hash", "organization", "run", "thread", "user"] as const)(
     "browser rejects request %s after its unlocked locator",
@@ -1014,17 +1426,17 @@ describe("authorization GET exact locator and host projection", () => {
           requestToken: fixture.requestToken,
           stopAt: "locator",
           work: async (barrier) => {
-            const reading = settleIncludingAbort(
-              readAuthorization(fixture, [404]),
-            );
-            const located = await barrier.entered;
-            expect(located.rowCount).toBe(1);
-            await mutateBrowserAuthorizationReadRequestFixture({
-              requestToken: fixture.requestToken,
-              mutation,
+            await withOwnedOperations(barrier.release, async (scope) => {
+              const reading = scope.start(readAuthorization(fixture, [404]));
+              const located = await barrier.entered;
+              expect(located.rowCount).toBe(1);
+              await mutateBrowserAuthorizationReadRequestFixture({
+                requestToken: fixture.requestToken,
+                mutation,
+              });
+              await scope.release();
+              expect(valueOf(await reading).status).toBe(404);
             });
-            barrier.release();
-            expect(valueOf(await reading).status).toBe(404);
           },
         },
         context.signal,
@@ -1053,21 +1465,38 @@ describe("authorization GET exact locator and host projection", () => {
           requestToken: fixture.requestToken,
           stopAt: "locator",
           work: async (barrier) => {
-            const reading = settleIncludingAbort(
-              readAuthorization(fixture, [404]),
-            );
-            const located = await barrier.entered;
-            expect(located.rowCount).toBe(1);
-            await mutateComputerUseAuthorizationReadRequestFixture({
-              requestToken: fixture.requestToken,
-              mutation,
+            await withOwnedOperations(barrier.release, async (scope) => {
+              const reading = scope.start(readAuthorization(fixture, [404]));
+              const located = await barrier.entered;
+              expect(located.rowCount).toBe(1);
+              await mutateComputerUseAuthorizationReadRequestFixture({
+                requestToken: fixture.requestToken,
+                mutation,
+              });
+              await scope.release();
+              expect(valueOf(await reading).status).toBe(404);
             });
-            barrier.release();
-            expect(valueOf(await reading).status).toBe(404);
           },
         },
         context.signal,
       );
+    },
+  );
+
+  it(
+    "returns the complete empty canonical host projection",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const fixture = await createAuthorizationReadFixture({
+        kind: "computer-use",
+        withHost: false,
+      });
+      const response = await readAuthorization(fixture, [200]);
+      expectFoundProjection(response, fixture, false);
+      if (response.status === 200 && "hosts" in response.body) {
+        expect(response.body.hosts).toStrictEqual([]);
+        expect(response.body.computerUseHostId).toBeNull();
+      }
     },
   );
 
@@ -1165,6 +1594,9 @@ describe("authorization GET exact locator and host projection", () => {
       if (response.status === 200 && "hosts" in response.body) {
         expect(response.body.hosts).toStrictEqual(expected);
         expect(response.body.computerUseHostId).toBeNull();
+        expect(Buffer.byteLength(JSON.stringify(response.body), "utf8")).toBe(
+          2605,
+        );
       }
       expectNoPublications();
     },

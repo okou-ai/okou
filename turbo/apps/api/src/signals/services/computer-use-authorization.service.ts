@@ -728,12 +728,13 @@ export const createComputerUseAuthorizationRequest$ = command(
 );
 
 /**
- * Retains every non-key canonical thread identity field while GET waits for its
- * exact request pin. UPDATE is intentionally stronger than the shared helper's
- * KEY SHARE: all Apply and direct-setting paths acquire at least KEY SHARE on
- * the thread before any later request or host-dependent mutation, so they wait
- * here before a second business-row lock can create an inverse. The projection
- * takes no host row lock; host lifecycle's host -> thread order is unchanged.
+ * Rechecks every non-key canonical thread identity field and reads the selected
+ * host under the UPDATE lock already acquired by the shared helper's read-only
+ * opt-in. Taking UPDATE as the first thread lock serializes concurrent GETs and
+ * every Apply/direct-setting path before either side can retain KEY SHARE and
+ * later upgrade around a second business row. This repeated UPDATE is not a
+ * lock upgrade. The projection takes no host row lock; host lifecycle's
+ * host -> thread order is unchanged.
  */
 async function retainComputerUseAuthorizationReadThread(
   tx: Tx,
@@ -889,6 +890,7 @@ export const readComputerUseAuthorizationRequest$ = command(
               identity.orgId === args.orgId
             );
           },
+          threadLock: "update",
         },
         async (tx, identity) => {
           if (identity.agentId === null) {

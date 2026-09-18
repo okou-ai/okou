@@ -74,6 +74,9 @@ surface; the index does not replace their detailed rules.
 - [Computer Use authorization Apply](./account-erasure-computer-use-authorization-apply.md):
   canonical chat admission, retained request and thread identity, atomic sidebar
   completion, bounded SQL inventory and explicit host/legacy residuals.
+- [Canonical authorization reads](./account-erasure-authorization-read.md):
+  deadlock-free Browser and Computer Use GET admission, same-thread concurrency,
+  exact SQL counts and complete unbounded host projection.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
