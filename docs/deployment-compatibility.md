@@ -151,6 +151,8 @@ The additive `GET /api/artifact-references/:reference/download` uses the same
 authorized deployment manifest and per-file delivery URLs. Shared sites use
 the selected version's immutable snapshot, rather than the owner's latest
 deployment. Standalone HTML uploads remain file downloads.
+Conversation references selecting a non-HTML hosted file also retain their
+single-file bytes and MIME type; HTML/page references return the full site.
 
 `okou artifact download` and `okou web download-file` use the download endpoint
 for short and long artifact references, including same-origin App URLs. For

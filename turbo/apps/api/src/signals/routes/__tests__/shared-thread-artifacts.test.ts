@@ -934,22 +934,43 @@ test.each([
     filename: "overview.html",
     contentType: "text/html; charset=utf-8",
     extension: ".html",
+    downloadKind: "html",
+    downloadedText: null,
   },
   {
     path: "/dashboard",
     filename: "index.html",
     contentType: "text/html; charset=utf-8",
     extension: ".html",
+    downloadKind: "html",
+    downloadedText: null,
   },
   {
     path: "/reports/results.csv",
     filename: "results.csv",
     contentType: "text/csv",
     extension: ".csv",
+    downloadKind: "file",
+    downloadedText: "name,value\nresult,42",
+  },
+  {
+    path: "/reports/source.html",
+    filename: "source.html",
+    contentType: "text/plain",
+    extension: ".html",
+    downloadKind: "file",
+    downloadedText: "Source text",
   },
 ])(
   "preserves the hosted preview path and file type for $path",
-  async ({ path, filename, contentType, extension }) => {
+  async ({
+    path,
+    filename,
+    contentType,
+    extension,
+    downloadKind,
+    downloadedText,
+  }) => {
     const f = await fixture();
     const site = await f.site([
       { path: "/index.html", content: "<h1>Home</h1>" },
@@ -958,6 +979,11 @@ test.each([
         path: "/reports/results.csv",
         content: "name,value\nresult,42",
         contentType: "text/csv",
+      },
+      {
+        path: "/reports/source.html",
+        content: "Source text",
+        contentType: "text/plain",
       },
     ]);
     const ownerPreview = await accept(
@@ -999,6 +1025,58 @@ test.each([
       filename,
       contentType,
     });
+    const outsider = bdd.user({ orgId: null });
+    const downloads = api()(artifactDownloadsContract);
+    const downloaded = await accept(
+      downloads.download({
+        headers: headers(outsider),
+        params: { reference: referenceName(childUrl!) },
+      }),
+      [200],
+    );
+    expect(downloaded.body.kind).toBe(downloadKind);
+    if (downloaded.body.kind === "html") {
+      expect(downloaded.body.site).toMatchObject({
+        deploymentId: site.deploymentId,
+        fileCount: 4,
+      });
+      expect(
+        downloaded.body.site.files.map((file) => {
+          return file.path;
+        }),
+      ).toStrictEqual([
+        "/index.html",
+        "/reports/overview.html",
+        "/reports/results.csv",
+        "/reports/source.html",
+      ]);
+      const cloned = await accept(
+        downloads.files({
+          headers: headers(outsider),
+          params: { reference: referenceName(childUrl!) },
+        }),
+        [200],
+      );
+      expect(cloned.body).toStrictEqual(downloaded.body.site);
+    } else {
+      expect(downloaded.body).toMatchObject({
+        filename,
+        contentType,
+      });
+      expect(downloaded.body).not.toHaveProperty("site");
+      const response = await fetch(downloaded.body.url);
+      expect(response.status).toBe(200);
+      await expect(response.text()).resolves.toBe(downloadedText);
+      const rejectedClone = await accept(
+        downloads.files({
+          headers: headers(outsider),
+          params: { reference: referenceName(childUrl!) },
+        }),
+        [404],
+      );
+      expect(rejectedClone.body).not.toHaveProperty("files");
+      expect(rejectedClone.body).not.toHaveProperty("url");
+    }
   },
 );
 

@@ -2,7 +2,12 @@ import { command } from "ccstate";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { nowDate } from "../../lib/time";
-import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
+import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
+import {
+  generateArtifactPreviewUrl,
+  generateHostedSitesPresignedGetUrl,
+  s3ObjectHead,
+} from "../external/s3";
 import {
   artifactReferenceRecord,
   type SharedThreadArtifactReference,
@@ -10,12 +15,16 @@ import {
 import { privateArtifactRecord } from "./private-artifact-storage.service";
 import { resolveArtifactShareDownload$ } from "./artifact-shares.service";
 import { getHostedSiteFiles$ } from "./host.service";
-import { resolveSharedThreadArtifactReference$ } from "./shared-thread-artifact-reference.service";
-import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
+import {
+  resolveSharedThreadArtifactReference$,
+  sharedThreadArtifactTarget,
+} from "./shared-thread-artifact-reference.service";
+import { signSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
+import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
 
 const resolveSharedThreadArtifactDownload$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly reference: SharedThreadArtifactReference;
       readonly expectedKind?: "html";
@@ -41,21 +50,45 @@ const resolveSharedThreadArtifactDownload$ = command(
           }
         : null;
     }
+    const target = await get(sharedThreadArtifactTarget(reference, signal));
+    signal.throwIfAborted();
+    if (target?.kind !== "html") {
+      return null;
+    }
+    const file = sharedThreadHostedSnapshotFile(target, reference.previewPath);
+    if (!file) {
+      return null;
+    }
+    const mediaType = file.contentType.split(";")[0]?.trim().toLowerCase();
+    if (mediaType !== "text/html") {
+      if (args.expectedKind) {
+        return null;
+      }
+      const url = await get(
+        generateHostedSitesPresignedGetUrl(
+          sharedThreadArtifactsBucket(),
+          `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
+          true,
+        ),
+      );
+      signal.throwIfAborted();
+      return {
+        kind: "file",
+        url,
+        filename: file.path.slice(file.path.lastIndexOf("/") + 1),
+        contentType: file.contentType,
+      };
+    }
     const site = await set(
-      resolveSharedThreadHostedDownload$,
+      signSharedThreadHostedDownload$,
       {
         publicSlug: reference.publicToken,
-        record: {
-          publicBrand: reference.publicBrand,
-          threadId: reference.threadId,
-          publicToken: reference.publicToken,
-          targetKind: reference.target.kind,
-          targetId: reference.target.id,
-        },
+        publicBrand: reference.publicBrand,
+        target,
       },
       signal,
     );
-    return site ? { kind: "html", site } : null;
+    return { kind: "html", site };
   },
 );
 

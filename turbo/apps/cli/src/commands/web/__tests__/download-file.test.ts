@@ -96,6 +96,13 @@ describe.each([
       filename: "index.html",
       contentType: "text/html",
     },
+    {
+      name: "a shared CSV file selected from a hosted site",
+      input: "/artifacts/csvchild01.csv",
+      reference: "csvchild01.csv",
+      filename: "results.csv",
+      contentType: "text/csv",
+    },
   ])(
     "downloads authorized $name",
     async ({ input, reference, filename, contentType }) => {

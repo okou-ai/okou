@@ -178,7 +178,9 @@ deployment manifest, including every HTML page and asset, into an empty or new
 directory specified by `--out`. Their JSON result additionally contains
 `fileCount` and `entrypoint`; `path` is the directory and `size` is the total
 size of its files. Directory structure is preserved, every file's size and hash
-are verified, and external URLs are not mirrored. For example:
+are verified, and external URLs are not mirrored. Conversation references that
+select a non-HTML file inside a site retain single-file download behavior; clone
+accepts the site's HTML references. For example:
 
 ```bash
 okou artifact download /artifacts/abc123def4.html --out ./site

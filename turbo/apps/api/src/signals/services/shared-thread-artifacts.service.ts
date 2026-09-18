@@ -7,6 +7,7 @@ import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/ho
 import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
+  type SharedThreadArtifactPolicy,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 import {
   sharedThreadArtifactAuthorUserId,
@@ -87,11 +88,38 @@ export const resolveSharedThreadHostedDownload$ = command(
     ) {
       return null;
     }
+    return await set(
+      signSharedThreadHostedDownload$,
+      {
+        publicSlug: args.publicSlug,
+        publicBrand: record.publicBrand,
+        target,
+      },
+      signal,
+    );
+  },
+);
+
+/** Call only after authorizing this exact snapshot against its live thread policy. */
+export const signSharedThreadHostedDownload$ = command(
+  async (
+    { set },
+    args: {
+      readonly publicSlug: string;
+      readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
+      readonly target: Extract<
+        SharedThreadArtifactPolicy["resources"][string],
+        { kind: "html" }
+      >;
+    },
+    signal: AbortSignal,
+  ): Promise<HostedSiteFilesResponse> => {
+    const { target } = args;
     const scheme = env(
-      record.publicBrand === "okou" ? "OKOU_HOST_SCHEME" : "ZERO_HOST_SCHEME",
+      args.publicBrand === "okou" ? "OKOU_HOST_SCHEME" : "ZERO_HOST_SCHEME",
     );
     const domain = env(
-      record.publicBrand === "okou"
+      args.publicBrand === "okou"
         ? "OKOU_PUBLIC_HOST_DOMAIN"
         : "ZERO_HOST_DOMAIN",
     );
@@ -112,7 +140,7 @@ export const resolveSharedThreadHostedDownload$ = command(
           aliasUrl: url,
         },
         manifest: target.manifest,
-        prefix: `shared-artifacts/${record.publicBrand}/${target.snapshotId}/${target.id}`,
+        prefix: `shared-artifacts/${args.publicBrand}/${target.snapshotId}/${target.id}`,
       },
       signal,
     );
