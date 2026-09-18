@@ -63,6 +63,30 @@ export const artifactUrlSchema = z.union([z.url(), artifactReferenceSchema]);
 
 const c = initContract();
 export const artifactReferencesContract = c.router({
+  read: {
+    method: "GET",
+    path: "/api/artifact-references/:reference/read",
+    headers: authHeadersSchema,
+    pathParams: z.object({
+      reference: z
+        .string()
+        .regex(/^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u),
+    }),
+    responses: {
+      200: z.object({
+        url: z.url(),
+        filename: z.string(),
+        contentType: z.string(),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Authorize artifact content using owner, organization, or public access",
+  },
   publicUrl: {
     method: "GET",
     path: "/api/artifact-references/:reference/public",
@@ -87,8 +111,8 @@ export const artifactReferencesContract = c.router({
     method: "GET",
     path: "/api/artifact-references/:reference",
     headers: authHeadersSchema,
-    // Agent consumers resolve only owned resources. Artifact management accepts
-    // either resource type under artifact:read, without recipient access.
+    // Typed resolution is owner-only for management, cloning, and generation.
+    // Agent downloads use read to authorize shared content as well.
     query: z.object({ kind: z.enum(["file", "html", "artifact"]).optional() }),
     pathParams: z.object({
       reference: z

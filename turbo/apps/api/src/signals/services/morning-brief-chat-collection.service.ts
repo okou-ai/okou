@@ -878,9 +878,10 @@ async function inspectCandidates(
  * a lock across the whole collection.
  *
  * Admission freezes the exact authority the attempt speaks for — the member's
- * immutable Clerk membership generation, the canonical installation, its Agent
- * and the destination thread — and the same shared fence that admitted it is
- * the one that has to agree again before any envelope is released. One absolute
+ * immutable Clerk membership generation and the canonical installation,
+ * automation, Agent and nullable destination — and the same shared fence that
+ * admitted it is the one that has to agree again before any envelope is
+ * released. One absolute
  * budget covers admission, discovery, every thread read and that final check.
  */
 export const collectMorningBriefChat$ = command(
@@ -978,8 +979,9 @@ export const collectMorningBriefChat$ = command(
     // Nothing is released while the admitted authority is in doubt, and a
     // whole-owner invalidation releases none of it. A membership that was
     // revoked, or revoked and rejoined under a new id, a replaced or disabled
-    // installation, a different Agent and a closed subject all fail here, and
-    // an unrelated enabled installation is not a substitute for this one.
+    // installation or automation, a rebound nullable destination, a different
+    // Agent and a closed subject all fail here. Clerk is observed first; the
+    // local erasure/binding/Agent decision follows in one short transaction.
     const released = await withinBudget(
       morningBriefScopeIsCurrent({ db, clerk, scope }, budget.signal),
       budget,

@@ -5,7 +5,10 @@ import {
   type IntroVideoRenderResponse,
 } from "@okouai/api-contracts/contracts/intro-video-render";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { resolveOwnedArtifactReference } from "./artifact-references";
+import {
+  readArtifactReference,
+  resolveOwnedArtifactReference,
+} from "./artifact-references";
 import { isUtf8 } from "node:buffer";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
 import { basename, extname } from "node:path";
@@ -256,17 +259,21 @@ async function fetchWebFile(fileId: string): Promise<Response> {
 }
 
 /**
- * Download a web-uploaded file to a local path, streaming the response body
- * to disk. Authenticates via OKOU_TOKEN. Response is binary, so this bypasses
- * the typed contract client.
+ * Download an authorized artifact or web-uploaded file to a local path.
+ * Artifact authorization uses OKOU_TOKEN, but its delivery URL never receives
+ * the CLI credential. Raw file IDs retain the authenticated download route.
  */
 export async function downloadWebFile(
   fileId: string,
   outPath: string,
 ): Promise<DownloadWebFileResult> {
-  const response = await fetchWebFile(
-    (await webFileReferenceId(fileId)) ?? fileId,
-  );
+  const reference = parseArtifactReference(fileId, await getPlatformOrigin());
+  const artifact = reference
+    ? await readArtifactReference(`${reference.hash}${reference.extension}`)
+    : undefined;
+  const response = artifact
+    ? await fetch(artifact.url)
+    : await fetchWebFile((await webFileReferenceId(fileId)) ?? fileId);
 
   if (!response.ok) {
     let message = `Failed to download web file (HTTP ${response.status})`;
@@ -294,6 +301,7 @@ export async function downloadWebFile(
   const mimetype =
     response.headers.get("x-file-mimetype") ??
     response.headers.get("content-type") ??
+    artifact?.contentType ??
     "application/octet-stream";
 
   // Cast required: Web API ReadableStream and Node.js ReadableStream are
@@ -303,8 +311,7 @@ export async function downloadWebFile(
     createWriteStream(outPath),
   );
 
-  const contentLengthHeader = response.headers.get("content-length");
-  const size = contentLengthHeader ? Number(contentLengthHeader) : 0;
+  const size = statSync(outPath).size;
 
   return { path: outPath, mimetype, size };
 }

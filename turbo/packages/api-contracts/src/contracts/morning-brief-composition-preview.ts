@@ -45,26 +45,75 @@ const compositionCoverageSchema = z.enum([
   "not-started",
 ]);
 
+/**
+ * Whole-item losses, named by the reduction that caused each one.
+ *
+ * Three independent stages can drop evidence and they act on disjoint records,
+ * so the known counts add up. `unknownRemaining` is not a count: a cap that
+ * ended a provider read never enumerated what was behind it, and reporting a
+ * number there would state a total nothing observed.
+ */
+const compositionOmissionSchema = z.object({
+  bySource: z.object({
+    known: z.number().int().nonnegative(),
+    unknownRemaining: z.boolean(),
+  }),
+  byNormalizedCap: z.number().int().nonnegative(),
+  byRequest: z.number().int().nonnegative(),
+  knownTotal: z.number().int().nonnegative(),
+  unknownRemaining: z.boolean(),
+});
+
+/** One provider branch's own window or outstanding-work snapshot. */
+const compositionBranchSchema = z.object({
+  name: z.string(),
+  status: z.string(),
+  startAt: z.string().nullable(),
+  endAt: z.string().nullable(),
+  observedAt: z.string().nullable(),
+});
+
+/** The window and snapshot context one source's evidence is only true within. */
+const compositionProvenanceSchema = z.object({
+  startAt: z.string().nullable(),
+  endAt: z.string().nullable(),
+  startDate: z.string().nullable(),
+  endDateExclusive: z.string().nullable(),
+  timezone: z.string().nullable(),
+  observedAt: z.string().nullable(),
+  collectedAt: z.string().nullable(),
+  branches: z.array(compositionBranchSchema),
+  limitations: z.array(z.string()),
+});
+
 /** One entry per applicable source, in the fixed admission order. */
 const compositionSourcesSchema = z.array(
   z.object({
     source: morningBriefCompositionSourceSchema,
     coverage: compositionCoverageSchema,
+    /** Normalized items that survived the combined normalized ceiling. */
     items: z.number().int().nonnegative(),
-    /** Null when a started source rejected before it returned its accounting. */
+    /** Of those, the ones the assembled request could actually carry. */
+    includedInRequest: z.number().int().nonnegative(),
+    /** Null when a started source rejected before returning its accounting. */
     requests: z.number().int().nonnegative().nullable(),
+    /** Why each item is in the window, counted by claim. */
+    timeSemantics: z.object({
+      instant: z.number().int().nonnegative(),
+      overlap: z.number().int().nonnegative(),
+      dateOnly: z.number().int().nonnegative(),
+      outstanding: z.number().int().nonnegative(),
+    }),
+    omitted: compositionOmissionSchema,
+    provenance: compositionProvenanceSchema,
+    /** Content-free fingerprint of this source's accepted request evidence. */
+    evidenceDigest: z.string(),
   }),
 );
 
 const compositionResultSchema = z.object({
   sources: compositionSourcesSchema,
-  /**
-   * The one absolute deadline this attempt ran under.
-   *
-   * `source` is `caller` when the caller's own budget was tighter than the
-   * 45-second phase, which is how a scheduled occurrence hands its remaining
-   * lease to the composition instead of receiving a fresh phase.
-   */
+  /** The one absolute deadline this attempt ran under. */
   deadline: z.object({
     startedAt: z.string().datetime(),
     deadlineAt: z.string().datetime(),
@@ -72,13 +121,16 @@ const compositionResultSchema = z.object({
   }),
   /** The admission order, capped at the concurrency ceiling. */
   waves: z.array(z.array(morningBriefCompositionSourceSchema)),
+  /** Measured bytes of the one aggregate normalized document, metadata included. */
   normalizedBytes: z.number().int().nonnegative(),
+  normalizedMaxBytes: z.number().int().positive(),
   omittedByNormalizedCap: z.number().int().nonnegative(),
   /**
-   * Measured bytes of the request one model call would receive.
+   * Measured bytes of the request document one model call would receive.
    *
    * `null` when no request was assembled, which is what a healthy empty
-   * collection produces.
+   * collection produces. This measures the composed document itself; the
+   * transport body that carries it is the integration consumer's own ceiling.
    */
   request: z
     .object({
@@ -88,6 +140,7 @@ const compositionResultSchema = z.object({
       items: z.number().int().nonnegative(),
       omittedItems: z.number().int().nonnegative(),
       omittedBytes: z.number().int().nonnegative(),
+      digest: z.string(),
     })
     .nullable(),
   language: z

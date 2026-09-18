@@ -82,11 +82,8 @@ import {
 } from "./morning-brief-language-policy";
 import { loadMorningBriefMemberLocale } from "./morning-brief-member-locale.service";
 import {
-  buildMorningBriefRequest,
-  morningBriefCoverageReport,
-  morningBriefEnvelopeBytes,
-  morningBriefRequestBytes,
-  morningBriefWidestCoverageReport,
+  packMorningBriefRequest,
+  type MorningBriefOmissionStages,
 } from "./morning-brief-request-envelope";
 import { collectMorningBriefSlackBundle } from "./morning-brief-slack-collection.service";
 import {
@@ -101,8 +98,17 @@ import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-re
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
+  morningBriefEvidenceDigest,
+  morningBriefSourceOmissions,
+  MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
+  MORNING_BRIEF_NO_OMISSIONS,
+  MORNING_BRIEF_NO_PROVENANCE,
   type MorningBriefSourceCollection,
+  type MorningBriefSourceItem,
   type MorningBriefSourceKind,
+  type MorningBriefSourceOmissions,
+  type MorningBriefSourceProvenance,
+  type MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
 import { slackUserInstallation } from "./slack-data.service";
 
@@ -127,22 +133,34 @@ interface SlackBinding {
 /** Slack's frozen window is the 24 hours ending at the anchor. */
 const MORNING_BRIEF_SLACK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/**
- * How a source finished, including the ways it never ran.
- *
- * A null request count means a started source rejected before it could return
- * its collector-owned accounting. Zero remains a measured zero, never the
- * substitute for an unknown spend.
- */
+/** How many of one source's items made each kind of time claim. */
+interface MorningBriefTimeSemanticsCount {
+  readonly instant: number;
+  readonly overlap: number;
+  readonly dateOnly: number;
+  readonly outstanding: number;
+}
+
+/** How a source finished, including the ways it never ran. */
 type MorningBriefCompositionCoverage =
   | MorningBriefSourceCollection["coverage"]
   | "not-started";
 
-interface MorningBriefCompositionSourceOutcome {
+/** What one source contributed, with no evidence text in it. */
+interface MorningBriefSourceReport {
   readonly source: MorningBriefSourceKind;
   readonly coverage: MorningBriefCompositionCoverage;
+  /** Normalized items that survived the combined ceiling. */
   readonly items: number;
+  /** Of those, the ones the request could actually carry. */
+  readonly includedInRequest: number;
+  /** Null when a rejected source could not return collector accounting. */
   readonly requests: number | null;
+  readonly timeSemantics: MorningBriefTimeSemanticsCount;
+  readonly omitted: MorningBriefSourceOmissions;
+  readonly provenance: MorningBriefSourceProvenance;
+  /** A fingerprint of exactly the evidence this source put in the request. */
+  readonly evidenceDigest: string;
 }
 
 function settledCoverage(coverage: MorningBriefCompositionCoverage): boolean {
@@ -155,7 +173,7 @@ function settledCoverage(coverage: MorningBriefCompositionCoverage): boolean {
 
 /** What one composition attempt produced, with no provider payload in it. */
 interface MorningBriefCompositionResult {
-  readonly sources: readonly MorningBriefCompositionSourceOutcome[];
+  readonly sources: readonly MorningBriefSourceReport[];
   readonly deadline: {
     readonly startedAt: string;
     readonly deadlineAt: string;
@@ -163,6 +181,7 @@ interface MorningBriefCompositionResult {
   };
   readonly waves: readonly (readonly MorningBriefSourceKind[])[];
   readonly normalizedBytes: number;
+  readonly normalizedMaxBytes: number;
   readonly omittedByNormalizedCap: number;
   readonly request: {
     readonly envelopeBytes: number;
@@ -171,6 +190,8 @@ interface MorningBriefCompositionResult {
     readonly items: number;
     readonly omittedItems: number;
     readonly omittedBytes: number;
+    /** A content-free fingerprint of the evidence items in this request. */
+    readonly digest: string;
   } | null;
   readonly language: MorningBriefLanguagePlan | null;
   readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
@@ -187,13 +208,6 @@ type MorningBriefCompositionOutcome =
       readonly kind: "empty";
       readonly result: MorningBriefCompositionResult;
     }
-  /**
-   * Usable evidence existed but no request could be made.
-   *
-   * This is never a healthy empty: the owner had material and the pipeline
-   * could not act on it, which has to stay distinguishable so a configuration
-   * problem is recovered rather than reported as a quiet morning.
-   */
   | {
       readonly kind: "incomplete";
       readonly reason:
@@ -205,7 +219,7 @@ type MorningBriefCompositionOutcome =
         | "incomplete-coverage";
       readonly detail: string;
       /** Empty only when the source plan did not yet exist. */
-      readonly sources: readonly MorningBriefCompositionSourceOutcome[];
+      readonly sources: readonly MorningBriefSourceReport[];
     }
   | {
       readonly kind: "denied";
@@ -245,7 +259,7 @@ export const composeMorningBrief$ = command(
     );
     const expired = (
       step: string,
-      sources: readonly MorningBriefCompositionSourceOutcome[] = [],
+      sources: readonly MorningBriefSourceReport[] = [],
     ): MorningBriefDeadlineExceeded | null => {
       return morningBriefExpired(phaseDeadlineAt, step, sources);
     };
@@ -308,12 +322,11 @@ export const composeMorningBrief$ = command(
       notStarted,
       unknownRequests,
     });
-    const afterSources = expired("source collection", reduced.sources);
+    const afterSources = expired("source collection", reduced.reports);
     if (afterSources) {
       return afterSources;
     }
-    const base = {
-      sources: reduced.sources,
+    const base: MorningBriefCompositionBase = {
       deadline: {
         startedAt: phaseStartedAt.toISOString(),
         deadlineAt: phaseDeadlineAt.toISOString(),
@@ -321,6 +334,7 @@ export const composeMorningBrief$ = command(
       },
       waves,
       normalizedBytes: reduced.bounded.bytes,
+      normalizedMaxBytes: MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
       omittedByNormalizedCap: reduced.bounded.omitted,
     };
 
@@ -334,6 +348,7 @@ export const composeMorningBrief$ = command(
       {
         scope,
         collections: reduced.bounded.collections,
+        omittedByNormalizedCap: reduced.bounded.omittedBySource,
         descriptors,
         slack: slackBinding,
         phaseDeadlineAt,
@@ -343,23 +358,18 @@ export const composeMorningBrief$ = command(
     );
     signal.throwIfAborted();
     if (planned.kind === "incomplete") {
-      return { ...planned, sources: reduced.sources };
+      return { ...planned, sources: reduced.reports };
     }
     if (planned.kind !== "planned") {
       return planned;
     }
-    return finishPlannedComposition(planned, descriptors, {
-      base,
-      waves,
-      notStarted,
-      unknownRequests,
-    });
+    return finishPlannedComposition(planned, descriptors, reduced, base);
   },
 );
 
 type MorningBriefCompositionBase = Omit<
   MorningBriefCompositionResult,
-  "descriptors" | "language" | "request"
+  "descriptors" | "language" | "request" | "sources"
 >;
 
 type ReducedMorningBriefCollections = ReturnType<
@@ -384,7 +394,7 @@ function finishEmptyComposition(
   if (reduced.contributed.size > 0) {
     return null;
   }
-  const unsettled = unsettledSources(reduced.sources);
+  const unsettled = unsettledSources(reduced.reports);
   if (unsettled !== null) {
     return unsettled;
   }
@@ -393,13 +403,14 @@ function finishEmptyComposition(
     return incomplete(
       "retained-authority-unbounded",
       retained.reason,
-      reduced.sources,
+      reduced.reports,
     );
   }
   return {
     kind: "empty",
     result: {
       ...base,
+      sources: reduced.reports,
       descriptors: retained.descriptors,
       request: null,
       language: null,
@@ -411,38 +422,30 @@ function finishEmptyComposition(
 function finishPlannedComposition(
   planned: PlannedMorningBriefRequest,
   descriptors: readonly MorningBriefRetainedSourceDescriptor[],
-  context: {
-    readonly base: MorningBriefCompositionBase;
-    readonly waves: readonly (readonly MorningBriefSourceKind[])[];
-    readonly notStarted: ReadonlySet<MorningBriefSourceKind>;
-    readonly unknownRequests: ReadonlySet<MorningBriefSourceKind>;
-  },
+  reduced: ReducedMorningBriefCollections,
+  base: MorningBriefCompositionBase,
 ): MorningBriefCompositionOutcome {
+  const sources = sourceReports(reduced.waves, planned.collections, {
+    stages: {
+      byNormalizedCap: reduced.bounded.omittedBySource,
+      byRequest: planned.allocation.omittedBySource,
+    },
+    accepted: planned.allocation.items,
+    notStarted: reduced.notStarted,
+    unknownRequests: reduced.unknownRequests,
+  });
   const retained = retainSuppliedAuthority(descriptors, planned);
-  const sources = sourceSummary(
-    context.waves,
-    planned.collections,
-    context.notStarted,
-    context.unknownRequests,
-  );
   if (retained.kind === "rejected") {
     return incomplete("retained-authority-unbounded", retained.reason, sources);
   }
   return {
     kind: "composed",
     result: {
-      ...context.base,
+      ...base,
       sources,
       descriptors: retained.descriptors,
       language: planned.language,
-      request: {
-        envelopeBytes: planned.envelopeBytes,
-        totalBytes: planned.totalBytes,
-        maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
-        items: planned.allocation.items.length,
-        omittedItems: planned.allocation.omittedItems,
-        omittedBytes: planned.allocation.omittedBytes,
-      },
+      request: requestReport(planned),
     },
   };
 }
@@ -451,7 +454,7 @@ interface MorningBriefDeadlineExceeded {
   readonly kind: "incomplete";
   readonly reason: "deadline-exceeded";
   readonly detail: string;
-  readonly sources: readonly MorningBriefCompositionSourceOutcome[];
+  readonly sources: readonly MorningBriefSourceReport[];
 }
 
 function incomplete(
@@ -460,7 +463,7 @@ function incomplete(
     { kind: "incomplete" }
   >["reason"],
   detail: string,
-  sources: readonly MorningBriefCompositionSourceOutcome[],
+  sources: readonly MorningBriefSourceReport[],
 ): Extract<MorningBriefCompositionOutcome, { kind: "incomplete" }> {
   return { kind: "incomplete", reason, detail, sources };
 }
@@ -468,7 +471,7 @@ function incomplete(
 function morningBriefExpired(
   deadlineAt: Date,
   step: string,
-  sources: readonly MorningBriefCompositionSourceOutcome[] = [],
+  sources: readonly MorningBriefSourceReport[] = [],
 ): MorningBriefDeadlineExceeded | null {
   if (nowDate().getTime() < deadlineAt.getTime()) {
     return null;
@@ -546,14 +549,18 @@ function reduceMorningBriefCollections(input: {
     return { ...collection, items: dedupeMorningBriefItems(collection.items) };
   });
   const bounded = boundCombinedNormalizedItems(deduped);
+  const reports = sourceReports(input.waves, bounded.collections, {
+    stages: { byNormalizedCap: bounded.omittedBySource, byRequest: {} },
+    accepted: [],
+    notStarted: input.notStarted,
+    unknownRequests: input.unknownRequests,
+  });
   return {
     bounded,
-    sources: sourceSummary(
-      input.waves,
-      bounded.collections,
-      input.notStarted,
-      input.unknownRequests,
-    ),
+    reports,
+    waves: input.waves,
+    notStarted: input.notStarted,
+    unknownRequests: input.unknownRequests,
     contributed: new Set(
       bounded.collections
         .filter((collection) => {
@@ -567,7 +574,7 @@ function reduceMorningBriefCollections(input: {
 }
 
 function unsettledSources(
-  sources: readonly MorningBriefCompositionSourceOutcome[],
+  sources: readonly MorningBriefSourceReport[],
 ): Extract<MorningBriefCompositionOutcome, { kind: "incomplete" }> | null {
   const answerable = sources.filter((entry) => {
     return entry.coverage !== "unconfigured";
@@ -592,6 +599,23 @@ function unsettledSources(
     detail,
     sources,
   );
+}
+
+/** The measured request one model call would receive, with no evidence in it. */
+function requestReport(planned: {
+  readonly envelopeBytes: number;
+  readonly totalBytes: number;
+  readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+}): NonNullable<MorningBriefCompositionResult["request"]> {
+  return {
+    envelopeBytes: planned.envelopeBytes,
+    totalBytes: planned.totalBytes,
+    maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
+    items: planned.allocation.items.length,
+    omittedItems: planned.allocation.omittedItems,
+    omittedBytes: planned.allocation.omittedBytes,
+    digest: morningBriefEvidenceDigest(planned.allocation.items),
+  };
 }
 
 /**
@@ -732,7 +756,8 @@ function failedCollection(
     // Internal request assembly does not serialize this count. Public source
     // outcomes override it with null when a rejection made spend unknowable.
     requests: 0,
-    omittedBySource: 0,
+    provenance: MORNING_BRIEF_NO_PROVENANCE,
+    omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
   };
 }
 
@@ -849,6 +874,7 @@ const planMorningBriefRequest$ = command(
     input: {
       readonly scope: MorningBriefCollectionScope;
       readonly collections: readonly MorningBriefSourceCollection[];
+      readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
       readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
       readonly slack: SlackBinding | null;
       readonly phaseDeadlineAt: Date;
@@ -907,6 +933,7 @@ const planMorningBriefRequest$ = command(
     const first = allocateForCollections(bounded.collections, {
       language,
       instructions,
+      omittedByNormalizedCap: input.omittedByNormalizedCap,
     });
     if (first.allocation.items.length === 0) {
       // Evidence existed and none of it fits beside the fixed context. That is
@@ -930,6 +957,7 @@ const planMorningBriefRequest$ = command(
         planned: first,
         language,
         instructions,
+        omittedByNormalizedCap: input.omittedByNormalizedCap,
         deadline: phaseDeadline,
       },
       signal,
@@ -1010,6 +1038,7 @@ async function proveRetainedAuthority(
     readonly planned: MorningBriefAllocated;
     readonly language: MorningBriefLanguagePlan;
     readonly instructions: string | null;
+    readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
     /** The attempt's own reservation; the check never outlives it. */
     readonly deadline: MorningBriefSourceDeadline;
   },
@@ -1072,6 +1101,7 @@ async function proveRetainedAuthority(
   const replanned = allocateForCollections(collections, {
     language: input.language,
     instructions: input.instructions,
+    omittedByNormalizedCap: input.omittedByNormalizedCap,
   });
   // The owner had material and every piece of it lost its authority. That is an
   // authority change, never a quiet morning.
@@ -1087,41 +1117,20 @@ interface MorningBriefAllocated {
   readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
 }
 
-/** Measure the envelope, allocate the evidence and size the exact request. */
+/** Allocate with the shared consumed serializer/packing contract. */
 function allocateForCollections(
   collections: readonly MorningBriefSourceCollection[],
   context: {
     readonly language: MorningBriefLanguagePlan;
     readonly instructions: string | null;
+    readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
   },
 ): MorningBriefAllocated {
-  const envelopeBytes = morningBriefEnvelopeBytes({
-    language: context.language,
-    instructions: context.instructions,
-    // Measured at its widest, because the real counts are only known after
-    // allocation and a narrower measurement would under-reserve.
-    coverage: morningBriefWidestCoverageReport(collections),
-  });
-  const allocation = allocateMorningBriefRequest(collections, {
-    maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
-    overheadBytes: envelopeBytes,
-  });
-  if (allocation.items.length === 0) {
-    return { envelopeBytes, totalBytes: 0, allocation };
-  }
-  const request = buildMorningBriefRequest({
-    language: context.language,
-    instructions: context.instructions,
-    coverage: morningBriefCoverageReport(
-      collections,
-      allocation.omittedBySource,
-    ),
-    items: allocation.items,
-  });
+  const packed = packMorningBriefRequest({ collections, ...context });
   return {
-    envelopeBytes,
-    totalBytes: morningBriefRequestBytes(request),
-    allocation,
+    envelopeBytes: packed.envelopeBytes,
+    totalBytes: packed.totalBytes,
+    allocation: packed.allocation,
   };
 }
 
@@ -1144,18 +1153,43 @@ function withdrawRevokedSources(
       ...collection,
       coverage: "failed",
       items: [],
-      omittedBySource: 0,
+      omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
     };
   });
 }
 
-/** What each applicable source did, with no evidence in it. */
-function sourceSummary(
+/** How many of one source's items made each kind of time claim. */
+function timeSemanticsCount(
+  items: readonly MorningBriefSourceItem[],
+): MorningBriefTimeSemanticsCount {
+  const counted: Record<MorningBriefTimeSemantics, number> = {
+    instant: 0,
+    overlap: 0,
+    "date-only": 0,
+    outstanding: 0,
+  };
+  for (const item of items) {
+    counted[item.timeSemantics] += 1;
+  }
+  return {
+    instant: counted.instant,
+    overlap: counted.overlap,
+    dateOnly: counted["date-only"],
+    outstanding: counted.outstanding,
+  };
+}
+
+/** What each applicable source contributed, with no evidence in it. */
+function sourceReports(
   waves: readonly (readonly MorningBriefSourceKind[])[],
   collections: readonly MorningBriefSourceCollection[],
-  notStarted: ReadonlySet<MorningBriefSourceKind>,
-  unknownRequests: ReadonlySet<MorningBriefSourceKind>,
-): MorningBriefCompositionResult["sources"] {
+  input: {
+    readonly stages: MorningBriefOmissionStages;
+    readonly accepted: readonly MorningBriefSourceItem[];
+    readonly notStarted: ReadonlySet<MorningBriefSourceKind>;
+    readonly unknownRequests: ReadonlySet<MorningBriefSourceKind>;
+  },
+): readonly MorningBriefSourceReport[] {
   return waves.flat().map((source) => {
     const collection = collections.find((candidate) => {
       return candidate.source === source;
@@ -1163,22 +1197,43 @@ function sourceSummary(
     if (collection === undefined) {
       return {
         source,
-        coverage: notStarted.has(source)
+        coverage: input.notStarted.has(source)
           ? ("not-started" as const)
           : ("unconfigured" as const),
         items: 0,
+        includedInRequest: 0,
         requests: 0,
+        timeSemantics: timeSemanticsCount([]),
+        omitted: morningBriefSourceOmissions({
+          bySource: MORNING_BRIEF_NO_OMISSIONS,
+          byNormalizedCap: 0,
+          byRequest: 0,
+        }),
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
+        evidenceDigest: morningBriefEvidenceDigest([]),
       };
     }
+    const accepted = input.accepted.filter((item) => {
+      return item.identity.source === collection.source;
+    });
+    const byRequest = input.stages.byRequest[collection.source] ?? 0;
     return {
       source,
       coverage: collection.coverage,
       items: collection.items.length,
-      requests: unknownRequests.has(source) ? null : collection.requests,
+      includedInRequest: accepted.length,
+      requests: input.unknownRequests.has(source) ? null : collection.requests,
+      timeSemantics: timeSemanticsCount(collection.items),
+      omitted: morningBriefSourceOmissions({
+        bySource: collection.omittedBySource,
+        byNormalizedCap: input.stages.byNormalizedCap[collection.source] ?? 0,
+        byRequest,
+      }),
+      provenance: collection.provenance,
+      evidenceDigest: morningBriefEvidenceDigest(accepted),
     };
   });
 }
-
 /**
  * Run the waves in order, joining each before the next one starts.
  *
@@ -1389,7 +1444,8 @@ async function readGithubSource(
         coverage: execution.kind === "not-executed" ? "unconfigured" : "failed",
         items: [],
         requests: 0,
-        omittedBySource: 0,
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
+        omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
       },
       descriptor: null,
     };
@@ -1521,7 +1577,8 @@ async function readSlackSource(
         coverage: "failed",
         items: [],
         requests: 0,
-        omittedBySource: 0,
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
+        omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
       },
       descriptor: describe([]),
     };

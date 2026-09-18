@@ -652,7 +652,11 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     }
     // An owner who connected nothing has no evidence to lose, and Chat's own
     // read answered. Every source is accounted for, none of them silently.
-    expect(body.composition.sources).toStrictEqual([
+    expect(
+      body.composition.sources.map(({ source, coverage, items, requests }) => {
+        return { source, coverage, items, requests };
+      }),
+    ).toStrictEqual([
       { source: "calendar", coverage: "unconfigured", items: 0, requests: 0 },
       { source: "gmail", coverage: "unconfigured", items: 0, requests: 0 },
       { source: "github", coverage: "unconfigured", items: 0, requests: 0 },
@@ -747,7 +751,11 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     // Chat never ran, and Gmail's held read could not finish inside its own
     // budget. Both facts survive into the report: an exhausted attempt must not
     // look like an owner whose Chat was quiet and whose mail was read.
-    expect(response.body.sources).toStrictEqual([
+    expect(
+      response.body.sources.map(({ source, coverage, items, requests }) => {
+        return { source, coverage, items, requests };
+      }),
+    ).toStrictEqual([
       { source: "calendar", coverage: "unconfigured", items: 0, requests: 0 },
       { source: "gmail", coverage: "failed", items: 0, requests: 0 },
       { source: "github", coverage: "unconfigured", items: 0, requests: 0 },

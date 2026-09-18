@@ -39,8 +39,9 @@ The reader performs GET only, against the source's fixed provider base; it is
 not an authenticated fetch proxy.
 
 `admitMorningBriefCollection({ db, clerk, orgId, userId, anchor, deadline }, signal)`
-derives the `MorningBriefCollectionScope` — owner, installation, Agent, bound
-thread, anchor, timezone and the immutable membership id — from
+derives the `MorningBriefCollectionScope` — owner, installation, exact
+automation, Agent, nullable bound thread, anchor, timezone and the immutable
+membership id — from
 `simpleMorningBrief`, the canonical
 [migration state](./morning-brief-migration-state.md), the member's current
 Clerk membership and erasure admission. Nothing in a request body contributes to
@@ -53,11 +54,11 @@ an ambiguous route, `deny`, `ask` and an expired grant are all refusals, and
 holding a credential is never permission. Each authorization pass re-derives:
 
 1. the member's current Clerk membership generation, compared against the
-   immutable id this collection was admitted under, plus transaction-level
-   erasure admission,
-2. a canonical Morning Brief that is still `installed`, still enabled, and still
-   the same installation on the same Agent,
-3. the Agent's current visibility to this member,
+   immutable id this collection was admitted under,
+2. after that external answer, transaction-level erasure admission and a
+   canonical Morning Brief that is still `installed`, still enabled, and still
+   the same installation, automation, Agent and nullable destination,
+3. the Agent's current visibility to this member in that same local transaction,
 4. the pinned connector account,
 5. the Agent's connector grants,
 6. accepted-catalog visibility for this member,
@@ -71,8 +72,12 @@ allowed**, so a credential is never touched on the strength of connector
 presence alone.
 
 The pass runs **before the credential is decrypted or refreshed**, **before
-every request**, and **again after `collect` returns** as a release fence. The
-release fence re-evaluates identity plus **every distinct permission whose
+every request**, and **again after `collect` returns** as a release fence. Clerk
+is always queried before the short final local transaction, so no network call
+runs under erasure or database locks. That transaction is the local decision
+point; it does not make Clerk and PostgreSQL globally atomic or recall a payload
+after a later revocation. The release fence re-evaluates identity plus **every
+distinct permission whose
 result the source still holds**, not only the last request's. A source that read
 a list under one permission and bodies under another withholds everything if the
 list permission is denied while the final body request is in flight.

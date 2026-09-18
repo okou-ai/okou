@@ -615,7 +615,10 @@ function recordFailure(
  * [the checks API](https://docs.github.com/en/rest/checks/runs), where `stale`
  * is documented as a conclusion only GitHub itself sets, and commit-status
  * `state` from
- * [the statuses API](https://docs.github.com/en/rest/commits/statuses).
+ * [the statuses API](https://docs.github.com/en/rest/commits/statuses). GitHub's
+ * [pinned OpenAPI contract](https://github.com/github/rest-api-description/blob/d4278c869e367f5d6d4e0f46878119128abba77b/descriptions/api.github.com/api.github.com.json)
+ * assigns `startup_failure` to check suites, not check runs, so one resource's
+ * vocabulary is not borrowed for another.
  */
 const GITHUB_CHECK_RUN_COMPLETED_STATUS = "completed";
 
@@ -641,7 +644,6 @@ const GITHUB_CHECK_RUN_FAILING_CONCLUSIONS: Readonly<Set<string>> = new Set([
   "cancelled",
   "failure",
   "stale",
-  "startup_failure",
   "timed_out",
 ]);
 
@@ -667,7 +669,12 @@ function checkRunVerdict(run: {
   readonly conclusion?: string | null;
 }): CheckVerdict {
   if (GITHUB_CHECK_RUN_IN_FLIGHT_STATUSES.has(run.status)) {
-    return "pending";
+    // GitHub sets a run to `completed` when a conclusion is supplied. An
+    // in-flight status is therefore pending only while its conclusion is
+    // absent; pairing it with any terminal value contradicts the lifecycle.
+    return run.conclusion === undefined || run.conclusion === null
+      ? "pending"
+      : "unrecognized";
   }
   if (run.status !== GITHUB_CHECK_RUN_COMPLETED_STATUS) {
     return "unrecognized";
