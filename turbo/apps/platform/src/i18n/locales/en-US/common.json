@@ -666,6 +666,7 @@
       "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
+      "selected": "Selected",
       "selectStyle": "Select style {{style}}",
       "selectTemplate": "Select template {{title}}",
       "selectVideo": "Select video template {{title}}",
@@ -1886,6 +1887,7 @@
         "heading": "Choose an avatar",
         "label": "Avatar",
         "none": "No avatar",
+        "noneDetail": "Style only",
         "previewLook": "Preview look {{name}}"
       },
       "catalog": {
@@ -1898,17 +1900,29 @@
         "cancel": "Cancel"
       },
       "picker": {
-        "autoVoiceDescription": "Find a voice that fits your content.",
+        "allPresenters": "All presenters",
+        "allPresentersCount": "All presenters ({{total}})",
+        "allVoices": "All voices",
+        "allVoicesCount": "All voices ({{total}})",
+        "autoVoiceDescription": "A voice that fits your style",
         "avatarVoice": "Avatar’s voice",
         "back": "Back",
-        "chooseStyle": "Choose a style",
         "closeOptions": "Close options",
+        "done": "Done",
         "moreOptions": "More options",
         "noMatches": "No matches found.",
+        "optionsNote": "Change these any time from the chip in the chat.",
+        "pickStyle": "Pick a style",
+        "reset": "Reset",
+        "searchPresenters": "Search presenters",
         "searchStyles": "Search styles",
-        "selectionSummary": "Voice: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Search voices",
+        "selectedStyle": "Selected: {{name}}",
         "settings": "Intro video settings",
-        "useSelection": "Use selection"
+        "styleCount_one": "{{count}} style",
+        "styleCount_other": "{{count}} styles",
+        "styleCountOf": "{{shown}} of {{total}}",
+        "useStyle": "Use {{name}}"
       },
       "style": {
         "auto": "Let Okou choose",
@@ -1927,10 +1941,9 @@
       "voice": {
         "auto": "Let Okou choose",
         "defaultDescription": "Use the chosen avatar's default voice",
-        "heading": "Choose a voice",
         "label": "Voice",
         "none": "No voiceover",
-        "noneDescription": "Do not add narration; keep source audio unless you ask to mute it."
+        "noneShortDescription": "Keep the source audio"
       }
     },
     "mail": {
@@ -2113,7 +2126,10 @@
       "number": "number"
     },
     "sidebar": {
+      "allArchived": "All your chats are archived",
+      "allCaughtUp": "All caught up",
       "allChats": "All chats",
+      "archive": "Archive chat",
       "chatsWith": "Chats with {{agentName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
@@ -2132,7 +2148,10 @@
       "pinned": "Pinned",
       "rename": "Rename chat",
       "renameDescription": "Enter a new name for this chat thread.",
+      "showArchived": "Show archived",
+      "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
+      "unarchive": "Unarchive chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
       "unreadOnly": "Unread only"
@@ -2844,6 +2863,7 @@
       "ariaLabel": "Chat thread",
       "changeIcon": "Change icon",
       "emoji": {
+        "archive": "Archive",
         "done": "Done",
         "idea": "Idea",
         "no": "No",
@@ -3553,6 +3573,7 @@
           "sourceUnavailable": "Source unavailable",
           "stale": "Stale",
           "unchanged": "Unchanged",
+          "unsupportedProtocol": "Unsupported protocol",
           "unsupportedSchema": "Unsupported schema"
         }
       },
@@ -5469,7 +5490,7 @@
         "usage": {
           "balanceDescription": "What your team has left to spend.",
           "balanceTitle": "Credit balance",
-          "usageDescription": "Your credit usage across chats, automations, and channels.",
+          "usageDescription": "Your credit usage, grouped by thread.",
           "usageTitle": "Credit usage"
         }
       },
@@ -5633,9 +5654,12 @@
         "codexDescription": "Connect with Codex device login for Codex-backed model routes.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Used only in your runs, with your own credentials.",
+        "disconnectAccount": "Disconnect account",
+        "disconnectDescription": "This removes the account from Okou. It won’t cancel your subscription with the provider.",
+        "disconnecting": "Disconnecting…",
+        "disconnectTitle": "Disconnect {{account}}?",
         "noAccounts": "No accounts connected.",
         "reconnectAccount": "Reconnect",
-        "removeAccount": "Remove",
         "sectionTitle": "Personal",
         "status": {
           "connected": "Connected",
@@ -5762,7 +5786,7 @@
         "codexTitle": "ChatGPT session needs reconnection"
       },
       "toasts": {
-        "accountRemoved": "Account removed",
+        "accountDisconnected": "Account disconnected",
         "accountSwitched": "Active account switched",
         "disconnected": "{{provider}} disconnected",
         "policiesUpdated": "Model provider settings updated",
@@ -6341,6 +6365,7 @@
     "loadFailed": "Couldn't load templates.",
     "pageCount_one": "{{count}} page",
     "pageCount_other": "{{count}} pages",
+    "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",
     "sharedBy": "Shared by {{owner}}",
     "visibility": {
@@ -6382,36 +6407,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "No usage in this billing period",
-        "description": "Credits you spend on chats, automations, and channels show up here.",
+        "description": "Credits you spend in threads show up here.",
         "noBillingPeriodDescription": "Team usage appears once a billing period starts.",
         "noBillingPeriodTitle": "No active billing period",
         "rangeTitle": "No usage in this time range",
-        "teamDescription": "Credits your team spends on chats, automations, and channels show up here."
+        "teamDescription": "Credits your team spends in threads show up here."
       },
       "loadError": "Could not load your usage.",
       "loadMore": "Load more",
       "myUsage": "My usage",
       "teamLoadError": "Could not load team usage.",
       "teamUsage": "Team usage",
+      "thread": "Thread",
+      "unavailableThread": "Unavailable thread",
       "untitled": "(untitled)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automation",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Other",
-      "phone": "Phone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_other": "{{value}} chats",
       "credit_one": "{{value}} credit",
-      "credit_other": "{{value}} credits"
+      "credit_other": "{{value}} credits",
+      "thread_one": "{{value}} thread",
+      "thread_other": "{{value}} threads"
     }
   },
   "workflows": {

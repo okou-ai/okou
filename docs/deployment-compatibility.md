@@ -1911,6 +1911,31 @@ below the producer change only stops new larger sources; it does not rewrite
 what was already published. The stored source itself is never truncated or
 rewritten by any reader, producer or rollback.
 
+## Connector catalog v4 consumption
+
+Publish the complete v4 catalog before deploying the consumer. The new API
+syncs and accepts only v4. Until a source has accepted v4, its shared catalog
+reader serves the retained accepted v3 snapshot, validating original v3 bytes
+and current executable capabilities. Discovery, execution and firewall permissions
+use that same reader. Normal sync switches subsequent reads to accepted v4.
+The release workflow stays unchanged; no environment variable, generation
+selector or separate warm-up endpoint is needed. MCP capability filtering does
+not block catalog acceptance.
+
+Earlier API binaries continue using their v3 namespace and rows. No database
+migration, source-salt change or historical-byte rewrite is needed. New APIs
+always prefer an accepted v4 snapshot, regardless of catalog version ordering.
+Later candidate failures retain v4; a corrupt accepted v4 snapshot fails rather
+than falling back to v3. Diagnostics describe the v4 sync target and can report
+cold v4 state while the v3 bridge keeps connectors available.
+
+[The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
+and rollback requirements. MCP execution and Automatic OAuth remain separate
+deliveries. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
+bridge cleanup after every serving source and supported bootstrap target has
+accepted v4 and the deployment/rollback window no longer needs the bridge.
+Historical v3 object and row retention for old binaries remains independent.
+
 ## PostHog CIMD OAuth
 
 PostHog OAuth uses a public client identified by
@@ -2212,6 +2237,13 @@ UUID, its UTC occurrence time and the bounded source `onboarding_video` or
 its own consented cookies. Both requests include credentials, run under the App
 root with a ten-second deadline and never delay navigation for their response.
 There is no periodic check or browser retry.
+
+App-side Marketing diagnostics are retired without changing either request
+contract. Marketing owns these logs and correlates authenticated requests by
+`userId` and `orgId`. The optional `X-Marketing-Request-Id` response header has
+no business consumer: older App builds already accept an absent header, and
+new builds do not read it. Its removal can deploy independently of this App
+cleanup and requires no additional client-version floor.
 
 The new receiver records Google Ads funnel shadows only. Marketing deduplicates
 onboarding by user/org and checkout by user/org/event UUID. These counts differ

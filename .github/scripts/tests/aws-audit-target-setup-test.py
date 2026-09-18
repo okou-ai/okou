@@ -50,10 +50,11 @@ class AuditSetupTests(unittest.TestCase):
             self.stubs[service] = stub
         self.env = {
             "RUNNER_TEMP": str(self.root),
-            "GITHUB_REPOSITORY": "vm0-ai/vm0",
+            "GITHUB_REPOSITORY": "vm0-ai/okou",
+            "GITHUB_REPOSITORY_ID": "1096175506",
             "GITHUB_REF": "refs/heads/main",
             "GITHUB_EVENT_NAME": "workflow_dispatch",
-            "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
+            "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
             "GITHUB_RUN_ID": "1234",
             "ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.actions.githubusercontent.com/example",
             "ACTIONS_ID_TOKEN_REQUEST_TOKEN": SECRET,
@@ -61,6 +62,28 @@ class AuditSetupTests(unittest.TestCase):
 
     def client(self, service, **_kwargs):
         return self.clients[service]
+
+    def test_iam_trust_allows_only_current_and_renamed_production_subjects(self):
+        expected_subjects = [
+            "repo:vm0-ai/okou:environment:production",
+            "repo:maxandzoe/okou:environment:production",
+        ]
+        github_directory = SCRIPT.parent.parent
+        for relative_path in [
+            "aws-audit-32264/operator-trust.json",
+            "kms-migration-32264/role-trust.json",
+        ]:
+            with self.subTest(path=relative_path):
+                policy = json.loads((github_directory / relative_path).read_text())
+                conditions = policy["Statement"][0]["Condition"]["StringEquals"]
+                self.assertEqual(
+                    conditions["token.actions.githubusercontent.com:aud"],
+                    "sts.amazonaws.com",
+                )
+                self.assertEqual(
+                    conditions["token.actions.githubusercontent.com:sub"],
+                    expected_subjects,
+                )
 
     def main(self, account=audit.ACCOUNT, denied=False, oidc_status="200"):
         sts = self.stubs["sts"]
@@ -111,6 +134,22 @@ class AuditSetupTests(unittest.TestCase):
         report_text = (self.root / "aws-audit-target.json").read_text()
         self.assertNotIn(SECRET, captured.getvalue() + report_text)
         return result, json.loads(report_text)
+
+    def test_renamed_repository_reaches_the_same_protected_identity_boundary(self):
+        self.env["GITHUB_REPOSITORY"] = "maxandzoe/okou"
+        self.env["GITHUB_WORKFLOW_REF"] = (
+            "maxandzoe/okou/.github/workflows/"
+            "aws-audit-target-setup.yml@refs/heads/main"
+        )
+        result, report = self.main(account="072707626411")
+        self.assertEqual(result, 1)
+        self.assertEqual(report["failure"], "wrong_aws_identity")
+
+    def test_wrong_repository_id_stops_before_aws_access(self):
+        self.env["GITHUB_REPOSITORY_ID"] = "1"
+        result, report = self.main()
+        self.assertEqual(result, 1)
+        self.assertEqual(report["failure"], "wrong_repository")
 
     def test_wrong_account_stops_before_resource_changes(self):
         result, report = self.main(account="072707626411")

@@ -1,4 +1,4 @@
-import { isValidTimeZone } from "@okouai/core/timezone";
+import { isValidTimeZone, parseScheduledAtTime } from "@okouai/core/timezone";
 
 /**
  * The reporting window a Morning Brief calendar read covers.
@@ -98,10 +98,18 @@ function addDays(
 /**
  * The first instant belonging to a local day.
  *
- * The local date is monotonically non-decreasing in absolute time, so the
- * boundary is found by bisection. That is what makes this correct when a
+ * The local date is treated as monotonically non-decreasing in absolute time,
+ * so the boundary is found by bisection. That is what makes this correct when a
  * spring-forward skips 00:00 entirely: the answer becomes the instant the
  * clock jumps into the day, not a local midnight that never existed.
+ *
+ * Known limitation: a zone whose local date moves *backwards* breaks that
+ * assumption, and bisection then returns the last crossing rather than the
+ * first instant of the day. `America/Goose_Bay` turned its clock back at 00:01
+ * on 2009-11-01, so this returns `04:00Z` where the day actually begins at
+ * `03:00Z`. Such rules are historical rather than current, and the anchor a
+ * Morning Brief collects for is the current day, so this is documented instead
+ * of widening the repair. No claim is made that every IANA history is exact.
  */
 function startOfLocalDay(
   formatter: Intl.DateTimeFormat,
@@ -203,55 +211,220 @@ export function parseCalendarDate(
 }
 
 /**
- * Whether an all-day event overlaps the window's local days.
+ * A provider timestamp that could not be turned into one instant.
+ *
+ * Every reason is reported as a coverage gap rather than repaired: a guessed
+ * instant is indistinguishable from a real meeting once it reaches a brief.
+ */
+type MorningBriefCalendarTimeFailure =
+  /** Not a supported RFC3339 shape, or a component no calendar can hold. */
+  | "malformed"
+  /** No offset and no usable IANA zone: the instant is simply not stated. */
+  | "unknown-timezone"
+  /** A wall time a daylight-saving jump skipped over in that zone. */
+  | "nonexistent-local-time"
+  /** A wall time a daylight-saving repeat makes true twice in that zone. */
+  | "ambiguous-local-time";
+
+type MorningBriefCalendarTimeResult =
+  | { readonly ok: true; readonly instant: Date }
+  | { readonly ok: false; readonly reason: MorningBriefCalendarTimeFailure };
+
+/**
+ * Strict RFC3339, which is what Google documents `dateTime` to be.
+ *
+ * The offset is optional here only so the offsetless-plus-`timeZone` shape can
+ * be recognised and resolved explicitly. Anything this does not match is
+ * reported as unreadable instead of being handed to `new Date`, whose lenient
+ * parsing rolls `2026-02-30` into March and falls back to the machine timezone.
+ */
+const RFC3339_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(?:([Zz])|([+-])(\d{2}):(\d{2}))?$/u;
+
+interface WallTimeComponents {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+  readonly second: number;
+  readonly millisecond: number;
+}
+
+/** The civil components as UTC, or `null` when they are not a real moment. */
+function civilUtcMs(parts: WallTimeComponents): number | null {
+  if (parts.hour > 23 || parts.minute > 59 || parts.second > 59) {
+    return null;
+  }
+  const utcMs = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+    parts.millisecond,
+  );
+  const normalized = new Date(utcMs);
+  // Rejects both an impossible day such as 2026-02-30 and the two-digit-year
+  // remapping `Date.UTC` applies below 100.
+  return normalized.getUTCFullYear() === parts.year &&
+    normalized.getUTCMonth() + 1 === parts.month &&
+    normalized.getUTCDate() === parts.day
+    ? utcMs
+    : null;
+}
+
+function localDateTimeText(parts: WallTimeComponents): string {
+  const pad = (value: number, width = 2): string => {
+    return String(value).padStart(width, "0");
+  };
+  return `${pad(parts.year, 4)}-${pad(parts.month)}-${pad(parts.day)}T${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}.${pad(parts.millisecond, 3)}`;
+}
+
+/**
+ * The instant a Google event endpoint denotes.
+ *
+ * An explicit offset identifies the instant on its own and is honoured exactly,
+ * so a request from an unfamiliar zone is still readable. Without one, the
+ * value is a wall time that only the event's own IANA `timeZone` can place; the
+ * repository's scheduling parser resolves it, including the two daylight-saving
+ * cases where a wall time names no instant or two. The machine timezone is
+ * never consulted, and an unresolvable value never becomes an instant.
+ */
+export function parseCalendarDateTime(args: {
+  readonly value: string;
+  readonly timeZone: string | undefined;
+}): MorningBriefCalendarTimeResult {
+  const match = RFC3339_PATTERN.exec(args.value);
+  if (!match) {
+    return { ok: false, reason: "malformed" };
+  }
+  const [
+    ,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    fraction,
+    utcDesignator,
+    offsetSign,
+    offsetHours,
+    offsetMinutes,
+  ] = match;
+  const parts: WallTimeComponents = {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    hour: Number(hour),
+    minute: Number(minute),
+    second: Number(second),
+    // Sub-millisecond precision is dropped, never rounded into another second.
+    millisecond: Number((fraction ?? "").slice(0, 3).padEnd(3, "0")),
+  };
+  const utcMs = civilUtcMs(parts);
+  if (utcMs === null) {
+    return { ok: false, reason: "malformed" };
+  }
+
+  if (utcDesignator !== undefined) {
+    return { ok: true, instant: new Date(utcMs) };
+  }
+  if (
+    offsetSign !== undefined &&
+    offsetHours !== undefined &&
+    offsetMinutes !== undefined
+  ) {
+    const hours = Number(offsetHours);
+    const minutes = Number(offsetMinutes);
+    if (hours > 23 || minutes > 59) {
+      return { ok: false, reason: "malformed" };
+    }
+    const offsetMs =
+      (offsetSign === "-" ? -1 : 1) * (hours * HOUR_MS + minutes * 60 * 1000);
+    return { ok: true, instant: new Date(utcMs - offsetMs) };
+  }
+
+  if (args.timeZone === undefined || !isValidTimeZone(args.timeZone)) {
+    return { ok: false, reason: "unknown-timezone" };
+  }
+  const zoned = parseScheduledAtTime(localDateTimeText(parts), args.timeZone);
+  if (zoned.ok) {
+    return { ok: true, instant: zoned.date };
+  }
+  return {
+    ok: false,
+    reason:
+      zoned.code === "nonexistent-local-time" ||
+      zoned.code === "ambiguous-local-time"
+        ? zoned.code
+        : "malformed",
+  };
+}
+
+/** Where a provider range sits, or that it is not a usable range at all. */
+type MorningBriefCalendarRangePlacement =
+  | "in-window"
+  | "out-of-window"
+  | "invalid-range";
+
+/**
+ * Where an all-day event sits against the window's local days.
  *
  * Google renders all-day values as calendar dates with an exclusive end date.
  * They are not instants, so they are compared as dates against the window's
  * local days. Converting them to a fabricated UTC midnight is exactly the bug
  * the sync-token baseline carries.
+ *
+ * An exclusive end at or before the start covers no day at all. Unlike a timed
+ * `start === end`, which Google really does emit as a point in time, such a
+ * range has no truthful placement, so it is rejected rather than quietly
+ * pinned to its start date.
  */
-export function allDayRangeOverlapsWindow(args: {
+export function checkAllDayRange(args: {
   readonly start: MorningBriefCalendarDate;
   readonly endExclusive: MorningBriefCalendarDate;
   readonly window: MorningBriefCalendarWindow;
-}): boolean {
+}): MorningBriefCalendarRangePlacement {
   const start = dateKey(args.start);
   const end = dateKey(args.endExclusive);
   if (end <= start) {
-    // A malformed or single-instant range still occupies its start date.
-    return (
-      start >= dateKey(args.window.startDate) &&
-      start < dateKey(args.window.endDate)
-    );
+    return "invalid-range";
   }
-  return (
-    start < dateKey(args.window.endDate) && end > dateKey(args.window.startDate)
-  );
+  return start < dateKey(args.window.endDate) &&
+    end > dateKey(args.window.startDate)
+    ? "in-window"
+    : "out-of-window";
 }
 
 /**
- * Whether a timed event overlaps the half-open window.
+ * Where a timed event sits against the half-open window.
  *
  * An event ending exactly at the window start, or starting exactly at the
  * window end, is outside it. An event crossing local midnight stays inside.
+ * A zero-length event is a real Google shape and keeps its point semantics;
+ * an end before its start describes no interval and is rejected.
  */
-export function timedRangeOverlapsWindow(args: {
+export function checkTimedRange(args: {
   readonly startAt: Date;
   readonly endAt: Date;
   readonly window: MorningBriefCalendarWindow;
-}): boolean {
+}): MorningBriefCalendarRangePlacement {
   const start = args.startAt.getTime();
   const end = args.endAt.getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end)) {
-    return false;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return "invalid-range";
   }
   const windowStart = args.window.startAt.getTime();
   const windowEnd = args.window.endAt.getTime();
-  if (end <= start) {
-    // Zero-length events are a real Google shape; treat them as a point.
-    return start >= windowStart && start < windowEnd;
+  if (end === start) {
+    return start >= windowStart && start < windowEnd
+      ? "in-window"
+      : "out-of-window";
   }
-  return start < windowEnd && end > windowStart;
+  return start < windowEnd && end > windowStart ? "in-window" : "out-of-window";
 }
 
 /** The covered local day an item is grouped under, or `null` when outside. */

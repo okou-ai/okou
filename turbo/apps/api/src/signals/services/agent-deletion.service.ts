@@ -24,6 +24,7 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 export function agentExistsInOrg(args: {
   readonly orgId: string;
@@ -179,6 +180,13 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     );
 
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
+
+  // A native Morning Brief delivery cascades away with this Agent, taking the
+  // only association to its still-unsent mail with it. Remove both first.
+  await revokeMorningBriefDeliveryOwnership(tx, {
+    kind: "agent",
+    agentId: args.agentId,
+  });
 
   await tx
     .delete(agents)

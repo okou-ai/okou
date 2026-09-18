@@ -11,6 +11,7 @@ import { onTestFinished } from "vitest";
 
 import { getApiTestMocks } from "../__tests__/mocks";
 import { db } from "../lib/db";
+import { nowDate } from "../lib/time";
 import { createDeferredPromise } from "../signals/utils";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
@@ -101,6 +102,12 @@ export async function seedInstalledMorningBrief(options: {
   if (!workflow) {
     throw new Error("Expected a seeded Morning Brief installation");
   }
+  // The Official Workflow installer stamps these from the application clock,
+  // and the Settings surface's own lifecycle guard later matches `updated_at`
+  // exactly. A `DEFAULT now()` stamp carries microseconds a JavaScript `Date`
+  // cannot represent, so seeding it that way would make a real preference
+  // update unrepresentable against this row.
+  const stampedAt = nowDate();
   const [automation] = await db()
     .insert(workflowAutomations)
     .values({
@@ -120,6 +127,8 @@ export async function seedInstalledMorningBrief(options: {
       officialParameterBindings: [],
       officialIntendedEnabled: options.enabled ?? true,
       officialResultEmailEnabled: true,
+      createdAt: stampedAt,
+      updatedAt: stampedAt,
     })
     .returning({ id: workflowAutomations.id });
   if (!automation) {
@@ -197,6 +206,30 @@ export async function readMorningBriefCollectionOccurrences(
  */
 export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
   await db().delete(agents).where(eq(agents.id, agentId));
+}
+
+/**
+ * Move the installation's Agent out of this member's reach without deleting it.
+ *
+ * Deletion cascades the occurrence away, which hides every fence behind a
+ * foreign key. An access change does not: the Agent row survives, so only a
+ * real re-resolution of the installation's authority can notice that the member
+ * may no longer act through it.
+ *
+ * This is a deliberate external-behavior exception. The Agent only stops
+ * resolving when it is private *and* owned by somebody else, and no production
+ * endpoint transfers Agent ownership — `agentRequestSchema` and
+ * `agentMetadataRequestSchema` expose visibility but never an owner — so the
+ * state cannot be constructed through the real API. Turning visibility private
+ * alone leaves the member as the owner, which still resolves.
+ */
+export async function restrictMorningBriefAgent(
+  agentId: string,
+): Promise<void> {
+  await db()
+    .update(agents)
+    .set({ visibility: "private", owner: `user_${randomUUID()}` })
+    .where(eq(agents.id, agentId));
 }
 
 /**

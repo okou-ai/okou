@@ -143,7 +143,7 @@ describe("with an initial voice composer", () => {
   beforeEach(async () => {
     preparedScenario = await prepareScenario();
   });
-  it("removing another target's local recording preserves the original recording", async () => {
+  async function openAnotherTargetAfterRecordingFailure() {
     const { firstRoot, firstComposer } = preparedScenario;
     click(await findEnabledButton("Voice input", firstRoot));
     click(await findEnabledButton("Stop recording", firstRoot));
@@ -166,7 +166,17 @@ describe("with an initial voice composer", () => {
     });
     const secondRoot = pageRoot(secondComposer);
     await findEnabledButton("Voice input", secondRoot);
+    return { firstRoot, firstComposer, secondRoot };
+  }
+
+  it("another target starts with voice input instead of the original recording's retry", async () => {
+    const { secondRoot } = await openAnotherTargetAfterRecordingFailure();
     expect(queryButton("Retry", secondRoot)).toBeNull();
+  });
+
+  it("removing another target's recording keeps the original recording recoverable", async () => {
+    const { firstRoot, firstComposer, secondRoot } =
+      await openAnotherTargetAfterRecordingFailure();
     click(await findEnabledButton("Voice input", secondRoot));
     click(await findEnabledButton("Stop recording", secondRoot));
     click(await findEnabledButton("Remove voice draft", secondRoot));

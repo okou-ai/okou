@@ -165,6 +165,35 @@ async function createChatThreadRun(
  * stays NULL), so the sandbox usage-event webhook accepts their model-kind
  * events into the billing ledger.
  */
+async function createThreadRun(
+  fixture: UsageRecordActor,
+  args: {
+    readonly threadId: string;
+    readonly prompt: string;
+    readonly triggerSource: TriggerSource;
+    readonly createdAt?: Date;
+  },
+): Promise<{ readonly runId: string }> {
+  if (!fixture.actor.orgId) {
+    throw new Error("Thread usage requires an org-scoped actor");
+  }
+  return await store.set(
+    seedRun$,
+    {
+      orgId: fixture.actor.orgId,
+      userId: fixture.actor.userId,
+      composeId: fixture.agentId,
+      chatThreadId: args.threadId,
+      prompt: args.prompt,
+      triggerSource: args.triggerSource,
+      status: "completed",
+      completedAt: nowDate(),
+      createdAt: args.createdAt,
+    },
+    context.signal,
+  );
+}
+
 async function createUnthreadedRun(
   actor: ApiTestUser,
   args: {
@@ -402,7 +431,7 @@ describe("GET /api/usage/record", () => {
     });
   });
 
-  it("returns rows across sources ordered by recent activity", async () => {
+  it("aggregates trigger sources by thread and orders recent activity", async () => {
     const fixture = await entitledRecordActor();
     const model = uniqueProvider("bdd-model");
     const connectorProvider = uniqueProvider("bdd-connector");
@@ -410,7 +439,7 @@ describe("GET /api/usage/record", () => {
     await seedConnectorPricing(connectorProvider);
 
     const older = await createChatThreadRun(fixture, {
-      title: "Older chat",
+      title: "Older thread",
       createdAt: createdAt(120),
     });
     await recordConnectorUsage(
@@ -420,27 +449,35 @@ describe("GET /api/usage/record", () => {
       8,
     );
 
-    // Unthreaded Slack run — one row per run, links via runId.
-    const slack = await createUnthreadedRun(fixture.actor, {
-      prompt: "Slack triage",
+    const mixed = await createChatThreadRun(fixture, {
+      title: "Mixed-source thread",
+      createdAt: createdAt(10),
+    });
+    await recordConnectorUsage(
+      fixture.actor,
+      mixed.runId,
+      connectorProvider,
+      25,
+    );
+    const slack = await createThreadRun(fixture, {
+      threadId: mixed.threadId,
+      prompt: "Slack follow-up",
       triggerSource: "slack",
-      createdAt: createdAt(60),
+      createdAt: createdAt(5),
     });
     await recordModelUsage(fixture.actor, slack.runId, model, {
       input: 30,
       output: 20,
     });
 
-    const newer = await createChatThreadRun(fixture, {
-      title: "Newer chat",
-      createdAt: createdAt(5),
+    const historical = await createUnthreadedRun(fixture.actor, {
+      prompt: "Historical unthreaded usage",
+      triggerSource: "webhook",
+      createdAt: createdAt(60),
     });
-    await recordConnectorUsage(
-      fixture.actor,
-      newer.runId,
-      connectorProvider,
-      25,
-    );
+    await recordModelUsage(fixture.actor, historical.runId, model, {
+      input: 10,
+    });
 
     await billing.processOrgUsageEvents(fixture.actor);
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
@@ -452,17 +489,30 @@ describe("GET /api/usage/record", () => {
 
     expect(response.body.rows).toHaveLength(3);
     expect(response.body.pagination.total).toBe(3);
-    // Range-wide credit total across all three rows (250 + 50 + 80).
-    expect(response.body.totalCredits).toBe(380);
+    expect(response.body.totalCredits).toBe(390);
     expect(response.body.period).not.toBeNull();
 
-    expect(response.body.rows[0]?.source).toBe("chat");
-    expect(response.body.rows[0]?.threadId).toBe(newer.threadId);
-    expect(response.body.rows[0]?.runId).toBeNull();
-    expect(response.body.rows[0]?.title).toBe("Newer chat");
-    expect(response.body.rows[0]?.credits).toBe(250);
-    expect(response.body.rows[0]?.tokens).toBe(0);
+    expect(response.body.rows[0]).toMatchObject({
+      source: "chat",
+      threadId: mixed.threadId,
+      runId: null,
+      title: "Mixed-source thread",
+      credits: 300,
+      tokens: 50,
+      member: null,
+    });
     expect(response.body.rows[0]?.breakdown).toStrictEqual([
+      {
+        kind: "model",
+        credits: 50,
+        providers: [
+          {
+            provider: model,
+            credits: 50,
+            usageKinds: [{ kind: "model", credits: 50 }],
+          },
+        ],
+      },
       {
         kind: "connector",
         credits: 250,
@@ -475,31 +525,22 @@ describe("GET /api/usage/record", () => {
         ],
       },
     ]);
-    expect(response.body.rows[0]?.member).toBeNull();
 
-    expect(response.body.rows[1]?.source).toBe("slack");
-    expect(response.body.rows[1]?.threadId).toBeNull();
-    expect(response.body.rows[1]?.runId).toBe(slack.runId);
-    expect(response.body.rows[1]?.title).toBe("Slack triage");
-    expect(response.body.rows[1]?.credits).toBe(50);
-    expect(response.body.rows[1]?.tokens).toBe(50);
-    expect(response.body.rows[1]?.breakdown).toStrictEqual([
-      {
-        kind: "model",
-        credits: 50,
-        providers: [
-          {
-            provider: model,
-            credits: 50,
-            usageKinds: [{ kind: "model", credits: 50 }],
-          },
-        ],
-      },
-    ]);
-
-    expect(response.body.rows[2]?.source).toBe("chat");
-    expect(response.body.rows[2]?.threadId).toBe(older.threadId);
-    expect(response.body.rows[2]?.credits).toBe(80);
+    expect(response.body.rows[1]).toMatchObject({
+      source: "chat",
+      threadId: null,
+      runId: null,
+      title: "Unavailable thread",
+      credits: 10,
+      tokens: 10,
+    });
+    expect(response.body.rows[2]).toMatchObject({
+      source: "chat",
+      threadId: older.threadId,
+      runId: null,
+      title: "Older thread",
+      credits: 80,
+    });
   });
 
   it("returns rows, totals, tokens, and breakdowns from hourly storage", async () => {
@@ -550,8 +591,10 @@ describe("GET /api/usage/record", () => {
     expect(response.body.pagination.total).toBe(1);
     expect(response.body.rows).toStrictEqual([
       expect.objectContaining({
-        source: "slack",
-        runId: run.runId,
+        source: "chat",
+        threadId: null,
+        runId: null,
+        title: "Unavailable thread",
         credits: 70,
         tokens: 50,
         breakdown: [
@@ -582,7 +625,7 @@ describe("GET /api/usage/record", () => {
     ]);
   });
 
-  it("normalizes unattended sources without changing credits", async () => {
+  it("combines historical threadless usage without changing credits", async () => {
     const fixture = await entitledRecordActor();
     const connectorProvider = uniqueProvider("bdd-connector");
     await seedConnectorPricing(connectorProvider);
@@ -612,7 +655,7 @@ describe("GET /api/usage/record", () => {
 
     const response = await accept(
       apiClient().get({
-        query: { source: "automation", range: "7d", tz: "UTC" },
+        query: { range: "7d", tz: "UTC" },
         headers: authHeaders(),
       }),
       [200],
@@ -621,15 +664,16 @@ describe("GET /api/usage/record", () => {
     expect(response.body.rows).toHaveLength(1);
     expect(response.body.totalCredits).toBe(200);
     expect(response.body.rows[0]).toMatchObject({
-      source: "automation",
+      source: "chat",
       threadId: null,
       runId: null,
+      title: "Unavailable thread",
       credits: 200,
       tokens: 0,
     });
   });
 
-  it("aggregates deleted chat threads into a synthetic usage row", async () => {
+  it("aggregates deleted threads into the unavailable-thread row", async () => {
     const fixture = await entitledRecordActor();
     const connectorProvider = uniqueProvider("bdd-connector");
     const imageProvider = uniqueProvider("bdd-image");
@@ -692,7 +736,7 @@ describe("GET /api/usage/record", () => {
       source: "chat",
       threadId: null,
       runId: null,
-      title: "Deleted chats",
+      title: "Unavailable thread",
       credits: 130,
       tokens: 0,
     });
@@ -731,59 +775,7 @@ describe("GET /api/usage/record", () => {
     });
   });
 
-  it("filters rows by source", async () => {
-    const fixture = await entitledRecordActor();
-    const connectorProvider = uniqueProvider("bdd-connector");
-    await seedConnectorPricing(connectorProvider);
-
-    const chat = await createChatThreadRun(fixture, {
-      title: "A chat",
-      createdAt: createdAt(20),
-    });
-    await recordConnectorUsage(fixture.actor, chat.runId, connectorProvider, 1);
-
-    const slack = await createUnthreadedRun(fixture.actor, {
-      prompt: "Slack digest",
-      triggerSource: "slack",
-      createdAt: createdAt(10),
-    });
-    await recordConnectorUsage(
-      fixture.actor,
-      slack.runId,
-      connectorProvider,
-      12,
-    );
-
-    await billing.processOrgUsageEvents(fixture.actor);
-    mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-
-    const slackResponse = await accept(
-      apiClient().get({
-        query: { source: "slack" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(slackResponse.body.rows).toHaveLength(1);
-    expect(slackResponse.body.pagination.total).toBe(1);
-    expect(slackResponse.body.rows[0]?.source).toBe("slack");
-    expect(slackResponse.body.rows[0]?.runId).toBe(slack.runId);
-    expect(slackResponse.body.rows[0]?.credits).toBe(120);
-
-    const chatResponse = await accept(
-      apiClient().get({
-        query: { source: "chat" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(chatResponse.body.rows).toHaveLength(1);
-    expect(chatResponse.body.rows[0]?.source).toBe("chat");
-    expect(chatResponse.body.rows[0]?.threadId).toBe(chat.threadId);
-    expect(chatResponse.body.rows[0]?.credits).toBe(10);
-  });
-
-  it("normalizes non-passthrough trigger sources to other", async () => {
+  it("keeps historical threadless usage without a run link", async () => {
     const fixture = await entitledRecordActor();
     const model = uniqueProvider("bdd-model");
     await seedModelPricing(model);
@@ -804,20 +796,17 @@ describe("GET /api/usage/record", () => {
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
 
     const response = await accept(
-      apiClient().get({
-        query: { source: "other" },
-        headers: authHeaders(),
-      }),
+      apiClient().get({ query: {}, headers: authHeaders() }),
       [200],
     );
 
     expect(response.body.rows).toHaveLength(1);
     expect(response.body.pagination.total).toBe(1);
     expect(response.body.rows[0]).toMatchObject({
-      source: "other",
+      source: "chat",
       threadId: null,
-      runId: webhookRun.runId,
-      title: "Webhook triggered run",
+      runId: null,
+      title: "Unavailable thread",
       credits: 40,
       tokens: 40,
     });
@@ -1017,8 +1006,9 @@ describe("GET /api/usage/record", () => {
     expect(response.body.pagination.total).toBe(1);
     expect(response.body.totalCredits).toBe(6);
     expect(response.body.rows[0]).toMatchObject({
-      source: "other",
-      runId: run.runId,
+      source: "chat",
+      threadId: null,
+      runId: null,
       credits: 6,
       tokens: 0,
     });

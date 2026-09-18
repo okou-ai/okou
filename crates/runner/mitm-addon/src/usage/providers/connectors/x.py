@@ -20,13 +20,14 @@ import stream_capture
 from body_limits import REQUEST_BODY_BILLING_INSPECTION_LIMIT
 from logging_utils import log_proxy_entry
 
-from ...buffer import UsageEvent, buffer_usage_events
+from ...buffer import UsageEvent, buffer_source_usage_events, buffer_usage_events
 from ...idempotency import USAGE_EVENT_NAMESPACE_CONNECTOR, derive_usage_idempotency_key
 from ...reporting_context import (
     log_usage_reporting_context_missing,
     usage_reporting_context,
 )
 from ...underbilling import log_usage_underbilling
+from .response_parser import ConnectorResponseParser
 from .x_billing import (
     INCLUDES_OVERFLOW_CATEGORY,
     MAX_UNKNOWN_INCLUDE_CATEGORIES,
@@ -35,10 +36,14 @@ from .x_billing import (
     include_billing_category,
     refine_bucket_with_body,
 )
+from .x_resources import observed_at, resource_event
 from .x_response_inspection import (
     as_non_negative_response_count,
     is_stream_path,
     parse_json_response_fields_from_body,
+)
+from .x_response_inspection import (
+    create_response_parser as create_x_response_parser,
 )
 
 # HTTP 2xx success range (RFC 9110). Also defined in ``response_streaming.py``
@@ -447,7 +452,9 @@ def _parse_response_metadata(flow: http.HTTPFlow) -> dict:
     if decode_error is not None:
         result["parse_error"] = decode_error
         return result
-    fields = parse_json_response_fields_from_body(body)
+    fields = parse_json_response_fields_from_body(
+        body, identities=flow_metadata.x_resource_billing(flow.metadata) is not None
+    )
     if fields is None:
         return result
 
@@ -619,7 +626,48 @@ def needs_response_buffer_fallback(flow: http.HTTPFlow) -> bool:
     return context is not None and not is_stream_path(context.request_path)
 
 
+def create_response_parser(
+    flow: http.HTTPFlow, original_url: str
+) -> ConnectorResponseParser | None:
+    """Compose validated stream observations with the existing X billing policy."""
+    capability = flow_metadata.x_resource_billing(flow.metadata)
+    on_row = None
+    if capability is not None and is_stream_path(urllib.parse.urlparse(original_url).path):
+        flow.metadata[metadata_keys.X_RESOURCE_STREAM_REPORTED] = True
+
+        def report_row(response: dict, ordinal: int) -> None:
+            run_id = flow_metadata.run_id(flow.metadata)
+            if run_id:
+                _report_usage(flow, run_id, original_url, response=response, row=ordinal)
+
+        on_row = report_row
+    return create_x_response_parser(
+        flow, original_url, identities=capability is not None, on_row=on_row
+    )
+
+
 def report_usage(flow: http.HTTPFlow, run_id: str, original_url: str) -> None:
+    if flow.metadata.get(metadata_keys.X_RESOURCE_STREAM_REPORTED):
+        if not flow.metadata.get(metadata_keys.X_RESOURCE_REPORTED):
+            flow.metadata[metadata_keys.X_RESOURCE_REPORTED] = True
+            _report_usage(flow, run_id, original_url, report_events=False)
+        return
+    if flow_metadata.x_resource_billing(flow.metadata) is not None:
+        if flow.metadata.get(metadata_keys.X_RESOURCE_REPORTED):
+            return
+        flow.metadata[metadata_keys.X_RESOURCE_REPORTED] = True
+    _report_usage(flow, run_id, original_url)
+
+
+def _report_usage(
+    flow: http.HTTPFlow,
+    run_id: str,
+    original_url: str,
+    *,
+    response: dict | None = None,
+    row: int | None = None,
+    report_events: bool = True,
+) -> None:
     """Compute billable resource counts and buffer them for upload.
 
     Derives per-permission billable resource counts from the request and
@@ -668,7 +716,7 @@ def report_usage(flow: http.HTTPFlow, run_id: str, original_url: str) -> None:
         )
 
     req_meta = _parse_request_metadata(original_url)
-    resp_meta = _parse_response_metadata(flow)
+    resp_meta = response if response is not None else _parse_response_metadata(flow)
     # Query-derived request hints are not general request metadata.  They are
     # merged only when billing lost response visibility for a non-count GET.
     req_meta.update(
@@ -761,7 +809,7 @@ def report_usage(flow: http.HTTPFlow, run_id: str, original_url: str) -> None:
         )
 
     # Buffer usage events for aggregate platform upload.
-    if not billable_counts:
+    if not billable_counts or not report_events:
         return
 
     reporting_context = usage_reporting_context(flow)
@@ -774,23 +822,43 @@ def report_usage(flow: http.HTTPFlow, run_id: str, original_url: str) -> None:
         )
         return
     events: list[UsageEvent] = []
+    capability = flow_metadata.x_resource_billing(flow.metadata)
+    observation_time = resp_meta.get("observed_at") or observed_at()
+    resource_protocol = capability is not None and observation_time[:10] >= capability.start_date
     for category, qty in billable_counts.items():
         # UUIDv5 from stable source inputs. The usage buffer uses this key to
         # dedupe duplicate response/error observations before aggregation.
         idempotency_key = derive_usage_idempotency_key(
             USAGE_EVENT_NAMESPACE_CONNECTOR,
-            (run_id, flow.id, category),
+            (run_id, flow.id, category) if row is None else (run_id, flow.id, str(row), category),
         )
-        events.append(
-            {
-                "idempotencyKey": idempotency_key,
-                "kind": "connector",
-                "provider": firewall_name,
-                "category": category,
-                "quantity": qty,
-            }
-        )
-    buffer_usage_events(
+        event: UsageEvent = {
+            "idempotencyKey": idempotency_key,
+            "kind": "connector",
+            "provider": firewall_name,
+            "category": category,
+            "quantity": qty,
+        }
+        if resource_protocol and method == "GET":
+            if category in {"posts.read", "user.read"}:
+                event, remainder = resource_event(
+                    event,
+                    resp_meta,
+                    endpoint_bucket=endpoint_bucket,
+                    path=urllib.parse.urlparse(original_url).path,
+                    observation_time=observation_time,
+                    count_endpoint=req_meta["is_count_endpoint"],
+                )
+            else:
+                remainder = [{"reason": "unsupported_resource", "quantity": qty}]
+            summary = flow.metadata.setdefault(metadata_keys.X_RESOURCE_REMAINDER, {})
+            category_summary = summary.setdefault(category, {})
+            for item in remainder:
+                reason = item["reason"]
+                category_summary[reason] = category_summary.get(reason, 0) + item["quantity"]
+        events.append(event)
+    buffer = buffer_source_usage_events if capability is not None else buffer_usage_events
+    buffer(
         reporting_context.usage_event_url(),
         reporting_context.sandbox_token,
         run_id,

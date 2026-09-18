@@ -425,6 +425,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.McpServer]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Allow OAuth-authorized external clients to use Okou MCP tools.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.VncAccess]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable owner-scoped VNC host and credential configuration",
+    enabled: false,
+  },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -436,6 +447,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Pin chats from the desktop title and keep Pin, Share, and More visible in the mobile thread header.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatThreadArchiving]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

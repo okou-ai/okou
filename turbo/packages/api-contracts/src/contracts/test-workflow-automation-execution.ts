@@ -71,6 +71,17 @@ export const testWorkflowAutomationExecutionContract = c.router({
     },
     summary: "Run Morning Brief enrollment for one test-owned member",
   },
+  retainMorningBriefGenerations: {
+    method: "POST",
+    path: "/api/test/workflow-automation-execution/retain-morning-brief-generations",
+    body: z.object({}).strict(),
+    responses: {
+      200: z.object({ purged: z.number().int().nonnegative() }),
+      404: z.string(),
+    },
+    summary:
+      "Run the Morning Brief generation retention batch the maintenance tick runs",
+  },
   execute: {
     method: "POST",
     path: "/api/test/workflow-automation-execution/execute",

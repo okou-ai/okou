@@ -80,6 +80,15 @@ const collect$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Morning Brief collection authority was withdrawn while this collection ran",
     );
   }
+  if (collection.kind === "deadline-exceeded") {
+    // An unfinished attempt is not an empty inbox. Nothing it read could still
+    // be re-authorized, so the envelope — items and thread ids alike — is
+    // withheld rather than reported as a healthy result.
+    return createErrorResponse(
+      "REQUEST_DEADLINE_EXCEEDED",
+      "Morning Brief unread Chat collection did not finish within its budget",
+    );
+  }
   return { status: 200 as const, body: collection.collection };
 });
 

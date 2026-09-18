@@ -5163,7 +5163,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       await api.requestCancelRun(actor, first.runId, [200]);
       const failed = await waitForRunStatus(api, actor, queued.runId, "failed");
       expect(failed.error).toBe(
-        "Claude Fable 5 has been retired. Select Claude Fable 5.1.",
+        "This model has been retired. Select another available model.",
       );
       expect(
         (await waitForRunQueueLength(api, actor, 0)).body.queue,
@@ -15619,7 +15619,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       expect.objectContaining({
         source: "chat",
         runId: null,
-        title: "Deleted chats",
+        title: "Unavailable thread",
         credits: 17,
       }),
     );
@@ -15666,7 +15666,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     });
     expect(listedUsage).toMatchObject({
       runId: null,
-      title: "Deleted chats",
+      title: "Unavailable thread",
     });
     expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
 
@@ -15792,6 +15792,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 14,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 14,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 14,
+              usageKinds: [{ kind: "image", credits: 14 }],
+            },
+          ],
+        },
+      ],
     });
     expect(aggregated.body.members[1]).toMatchObject({
       userId: actor.userId,
@@ -15801,6 +15814,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 7,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 7,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 7,
+              usageKinds: [{ kind: "image", credits: 7 }],
+            },
+          ],
+        },
+      ],
     });
 
     await api.requestCancelRun(actor, actorRun.runId, [200]);

@@ -40,6 +40,8 @@ pub(super) enum Scenario {
     RuntimeTurnFailedUnauthorized,
     RuntimeTurnFailedUnknown,
     RuntimeTurnFailedContentPolicyRejection,
+    RuntimeTurnFailedBiologicalRiskRejection,
+    RuntimeTurnFailedBiologicalRiskInternalServerError,
     RuntimeTurnFailedInvalidRequestFormat,
     RuntimeTurnCompleteAfterSteer,
     RuntimeTurnCompleteBeforeSteerResponse,
@@ -158,6 +160,12 @@ impl Scenario {
                 "runtime-turn-failed-content-policy-rejection" => {
                     Ok(Self::RuntimeTurnFailedContentPolicyRejection)
                 }
+                "runtime-turn-failed-biological-risk-rejection" => {
+                    Ok(Self::RuntimeTurnFailedBiologicalRiskRejection)
+                }
+                "runtime-turn-failed-biological-risk-internal-server-error" => {
+                    Ok(Self::RuntimeTurnFailedBiologicalRiskInternalServerError)
+                }
                 "runtime-turn-failed-invalid-request-format" => {
                     Ok(Self::RuntimeTurnFailedInvalidRequestFormat)
                 }
@@ -260,6 +268,12 @@ impl Scenario {
             Self::RuntimeTurnFailedContentPolicyRejection => {
                 Some(TurnFailure::ContentPolicyRejection)
             }
+            Self::RuntimeTurnFailedBiologicalRiskRejection => {
+                Some(TurnFailure::BiologicalRiskRejection)
+            }
+            Self::RuntimeTurnFailedBiologicalRiskInternalServerError => {
+                Some(TurnFailure::BiologicalRiskInternalServerError)
+            }
             Self::RuntimeTurnFailedInvalidRequestFormat => Some(TurnFailure::InvalidRequestFormat),
             _ => None,
         }
@@ -297,4 +311,8 @@ pub(super) enum TurnFailure {
     /// Same error type and code as the rejection above, but a genuine
     /// request-shape complaint that must stay unclassified.
     InvalidRequestFormat,
+    /// Provider refusal text with the generic `other` error discriminator.
+    BiologicalRiskRejection,
+    /// The same refusal text must not override a structured server error.
+    BiologicalRiskInternalServerError,
 }

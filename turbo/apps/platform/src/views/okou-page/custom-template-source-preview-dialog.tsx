@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -87,7 +87,11 @@ export function CustomTemplateSourcePreviewDialog({
 }) {
   const { t } = useTranslation();
   const openKind = useGet(openCustomTemplateKind$);
-  const detailLoadable = useLoadable(openCustomTemplateDetail$);
+  // The detail shares the catalog's version, so every save invalidates it. Read
+  // through the last settled answer: dropping to the spinner on a refresh would
+  // take the editor away mid-save, and reload the viewer beside it on a rename
+  // that changed neither the file nor the URL it is drawn from.
+  const detailLoadable = useLastLoadable(openCustomTemplateDetail$);
   const close = useSet(closeCustomTemplate$);
   const detail =
     detailLoadable.state === "hasData" ? detailLoadable.data : null;
@@ -133,7 +137,14 @@ export function CustomTemplateSourcePreviewDialog({
             <CustomTemplateSourcePreview detail={detail} />
           </div>
           {detail === null ? null : (
-            <CustomTemplateDetailSidebar detail={detail} onSelect={onSelect} />
+            /* Keyed by the template, not by anything that changes while one is
+               open: a save re-renders this subtree, and only arriving at a
+               different template may hand the editor a fresh field. */
+            <CustomTemplateDetailSidebar
+              key={detail.id}
+              detail={detail}
+              onSelect={onSelect}
+            />
           )}
         </div>
       </DialogContent>

@@ -8,7 +8,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -468,7 +468,12 @@ function CustomTemplateDetail({
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
-  const detailLoadable = useLoadable(openCustomTemplateDetail$);
+  // The detail shares the catalog's version, so every save invalidates it. Read
+  // through the last settled answer: dropping to the skeleton on a refresh
+  // would take the editor away mid-save, and with it the field the member is
+  // waiting to get back. The first load still has no previous answer to show,
+  // and a failed refresh still settles as an error.
+  const detailLoadable = useLastLoadable(openCustomTemplateDetail$);
   const close = useSet(closeCustomTemplate$);
   const detail =
     detailLoadable.state === "hasData" ? detailLoadable.data : null;
@@ -510,7 +515,14 @@ function CustomTemplateDetail({
               );
             })}
           </div>
-          <CustomTemplateDetailSidebar detail={detail} onSelect={onSelect} />
+          {/* Keyed by the template, not by anything that changes while one is
+              open: a save re-renders this subtree, and only arriving at a
+              different template may hand the editor a fresh field. */}
+          <CustomTemplateDetailSidebar
+            key={detail.id}
+            detail={detail}
+            onSelect={onSelect}
+          />
         </div>
       )}
     </div>

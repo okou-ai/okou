@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.91.15](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.14...guest-agent-v0.91.15) (2026-09-18)
+
+## [0.91.14](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.13...guest-agent-v0.91.14) (2026-09-18)
+
+
+### Bug Fixes
+
+* classify explicit biological risk refusals ([#35036](https://github.com/vm0-ai/okou/issues/35036)) ([3b89f3e](https://github.com/vm0-ai/okou/commit/3b89f3e687af19e8989a5f7612e9c51b6179e571)), closes [#34764](https://github.com/vm0-ai/okou/issues/34764)
+
+## [0.91.13](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.12...guest-agent-v0.91.13) (2026-09-17)
+
+
+### Bug Fixes
+
+* align bedrock, api-first and codex failure handling ([#34921](https://github.com/vm0-ai/okou/issues/34921)) ([1b958dd](https://github.com/vm0-ai/okou/commit/1b958dd56b9c2a137d615de646bfa5b392a35d52))
+
 ## [0.91.12](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.11...guest-agent-v0.91.12) (2026-09-17)
 
 ## [0.91.11](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.10...guest-agent-v0.91.11) (2026-09-17)

@@ -1,5 +1,6 @@
 import { Lock, User, Users } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -140,17 +141,23 @@ function UseCustomTemplateButton({
   );
 }
 
-export function CustomTemplateDetailSidebar({
+/**
+ * The title is the one control here whose next edit depends on the previous one
+ * having finished, so the field owns its own save rather than firing it and
+ * forgetting it. It is closed for the duration: a second blur sends a second
+ * rename, and nothing between here and the row lock promises the two arrive in
+ * the order they were typed — which is how the earlier of the two could land
+ * last and take the name back.
+ */
+function CustomTemplateTitleInput({
   detail,
-  onSelect,
 }: {
   readonly detail: UserTemplateDetail;
-  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const updateTemplate = useSet(updateCustomTemplate$);
-  const deleteTemplate = useSet(deleteCustomTemplate$);
+  const [saveLoadable, updateTemplate] = useLoadableSet(updateCustomTemplate$);
+  const saving = saveLoadable.state === "loading";
   const rename = (nextTitle: string) => {
     const normalized = nextTitle.replace(/\s+/gu, " ").trim();
     if (normalized.length === 0 || normalized === detail.title) {
@@ -165,27 +172,57 @@ export function CustomTemplateDetailSidebar({
     );
   };
   return (
+    <>
+      <Input
+        // Re-keyed on the stored title so the server's own normalisation
+        // replaces what was typed, once it is stored. A save that failed did
+        // not change the title, which is what leaves the rejected text in the
+        // field to be corrected and sent again.
+        key={detail.title}
+        defaultValue={detail.title}
+        disabled={saving}
+        aria-label={t(($) => {
+          return $.templates.actions.rename;
+        })}
+        className="h-9 text-base font-semibold"
+        onBlur={(event) => {
+          rename(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
+      />
+      {saveLoadable.state === "hasError" ? (
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {t(($) => {
+            return $.templates.renameFailed;
+          })}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+export function CustomTemplateDetailSidebar({
+  detail,
+  onSelect,
+}: {
+  readonly detail: UserTemplateDetail;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const updateTemplate = useSet(updateCustomTemplate$);
+  const deleteTemplate = useSet(deleteCustomTemplate$);
+  return (
     <aside className="w-full shrink-0 lg:w-[300px]">
       <div className="rounded-xl border border-border bg-background p-4">
         <UseCustomTemplateButton detail={detail} onSelect={onSelect} />
         {detail.canManage ? (
-          <Input
-            key={detail.title}
-            defaultValue={detail.title}
-            aria-label={t(($) => {
-              return $.templates.actions.rename;
-            })}
-            className="h-9 text-base font-semibold"
-            onBlur={(event) => {
-              rename(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                event.currentTarget.blur();
-              }
-            }}
-          />
+          <CustomTemplateTitleInput detail={detail} />
         ) : (
           <h3 className="text-lg font-semibold text-foreground">
             {detail.title}

@@ -1,20 +1,12 @@
 import type { MouseEvent } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
-import {
-  ChevronDown,
-  Clock,
-  Mail,
-  MessageCircle,
-  Phone,
-  Bot,
-} from "lucide-react";
+import { ChevronDown, MessageCircle } from "lucide-react";
 import type { OrgMember } from "@okouai/api-contracts/contracts/org-members";
 import type {
   UsageRecordKind,
   UsageRecordRange,
   UsageRecordResponse,
   UsageRecordRow,
-  UsageRecordSource,
 } from "@okouai/api-contracts/contracts/usage-record";
 import type { UsageMembersResponse } from "@okouai/api-contracts/contracts/usage";
 import {
@@ -23,16 +15,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  BrandGithub,
-  BrandSlack,
-  BrandTelegram,
 } from "@okouai/ui";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@okouai/ui/components/ui/tooltip";
+import { TooltipProvider } from "@okouai/ui/components/ui/tooltip";
 import {
   loadMoreUsageRecord$,
   myUsageRecordAsync$,
@@ -43,7 +27,6 @@ import { detach, Reason } from "../../../../signals/utils.ts";
 import { orgMembers$ } from "../../../../signals/external/org-members.ts";
 import { closeSettingsModal$ } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { nowDate } from "../../../../lib/time.ts";
-import { getCreditUsageDisplayName } from "../../../../lib/credit-usage-display.ts";
 import { Link } from "../../../router/link.tsx";
 import { MemberUsageTable } from "../org-manage/org-usage-tab.tsx";
 import { emptyUsageImg } from "../../platform-assets.ts";
@@ -53,39 +36,13 @@ import {
   formatCompactNumber,
   formatLocalizedNumber,
 } from "../../../../i18n/format.ts";
+import {
+  UsageBreakdownBar,
+  USAGE_KIND_META,
+  usageKindLabel,
+} from "../usage-breakdown-bar.tsx";
 
 const CARD_BORDER = "var(--border-width-surface) solid hsl(var(--gray-400))";
-
-const SOURCE_ICONS = {
-  chat: MessageCircle,
-  automation: Clock,
-  slack: BrandSlack,
-  teams: MessageCircle,
-  telegram: BrandTelegram,
-  email: Mail,
-  agentphone: Phone,
-  github: BrandGithub,
-  agent: Bot,
-  other: Bot,
-} as const satisfies Record<UsageRecordSource, typeof MessageCircle>;
-
-const KIND_META = {
-  model: {
-    color: "bg-usage-kind-model",
-  },
-  image: {
-    color: "bg-usage-kind-image",
-  },
-  video: {
-    color: "bg-usage-kind-video",
-  },
-  connector: {
-    color: "bg-usage-kind-connector",
-  },
-  other: {
-    color: "bg-usage-kind-other",
-  },
-} as const satisfies Record<UsageRecordKind, { color: string }>;
 
 const RANGE_OPTIONS = [
   "today",
@@ -165,93 +122,8 @@ function rangeLabel(range: UsageRecordRange): string {
   }
 }
 
-function sourceLabel(source: UsageRecordSource): string {
-  switch (source) {
-    case "chat": {
-      return i18n.t(($) => {
-        return $.usage.sources.chat;
-      });
-    }
-    case "automation": {
-      return i18n.t(($) => {
-        return $.usage.sources.automation;
-      });
-    }
-    case "slack": {
-      return i18n.t(($) => {
-        return $.usage.sources.slack;
-      });
-    }
-    case "teams": {
-      return i18n.t(($) => {
-        return $.usage.sources.teams;
-      });
-    }
-    case "telegram": {
-      return i18n.t(($) => {
-        return $.usage.sources.telegram;
-      });
-    }
-    case "email": {
-      return i18n.t(($) => {
-        return $.usage.sources.email;
-      });
-    }
-    case "agentphone": {
-      return i18n.t(($) => {
-        return $.usage.sources.phone;
-      });
-    }
-    case "github": {
-      return i18n.t(($) => {
-        return $.usage.sources.github;
-      });
-    }
-    case "agent": {
-      return i18n.t(($) => {
-        return $.usage.sources.agent;
-      });
-    }
-    case "other": {
-      return i18n.t(($) => {
-        return $.usage.sources.other;
-      });
-    }
-  }
-}
-
-function kindLabel(kind: UsageRecordKind): string {
-  switch (kind) {
-    case "model": {
-      return i18n.t(($) => {
-        return $.usage.kinds.model;
-      });
-    }
-    case "image": {
-      return i18n.t(($) => {
-        return $.usage.kinds.image;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.usage.kinds.video;
-      });
-    }
-    case "connector": {
-      return i18n.t(($) => {
-        return $.usage.kinds.connector;
-      });
-    }
-    case "other": {
-      return i18n.t(($) => {
-        return $.usage.kinds.other;
-      });
-    }
-  }
-}
-
 function usageRowKey(row: UsageRecordRow): string {
-  return `${row.source}:${row.threadId ?? row.runId ?? row.lastActivityAt}:${row.member?.userId ?? "mine"}`;
+  return `${row.threadId ?? row.lastActivityAt}:${row.member?.userId ?? "mine"}`;
 }
 
 export function UsageRangeSelect({
@@ -288,94 +160,25 @@ export function UsageRangeSelect({
   );
 }
 
-function UsageBreakdownBar({ row, max }: { row: UsageRecordRow; max: number }) {
-  const segments = row.breakdown.filter((segment) => {
-    return segment.credits > 0;
-  });
-  if (row.credits <= 0 || segments.length === 0) {
-    return null;
-  }
-
-  // Outer track is the full row width; the filled portion is scaled to this
-  // chat's size relative to the largest chat, so the bar reads as magnitude.
-  // The kind colors live inside the fill, so one bar carries both size and mix.
-  return (
-    <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-foreground/8">
-      <div
-        className="flex h-full overflow-hidden rounded-full"
-        style={{ width: `${(row.credits / max) * 100}%` }}
-      >
-        {segments.map((segment) => {
-          const meta = KIND_META[segment.kind];
-          const width = `${(segment.credits / row.credits) * 100}%`;
-          return (
-            <Tooltip key={segment.kind}>
-              <TooltipTrigger asChild>
-                <div
-                  className={`${meta.color} h-full cursor-default first:rounded-l-full last:rounded-r-full transition-shadow hover:z-10 hover:ring-2 hover:ring-foreground/30`}
-                  style={{ width }}
-                  data-testid={`usage-kind-segment-${segment.kind}`}
-                />
-              </TooltipTrigger>
-              <TooltipContent
-                side="top"
-                sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="max-w-64 border shadow-md"
-              >
-                <div className="font-medium text-foreground">
-                  {kindLabel(segment.kind)} -{" "}
-                  {formatLocalizedNumber(segment.credits)}
-                </div>
-                <div className="mt-1 flex flex-col gap-0.5">
-                  {segment.providers.flatMap((provider) => {
-                    const usageKinds =
-                      provider.usageKinds.length > 0
-                        ? provider.usageKinds
-                        : [{ kind: segment.kind, credits: provider.credits }];
-                    return usageKinds.map((usageKind) => {
-                      return (
-                        <div
-                          key={`${provider.provider}:${usageKind.kind}`}
-                          className="flex min-w-0 justify-between gap-3 text-xs text-muted-foreground"
-                        >
-                          <span className="truncate">
-                            {getCreditUsageDisplayName(
-                              usageKind.kind,
-                              provider.provider,
-                            )}
-                          </span>
-                          <span className="shrink-0 tabular-nums">
-                            {formatLocalizedNumber(usageKind.credits)}
-                          </span>
-                        </div>
-                      );
-                    });
-                  })}
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function UsageRow({ row, max }: { row: UsageRecordRow; max: number }) {
   const { t } = useTranslation();
   const closeSettings = useSet(closeSettingsModal$);
-  const Icon = SOURCE_ICONS[row.source];
-  const label = sourceLabel(row.source);
-  const title =
-    row.title && row.title.length > 0
+  const label = row.threadId
+    ? t(($) => {
+        return $.usage.records.thread;
+      })
+    : t(($) => {
+        return $.usage.records.unavailableThread;
+      });
+  const title = row.threadId
+    ? row.title && row.title.length > 0
       ? row.title
       : t(($) => {
           return $.usage.records.untitled;
-        });
+        })
+    : t(($) => {
+        return $.usage.records.unavailableThread;
+      });
 
   const closeOnNavigate = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey) {
@@ -385,19 +188,14 @@ function UsageRow({ row, max }: { row: UsageRecordRow; max: number }) {
   };
   const credits = formatCredits(row.credits);
 
-  // Only the title is a navigation target. Thread rows open the chat, run rows
-  // open the activity; rows with neither stay plain text.
+  // Only a recoverable thread title is a navigation target. Historical usage
+  // without a thread stays visible but cannot fabricate a destination.
   const titleLink = row.threadId
     ? {
         pathname: "/chats/:threadId" as const,
         options: { pathParams: { threadId: row.threadId } },
       }
-    : row.runId
-      ? {
-          pathname: "/activities/:activityRunId" as const,
-          options: { pathParams: { activityRunId: row.runId } },
-        }
-      : null;
+    : null;
 
   const titleNode = titleLink ? (
     // Wrapper reserves the flex space so date/credits stay right-aligned, while
@@ -429,7 +227,7 @@ function UsageRow({ row, max }: { row: UsageRecordRow; max: number }) {
           aria-label={label}
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground"
         >
-          <Icon size={20} />
+          <MessageCircle size={20} />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-h-8 min-w-0 items-center gap-3">
@@ -446,7 +244,11 @@ function UsageRow({ row, max }: { row: UsageRecordRow; max: number }) {
               {row.member.email}
             </span>
           ) : null}
-          <UsageBreakdownBar row={row} max={max} />
+          <UsageBreakdownBar
+            credits={row.credits}
+            breakdown={row.breakdown}
+            max={max}
+          />
         </span>
       </div>
     </div>
@@ -529,10 +331,10 @@ function UsageRecordSummary({
   totalCredits: number;
 }) {
   const { t } = useTranslation();
-  const kinds = Object.keys(KIND_META) as UsageRecordKind[];
-  const chats = t(
+  const kinds = Object.keys(USAGE_KIND_META) as UsageRecordKind[];
+  const threads = t(
     ($) => {
-      return $.usage.units.chat;
+      return $.usage.units.thread;
     },
     {
       count,
@@ -552,7 +354,7 @@ function UsageRecordSummary({
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-3.5">
       <p className="text-sm text-muted-foreground">
         <span className="font-medium text-foreground tabular-nums">
-          {chats}
+          {threads}
         </span>{" "}
         · {credits}
       </p>
@@ -564,9 +366,9 @@ function UsageRecordSummary({
               className="flex items-center gap-1.5 text-xs text-muted-foreground"
             >
               <span
-                className={`${KIND_META[kind].color} h-2 w-2 shrink-0 rounded-full`}
+                className={`${USAGE_KIND_META[kind].color} h-2 w-2 shrink-0 rounded-full`}
               />
-              {kindLabel(kind)}
+              {usageKindLabel(kind)}
             </span>
           );
         })}

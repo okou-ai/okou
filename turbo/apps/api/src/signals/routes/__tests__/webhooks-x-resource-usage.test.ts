@@ -103,7 +103,7 @@ function observation(
     idempotencyKey: randomUUID(),
     kind: "connector",
     provider: "x",
-    category: "tweet.read",
+    category: "posts.read",
     quantity: ids.length,
     observedAt: nowDate().toISOString(),
     resources: ids.map((id) => {
@@ -129,7 +129,7 @@ async function pricing(): Promise<UsagePricingFixture> {
   // canonical provider to private lookup rows; it never changes shared X prices.
   const fixture = await createUsagePricingFixture({
     configured: [
-      ...["tweet.read", "user.read"].map((category) => {
+      ...["posts.read", "user.read"].map((category) => {
         return {
           kind: "connector",
           provider: "x",
@@ -371,7 +371,7 @@ describe("X daily resource usage webhook", () => {
       idempotencyKey: randomUUID(),
       kind: "connector",
       provider: "x",
-      category: "tweet.read",
+      category: "posts.read",
       quantity: 5,
     };
     await accept(submit(first, [original]), [200]);
@@ -649,7 +649,7 @@ describe("X daily resource usage webhook", () => {
       idempotencyKey: randomUUID(),
       kind: "connector",
       provider: "x",
-      category: "tweet.read",
+      category: "posts.read",
       quantity: 1,
     };
     await accept(submit(fixture, [legacy, observation([resourceId()])]), [400]);
@@ -667,7 +667,7 @@ describe("X daily resource usage webhook", () => {
         idempotencyKey: randomUUID(),
         kind: "connector",
         provider: "x",
-        category: "tweet.read",
+        category: "posts.read",
         quantity: 3,
       },
       {

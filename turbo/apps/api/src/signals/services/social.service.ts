@@ -16,7 +16,6 @@ import { z } from "zod";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
 import type { AuthContext } from "../../types/auth";
 import { requestSignal$ } from "../context/hono";
 import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
@@ -32,7 +31,6 @@ const USAGE_KIND = "social";
 const SOCIALKIT_API_BASE = "https://api.socialkit.dev";
 const SOCIALKIT_TIMEOUT_MS = 240_000;
 const MAX_SOCIALKIT_RESPONSE_BYTES = 4 * 1024 * 1024;
-const L = logger("ManagedSocialKit");
 
 /** Internal acquisition verification is paid by the platform, not the claimant. */
 export async function readGetStartedRewardPost(
@@ -295,15 +293,6 @@ async function fetchSocialKit(
           request.input.requireViews === true,
       },
     );
-    // Structured provider codes can override an HTTP 400's input classification.
-    if (normalized.error.reason === "invalid_input") {
-      L.warn("Managed SocialKit request failed", {
-        tool: tool.name,
-        path: tool.path,
-        failureKind: "http_error",
-        ...normalized.evidence,
-      });
-    }
     return errorResult({
       status: normalized.status,
       body: { error: normalized.error },

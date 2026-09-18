@@ -21,9 +21,17 @@ for by Okou and accounted for separately from every user ledger.
 It starts no Run, sandbox or workflow automation, writes no Chat event, email or
 outbox row, sends nothing anywhere and touches no schedule. It reads no user
 model-provider account, checks no credit balance, reserves no allowance and
-writes no `usage_event`. There is no cron, recovery poller or background
-enqueue: a retry is another explicitly authorized invocation. **No result
-produced here is delivered, and none is a production candidate.**
+writes no `usage_event`. Nothing generates, collects, retries or recovers in the
+background: a retry is another explicitly authorized invocation. The single
+exception is deletion — a bounded retention batch on an existing maintenance
+tick removes expired content, and it only ever deletes. **No result produced
+here is delivered, and none is a production candidate.**
+
+Those absences are read from this slice's own source: nothing in it constructs a
+schedule, a queue entry or a second invocation path. A measured footprint is a
+narrower claim and is asserted separately — the platform-paid test compares the
+owner's whole usage, allowance, Run, email, thread and credit footprint across a
+real invocation and requires it unchanged.
 
 ## The entrypoint
 
@@ -59,8 +67,18 @@ after its guarded update matched. That placement is the contract:
 - Collection facts and the right to call the provider become durable together.
   Throwing from the handoff rolls the finalization back and leaves the
   occurrence reclaimable.
-- The collect-only entrypoint passes no handoff and keeps exactly its previous
-  behavior.
+- Cancellation crosses that boundary. The finalizing transaction admits the
+  completion after its own lock waits, and again after `onCollected` returns and
+  its own waits are behind it, so a caller that went away commits neither the
+  collected facts nor the reservation. The same admission refuses a lapsed local
+  authority before either write is issued, which leaves the occurrence
+  reclaimable instead of completed-without-a-result. Once the transaction
+  commits, the collection contract's
+  [acceptance boundary](morning-brief-collection.md) owns what can no longer be
+  retracted.
+- The collect-only entrypoint passes no handoff, so nothing is reserved for it
+  and its collected facts are the only thing the transaction commits. The final
+  admission itself is not optional: it guards that entrypoint too.
 
 A same-anchor occurrence that already completed **without** a generation is
 reported as `collection-completed-without-generation`. It is not recollected,
@@ -132,20 +150,52 @@ against that row field by field:
   current binding is a different authority and is refused rather than served the
   previous binding's work. Settling a lapsed reservation is exempt: it records
   an operational fact and releases nothing.
+- **At the moment of release, after every wait.** The read-back's last step is a
+  local fence under the owner lock: the slot is read again, its attempt must
+  still be the one that was validated, its retention deadline must still be in
+  the future, and the local binding must still match. It runs after the receipt
+  lookup, so a deletion, a disable, a rebinding or the deadline landing during
+  that final read cannot hand back the copy the request started with. It writes
+  nothing and never recreates an owner row.
 
 There is no second adoption algorithm and no always-allow path: this is the
 collection contract's own reader with the Slack credential withheld. It
 serializes local acceptance only — a request already in flight to the provider
 cannot be recalled, and this never claims otherwise.
 
+### The commit-admission fence
+
+Each of those checks describes an instant that has already passed by the time
+anything is written: the canonical resolution waits on Clerk, and the writes
+that follow it wait for the owner lock and the slot row. A Settings disable, an
+Agent transfer, a Slack rebinding or the caller going away can all land inside
+exactly that wait, which is why the decision is re-taken where the mutation is
+really admitted — after every wait, before any statement is issued, and on every
+persistence attempt:
+
+- **Cancellation.** A caller that has gone away commits nothing to the owner
+  slot. The whole transaction unwinds, so the slot keeps its original attempt,
+  reservation and retention, and a later explicit invocation settles it exactly
+  as any other unrecorded outcome. The anonymous receipt is already durable by
+  then and is kept.
+- **The local half of the authority.** The installation resolution — switch,
+  canonical installed-and-enabled brief, timezone, installation Agent, native
+  Slack binding — is re-resolved from the same readers admission uses, under the
+  locks those mutators really take, and compared against the occurrence with the
+  shared binding comparator. A lapse turns an acceptance into `result_discarded`.
+- **The remote half is not re-resolved.** A transaction is never held open
+  across a Clerk round trip. The membership generation proved before persistence
+  is carried in the fence the write is guarded by; a membership that changes
+  afterwards is caught by the next invocation's own resolution.
+
 ### The admission clock
 
-Every guarded write waits twice, once for the owner lock and once for the slot
-row. The clock is therefore sampled **after** those waits and on every
-persistence attempt, so the deadline comparison describes the instant the
-mutation is actually admitted rather than the instant the response arrived. A
-response observed before expiry that waits behind a lock until after it is
-refused, not accepted. Equality with the deadline is expired at both boundaries.
+The clock is sampled at that same point — after the owner lock and the slot row
+are really held, and on every persistence attempt — so the deadline comparison
+describes the instant the mutation is actually admitted rather than the instant
+the response arrived. A response observed before expiry that waits behind a lock
+until after it is refused, not accepted. Equality with the deadline is expired at
+every boundary.
 
 ### Finite phase ownership
 
@@ -158,7 +208,8 @@ refused, not accepted. Equality with the deadline is expired at both boundaries.
 | Streamed success response | 256 KiB                                             |
 | Error response            | 64 KiB                                              |
 | Accepted rendered result  | 32 KiB                                              |
-| Preview result retention  | 24 h                                                |
+| Preview result retention  | 24 h, then unreadable; purged on a maintenance tick |
+| Retention purge batch     | 200 rows per statement, 10 statements, 5 s per tick |
 
 The collection lease is **not** reused as generation ownership.
 
@@ -334,25 +385,65 @@ rather than closed by inference.
 | `unavailable`        | A response was read but carried no usable cost. The generation id is kept.       |
 | `invocation_unknown` | No usage payload was read at all, so whether anything was charged is unknown.    |
 
-A string, a negative number, `NaN`, a missing field and a missing `usage` object
-are all `unavailable`. Token counts never imply a known cost and are never
-converted into one.
+A string, a negative number, a missing field and a missing `usage` object are all
+`unavailable`. Token counts never imply a known cost and are never converted into
+one.
+
+### The reported number, not the float it parses into
+
+The domain below is judged on the digits the provider actually sent. That
+distinction is the whole contract, because `JSON.parse` answers with a double and
+a double silently rewrites what it cannot hold:
+
+| Response bytes                        | As a double     | Recorded       |
+| ------------------------------------- | --------------- | -------------- |
+| `"cost": 1e-400`                      | `0`             | `unavailable`  |
+| `"cost": -1e-400`                     | `0`             | `unavailable`  |
+| `"cost": 0.10000000000000001`         | `0.1`           | `unavailable`  |
+| `"prompt_tokens": 2147483647.0000001` | `2147483647`    | `unavailable`  |
+| `"cost": 999999999999.999999999999`   | `1000000000000` | stored exactly |
+
+Judging the parsed number would publish a durable **reported zero** for a real
+nonzero charge, an amount nobody reported, and a whole count for a fractional
+one. So both usage entrypoints parse through `safeExactJsonParse`, which is
+`safeJsonParse` with every number kept as the text it was written as. Structure,
+key identity, nesting and every non-numeric value are unchanged, a number stays
+distinguishable from a numeric string — a quoted `"0.5"` is still refused — and
+no other caller of `safeJsonParse` is affected.
+
+The digits come from the engine's own source-text reviver, available from V8
+12.4 and therefore on every Node version this workspace supports. `JSON.parse`
+stays the one thing that parses and validates the document, so text it would
+have rejected — `01`, `1.`, `+1`, a truncated body — is still rejected, and
+number-shaped text inside provider prose is never reached into: it is string
+content, and the reviver only ever sees the number values themselves.
+
+Only the selected `usage` fields and `data.total_cost` are read from that parse;
+nothing scans the body for number-shaped text, which would match a value in
+someone else's field. Bounds are decided by counting digits and shifting a
+decimal point, so `1e999999999` is refused by arithmetic rather than by sizing a
+string from an attacker-chosen exponent, and the response byte ceilings still
+bound the text itself. A body that is not a JSON document — including a bare
+number — remains `response_unreadable`.
 
 ### The durable domain
 
 Validation and storage share one domain, because a value the column cannot hold
 is not recorded more widely — it is recorded wrongly, or not at all.
 
-- **Token counts** are `integer`. A count above `2147483647` is `unavailable`
-  for that field alone. It previously passed validation and then failed the
-  whole INSERT with `integer out of range`, discarding the observed cost, the
-  sibling counts and the invocation record with it.
+- **Token counts** are `integer`. A count above `2147483647`, and any count with
+  a digit after the decimal point, is `unavailable` for that field alone. An
+  over-range count previously passed validation and then failed the whole INSERT
+  with `integer out of range`, discarding the observed cost, the sibling counts
+  and the invocation record with it. Integral exponent forms are ordinary
+  counts: `2.147483647e9` is the ceiling, exactly.
 - **The amount** is `numeric(24, 12)`: at most twelve integral digits and
   exactly twelve fractional digits. An amount needing finer digits — `1e-13` —
   or more integral digits — `1e12` — is `unavailable`, never rounded. Rounding
   into the scale would publish a durable **reported zero** for a real nonzero
   charge, and an over-range amount would fail the INSERT with
-  `numeric field overflow`.
+  `numeric field overflow`. An exactly representable amount is accepted however
+  it was written, including one no double could have carried.
 - An accepted amount is normalised to the exact decimal the column returns, so
   the initial response, the stored row and every later reread carry one
   identical value rather than two spellings of it.
@@ -385,10 +476,13 @@ The receipt's own bounded attempts finish **before** the caller's cancellation
 check and before the live-authority resolution that decides the owner write.
 Both of those can end the request — cancellation propagates, and resolving the
 authority can itself fail — and the charge was incurred at the provider either
-way. Those attempts are joined to this request and finite: nothing is detached
-to complete later, no queue is created, and nothing about them accepts or
-releases owner content. A cancelled request still cancels; it simply no longer
-discards an observation it already made.
+way. There are **three** such attempts, and an owner path that proceeds while
+the receipt still owes gives it up to **three more** before its own write; six
+attempts is the ceiling, not the usual number, and a receipt already durable is
+not attempted again. Those attempts are joined to this request and finite:
+nothing is detached to complete later, no queue is created, and nothing about
+them accepts or releases owner content. A cancelled request still cancels; it
+simply no longer discards an observation it already made.
 
 If the owner write then fails, the committed receipt is unaffected; if the
 receipt is still outstanding, the owner write does not wait on it.
@@ -400,6 +494,13 @@ it is not a guarantee of durability during a permanent database failure. When
 every owner attempt fails, the slot stays `reserved`, the response reports that
 honestly with `persistence_failed`, and a later invocation resolves it to
 `invocation_outcome_unknown`. No second request is ever made in either case.
+
+A cancelled caller reaches the same place by a different route. The retry
+reserve exists for real faults, so cancellation stops it immediately rather than
+spending it, and the slot is left exactly as its reservation left it. What is
+promised is that cancellation before the commit admission leaves **no accepted
+result**; what is not promised is retracting bytes already committed or a
+request already in flight to the provider.
 
 ## Stored values are validated, not defaulted
 
@@ -424,11 +525,34 @@ and the collection's own explicit revocation therefore cascade to generation
 rows as well, with no detached result and no separate cleanup path to forget.
 
 Preview results are derived from source content, so they get a real bounded
-lifetime instead of a claim that they are ephemeral: 24 hours, enforced by an
-owner-scoped sweep the preview entrypoint itself consumes on every invocation.
-No scheduler or queue is introduced, and no other owner's rows are touched.
-Expired results are deleted; the anonymous platform receipt is not, because
-retention does not erase an incurred cost.
+lifetime instead of a claim that they are ephemeral: **24 hours**. Two distinct
+things enforce it, and conflating them would overstate the guarantee.
+
+**Accessibility ends at the deadline.** The release fence refuses a result whose
+`expires_at` has passed, equality included, so an expired result is unreadable
+from the instant it expires — whether or not its row is still there.
+
+**Physical removal is bounded by a maintenance interval.** An owner-scoped sweep
+still runs on every preview invocation, which keeps an owner who comes back from
+ever holding stale rows, but it bounds nothing on its own: an owner who invokes
+once and never again would keep title and Markdown forever. The real bound is
+`executeMorningBriefGenerationRetentionWork$`, a batch on the existing
+`/api/cron/execute-workflow-automations` tick — the same maintenance entrypoint
+the Morning Brief enrollment worker already runs on. It settles independently of
+the automations beside it, and it is deliberately finite: up to 200 rows per
+statement, 10 statements and 5 seconds per tick, selected in deadline order with
+`SKIP LOCKED` so it never queues behind a live attempt or takes a table-wide
+lock. That tick runs every minute, so purge latency after a deadline is
+**minutes under normal load, and longer only while a backlog drains** — never a
+reason a result stays readable.
+
+No scheduler, queue or recovery poller is introduced, and no other owner's rows
+are touched. Expired results are deleted; the anonymous platform receipt is not,
+because retention does not erase an incurred cost. What survives a purge instead
+is the completed collection occurrence: it holds no content, and it is what
+actually refuses a second invocation, so a purged slot reads as a completed
+collection that holds no generation rather than as an occurrence free to call the
+provider again.
 
 ## Rollout
 
@@ -437,6 +561,44 @@ tables and changes nothing existing, so it deploys before the code and rolls
 back with it: an older API simply never reads or writes them. No backfill
 exists or is needed. The feature stays default-off and the route stays
 unavailable in production.
+
+Migration `1155_morning_brief_generation_expiry_index` adds one index,
+`idx_morning_brief_generations_expiry` on `expires_at`, which the maintenance
+batch's ordered scan over already expired rows uses instead of a sequential
+scan; the existing owner-prefixed index cannot serve a scan that is not scoped to
+one owner. It is additive in both mixed-version directions: an older API never
+consults it and is unaffected if it ships first, and a newer API that reaches the
+database before it exists still runs the same bounded, `LIMIT`-ed statement —
+only its plan degrades. There is no backfill, no rewrite and no broad table lock:
+the table is new and empty in production, so the index build is immediate under
+the migration runner's `1s` lock timeout.
+
+Reading the reported digits instead of the parsed double changes no column, no
+stored value and no migration. It narrows what a _new_ observation may record:
+an amount or count outside the durable domain is now `unavailable` where it
+previously became a rounded amount or a truncated count, and an exactly
+representable amount is now accepted even when no double could carry it.
+Already-committed receipts are immutable and are not revisited, re-derived or
+corrected — a row written before this change still says what it said.
+
+### Evidence limits
+
+What the regressions actually establish, and what they do not:
+
+- The exactness cases drive the registered preview route, real PostgreSQL and
+  literal response bytes, on both the inline `usage.cost` and the delayed
+  `data.total_cost` path. They are not a real provider call: they establish this
+  system's behavior for given bytes, not that OpenRouter emits those bytes.
+- Overlap is proved by suspending one invocation at a real boundary — the
+  provider request, and the receipt INSERT inside PostgreSQL — and completing
+  further requests for the same owner while it is held. That is concurrency
+  within one process against one database, not a multi-process claim.
+- The reconciliation-deadline case waits out the real five-second deadline
+  rather than shortening it, so what it observes is the production wait.
+- `cost_unit` remains the cross-page inference recorded above, not a field-level
+  statement from the generation reference.
+- Finite exhaustion of the receipt's attempts stays `unresolved`. It is not made
+  durable by this change, and a permanent database failure still loses it.
 
 ## Scale
 
@@ -478,17 +640,37 @@ it does not add a second request.
 **Durable state.** `morning-brief-generation-store.service.ts` exposes
 `reserveMorningBriefGeneration`, `recordMorningBriefGenerationSkip`,
 `readMorningBriefGeneration(db, key, purpose)`,
-`acceptMorningBriefGenerationResult`, `recordMorningBriefGenerationOutcome`,
+`holdMorningBriefGenerationSlot(tx, fence)`,
+`acceptMorningBriefGenerationResult(tx, fence, held, result)`,
+`recordMorningBriefGenerationOutcome(tx, fence, held, outcome)`,
 `resolveStaleMorningBriefGeneration`, `recordPlatformGenerationReceipt`,
-`readPlatformGenerationReceipt` and
-`sweepExpiredMorningBriefGenerations`. The guarded writers sample their own
-admission clock; callers pass no instant.
+`readPlatformGenerationReceipt`, `sweepExpiredMorningBriefGenerations` and
+`purgeExpiredMorningBriefGenerations(db, at, limit)`.
+
+The two guarded writers no longer take the slot themselves: a caller takes it
+with `holdMorningBriefGenerationSlot` and passes the returned hold — whose `at`
+is the admission clock, still sampled after every real wait — to the write. That is the point where a caller must
+honour cancellation and re-prove the owner's live local authority, and only the
+caller can do either, so the hold is a value rather than an implicit step.
+Callers still pass no instant of their own.
 
 **Live authority.** `currentMorningBriefCollectionAuthority$` resolves the
 canonical Morning Brief authority without the Slack credential, and
 `morningBriefCollectionBindingMatches(row, admission)` compares it against an
 occurrence. Any slice acting for an owner after a wait uses these rather than a
 second adoption algorithm.
+
+`morningBriefLocalAuthorityStillCurrent(db, occurrence)` is the transaction-safe
+half of the same resolution: it takes any `Pick<ReadonlyDb, "select">` — a `Tx`
+included — re-reads the switch, canonical installation and schedule, timezone,
+installation Agent and native Slack binding, and compares them against the
+occurrence with that same comparator, returning `current`, `not-executed` with a
+skip reason, or `binding-changed`. It makes no network call and carries the
+membership generation over from the occurrence, so it is the one to use inside a
+transaction; `currentMorningBriefCollectionAuthority$` remains the one to use
+outside it. `loadSlackUserBinding(db, { orgId, userId })` in
+`slack-data.service.ts` is the credential-free read both share, so a caller that
+only needs to know which Slack identity is bound never decrypts a bot token.
 
 **Delivery read.** Delivery reads one accepted result by owner, occurrence slot
 and purpose. The stable parts of that reference are the slot key

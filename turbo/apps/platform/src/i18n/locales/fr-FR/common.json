@@ -685,6 +685,7 @@
       "renameImportedTemplate": "Renommer le modèle",
       "searchConnector": "Rechercher des modèles",
       "searchConnectors": "Rechercher des modèles",
+      "selected": "Sélectionné",
       "selectStyle": "Sélectionner le style {{style}}",
       "selectTemplate": "Sélectionner le modèle {{title}}",
       "selectVideo": "Sélectionner le modèle vidéo {{title}}",
@@ -1924,6 +1925,7 @@
         "heading": "Choisir un avatar",
         "label": "Avatar",
         "none": "Aucun avatar",
+        "noneDetail": "Style seul",
         "previewLook": "Aperçu de l’apparence {{name}}"
       },
       "catalog": {
@@ -1936,17 +1938,30 @@
         "cancel": "Annuler"
       },
       "picker": {
-        "autoVoiceDescription": "Trouvez une voix adaptée à votre contenu.",
+        "allPresenters": "Tous les présentateurs",
+        "allPresentersCount": "Tous les présentateurs ({{total}})",
+        "allVoices": "Toutes les voix",
+        "allVoicesCount": "Toutes les voix ({{total}})",
+        "autoVoiceDescription": "Une voix adaptée à votre style",
         "avatarVoice": "Voix de l’avatar",
         "back": "Retour",
-        "chooseStyle": "Choisir un style",
         "closeOptions": "Fermer les options",
+        "done": "Terminé",
         "moreOptions": "Plus d’options",
         "noMatches": "Aucun résultat.",
+        "optionsNote": "Vous pouvez les modifier à tout moment depuis la puce dans le chat.",
+        "pickStyle": "Choisir un style",
+        "reset": "Réinitialiser",
+        "searchPresenters": "Rechercher des présentateurs",
         "searchStyles": "Rechercher des styles",
-        "selectionSummary": "Voix: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Rechercher des voix",
+        "selectedStyle": "Sélectionné : {{name}}",
         "settings": "Paramètres de la vidéo d’intro",
-        "useSelection": "Utiliser la sélection"
+        "styleCount_one": "{{count}} style",
+        "styleCount_many": "{{count}} styles",
+        "styleCount_other": "{{count}} styles",
+        "styleCountOf": "{{shown}} sur {{total}}",
+        "useStyle": "Utiliser {{name}}"
       },
       "style": {
         "auto": "Laisser Okou choisir",
@@ -1965,10 +1980,9 @@
       "voice": {
         "auto": "Laisser Okou choisir",
         "defaultDescription": "Utiliser la voix par défaut de l’avatar choisi",
-        "heading": "Choisir une voix",
         "label": "Voix",
         "none": "Sans voix off",
-        "noneDescription": "Ne pas ajouter de narration ; conserver le son d’origine sauf demande de mise en sourdine."
+        "noneShortDescription": "Conserver le son d’origine"
       }
     },
     "mail": {
@@ -2160,7 +2174,10 @@
       "number": "numéro"
     },
     "sidebar": {
+      "allArchived": "Toutes vos discussions sont archivées",
+      "allCaughtUp": "Tout est à jour",
       "allChats": "Toutes les discussions",
+      "archive": "Archiver la discussion",
       "chatsWith": "Discussions avec {{agentName}}",
       "chatThreads": "Fils de discussion",
       "delete": "Supprimer la discussion",
@@ -2179,7 +2196,10 @@
       "pinned": "Épinglé",
       "rename": "Renommer la discussion",
       "renameDescription": "Entrez un nouveau nom pour ce fil de discussion.",
+      "showArchived": "Afficher les archives",
+      "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
+      "unarchive": "Désarchiver la discussion",
       "unpin": "Détacher la discussion",
       "unread": "Non lu",
       "unreadOnly": "Seulement non lu"
@@ -2891,6 +2911,7 @@
       "ariaLabel": "Fil de discussion",
       "changeIcon": "Changer l'icône",
       "emoji": {
+        "archive": "Archiver",
         "done": "Terminé",
         "idea": "Idée",
         "no": "Non",
@@ -3616,6 +3637,7 @@
           "sourceUnavailable": "Source indisponible",
           "stale": "Périmé",
           "unchanged": "Inchangé",
+          "unsupportedProtocol": "Protocole non pris en charge",
           "unsupportedSchema": "Schéma non pris en charge"
         }
       },
@@ -5536,7 +5558,7 @@
         "usage": {
           "balanceDescription": "Ce qu'il reste à dépenser à votre équipe.",
           "balanceTitle": "Solde de crédits",
-          "usageDescription": "Votre utilisation des crédits dans les conversations, automatisations et canaux.",
+          "usageDescription": "Votre utilisation des crédits, regroupée par fil de discussion.",
           "usageTitle": "Utilisation des crédits"
         }
       },
@@ -5700,9 +5722,12 @@
         "codexDescription": "Connectez-vous avec l'appareil Codex pour les itinéraires de modèles soutenus par Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Utilisé uniquement dans vos sessions, avec vos propres identifiants.",
+        "disconnectAccount": "Déconnecter le compte",
+        "disconnectDescription": "Cette action supprime le compte d’Okou. Elle n’annule pas votre abonnement auprès du fournisseur.",
+        "disconnecting": "Déconnexion…",
+        "disconnectTitle": "Déconnecter {{account}} ?",
         "noAccounts": "Aucun compte connecté.",
         "reconnectAccount": "Reconnecter",
-        "removeAccount": "Supprimer",
         "sectionTitle": "Personnel",
         "status": {
           "connected": "Connecté",
@@ -5831,7 +5856,7 @@
         "codexTitle": "La session ChatGPT nécessite une reconnexion"
       },
       "toasts": {
-        "accountRemoved": "Compte supprimé",
+        "accountDisconnected": "Compte déconnecté",
         "accountSwitched": "Compte actif changé",
         "disconnected": "{{provider}} déconnecté",
         "policiesUpdated": "Paramètres du fournisseur de modèle mis à jour",
@@ -6419,6 +6444,7 @@
     "pageCount_one": "{{count}} page",
     "pageCount_many": "{{count}} pages",
     "pageCount_other": "{{count}} pages",
+    "renameFailed": "Impossible de renommer le modèle.",
     "retry": "Réessayer",
     "sharedBy": "Partagé par {{owner}}",
     "visibility": {
@@ -6460,38 +6486,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Aucune utilisation pendant cette période de facturation",
-        "description": "Les crédits dépensés dans les chats, automatisations et canaux s'affichent ici.",
+        "description": "Les crédits dépensés dans les fils de discussion s'affichent ici.",
         "noBillingPeriodDescription": "L'utilisation de l'équipe s'affiche dès qu'une période de facturation commence.",
         "noBillingPeriodTitle": "Aucune période de facturation active",
         "rangeTitle": "Aucune utilisation pour cette plage horaire",
-        "teamDescription": "Les crédits dépensés par votre équipe dans les chats, automatisations et canaux s'affichent ici."
+        "teamDescription": "Les crédits dépensés par votre équipe dans les fils de discussion s'affichent ici."
       },
       "loadError": "Impossible de charger votre utilisation.",
       "loadMore": "Charger plus",
       "myUsage": "Mon utilisation",
       "teamLoadError": "Impossible de charger l'utilisation de l'équipe.",
       "teamUsage": "Utilisation de l'équipe",
+      "thread": "Fil de discussion",
+      "unavailableThread": "Fil de discussion indisponible",
       "untitled": "(sans titre)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automatisation",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Autre",
-      "phone": "Téléphone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_many": "{{value}} chats",
-      "chat_other": "{{value}} chats",
       "credit_one": "{{value}} crédit",
       "credit_many": "{{value}} crédits",
-      "credit_other": "{{value}} crédits"
+      "credit_other": "{{value}} crédits",
+      "thread_one": "{{value}} fil",
+      "thread_many": "{{value}} fils",
+      "thread_other": "{{value}} fils"
     }
   },
   "workflows": {

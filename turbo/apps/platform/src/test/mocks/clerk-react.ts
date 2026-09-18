@@ -73,6 +73,7 @@ interface ClerkProviderProps {
 export function ClerkProvider({
   Clerk,
   afterSignOutUrl,
+  allowedRedirectOrigins,
   children,
   localization,
   routerPush,
@@ -87,6 +88,9 @@ export function ClerkProvider({
     createElement("span", {
       "data-clerk-sign-in-start-action-link": start.actionLink,
       "data-clerk-after-sign-out-url": afterSignOutUrl,
+      "data-clerk-allowed-redirect-origins": JSON.stringify(
+        allowedRedirectOrigins?.map(String),
+      ),
       "data-clerk-provider-router-push": typeof routerPush,
       "data-clerk-provider-router-replace": typeof routerReplace,
       "data-clerk-provider-sign-in-url": signInUrl,

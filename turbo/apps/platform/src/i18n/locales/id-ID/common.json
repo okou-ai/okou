@@ -665,6 +665,7 @@
       "renameImportedTemplate": "Ganti nama templat",
       "searchConnector": "Cari templat",
       "searchConnectors": "Cari templat",
+      "selected": "Dipilih",
       "selectStyle": "Pilih gaya {{style}}",
       "selectTemplate": "Pilih template {{title}}",
       "selectVideo": "Pilih template video {{title}}",
@@ -1878,6 +1879,7 @@
         "heading": "Pilih avatar",
         "label": "Avatar",
         "none": "Tanpa avatar",
+        "noneDetail": "Hanya gaya",
         "previewLook": "Pratinjau tampilan {{name}}"
       },
       "catalog": {
@@ -1890,17 +1892,28 @@
         "cancel": "Batal"
       },
       "picker": {
-        "autoVoiceDescription": "Temukan suara yang cocok dengan konten Anda.",
+        "allPresenters": "Semua presenter",
+        "allPresentersCount": "Semua presenter ({{total}})",
+        "allVoices": "Semua suara",
+        "allVoicesCount": "Semua suara ({{total}})",
+        "autoVoiceDescription": "Suara yang cocok dengan gaya Anda",
         "avatarVoice": "Suara avatar",
         "back": "Kembali",
-        "chooseStyle": "Pilih gaya",
         "closeOptions": "Tutup opsi",
+        "done": "Selesai",
         "moreOptions": "Opsi lainnya",
         "noMatches": "Tidak ada hasil.",
+        "optionsNote": "Anda bisa mengubahnya kapan saja lewat chip di chat.",
+        "pickStyle": "Pilih gaya",
+        "reset": "Atur ulang",
+        "searchPresenters": "Cari presenter",
         "searchStyles": "Cari gaya",
-        "selectionSummary": "Suara: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Cari suara",
+        "selectedStyle": "Dipilih: {{name}}",
         "settings": "Pengaturan video intro",
-        "useSelection": "Gunakan pilihan"
+        "styleCount_other": "{{count}} gaya",
+        "styleCountOf": "{{shown}} dari {{total}}",
+        "useStyle": "Gunakan {{name}}"
       },
       "style": {
         "auto": "Biarkan Okou memilih",
@@ -1919,10 +1932,9 @@
       "voice": {
         "auto": "Biarkan Okou memilih",
         "defaultDescription": "Gunakan suara default avatar yang dipilih",
-        "heading": "Pilih suara",
         "label": "Suara",
         "none": "Tanpa narasi",
-        "noneDescription": "Jangan tambahkan narasi; pertahankan audio sumber kecuali Anda meminta untuk membisukannya."
+        "noneShortDescription": "Pertahankan audio asli"
       }
     },
     "mail": {
@@ -2104,7 +2116,10 @@
       "number": "nomor"
     },
     "sidebar": {
+      "allArchived": "Semua chat Anda telah diarsipkan",
+      "allCaughtUp": "Semua sudah beres",
       "allChats": "Semua chat",
+      "archive": "Arsipkan chat",
       "chatsWith": "Chat dengan {{agentName}}",
       "chatThreads": "Thread chat",
       "delete": "Hapus chat",
@@ -2123,7 +2138,10 @@
       "pinned": "Disematkan",
       "rename": "Ganti nama chat",
       "renameDescription": "Masukkan nama baru untuk thread chat ini.",
+      "showArchived": "Tampilkan yang diarsipkan",
+      "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
+      "unarchive": "Batalkan pengarsipan",
       "unpin": "Lepas sematan chat",
       "unread": "Belum dibaca",
       "unreadOnly": "Hanya yang belum dibaca"
@@ -2835,6 +2853,7 @@
       "ariaLabel": "Thread chat",
       "changeIcon": "Ubah ikon",
       "emoji": {
+        "archive": "Arsipkan",
         "done": "Selesai",
         "idea": "Ide",
         "no": "Tidak",
@@ -3548,6 +3567,7 @@
           "sourceUnavailable": "Sumber tidak tersedia",
           "stale": "Usang",
           "unchanged": "Tidak berubah",
+          "unsupportedProtocol": "Protokol tidak didukung",
           "unsupportedSchema": "Skema tidak didukung"
         }
       },
@@ -5464,7 +5484,7 @@
         "usage": {
           "balanceDescription": "Sisa yang bisa dibelanjakan tim Anda.",
           "balanceTitle": "Saldo kredit",
-          "usageDescription": "Penggunaan kredit Anda di seluruh chat, otomatisasi, dan channel.",
+          "usageDescription": "Penggunaan kredit Anda, dikelompokkan berdasarkan utas.",
           "usageTitle": "Penggunaan kredit"
         }
       },
@@ -5628,9 +5648,12 @@
         "codexDescription": "Hubungkan dengan login perangkat Codex untuk rute model berbasis Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Hanya digunakan di eksekusi Anda, dengan kredensial Anda sendiri.",
+        "disconnectAccount": "Putuskan akun",
+        "disconnectDescription": "Ini menghapus akun dari Okou. Langganan Anda dengan penyedia tidak akan dibatalkan.",
+        "disconnecting": "Memutuskan…",
+        "disconnectTitle": "Putuskan {{account}}?",
         "noAccounts": "Belum ada akun terhubung.",
         "reconnectAccount": "Hubungkan ulang",
-        "removeAccount": "Hapus",
         "sectionTitle": "Pribadi",
         "status": {
           "connected": "Terhubung",
@@ -5756,7 +5779,7 @@
         "codexTitle": "Sesi ChatGPT perlu disambungkan ulang"
       },
       "toasts": {
-        "accountRemoved": "Akun dihapus",
+        "accountDisconnected": "Akun diputuskan",
         "accountSwitched": "Akun aktif diganti",
         "disconnected": "{{provider}} terputus",
         "policiesUpdated": "Pengaturan provider model diperbarui",
@@ -6328,6 +6351,7 @@
     },
     "loadFailed": "Tidak dapat memuat templat.",
     "pageCount_other": "{{count}} halaman",
+    "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
     "visibility": {
@@ -6369,36 +6393,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Tidak ada penggunaan pada periode penagihan ini",
-        "description": "Kredit yang Anda pakai di chat, automasi, dan kanal muncul di sini.",
+        "description": "Kredit yang Anda pakai di utas muncul di sini.",
         "noBillingPeriodDescription": "Penggunaan tim muncul setelah periode penagihan dimulai.",
         "noBillingPeriodTitle": "Tidak ada periode penagihan aktif",
         "rangeTitle": "Tidak ada penggunaan pada rentang waktu ini",
-        "teamDescription": "Kredit yang dipakai tim Anda di chat, automasi, dan kanal muncul di sini."
+        "teamDescription": "Kredit yang dipakai tim Anda di utas muncul di sini."
       },
       "loadError": "Tidak dapat memuat penggunaan Anda.",
       "loadMore": "Muat lebih banyak",
       "myUsage": "Penggunaan saya",
       "teamLoadError": "Tidak dapat memuat penggunaan tim.",
       "teamUsage": "Penggunaan tim",
+      "thread": "Utas",
+      "unavailableThread": "Utas tidak tersedia",
       "untitled": "(tanpa judul)"
     },
-    "sources": {
-      "agent": "Agen",
-      "automation": "Otomatisasi",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Lainnya",
-      "phone": "Telepon",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_other": "{{value}} chat",
       "credit_one": "{{value}} kredit",
-      "credit_other": "{{value}} kredit"
+      "credit_other": "{{value}} kredit",
+      "thread_one": "{{value}} utas",
+      "thread_other": "{{value}} utas"
     }
   },
   "workflows": {

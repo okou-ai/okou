@@ -1,8 +1,9 @@
-import type {
-  MorningBriefChatCollection,
-  MorningBriefChatItem,
-  MorningBriefChatSkipReason,
-  MorningBriefChatTruncation,
+import {
+  MORNING_BRIEF_CHAT_COLLECTION_BUDGET,
+  type MorningBriefChatCollection,
+  type MorningBriefChatItem,
+  type MorningBriefChatSkipReason,
+  type MorningBriefChatTruncation,
 } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import {
   assertErasureSubjectWritable,
@@ -38,8 +39,9 @@ import {
 } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
+import { clerk$ } from "../external/clerk";
 import { type Db, writeDb$ } from "../external/db";
-import { settle } from "../utils";
+import { settle, settleIncludingAbort } from "../utils";
 import {
   canonicalChatEventContent,
   canonicalChatEventUserMessage,
@@ -56,9 +58,12 @@ import {
   requiredUserMessageForEvent,
 } from "./chat-user-message.service";
 import {
-  loadMorningBriefMigrationState,
-  type MorningBriefMigrationState,
-} from "./morning-brief-migration-state.service";
+  admitMorningBriefCollection,
+  morningBriefScopeIsCurrent,
+  startMorningBriefSourceDeadline,
+  type MorningBriefCollectionScope,
+  type MorningBriefSourceDeadline,
+} from "./morning-brief-connector-reader.service";
 import {
   MORNING_BRIEF_CHAT_THREAD_PROVENANCE,
   ORDINARY_CHAT_THREAD_PROVENANCE,
@@ -89,9 +94,21 @@ const EXCERPT_BYTE_CAP = 4 * 1024;
 const COLLECTION_TEXT_BYTE_BUDGET = 64 * 1024;
 /** A stored event larger than this is a coverage gap, never a decoded excerpt. */
 const EVENT_PAYLOAD_BYTE_CAP = 64 * 1024;
-const COLLECTION_DEADLINE_MS = 15_000;
-const THREAD_LOCK_TIMEOUT = "2s";
-const THREAD_STATEMENT_TIMEOUT = "5s";
+/**
+ * One absolute budget for the whole attempt, taken before admission, and the
+ * tail of it candidate work may not spend.
+ *
+ * The final authority check is part of the attempt, not extra time after it, so
+ * candidate discovery and every thread read stop at the reserve. Without it a
+ * loop that used the whole budget would leave the fence nothing, and content
+ * that cannot be re-authorized may not be released at all — the reserve is what
+ * makes a truthful partial collection possible instead of an all-or-nothing one.
+ */
+const COLLECTION_DEADLINE_MS = MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs;
+const FINAL_AUTHORITY_RESERVE_MS =
+  MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs;
+const THREAD_LOCK_TIMEOUT_MS = 2000;
+const THREAD_STATEMENT_TIMEOUT_MS = 5000;
 /** Guards against an anchor far outside the occurrence it claims to describe. */
 const ANCHOR_MAX_FUTURE_MS = 5 * 60 * 1000;
 const ANCHOR_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -108,10 +125,111 @@ type MorningBriefChatCollectionResult =
   | { readonly kind: "invalid-anchor"; readonly message: string }
   | { readonly kind: "not-installed" }
   | { readonly kind: "owner-unavailable" }
+  /** The attempt did not finish inside its budget, so it released nothing. */
+  | { readonly kind: "deadline-exceeded" }
   | {
       readonly kind: "collected";
       readonly collection: MorningBriefChatCollection;
     };
+
+/**
+ * One attempt's absolute time budget.
+ *
+ * Every wait spends the same budget: admission, including its network
+ * membership read, candidate discovery, each thread read, and the final
+ * authority check. Nothing here starts a second clock.
+ */
+interface AttemptBudget {
+  /**
+   * The shared source deadline, handed to admission so the preflight spends
+   * this attempt's budget instead of starting a second one.
+   */
+  readonly deadline: MorningBriefSourceDeadline;
+  /** The instant the whole attempt must have finished by. */
+  readonly deadlineAt: number;
+  /** Where candidate work stops, leaving the final fence its reserve. */
+  readonly candidateDeadlineAt: number;
+  /** Caller cancellation merged with this attempt's own deadline. */
+  readonly signal: AbortSignal;
+  /** Milliseconds left before `limit`, never negative. */
+  readonly remaining: (limit: number) => number;
+  readonly exhausted: (limit: number) => boolean;
+}
+
+function attemptBudget(signal: AbortSignal): AttemptBudget {
+  const deadline = startMorningBriefSourceDeadline(COLLECTION_DEADLINE_MS);
+  const remaining = (limit: number): number => {
+    return Math.max(0, limit - nowDate().getTime());
+  };
+  return {
+    deadline,
+    deadlineAt: deadline.at,
+    candidateDeadlineAt: deadline.at - FINAL_AUTHORITY_RESERVE_MS,
+    signal: AbortSignal.any([signal, deadline.signal]),
+    remaining,
+    // The timer bit only flips once its callback has run, so the clock decides
+    // and the timer is left to interrupt I/O already in flight.
+    exhausted: (limit) => {
+      return deadline.signal.aborted || remaining(limit) === 0;
+    },
+  };
+}
+
+type BudgetedStep<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false };
+
+/**
+ * Await one step of the attempt and re-read the clock on the way out.
+ *
+ * A step that returned at or after the boundary is expired even when it
+ * succeeded: the fact it produced was only known to be true before the wait.
+ * Caller cancellation still propagates, and a failure that is not the budget is
+ * a real failure rather than a quiet empty result.
+ */
+async function withinBudget<T>(
+  work: Promise<T>,
+  budget: AttemptBudget,
+  limit: number,
+  signal: AbortSignal,
+): Promise<BudgetedStep<T>> {
+  const settled = await settleIncludingAbort(work);
+  signal.throwIfAborted();
+  if (budget.exhausted(limit)) {
+    return { ok: false };
+  }
+  if (settled.ok) {
+    return { ok: true, value: settled.value };
+  }
+  throw settled.error;
+}
+
+/**
+ * Keep one transaction inside the remaining budget.
+ *
+ * PostgreSQL enforces both server-side, so a wait that would outlive the
+ * attempt is cancelled at the database rather than abandoned as detached work
+ * behind a promise race. Its own caps still apply: the budget can shorten a
+ * wait, never lengthen it.
+ */
+async function boundTransaction(
+  tx: Tx,
+  budget: AttemptBudget,
+  limit: number,
+): Promise<void> {
+  // PostgreSQL reads `0` as "no timeout", so an already-spent budget still
+  // bounds the transaction at the smallest real value rather than removing the
+  // bound entirely.
+  const remaining = Math.max(1, budget.remaining(limit));
+  const lockTimeout = Math.min(THREAD_LOCK_TIMEOUT_MS, remaining);
+  const statementTimeout = Math.min(THREAD_STATEMENT_TIMEOUT_MS, remaining);
+  await tx.execute(
+    sql`SELECT set_config('lock_timeout', ${`${lockTimeout.toString()}ms`}, true)`,
+  );
+  await tx.execute(
+    sql`SELECT set_config('statement_timeout', ${`${statementTimeout.toString()}ms`}, true)`,
+  );
+}
 
 interface CandidateThread {
   readonly threadId: string;
@@ -250,6 +368,20 @@ function anchoredTerminalEvent(db: Pick<Db, "select">, anchor: Date) {
  */
 async function loadUnreadCandidates(
   db: Db,
+  owner: MorningBriefChatCollectionOwner,
+  anchor: Date,
+  budget: AttemptBudget,
+): Promise<readonly CandidateThread[]> {
+  return await db.transaction(async (tx) => {
+    // Selection can queue behind a writer of the same rows, so it is bounded by
+    // what is left of the attempt rather than by nothing at all.
+    await boundTransaction(tx, budget, budget.candidateDeadlineAt);
+    return await selectUnreadCandidates(tx, owner, anchor);
+  });
+}
+
+async function selectUnreadCandidates(
+  db: Tx,
   owner: MorningBriefChatCollectionOwner,
   anchor: Date,
 ): Promise<readonly CandidateThread[]> {
@@ -565,18 +697,17 @@ function buildExcerpts(
 
 async function collectThread(
   db: Db,
-  owner: MorningBriefChatCollectionOwner,
-  candidate: CandidateThread,
-  anchor: Date,
-  remainingTextBytes: number,
+  args: {
+    readonly owner: MorningBriefChatCollectionOwner;
+    readonly candidate: CandidateThread;
+    readonly anchor: Date;
+    readonly remainingTextBytes: number;
+    readonly budget: AttemptBudget;
+  },
 ): Promise<ThreadOutcome> {
+  const { owner, candidate, anchor, remainingTextBytes, budget } = args;
   return await db.transaction(async (tx) => {
-    await tx.execute(
-      sql`SELECT set_config('lock_timeout', ${THREAD_LOCK_TIMEOUT}, true)`,
-    );
-    await tx.execute(
-      sql`SELECT set_config('statement_timeout', ${THREAD_STATEMENT_TIMEOUT}, true)`,
-    );
+    await boundTransaction(tx, budget, budget.candidateDeadlineAt);
     const admitted = await erasureAdmitted(
       tx,
       ownerErasureSubjects({ ...owner, agentOwner: candidate.agentOwner }),
@@ -638,10 +769,6 @@ function validateAnchor(
   return undefined;
 }
 
-function installedAndEnabled(state: MorningBriefMigrationState): boolean {
-  return state.kind === "installed" && state.automation.enabled;
-}
-
 /** Reasons that describe a gap in what the collection could see. */
 const UNKNOWN_COVERAGE_REASONS = [
   "unknown_thread_provenance",
@@ -671,10 +798,12 @@ async function inspectCandidates(
     readonly anchor: Date;
     readonly candidates: readonly CandidateThread[];
     readonly destinationThreadId: string | null;
-    readonly deadline: number;
+    readonly budget: AttemptBudget;
   },
   signal: AbortSignal,
 ): Promise<InspectedCandidates> {
+  const { budget } = args;
+  const limit = budget.candidateDeadlineAt;
   const truncations = new Set<MorningBriefChatTruncation>();
   const items: MorningBriefChatItem[] = [];
   const skips: { threadId: string; reason: MorningBriefChatSkipReason }[] = [];
@@ -682,12 +811,12 @@ async function inspectCandidates(
   let inspectedThreads = 0;
 
   for (const candidate of args.candidates) {
-    if (nowDate().getTime() >= args.deadline) {
+    if (budget.exhausted(limit)) {
       truncations.add("deadline_exceeded");
       break;
     }
-    inspectedThreads += 1;
     if (candidate.threadId === args.destinationThreadId) {
+      inspectedThreads += 1;
       skips.push({
         threadId: candidate.threadId,
         reason: "destination_thread",
@@ -695,9 +824,24 @@ async function inspectCandidates(
       continue;
     }
     const outcome = await settle(
-      collectThread(db, args.owner, candidate, args.anchor, remainingTextBytes),
+      collectThread(db, {
+        owner: args.owner,
+        candidate,
+        anchor: args.anchor,
+        remainingTextBytes,
+        budget,
+      }),
     );
     signal.throwIfAborted();
+    // A lock wait, a statement or the read itself can outlast the boundary.
+    // Content that arrived at or after it is expired, so neither the excerpts
+    // nor the refusal reason — both facts about this member's threads — is
+    // reported, and the gap is declared instead.
+    if (budget.exhausted(limit)) {
+      truncations.add("deadline_exceeded");
+      break;
+    }
+    inspectedThreads += 1;
     if (!outcome.ok) {
       // A bounded read that could not complete — a lock wait, a statement
       // timeout, or a transient database failure — is a coverage gap for one
@@ -732,10 +876,16 @@ async function inspectCandidates(
  * from the member's canonical Morning Brief state; neither is accepted as
  * input. Database work stays in short per-thread transactions so nothing holds
  * a lock across the whole collection.
+ *
+ * Admission freezes the exact authority the attempt speaks for — the member's
+ * immutable Clerk membership generation, the canonical installation, its Agent
+ * and the destination thread — and the same shared fence that admitted it is
+ * the one that has to agree again before any envelope is released. One absolute
+ * budget covers admission, discovery, every thread read and that final check.
  */
 export const collectMorningBriefChat$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly owner: MorningBriefChatCollectionOwner;
       readonly scheduledFor: Date;
@@ -743,26 +893,70 @@ export const collectMorningBriefChat$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefChatCollectionResult> => {
     const db = set(writeDb$);
+    const clerk = get(clerk$);
     const startedAt = nowDate();
     const anchorProblem = validateAnchor(args.scheduledFor, startedAt);
     if (anchorProblem !== undefined) {
       return { kind: "invalid-anchor", message: anchorProblem };
     }
+    // Established before admission, because admission itself waits on the
+    // network and that wait is part of this attempt.
+    const budget = attemptBudget(signal);
 
-    const state = await loadMorningBriefMigrationState(db, args.owner);
-    signal.throwIfAborted();
-    if (!installedAndEnabled(state)) {
+    const admitted = await withinBudget(
+      admitMorningBriefCollection(
+        {
+          db,
+          clerk,
+          orgId: args.owner.orgId,
+          userId: args.owner.userId,
+          anchor: args.scheduledFor,
+          deadline: budget.deadline,
+        },
+        signal,
+      ),
+      budget,
+      budget.deadlineAt,
+      signal,
+    );
+    if (!admitted.ok || admitted.value.kind === "unavailable") {
+      // Admission spent the budget the collection would have needed; it is an
+      // unfinished attempt, not a member without a brief.
+      return { kind: "deadline-exceeded" };
+    }
+    if (admitted.value.kind !== "ok") {
       return { kind: "not-installed" };
     }
-    const destinationThreadId =
-      state.kind === "installed" ? state.chatThreadId : null;
-
-    const candidates = await loadUnreadCandidates(
-      db,
-      args.owner,
-      args.scheduledFor,
+    const scope: MorningBriefCollectionScope = admitted.value.scope;
+    // Admission proves the canonical brief and this member's generation; the
+    // release fence additionally proves the brief's own Agent is visible to
+    // them. Running it here too means an admitted scope is one the release
+    // check would accept right now, at the cost of one extra membership read.
+    const authorized = await withinBudget(
+      morningBriefScopeIsCurrent({ db, clerk, scope }, budget.signal),
+      budget,
+      budget.deadlineAt,
+      signal,
     );
-    signal.throwIfAborted();
+    if (!authorized.ok) {
+      return { kind: "deadline-exceeded" };
+    }
+    if (!authorized.value) {
+      return { kind: "not-installed" };
+    }
+
+    const discovered = await withinBudget(
+      loadUnreadCandidates(db, args.owner, args.scheduledFor, budget),
+      budget,
+      budget.candidateDeadlineAt,
+      signal,
+    );
+    if (!discovered.ok) {
+      // Discovery that outlived the boundary leaves nothing that can still be
+      // fenced, so this is an unfinished attempt rather than a quiet inbox.
+      return { kind: "deadline-exceeded" };
+    }
+    const candidates = discovered.value;
 
     const inspected = await inspectCandidates(
       db,
@@ -770,8 +964,8 @@ export const collectMorningBriefChat$ = command(
         owner: args.owner,
         anchor: args.scheduledFor,
         candidates: candidates.slice(0, CANDIDATE_PROCESS_LIMIT),
-        destinationThreadId,
-        deadline: startedAt.getTime() + COLLECTION_DEADLINE_MS,
+        destinationThreadId: scope.chatThreadId,
+        budget,
       },
       signal,
     );
@@ -781,18 +975,23 @@ export const collectMorningBriefChat$ = command(
     }
     const { items, skips } = inspected;
 
-    // Nothing is released while the owner's own authority is in doubt, and a
-    // whole-owner invalidation releases none of it.
-    const ownerStillValid = await db.transaction(async (tx) => {
-      if (!(await erasureAdmitted(tx, ownerErasureSubjects(args.owner)))) {
-        return false;
-      }
-      return installedAndEnabled(
-        await loadMorningBriefMigrationState(tx, args.owner),
-      );
-    });
-    signal.throwIfAborted();
-    if (!ownerStillValid) {
+    // Nothing is released while the admitted authority is in doubt, and a
+    // whole-owner invalidation releases none of it. A membership that was
+    // revoked, or revoked and rejoined under a new id, a replaced or disabled
+    // installation, a different Agent and a closed subject all fail here, and
+    // an unrelated enabled installation is not a substitute for this one.
+    const released = await withinBudget(
+      morningBriefScopeIsCurrent({ db, clerk, scope }, budget.signal),
+      budget,
+      budget.deadlineAt,
+      signal,
+    );
+    if (!released.ok) {
+      // Unverifiable at the boundary: neither the excerpts nor the thread ids
+      // that would describe them may leave.
+      return { kind: "deadline-exceeded" };
+    }
+    if (!released.value) {
       return { kind: "owner-unavailable" };
     }
 

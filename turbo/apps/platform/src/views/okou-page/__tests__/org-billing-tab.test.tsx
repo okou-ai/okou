@@ -448,33 +448,42 @@ async function selectMemberUsagePack(
   click(await screen.findByRole("option", { name: optionName }));
 }
 
-test("Compare usage-pack plan pricing before choosing one", async () => {
-  mockInitialUsagePackPurchase();
-  const { choosePlanHeading, proPlan, teamPlan } =
-    await openUsagePackPlanSelection();
-  expect(choosePlanHeading).toBeInTheDocument();
-  // The plan steps are a dialog over the billing tab, not a page that
-  // replaces it, so the plan the workspace is deciding against stays visible.
-  expect(screen.getByText("No active plan")).toBeInTheDocument();
-  // The figure is a floor, not a fixed total: a workspace pays the plan plus
-  // at least one paid package, and paid packages run $20 to $200.
-  expect(proPlan).toHaveTextContent("from $20/month");
-  expect(
-    within(proPlan).getByText("Plan $0 · member packages $20–$200 each"),
-  ).toBeInTheDocument();
-  expect(teamPlan).toHaveTextContent("from $180/month");
-  expect(
-    within(teamPlan).getByText("Plan $160 · member packages $20–$200 each"),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Choose a paid package for each member in the next step, or select No package.",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("group", { name: "Member usage" }),
-  ).not.toBeInTheDocument();
-});
+test.each([
+  {
+    name: "Pro",
+    floor: "from $20/month",
+    breakdown: "Plan $0 · member packages $20–$200 each",
+  },
+  {
+    name: "Team",
+    floor: "from $180/month",
+    breakdown: "Plan $160 · member packages $20–$200 each",
+  },
+])(
+  "Compare $name usage-pack pricing before choosing a plan",
+  async ({ name, floor, breakdown }) => {
+    mockInitialUsagePackPurchase();
+    const { choosePlanHeading, proPlan, teamPlan } =
+      await openUsagePackPlanSelection();
+    expect(choosePlanHeading).toBeInTheDocument();
+    // The plan steps are a dialog over the billing tab, not a page that
+    // replaces it, so the plan the workspace is deciding against stays visible.
+    expect(screen.getByText("No active plan")).toBeInTheDocument();
+    // The figure is a floor, not a fixed total: a workspace pays the plan plus
+    // at least one paid package, and paid packages run $20 to $200.
+    const plan = name === "Pro" ? proPlan : teamPlan;
+    expect(plan).toHaveTextContent(floor);
+    expect(within(plan).getByText(breakdown)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Choose a paid package for each member in the next step, or select No package.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Member usage" }),
+    ).not.toBeInTheDocument();
+  },
+);
 
 test("Show the included Pro usage-pack plan features", async () => {
   mockInitialUsagePackPurchase();
@@ -2644,9 +2653,9 @@ async function openProToTeamUpgrade() {
   return { packageSelect, orderSummary };
 }
 
-test("Update Pro-to-Team pricing when editing and restoring a member package", async () => {
-  const { packageSelect, orderSummary } = await openProToTeamUpgrade();
-  let comparison = within(await hoverSubscriptionComparison()).getByRole(
+test("Compare the initial Pro-to-Team plan, slots and monthly total", async () => {
+  await openProToTeamUpgrade();
+  const comparison = within(await hoverSubscriptionComparison()).getByRole(
     "table",
     {
       name: "Current and new subscription comparison",
@@ -2667,33 +2676,51 @@ test("Update Pro-to-Team pricing when editing and restoring a member package", a
       name: /Monthly total \$20\/month \$180\/month/u,
     }),
   ).toBeInTheDocument();
-  const confirmButton = buttonByText("Confirm", orderSummary);
+});
 
+async function editProToTeamMemberPackage() {
+  const { packageSelect, orderSummary } = await openProToTeamUpgrade();
+  const confirmButton = buttonByText("Confirm", orderSummary);
   click(packageSelect);
   click(
     await screen.findByRole("option", {
       name: "$50 · 54,321 credits · 8% off",
     }),
   );
-  comparison = within(await hoverSubscriptionComparison()).getByRole("table", {
-    name: "Current and new subscription comparison",
-  });
+  const comparison = within(await hoverSubscriptionComparison()).getByRole(
+    "table",
+    {
+      name: "Current and new subscription comparison",
+    },
+  );
   expect(
     within(comparison).getByRole("row", {
       name: /Monthly total \$20\/month \$210\/month/u,
     }),
   ).toBeInTheDocument();
   expect(confirmButton).not.toBeDisabled();
+  return { packageSelect, confirmButton };
+}
 
+test("Update Pro-to-Team pricing when increasing a member package", async () => {
+  const { confirmButton } = await editProToTeamMemberPackage();
+  expect(confirmButton).not.toBeDisabled();
+});
+
+test("Restore Pro-to-Team pricing after editing a member package", async () => {
+  const { packageSelect, confirmButton } = await editProToTeamMemberPackage();
   click(packageSelect);
   click(
     await screen.findByRole("option", {
       name: "$20 · 21,234 credits · 6% off",
     }),
   );
-  comparison = within(await hoverSubscriptionComparison()).getByRole("table", {
-    name: "Current and new subscription comparison",
-  });
+  const comparison = within(await hoverSubscriptionComparison()).getByRole(
+    "table",
+    {
+      name: "Current and new subscription comparison",
+    },
+  );
   expect(
     within(comparison).getByRole("row", {
       name: /Monthly total \$20\/month \$180\/month/u,
@@ -3249,53 +3276,54 @@ test("Show custom-plan access without self-service plan changes", async () => {
   expect(screen.queryByText("Downgrade")).not.toBeInTheDocument();
 });
 
-test("Keep usage-pack plans unavailable for custom workspaces", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Custom Usage Pack Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, activeCustomBillingStatus());
-  });
-  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, usagePackCatalogResponse());
-  });
-  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-    return respond(200, {
-      supportsFreeMembers: true,
-      tier: "team",
-      currentPeriodEnd: "2026-04-01T00:00:00Z",
-      allocations: [],
+test.each(["Pro plan", "Team plan"])(
+  "Keep the %s unavailable when a custom workspace reopens plan comparison",
+  async (name) => {
+    context.mocks.data.org({
+      id: "org_1",
+      name: "Custom Usage Pack Org",
+      role: "admin",
     });
-  });
-
-  await openBillingTab("/?settings=billing");
-
-  await screen.findByText("Custom plan");
-
-  for (let openCount = 0; openCount < 2; openCount += 1) {
-    click(buttonByText("Compare all plans"));
-
-    const choosePlanDialog = await screen.findByRole("dialog", {
-      name: "Choose a plan",
+    context.mocks.api(billingStatusContract.get, ({ respond }) => {
+      return respond(200, activeCustomBillingStatus());
     });
-    expect(
-      within(choosePlanDialog).getByText("Step 1 of 3"),
-    ).toBeInTheDocument();
-    for (const name of ["Pro plan", "Team plan"]) {
+    context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
+      return respond(200, usagePackCatalogResponse());
+    });
+    context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
+      return respond(200, {
+        supportsFreeMembers: true,
+        tier: "team",
+        currentPeriodEnd: "2026-04-01T00:00:00Z",
+        allocations: [],
+      });
+    });
+
+    await openBillingTab("/?settings=billing");
+
+    await screen.findByText("Custom plan");
+
+    for (let openCount = 0; openCount < 2; openCount += 1) {
+      click(buttonByText("Compare all plans"));
+
+      const choosePlanDialog = await screen.findByRole("dialog", {
+        name: "Choose a plan",
+      });
+      expect(
+        within(choosePlanDialog).getByText("Step 1 of 3"),
+      ).toBeInTheDocument();
       const plan = within(choosePlanDialog).getByRole("article", { name });
       expect(buttonByText("Unavailable", plan)).toBeDisabled();
-    }
 
-    click(within(choosePlanDialog).getByLabelText("Close"));
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Choose a plan" }),
-      ).not.toBeInTheDocument();
-    });
-  }
-});
+      click(within(choosePlanDialog).getByLabelText("Close"));
+      await waitFor(() => {
+        expect(
+          screen.queryByRole("dialog", { name: "Choose a plan" }),
+        ).not.toBeInTheDocument();
+      });
+    }
+  },
+);
 
 test("Show the end date for a cancelled custom plan", async () => {
   context.mocks.data.org({

@@ -45,8 +45,9 @@ state["requests"].append(
 )
 
 if parsed.hostname == "pipelines.actions.githubusercontent.com":
+    owner = os.environ["GITHUB_REPOSITORY"].partition("/")[0]
     assert urllib.parse.parse_qs(parsed.query)["audience"] == [
-        "https://github.com/vm0-ai"
+        "https://github.com/" + owner
     ]
     assert "Authorization: Bearer github-request-fixture" in headers
     response = {"value": "oidc-fixture-secret"}

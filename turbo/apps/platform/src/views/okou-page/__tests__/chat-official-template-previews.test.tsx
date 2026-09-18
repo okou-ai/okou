@@ -18,6 +18,12 @@ const DECK =
 const VIDEO =
   "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4";
 
+const WELCOME_STEP_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
+const WELCOME_SCENE_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
+const QUICK_START = "https://okou-quick-start-deck.okou.app";
+
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
     return candidate.textContent === name;
@@ -35,9 +41,48 @@ async function closePreview() {
   });
 }
 
-test.each([true, false])(
-  "Official examples use ordinary previews with runless=%s and no uploaded artifacts",
-  async (runless) => {
+async function expectImagePreview() {
+  click(link("Sunlit bookshop.jpg"));
+  await expect(
+    screen.findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", IMAGE);
+  await closePreview();
+}
+
+async function expectDeckPreview() {
+  click(link("View deck"));
+  expect(
+    (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
+      "iframe",
+    ),
+  ).toHaveAttribute("src", DECK);
+  await closePreview();
+}
+
+async function expectVideoPreview() {
+  click(link("View video"));
+  const dialog = await screen.findByTestId("attachment-lightbox");
+  await waitFor(() => {
+    return expect(dialog.querySelector("video")).toHaveAttribute("src", VIDEO);
+  });
+  expect(dialog.querySelector("video")).toHaveAttribute("controls");
+}
+
+const officialPreviewCases = [
+  { media: "image", expectPreview: expectImagePreview },
+  { media: "deck", expectPreview: expectDeckPreview },
+  { media: "video", expectPreview: expectVideoPreview },
+] as const;
+
+test.each(
+  [true, false].flatMap((runless) => {
+    return officialPreviewCases.map((preview) => {
+      return { runless, ...preview };
+    });
+  }),
+)(
+  "Official $media example uses an ordinary preview with runless=$runless and no uploaded artifacts",
+  async ({ runless, expectPreview }) => {
     const chat = createMarkdownChatFixture(context);
     const content = `## Hello from Okou\n\n[Sunlit bookshop.jpg](${IMAGE})\n\n![Launch deck.html](${DECK})\n\n![Epic grandeur.mp4](${VIDEO})\n\n[View deck](${DECK})\n\n[View video](${VIDEO})\n\nWelcome text is ready before media loads.`;
     const row = chat.outputMessage(content, { seqId: 1 });
@@ -67,29 +112,54 @@ test.each([true, false])(
     expect(
       document.querySelector('[data-role="assistant-thinking"]') === null,
     ).toBe(runless);
-    click(link("Sunlit bookshop.jpg"));
-    await expect(
-      screen.findByTestId("attachment-lightbox-image"),
-    ).resolves.toHaveAttribute("src", IMAGE);
-    await closePreview();
-    click(link("View deck"));
-    expect(
-      (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
-        "iframe",
-      ),
-    ).toHaveAttribute("src", DECK);
-    await closePreview();
-    click(link("View video"));
-    const dialog = await screen.findByTestId("attachment-lightbox");
-    await waitFor(() => {
-      return expect(dialog.querySelector("video")).toHaveAttribute(
-        "src",
-        VIDEO,
-      );
-    });
-    expect(dialog.querySelector("video")).toHaveAttribute("controls");
+    await expectPreview();
   },
 );
+
+test("Welcome diagrams and the quick start open without uploaded artifacts", async () => {
+  const diagrams = [
+    ["Slack scene", `${WELCOME_SCENE_BASE}/slack-scene.png`],
+    ["Model tiers", `${WELCOME_SCENE_BASE}/model-tiers.png`],
+    ["Workflow templates", `${WELCOME_STEP_BASE}/workflow-template-picker.png`],
+    ["New agent", `${WELCOME_STEP_BASE}/new-agent.png`],
+  ] as const;
+  const chat = createMarkdownChatFixture(context);
+  const content = [
+    ...diagrams.map(([name, url]) => {
+      return `[${name}](${url})`;
+    }),
+    `[View the quick start](${QUICK_START})`,
+  ].join("\n\n");
+  const row = chat.outputMessage(content, { seqId: 1 });
+  chat.install({
+    rows: () => {
+      return [
+        {
+          ...row,
+          runId: null,
+          runEventId: null,
+          runEventSequenceNumber: null,
+        },
+      ];
+    },
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(200, { runs: [] });
+  });
+  await setupPage({ context, path: chat.path });
+  await screen.findByText("View the quick start");
+  for (const [name, url] of diagrams) {
+    click(link(name));
+    await expect(
+      screen.findByTestId("attachment-lightbox-image"),
+    ).resolves.toHaveAttribute("src", url);
+    await closePreview();
+  }
+  // The quick start is a hosted site on okou.app, and hosted-site framing is
+  // resolved per environment (resolveHostedSiteDomains), so its in-thread frame
+  // only exists on production hostnames. Assert the link survives here.
+  expect(link("View the quick start")).toHaveAttribute("href", QUICK_START);
+});
 
 test("Unlisted external HTML and altered catalog URLs keep ordinary link behavior", async () => {
   const urls = [
@@ -99,6 +169,8 @@ test("Unlisted external HTML and altered catalog URLs keep ordinary link behavio
     `${DECK}?redirect=https://example.com`,
     DECK.replace("https://", "http://"),
     DECK.replace("https://", "https://user@"),
+    `${QUICK_START}/unlisted.html`,
+    QUICK_START.replace("okou.app", "okou.app.evil.example"),
   ];
   const chat = createMarkdownChatFixture(context);
   chat.install({

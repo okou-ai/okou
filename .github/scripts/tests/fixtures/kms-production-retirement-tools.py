@@ -15,6 +15,7 @@ state = json.loads(state_path.read_text())
 args = sys.argv[1:]
 scenario = state["scenario"]
 source = state["snapshot"]["sourceKeyArn"]
+repository = state["run"]["repository"]["full_name"]
 
 
 def save():
@@ -35,7 +36,7 @@ if binary.name == "gh":
     state["verificationReads"] += 1
     assert args == [
         "api",
-        "repos/vm0-ai/okou/actions/artifacts/123/zip",
+        "repos/" + repository + "/actions/artifacts/123/zip",
         "--allow-escape-sequences",
     ]
     raw = base64.b64decode(state["archive"])
@@ -47,12 +48,14 @@ if binary.name == "gh":
 
 if binary.name == "curl":
     url = next(arg for arg in args if arg.startswith("https://"))
-    if url == "https://api.github.com/repos/vm0-ai/okou/actions/runs/54321":
+    if url == "https://api.github.com/repos/" + repository + "/actions/runs/54321":
         state["verificationReads"] += 1
         result = state["run"]
     elif (
         url
-        == "https://api.github.com/repos/vm0-ai/okou/actions/runs/54321/artifacts?per_page=100"
+        == "https://api.github.com/repos/"
+        + repository
+        + "/actions/runs/54321/artifacts?per_page=100"
     ):
         result = {"total_count": 1, "artifacts": [state["artifact"]]}
     elif (
