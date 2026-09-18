@@ -116,6 +116,20 @@ export function startMorningBriefSourceDeadline(
   return { at: now() + budgetMs, signal: AbortSignal.timeout(budgetMs) };
 }
 
+/** A shorter phase bound that still spends the parent attempt's clock. */
+export function narrowMorningBriefSourceDeadline(
+  parentAt: number,
+  at: number,
+  parentSignal: AbortSignal,
+): MorningBriefSourceDeadline {
+  const narrowedAt = Math.min(parentAt, at);
+  const remainingMs = Math.max(0, narrowedAt - now());
+  return {
+    at: narrowedAt,
+    signal: AbortSignal.any([parentSignal, AbortSignal.timeout(remainingMs)]),
+  };
+}
+
 /**
  * Has this source's budget run out, by the clock rather than by the timer?
  *
@@ -128,6 +142,101 @@ export function startMorningBriefSourceDeadline(
  */
 function deadlineHasPassed(at: number, timer: AbortSignal): boolean {
   return timer.aborted || now() >= at;
+}
+
+export interface MorningBriefDatabaseDeadlineCaps {
+  readonly lockTimeoutMs: number;
+  readonly statementTimeoutMs: number;
+}
+
+export class MorningBriefDatabaseDeadlineExceededError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Morning Brief database deadline exceeded", options);
+    this.name = "MorningBriefDatabaseDeadlineExceededError";
+  }
+}
+
+export function isMorningBriefDatabaseDeadlineExceeded(
+  error: unknown,
+): boolean {
+  if (error instanceof MorningBriefDatabaseDeadlineExceededError) {
+    return true;
+  }
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "25P04"
+  );
+}
+
+/**
+ * Run one local authority/read transaction under the source's absolute clock.
+ *
+ * `statement_timeout` and `lock_timeout` still cap one statement. The separate
+ * `transaction_timeout`, installed once when the transaction starts, is what
+ * prevents several individually-short waits from cumulatively outliving the
+ * source. `beforeStatement` re-reads the application clock after every await so
+ * no later query is dispatched at equality, while retaining the transaction
+ * timeout as the server-side bound for work already in flight.
+ */
+export async function withMorningBriefDatabaseDeadline<T>(
+  args: {
+    readonly db: Db;
+    readonly deadlineAt: number;
+    readonly caps: MorningBriefDatabaseDeadlineCaps;
+  },
+  signal: AbortSignal,
+  work: (tx: Tx, beforeStatement: () => Promise<void>) => Promise<T>,
+): Promise<T> {
+  signal.throwIfAborted();
+  const remaining = (): number => {
+    return Math.max(0, args.deadlineAt - now());
+  };
+  if (remaining() === 0) {
+    throw new MorningBriefDatabaseDeadlineExceededError();
+  }
+  const transaction = await settle(
+    args.db.transaction(async (tx: Tx) => {
+      signal.throwIfAborted();
+      const transactionRemaining = remaining();
+      if (transactionRemaining === 0) {
+        throw new MorningBriefDatabaseDeadlineExceededError();
+      }
+      const transactionTimeout = `${transactionRemaining.toString()}ms`;
+      await tx.execute(sql`SELECT
+        set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
+        set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
+        set_config('transaction_timeout', ${transactionTimeout}, true)`);
+
+      const beforeStatement = async (): Promise<void> => {
+        signal.throwIfAborted();
+        const statementRemaining = remaining();
+        if (statementRemaining === 0) {
+          throw new MorningBriefDatabaseDeadlineExceededError();
+        }
+        await tx.execute(sql`SELECT
+          set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
+          set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
+        signal.throwIfAborted();
+        if (remaining() === 0) {
+          throw new MorningBriefDatabaseDeadlineExceededError();
+        }
+      };
+
+      await beforeStatement();
+      return await work(tx, beforeStatement);
+    }),
+  );
+  if (transaction.ok) {
+    return transaction.value;
+  }
+  if (isMorningBriefDatabaseDeadlineExceeded(transaction.error)) {
+    throw new MorningBriefDatabaseDeadlineExceededError({
+      cause: transaction.error,
+    });
+  }
+  throw transaction.error;
 }
 
 /**
@@ -283,13 +392,13 @@ interface MorningBriefAuthorizationRequest {
   readonly selection: MorningBriefFrozenSelection;
   readonly db: Db;
   readonly clerk: ClerkClient;
+  readonly deadline: MorningBriefSourceDeadline;
 }
 
 interface MorningBriefReaderRequest extends MorningBriefAuthorizationRequest {
   readonly apiBase: string;
   readonly environmentName: string;
   readonly budget: MorningBriefReaderBudget;
-  readonly deadline: MorningBriefSourceDeadline;
 }
 
 /** The exact account this source is pinned to for its whole lifetime. */
@@ -365,8 +474,10 @@ async function agentIsVisible(
   return agent !== undefined;
 }
 
-const ADMISSION_LOCK_TIMEOUT = "1s";
-const ADMISSION_STATEMENT_TIMEOUT = "5s";
+const ADMISSION_DATABASE_CAPS = {
+  lockTimeoutMs: 1000,
+  statementTimeoutMs: 5000,
+} as const;
 
 /**
  * Erasure admission in one short, finitely bounded transaction.
@@ -380,22 +491,29 @@ const ADMISSION_STATEMENT_TIMEOUT = "5s";
 async function subjectIsWritable(
   db: Db,
   owner: { readonly orgId: string; readonly userId: string },
+  deadlineAt: number,
+  signal: AbortSignal,
 ): Promise<boolean> {
   const settled = await settle(
-    db.transaction(async (tx: Tx) => {
-      await tx.execute(
-        sql`SELECT set_config('lock_timeout', ${ADMISSION_LOCK_TIMEOUT}, true)`,
-      );
-      await tx.execute(
-        sql`SELECT set_config('statement_timeout', ${ADMISSION_STATEMENT_TIMEOUT}, true)`,
-      );
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "organization", subjectId: owner.orgId },
-        { subjectKind: "user", subjectId: owner.userId },
-      ]);
-      return true;
-    }),
+    withMorningBriefDatabaseDeadline(
+      { db, deadlineAt, caps: ADMISSION_DATABASE_CAPS },
+      signal,
+      async (tx) => {
+        await assertErasureSubjectWritable(tx, [
+          { subjectKind: "organization", subjectId: owner.orgId },
+          { subjectKind: "user", subjectId: owner.userId },
+        ]);
+        return true;
+      },
+    ),
   );
+  if (
+    !settled.ok &&
+    (deadlineHasPassed(deadlineAt, signal) ||
+      isMorningBriefDatabaseDeadlineExceeded(settled.error))
+  ) {
+    throw settled.error;
+  }
   // A closed subject aborts the transaction; that is a refusal, not an outage.
   return settled.ok;
 }
@@ -628,29 +746,36 @@ export async function morningBriefScopeIsCurrent(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const { db, scope } = args;
-  if (!(await subjectIsWritable(db, scope))) {
+  const { db, scope, deadline } = args;
+  if (!(await subjectIsWritable(db, scope, deadline.at, signal))) {
     return false;
   }
   signal.throwIfAborted();
 
   // The member's current Clerk membership generation, not a cache row's
   // presence. A removal, and a removal followed by a rejoin under a new id,
-  // both fail here.
+  // both fail here. No transaction is held across this network call.
   const membershipId = await loadCurrentMembershipId(args.clerk, scope, signal);
   signal.throwIfAborted();
   if (membershipId === null || membershipId !== scope.membershipId) {
     return false;
   }
 
-  if (!(await ownershipIsUnchanged(db, scope))) {
-    return false;
-  }
-  signal.throwIfAborted();
-  return await agentIsVisible(db, scope);
+  return await withMorningBriefDatabaseDeadline(
+    { db, deadlineAt: deadline.at, caps: ADMISSION_DATABASE_CAPS },
+    signal,
+    async (tx, beforeStatement) => {
+      if (!(await ownershipIsUnchanged(tx, scope))) {
+        return false;
+      }
+      await beforeStatement();
+      return await agentIsVisible(tx, scope);
+    },
+  );
 }
 
 /**
@@ -669,7 +794,7 @@ async function authorizeIdentity(
   const { db, scope, connectorSlug } = request;
   if (
     !(await morningBriefScopeIsCurrent(
-      { db, clerk: request.clerk, scope },
+      { db, clerk: request.clerk, scope, deadline: request.deadline },
       signal,
     ))
   ) {
@@ -1415,6 +1540,8 @@ export async function revalidateMorningBriefRetainedRead(
     readonly connectionId: string;
     /** Every endpoint whose result is still held. */
     readonly endpoints: readonly string[];
+    /** The composing attempt's absolute bound, never a fresh phase budget. */
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefSourceUnavailable | null> {
@@ -1424,6 +1551,7 @@ export async function revalidateMorningBriefRetainedRead(
     scope: args.scope,
     connectorSlug: args.connectorSlug,
     selection: { kind: "selected", connectorId: args.connectionId },
+    deadline: args.deadline,
   };
   const pinned: PinnedAccount = {
     connectorId: args.connectionId,
@@ -1514,22 +1642,40 @@ async function admitWithinDeadline(
   args: MorningBriefAdmissionArgs,
   signal: AbortSignal,
 ): Promise<MorningBriefCollectionAdmission> {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    args.db,
-    args.orgId,
-    args.userId,
+  const local = await withMorningBriefDatabaseDeadline(
+    {
+      db: args.db,
+      deadlineAt: args.deadline.at,
+      caps: ADMISSION_DATABASE_CAPS,
+    },
+    signal,
+    async (tx, beforeStatement) => {
+      const featureSwitchContext = await loadUserFeatureSwitchContext(
+        tx,
+        args.orgId,
+        args.userId,
+      );
+      if (
+        !isFeatureEnabled(
+          FeatureSwitchKey.SimpleMorningBrief,
+          featureSwitchContext,
+        )
+      ) {
+        return { kind: "feature-disabled" } as const;
+      }
+      await beforeStatement();
+      const state = await loadMorningBriefMigrationState(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+      });
+      return { kind: "state", state } as const;
+    },
   );
   signal.throwIfAborted();
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, featureSwitchContext)
-  ) {
+  if (local.kind === "feature-disabled") {
     return { kind: "denied", reason: "feature-disabled" };
   }
-  const state = await loadMorningBriefMigrationState(args.db, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  signal.throwIfAborted();
+  const { state } = local;
   if (state.kind !== "installed") {
     return { kind: "denied", reason: "not-installed" };
   }
@@ -1545,7 +1691,7 @@ async function admitWithinDeadline(
   if (membershipId === null) {
     return { kind: "denied", reason: "no-membership" };
   }
-  if (!(await subjectIsWritable(args.db, args))) {
+  if (!(await subjectIsWritable(args.db, args, args.deadline.at, signal))) {
     return { kind: "denied", reason: "no-membership" };
   }
   if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {

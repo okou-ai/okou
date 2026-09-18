@@ -175,7 +175,14 @@ export async function revalidateMorningBriefRetainedSources(
   for (const descriptor of input.descriptors) {
     const reason = await settle(
       revalidateSource(
-        { db, clerk, scope, slack: input.slack, descriptor },
+        {
+          db,
+          clerk,
+          scope,
+          slack: input.slack,
+          descriptor,
+          deadline: input.deadline,
+        },
         bounded,
       ),
       signal,
@@ -198,6 +205,7 @@ async function revalidateSource(
     readonly scope: MorningBriefCollectionScope;
     readonly slack: MorningBriefSlackAuthority | null;
     readonly descriptor: MorningBriefRetainedSourceDescriptor;
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<string | null> {
@@ -217,6 +225,7 @@ async function revalidateSource(
         connectorSlug,
         connectionId: descriptor.connectionId,
         endpoints: descriptor.endpoints,
+        deadline: args.deadline,
       },
       signal,
     );

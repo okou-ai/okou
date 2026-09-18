@@ -18,9 +18,12 @@ import {
   countMorningBriefChatWritesFixture,
   deleteSeededChatThreadFixture,
   excludeMorningBriefChatThreadFixture,
+  holdActiveRunReadFixture,
   holdAgentRowFixture,
+  holdChatCandidateDiscoveryFixture,
   holdChatThreadReadBarrierFixture,
   holdMorningBriefChatMembershipLookupFixture,
+  holdMorningBriefOwnershipReadFixture,
   markChatThreadReadFixture,
   renameChatThreadFixture,
   replaceMorningBriefInstallationFixture,
@@ -32,6 +35,10 @@ import {
   startActiveChatRunFixture$,
   type MorningBriefChatMember,
 } from "../../../test-fixtures/morning-brief-chat-collection";
+import {
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/account-erasure-subject";
 import { agentsRoutes } from "../agents";
 import { morningBriefChatCollectionPreviewRoutes } from "../morning-brief-chat-collection-preview";
 import { createRouteMocks } from "./helpers/route-test";
@@ -221,6 +228,15 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs
     );
   };
+
+  function isExcerptContentQuery(queryArgs: unknown[]): boolean {
+    const text = barrierQueryText(queryArgs);
+    return (
+      text.includes('from "chat_events"') &&
+      text.includes('"chat_events"."run_id" =') &&
+      text.includes('order by "chat_events"."seq_id" asc')
+    );
+  }
 
   it("does not exist in production, even with the switch on", async () => {
     const member = await briefMember();
@@ -794,6 +810,153 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       // Neither the excerpts nor the refusal reason for an expired read escape.
       expect(JSON.stringify(response.body)).not.toContain(threadId);
       expect(JSON.stringify(response.body)).not.toContain("too late");
+    }, 60_000);
+
+    it("spends successive PostgreSQL waits without starting content after the candidate deadline", async () => {
+      await withDatabaseTransactionBarrierFixture(
+        {
+          select: isExcerptContentQuery,
+          stopAt: (_queryArgs, selectingStatement) => {
+            return selectingStatement;
+          },
+          work: async (contentQuery) => {
+            // Observe a rejected deferred explicitly if setup fails before the
+            // control reaches content; the assertion below is about whether it
+            // was reached, not about leaving an unowned promise.
+            void contentQuery.entered.catch(() => {
+              return undefined;
+            });
+            const member = await briefMember();
+            const { threadId } = await seedUnreadThread(member, {
+              prompt: "prompt beyond the cumulative budget",
+              reply: "reply beyond the cumulative budget",
+            });
+            const discovery = await holdChatCandidateDiscoveryFixture(
+              context.signal,
+            );
+            const agent = await holdAgentRowFixture(
+              member.agentId,
+              context.signal,
+            );
+            const startedAt = freezeAttemptClock();
+
+            const pending = collectRequest(member);
+            await discovery.waitForBlocked();
+            // Discovery consumed most of the candidate allowance while queued
+            // in PostgreSQL, but stayed within its individual cap.
+            mockNow(candidateDeadline(startedAt) - 500);
+            await discovery.release();
+            await agent.waitForBlocked();
+
+            // Acquire the final-query blocker only after discovery committed;
+            // candidate selection itself also reads agent_runs.
+            const activeRun = await holdActiveRunReadFixture(context.signal);
+            await agent.release();
+            await activeRun.waitForBlocked();
+            mockNow(candidateDeadline(startedAt));
+            await activeRun.release();
+
+            const response = await accept(pending, [200]);
+            expect(response.body).toMatchObject({
+              result: "no-eligible-content",
+              coverage: "partial",
+              items: [],
+              skipped: [],
+              truncations: ["deadline_exceeded"],
+            });
+            expect(JSON.stringify(response.body)).not.toContain(threadId);
+            expect(contentQuery.enteredYet()).toBeFalsy();
+
+            // Guard-removal control: a fresh healthy request reaches this exact
+            // content statement. The selected transaction exposes all three
+            // real server settings, including the whole-transaction bound.
+            const healthy = collectRequest(member);
+            await expect(contentQuery.entered).resolves.toMatchObject({
+              lockTimeout: "1s",
+              statementTimeout: "5s",
+              transactionTimeout: "12s",
+            });
+            contentQuery.release();
+            const recovered = await accept(healthy, [200]);
+            expect(recovered.body.result).toBe("collected");
+            expect(recovered.body.items).toHaveLength(1);
+          },
+        },
+        context.signal,
+      );
+    }, 60_000);
+
+    it("lets PostgreSQL cancel an in-flight transaction at its remaining absolute deadline", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        prompt: "prompt behind the server deadline",
+        reply: "reply behind the server deadline",
+      });
+      const discovery = await holdChatCandidateDiscoveryFixture(context.signal);
+      const agent = await holdAgentRowFixture(member.agentId, context.signal);
+      const startedAt = freezeAttemptClock();
+
+      const pending = collectRequest(member);
+      await discovery.waitForBlocked();
+      // The per-thread transaction starts with only 100ms left. Its Agent read
+      // then remains genuinely blocked; no test timer releases the lock.
+      mockNow(candidateDeadline(startedAt) - 100);
+      await discovery.release();
+      await agent.waitForBlocked();
+      const response = await accept(pending, [200]);
+
+      expect(response.body).toMatchObject({
+        result: "no-eligible-content",
+        coverage: "partial",
+        items: [],
+        skipped: [],
+        truncations: ["deadline_exceeded"],
+      });
+      expect(JSON.stringify(response.body)).not.toContain(threadId);
+      await agent.release();
+
+      // The timed-out transaction was awaited and rolled back (PostgreSQL may
+      // replace its terminated session); the same route and pool remain usable.
+      const recovered = await collect(member);
+      expect(recovered.result).toBe("collected");
+    }, 60_000);
+
+    it("bounds the local final-authority query after the external fence", async () => {
+      const member = await briefMember();
+      const { threadId } = await seedUnreadThread(member, {
+        prompt: "prompt waiting on final local authority",
+        reply: "reply waiting on final local authority",
+      });
+      // Admission and the pre-read fence use the first two lookups. Hold the
+      // final external answer after content has already been collected.
+      const membership = holdMorningBriefChatMembershipLookupFixture(
+        { owner: member, skip: 2 },
+        context.signal,
+      );
+      const startedAt = freezeAttemptClock();
+      const pending = collectRequest(member);
+      await membership.waitForArrival();
+      expect(membership.lookupsBefore()).toBe(2);
+
+      const ownership = await holdMorningBriefOwnershipReadFixture(
+        context.signal,
+      );
+      mockNow(
+        startedAt + MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs - 500,
+      );
+      membership.release();
+      await ownership.waitForBlocked();
+      mockNow(startedAt + MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs);
+      await ownership.release();
+
+      const response = await accept(pending, [503]);
+      expect(response.body.error.code).toBe("REQUEST_DEADLINE_EXCEEDED");
+      expect(JSON.stringify(response.body)).not.toContain(threadId);
+
+      // Final local work committed or rolled back before the response; no lock
+      // or detached query prevents the next valid request.
+      const recovered = await collect(member);
+      expect(recovered.result).toBe("collected");
     }, 60_000);
 
     it("refuses an attempt whose final authority check outlived the budget", async () => {

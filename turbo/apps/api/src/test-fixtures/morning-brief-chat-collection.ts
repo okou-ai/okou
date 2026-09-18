@@ -642,6 +642,29 @@ export async function holdAgentRowFixture(
   });
 }
 
+/** Block the real candidate SELECT without changing any candidate row. */
+export async function holdChatCandidateDiscoveryFixture(signal: AbortSignal) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${chatThreads} IN ACCESS EXCLUSIVE MODE`);
+  });
+}
+
+/** Block the last per-thread authority query immediately before content. */
+export async function holdActiveRunReadFixture(signal: AbortSignal) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${agentRuns} IN ACCESS EXCLUSIVE MODE`);
+  });
+}
+
+/** Block the canonical ownership read used by the final local authority gate. */
+export async function holdMorningBriefOwnershipReadFixture(
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${workflows} IN ACCESS EXCLUSIVE MODE`);
+  });
+}
+
 /** Hold an uncommitted Agent ownership transfer on the thread's Agent. */
 export async function holdAgentOwnerTransferFixture(
   args: { readonly agentId: string; readonly nextOwner: string },
