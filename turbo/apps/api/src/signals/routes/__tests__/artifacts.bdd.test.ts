@@ -1259,6 +1259,48 @@ describe("hosted Artifact previews", () => {
     ).toBeFalsy();
   }, 120_000);
 
+  it("counts navigation and rate-limit retries against one budget", async () => {
+    const owner = await artifactActor("Artifacts API retry sharing agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    // A third fixture is deliberately the last one: a rate-limit retry holding
+    // its own counter would ask for a fourth snapshot, which the handler has no
+    // fixture for. Only one shared budget stops here.
+    const snapshotRequests = mockCloudflareSnapshot([
+      {
+        error: {
+          code: 6002,
+          message:
+            "A timeout was reached. Check gotoOptions/waitForSelector/waitForTimeout/actionTimeout options.",
+          detail: "Navigation timeout of 20000 ms exceeded",
+          status: 422,
+        },
+      },
+      rateLimitedSnapshot("1"),
+      rateLimitedSnapshot("1"),
+    ]);
+    const site = `retry-sharing-${randomUUID().slice(0, 8)}`;
+
+    await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(3);
+    // The rate-limit retry repeats whichever profile the render had reached,
+    // so it must not reset the navigation fallback back to the primary one.
+    expect(snapshotRequests[2]?.body).toMatchObject({
+      gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
+      waitForTimeout: 3000,
+    });
+    const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(unpreviewedArtifact?.thumbnail).toBeNull();
+  }, 120_000);
+
   it("gives up when the stated wait outlives the render budget", async () => {
     const owner = await artifactActor("Artifacts API rate limit ceiling agent");
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
