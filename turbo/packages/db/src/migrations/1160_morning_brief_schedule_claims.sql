@@ -1,8 +1,8 @@
 CREATE TABLE "morning_brief_schedule_claims" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"automation_id" uuid NOT NULL,
-	"org_id" text NOT NULL,
-	"owner_user_id" text NOT NULL,
+	"org_id" text,
+	"owner_user_id" text,
 	"workflow_id" uuid NOT NULL,
 	"scheduled_anchor_at" timestamp NOT NULL,
 	"claimed_at" timestamp NOT NULL,
@@ -18,8 +18,15 @@ CREATE TABLE "morning_brief_schedule_claims" (
 	CONSTRAINT "chk_morning_brief_schedule_claims_settlement" CHECK ((
             "morning_brief_schedule_claims"."settlement" = 'unsettled' AND "morning_brief_schedule_claims"."settled_at" IS NULL
           ) OR (
-            "morning_brief_schedule_claims"."settlement" IN ('completed', 'failed', 'pre_run_failure')
+            "morning_brief_schedule_claims"."settlement" IN ('completed', 'failed', 'pre_run_failure', 'revoked')
             AND "morning_brief_schedule_claims"."settled_at" IS NOT NULL
+          )),
+	CONSTRAINT "chk_morning_brief_schedule_claims_owner" CHECK ((
+            "morning_brief_schedule_claims"."org_id" IS NOT NULL AND "morning_brief_schedule_claims"."owner_user_id" IS NOT NULL
+          ) OR (
+            "morning_brief_schedule_claims"."settlement" = 'revoked'
+            AND "morning_brief_schedule_claims"."org_id" IS NULL
+            AND "morning_brief_schedule_claims"."owner_user_id" IS NULL
           )),
 	CONSTRAINT "chk_morning_brief_schedule_claims_sequence" CHECK ("morning_brief_schedule_claims"."claim_sequence" >= 1)
 );

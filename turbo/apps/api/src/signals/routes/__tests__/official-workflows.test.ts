@@ -75,7 +75,12 @@ import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
-import { readMorningBriefScheduleClaimsFixture } from "../../../test-fixtures/morning-brief-schedule-claim";
+import {
+  holdNewerMorningBriefClaimFixture,
+  readMorningBriefScheduleClaimsFixture,
+  readWorkflowAutomationLastRunFixture,
+  recordWorkflowAutomationLastRunFixture,
+} from "../../../test-fixtures/morning-brief-schedule-claim";
 import {
   admitWorkflowAutomationEventFixture,
   holdWorkflowAutomationRowFixture,
@@ -1748,26 +1753,6 @@ async function deliverClerkOrganizationCreated(
   await flushWaitUntilForTest();
 }
 
-async function deliverClerkOrganizationMembershipDeleted(
-  actor: ApiTestUser,
-): Promise<void> {
-  if (!actor.orgId || !actor.orgRole) {
-    throw new Error("Expected organization-scoped Clerk member");
-  }
-  webhooks.configureClerkWebhookSecret();
-  webhooks.verifyNextClerkWebhook({
-    type: "organizationMembership.deleted",
-    data: {
-      id: `membership-${actor.userId}-${actor.orgId}`,
-      organization: { id: actor.orgId },
-      publicUserData: { userId: actor.userId },
-      role: actor.orgRole,
-    },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-}
-
 async function deliverClerkOrganizationMembershipCreated(
   actor: ApiTestUser,
   createdAt: Date,
@@ -1785,6 +1770,22 @@ async function deliverClerkOrganizationMembershipCreated(
       public_user_data: { user_id: actor.userId },
       role: actor.orgRole,
       created_at: createdAt.getTime(),
+    },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
+async function deliverClerkOrganizationMembershipDeleted(
+  actor: ApiTestUser,
+): Promise<void> {
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organizationMembership.deleted",
+    data: {
+      id: `membership-${actor.userId}-${actor.orgId}`,
+      organization: { id: actor.orgId },
+      public_user_data: { user_id: actor.userId },
     },
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
@@ -12624,6 +12625,13 @@ describe("Morning Brief legacy schedule claim journal", () => {
       threadId,
       signal: context.signal,
     });
+    // Release the shared admission lock even when an assertion below throws.
+    onTestFinished(async () => {
+      barrier.release();
+      // Await the holding transaction: releasing only resolves its deferred
+      // promise, and the lock survives until that transaction actually ends.
+      await barrier.done;
+    });
     mockNow(secondAnchor + 60_000);
     const ticks = Promise.all([
       accept(
@@ -12846,22 +12854,52 @@ describe("Morning Brief legacy schedule claim journal", () => {
       readMorningBriefScheduleClaimsFixture(departing.automationId),
     ).resolves.toHaveLength(1);
 
+    const departingThread = await briefThreadId(
+      departing.actor,
+      departing.workflowId,
+    );
+    const [departingRunId] = await briefRunIds(departingThread);
+    if (!departingRunId) {
+      throw new Error("Expected the departing member's occurrence to run");
+    }
+
     await deliverClerkOrganizationMembershipDeleted(departing.actor);
 
-    // The departing member's occurrences are gone. Revocation deliberately
-    // changes nothing else, so the automation itself is untouched.
-    await expect(
-      readMorningBriefScheduleClaimsFixture(departing.automationId),
-    ).resolves.toHaveLength(0);
-    await pollAt(departing.automationId, departing.anchor + 2 * 60 * 60 * 1000);
-    await expect(
-      readMorningBriefScheduleClaimsFixture(departing.automationId),
-    ).resolves.toHaveLength(0);
+    // Owner identity is scrubbed, but the occurrence survives as a terminal
+    // recorded execution rather than disappearing into the untracked branch.
+    const revoked = await readMorningBriefScheduleClaimsFixture(
+      departing.automationId,
+    );
+    expect(revoked).toHaveLength(1);
+    expect(revoked[0]).toMatchObject({
+      orgId: null,
+      ownerUserId: null,
+      settlement: "revoked",
+    });
+    expect(revoked[0]?.settledAt).not.toBeNull();
+
+    // A callback that was still in flight therefore settles nothing.
+    const scheduleBefore = await readBriefPreference(departing.actor);
+    const delivery = await deliverBriefCallback(departingRunId);
+    expect(delivery.callbackResults).toBeGreaterThan(0);
+    await expect(readBriefPreference(departing.actor)).resolves.toMatchObject({
+      body: { nextRunAt: scheduleBefore.body.nextRunAt },
+    });
+    const afterCallback = await readMorningBriefScheduleClaimsFixture(
+      departing.automationId,
+    );
+    expect(afterCallback[0]?.settlement).toBe("revoked");
+    expect(afterCallback[0]?.settledAt?.getTime()).toBe(
+      revoked[0]?.settledAt?.getTime(),
+    );
 
     // The other owner keeps its occurrence and its schedule.
-    await expect(
-      readMorningBriefScheduleClaimsFixture(kept.automationId),
-    ).resolves.toHaveLength(1);
+    const untouched = await readMorningBriefScheduleClaimsFixture(
+      kept.automationId,
+    );
+    expect(untouched).toHaveLength(1);
+    expect(untouched[0]?.settlement).toBe("unsettled");
+    expect(untouched[0]?.ownerUserId).toBe(kept.actor.userId);
   });
 
   it("revokes a departing member's occurrences recorded by an earlier tick", async () => {
@@ -12873,6 +12911,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
     // recreate journal state for the removed member.
     await deliverClerkOrganizationMembershipDeleted(departing.actor);
     await pollAt(departing.automationId, departing.anchor + 60_000);
+    // Revocation before any occurrence leaves nothing to scrub, and the later
+    // tick must not record one for a member who no longer belongs here.
     await expect(
       readMorningBriefScheduleClaimsFixture(departing.automationId),
     ).resolves.toHaveLength(0);
@@ -12899,6 +12939,13 @@ describe("Morning Brief legacy schedule claim journal", () => {
     const barrier = await holdChatEventQueueAdmissionLockFixture({
       threadId,
       signal: context.signal,
+    });
+    // Release the shared admission lock even when an assertion below throws.
+    onTestFinished(async () => {
+      barrier.release();
+      // Await the holding transaction: releasing only resolves its deferred
+      // promise, and the lock survives until that transaction actually ends.
+      await barrier.done;
     });
     mockNow(secondAnchor + 60_000);
     // The cancelled admission surfaces through the tick's own failure path, so
@@ -12983,6 +13030,11 @@ describe("Morning Brief legacy schedule claim journal", () => {
       automationId: brief.automationId,
       signal: context.signal,
     });
+    // An open automation row lock would block unrelated agent deletion later.
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
     mockNow(boundary.getTime() - 60_000);
     const settlement = deliverBriefCallback(runId);
     await expect
@@ -13005,6 +13057,137 @@ describe("Morning Brief legacy schedule claim journal", () => {
     expect(Date.parse(settled.body.nextRunAt)).toBeGreaterThan(
       boundary.getTime() + 60_000,
     );
+  });
+
+  it("does not let a waiting late last-run write overwrite a newer claim", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [olderRunId] = await briefRunIds(threadId);
+    if (!olderRunId) {
+      throw new Error("Expected the first occurrence to start a run");
+    }
+    if (!brief.actor.orgId) {
+      throw new Error("Expected an organization-scoped brief owner");
+    }
+    const nextAnchor = await republishBriefSchedule(brief.actor);
+
+    // A real newer claim runs inside an uncommitted transaction, so it owns the
+    // automation row and its journal row is invisible to anything that started
+    // earlier.
+    const claimedAt = new Date(nextAnchor + 30_000);
+    const newerClaim = await holdNewerMorningBriefClaimFixture({
+      automationId: brief.automationId,
+      owner: {
+        orgId: brief.actor.orgId,
+        ownerUserId: brief.actor.userId,
+        workflowId: brief.workflowId,
+      },
+      scheduledAnchorAt: new Date(nextAnchor),
+      claimedAt,
+      signal: context.signal,
+    });
+    // Never leave the newer claim transaction holding the automation row.
+    onTestFinished(async () => {
+      newerClaim.commit();
+      await newerClaim.done;
+    });
+
+    // The older launch's late write begins now and waits on that row.
+    const lateWrite = recordWorkflowAutomationLastRunFixture({
+      automationId: brief.automationId,
+      runId: olderRunId,
+    });
+    await expect
+      .poll(async () => {
+        return await newerClaim.blockedWaiterCount();
+      })
+      .toBeGreaterThan(0);
+    newerClaim.commit();
+    await newerClaim.done;
+    await lateWrite;
+
+    // The newer claimant's row state survives: the late write observed the
+    // claim that committed during its wait and skipped.
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(2);
+    expect(claims[1]?.claimSequence).toBe(2);
+    const automation = await readWorkflowAutomationLastRunFixture(
+      brief.automationId,
+    );
+    expect(automation.lastRunAt?.getTime()).toBe(claimedAt.getTime());
+    expect(automation.updatedAt.getTime()).toBe(claimedAt.getTime());
+  });
+
+  it("rolls the claim and its queue event back together when the claim transaction fails", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the first occurrence to start a run");
+    }
+    await deliverBriefCallback(runId);
+    const secondAnchor = Date.parse(
+      (await readBriefPreference(brief.actor)).body.nextRunAt ?? "",
+    );
+    const eventsBefore = await briefAutomationEventCount(threadId);
+
+    // The tick reaches the claim, then fails inside the same transaction that
+    // would have inserted its queue event.
+    const held = await holdWorkflowAutomationRowFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+    });
+    // An open automation row lock would block unrelated agent deletion later.
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+    mockNow(secondAnchor + 60_000);
+    const failingTick = accept(
+      automationExecutionClient().execute({
+        body: { automation_id: brief.automationId },
+      }),
+      [200],
+    );
+    await expect
+      .poll(async () => {
+        return await held.blockedWaiterCount();
+      })
+      .toBeGreaterThan(0);
+    await expect(held.cancelBlockedWaiters()).resolves.toBeGreaterThan(0);
+    held.release();
+    await held.done;
+    await failingTick;
+
+    // Nothing partial survives: the claim and the queue event rolled back
+    // together, and the existing failure policy left a real future schedule
+    // rather than a permanently NULL hole.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(1);
+    await expect(briefAutomationEventCount(threadId)).resolves.toBe(
+      eventsBefore,
+    );
+    const recoveredSchedule = await readBriefPreference(brief.actor);
+    if (!recoveredSchedule.body.nextRunAt) {
+      throw new Error("Expected the failed claim to leave a usable schedule");
+    }
+    const recoveredAnchor = Date.parse(recoveredSchedule.body.nextRunAt);
+    expect(recoveredAnchor).toBeGreaterThan(secondAnchor);
+    expect(recoveredSchedule.body.enabled).toBeTruthy();
+
+    // The real cron then records the recovered occurrence on its next tick.
+    await pollAt(brief.automationId, recoveredAnchor + 60_000);
+    const recovered = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(recovered).toHaveLength(2);
+    expect(recovered[1]?.scheduledAnchorAt.getTime()).toBe(recoveredAnchor);
+    expect(recovered[1]?.queueEventId).toStrictEqual(expect.any(String));
   });
 
   it("settles a consumed occurrence through the outer pre-run failure path and recovers the schedule", async () => {
