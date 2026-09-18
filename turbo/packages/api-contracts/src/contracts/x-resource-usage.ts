@@ -21,8 +21,8 @@ export const xResourceUsageEventSchema = z
     idempotencyKey: z.uuid(),
     kind: z.literal("connector"),
     provider: z.literal("x"),
-    // The initial namespaces are derived: tweet.read -> post, user.read -> user.
-    category: z.enum(["tweet.read", "user.read"]),
+    // The billing categories derive namespaces: posts.read -> post, user.read -> user.
+    category: z.enum(["posts.read", "user.read"]),
     quantity: quantitySchema,
     observedAt: z.iso.datetime({ precision: 3 }),
     resources: z
