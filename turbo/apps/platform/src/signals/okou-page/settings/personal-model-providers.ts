@@ -2,6 +2,7 @@ import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   getModelProviderPresentationLabel,
+  type ModelProviderResponse,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ResetPersonalModelProviderSubscriptionUsageResponse } from "@okouai/api-contracts/contracts/personal-model-providers";
@@ -29,6 +30,13 @@ const internalAccountMenuCodexResetDialog$ = state({
   open: false,
   resetCredits: null as number | null,
 });
+interface PersonalAccountDisconnectDialogState {
+  readonly account: ModelProviderResponse;
+  readonly fallbackIndex: number;
+}
+
+const internalPersonalAccountDisconnectDialog$ =
+  state<PersonalAccountDisconnectDialogState | null>(null);
 
 export const personalActionPromise$ = computed((get) => {
   return get(internalPersonalActionPromise$);
@@ -40,6 +48,10 @@ export const settingsCodexResetDialog$ = computed((get) => {
 
 export const accountMenuCodexResetDialog$ = computed((get) => {
   return get(internalAccountMenuCodexResetDialog$);
+});
+
+export const personalAccountDisconnectDialog$ = computed((get) => {
+  return get(internalPersonalAccountDisconnectDialog$);
 });
 
 export const setSettingsCodexResetDialog$ = command(
@@ -58,6 +70,12 @@ export const setSettingsCodexResetDialog$ = command(
 export const setAccountMenuCodexResetDialog$ = command(
   ({ set }, dialog: { open: boolean; resetCredits: number | null }) => {
     set(internalAccountMenuCodexResetDialog$, dialog);
+  },
+);
+
+export const setPersonalAccountDisconnectDialog$ = command(
+  ({ set }, dialog: PersonalAccountDisconnectDialogState | null) => {
+    set(internalPersonalAccountDisconnectDialog$, dialog);
   },
 );
 
@@ -131,7 +149,7 @@ export const deletePersonalOAuthCredentialAccount$ = command(
       signal.throwIfAborted();
       toast.success(
         i18n.t(($) => {
-          return $.settings.models.toasts.accountRemoved;
+          return $.settings.models.toasts.accountDisconnected;
         }),
       );
     })();

@@ -907,6 +907,13 @@ test("Replace the failure card copy when recovery resolves", async () => {
       status: "failed",
       prompt: "Continue the analysis",
       appendSystemPrompt: null,
+      source: {
+        providerType: null,
+        runtimeProviderType: null,
+        model: null,
+        credentialScope: null,
+        account: { status: "unknown" },
+      },
       createdAt: "2026-08-01T10:00:02.000Z",
     });
   });

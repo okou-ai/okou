@@ -17,6 +17,7 @@ import { serializeError } from "@okouai/core/log-utils";
 // oxlint-disable-next-line no-restricted-imports -- app factory owns the Hono instance
 import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { bodyLimit } from "hono/body-limit";
 import { matchedRoutes } from "hono/route";
 
 import { corsMiddleware } from "./lib/cors";
@@ -591,6 +592,7 @@ export function createAppWithRoutes({
   // matching a registered method, and so registered route responses receive
   // Access-Control-Allow-Origin without relying on the legacy web proxy.
   app.use("*", corsMiddleware);
+  app.use("/mcp", bodyLimit({ maxSize: 64 * 1024 }));
 
   // Flush buffered Axiom logs after the response is sent so logging doesn't
   // add latency to the user-visible request.

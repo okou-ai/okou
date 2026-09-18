@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
+import type { FileEntryWithHash } from "@okouai/api-contracts/contracts/storage-content-hash";
 import {
   DEFAULT_SKILLS_BRANCH,
   DEFAULT_SKILLS_OWNER,
@@ -37,7 +38,6 @@ import {
   putS3Object,
 } from "../external/s3";
 import { createDeferredPromise, safeSync, tapError } from "../utils";
-import type { FileEntryWithHash } from "./storage-content-hash.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
 import { preparePiResourceIndex } from "../../lib/pi-resource-index";

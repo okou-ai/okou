@@ -403,11 +403,22 @@ describe("retained source authority", () => {
     connectionId: null,
     accountRef: "T123:U456",
     scopeDigest: morningBriefScopeDigest(["conversations.history"]),
+    endpoints: [],
     membershipId: "orgmem_1",
     agentId: "agent_1",
     capturedAt: "2026-09-17T06:00:00.000Z",
     containers: ["C1"],
     contributed: true,
+  };
+
+  /** A connector-backed source proves a connection, an account and endpoints. */
+  const gmailDescriptor: MorningBriefRetainedSourceDescriptor = {
+    ...descriptor,
+    source: "gmail",
+    connectionId: "conn_1",
+    accountRef: "owner@example.test",
+    endpoints: ["https://gmail.googleapis.com/gmail/v1/users/me/messages"],
+    containers: ["thread-1"],
   };
 
   it("digests an unchanged grant identically regardless of order", () => {
@@ -433,10 +444,44 @@ describe("retained source authority", () => {
     ).toBe("rejected");
   });
 
+  it("rejects supplied material whose account was never proved", () => {
+    // Null identity is "not observed", never "any account": a later check given
+    // this descriptor would have nothing to ask the provider about.
+    expect(
+      boundMorningBriefDescriptors([{ ...gmailDescriptor, accountRef: null }]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+    expect(
+      boundMorningBriefDescriptors([
+        { ...gmailDescriptor, connectionId: null },
+      ]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+    expect(
+      boundMorningBriefDescriptors([{ ...gmailDescriptor, endpoints: [] }]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+  });
+
+  it("accepts an unproven source that supplied nothing", () => {
+    // An unconfigured connector has no retained input, so there is nothing for
+    // a later check to defend and no reason to fail the whole composition.
+    expect(
+      boundMorningBriefDescriptors([
+        {
+          ...gmailDescriptor,
+          connectionId: null,
+          accountRef: null,
+          scopeDigest: "",
+          endpoints: [],
+          containers: [],
+          contributed: false,
+        },
+      ]).kind,
+    ).toBe("bounded");
+  });
+
   it("revalidates supplied-but-uncited material and skips sources that supplied none", () => {
     const supplied = morningBriefSourcesToRevalidate([
       descriptor,
-      { ...descriptor, source: "gmail", contributed: false },
+      { ...gmailDescriptor, contributed: false },
     ]);
 
     expect(
@@ -488,35 +533,68 @@ describe("retained source authority", () => {
 describe("language precedence", () => {
   it("keeps Agent instructions as the authority over a member locale", () => {
     const plan = planMorningBriefLanguage({
-      instructions: { versionId: "ver_1", digest: "d1" },
+      instructions: { state: "available", versionId: "ver_1", digest: "d1" },
       memberLocale: "en-US",
     });
 
     expect(plan.authority).toBe("agent-instructions");
-    expect(plan.instructionsVersionId).toBe("ver_1");
+    expect(plan.instructions).toStrictEqual({
+      state: "available",
+      versionId: "ver_1",
+      digest: "d1",
+    });
     // The same call applies the fallback only when the text says nothing.
     expect(plan.fallbackLanguage).toBe("en-US");
   });
 
   it("uses the member locale when no instructions exist", () => {
     const plan = planMorningBriefLanguage({
-      instructions: null,
+      instructions: { state: "no-storage", versionId: null },
       memberLocale: "ja-JP",
     });
 
     expect(plan.authority).toBe("member-locale");
     expect(plan.fallbackLanguage).toBe("ja-JP");
-    expect(plan.instructionsDigest).toBeNull();
+    expect(plan.instructions).toStrictEqual({
+      state: "no-storage",
+      versionId: null,
+    });
+  });
+
+  it("keeps the version a proven absence was read under", () => {
+    // An empty file and a version without the target are answers *from* a
+    // configuration, so the plan says which one it read rather than dropping
+    // the evidence that anything was read at all.
+    expect(
+      planMorningBriefLanguage({
+        instructions: { state: "empty-file", versionId: "ver_9" },
+        memberLocale: "ja-JP",
+      }).instructions,
+    ).toStrictEqual({ state: "empty-file", versionId: "ver_9" });
+    expect(
+      planMorningBriefLanguage({
+        instructions: { state: "no-target", versionId: "ver_9" },
+        memberLocale: null,
+      }),
+    ).toStrictEqual({
+      authority: "default",
+      fallbackLanguage: MORNING_BRIEF_DEFAULT_LANGUAGE,
+      instructions: { state: "no-target", versionId: "ver_9" },
+    });
   });
 
   it("falls back to the declared default for an absent or unknown locale", () => {
     expect(
-      planMorningBriefLanguage({ instructions: null, memberLocale: null })
-        .authority,
+      planMorningBriefLanguage({
+        instructions: { state: "no-storage", versionId: null },
+        memberLocale: null,
+      }).authority,
     ).toBe("default");
     expect(
-      planMorningBriefLanguage({ instructions: null, memberLocale: "xx-YY" })
-        .fallbackLanguage,
+      planMorningBriefLanguage({
+        instructions: { state: "no-storage", versionId: null },
+        memberLocale: "xx-YY",
+      }).fallbackLanguage,
     ).toBe(MORNING_BRIEF_DEFAULT_LANGUAGE);
   });
 
@@ -526,7 +604,7 @@ describe("language precedence", () => {
     // Settings still offers exactly the ten UI locales; neither is one of them.
     expect(
       planMorningBriefLanguage({
-        instructions: null,
+        instructions: { state: "no-storage", versionId: null },
         memberLocale: "zh-Hans",
       }).authority,
     ).toBe("member-locale");
@@ -627,7 +705,7 @@ describe("exact request bytes", () => {
 
   it("keeps the assembled request inside the ceiling it was budgeted against", () => {
     const language = planMorningBriefLanguage({
-      instructions: null,
+      instructions: { state: "no-storage", versionId: null },
       memberLocale: "en-US",
     });
     const items = Array.from({ length: 200 }, (_, index) => {
@@ -664,7 +742,7 @@ describe("exact request bytes", () => {
 
   it("reserves the whole instruction file before allocating evidence", () => {
     const language = planMorningBriefLanguage({
-      instructions: { versionId: "ver_1", digest: "d1" },
+      instructions: { state: "available", versionId: "ver_1", digest: "d1" },
       memberLocale: null,
     });
     const instructions = "写成简体中文。".repeat(4096);
@@ -795,7 +873,7 @@ describe("declared bounds", () => {
 describe("envelope reservation against the final report", () => {
   it("reserves enough for the coverage counts allocation will actually produce", () => {
     const language = planMorningBriefLanguage({
-      instructions: null,
+      instructions: { state: "no-storage", versionId: null },
       memberLocale: null,
     });
     // Many items so the real omitted count is three digits wide, where an

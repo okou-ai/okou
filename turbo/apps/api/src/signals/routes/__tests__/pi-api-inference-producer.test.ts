@@ -170,6 +170,7 @@ async function seedProducerRecoveryRun(
   kind: "ready" | "publishing",
   options?: {
     readonly omitBillingCapture?: boolean;
+    readonly missingModelKey?: boolean;
     readonly deadlineAt?: Date;
   },
 ): Promise<string> {
@@ -178,6 +179,7 @@ async function seedProducerRecoveryRun(
     source_run_id: sourceRunId,
     kind,
     ...(options?.omitBillingCapture ? { omit_billing_capture: true } : {}),
+    ...(options?.missingModelKey ? { missing_model_key: true } : {}),
     ...(options?.deadlineAt
       ? { deadline_at: options.deadlineAt.toISOString() }
       : {}),
@@ -190,13 +192,6 @@ async function expirePiInference(runId: string, deadlineAt = new Date(0)) {
     action: "expire-pi-inference",
     run_id: runId,
     deadline_at: deadlineAt.toISOString(),
-  });
-}
-
-async function deleteCapturedPiModelKey(runId: string) {
-  await requestStateAction({
-    action: "delete-pi-inference-model-key",
-    run_id: runId,
   });
 }
 
@@ -1253,11 +1248,14 @@ describe("durable Pi API producer", () => {
     );
   }, 90_000);
 
-  it("rejects a recovered ready owner after its captured model source disappears", async () => {
+  it("rejects a recovered ready owner with a missing model source without disrupting another actor", async () => {
     configureNativeCliArtifact();
     const { actor, agentId } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const other = await entitledChatActor();
+    await enableDurablePi(other.actor);
+    await configureBuiltInPiModel(other.actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
     mockPiResourceArchiveDownloads();
@@ -1286,8 +1284,26 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, source.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-    const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready");
-    await deleteCapturedPiModelKey(recoveryRunId);
+    expect(calls).toBe(1);
+
+    // Platform-managed key removal has no product API. Capture an absent key
+    // only in the synthetic recovery run while another actor owns the live key.
+    const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready", {
+      missingModelKey: true,
+    });
+
+    const unaffected = await sendChatRun(
+      other.actor,
+      {
+        agentId: other.agentId,
+        prompt: "keep the shared model source available",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(other.actor, unaffected.runId, "completed", 10_000);
+    await flushWaitUntilForTest();
+    expect(calls).toBe(2);
 
     await expect(
       cleanupRun(recoveryRunId, orgId, usagePricingResolution),
@@ -1297,9 +1313,10 @@ describe("durable Pi API producer", () => {
     await waitForRunStatus(actor, recoveryRunId, "failed", 10_000);
     await flushWaitUntilForTest();
 
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
     await expect(api.readRun(actor, recoveryRunId)).resolves.toMatchObject({
       status: "failed",
+      error: expect.stringContaining("[PI_API_MODEL_CREDENTIAL_INVALID]"),
     });
   }, 90_000);
 

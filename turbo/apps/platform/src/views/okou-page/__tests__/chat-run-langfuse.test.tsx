@@ -24,6 +24,13 @@ const RUN_DETAIL = Object.freeze({
   status: "completed" as const,
   prompt: "Prepare the response",
   appendSystemPrompt: null,
+  source: {
+    providerType: null,
+    runtimeProviderType: null,
+    model: null,
+    credentialScope: null,
+    account: { status: "unknown" as const },
+  },
   createdAt: "2026-03-10T00:00:00Z",
 });
 

@@ -21,6 +21,8 @@ const SCHEMA = {
   DATABASE_URL: z.string().min(1),
   CLERK_SECRET_KEY: z.string().min(1),
   CLERK_PUBLISHABLE_KEY: z.string().min(1),
+  MCP_RESOURCE_URL: z.url().optional(),
+  MCP_OAUTH_ISSUER: z.url().optional(),
   SECRETS_ENCRYPTION_KEY: z.string().length(64),
   SECRETS_KMS_KEY_ID: z.string().min(1).optional(),
   OFFICIAL_RUNNER_SECRET: z.string().length(64),

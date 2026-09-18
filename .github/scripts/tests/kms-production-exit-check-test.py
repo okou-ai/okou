@@ -41,12 +41,13 @@ class ExitCheckTests(unittest.TestCase):
             {
                 "RUNNER_TEMP": str(self.root),
                 "GITHUB_STEP_SUMMARY": str(self.root / "summary.md"),
-                "GITHUB_REPOSITORY": "vm0-ai/vm0",
+                "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "1234",
                 "GITHUB_SHA": "a" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/kms-production-exit-check.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-exit-check.yml@refs/heads/main",
                 "NEON_PROJECT_ID": "hidden-lab-39609750",
                 "NEON_API_KEY": SECRET,
                 "MIGRATION_VERIFIED_AT": (
@@ -312,6 +313,16 @@ print(json.dumps(data)+"\\n200", end="")
         self.assertEqual(inventory["counts"]["unreadable"], 1)
         self.assertEqual(inventory["failures"][0]["reason"], "duplicate_json_key")
 
+    def test_renamed_repository_uses_the_same_protected_workflow(self):
+        self.env["GITHUB_REPOSITORY"] = "maxandzoe/okou"
+        self.env["GITHUB_WORKFLOW_REF"] = (
+            "maxandzoe/okou/.github/workflows/"
+            "kms-production-exit-check.yml@refs/heads/main"
+        )
+        self.fake_neon()
+        result = self.run_script("backups")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_paginated_metadata_keeps_all_snapshots_for_review(self):
         self.fake_neon()
         result = self.run_script("backups")
@@ -466,10 +477,19 @@ print(json.dumps(data)+"\\n200", end="")
                 self.assertEqual(report["failure"], failure)
 
     def test_nonproduction_context_never_contacts_neon(self):
-        self.fake_neon()
-        self.env["GITHUB_REF"] = "refs/heads/feature"
-        self.assertEqual(self.run_script("backups").returncode, 1)
-        self.assertFalse((self.root / "requests.jsonl").exists())
+        for variable, value in [
+            ("GITHUB_REF", "refs/heads/feature"),
+            ("GITHUB_REPOSITORY_ID", "1"),
+        ]:
+            with self.subTest(variable=variable):
+                self.fake_neon()
+                self.env[variable] = value
+                self.assertEqual(self.run_script("backups").returncode, 1)
+                self.assertFalse((self.root / "requests.jsonl").exists())
+                self.env[variable] = {
+                    "GITHUB_REF": "refs/heads/main",
+                    "GITHUB_REPOSITORY_ID": "1096175506",
+                }[variable]
 
     def test_unexpected_remote_fields_are_never_exported(self):
         self.tool(

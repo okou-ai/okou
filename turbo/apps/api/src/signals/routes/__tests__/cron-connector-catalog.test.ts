@@ -136,7 +136,7 @@ const miscApi = createMiscRoutesApi(context);
 const CRON_SECRET = "connector-catalog-cron-secret";
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-const ACTIVE_KEY = "connectors/v3/active.json";
+const ACTIVE_KEY = "connectors/v4/active.json";
 const FIRST_SYNC_TIME = "2026-07-15T08:00:00.000Z";
 const DIAGNOSTICS_USER_ID = `user_${randomUUID()}`;
 const DIAGNOSTICS_ORG_ID = `org_${randomUUID()}`;
@@ -145,7 +145,7 @@ const DEFAULT_API_VERSION = apiPackage.version;
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES = 32 * 1024 * 1024;
 const EXPECTED_CAPABILITY_DIGEST =
-  "sha256:9a8c84f91a49b1ab88d0771fda4bfa91816dcd9d471d98d2d3eb2f2aafbc4627";
+  "sha256:c797c6c605b7074cce27edc6e6a35da4dd9e252c65404ebf13d363148981caf1";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
@@ -251,7 +251,7 @@ function catalogTemplate(reference: string): string {
 function releaseKeys(version: string): {
   readonly catalog: string;
 } {
-  const prefix = `connectors/v3/releases/${version}`;
+  const prefix = `connectors/v4/releases/${version}`;
   return {
     catalog: `${prefix}/catalog.json`,
   };
@@ -1194,7 +1194,7 @@ function buildRelease(options: ReleaseFixtureOptions): ReleaseFixture {
     "platform/views/zero-page/components/settings/icons/" +
     `${connectorSlug}-${iconDigest.slice("sha256:".length, 19)}.svg`;
   const catalog: JsonRecord = {
-    artifactSchemaVersion: 3,
+    artifactSchemaVersion: 4,
     catalogVersion: options.version,
     categoryMetadata: {
       categories: [
@@ -1630,6 +1630,7 @@ describe("connector catalog cron authentication and initial state", () => {
   it("reports never-synced without reading the shared storage bucket", async () => {
     configureSource();
     expect((await readStatus()).body).toStrictEqual({
+      schemaVersion: 4,
       state: "never-synced",
       active: null,
       lastAttempt: null,
@@ -2196,7 +2197,7 @@ describe("connector catalog valid lifecycle", () => {
     await replaceApiTestConnectorCatalogStoredBytes({
       catalogVersion: schemaRelease.version,
       rawBytes: jsonBytes({
-        artifactSchemaVersion: 4,
+        artifactSchemaVersion: 5,
         catalogVersion: schemaRelease.version,
       }),
       catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
@@ -2220,7 +2221,7 @@ describe("connector catalog valid lifecycle", () => {
     await replaceApiTestConnectorCatalogStoredBytes({
       catalogVersion: shapeRelease.version,
       rawBytes: jsonBytes({
-        artifactSchemaVersion: 3,
+        artifactSchemaVersion: 4,
       }),
       catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
     });
@@ -6444,7 +6445,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
           version: "legacy-pointer-reference",
           mutatePointer: (pointer) => {
             pointer.integrity = {
-              key: "connectors/v3/releases/legacy-pointer-reference/integrity/catalog.json",
+              key: "connectors/v4/releases/legacy-pointer-reference/integrity/catalog.json",
               digest: pointer.catalogDigest,
             };
             delete pointer.catalogDigest;
@@ -6471,7 +6472,7 @@ describe("connector catalog rejection and latest-valid retention", () => {
         return buildRelease({
           version: "unsupported-schema",
           mutateArtifact: (artifact) => {
-            artifact.artifactSchemaVersion = 4;
+            artifact.artifactSchemaVersion = 5;
           },
         });
       },

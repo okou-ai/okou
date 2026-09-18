@@ -30,7 +30,7 @@ type FilePreviewIconMeta = {
   bandClassName: string;
 };
 
-type FilePreviewIconSize = "sm" | "md";
+type FilePreviewIconSize = "sm" | "md" | "lg";
 
 function filePreviewIconSizeClass(size: FilePreviewIconSize) {
   if (size === "sm") {
@@ -38,6 +38,16 @@ function filePreviewIconSizeClass(size: FilePreviewIconSize) {
       root: "h-5 w-5 rounded-[5px]",
       top: "h-2.5",
       band: "h-2.5 px-0.5 text-[5px] tracking-[0.02em]",
+    };
+  }
+
+  // Large enough to carry a tile on its own, where the icon is the whole
+  // cover rather than a marker beside a filename.
+  if (size === "lg") {
+    return {
+      root: "h-16 w-16 rounded-[16px]",
+      top: "h-8",
+      band: "h-8 px-1.5 text-[12px] tracking-[0.05em]",
     };
   }
 

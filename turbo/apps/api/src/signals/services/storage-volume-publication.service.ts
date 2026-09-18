@@ -3,6 +3,11 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
+import {
+  computeContentHashFromHashes,
+  hashFileContent,
+  type FileEntryWithHash,
+} from "@okouai/api-contracts/contracts/storage-content-hash";
 import { VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
@@ -25,11 +30,6 @@ import {
   verifyS3FilesExist,
 } from "../external/s3";
 import { onRejection } from "../utils";
-import {
-  computeContentHashFromHashes,
-  hashFileContent,
-  type FileEntryWithHash,
-} from "./storage-content-hash.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import {
   registerPreparedStorageVersions,

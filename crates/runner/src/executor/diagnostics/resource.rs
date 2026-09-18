@@ -202,29 +202,41 @@ pub(in crate::executor) async fn collect_agent_abnormal_exit_diagnostics(
                 .map(u64::from);
             let guest_memory_available_mb =
                 resource_diagnostics.and_then(|diagnostics| diagnostics.guest_memory_available_mb);
-            warn!(
-                run_id = %run_id,
-                sandbox_id = %sandbox_id,
-                sandbox_reuse_result = reuse_result.as_wire(),
-                exit_code,
-                diagnostic_termination = helper_exec_termination_label(&result),
-                diagnostic_succeeded,
-                diagnostic_stdout_len = result.stdout.len(),
-                diagnostic_stderr_len = result.stderr.len(),
-                diagnostic_stdout_truncated = result.stdout_truncated,
-                diagnostic_stderr_truncated = result.stderr_truncated,
-                resource_failure_kind,
-                guest_root_fs_used_percent,
-                guest_root_fs_available_kb,
-                guest_root_fs_inode_used_percent,
-                guest_root_fs_available_inodes,
-                guest_workspace_fs_used_percent,
-                guest_memory_available_mb,
-                diagnostic_stdout = %stdout,
-                guest_root_fs_usage,
-                diagnostic_stderr = %stderr,
-                "agent abnormal exit in-vm diagnostics"
-            );
+            macro_rules! emit_diagnostics {
+                ($level:expr) => {
+                    tracing::event!(
+                        $level,
+                        run_id = %run_id,
+                        sandbox_id = %sandbox_id,
+                        sandbox_reuse_result = reuse_result.as_wire(),
+                        exit_code,
+                        diagnostic_termination = helper_exec_termination_label(&result),
+                        diagnostic_succeeded,
+                        diagnostic_stdout_len = result.stdout.len(),
+                        diagnostic_stderr_len = result.stderr.len(),
+                        diagnostic_stdout_truncated = result.stdout_truncated,
+                        diagnostic_stderr_truncated = result.stderr_truncated,
+                        resource_failure_kind,
+                        guest_root_fs_used_percent,
+                        guest_root_fs_available_kb,
+                        guest_root_fs_inode_used_percent,
+                        guest_root_fs_available_inodes,
+                        guest_workspace_fs_used_percent,
+                        guest_memory_available_mb,
+                        diagnostic_stdout = %stdout,
+                        guest_root_fs_usage,
+                        diagnostic_stderr = %stderr,
+                        "agent abnormal exit in-vm diagnostics"
+                    );
+                };
+            }
+            if resource_diagnostics.and_then(|diagnostics| diagnostics.failure_kind)
+                == Some(ResourceFailureKind::GuestRootFilesystemFull)
+            {
+                emit_diagnostics!(tracing::Level::INFO);
+            } else {
+                emit_diagnostics!(tracing::Level::WARN);
+            }
             resource_diagnostics
         }
         Err(error) => {

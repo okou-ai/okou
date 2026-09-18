@@ -20,6 +20,7 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   deleteMorningBriefAgent,
+  holdMorningBriefCollectionOccurrence,
   pauseMorningBriefAutomation,
   readMorningBriefCollectionOccurrences,
   restrictMorningBriefAgent,
@@ -2147,7 +2148,9 @@ describe("Morning Brief platform-funded generation commit admission", () => {
   it("admits one provider request when a second attempt overlaps the reservation commit", async () => {
     const f = await fixture();
     slackWithMessages();
-    const traffic = scriptProvider(() => {
+    const releaseProvider = createDeferredPromise<void>(context.signal);
+    const traffic = scriptProvider(async () => {
+      await releaseProvider.promise;
       return completion({ cost: 0.006 });
     });
     // The first attempt is suspended between its reservation INSERT and its
@@ -2157,21 +2160,30 @@ describe("Morning Brief platform-funded generation commit admission", () => {
       context.signal,
     );
 
-    const first = accept(generate(f), [200]);
-    const firstBackend = await barrier.waitForArrival();
-    const second = accept(generate(f), [409]);
-    // The second attempt serializes on the occurrence row the first holds, so
-    // its own arrival is observed as a backend blocked by that backend — not by
-    // asking the barrier again, which the first attempt already satisfies.
-    await waitForDeferredBlocker(firstBackend);
-    await barrier.release();
-
-    const [firstResponse, secondResponse] = await Promise.all([first, second]);
+    const [firstResponse] = await Promise.all([
+      accept(generate(f), [200]),
+      (async () => {
+        const firstTransaction = await barrier.waitForArrival();
+        const [secondResponse] = await Promise.all([
+          accept(generate(f), [409]),
+          (async () => {
+            // The second request must wait on the first transaction, not on
+            // the barrier that is already blocking the first request.
+            await waitForDeferredBlocker(firstTransaction);
+            expect(traffic.bodies).toHaveLength(0);
+            await barrier.release();
+          })(),
+        ]);
+        expect(secondResponse.body.error.code).toBe(
+          "MORNING_BRIEF_GENERATION_IN_PROGRESS",
+        );
+        // Keep the reservation open until the second request observes it;
+        // a completed generation would legitimately return 200 instead.
+        releaseProvider.resolve();
+      })(),
+    ]);
     const accepted = expectGenerated(firstResponse.body).generation;
     expect(accepted.state).toBe("succeeded");
-    expect(secondResponse.body.error.code).toBe(
-      "MORNING_BRIEF_GENERATION_IN_PROGRESS",
-    );
     expect(traffic.bodies).toHaveLength(1);
 
     const [row, ...extraRows] = await readMorningBriefGenerations(f);
@@ -2215,6 +2227,211 @@ describe("Morning Brief platform-funded generation commit admission", () => {
     expect(expectGenerated(response.body).generation.state).toBe("succeeded");
     expect(traffic.bodies).toHaveLength(1);
     await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+  });
+});
+
+/**
+ * The joined reservation rolls back with the completion that carries it.
+ *
+ * Every case here suspends the real collection finalization — or the
+ * reservation it performs inside that same transaction — and then changes the
+ * world. Only external HTTP is doubled: the occurrence, the slot, the locks and
+ * the rollback are the production ones against a real database.
+ */
+describe("Morning Brief collection handoff admission", () => {
+  /**
+   * Script the Slack reads with the first discovery call parked.
+   *
+   * The attempt commits its claim before that call, so the occurrence row
+   * really exists and a test can hold it before finalization tries to take it.
+   * The later discovery calls — the pre-read proofs and the final release proof
+   * — answer immediately, and history carries one in-window message so the
+   * bundle really reserves a generation.
+   */
+  function slackHeldAtDiscovery(): {
+    readonly arrived: Promise<void>;
+    readonly release: () => void;
+  } {
+    const arrived = createDeferredPromise<void>(context.signal);
+    const released = createDeferredPromise<void>(context.signal);
+    let suspended = false;
+    server.use(
+      http.get(SLACK_USER_CONVERSATIONS_URL, async () => {
+        if (!suspended) {
+          suspended = true;
+          arrived.resolve();
+          await released.promise;
+        }
+        return HttpResponse.json({
+          ok: true,
+          channels: [{ id: "C100", name: "general", is_private: false }],
+          response_metadata: { next_cursor: "" },
+        });
+      }),
+      http.get(SLACK_HISTORY_URL, () => {
+        return HttpResponse.json({
+          ok: true,
+          messages: [
+            {
+              type: "message",
+              ts: messageTs(0),
+              user: "U0",
+              text: "ship the release",
+            },
+          ],
+        });
+      }),
+      http.get("https://slack.com/api/conversations.replies", () => {
+        return HttpResponse.json({ ok: true, messages: [] });
+      }),
+    );
+    return {
+      arrived: arrived.promise,
+      release: () => {
+        if (!released.settled()) {
+          released.resolve();
+        }
+      },
+    };
+  }
+
+  /** Suspend one attempt where its completion waits for the occurrence row. */
+  async function heldCompletion(
+    f: Fixture,
+    controller?: AbortController,
+  ): Promise<{
+    readonly pending: ReturnType<typeof generate>;
+    readonly release: () => Promise<void>;
+  }> {
+    const suspended = slackHeldAtDiscovery();
+    const pending = controller
+      ? cancellableGeneration(controller.signal).preview({
+          headers: f.headers,
+          body: { scheduledFor: ANCHOR },
+        })
+      : generate(f);
+    await suspended.arrived;
+    const held = await holdMorningBriefCollectionOccurrence(
+      { orgId: f.orgId, userId: f.userId },
+      context.signal,
+    );
+    suspended.release();
+    await held.waitForArrival();
+    return { pending, release: held.release };
+  }
+
+  it("commits neither completion nor reservation when the caller cancels while the completion waits", async () => {
+    const f = await fixture();
+    const traffic = scriptProvider(() => {
+      throw new Error("a cancelled completion must not reach the provider");
+    });
+    const controller = new AbortController();
+    const held = await heldCompletion(f, controller);
+
+    controller.abort();
+    await held.release();
+    const outcome = await settleIncludingAbort(held.pending);
+
+    expect(outcome.ok && outcome.value.status === 200).toBeFalsy();
+    expect(traffic.bodies).toStrictEqual([]);
+    // Neither write survived: the reservation joins the completion's
+    // transaction, so unwinding one unwinds both.
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+    expect(extra).toStrictEqual([]);
+    expect(row).toMatchObject({ status: "running", attempt: 1 });
+    expect(row?.outcome).toBeNull();
+    expect(row?.finishedAt).toBeNull();
+  });
+
+  it("commits neither completion nor reservation when the caller cancels while the reservation waits", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(() => {
+      throw new Error("a cancelled reservation must not reach the provider");
+    });
+    const controller = new AbortController();
+    const barrier = await holdMorningBriefGenerationReservation(
+      { orgId: f.orgId, userId: f.userId },
+      context.signal,
+    );
+
+    const pending = cancellableGeneration(controller.signal).preview({
+      headers: f.headers,
+      body: { scheduledFor: ANCHOR },
+    });
+    // The reservation is written and blocked before COMMIT, which is an await
+    // interval of its own inside the joined handoff.
+    await barrier.waitForArrival();
+    controller.abort();
+    await barrier.release();
+    const outcome = await settleIncludingAbort(pending);
+
+    expect(outcome.ok && outcome.value.status === 200).toBeFalsy();
+    expect(traffic.bodies).toStrictEqual([]);
+    await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+    const [row] = await readMorningBriefCollectionOccurrences(f);
+    expect(row).toMatchObject({ status: "running", attempt: 1 });
+    expect(row?.outcome).toBeNull();
+  });
+
+  it.each([
+    [
+      "the brief is disabled",
+      async (f: Fixture) => {
+        await pauseMorningBriefAutomation(f.automationId);
+      },
+      "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+    ],
+    [
+      "the connected Slack account is rebound",
+      async (f: Fixture) => {
+        await rebindMorningBriefSlackAccount(
+          f.userId,
+          `U${randomUUID().slice(0, 8)}`,
+        );
+      },
+      "MORNING_BRIEF_COLLECTION_BINDING_CHANGED",
+    ],
+  ])(
+    "reserves nothing when %s while the completion waits",
+    async (_label, mutate, expectedCode) => {
+      const f = await fixture();
+      const traffic = scriptProvider(() => {
+        throw new Error("a lapsed authority must not reach the provider");
+      });
+      const held = await heldCompletion(f);
+
+      await mutate(f);
+      await held.release();
+
+      const refused = await accept(held.pending, [409]);
+      expect(refused.body.error.code).toBe(expectedCode);
+      expect(traffic.bodies).toStrictEqual([]);
+      await expect(readMorningBriefGenerations(f)).resolves.toStrictEqual([]);
+      const [row] = await readMorningBriefCollectionOccurrences(f);
+      expect(row).toMatchObject({ status: "running", attempt: 1 });
+      expect(row?.outcome).toBeNull();
+    },
+  );
+
+  it("generates once when nothing changes while the completion waits", async () => {
+    const f = await fixture();
+    const traffic = scriptProvider(() => {
+      return completion({ cost: 0.003 });
+    });
+    const held = await heldCompletion(f);
+
+    // The positive control: the same suspended wait, with nothing changing
+    // underneath it, commits the completion and its reservation together.
+    await held.release();
+    const response = await accept(held.pending, [200]);
+
+    expect(expectGenerated(response.body).generation.state).toBe("succeeded");
+    expect(traffic.bodies).toHaveLength(1);
+    await expect(readMorningBriefGenerations(f)).resolves.toHaveLength(1);
+    const [row] = await readMorningBriefCollectionOccurrences(f);
+    expect(row).toMatchObject({ status: "completed", attempt: 1 });
   });
 });
 

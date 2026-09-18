@@ -32,6 +32,7 @@ class TargetProductionTest(unittest.TestCase):
                 "RUNNER_TEMP": str(root),
                 "KMS_OPERATION": "verify-target",
                 "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
@@ -89,9 +90,20 @@ class TargetProductionTest(unittest.TestCase):
         self.assertEqual(state["calls"].count("verify"), 1)
         self.assertTrue(report["kmsCallsMade"])
 
+    def test_renamed_repository_uses_the_same_protected_workflow(self):
+        result, report, _ = self.invoke(
+            overrides={
+                "GITHUB_REPOSITORY": "maxandzoe/okou",
+                "GITHUB_WORKFLOW_REF": "maxandzoe/okou/.github/workflows/kms-production-preflight.yml@refs/heads/main",
+            }
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(report["collectionComplete"])
+
     def test_wrong_context_is_rejected_before_provider_access(self):
         for overrides in [
             {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY_ID": "1"},
             {"GITHUB_REPOSITORY": "another-owner/okou"},
             {"GITHUB_EVENT_NAME": "pull_request"},
             {"GITHUB_WORKFLOW_REF": "other"},

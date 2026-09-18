@@ -11,6 +11,10 @@ function playVideoPreview(video: HTMLVideoElement): void {
   video.muted = true;
   video.playsInline = true;
   video.preload = "metadata";
+  // The clip is fetched on demand, so the gap between the click and the first
+  // frame is the network's, not the user's mistake. A card states it rather
+  // than looking inert; a clip already buffered skips straight to playing.
+  video.dataset.previewBuffering = video.readyState < 2 ? "true" : "false";
   detach(video.play(), Reason.DomCallback);
 }
 
@@ -22,6 +26,7 @@ export function markVideoPreviewPlaying(
     return;
   }
   video.dataset.previewPlaying = playing ? "true" : "false";
+  video.dataset.previewBuffering = "false";
 }
 
 export function startVideoPreview(video: HTMLVideoElement | null): void {
@@ -38,4 +43,5 @@ export function resetVideoPreview(video: HTMLVideoElement | null): void {
   video.pause();
   video.currentTime = 0;
   markVideoPreviewPlaying(video, false);
+  video.dataset.previewBuffering = "false";
 }

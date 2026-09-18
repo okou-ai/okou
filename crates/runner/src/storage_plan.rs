@@ -160,6 +160,16 @@ pub(crate) struct ArchiveHandle {
 }
 
 impl ArchiveHandle {
+    /// Representative source in the normalized per-kind prepared plan.
+    /// This position is not an object identity or stable across plan replacements.
+    pub(crate) const fn diagnostic_source(self) -> (&'static str, usize) {
+        let kind = match self.kind {
+            ArchiveKind::Storage => "storage",
+            ArchiveKind::Artifact => "artifact",
+        };
+        (kind, self.index)
+    }
+
     #[cfg(test)]
     pub(crate) const fn storage(index: usize) -> Self {
         Self {

@@ -5,7 +5,11 @@ import {
   agentsMainContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import type { ChatThreadSnapshotProjection } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadsContract,
+  type ChatThreadSnapshotProjection,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -174,6 +178,44 @@ test("Hide mention suggestions when nothing useful matches", async () => {
     expect(composer).toHaveTextContent("@alpha");
     expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
   });
+});
+
+test("Keep archived chats in @ mention suggestions when archiving is enabled", async () => {
+  const current = withAgent(
+    continuityThread(64, 1, "Current mention chat"),
+    AGENT_ID,
+  );
+  const archived = withAgent(
+    continuityThread(64, 2, "✅ Archived mention context"),
+    AGENT_ID,
+  );
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 64,
+    threads: [current, archived],
+  });
+  installAgents([agent(AGENT_ID, "Scout", SCOUT_AVATAR)]);
+  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+    return respond(200, { unreads: [] });
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${current.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+
+  await waitFor(() => {
+    expect(screen.queryByText("✅ Archived mention context")).toBeNull();
+  });
+
+  const user = userEvent.setup({ delay: null });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await user.click(composer);
+  await user.keyboard("@archived");
+
+  const menu = await screen.findByTestId("chat-thread-suggestion-menu");
+  expect(within(menu).getByText("✅ Archived mention context")).toBeVisible();
 });
 
 async function openAgentMentionWorkspace() {

@@ -115,6 +115,15 @@ const userTemplateCatalogEntrySchema = userTemplateSummarySchema.extend({
 
 const userTemplateDetailSchema = userTemplateSummarySchema.extend({
   pageUrls: z.array(z.url()),
+  /**
+   * An expiring URL for the file this template was compiled from.
+   *
+   * Here rather than on the summary because it is what a reader opens, not
+   * what a catalog lists: a document template renders no pages, so the source
+   * is the only thing there is to show, and signing one per row for a grid
+   * nobody has opened yet would pay for URLs that expire unread.
+   */
+  sourceUrl: z.url(),
   previewAssets: z.array(userTemplatePreviewAssetSchema),
 });
 

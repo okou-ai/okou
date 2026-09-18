@@ -35,6 +35,19 @@ const f = fixture(
   input.authorityId,
   policy,
 );
+if (!process.send) {
+  throw new Error("test_ipc_required");
+}
+const send = process.send.bind(process);
+// Only the test-installed trigger emits this marker. PostgreSQL delivers the
+// notice before waiting on its held lock, without committing the transaction.
+f.pool.on("connect", (client) => {
+  client.on("notice", (notice) => {
+    if (notice.message === "b2a_database_pause") {
+      send("b2a_database_pause");
+    }
+  });
+});
 let lookups = 0;
 const journal = {
   ...f.journal,
@@ -61,10 +74,6 @@ const bridge = createClerkErasureBridge({
   signingSecret: secret,
   authority: policy,
 });
-if (!process.send) {
-  throw new Error("test_ipc_required");
-}
-process.send({ state: "ready" });
 const attemptController = new AbortController();
 try {
   const signal = attemptController.signal;

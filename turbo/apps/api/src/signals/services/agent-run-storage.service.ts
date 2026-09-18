@@ -5,6 +5,7 @@ import {
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
 import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
+import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { expandVariablesInString } from "@okouai/core/variable-expander";
 import {
   getInstructionsFilename,
@@ -55,7 +56,6 @@ import {
   type ApiDispatchTimingDimensions,
   type ApiDispatchTimingDimensionsInput,
 } from "./api-dispatch-timing.service";
-import { computeContentHashFromHashes } from "./storage-content-hash.service";
 import { enqueueMemorySummaryProjection } from "./memory-summary-projection.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 

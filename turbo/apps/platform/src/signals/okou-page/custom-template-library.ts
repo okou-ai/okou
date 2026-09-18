@@ -4,6 +4,7 @@ import {
   type UpdateUserTemplateBody,
   type UserTemplateCatalogEntry,
   type UserTemplateDetail,
+  type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -95,18 +96,38 @@ export const visibleCustomTemplates$ = computed(
   },
 );
 
-const internalOpenTemplateId$ = state<string | null>(null);
+/**
+ * The open template, with the kind that decides where it opens.
+ *
+ * The kind travels with the id rather than being read back from the catalog,
+ * because the surface has to be chosen in the same frame as the click: a deck
+ * takes over the panel, a document opens a preview dialog over it, and waiting
+ * for the detail request to say which would render one of them first and then
+ * replace it.
+ */
+interface OpenCustomTemplate {
+  readonly templateId: string;
+  readonly kind: UserTemplateKind;
+}
+
+const internalOpenTemplate$ = state<OpenCustomTemplate | null>(null);
 
 export const openCustomTemplateId$ = computed((get) => {
-  return get(internalOpenTemplateId$);
+  return get(internalOpenTemplate$)?.templateId ?? null;
 });
 
-export const openCustomTemplate$ = command(({ set }, templateId: string) => {
-  set(internalOpenTemplateId$, templateId);
+export const openCustomTemplateKind$ = computed((get) => {
+  return get(internalOpenTemplate$)?.kind ?? null;
 });
+
+export const openCustomTemplate$ = command(
+  ({ set }, template: OpenCustomTemplate) => {
+    set(internalOpenTemplate$, template);
+  },
+);
 
 export const closeCustomTemplate$ = command(({ set }) => {
-  set(internalOpenTemplateId$, null);
+  set(internalOpenTemplate$, null);
 });
 
 /**
@@ -115,7 +136,7 @@ export const closeCustomTemplate$ = command(({ set }) => {
  */
 export const openCustomTemplateDetail$ = computed(
   async (get): Promise<UserTemplateDetail | null> => {
-    const templateId = get(internalOpenTemplateId$);
+    const templateId = get(openCustomTemplateId$);
     if (templateId === null) {
       return null;
     }
@@ -160,7 +181,7 @@ export const updateCustomTemplate$ = command(
     // A visibility change made from a card, or a rename the member walked away
     // from, has no such reader — and waiting for a detail nobody is showing
     // would keep a save open on a request that is never made.
-    if (get(internalOpenTemplateId$) === args.templateId) {
+    if (get(openCustomTemplateId$) === args.templateId) {
       await waitForOperation(get(openCustomTemplateDetail$), signal);
       signal.throwIfAborted();
     }
@@ -183,8 +204,8 @@ export const deleteCustomTemplate$ = command(
       [204],
     );
     signal.throwIfAborted();
-    if (get(internalOpenTemplateId$) === templateId) {
-      set(internalOpenTemplateId$, null);
+    if (get(openCustomTemplateId$) === templateId) {
+      set(internalOpenTemplate$, null);
     }
     await set(reloadAndAwaitCustomTemplates$, signal);
   },
@@ -193,6 +214,6 @@ export const deleteCustomTemplate$ = command(
 /** Opening the picker always starts from a clean list and no open template. */
 export const resetCustomTemplatePicker$ = command(({ set }) => {
   set(internalSearchQuery$, "");
-  set(internalOpenTemplateId$, null);
+  set(internalOpenTemplate$, null);
   set(reloadCustomTemplates$);
 });

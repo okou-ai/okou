@@ -81,8 +81,10 @@ import {
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import { eraseVncOwnerData } from "./vnc-owner-lifecycle.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -148,6 +150,12 @@ async function cancelOrgRuns(
         { kind: "organization", orgId },
         revokedAt,
       );
+      // Same transaction, same reason: an unsent native intent still holds the
+      // recipient and the rendered brief.
+      await revokeMorningBriefDeliveryOwnership(tx, {
+        kind: "organization",
+        orgId,
+      });
     }
     return rows;
   });
@@ -228,6 +236,7 @@ async function cancelUserRuns(
         { kind: "user", userId },
         revokedAt,
       );
+      await revokeMorningBriefDeliveryOwnership(tx, { kind: "user", userId });
     }
     return rows;
   });
@@ -967,6 +976,8 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await eraseVncOwnerData(db, { kind: "organization", orgId });
+    signal.throwIfAborted();
     await cancelOrgRuns(db, orgId, {
       cascadeOwnedAgents: true,
       revokeMorningBriefCollection: true,
@@ -1001,6 +1012,8 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await eraseVncOwnerData(db, { kind: "user", userId });
+    signal.throwIfAborted();
     await cancelUserRuns(db, userId, {
       cascadeOwnedAgents: true,
       revokeMorningBriefCollection: true,
@@ -1020,6 +1033,8 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
+      await eraseVncOwnerData(db, { kind: "organization", orgId });
+      signal.throwIfAborted();
       await cancelOrgRuns(db, orgId, {
         cascadeOwnedAgents: true,
         revokeMorningBriefCollection: true,
