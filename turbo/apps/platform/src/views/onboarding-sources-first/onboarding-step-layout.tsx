@@ -126,7 +126,7 @@ export function OnboardingStepLayout({
               {/* One card of one size on every step: its answers above the
                   rule, the way back and the way on below it. Content that
                   outgrows the card scrolls inside it. */}
-              <div className="flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-background shadow-surface">
+              <div className="flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-background">
                 <div className="flex flex-col justify-center overflow-y-auto p-6 lg:h-[440px]">
                   {children}
                 </div>
