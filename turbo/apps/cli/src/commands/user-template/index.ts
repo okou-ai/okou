@@ -77,7 +77,7 @@ const publishCommand = new Command()
   )
   .requiredOption(
     "--source <path>",
-    "The original file: .ppt, .pptx or .pdf for a presentation; .doc, .docx or .pdf for a document; .png, .jpg, .gif, .bmp or .webp for an illustration",
+    "The original file: .ppt, .pptx or .pdf for a presentation; .doc, .docx or .pdf for a document; .png, .jpg, .bmp or .webp for an illustration",
   )
   .option(
     "--pages <dir>",

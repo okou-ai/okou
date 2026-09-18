@@ -57,10 +57,14 @@ export const MAX_USER_TEMPLATE_PACKAGE_FILE_BYTES = 25 * 1024 * 1024;
  * opens them in a viewer instead.
  *
  * The image formats are the intersection of what the reverse scripts read and
- * what a browser renders. TIFF, JPEG 2000 and Netpbm are readable and are
- * deliberately absent: they would measure fine and then fail to paint. WebP is
- * present for the opposite reason — the scripts convert it before measuring,
- * and it is what a phone or a web page hands over.
+ * what a browser renders, minus what makes a poor reference. TIFF, JPEG 2000
+ * and Netpbm are readable and are deliberately absent: they would measure fine
+ * and then fail to paint. GIF paints and is absent anyway — it animates, and
+ * the cover is drawn as one still image, and its palette is quantised to 256
+ * colours, so the colour axis would describe the encoder rather than the
+ * style. WebP is present for the opposite reason to the first group: the
+ * scripts convert it before measuring, and it is what a phone or a web page
+ * hands over.
  */
 export const USER_TEMPLATE_SOURCE_CONTENT_TYPES: Readonly<
   Record<UserTemplateKind, readonly string[]>
@@ -75,13 +79,7 @@ export const USER_TEMPLATE_SOURCE_CONTENT_TYPES: Readonly<
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ],
-  illustration: [
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/bmp",
-    "image/webp",
-  ],
+  illustration: ["image/png", "image/jpeg", "image/bmp", "image/webp"],
 };
 export const USER_TEMPLATE_PAGE_CONTENT_TYPE = "image/png";
 export const USER_TEMPLATE_PACKAGE_CONTENT_TYPE = "application/gzip";
