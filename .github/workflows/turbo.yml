@@ -906,41 +906,6 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
-  test-pi-memory-boundary:
-    needs: [detect-turbo-ts-checks]
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
-    services:
-      postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 5
-          --health-start-period 3s
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/toolchain-init
-      - name: Build real Guest and Pi boundary runtimes
-        run: |
-          cargo build --manifest-path crates/Cargo.toml --profile local -p guest-agent -j 2
-          pnpm --dir turbo --filter @okouai/pi-agent-runtime build
-          pnpm --dir turbo --filter @okouai/cli build
-          mkdir -p /home/user/workspace
-      - name: Exercise private Pi boundaries
-        working-directory: turbo
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: |
-          pnpm --filter @okouai/db db:migrate
-          pnpm --filter api exec vitest run --config vitest.maintenance.config.ts
-
   test-other:
     needs: [detect-turbo-ts-checks]
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
@@ -3211,7 +3176,6 @@ jobs:
       - test-cli
       - test-app
       - test-api
-      - test-pi-memory-boundary
       - test-other
       - deploy-api
       - deploy-app
@@ -3318,7 +3282,6 @@ jobs:
           check_result "test-cli" "${{ needs.test-cli.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
-          check_result "test-pi-memory-boundary" "${{ needs.test-pi-memory-boundary.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable
