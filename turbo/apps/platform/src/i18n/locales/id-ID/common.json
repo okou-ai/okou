@@ -6174,8 +6174,9 @@
     },
     "notFound": {
       "action": "Kembali ke beranda",
-      "description": "Halaman yang Anda cari tidak ada.",
-      "title": "Halaman tidak ditemukan"
+      "browse": "Jelajahi alur kerja",
+      "description": "Mungkin sudah dipindahkan, atau tautannya sudah lama. Semua yang lain masih ada di tempatnya.",
+      "title": "Halaman itu tidak ada di sini."
     },
     "workerFailure": {
       "action": "Muat ulang",

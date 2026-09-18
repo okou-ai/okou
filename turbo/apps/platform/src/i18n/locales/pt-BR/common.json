@@ -6250,8 +6250,9 @@
     },
     "notFound": {
       "action": "Voltar ao início",
-      "description": "A página que você procura não existe.",
-      "title": "Página não encontrada"
+      "browse": "Explorar fluxos de trabalho",
+      "description": "Ela pode ter sido movida ou o link pode estar desatualizado. Todo o resto está onde você deixou.",
+      "title": "Essa página não está aqui."
     },
     "workerFailure": {
       "action": "Atualizar",

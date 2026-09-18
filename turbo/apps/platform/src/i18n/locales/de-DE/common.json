@@ -6188,8 +6188,9 @@
     },
     "notFound": {
       "action": "Zurück zur Startseite",
-      "description": "Die gesuchte Seite existiert nicht.",
-      "title": "Seite nicht gefunden"
+      "browse": "Workflows durchsuchen",
+      "description": "Sie wurde möglicherweise verschoben oder der Link ist veraltet. Alles andere ist dort, wo Sie es verlassen haben.",
+      "title": "Diese Seite ist nicht hier."
     },
     "workerFailure": {
       "action": "Aktualisieren",

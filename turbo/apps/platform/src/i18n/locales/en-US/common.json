@@ -6180,8 +6180,9 @@
     },
     "notFound": {
       "action": "Back to home",
-      "description": "The page you are looking for does not exist.",
-      "title": "Page not found"
+      "browse": "Browse workflows",
+      "description": "It may have moved, or the link may be old. Everything else is where you left it.",
+      "title": "That page isn't here."
     },
     "workerFailure": {
       "action": "Refresh",
