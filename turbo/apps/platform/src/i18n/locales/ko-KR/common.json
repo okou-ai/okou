@@ -1456,6 +1456,8 @@
           "invite": {
             "confirm": "팀원 초대하기",
             "description": "이 워크스페이스로 팀원을 초대합니다.",
+            "pointAccounts": "계정은 각자 연결합니다.",
+            "pointShared": "내가 만든 워크플로를 팀원도 실행할 수 있습니다.",
             "title": "한 사람이 아는 것을 모두가 실행합니다"
           },
           "later": "나중에",
@@ -1463,6 +1465,8 @@
             "appBadge": "APP",
             "confirm": "Slack에 추가",
             "description": "팀의 Slack 워크스페이스에 {{assistantName}}를 추가합니다.",
+            "pointChannels": "초대한 채널만 볼 수 있습니다.",
+            "pointTeam": "내 워크스페이스가 팀의 것이 됩니다.",
             "sampleChannel": "# growth",
             "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
           },

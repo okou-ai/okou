@@ -1456,6 +1456,8 @@
           "invite": {
             "confirm": "メンバーを招待",
             "description": "このワークスペースにチームメンバーを招待します。",
+            "pointAccounts": "アカウントは各自で接続します。",
+            "pointShared": "あなたが作ったワークフローをメンバーも実行できます。",
             "title": "ひとりが覚えたことを、全員が実行できます"
           },
           "later": "後で",
@@ -1463,6 +1465,8 @@
             "appBadge": "APP",
             "confirm": "Slack に追加",
             "description": "チームの Slack ワークスペースに {{assistantName}} を追加します。",
+            "pointChannels": "招待したチャンネルしか見えません。",
+            "pointTeam": "あなたのワークスペースがチームのものになります。",
             "sampleChannel": "# growth",
             "title": "チームがすでに会話している場所で {{assistantName}} を使う"
           },

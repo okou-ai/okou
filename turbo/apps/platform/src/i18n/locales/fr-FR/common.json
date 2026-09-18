@@ -1481,6 +1481,8 @@
           "invite": {
             "confirm": "Inviter l'équipe",
             "description": "Invitez vos collègues dans cet espace de travail.",
+            "pointAccounts": "Chacun connecte ses propres comptes.",
+            "pointShared": "Vos collègues peuvent lancer les workflows que vous créez.",
             "title": "Ce qu'une personne sait, toute l'équipe peut l'exécuter"
           },
           "later": "Plus tard",
@@ -1488,6 +1490,8 @@
             "appBadge": "APP",
             "confirm": "Ajouter à Slack",
             "description": "Ajoutez {{assistantName}} à l'espace Slack de votre équipe.",
+            "pointChannels": "Il ne voit que les canaux où vous l'invitez.",
+            "pointTeam": "Votre espace devient celui de l'équipe.",
             "sampleChannel": "# growth",
             "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
           },

@@ -433,6 +433,30 @@ function WorkflowStep({
 }
 
 /**
+ * Two short lines under the figure, for the quests where the drawing cannot
+ * say who the step affects. Kept to one clause each: the title carries the
+ * claim and the description says what the step is, so this only adds what
+ * neither of them can.
+ */
+function IntroPoints({ items }: { items: readonly string[] }) {
+  return (
+    <ul className="flex flex-col gap-1.5 px-0.5 text-[13px] text-muted-foreground">
+      {items.map((item) => {
+        return (
+          <li key={item} className="flex items-start gap-2">
+            <span
+              aria-hidden="true"
+              className="mt-[7px] size-[3px] shrink-0 rounded-full bg-muted-foreground"
+            />
+            <span>{item}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
  * The shape every quest intro takes: what it is worth, a drawing of it, the
  * detail the row could not hold, and one way forward that is not a dead end.
  */
@@ -556,7 +580,18 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
         return $.chat.agentPage.getStarted.intro.slack.confirm;
       })}
       onConfirm={onConfirm}
-    />
+    >
+      <IntroPoints
+        items={[
+          t(($) => {
+            return $.chat.agentPage.getStarted.intro.slack.pointTeam;
+          }),
+          t(($) => {
+            return $.chat.agentPage.getStarted.intro.slack.pointChannels;
+          }),
+        ]}
+      />
+    </IntroLayout>
   );
 }
 
@@ -577,7 +612,18 @@ function InviteIntro({ onConfirm, onClose }: IntroProps) {
         return $.chat.agentPage.getStarted.intro.invite.confirm;
       })}
       onConfirm={onConfirm}
-    />
+    >
+      <IntroPoints
+        items={[
+          t(($) => {
+            return $.chat.agentPage.getStarted.intro.invite.pointShared;
+          }),
+          t(($) => {
+            return $.chat.agentPage.getStarted.intro.invite.pointAccounts;
+          }),
+        ]}
+      />
+    </IntroLayout>
   );
 }
 

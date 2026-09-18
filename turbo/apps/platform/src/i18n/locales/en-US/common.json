@@ -1457,6 +1457,8 @@
           "invite": {
             "confirm": "Invite teammates",
             "description": "Invite your teammates to this workspace.",
+            "pointAccounts": "Each of them connects their own accounts.",
+            "pointShared": "Teammates can run the workflows you build.",
             "title": "What one person knows, everyone can run"
           },
           "later": "Later",
@@ -1464,6 +1466,8 @@
             "appBadge": "APP",
             "confirm": "Add to Slack",
             "description": "Add {{assistantName}} to your team's Slack workspace.",
+            "pointChannels": "It only sees the channels you invite it into.",
+            "pointTeam": "Your workspace becomes the team's.",
             "sampleChannel": "# growth",
             "title": "Work with {{assistantName}} where your team already talks"
           },
