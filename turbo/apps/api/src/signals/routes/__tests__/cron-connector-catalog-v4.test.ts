@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { runnersBuiltinFirewallsResolveContract } from "@okouai/api-contracts/contracts/runners";
@@ -17,6 +19,7 @@ import { connectorCheckRoutes } from "../connector-check";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { runnersRoutes } from "../runners";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -86,7 +89,7 @@ function httpConnector(slug: string, label: string) {
   };
 }
 
-function mcpConnector(slug = "notes-mcp") {
+function mcpConnector(slug = "plaud-mcp") {
   const tokenBindings = { accessToken: "$secrets.NOTES_ACCESS_TOKEN" };
   return {
     ...httpConnector(slug, "Notes"),
@@ -588,8 +591,8 @@ describe("connector catalog v4 preparation", () => {
     expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
   });
 
-  it("serves complete v4 HTTP data through normal sync while filtering unsupported MCP methods", async () => {
-    const candidate = release({ label: "Accepted v4" });
+  it("serves v4 HTTP and generic Automatic MCP methods through normal sync", async () => {
+    const candidate = release({ label: "Accepted v4", mcpSlug: "notes-mcp" });
     serveObjects(candidate.objects);
     expect((await sync()).body).toMatchObject({
       outcome: "accepted",
@@ -598,26 +601,59 @@ describe("connector catalog v4 preparation", () => {
       active: { catalogDigest: candidate.pointer.catalogDigest },
       filtering: {
         stale: false,
-        filteredAuthMethods: [
-          {
-            connectorSlug: "notes-mcp",
-            authMethodId: "automatic",
-            reasons: expect.arrayContaining([
-              "unsupported-protocol",
-              "missing-grant-provider",
-              "missing-access-provider",
-            ]),
-          },
-        ],
+        filteredAuthMethods: [],
       },
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "catalog-service", label: "Accepted v4" },
+      { slug: "notes-mcp", authMethods: [{ grantKind: "automatic" }] },
     ]);
     expect((await sync()).body).toMatchObject({
       outcome: "unchanged",
       schemaVersion: 4,
     });
+  });
+
+  it("uses the Plaud auth-method switch for discovery while accepting its catalog", async () => {
+    serveObjects(release({}).objects);
+    expect((await sync()).body).toMatchObject({
+      outcome: "accepted",
+      filtering: { filteredAuthMethods: [] },
+    });
+    expect(
+      (await publicCatalog()).body.connectors.map((connector) => {
+        return connector.slug;
+      }),
+    ).toStrictEqual(["catalog-service"]);
+    const features = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.PlaudConnector]: true } },
+      }),
+      [200],
+    );
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { slug: "catalog-service" },
+      {
+        slug: "plaud-mcp",
+        authMethods: [{ id: "automatic", grantKind: "automatic" }],
+      },
+    ]);
+    await accept(
+      features.update({
+        headers: sessionHeaders,
+        body: { switches: { [FeatureSwitchKey.PlaudConnector]: false } },
+      }),
+      [200],
+    );
+    expect(
+      (await publicCatalog()).body.connectors.map((connector) => {
+        return connector.slug;
+      }),
+    ).toStrictEqual(["catalog-service"]);
   });
 
   it("reports a cold catalog as unavailable until v4 is accepted", async () => {
@@ -741,24 +777,17 @@ describe("connector catalog v4 preparation", () => {
     expect((await sync()).body).toMatchObject({
       outcome: "accepted",
       filtering: {
-        filteredAuthMethods: [
-          {
-            connectorSlug: "spoken-notes",
-            reasons: expect.arrayContaining([
-              "missing-grant-provider",
-              "missing-access-provider",
-            ]),
-          },
-        ],
+        filteredAuthMethods: [],
       },
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
+      { slug: "spoken-notes", authMethods: [{ grantKind: "automatic" }] },
     ]);
   });
 
   it("does not expose an accepted MCP transport as an executable HTTP permission bundle", async () => {
-    serveObjects(release({}).objects);
+    serveObjects(release({ mcpSlug: "notes-mcp" }).objects);
     await sync();
     const client = setupApp({ context, routes: customConnectorsRoutes })(
       customConnectorsContract,

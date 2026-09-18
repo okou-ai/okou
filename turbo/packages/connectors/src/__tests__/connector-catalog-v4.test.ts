@@ -173,15 +173,7 @@ describe("v4 connector catalog reader", () => {
       filteredMethods(decoded).find((method) => {
         return method.connectorSlug === "plaud-mcp";
       }),
-    ).toEqual({
-      connectorSlug: "plaud-mcp",
-      authMethodId: "automatic",
-      reasons: [
-        "unsupported-protocol",
-        "missing-grant-provider",
-        "missing-access-provider",
-      ],
-    });
+    ).toBeUndefined();
   });
 
   it("binds deep and attested snapshots to the supported schema, release, and digest", () => {
@@ -260,8 +252,8 @@ describe("v4 connector catalog reader", () => {
     expect(
       filtered.find((method) => {
         return method.connectorSlug === "recording-tools";
-      })?.reasons,
-    ).toContain("unsupported-protocol");
+      }),
+    ).toBeUndefined();
     expect(
       filtered.filter((method) => {
         return method.connectorSlug === "messages-mcp";

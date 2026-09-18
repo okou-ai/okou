@@ -4,6 +4,7 @@ import { authMeRoutes } from "./routes/auth-me";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import type { RouteEntry } from "./route-entry";
 import { connectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
+import { connectorsAutomaticRoutes } from "./routes/connectors-automatic";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
 import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-event-search";
 import { cronSnapshotChatEventsRoutes } from "./routes/cron-snapshot-chat-events";
@@ -251,6 +252,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,
   ...webhooksAgentStorageRoutes,
+  ...connectorsAutomaticRoutes,
   ...connectorsSlugCallbackRoutes,
   ...cronCompactChatThreadSnapshotsRoutes,
   ...cronProjectChatEventSearchRoutes,

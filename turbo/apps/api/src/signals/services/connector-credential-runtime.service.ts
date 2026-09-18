@@ -139,6 +139,7 @@ export async function loadConnectorCredentialConnection(args: {
   const [row] = await args.db
     .select({
       authMethod: connectors.authMethod,
+      automaticAuthType: connectors.automaticAuthType,
       connectorId: connectors.id,
       externalEmail: connectors.externalEmail,
       externalId: connectors.externalId,
@@ -166,6 +167,7 @@ export async function loadConnectorCredentialConnection(args: {
     snapshot: args.snapshot,
     stored: {
       authMethodId: row.authMethod,
+      automaticAuthType: row.automaticAuthType,
       connectorId: row.connectorId,
       connectorSlug: args.connectorSlug,
       orgId: args.orgId,
@@ -200,7 +202,7 @@ export function connectorCredentialRuntimeValueRef(
   environmentName: string,
 ): string | null {
   const access = connection.runtimeMethod.method.access;
-  if (access.kind === "none") {
+  if (access.kind === "none" || access.kind === "automatic") {
     return null;
   }
   const binding = access.envBindings[environmentName];

@@ -1,4 +1,5 @@
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
+import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/builtin-connector-dcr-registration";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userConnectors } from "@okouai/db/schema/user-connector";
@@ -56,6 +57,10 @@ export async function deleteConnectorOwnerState(
   await deleteConnectorCredentialStorageConnectionsForOwner(db, owner, signal);
 
   if (owner.kind === "organization") {
+    await db
+      .delete(builtinConnectorDcrRegistrations)
+      .where(eq(builtinConnectorDcrRegistrations.orgId, owner.orgId));
+    signal.throwIfAborted();
     await db
       .delete(orgCustomConnectors)
       .where(eq(orgCustomConnectors.orgId, owner.orgId));

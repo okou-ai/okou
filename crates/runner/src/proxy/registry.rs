@@ -199,6 +199,7 @@ pub(crate) enum ConnectorRuntimeRegistryUpdate {
     BuiltinAvailable {
         connector_slug: String,
         network_policy: NetworkPolicy,
+        firewall: Option<Box<FirewallEntry>>,
     },
     Custom {
         custom_connector_id: String,
@@ -447,9 +448,25 @@ fn apply_connector_runtime_update(
         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
             connector_slug,
             network_policy,
+            firewall,
         } => {
             if !sandbox_has_connector_firewall(sandbox, connector_slug) {
                 return Ok(false);
+            }
+            if let Some(replacement) = firewall {
+                let firewalls = sandbox.firewalls.get_or_insert_with(Vec::new);
+                if firewalls.iter().any(|entry| {
+                    firewall_name(entry) == connector_slug
+                        && custom_connector_owner(entry).is_some()
+                }) {
+                    return Err(RunnerError::Internal(format!(
+                        "builtin connector {connector_slug} cannot replace a custom firewall"
+                    )));
+                }
+                replace_first_matching_firewall(firewalls, *replacement.clone(), |entry| {
+                    firewall_entry_matches(entry, connector_slug)
+                });
+                sandbox.omitted_builtin_firewalls.remove(connector_slug);
             }
             sandbox
                 .network_policies
@@ -480,7 +497,9 @@ fn initial_omitted_connector_runtime_targets(
             } => {
                 active_custom_connector_ids.insert(custom_connector_id.as_str());
             }
-            FirewallEntry::Inline { .. } => {}
+            FirewallEntry::Inline { firewall, .. } => {
+                active_builtin_firewalls.insert(firewall.name.as_str());
+            }
         }
     }
 
@@ -534,6 +553,18 @@ fn initial_connector_routing_variables(
         })
         .collect::<HashSet<_>>();
     for firewall in firewalls {
+        if let FirewallEntry::Inline {
+            firewall,
+            custom_connector_id: None,
+            ..
+        } = firewall
+            && builtin_connector_slugs.contains(firewall.name.as_str())
+        {
+            routing_variables.insert(
+                builtin_connector_routing_key(&firewall.name),
+                HashMap::new(),
+            );
+        }
         if let FirewallEntry::Builtin {
             name,
             base_url_vars,
@@ -767,6 +798,7 @@ impl ProxyRegistryHandle {
                 &[ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                     connector_slug: connector_slug.to_string(),
                     network_policy: policy,
+                    firewall: None,
                 }],
             )
             .await?;
@@ -1628,6 +1660,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn builtin_automatic_runtime_updates_auth_without_changing_account() {
+        let harness = RegistryHarness::new().await;
+        let slug = "automatic-mcp";
+        let source_id = "550e8400-e29b-41d4-a716-446655440001";
+        let mut firewalls = test_firewalls(&[slug]);
+        if let FirewallEntry::Inline {
+            source_id: selected_source,
+            ..
+        } = &mut firewalls[0]
+        {
+            *selected_source = Some(source_id.to_string());
+        }
+        let runtime_targets = vec![ConnectorRuntimeTargetRegistration::Builtin {
+            connector_slug: slug.to_string(),
+            base_url_vars: None,
+            source_id: Some(source_id.to_string()),
+        }];
+        harness
+            .handle
+            .register_sandbox(
+                "10.200.0.2",
+                &SandboxRegistration {
+                    firewalls: Some(&firewalls),
+                    connector_runtime_targets: Some(&runtime_targets),
+                    ..base_registration()
+                },
+            )
+            .await
+            .unwrap();
+        let initial = read_registry(harness.registry_path()).await.unwrap();
+        let sandbox = &initial.sandboxes["10.200.0.2"];
+        assert!(!sandbox.omitted_builtin_firewalls.contains(slug));
+        assert_eq!(
+            sandbox
+                .connector_routing_variables
+                .get("builtin:automatic-mcp"),
+            Some(&HashMap::new())
+        );
+
+        for oauth in [true, false, true] {
+            let mut replacement = firewalls[0].clone();
+            if let FirewallEntry::Inline { firewall, .. } = &mut replacement
+                && oauth
+            {
+                firewall.apis[0].auth.headers.insert(
+                    "Authorization".to_string(),
+                    "Bearer ${{ secrets.BUILTIN_MCP_ACCESS_TOKEN }}".to_string(),
+                );
+            }
+            harness
+                .handle
+                .apply_connector_runtime_updates_if_run_matches(
+                    "10.200.0.2",
+                    "run-test",
+                    &[ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                        connector_slug: slug.to_string(),
+                        network_policy: policy(&[], &[], &[], "allow"),
+                        firewall: Some(Box::new(replacement.clone())),
+                    }],
+                )
+                .await
+                .unwrap();
+            let updated = read_registry(harness.registry_path()).await.unwrap();
+            assert_eq!(
+                updated.sandboxes["10.200.0.2"].firewalls.as_ref().unwrap(),
+                &vec![replacement]
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn idempotent_connector_runtime_updates_preserve_registry_file() {
         let harness = RegistryHarness::new().await;
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
@@ -1682,6 +1785,7 @@ mod tests {
             ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                 connector_slug: "slack".to_string(),
                 network_policy: policy(&[], &["chat:write"], &[], "deny"),
+                firewall: None,
             },
             ConnectorRuntimeRegistryUpdate::Custom {
                 custom_connector_id: custom_connector_id.to_string(),
@@ -1810,10 +1914,12 @@ mod tests {
                         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                             connector_slug: "github".to_string(),
                             network_policy: github_policy,
+                            firewall: None,
                         },
                         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                             connector_slug: "slack".to_string(),
                             network_policy: policy(&[], &["chat:write"], &[], "deny"),
+                            firewall: None,
                         },
                     ],
                 )
@@ -1894,6 +2000,7 @@ mod tests {
                     ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                         connector_slug: "slack".to_string(),
                         network_policy: policy(&[], &["chat:write"], &[], "deny"),
+                        firewall: None,
                     },
                     ConnectorRuntimeRegistryUpdate::Custom {
                         custom_connector_id: custom_connector_id.to_string(),
@@ -1983,6 +2090,7 @@ mod tests {
                         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                             connector_slug: "slack".to_string(),
                             network_policy: policy(&[], &["chat:write"], &[], "deny"),
+                            firewall: None,
                         },
                         ConnectorRuntimeRegistryUpdate::Custom {
                             custom_connector_id: custom_connector_id.to_string(),

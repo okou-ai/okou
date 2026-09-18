@@ -50,6 +50,7 @@ type ConnectorCredentialAccessResult =
   | { readonly kind: "incompatible" };
 
 interface ConnectorCredentialStoredIdentity {
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly authMethodId: string;
   readonly connectorId: string;
   readonly connectorSlug: string;
@@ -75,10 +76,13 @@ const credentialAccessConnector = alias(
 
 export function connectorCredentialStorageIsCompatible(args: {
   readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storageVersion: number;
 }): boolean {
   return (
     args.runtimeMethod.method.grant.kind === "none" ||
+    (args.runtimeMethod.method.grant.kind === "automatic" &&
+      args.automaticAuthType === "none") ||
     args.storageVersion === args.runtimeMethod.method.storage.version
   );
 }
@@ -136,6 +140,7 @@ export function resolveConnectorCredentialAccess(args: {
     !connectorCredentialStorageIsCompatible({
       runtimeMethod,
       storageVersion: args.stored.storageVersion,
+      automaticAuthType: args.stored.automaticAuthType,
     })
   ) {
     return { kind: "incompatible" };

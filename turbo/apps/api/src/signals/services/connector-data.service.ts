@@ -296,10 +296,12 @@ function storedConnectorRowToResponse(
 ): ConnectorResponse {
   const storageCompatible = connectorCredentialStorageIsCompatible({
     runtimeMethod,
+    automaticAuthType: row.automaticAuthType,
     storageVersion: row.storageVersion,
   });
   const credentialStatus = connectorCredentialStatusWithMethod({
     method: runtimeMethod.method,
+    automaticAuthType: row.automaticAuthType,
     storedNeedsReconnect: row.needsReconnect,
     tokenExpiresAt: row.tokenExpiresAt,
     now,
@@ -323,6 +325,7 @@ function storedConnectorRowToResponse(
         ? (parseStoredReconnectReason(row.reconnectReason) ??
           connectorCredentialReconnectReasonWithMethod({
             method: runtimeMethod.method,
+            automaticAuthType: row.automaticAuthType,
             storedNeedsReconnect: row.needsReconnect,
             tokenExpiresAt: row.tokenExpiresAt,
             now,
@@ -553,6 +556,7 @@ function connectorListState(args: {
           .mapWith(pgTextDecoder)
           .as("connector_slug"),
         authMethod: connectors.authMethod,
+        automaticAuthType: connectors.automaticAuthType,
         displayName: connectors.displayName,
         isDefault: connectors.isDefault,
         externalId: connectors.externalId,
@@ -704,6 +708,7 @@ function storedConnector(args: {
       .select({
         id: connectors.id,
         authMethod: connectors.authMethod,
+        automaticAuthType: connectors.automaticAuthType,
         displayName: connectors.displayName,
         isDefault: connectors.isDefault,
         externalId: connectors.externalId,
@@ -1828,6 +1833,9 @@ function connectorTokenOutputMetadataForAuthMethod(args: {
     case "manual":
     case "managed":
     case "none": {
+      return undefined;
+    }
+    case "automatic": {
       return undefined;
     }
   }

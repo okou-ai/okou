@@ -351,6 +351,7 @@ import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
+import { resolveBuiltinAutomaticRuntimeFirewall } from "./builtin-automatic-firewall.service";
 import {
   connectorCredentialSecretReadCondition,
   resolveConnectorCredentialAccess,
@@ -1206,7 +1207,15 @@ function assertThreadBoundRunHasQueueAssociation(
   }
 }
 
+interface AutomaticMcpAccountContext {
+  readonly authMethodId: string;
+  readonly automaticAuthType: "none" | "oauth" | null;
+}
+
 interface ConnectorRuntimeContext {
+  readonly automaticMcpAccounts?: Readonly<
+    Record<string, AutomaticMcpAccountContext>
+  >;
   readonly secrets: Record<string, string> | undefined;
   readonly vars: Record<string, string> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
@@ -3506,6 +3515,7 @@ function filterSecretConnectorMetadataMap(args: {
 }
 
 interface StoredConnectorRuntimeRow {
+  readonly automaticAuthType: "none" | "oauth" | null;
   readonly access: ConnectorCredentialAccess;
   readonly connectorSlug: ConnectorSlug;
   readonly connectorStateRevision: bigint;
@@ -3517,6 +3527,7 @@ interface StoredConnectorRuntimeRow {
 }
 
 interface StoredConnectorRuntimeRowCandidate {
+  readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorId: string;
   readonly connectorSlug: string;
   readonly authMethod: string;
@@ -3604,6 +3615,7 @@ function allowedStoredConnectorRows(
     const accessResult = resolveConnectorCredentialAccess({
       snapshot,
       stored: {
+        automaticAuthType: row.automaticAuthType,
         authMethodId: row.authMethod,
         connectorId: row.connectorId,
         connectorSlug: row.connectorSlug,
@@ -3622,6 +3634,7 @@ function allowedStoredConnectorRows(
         connectorSlug: access.runtimeMethod.connectorSlug,
         connectorStateRevision: row.connectorStateRevision,
         authMethod: access.runtimeMethod.authMethodId,
+        automaticAuthType: row.automaticAuthType,
         runtimeMethod: access.runtimeMethod,
         isMcp:
           getConnectorRuntimeConnector(snapshot, row.connectorSlug)
@@ -3645,6 +3658,7 @@ function storedConnectorRuntimeCredentialStatus(
 ): ConnectorCredentialStatus {
   return connectorRuntimeCredentialStatusWithMethod({
     method: row.runtimeMethod.method,
+    automaticAuthType: row.automaticAuthType,
     storedNeedsReconnect: row.needsReconnect,
     tokenExpiresAt: row.tokenExpiresAt,
     now,
@@ -3976,6 +3990,26 @@ function resolveStoredConnectorMetadata(
   };
 }
 
+function automaticMcpAccountContexts(
+  rows: readonly StoredConnectorRuntimeRow[],
+): Readonly<Record<string, AutomaticMcpAccountContext>> {
+  return Object.fromEntries(
+    rows.flatMap((row) => {
+      return row.runtimeMethod.method.grant.kind === "automatic"
+        ? [
+            [
+              row.connectorSlug,
+              {
+                authMethodId: row.authMethod,
+                automaticAuthType: row.automaticAuthType,
+              },
+            ],
+          ]
+        : [];
+    }),
+  );
+}
+
 function storedConnectorContextFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
 ): ConnectorRuntimeContext {
@@ -3983,6 +4017,9 @@ function storedConnectorContextFromSnapshot(
     return emptyConnectorRuntimeContext();
   }
   return {
+    automaticMcpAccounts: automaticMcpAccountContexts(
+      snapshot.allowedConnectorRows,
+    ),
     secrets: undefined,
     vars: compactRecord(
       storedConnectorRuntimeVariables(
@@ -4067,6 +4104,9 @@ async function materializeStoredConnectorContext(
       // Secrets are decrypted and merged later, by
       // materializeEagerStoredConnectorSecrets.
       return Promise.resolve({
+        automaticMcpAccounts: automaticMcpAccountContexts(
+          snapshot.allowedConnectorRows,
+        ),
         secrets: undefined,
         vars: compactRecord(resolved.vars),
         secretConnectorMap: compactRecord(resolved.secretConnectorMap),
@@ -4253,6 +4293,7 @@ function storedConnectorSnapshotQuery(
           .mapWith(pgTextDecoder)
           .as("connector_slug"),
         authMethod: connectors.authMethod,
+        automaticAuthType: connectors.automaticAuthType,
         connectorStateRevision: sql`(
             EXTRACT(EPOCH FROM ${connectors.updatedAt})
             * 1000000
@@ -4320,6 +4361,7 @@ function storedConnectorSnapshotQuery(
       connectorId: selectedConnectors.connectorId,
       connectorSlug: selectedConnectors.connectorSlug,
       authMethod: selectedConnectors.authMethod,
+      automaticAuthType: selectedConnectors.automaticAuthType,
       connectorStateRevision: selectedConnectors.connectorStateRevision,
       needsReconnect: selectedConnectors.needsReconnect,
       orgId: selectedConnectors.orgId,
@@ -5573,6 +5615,7 @@ function modelProviderPermissionManifest(
 }
 
 interface BuiltinConnectorManifestSource {
+  readonly automaticFirewall?: ExecutionFirewallEntry;
   readonly metadata: ConnectorServerFirewallExecutionMetadata;
   readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
   readonly isMcp: boolean;
@@ -5647,7 +5690,8 @@ function applyBuiltinConnectorMetadataPolicies(
       throw new Error("Missing built-in connector source identity");
     }
     firewalls.push(
-      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
+      source.automaticFirewall ??
+        builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
     );
     if (!source.isMcp) {
       Object.assign(
@@ -5677,6 +5721,15 @@ function applyBuiltinConnectorMetadataPolicies(
 function builtinRuntimeTargetRegistration(
   firewall: ExecutionFirewallEntry,
 ): BuiltinRuntimeTargetRegistration {
+  if (firewall.kind === "inline" && firewall.customConnectorId === undefined) {
+    return {
+      kind: "builtin",
+      connectorSlug: connectorSlugSchema.parse(firewall.firewall.name),
+      ...(firewall.sourceId === undefined
+        ? {}
+        : { sourceId: firewall.sourceId }),
+    };
+  }
   if (firewall.kind !== "builtin") {
     throw new Error("Builtin connector manifest contains an inline firewall");
   }
@@ -5749,6 +5802,9 @@ function mergePermissionManifests(args: {
 }
 
 interface BuildPermissionManifestArgs {
+  readonly automaticMcpAccounts?: Readonly<
+    Record<string, AutomaticMcpAccountContext>
+  >;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissionPolicies: FirewallPolicies | undefined;
@@ -5795,10 +5851,22 @@ async function buildPermissionManifest(
             snapshot,
             connectorSlug,
           });
+          const automaticAccount = args.automaticMcpAccounts?.[connectorSlug];
+          const sourceId = args.connectorSourceIdBySlug?.[connectorSlug];
+          const automaticFirewall =
+            automaticAccount && sourceId
+              ? resolveBuiltinAutomaticRuntimeFirewall({
+                  snapshot,
+                  connectorSlug,
+                  sourceId,
+                  ...automaticAccount,
+                })
+              : null;
           return {
             metadata,
             permissionIndex,
             isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
+            ...(automaticFirewall === null ? {} : { automaticFirewall }),
           };
         }),
       );
@@ -9845,6 +9913,8 @@ async function buildPreparedPermissionManifest(args: {
 }): Promise<PermissionManifest | undefined | CreateRunErrorResult> {
   const result = await settle(
     buildPermissionManifest({
+      automaticMcpAccounts:
+        args.storedConnectorMetadataContext.automaticMcpAccounts,
       connectorCatalogSelection: args.connectorCatalogSelection,
       modelProvider: args.modelProvider,
       permissionPolicies: args.body.permissionPolicies,

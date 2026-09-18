@@ -28,12 +28,12 @@ import {
   storeCustomConnectorOAuth2Connection,
   type OAuthTokenResult,
 } from "../services/custom-connector-oauth2.service";
+import { exchangeCustomConnectorAutomaticOAuthCode } from "../services/custom-connector-automatic-oauth.service";
 import {
-  CustomConnectorAutomaticOAuthError,
-  customConnectorAutomaticOAuthResourceMatchesEndpoint,
-  exchangeCustomConnectorAutomaticOAuthCode,
-  validateCustomConnectorAutomaticOAuthCallbackIssuer,
-} from "../services/custom-connector-automatic-oauth.service";
+  McpAutomaticOAuthError,
+  mcpAutomaticOAuthResourceMatchesEndpoint,
+  validateMcpAutomaticOAuthCallbackIssuer,
+} from "../services/mcp-automatic-oauth.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { addUserCustomConnector } from "../services/user-connectors.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
@@ -212,7 +212,7 @@ function isCurrentAutomaticOAuthCustomConnector(
     connector.kind === "mcp" &&
     connector.authMode === "automatic" &&
     connector.oauthConfig === null &&
-    customConnectorAutomaticOAuthResourceMatchesEndpoint(
+    mcpAutomaticOAuthResourceMatchesEndpoint(
       context.resource,
       connector.endpoint,
     ) &&
@@ -389,14 +389,14 @@ async function completeAutomaticOAuthCallback(
   const completed = await tapError(
     (async () => {
       if (!args.state.codeVerifier) {
-        throw new CustomConnectorAutomaticOAuthError(
+        throw new McpAutomaticOAuthError(
           { kind: "binding-drift", reason: "binding-drift" },
           "Automatic OAuth state is missing its PKCE verifier",
         );
       }
       const clientMetadata = okouMcpOAuthClientMetadata(args.request);
       if (args.state.redirectUri !== okouOAuthRedirectUri(args.request)) {
-        throw new CustomConnectorAutomaticOAuthError(
+        throw new McpAutomaticOAuthError(
           { kind: "binding-drift", reason: "binding-drift" },
           "Automatic OAuth callback changed",
         );
@@ -608,10 +608,7 @@ const completeOAuth2Callback$ = command(
       : null;
     if (automaticContext) {
       const issuerValidation = safeSync(() => {
-        validateCustomConnectorAutomaticOAuthCallbackIssuer(
-          automaticContext,
-          query.iss,
-        );
+        validateMcpAutomaticOAuthCallbackIssuer(automaticContext, query.iss);
         return true;
       });
       if (!("ok" in issuerValidation)) {

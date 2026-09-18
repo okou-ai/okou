@@ -2206,8 +2206,7 @@ than falling back to v3. Diagnostics describe the v4 sync target and can report
 cold v4 state while the v3 bridge keeps connectors available.
 
 [The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
-and rollback requirements. MCP execution and Automatic OAuth remain separate
-deliveries. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
+and rollback requirements. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
 bridge cleanup after every serving source and supported bootstrap target has
 accepted v4 and the deployment/rollback window no longer needs the bridge.
 Historical v3 object and row retention for old binaries remains independent.
@@ -2223,20 +2222,35 @@ Custom and builtin MCP use the same typed discovery response.
 
 Queued Runs retain their captured CLI package and exact account mapping.
 Builtin MCP admission requires the Run's Okou token for authenticated MCP
-discovery. None/manual methods are executable; the published Plaud Automatic
-method remains unavailable until its handler lands. The addon honors explicit
+discovery. None/manual and Automatic methods are executable. Plaud's Automatic
+method defaults off in auth-method discovery through `plaudConnector`; this
+switch does not gate existing account callbacks or execution. The addon honors explicit
 owner intent and never injects another owner's credentials when the requested
 owner is absent, including overlapping builtin/custom destinations.
 
 No-auth builtin and custom MCP requests skip credential validity checks and
-proxy auth resolution, including Automatic custom MCP resolved to no
+proxy auth resolution, including Automatic builtin and custom MCP resolved to no
 authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
 field to cap cached account authorization at 30 seconds from validation; this
 also bounds static-token cache reuse. Discovery immediately removes deleted
 accounts, while subsequent proxy requests may reuse an existing lease until
 expiry. Expiry does not interrupt an in-flight request or stream. After
 resolution, the addon rechecks the current owner before forwarding. No new
-Runner wire field or HTTP/custom cache policy is introduced.
+HTTP/custom cache policy is introduced.
+
+Automatic authentication adds separate builtin OAuth bindings and DCR
+registrations, plus a nullable account auth-resolution field. Apply this
+additive migration before deploying the API. The shared MCP protocol supports
+CIMD/DCR, PKCE, exact issuer/resource binding and optional refresh tokens.
+Builtin callbacks are owned by the API and completion receipts identify the
+exact account and attempt. Stored catalog method IDs remain unchanged.
+
+Automatic accounts receive an inline Run firewall whose auth configuration
+reflects their resolved no-auth/OAuth mode. Builtin runtime-sync updates can carry
+that firewall so same-account reconnect changes take effect without preserving
+obsolete auth headers. Use the current API and Runner for this behavior; there
+is no MCP-specific client or Runner capability negotiation. A rollback after
+Automatic accounts exist must retain their schema and credential readers.
 
 The v3 catalog read bridge and its cleanup under
 [#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.

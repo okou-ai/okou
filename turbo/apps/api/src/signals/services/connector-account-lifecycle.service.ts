@@ -110,6 +110,7 @@ function accountSelection() {
     displayName: connectors.displayName,
     isDefault: connectors.isDefault,
     authMethod: connectors.authMethod,
+    automaticAuthType: connectors.automaticAuthType,
     storageVersion: connectors.storageVersion,
     externalId: connectors.externalId,
     externalUsername: connectors.externalUsername,
@@ -295,6 +296,7 @@ async function loadConnectorAccountSummaryGroups(
       connectorSlug: connectors.connectorSlug,
       customConnectorId: connectors.customConnectorId,
       authMethod: connectors.authMethod,
+      automaticAuthType: connectors.automaticAuthType,
       storageVersion: connectors.storageVersion,
       needsReconnect: connectors.needsReconnect,
       definitionAuthMode: orgCustomConnectors.authMode,
@@ -356,6 +358,7 @@ async function loadConnectorAccountSummaryGroups(
       connectors.connectorSlug,
       connectors.customConnectorId,
       connectors.authMethod,
+      connectors.automaticAuthType,
       connectors.storageVersion,
       connectors.needsReconnect,
       orgCustomConnectors.authMode,
@@ -427,11 +430,13 @@ function builtinConnection(
     runtimeMethod !== undefined &&
     connectorCredentialStorageIsCompatible({
       runtimeMethod,
+      automaticAuthType: row.automaticAuthType,
       storageVersion: row.storageVersion,
     });
   const credentialStatus = runtimeMethod
     ? connectorCredentialStatusWithMethod({
         method: runtimeMethod.method,
+        automaticAuthType: row.automaticAuthType,
         storedNeedsReconnect: row.needsReconnect,
         tokenExpiresAt: row.tokenExpiresAt,
         now,
@@ -467,6 +472,7 @@ function builtinConnection(
           ? (parseReconnectReason(row.reconnectReason) ??
             connectorCredentialReconnectReasonWithMethod({
               method: runtimeMethod.method,
+              automaticAuthType: row.automaticAuthType,
               storedNeedsReconnect: row.needsReconnect,
               tokenExpiresAt: row.tokenExpiresAt,
               now,
@@ -596,11 +602,13 @@ function projectSummaryGroup(
       runtimeMethod !== undefined &&
       connectorCredentialStorageIsCompatible({
         runtimeMethod,
+        automaticAuthType: row.automaticAuthType,
         storageVersion: row.storageVersion,
       });
     const credentialStatus = runtimeMethod
       ? connectorCredentialStatusWithMethod({
           method: runtimeMethod.method,
+          automaticAuthType: row.automaticAuthType,
           storedNeedsReconnect: row.needsReconnect,
           tokenExpiresAt: row.tokenExpired ? now : null,
           now,

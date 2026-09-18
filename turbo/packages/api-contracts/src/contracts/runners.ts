@@ -344,6 +344,12 @@ export const connectorRuntimeBuiltinAvailableResultSchema =
     target: connectorRuntimeBuiltinTargetSchema,
     state: z.literal("available"),
     networkPolicy: networkPolicySchema,
+    firewall: executionFirewallInlineEntrySchema
+      .extend({
+        customConnectorId: z.never().optional(),
+        sourceId: z.uuid(),
+      })
+      .optional(),
   });
 
 export const connectorRuntimeBuiltinUnresolvedResultSchema =

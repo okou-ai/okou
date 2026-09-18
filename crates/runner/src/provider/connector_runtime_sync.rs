@@ -999,16 +999,26 @@ impl ConnectorRuntimeSyncCore {
                         firewall,
                     },
                 ) => {
-                    if firewall.is_some() {
-                        Err("builtin available result must not include an inline firewall")
-                    } else if let Err(error) =
-                        validate_connector_runtime_network_policy(network_policy)
-                    {
+                    let Some(expected_source_id) = self
+                        .source_id_for_publication(run_id, target, registration_cancel)
+                        .await
+                    else {
+                        continue;
+                    };
+                    if let Err(error) = validate_connector_runtime_network_policy(network_policy) {
                         Err(error)
                     } else {
-                        Ok(ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
-                            connector_slug: connector_slug.clone(),
-                            network_policy: network_policy.clone(),
+                        builtin_connector_runtime_firewall(
+                            connector_slug,
+                            firewall.as_ref(),
+                            expected_source_id.as_deref(),
+                        )
+                        .map(|firewall| {
+                            ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                                connector_slug: connector_slug.clone(),
+                                network_policy: network_policy.clone(),
+                                firewall,
+                            }
                         })
                     }
                 }
@@ -1036,7 +1046,7 @@ impl ConnectorRuntimeSyncCore {
                             HashMap::new()
                         };
                     let Some(expected_source_id) = self
-                        .custom_source_id_for_publication(run_id, target, registration_cancel)
+                        .source_id_for_publication(run_id, target, registration_cancel)
                         .await
                     else {
                         retry_targets.push(target.clone());
@@ -1538,7 +1548,7 @@ impl ConnectorRuntimeSyncCore {
         connector.registration.custom_base_url_vars().cloned()
     }
 
-    async fn custom_source_id_for_publication(
+    async fn source_id_for_publication(
         &self,
         run_id: RunId,
         target: &ConnectorSyncTarget,
@@ -1947,6 +1957,31 @@ fn connector_runtime_unresolved_reason_is_valid(
     }
 }
 
+fn builtin_connector_runtime_firewall(
+    connector_slug: &str,
+    firewall: Option<&FirewallEntry>,
+    expected_source_id: Option<&str>,
+) -> Result<Option<Box<FirewallEntry>>, &'static str> {
+    let Some(entry) = firewall else {
+        return Ok(None);
+    };
+    let FirewallEntry::Inline {
+        firewall,
+        custom_connector_id: None,
+        source_id: Some(source_id),
+    } = entry
+    else {
+        return Err("builtin available result must use a builtin account inline firewall");
+    };
+    if firewall.name != connector_slug || Some(source_id.as_str()) != expected_source_id {
+        return Err("builtin available result has a mismatched connector source");
+    }
+    firewall
+        .validate_for_connector_runtime()
+        .map_err(|_| "builtin available result has an invalid inline firewall")?;
+    Ok(Some(Box::new(entry.clone())))
+}
+
 fn custom_connector_runtime_registry_state(
     custom_connector_id: &str,
     state: &ConnectorRuntimeSyncState,
@@ -2195,6 +2230,48 @@ mod tests {
             custom_connector_id: Some(custom_connector_id.to_string()),
             source_id: source_id.map(str::to_string),
         }
+    }
+
+    #[test]
+    fn builtin_automatic_runtime_firewall_requires_exact_registered_source() {
+        let source_id = "550e8400-e29b-41d4-a716-446655440001";
+        let mut entry = custom_runtime_firewall_with_source(source_id, Some(source_id));
+        if let FirewallEntry::Inline {
+            firewall,
+            custom_connector_id,
+            ..
+        } = &mut entry
+        {
+            firewall.name = "automatic-mcp".to_string();
+            *custom_connector_id = None;
+        }
+        assert!(
+            builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), Some(source_id))
+                .is_ok()
+        );
+        assert!(builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), None).is_err());
+        assert!(
+            builtin_connector_runtime_firewall("other-mcp", Some(&entry), Some(source_id)).is_err()
+        );
+        assert!(
+            builtin_connector_runtime_firewall(
+                "automatic-mcp",
+                Some(&entry),
+                Some("other-account")
+            )
+            .is_err()
+        );
+        if let FirewallEntry::Inline {
+            custom_connector_id,
+            ..
+        } = &mut entry
+        {
+            *custom_connector_id = Some(source_id.to_string());
+        }
+        assert!(
+            builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), Some(source_id))
+                .is_err()
+        );
     }
 
     #[test]

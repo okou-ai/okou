@@ -8,7 +8,7 @@ export const okouMcpOAuthClientMetadataSchema = z.object({
   client_id: z.url(),
   client_name: z.literal("Okou"),
   client_uri: z.url(),
-  redirect_uris: z.array(z.url()).length(1),
+  redirect_uris: z.array(z.url()).min(1),
   grant_types: z.tuple([
     z.literal("authorization_code"),
     z.literal("refresh_token"),

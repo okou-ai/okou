@@ -1207,6 +1207,9 @@ function getConnectMethodContentComponent(
     case "auth-code": {
       return OAuthAuthCodeConnectMethodContent;
     }
+    case "automatic": {
+      return OAuthAuthCodeConnectMethodContent;
+    }
     case "openid-auth": {
       return OAuthAuthCodeConnectMethodContent;
     }
@@ -1222,7 +1225,6 @@ function getConnectMethodContentComponent(
     case "none": {
       return NoAuthConnectMethodContent;
     }
-    case "automatic":
     case "managed": {
       return null;
     }

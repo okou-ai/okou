@@ -27,8 +27,10 @@ import {
   connectorAccountTargetKey,
   resolveConnectorAccounts,
   resolvedConnectorAccountIdsByTarget,
+  type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import { resolveConnectorCredentialAccess } from "./connector-credential-access.service";
+import { resolveBuiltinAutomaticRuntimeFirewall } from "./builtin-automatic-firewall.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -79,6 +81,7 @@ export type ConnectorRuntimeDiagnosticResult =
         { readonly kind: "builtin" }
       >;
       readonly state: "available";
+      readonly credentialResolution?: "network-boundary" | "none";
       readonly networkPolicy: Extract<
         ConnectorRuntimeSyncResult,
         {
@@ -363,6 +366,28 @@ async function resolveCustomTarget(args: {
   };
 }
 
+function builtinAccountRequests(
+  registrations: readonly ConnectorRuntimeTargetRegistration[],
+): readonly ConnectorAccountResolutionRequest[] {
+  return registrations.flatMap((registration) => {
+    return registration.kind === "builtin" &&
+      registration.sourceId !== undefined
+      ? [
+          {
+            target: {
+              kind: "builtin" as const,
+              connectorSlug: registration.connectorSlug,
+            },
+            selection: {
+              kind: "exact" as const,
+              sourceId: registration.sourceId,
+            },
+          },
+        ]
+      : [];
+  });
+}
+
 async function resolveConnectorRuntimeTargetStates(args: {
   readonly db: Db;
   readonly scope: ConnectorRuntimeScope;
@@ -391,23 +416,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
       resolveConnectorAccounts(args.db, {
         orgId: args.scope.orgId,
         userId: args.scope.userId,
-        requests: args.targets.flatMap((registration) => {
-          return registration.kind === "builtin" &&
-            registration.sourceId !== undefined
-            ? [
-                {
-                  target: {
-                    kind: "builtin" as const,
-                    connectorSlug: registration.connectorSlug,
-                  },
-                  selection: {
-                    kind: "exact" as const,
-                    sourceId: registration.sourceId,
-                  },
-                },
-              ]
-            : [];
-        }),
+        requests: builtinAccountRequests(args.targets),
       }),
       customRegistrations.length > 0
         ? loadCustomSnapshot({
@@ -460,6 +469,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
             snapshot: builtinCatalogSelection,
             stored: {
               authMethodId: accountResolution.account.authMethod,
+              automaticAuthType: accountResolution.account.automaticAuthType,
               connectorId: accountResolution.account.connectorId,
               connectorSlug: registration.connectorSlug,
               orgId: args.scope.orgId,
@@ -469,6 +479,18 @@ async function resolveConnectorRuntimeTargetStates(args: {
           })
         : undefined;
     const refresh = builtinByTarget.get(connectorRuntimeTargetKey(target));
+    const automaticFirewall =
+      accountResolution?.kind === "resolved" &&
+      builtinCatalogSelection &&
+      credentialAccess?.kind === "ok"
+        ? resolveBuiltinAutomaticRuntimeFirewall({
+            snapshot: builtinCatalogSelection,
+            connectorSlug: registration.connectorSlug,
+            authMethodId: accountResolution.account.authMethod,
+            automaticAuthType: accountResolution.account.automaticAuthType,
+            sourceId: accountResolution.account.connectorId,
+          })
+        : null;
     resolvedTargets.push({
       kind: "builtin",
       result:
@@ -477,6 +499,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
               target,
               state: "available",
               networkPolicy: refresh.networkPolicy,
+              ...(automaticFirewall ? { firewall: automaticFirewall } : {}),
               ...(refresh.nextRefreshAt
                 ? { nextSyncAt: refresh.nextRefreshAt }
                 : {}),
@@ -540,16 +563,15 @@ function diagnosticCustomApis(
   });
 }
 
-function diagnosticCustomCredentialResolution(
+function diagnosticInlineCredentialResolution(
   result: Extract<
     ConnectorRuntimeSyncResult,
     {
-      readonly target: { readonly kind: "custom" };
       readonly state: "available";
     }
   >,
 ): "network-boundary" | "none" {
-  return result.firewall.firewall.apis.some((api) => {
+  return result.firewall?.firewall.apis.some((api) => {
     return (
       Object.keys(api.auth.headers ?? {}).length > 0 ||
       Object.keys(api.auth.query ?? {}).length > 0
@@ -573,6 +595,12 @@ export async function resolveConnectorRuntimeDiagnosticTargets(args: {
             target: result.target,
             state: result.state,
             networkPolicy: result.networkPolicy,
+            ...(result.firewall
+              ? {
+                  credentialResolution:
+                    diagnosticInlineCredentialResolution(result),
+                }
+              : {}),
           }
         : {
             target: result.target,
@@ -604,7 +632,7 @@ export async function resolveConnectorRuntimeDiagnosticTargets(args: {
       target: result.target,
       state: result.state,
       label: resolved.customSnapshot.row.connector.displayName,
-      credentialResolution: diagnosticCustomCredentialResolution(result),
+      credentialResolution: diagnosticInlineCredentialResolution(result),
       apis: diagnosticCustomApis(result),
       networkPolicy: result.networkPolicy,
     };

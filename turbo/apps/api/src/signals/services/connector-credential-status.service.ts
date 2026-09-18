@@ -37,12 +37,19 @@ export function connectorRuntimeCredentialStatusForAccess(args: {
 
 export function connectorCredentialStatusWithMethod(args: {
   readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorCredentialStatus {
-  if (args.method.grant.kind === "none") {
+  if (connectorMethodNeedsNoCredentials(args)) {
     return "available";
+  }
+  if (
+    args.method.grant.kind === "automatic" &&
+    args.automaticAuthType !== "oauth"
+  ) {
+    return "reconnect-required";
   }
   return connectorCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
@@ -54,11 +61,12 @@ export function connectorCredentialStatusWithMethod(args: {
 
 export function connectorCredentialReconnectReasonWithMethod(args: {
   readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorReconnectReason | null {
-  if (args.method.grant.kind === "none") {
+  if (connectorMethodNeedsNoCredentials(args)) {
     return null;
   }
   const credentialStatus = connectorCredentialStatusForAccess({
@@ -80,12 +88,19 @@ export function connectorCredentialReconnectReasonWithMethod(args: {
 
 export function connectorRuntimeCredentialStatusWithMethod(args: {
   readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storedNeedsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
   readonly now: Date;
 }): ConnectorCredentialStatus {
-  if (args.method.grant.kind === "none") {
+  if (connectorMethodNeedsNoCredentials(args)) {
     return "available";
+  }
+  if (
+    args.method.grant.kind === "automatic" &&
+    args.automaticAuthType !== "oauth"
+  ) {
+    return "reconnect-required";
   }
   return connectorRuntimeCredentialStatusForAccess({
     storedNeedsReconnect: args.storedNeedsReconnect,
@@ -98,5 +113,18 @@ export function connectorRuntimeCredentialStatusWithMethod(args: {
 function connectorAuthMethodSupportsRefreshWithMethod(
   method: ConnectorAuthMethodRuntimeConfig,
 ): boolean {
-  return method.access.kind === "refresh-token";
+  return (
+    method.access.kind === "refresh-token" || method.access.kind === "automatic"
+  );
+}
+
+function connectorMethodNeedsNoCredentials(args: {
+  readonly method: ConnectorAuthMethodRuntimeConfig;
+  readonly automaticAuthType?: "none" | "oauth" | null;
+}): boolean {
+  return (
+    args.method.grant.kind === "none" ||
+    (args.method.grant.kind === "automatic" &&
+      args.automaticAuthType === "none")
+  );
 }

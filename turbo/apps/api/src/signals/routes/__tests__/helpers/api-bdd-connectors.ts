@@ -280,6 +280,12 @@ export function mockCustomConnectorOAuth2Provider(
 }
 
 interface AutomaticMcpOAuthProviderOptions {
+  readonly authorizationCodeErrors?: readonly (
+    | "invalid_client"
+    | "invalid_grant"
+    | "temporarily_unavailable"
+    | null
+  )[];
   readonly registration: "cimd" | "dcr" | "none";
   readonly authentication?: "invalid" | "none" | "oauth";
   readonly issuerParameterSupported?: boolean;
@@ -310,6 +316,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly refreshResponse?: (attempt: number) => Response | Promise<Response>;
   readonly initialExpiresIn?: number;
   readonly initialRefreshToken?: string;
+  readonly omitRefreshToken?: boolean;
   readonly resource?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
@@ -546,6 +553,19 @@ export function mockAutomaticMcpOAuthProvider(
         }
       } else {
         authorizationCodeAttempts += 1;
+        const authorizationCodeError =
+          options.authorizationCodeErrors?.[authorizationCodeAttempts - 1];
+        if (authorizationCodeError) {
+          return HttpResponse.json(
+            { error: authorizationCodeError },
+            {
+              status:
+                authorizationCodeError === "temporarily_unavailable"
+                  ? 503
+                  : 400,
+            },
+          );
+        }
       }
       const refreshError = refresh
         ? (options.refreshErrors?.[refreshAttempts - 1] ?? options.refreshError)
@@ -562,7 +582,7 @@ export function mockAutomaticMcpOAuthProvider(
         access_token: refresh
           ? "automatic-refreshed-access-token"
           : "automatic-initial-access-token",
-        ...(!refresh
+        ...(!refresh && !options.omitRefreshToken
           ? {
               refresh_token:
                 options.initialRefreshToken ?? "automatic-refresh-token",

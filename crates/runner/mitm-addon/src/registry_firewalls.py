@@ -335,9 +335,10 @@ def resolve_firewall_entries(
 
     Runtime ownership metadata is assigned by the registry rather than trusted
     from source firewall data. Resolution clears any source-provided
-    `_connectorRuntimeKind` marker, marks a resolved builtin as `builtin` only
-    when its name is registered in `connectorRuntimeTargets`, and marks an inline
-    custom firewall as `custom` only when its UUID is registered there. Unregistered
+    `_connectorRuntimeKind` marker, marks a resolved builtin or inline entry without
+    a custom connector ID as `builtin` only when its name is registered in
+    `connectorRuntimeTargets`, and marks an inline custom firewall as `custom`
+    only when its UUID is registered there. Unregistered
     or absent connector identities remain unclassified.
 
     Optional entry `sourceId` values must be UUID strings and are copied to the
@@ -423,6 +424,11 @@ def resolve_firewall_entries(
                 for api in raw_apis:
                     if isinstance(api, dict):
                         api["customConnectorId"] = custom_connector_id
+            elif (
+                isinstance(resolved_firewall.get("name"), str)
+                and resolved_firewall["name"] in builtin_target_slugs
+            ):
+                connector_runtime_metadata.mark_connector_runtime_kind(resolved_firewall, "builtin")
             resolved.append(resolved_firewall)
             builtin_cache_keys.append(None)
             continue

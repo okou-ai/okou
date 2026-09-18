@@ -1,6 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
+  connectorAutomaticContract,
   connectorExternalCodeSessionContract,
   connectorManualGrantContract,
   connectorNoAuthGrantContract,
@@ -151,6 +152,89 @@ function oauthMethod(label = "OAuth") {
     startOptions: [],
   };
 }
+
+test.each(["none", "oauth"] as const)(
+  "Connect a builtin Automatic method resolving to %s",
+  async (resolution) => {
+    const slug = "server-authored-tools";
+    const methodId = "smart-connect";
+    const authorizationUrl = "https://oauth.test/tools/authorize";
+    const oauthAttemptId = crypto.randomUUID();
+    mockConnectors(context, []);
+    context.mocks.data.agents([
+      listAgent("c0000000-0000-4000-a000-000000000001", "Default"),
+    ]);
+    mockAgentConnectorAccess(slug);
+    mockPublicConnectorStatus(context, [
+      publicStatusItem({
+        connectorSlug: slug,
+        label: "Partner Tools",
+        authMethods: [
+          {
+            id: methodId,
+            label: "Connect",
+            description: null,
+            grantKind: "automatic",
+            manualFields: [],
+            startOptions: [],
+          },
+        ],
+      }),
+    ]);
+    const completedAttempts = mockOAuthCompletions(context);
+    if (resolution === "none") {
+      context.mocks.api(connectorAccountsContract.oauthCompletion, () => {
+        throw new Error("No-auth completion must not request an OAuth receipt");
+      });
+    }
+    const authWindow = createAuthWindow((href) => {
+      if (href !== authorizationUrl) {
+        return;
+      }
+      const connected = storeConnectedConnector(slug, methodId);
+      completedAttempts.set(oauthAttemptId, connected.id);
+      context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
+    });
+    context.mocks.browser.open(authWindow);
+    context.mocks.api(connectorAutomaticContract.start, ({ body, respond }) => {
+      expect(body).toMatchObject({
+        authMethod: methodId,
+        account: { intent: "add" },
+      });
+      if (resolution === "none") {
+        const connected = storeConnectedConnector(slug, methodId);
+        return respond(200, {
+          result: "connected",
+          connectedAccountId: connected.id,
+        });
+      }
+      return respond(200, {
+        result: "authorization",
+        authorizationUrl,
+        oauthAttemptId,
+      });
+    });
+    await setupPage({ context, path: "/connectors?keywords=partner+tools" });
+    await expect(
+      screen.findByText("Partner Tools"),
+    ).resolves.toBeInTheDocument();
+    click(getConnectorAction("button", "Connect Partner Tools"));
+    const naming = await screen.findByRole("dialog", {
+      name: "Name your Partner Tools account",
+    });
+    expect(authWindow).toMatchObject(
+      resolution === "none"
+        ? { closed: true }
+        : { location: { href: authorizationUrl } },
+    );
+    click(getConnectorAction("button", "Skip", naming));
+    await waitFor(() => {
+      expect(
+        getConnectorAction("button", "Manage Partner Tools access"),
+      ).toHaveTextContent("Used by Default");
+    });
+  },
+);
 
 function noAuthMethod() {
   return {

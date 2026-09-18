@@ -76,10 +76,7 @@ import {
 } from "./connector-client-invalidation.service";
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 import {
-  CustomConnectorAutomaticOAuthError,
   customConnectorAutomaticOAuthErrorCode,
-  isAutomaticOAuthInvalidClient,
-  isAutomaticOAuthInvalidGrant,
   prepareCustomConnectorAutomaticOAuthAuthorization,
   prepareCustomConnectorAutomaticOAuthReauthorization,
   readCustomConnectorAutomaticOAuthBinding,
@@ -88,6 +85,11 @@ import {
   type CustomConnectorAutomaticOAuthBinding,
   type CustomConnectorCanonicalAutomaticOAuthStateContext as PreparedCustomConnectorAutomaticOAuthStateContext,
 } from "./custom-connector-automatic-oauth.service";
+import {
+  McpAutomaticOAuthError,
+  isAutomaticOAuthInvalidClient,
+  isAutomaticOAuthInvalidGrant,
+} from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
@@ -690,7 +692,7 @@ async function prepareAutomaticOAuthStart(
   );
   if (!automatic.ok) {
     const error = automatic.error;
-    if (!(error instanceof CustomConnectorAutomaticOAuthError)) {
+    if (!(error instanceof McpAutomaticOAuthError)) {
       throw error;
     }
     const code = customConnectorAutomaticOAuthErrorCode(error);
@@ -1042,7 +1044,7 @@ function automaticOAuthReauthorizationScopes(
 }
 
 function automaticOAuthReauthorizationFailure(error: unknown) {
-  if (!(error instanceof CustomConnectorAutomaticOAuthError)) {
+  if (!(error instanceof McpAutomaticOAuthError)) {
     throw error;
   }
   const code = customConnectorAutomaticOAuthErrorCode(error);
@@ -1836,7 +1838,7 @@ async function handleAutomaticOAuthRefreshFailure(args: {
   if (
     isAutomaticOAuthInvalidGrant(args.error) ||
     isAutomaticOAuthInvalidClient(args.error) ||
-    (args.error instanceof CustomConnectorAutomaticOAuthError &&
+    (args.error instanceof McpAutomaticOAuthError &&
       args.error.kind === "binding-drift")
   ) {
     await markCustomConnectorNeedsReconnect(
@@ -1847,7 +1849,7 @@ async function handleAutomaticOAuthRefreshFailure(args: {
     return { kind: "reconnect-required" };
   }
   if (
-    args.error instanceof CustomConnectorAutomaticOAuthError &&
+    args.error instanceof McpAutomaticOAuthError &&
     args.error.kind === "temporary"
   ) {
     throw new CustomConnectorOAuth2TokenRefreshError(args.error);

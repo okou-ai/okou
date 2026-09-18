@@ -39,6 +39,7 @@ async function builtinMcpConnectors(args: {
       id: connectors.id,
       slug: connectors.connectorSlug,
       authMethod: connectors.authMethod,
+      automaticAuthType: connectors.automaticAuthType,
       storageVersion: connectors.storageVersion,
       needsReconnect: connectors.needsReconnect,
       tokenExpiresAt: connectors.tokenExpiresAt,
@@ -89,6 +90,7 @@ async function builtinMcpConnectors(args: {
       runtimeMethod?.executable !== true ||
       !connectorCredentialStorageIsCompatible({
         runtimeMethod,
+        automaticAuthType: row.automaticAuthType,
         storageVersion: row.storageVersion,
       })
     ) {
@@ -105,6 +107,7 @@ async function builtinMcpConnectors(args: {
         connected:
           connectorCredentialStatusWithMethod({
             method: runtimeMethod.method,
+            automaticAuthType: row.automaticAuthType,
             storedNeedsReconnect: row.needsReconnect,
             tokenExpiresAt: row.tokenExpiresAt,
             now: nowDate(),

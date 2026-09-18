@@ -6,6 +6,7 @@ import {
 } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
 import { connectorAccountMutationIntentSchema } from "./connector-accounts";
+import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
 import {
   connectorOauthDeviceAuthSessionPollRequestSchema,
   connectorOauthDeviceAuthSessionPollResponseSchema,
@@ -101,6 +102,59 @@ export const connectorOauthStartContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Create connector OAuth authorization URL",
+  },
+});
+
+export const connectorAutomaticContract = c.router({
+  start: {
+    method: "POST",
+    path: "/api/connectors/:connectorSlug/automatic/start",
+    headers: authHeadersSchema,
+    pathParams: z.object({ connectorSlug: connectorSlugSchema }),
+    body: z.object({
+      authMethod: connectorAuthMethodIdSchema,
+      agentId: z.uuid().optional(),
+      authorizeAgent: z.literal(true).optional(),
+      account: connectorAccountMutationIntentSchema,
+    }),
+    responses: {
+      200: z.discriminatedUnion("result", [
+        z.object({
+          result: z.literal("connected"),
+          connectedAccountId: z.uuid(),
+        }),
+        z.object({
+          result: z.literal("authorization"),
+          authorizationUrl: z.url(),
+          oauthAttemptId: z.uuid(),
+        }),
+      ]),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      500: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Discover and connect builtin MCP authentication",
+  },
+  callback: {
+    method: "GET",
+    path: "/api/connectors/automatic/callback",
+    query: z.object({
+      state: z.string().optional(),
+      code: z.string().optional(),
+      error: z.string().optional(),
+      error_description: z.string().optional(),
+      iss: z.string().optional(),
+      responseMode: z.literal("json").optional(),
+    }),
+    responses: {
+      200: connectorOauthCallbackResultSchema,
+      307: c.noBody(),
+    },
+    summary: "Complete builtin MCP automatic authorization",
   },
 });
 
