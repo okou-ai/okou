@@ -77,5 +77,6 @@ export enum FeatureSwitchKey {
   GetStartedQuests = "getStartedQuests",
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
+  PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
 }

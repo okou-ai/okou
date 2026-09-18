@@ -30,6 +30,7 @@ import { crc32, deflateRawSync, inflateRawSync } from "zlib";
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
 
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { browser, childPath, operatorPath, SETTLE, TIMEOUT_MS } from "./shared";
 
@@ -854,7 +855,22 @@ function verifyDeck(rendered: Rendered): VerifyReport {
 
 // --- command ----------------------------------------------------------------
 
+/**
+ * Conversion is still being measured against real decks, so it is held to the
+ * accounts the feature switch names. A run whose token predates the switch
+ * carries no capabilities to inspect and is left alone.
+ */
+function requirePresentationConvertCapability(): void {
+  const payload = decodeSandboxTokenPayload();
+  if (payload && !payload.capabilities.includes("presentation-convert:write")) {
+    throw new Error(
+      "Presentation conversion is not enabled for this agent run",
+    );
+  }
+}
+
 async function convert(options: Options): Promise<void> {
+  requirePresentationConvertCapability();
   const bundle = ensureRenderer();
   const rendered = render(options, bundle);
 

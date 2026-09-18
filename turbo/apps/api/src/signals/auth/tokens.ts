@@ -30,6 +30,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["artifact:write", FeatureSwitchKey.PrivateArtifacts],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
+  ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
   ["user-template:write", FeatureSwitchKey.CustomTemplates],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
