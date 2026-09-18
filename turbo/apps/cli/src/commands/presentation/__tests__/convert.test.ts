@@ -6,13 +6,7 @@
  * back a real .pptx, so slide detection, the capability guard, post-processing,
  * the archive round-trip, and coverage grading all run unchanged.
  */
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { crc32, inflateRawSync } from "zlib";
@@ -236,25 +230,25 @@ function stderr(): string {
     .join("\n");
 }
 
-async function convert(
-  workDir: string,
-  args: readonly string[],
-): Promise<void> {
+let workDir = "";
+let cacheHome = "";
+let deckPath = "";
+let outPath = "";
+
+async function convert(args: readonly string[]): Promise<void> {
   await presentationCommand.parseAsync(
-    ["convert", "--input", join(workDir, "deck.html"), ...args],
+    ["convert", "--input", deckPath, "--out", outPath, ...args],
     { from: "user" },
   );
 }
 
 describe("okou presentation convert", () => {
-  let workDir = "";
-  let cacheHome = "";
-
   beforeEach(() => {
     workDir = mkdtempSync(join(tmpdir(), "okou-convert-"));
     cacheHome = mkdtempSync(join(tmpdir(), "okou-convert-cache-"));
-    mkdirSync(workDir, { recursive: true });
-    writeFileSync(join(workDir, "deck.html"), "<html></html>");
+    deckPath = join(workDir, "deck.html");
+    outPath = join(workDir, "out.pptx");
+    writeFileSync(deckPath, "<html></html>");
     vi.stubEnv("OKOU_TOKEN", okouToken(["presentation-convert:write"]));
     vi.stubEnv("XDG_CACHE_HOME", cacheHome);
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -275,23 +269,20 @@ describe("okou presentation convert", () => {
 
   it("refuses a run whose token lacks the conversion capability", async () => {
     vi.stubEnv("OKOU_TOKEN", okouToken(["artifact:read"]));
-    await expect(
-      convert(workDir, ["--out", join(workDir, "out.pptx")]),
-    ).rejects.toThrow(/process\.exit/u);
+    await expect(convert([])).rejects.toThrow(/process\.exit/u);
     expect(stderr()).toContain("not enabled for this agent run");
   });
 
   it("rejects a slide width that is not a positive number", async () => {
-    await expect(
-      convert(workDir, ["--out", join(workDir, "out.pptx"), "--width", "0"]),
-    ).rejects.toThrow(/positive number|process\.exit/u);
+    await expect(convert(["--width", "0"])).rejects.toThrow(
+      /positive number|process\.exit/u,
+    );
   });
 
   it("writes a deck whose parts survive the archive round-trip", async () => {
-    const out = join(workDir, "out.pptx");
-    await convert(workDir, ["--out", out]);
+    await convert([]);
 
-    const parts = readZip(readFileSync(out));
+    const parts = readZip(readFileSync(outPath));
     expect([...parts.keys()]).toEqual(
       expect.arrayContaining([
         "[Content_Types].xml",
@@ -310,10 +301,10 @@ describe("okou presentation convert", () => {
   });
 
   it("keeps the measured geometry and the browser's line breaks", async () => {
-    const out = join(workDir, "out.pptx");
-    await convert(workDir, ["--out", out]);
+    await convert([]);
 
-    const slide = readZip(readFileSync(out)).get("ppt/slides/slide1.xml") ?? "";
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
     expect(slide).toContain("<a:normAutofit/>");
     expect(slide).not.toContain("<a:spAutoFit/>");
     expect(slide).toContain('wrap="none"');
@@ -321,48 +312,39 @@ describe("okou presentation convert", () => {
   });
 
   it("hands wrapping back to the viewer when asked", async () => {
-    const out = join(workDir, "out.pptx");
-    await convert(workDir, ["--out", out, "--wrap"]);
+    await convert(["--wrap"]);
 
-    const slide = readZip(readFileSync(out)).get("ppt/slides/slide1.xml") ?? "";
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
     expect(slide).toContain('wrap="square"');
     expect(slide).not.toContain('wrap="none"');
   });
 
   it("names the East Asian family the deck's own stack asks for", async () => {
-    const out = join(workDir, "out.pptx");
-    await convert(workDir, ["--out", out]);
+    await convert([]);
 
-    const slide = readZip(readFileSync(out)).get("ppt/slides/slide1.xml") ?? "";
+    const slide =
+      readZip(readFileSync(outPath)).get("ppt/slides/slide1.xml") ?? "";
     expect(slide).toContain('<a:ea typeface="PingFang SC"');
     // Only the East Asian slot moves; Latin keeps the deck's display face.
     expect(slide).toContain('<a:latin typeface="Lexend"');
   });
 
   it("passes verification when every source string reaches the deck", async () => {
-    const out = join(workDir, "out.pptx");
-    await expect(
-      convert(workDir, ["--out", out, "--verify"]),
-    ).resolves.toBeUndefined();
+    await expect(convert(["--verify"])).resolves.toBeUndefined();
   });
 
   it("passes verification when a string is split across runs", async () => {
     state.pageTexts = ["一个完整的句子"];
     state.deckTexts = ["一个完整的", "句子"];
     state.slideCount = 2;
-    const out = join(workDir, "out.pptx");
-    await expect(
-      convert(workDir, ["--out", out, "--verify"]),
-    ).resolves.toBeUndefined();
+    await expect(convert(["--verify"])).resolves.toBeUndefined();
   });
 
   it("fails verification when the deck loses a source string", async () => {
     state.pageTexts = ["Kept heading", "Lost heading"];
     state.deckTexts = ["Kept heading", ""];
-    const out = join(workDir, "out.pptx");
-    await expect(convert(workDir, ["--out", out, "--verify"])).rejects.toThrow(
-      /process\.exit/u,
-    );
+    await expect(convert(["--verify"])).rejects.toThrow(/process\.exit/u);
     expect(stderr()).toContain("coverage");
   });
 });
