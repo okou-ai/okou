@@ -31,6 +31,8 @@ const CONDITIONAL_CAPABILITIES = [
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["user-template:write", FeatureSwitchKey.CustomTemplates],
+  ["vnc:read", FeatureSwitchKey.VncAccess],
+  ["vnc:write", FeatureSwitchKey.VncAccess],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [

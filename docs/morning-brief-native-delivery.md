@@ -122,17 +122,35 @@ and stores no durable pending state of its own.
 
 ### Native admission in the shared drain
 
-Before the provider request is committed, a `morning-brief-result` row is
-admitted only if all of this still holds: the delivery row exists; erasure and
-the member row admit a write; the occurrence's frozen `membership_id` still
-matches; Morning Brief is installed, enabled and on the same Agent; the
-destination thread is still owned by that Agent and user; and the recipient has
-not opted out. Anything missing fails the row closed — it can never fall through
-to a generic send. Suppression stays with the shared drain, which checks every
-producer's recipient.
+Native cleanup already takes an authority or policy lock before it deletes the
+delivery and its outbox row. The drain follows the same protocol instead of
+claiming outbox first:
 
-A request the provider has already accepted cannot be recalled. This gate
-decides only whether a request is made.
+**erasure/member → occurrence → Agent → destination thread → workflow/thread
+binding and installation → automation → subscription → outbox.**
+
+The external Clerk membership lookup remains outside the transaction. Inside
+the transaction, the drain discovers that lookup's exact delivery, takes the
+locks above, and revalidates the canonical installation after the last policy
+wait. It then claims the outbox row and re-reads the complete delivery
+relationship. Missing or changed provenance across either unlocked discovery
+window fails closed; it can never fall through to the generic sender.
+
+Before the provider request is committed, the delivery must still exist;
+erasure and the member row must admit a write; the occurrence's frozen
+`membership_id` must still match; Morning Brief must be installed, enabled and
+on the same Agent; the exact workflow/thread binding and destination must still
+belong to that Agent and user; and the recipient must not have opted out.
+Suppression stays with the shared drain, which checks every producer's
+recipient.
+
+This order makes each race one-sided. A cleanup, opt-out, disable or ownership
+transfer that commits first is observed and no request is made. A claim that
+retains the relevant locks first may commit its provider request; cleanup waits
+and then removes the local receipt and outbox. A provider operation admitted by
+that commit cannot be recalled, and its completion may find that cleanup has
+already removed the local row. Stable provider request/key replay, the original
+outbox lifetime and the `(id, status, attempt)` completion fence are unchanged.
 
 ### Owner deletion
 
@@ -145,18 +163,19 @@ accepted cannot be retracted; only its local record goes.
 
 Where it runs, precisely:
 
-| Path                                                 | Transaction                                                                                                                 |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Agent deletion (`agent-deletion`, `agent-lifecycle`) | The deleting transaction itself, before the cascade removes the receipt.                                                    |
-| Thread deletion (`deleteChatThread$`)                | The deleting transaction itself, under the thread's own row lock.                                                           |
-| Membership cleanup (`org-member-cleanup`)            | The same transaction that revokes collection ownership.                                                                     |
-| Clerk user / organization deletion                   | **A separate later transaction**, after run cancellation and collection revocation — not the earliest committed revocation. |
+| Path                                                 | Transaction                                                                       |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Agent deletion (`agent-deletion`, `agent-lifecycle`) | The deleting transaction itself, before the cascade removes the receipt.          |
+| Thread deletion (`deleteChatThread$`)                | The deleting transaction itself, under the thread's own row lock.                 |
+| Membership cleanup (`org-member-cleanup`)            | The same transaction that revokes collection ownership.                           |
+| Clerk user / organization deletion                   | The same earliest run-cancellation transaction that revokes collection ownership. |
 
 The Agent and thread rows are the ones that would otherwise cascade the receipt
-away and strand its mail, so those two run inside the deleting transaction. The
-Clerk paths do not yet share the earliest revocation transaction; a fault
-between them leaves the mail to its ordinary outbox lifetime while the next
-drain fails it closed.
+away and strand its mail, so those two run inside the deleting transaction.
+Membership and both Clerk scopes remove delivery and outbox in the same earliest
+transaction that stamps collection revocation. A failure deleting the outbox
+therefore rolls the receipt, collection revocation and outbox removal back
+together; there is no later cleanup window that can orphan native content.
 
 ## Unread
 
@@ -183,7 +202,7 @@ newer unread is not swallowed.
 
 Both watermark references are unconditional and run for all four existing
 consumers regardless of the feature switch. A default-off switch does not
-protect an unconditional SQL reference: `1154_morning_brief_deliveries` must be
+protect an unconditional SQL reference: `1157_morning_brief_deliveries` must be
 applied before these readers deploy. That is schema-before-reader ordering, and
 it is the reason the migration ships with them.
 
@@ -191,6 +210,13 @@ The `morning-brief-result` template's reader and its native admission likewise
 ship before any producer can enqueue that template. An old worker that has not
 deployed this change rejects the unknown template, so production activation
 waits until the readers are drained across every worker.
+
+The authority-before-outbox protocol is also a worker-version boundary. While
+an old worker can still run, it may retain the previous outbox → member/policy
+order against a new cleanup caller. Keep native production activation off and
+drain old workers before relying on this protocol. Rollback must return all
+native workers to a mutually compatible order; no timeout or deadlock retry is
+treated as a compatibility bridge.
 
 Generated Drizzle snapshots exceed the ordinary 1 MiB file-size limit; they use
 the narrow 4 MiB generated-snapshot ceiling in `scripts/check-file-size.sh`.

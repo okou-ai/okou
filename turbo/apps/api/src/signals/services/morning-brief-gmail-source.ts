@@ -22,11 +22,12 @@ import {
   type MorningBriefSourceAuthorityProof,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import type {
-  MorningBriefSourceCollection,
-  MorningBriefSourceCoverage,
-  MorningBriefSourceItem,
-  MorningBriefTimeSemantics,
+import {
+  morningBriefItemFacts,
+  type MorningBriefSourceCollection,
+  type MorningBriefSourceCoverage,
+  type MorningBriefSourceItem,
+  type MorningBriefSourceProvenance,
 } from "./morning-brief-source-item";
 
 /**
@@ -39,7 +40,7 @@ import type {
  */
 function gmailTimeSemantics(
   item: MorningBriefGmailItem,
-): MorningBriefTimeSemantics {
+): "instant" | "outstanding" {
   return item.branches.includes("recent") ? "instant" : "outstanding";
 }
 
@@ -53,6 +54,46 @@ function gmailCoverage(
     return "partial";
   }
   return collection.items.length === 0 ? "empty" : "complete";
+}
+
+/**
+ * The two branches this collection drew from, each with its own time claim.
+ *
+ * The recent branch asked for a half-open window; the unread branch is a
+ * snapshot of the backlog at the instant it was read. They are reported apart
+ * because a brief that merges them can present week-old unread mail as window
+ * activity, and because a reader cannot judge "3 unread" without knowing when
+ * it was counted.
+ */
+function gmailProvenance(
+  collection: MorningBriefGmailCollection,
+): MorningBriefSourceProvenance {
+  return {
+    startAt: collection.recentWindow.from,
+    endAt: collection.recentWindow.to,
+    startDate: null,
+    endDateExclusive: null,
+    timezone: collection.timezone,
+    observedAt: collection.unreadObservedAt,
+    collectedAt: collection.collectedAt,
+    branches: [
+      {
+        name: "recent",
+        status: collection.coverage.recent,
+        startAt: collection.recentWindow.from,
+        endAt: collection.recentWindow.to,
+        observedAt: null,
+      },
+      {
+        name: "unread",
+        status: collection.coverage.unread,
+        startAt: null,
+        endAt: null,
+        observedAt: collection.unreadObservedAt,
+      },
+    ],
+    limitations: collection.coverage.truncations,
+  };
 }
 
 /**
@@ -92,6 +133,7 @@ export function normalizeMorningBriefGmail(
       occurredAt: new Date(message.internalDate),
       timeSemantics: gmailTimeSemantics(message),
       endsAt: null,
+      dateRange: null,
       title: message.subject ?? "",
       body: message.excerpt,
       // `none` and `html-only` are declared coverage gaps rather than empty
@@ -101,6 +143,18 @@ export function normalizeMorningBriefGmail(
         message.excerptSource === "none" ||
         message.excerptSource === "html-only",
       links: [{ label: "Open in Gmail", url: message.sourceUrl }],
+      // Both selecting branches survive, not just the one that decided the time
+      // semantics: a message that is recent *and* unread is a different fact
+      // from one that is only recent, and the excerpt source says whether the
+      // body was read at all.
+      facts: morningBriefItemFacts({
+        reasons: message.branches.map((branch) => {
+          return { branch, detail: null, unread: message.unread };
+        }),
+        startedAtRaw: message.date,
+        actor: message.from,
+        bodySource: message.excerptSource,
+      }),
     };
   });
   return {
@@ -108,7 +162,18 @@ export function normalizeMorningBriefGmail(
     coverage: gmailCoverage(collection),
     items,
     requests: collection.coverage.requests,
-    omittedBySource: collection.coverage.truncations.length,
+    provenance: gmailProvenance(collection),
+    // `truncations` names the caps that fired — list pages, candidates, byte
+    // budgets — and none of them knows how many messages were behind them.
+    // Reporting that list's length as a message count stated a total nothing
+    // observed, so the remainder is an explicit unknown instead.
+    omittedBySource: {
+      known: 0,
+      unknownRemaining:
+        collection.coverage.truncations.length > 0 ||
+        collection.coverage.recent !== "complete" ||
+        collection.coverage.unread !== "complete",
+    },
   };
 }
 

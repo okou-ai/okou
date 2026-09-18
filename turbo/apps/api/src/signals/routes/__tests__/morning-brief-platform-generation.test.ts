@@ -1760,13 +1760,18 @@ describe("Morning Brief platform receipt durability", () => {
       headers: f.headers,
       body: { scheduledFor: ANCHOR },
     });
+    const requestOutcome = settleIncludingAbort(pending);
     await barrier.waitForArrival();
     controller.abort(cancellation);
     await barrier.release();
 
     // Cancellation still reaches the caller: recording a charge is not
     // permission to accept anything.
-    await expect(pending).rejects.toThrow(cancellation.message);
+    const outcome = await requestOutcome;
+    expect(outcome.ok).toBeFalsy();
+    if (!outcome.ok) {
+      expect(outcome.error).toBe(cancellation);
+    }
     expect(traffic.bodies).toHaveLength(1);
 
     const [row, ...extraRows] = await readMorningBriefGenerations(f);
@@ -2309,10 +2314,11 @@ describe("Morning Brief collection handoff admission", () => {
     });
     const controller = new AbortController();
     const held = await heldCompletion(f, controller);
+    const requestOutcome = settleIncludingAbort(held.pending);
 
     controller.abort();
     await held.release();
-    const outcome = await settleIncludingAbort(held.pending);
+    const outcome = await requestOutcome;
 
     expect(outcome.ok && outcome.value.status === 200).toBeFalsy();
     expect(traffic.bodies).toStrictEqual([]);
@@ -2342,12 +2348,13 @@ describe("Morning Brief collection handoff admission", () => {
       headers: f.headers,
       body: { scheduledFor: ANCHOR },
     });
+    const requestOutcome = settleIncludingAbort(pending);
     // The reservation is written and blocked before COMMIT, which is an await
     // interval of its own inside the joined handoff.
     await barrier.waitForArrival();
     controller.abort();
     await barrier.release();
-    const outcome = await settleIncludingAbort(pending);
+    const outcome = await requestOutcome;
 
     expect(outcome.ok && outcome.value.status === 200).toBeFalsy();
     expect(traffic.bodies).toStrictEqual([]);

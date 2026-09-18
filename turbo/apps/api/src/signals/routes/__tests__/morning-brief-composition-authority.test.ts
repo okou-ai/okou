@@ -28,7 +28,10 @@ import {
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
+import {
+  createWorkflowsBddApi,
+  mockGoogleCalendarConnectorOAuth,
+} from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   seedSlackOrgConnection$,
@@ -60,6 +63,10 @@ const GMAIL_MESSAGE_URL =
 const SLACK_CONVERSATIONS_URL = "https://slack.com/api/users.conversations";
 const SLACK_HISTORY_URL = "https://slack.com/api/conversations.history";
 const SLACK_REPLIES_URL = "https://slack.com/api/conversations.replies";
+const CALENDAR_LIST_URL =
+  "https://www.googleapis.com/calendar/v3/users/me/calendarList";
+const CALENDAR_EVENTS_URL =
+  "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events";
 
 const ANCHOR_ISO = "2026-09-17T07:00:00.000Z";
 const ANCHOR_MS = Date.parse(ANCHOR_ISO);
@@ -167,19 +174,19 @@ interface ProviderCalls {
   readonly slack: string[];
 }
 
-function gmailMessagePayload(id: string) {
+function gmailMessagePayload(id: string, unread: boolean, anchorMs: number) {
   return {
     id,
     threadId: `thread-${id}`,
-    internalDate: String(ANCHOR_MS - 60_000),
-    labelIds: ["INBOX"],
+    internalDate: String(anchorMs - 60_000),
+    labelIds: unread ? ["INBOX", "UNREAD"] : ["INBOX"],
     payload: {
       mimeType: "multipart/alternative",
       headers: [
         { name: "Subject", value: `Subject ${id}` },
         { name: "From", value: "sender@example.test" },
         { name: "To", value: "owner@example.test" },
-        { name: "Date", value: new Date(ANCHOR_MS - 60_000).toUTCString() },
+        { name: "Date", value: new Date(anchorMs - 60_000).toUTCString() },
       ],
       parts: [
         {
@@ -202,6 +209,11 @@ function gmailMessagePayload(id: string) {
 function stubProviders(args: {
   readonly slackHold?: Promise<void>;
   readonly onSlackEnumerated?: () => void;
+  readonly gmailUnread?: boolean;
+  readonly slackFraction?: string;
+  readonly calendarAllDay?: boolean;
+  readonly onCalendarRequest?: () => void;
+  readonly anchorMs?: number;
 }): ProviderCalls {
   const calls: ProviderCalls = { gmail: [], slack: [] };
   // Slack enumerates once to discover the intersection and again to prove it
@@ -217,13 +229,19 @@ function stubProviders(args: {
       const query = url.searchParams.get("q") ?? "";
       return HttpResponse.json({
         messages:
-          query === "is:unread" ? [] : [{ id: "m1", threadId: "thread-m1" }],
+          query === "is:unread" && args.gmailUnread !== true
+            ? []
+            : [{ id: "m1", threadId: "thread-m1" }],
       });
     }),
     http.get(GMAIL_MESSAGE_URL, ({ request, params }) => {
       calls.gmail.push(new URL(request.url).pathname);
       return HttpResponse.json(
-        gmailMessagePayload(String(params["messageId"])),
+        gmailMessagePayload(
+          String(params["messageId"]),
+          args.gmailUnread === true,
+          args.anchorMs ?? ANCHOR_MS,
+        ),
       );
     }),
     http.get(SLACK_CONVERSATIONS_URL, async () => {
@@ -245,7 +263,7 @@ function stubProviders(args: {
         messages: [
           {
             type: "message",
-            ts: `${String(Math.floor((ANCHOR_MS - 120_000) / 1000))}.000100`,
+            ts: `${String(Math.floor(((args.anchorMs ?? ANCHOR_MS) - 120_000) / 1000))}.${args.slackFraction ?? "000100"}`,
             user: "U9",
             text: "standup at ten",
           },
@@ -255,6 +273,42 @@ function stubProviders(args: {
     http.get(SLACK_REPLIES_URL, () => {
       calls.slack.push("conversations.replies");
       return HttpResponse.json({ ok: true, messages: [] });
+    }),
+    http.get(CALENDAR_LIST_URL, () => {
+      args.onCalendarRequest?.();
+      return HttpResponse.json({
+        items:
+          args.calendarAllDay === true
+            ? [
+                {
+                  id: "primary",
+                  summary: "Primary",
+                  accessRole: "owner",
+                  primary: true,
+                  timeZone: "America/Los_Angeles",
+                },
+              ]
+            : [],
+      });
+    }),
+    http.get(CALENDAR_EVENTS_URL, () => {
+      args.onCalendarRequest?.();
+      return HttpResponse.json({
+        items:
+          args.calendarAllDay === true
+            ? [
+                {
+                  id: "dst-day",
+                  status: "confirmed",
+                  summary: "DST day",
+                  start: { date: "2026-11-01" },
+                  end: { date: "2026-11-02" },
+                  recurringEventId: "dst-series",
+                  originalStartTime: { date: "2026-11-01" },
+                },
+              ]
+            : [],
+      });
     }),
   );
   return calls;
@@ -299,10 +353,10 @@ async function connectGmail(
 async function setupOwner(
   /** Everything this suite's production writes published, kept across setup. */
   objectStorage: Map<string, Buffer>,
+  timezone = "Asia/Shanghai",
+  withCalendar = false,
 ): Promise<Fixture> {
-  const { actor } = await workflowBdd.setupWorkflowOrg({
-    timezone: "Asia/Shanghai",
-  });
+  const { actor } = await workflowBdd.setupWorkflowOrg({ timezone });
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped actor");
   }
@@ -326,7 +380,35 @@ async function setupOwner(
     email: "owner@example.test",
     subject: `gmail-${randomUUID()}`,
   });
-  await runsApi.enableAgentConnectors(actor, agentId, ["gmail"]);
+  if (withCalendar) {
+    const calendarSubject = `calendar-${randomUUID()}`;
+    mockGoogleCalendarConnectorOAuth({
+      accessToken: `calendar-token-${randomUUID()}`,
+      email: "owner@example.test",
+      subject: calendarSubject,
+    });
+    const calendarStart = await connectorsApi.startOauth(
+      actor,
+      "google-calendar",
+      "oauth",
+      agentId,
+    );
+    const calendarState = new URL(
+      calendarStart.authorizationUrl,
+    ).searchParams.get("state");
+    if (!calendarState) {
+      throw new Error("Expected a Google Calendar OAuth state");
+    }
+    await connectorsApi.completeOauthCallback("google-calendar", {
+      code: `calendar-code-${calendarSubject}`,
+      state: calendarState,
+    });
+  }
+  await runsApi.enableAgentConnectors(
+    actor,
+    agentId,
+    withCalendar ? ["gmail", "google-calendar"] : ["gmail"],
+  );
   await runsApi.applyUserPermissionGrant(actor, {
     agentId,
     connectorSlug: "gmail",
@@ -335,7 +417,7 @@ async function setupOwner(
   });
   const installation = await installMorningBriefFixture(
     { orgId: actor.orgId, userId: actor.userId },
-    { agentId },
+    { agentId, timezone },
   );
   const chatThreadId = await bindMorningBriefThreadFixture(
     { orgId: actor.orgId, userId: actor.userId },
@@ -375,7 +457,7 @@ async function setupOwner(
   };
 }
 
-async function compose(fixture: Fixture) {
+async function compose(fixture: Fixture, anchor = ANCHOR_ISO) {
   await store.set(
     seedOrgMembership$,
     {
@@ -389,7 +471,7 @@ async function compose(fixture: Fixture) {
   return await accept(
     composeClient().compose({
       headers: authHeaders(fixture.actor),
-      body: { anchor: ANCHOR_ISO },
+      body: { anchor },
     }),
     [200],
   );
@@ -408,6 +490,99 @@ describe("Morning Brief exact source selection and retained authority", () => {
   afterEach(() => {
     clearMockNow();
   });
+
+  it(
+    "keeps all-day DST dates, timezone, window and recurrence semantics through request assembly",
+    async () => {
+      const anchor = "2026-11-01T20:00:00.000Z";
+      mockNow(Date.parse(anchor) + 30_000);
+      const fixture = await setupOwner(
+        objectStorage,
+        "America/Los_Angeles",
+        true,
+      );
+      let calendarRequests = 0;
+      stubProviders({
+        calendarAllDay: true,
+        onCalendarRequest: () => {
+          calendarRequests += 1;
+        },
+      });
+
+      const response = await compose(fixture, anchor);
+      if (response.status !== 200 || response.body.result !== "composed") {
+        throw new Error(
+          `Expected a composed result, received ${JSON.stringify(response.body)}`,
+        );
+      }
+      const calendar = response.body.composition.sources.find((entry) => {
+        return entry.source === "calendar";
+      });
+      expect(calendar?.timeSemantics.dateOnly).toBe(1);
+      expect(calendar?.provenance.timezone).toBe("America/Los_Angeles");
+      expect(calendar?.provenance.startDate).toBe("2026-11-01");
+      expect(calendar?.provenance.endDateExclusive).toBe("2026-11-04");
+      expect(calendar?.requests).toBe(calendarRequests);
+      expect(calendar?.evidenceDigest).not.toBe("");
+      expect(response.body.composition.request?.totalBytes).toBeLessThanOrEqual(
+        response.body.composition.request?.maxBytes ?? 0,
+      );
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "preserves Gmail overlap and exact Slack timestamps through request assembly",
+    async () => {
+      const fixture = await setupOwner(objectStorage);
+      stubProviders({ gmailUnread: false, slackFraction: "000100" });
+      const baseline = await compose(fixture);
+      if (baseline.status !== 200 || baseline.body.result !== "composed") {
+        throw new Error(
+          `Expected a composed baseline, received ${JSON.stringify(baseline.body)}`,
+        );
+      }
+      stubProviders({ gmailUnread: true, slackFraction: "000200" });
+      const changed = await compose(fixture);
+      if (changed.status !== 200 || changed.body.result !== "composed") {
+        throw new Error(
+          `Expected a composed result, received ${JSON.stringify(changed.body)}`,
+        );
+      }
+
+      const before = new Map(
+        baseline.body.composition.sources.map((entry) => {
+          return [entry.source, entry];
+        }),
+      );
+      const after = new Map(
+        changed.body.composition.sources.map((entry) => {
+          return [entry.source, entry];
+        }),
+      );
+      expect(before.get("gmail")?.items).toBe(1);
+      expect(after.get("gmail")?.items).toBe(1);
+      // The Gmail record is identical except that the second collection reached
+      // it through both recent and unread branches. If overlap provenance were
+      // flattened, these request-evidence digests would be equal.
+      expect(after.get("gmail")?.evidenceDigest).not.toBe(
+        before.get("gmail")?.evidenceDigest,
+      );
+      expect(after.get("gmail")?.provenance.observedAt).not.toBeNull();
+      expect(
+        after.get("gmail")?.provenance.branches.map((branch) => {
+          return branch.name;
+        }),
+      ).toStrictEqual(expect.arrayContaining(["recent", "unread"]));
+
+      // Only the microsecond Slack record identity changed.
+      expect(after.get("slack")?.evidenceDigest).not.toBe(
+        before.get("slack")?.evidenceDigest,
+      );
+      expect(after.get("slack")?.provenance.startAt).not.toBeNull();
+    },
+    TEST_TIMEOUT_MS,
+  );
 
   it(
     "removes material whose grant was withdrawn while a later source was held, and keeps its siblings",
