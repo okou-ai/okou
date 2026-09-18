@@ -145,8 +145,9 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     await api.completeHostedSite(actor, replacement.deploymentId);
     expect(replacement.siteId).not.toBe(first.siteId);
     expect(replacement.publicSlug).not.toBe(first.publicSlug);
-    expect(replacement.publicSlug).toMatch(
-      new RegExp(`^${site}-[a-z0-9]{4}$`, "u"),
+    expect(replacement.publicSlug.startsWith(`${site}-`)).toBeTruthy();
+    expect(replacement.publicSlug.slice(site.length + 1)).toMatch(
+      /^[a-z0-9]{4}$/u,
     );
     expect(replacement.artifactUrl).not.toBe(first.artifactUrl);
     expect(replacement.deploymentVersion).toBe(1);
@@ -273,8 +274,9 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     });
     const replacement = await api.prepareHostedSite(actor, vm0Body);
     expect(replacement.siteId).not.toBe(legacySiteId);
-    expect(replacement.publicSlug).toMatch(
-      new RegExp(`^${vm0Site}-[a-z0-9]{4}$`, "u"),
+    expect(replacement.publicSlug.startsWith(`${vm0Site}-`)).toBeTruthy();
+    expect(replacement.publicSlug.slice(vm0Site.length + 1)).toMatch(
+      /^[a-z0-9]{4}$/u,
     );
     expect(replacement.url).toBe(`https://${replacement.publicSlug}.okou.app`);
     await expect(
@@ -385,8 +387,11 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       spaFallback: false,
       files: [hostedTextFile("/index.html", "<main>collision</main>")],
     });
-    expect(versioned.publicSlug).toMatch(
-      new RegExp(`^${occupied.publicSlug}-[a-z0-9]{4}$`, "u"),
+    expect(
+      versioned.publicSlug.startsWith(`${occupied.publicSlug}-`),
+    ).toBeTruthy();
+    expect(versioned.publicSlug.slice(occupied.publicSlug.length + 1)).toMatch(
+      /^[a-z0-9]{4}$/u,
     );
     expect(versioned.deploymentVersion).toBe(1);
     expect(versioned.artifactUrl).toContain(`dpl-${versioned.deploymentId}.`);
