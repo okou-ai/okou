@@ -143,7 +143,8 @@ function createReadServer(
           "threadId and around:{eventId,seqId} to get_chat_messages for context and full content. " +
           "Follow nextCursor with the identical query, filters and limit (default 20, maximum 50). " +
           "An empty page may still have a nextCursor: scanLimited means the 100-candidate scan budget " +
-          "was reached. Indexing is asynchronous; restart to refresh. Search does not mark messages " +
+          "was reached. Indexing is asynchronous; use get_chat_messages for recently sent content. " +
+          "An empty search does not prove absence or send failure. Restart to refresh. Search does not mark messages " +
           "read. Canonical validation shares a 32 MiB/50,000-event/15-second history budget across " +
           "candidate threads; resource/archive failures are explicit errors, not partial successes.",
         inputSchema: mcpSearchChatMessagesInputSchema,

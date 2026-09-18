@@ -204,7 +204,9 @@ size and expire 24 hours after the initial page. Every request reauthorizes.
 Indexing is asynchronous and pages read live state, not a global snapshot. A
 newly indexed match can fall ahead of an existing cursor; restart for refreshed
 results. No total count, completeness, indexing-delay bound or global watermark
-is promised. References can become stale after a result is returned; the context
+is promised. For recently sent content, read `get_chat_messages` using the known
+thread ID; an empty search does not prove send failure or that a topic was never
+discussed. References can become stale after a result is returned; the context
 reader then reports the unavailable anchor.
 
 A call processes at most 100 candidates and reads one additional metadata row to
