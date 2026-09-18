@@ -540,12 +540,14 @@
       "synced": "Google Drive에 동기화됨",
       "syncedFiles_one": "Google Drive에 동기화됨",
       "syncedFiles_other": "Google Drive에 {{count}}개 파일 동기화됨",
+      "syncedSlides": "Google Slides에 동기화됨",
       "syncFailed": "Google Drive 동기화 실패",
       "syncingArtifact": "아티팩트 동기화 중...",
       "syncingFiles_one": "{{count}}개 파일 동기화 중...",
       "syncingFiles_other": "{{count}}개 파일 동기화 중...",
       "syncingNamed": "{{filename}} 동기화 중...",
-      "upload": "Google Drive에 업로드"
+      "upload": "Google Drive에 업로드",
+      "uploadSlides": "Google Slides에 업로드"
     },
     "kinds": {
       "audio": "오디오",

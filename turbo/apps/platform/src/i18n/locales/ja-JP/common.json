@@ -540,12 +540,14 @@
       "synced": "Google Drive に同期されました",
       "syncedFiles_one": "Google Drive に同期されました",
       "syncedFiles_other": "{{count}} ファイルを Google Drive に同期しました",
+      "syncedSlides": "Google Slides に同期されました",
       "syncFailed": "Google Drive との同期に失敗しました",
       "syncingArtifact": "アーティファクトを同期中...",
       "syncingFiles_one": "{{count}} ファイルを同期しています...",
       "syncingFiles_other": "{{count}} ファイルを同期しています...",
       "syncingNamed": "{{filename}} を同期しています...",
-      "upload": "Google Drive にアップロード"
+      "upload": "Google Drive にアップロード",
+      "uploadSlides": "Google Slides にアップロード"
     },
     "kinds": {
       "audio": "オーディオ",

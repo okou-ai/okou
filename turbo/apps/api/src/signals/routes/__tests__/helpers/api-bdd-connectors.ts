@@ -813,6 +813,8 @@ const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo";
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
   "https://www.googleapis.com/upload/drive/v3/files";
+const GOOGLE_SLIDES_PRESENTATIONS_URL =
+  "https://slides.googleapis.com/v1/presentations";
 const GOOGLE_OPENID_USERINFO_URL =
   "https://openidconnect.googleapis.com/v1/userinfo";
 
@@ -1101,6 +1103,49 @@ export function mockGoogleDriveArtifactUpload(
     }),
   );
 
+  return recorded;
+}
+
+export interface GoogleSlidesReadbackRecorder {
+  readonly presentationIds: string[];
+  readonly trashedFileIds: string[];
+}
+
+/**
+ * Slides read-back boundary for converted uploads, plus the Drive patch the
+ * service uses to discard a deck that converted to nothing.
+ */
+export function mockGoogleSlidesReadback(
+  slides: readonly { readonly pageElementCount: number }[],
+): GoogleSlidesReadbackRecorder {
+  const recorded: GoogleSlidesReadbackRecorder = {
+    presentationIds: [],
+    trashedFileIds: [],
+  };
+  server.use(
+    http.get(
+      `${GOOGLE_SLIDES_PRESENTATIONS_URL}/:presentationId`,
+      ({ params }) => {
+        recorded.presentationIds.push(String(params["presentationId"]));
+        return HttpResponse.json({
+          slides: slides.map((slide) => {
+            return {
+              pageElements: Array.from(
+                { length: slide.pageElementCount },
+                () => {
+                  return {};
+                },
+              ),
+            };
+          }),
+        });
+      },
+    ),
+    http.patch(`${GOOGLE_DRIVE_FILES_URL}/:fileId`, ({ params }) => {
+      recorded.trashedFileIds.push(String(params["fileId"]));
+      return HttpResponse.json({ id: String(params["fileId"]) });
+    }),
+  );
   return recorded;
 }
 
@@ -2439,11 +2484,9 @@ export function createConnectorBddApi(context: TestContext) {
       actor: ApiTestUser,
       body: CreateCustomConnectorBody,
     ): Promise<CustomConnectorResponse> {
-      const response = await api.requestCreateCustomConnector(
-        actor,
-        body,
-        [201],
-      );
+      const response = await api.requestCreateCustomConnector(actor, body, [
+        201,
+      ]);
       expectStatus(response, 201);
       return response.body;
     },
@@ -2837,11 +2880,9 @@ export function createConnectorBddApi(context: TestContext) {
       actor: ApiTestUser,
       agentId: string,
     ): Promise<readonly string[]> {
-      const response = await api.requestAgentCustomConnectors(
-        actor,
-        agentId,
-        [200],
-      );
+      const response = await api.requestAgentCustomConnectors(actor, agentId, [
+        200,
+      ]);
       expectStatus(response, 200);
       return response.body.grants.map((grant) => {
         return grant.customConnectorId;
@@ -2852,11 +2893,9 @@ export function createConnectorBddApi(context: TestContext) {
       actor: ApiTestUser,
       agentId: string,
     ): Promise<readonly AgentCustomConnectorGrant[]> {
-      const response = await api.requestAgentCustomConnectors(
-        actor,
-        agentId,
-        [200],
-      );
+      const response = await api.requestAgentCustomConnectors(actor, agentId, [
+        200,
+      ]);
       expectStatus(response, 200);
       return response.body.grants;
     },

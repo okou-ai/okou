@@ -96,6 +96,11 @@ export const composerImageAnnotationEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ComposerImageAnnotation] ?? false;
 });
 
+/** Presentation artifacts sync to Drive as native Slides decks. */
+export const googleSlidesConversionEnabled$ = computed((get): boolean => {
+  return get(featureSwitch$)[FeatureSwitchKey.GoogleSlidesConversion] ?? false;
+});
+
 /** Effort is a run setting, not a way of drawing the model list. */
 export const chatEffortEnabled$ = computed((get): boolean => {
   return isChatEffortEnabled({ overrides: get(featureSwitch$) });

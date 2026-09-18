@@ -558,13 +558,15 @@
       "syncedFiles_one": "Sincronizzato con Google Drive",
       "syncedFiles_many": "{{count}} file sincronizzati con Google Drive",
       "syncedFiles_other": "{{count}} file sincronizzati con Google Drive",
+      "syncedSlides": "Sincronizzato con Google Slides",
       "syncFailed": "Impossibile sincronizzare con Google Drive",
       "syncingArtifact": "Sincronizzazione dell'artefatto...",
       "syncingFiles_one": "Sincronizzazione di {{count}} file...",
       "syncingFiles_many": "Sincronizzazione di {{count}} file...",
       "syncingFiles_other": "Sincronizzazione di {{count}} file...",
       "syncingNamed": "Sincronizzazione {{filename}}...",
-      "upload": "Carica su Google Drive"
+      "upload": "Carica su Google Drive",
+      "uploadSlides": "Carica su Google Slides"
     },
     "kinds": {
       "audio": "Audio",

@@ -6,7 +6,15 @@ import type {
   ChatThreadArtifactGoogleDriveSync,
   ChatThreadArtifactRun,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  GOOGLE_SLIDES_MIME_TYPE,
+  convertsToGoogleSlides,
+} from "@okouai/core/google-slides-conversion";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -59,7 +67,11 @@ import { uploadedArtifactObject } from "./uploaded-artifact.service";
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
   "https://www.googleapis.com/upload/drive/v3/files";
+const GOOGLE_SLIDES_PRESENTATIONS_URL =
+  "https://slides.googleapis.com/v1/presentations";
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
+/** Drive's documented ceiling for converting an upload into a Slides deck. */
+const GOOGLE_SLIDES_MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 const GOOGLE_DRIVE_STATUS_TIMEOUT_MS = 2000;
 const GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY = "vm0Artifact";
 const GOOGLE_DRIVE_THREAD_APP_PROPERTY = "vm0ThreadId";
@@ -1088,12 +1100,15 @@ async function uploadDriveFile(args: {
   readonly runId: string;
   readonly fileId: string;
   readonly contentType: string;
+  readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
 }): Promise<Response> {
   const boundary = `multipart-${randomUUID()}`;
   const metadata = JSON.stringify({
     name: args.filename,
-    mimeType: args.contentType,
+    // Naming a Google editor type here is what asks Drive to convert; the
+    // part below still declares the uploaded bytes' own type.
+    mimeType: args.targetMimeType ?? args.contentType,
     parents: [args.parentFolderId],
     appProperties: {
       [GOOGLE_DRIVE_ARTIFACT_APP_PROPERTY]: "true",
@@ -1141,6 +1156,7 @@ async function uploadArtifactWithToken(args: {
   readonly fileId: string;
   readonly filename: string;
   readonly contentType: string;
+  readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
 }): Promise<DriveTokenResult<Response>> {
   const folder = await ensureArtifactFolder({
@@ -1158,6 +1174,7 @@ async function uploadArtifactWithToken(args: {
     runId: args.runId,
     fileId: args.fileId,
     contentType: args.contentType,
+    targetMimeType: args.targetMimeType,
     file: args.file,
   });
   if (response.status === 401) {
@@ -1166,10 +1183,40 @@ async function uploadArtifactWithToken(args: {
   return { type: "ok", value: response };
 }
 
+const driveErrorResponseSchema = z.object({
+  error: z.object({
+    errors: z.array(z.object({ reason: z.string().optional() })).optional(),
+  }),
+});
+
+/** Drive's reason code when it cannot read the uploaded bytes at all. */
+const UNSUPPORTED_CONVERSION_REASON = "conversionUnsupportedConversionPath";
+
+async function isUnsupportedConversion(response: Response): Promise<boolean> {
+  const parsed = driveErrorResponseSchema.safeParse(
+    await response
+      .clone()
+      .json()
+      .catch(() => {
+        return null;
+      }),
+  );
+  return (
+    parsed.success &&
+    (parsed.data.error.errors ?? []).some((entry) => {
+      return entry.reason === UNSUPPORTED_CONVERSION_REASON;
+    })
+  );
+}
+
 async function parseUploadResponse(
   response: Response,
+  converted: boolean,
 ): Promise<DriveSyncResult> {
   if (!response.ok) {
+    if (converted && (await isUnsupportedConversion(response))) {
+      throw badRequestMessage("Google Slides could not read this presentation");
+    }
     throw badRequestMessage(
       `Google Drive upload failed with HTTP ${String(response.status)}`,
     );
@@ -1180,6 +1227,72 @@ async function parseUploadResponse(
     name: parsed.name,
     webViewLink: parsed.webViewLink ?? null,
   };
+}
+
+const slidesPresentationSchema = z.object({
+  slides: z
+    .array(z.object({ pageElements: z.array(z.unknown()).optional() }))
+    .optional(),
+});
+
+async function trashDriveFile(args: {
+  readonly accessToken: string;
+  readonly fileId: string;
+}): Promise<void> {
+  await fetch(new URL(`${GOOGLE_DRIVE_FILES_URL}/${args.fileId}`), {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${args.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ trashed: true }),
+  });
+}
+
+/**
+ * Reject a conversion that produced an empty deck.
+ *
+ * Drive answers HTTP 200 for source formats its importer cannot actually read,
+ * leaving a deck with the right page count and no page elements. The upload
+ * response cannot show that, so read the result back and discard it rather
+ * than reporting a successful sync of a blank presentation.
+ */
+async function rejectEmptyConvertedDeck(
+  args: {
+    readonly accessToken: string;
+    readonly presentationId: string;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    new URL(`${GOOGLE_SLIDES_PRESENTATIONS_URL}/${args.presentationId}`),
+    {
+      headers: { Authorization: `Bearer ${args.accessToken}` },
+      signal,
+    },
+  );
+  if (!response.ok) {
+    // An unreadable check is not evidence of an empty deck; keep the file.
+    return;
+  }
+  const parsed = slidesPresentationSchema.safeParse(await response.json());
+  if (!parsed.success) {
+    return;
+  }
+  const slides = parsed.data.slides ?? [];
+  const hasContent = slides.some((slide) => {
+    return (slide.pageElements ?? []).length > 0;
+  });
+  if (slides.length === 0 || hasContent) {
+    return;
+  }
+  await trashDriveFile({
+    accessToken: args.accessToken,
+    fileId: args.presentationId,
+  });
+  throw badRequestMessage(
+    "Google Slides converted this presentation to an empty deck",
+  );
 }
 
 type NotFoundResponse = ReturnType<typeof notFound>;
@@ -1285,13 +1398,31 @@ export const syncArtifactToGoogleDrive$ = command(
       );
     }
 
+    const targetMimeType =
+      isFeatureEnabled(
+        FeatureSwitchKey.GoogleSlidesConversion,
+        featureSwitchContext,
+      ) && convertsToGoogleSlides(content.filename)
+        ? GOOGLE_SLIDES_MIME_TYPE
+        : undefined;
+    if (
+      targetMimeType !== undefined &&
+      content.file.byteLength > GOOGLE_SLIDES_MAX_SOURCE_BYTES
+    ) {
+      return badRequestMessage(
+        "This presentation is too large to convert to Google Slides",
+      );
+    }
+
+    let accessToken = tokens.accessToken;
     let result = await uploadArtifactWithToken({
-      accessToken: tokens.accessToken,
+      accessToken,
       threadId: args.threadId,
       runId: args.runId,
       fileId: args.fileId,
       filename: content.filename,
       contentType: content.contentType,
+      targetMimeType,
       file: content.file,
     });
     signal.throwIfAborted();
@@ -1309,13 +1440,15 @@ export const syncArtifactToGoogleDrive$ = command(
       );
       signal.throwIfAborted();
       if (refreshed.type === "ok") {
+        accessToken = refreshed.accessToken;
         result = await uploadArtifactWithToken({
-          accessToken: refreshed.accessToken,
+          accessToken,
           threadId: args.threadId,
           runId: args.runId,
           fileId: args.fileId,
           filename: content.filename,
           contentType: content.contentType,
+          targetMimeType,
           file: content.file,
         });
         signal.throwIfAborted();
@@ -1326,9 +1459,18 @@ export const syncArtifactToGoogleDrive$ = command(
       return badRequestMessage("Google Drive upload failed with HTTP 401");
     }
 
-    return {
-      status: 200 as const,
-      body: await parseUploadResponse(result.value),
-    };
+    const body = await parseUploadResponse(
+      result.value,
+      targetMimeType !== undefined,
+    );
+    if (targetMimeType !== undefined) {
+      await rejectEmptyConvertedDeck(
+        { accessToken, presentationId: body.id },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+
+    return { status: 200 as const, body };
   },
 );
