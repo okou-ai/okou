@@ -202,36 +202,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
         "voice",
       ],
     },
-    {
-      tool: "video-generation",
-      args: [
-        "__intro-video-agent",
-        "--prompt-file",
-        "missing.txt",
-        "--style-id",
-        "editorial",
-        "--orientation",
-        "landscape",
-      ],
-    },
-    {
-      tool: "avatar-video-generation",
-      args: [
-        "__intro-video-presenter",
-        "--avatar-id",
-        "presenter",
-        "--audio-url",
-        "https://example.com/audio.mp3",
-      ],
-    },
-    {
-      tool: "voice-generation",
-      args: ["__intro-video-voice", "--voice-id", "voice", "--text", "Hello"],
-    },
-    {
-      tool: "video-rendering",
-      args: ["video", "render", "missing-project"],
-    },
   ])("rejects disabled $tool before any request", async ({ tool, args }) => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, JSON.stringify([tool]));
 
@@ -362,20 +332,20 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(requests).toEqual([]);
   });
 
-  it.each([
-    { args: ["generate", "image"], tool: "image-generation" },
-    { args: ["video", "render"], tool: "video-rendering" },
-  ])("annotates relevant media help for $tool", async ({ args, tool }) => {
-    vi.stubEnv(
-      DISABLED_PAID_TOOLS_ENV_VAR,
-      '["image-generation", "video-rendering"]',
-    );
-    await expect(run([...args, "--help"])).rejects.toMatchObject({
-      code: "commander.helpDisplayed",
-    });
-    expect(output).toContain(`Disabled paid tools in this run: ${tool}.`);
-    expect(requests).toEqual([]);
-  });
+  it.each([{ args: ["generate", "image"], tool: "image-generation" }])(
+    "annotates relevant media help for $tool",
+    async ({ args, tool }) => {
+      vi.stubEnv(
+        DISABLED_PAID_TOOLS_ENV_VAR,
+        '["image-generation", "video-rendering"]',
+      );
+      await expect(run([...args, "--help"])).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+      });
+      expect(output).toContain(`Disabled paid tools in this run: ${tool}.`);
+      expect(requests).toEqual([]);
+    },
+  );
 
   it.each([
     {

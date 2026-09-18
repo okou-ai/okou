@@ -101,13 +101,7 @@ export function mockTemplateChat(options?: {
 
 export async function openTemplatePicker(
   user: ReturnType<typeof userEvent.setup>,
-  category?:
-    | "Presentation"
-    | "Website"
-    | "Illustration"
-    | "Video"
-    | "Creative video"
-    | "Avatar",
+  category?: "Presentation" | "Website" | "Illustration" | "Video" | "Avatar",
 ): Promise<HTMLElement> {
   click(
     await waitFor(() => {
