@@ -74,7 +74,6 @@ async function openChat(
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },

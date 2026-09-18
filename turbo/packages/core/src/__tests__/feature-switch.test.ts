@@ -420,19 +420,16 @@ describe("getAllFeatureStates", () => {
     const states = getAllFeatureStates({ orgId: "org_nonexistent" });
     expect(states[FeatureSwitchKey.Effort]).toBe(true);
     expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
-    expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(true);
 
     const reverted = getAllFeatureStates({
       orgId: "org_nonexistent",
       overrides: {
         [FeatureSwitchKey.Effort]: false,
         [FeatureSwitchKey.CodexFastMode]: false,
-        [FeatureSwitchKey.ModelPickerFlyout]: false,
       },
     });
     expect(reverted[FeatureSwitchKey.Effort]).toBe(false);
     expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
-    expect(reverted[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {

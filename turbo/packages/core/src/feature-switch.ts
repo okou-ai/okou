@@ -281,12 +281,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Set Fast mode and chat reasoning effort from the composer's run controls.",
     enabled: true,
   },
-  [FeatureSwitchKey.ModelPickerFlyout]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Pick a model from a detached flyout: model types on the left, that type's models in a panel beside it.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatPreference]: {
     maintainer: "lancy@okou.ai",
     description:
