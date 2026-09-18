@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 
 import { command } from "ccstate";
+import { delay } from "signal-timers";
 import { v5 as uuidv5 } from "uuid";
 import { eq } from "drizzle-orm";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
@@ -68,6 +69,24 @@ const NAVIGATION_TIMEOUT_RETRY_OPTIONS = {
   gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
   waitForTimeout: 3000,
 } as const;
+
+// A render gets three requests in total, and the navigation retry and the
+// rate limit retry both draw on that one budget so they cannot multiply into
+// repeated render charges. The waiting ceilings come from the function
+// lifetime #34772 measured: the longest render observed in production is ~121s
+// and the surrounding storage and database work adds ~15s, so 45s of total
+// waiting keeps the worst case near 181s of the 300s budget. A wait that
+// outlives the function loses the failure record #34591 exists to produce,
+// which is why a stated wait past the ceiling stops instead of sleeping.
+const MAX_SNAPSHOT_REQUESTS = 3;
+const RATE_LIMIT_MIN_DELAY_MS = 1000;
+const RATE_LIMIT_MAX_DELAY_MS = 30_000;
+const RATE_LIMIT_TOTAL_DELAY_BUDGET_MS = 45_000;
+// 2s then 8s when the response states no wait. Quadrupling gets the second
+// attempt clear of a short burst without spending the whole budget.
+const RATE_LIMIT_BACKOFF_BASE_MS = 2000;
+const RATE_LIMIT_BACKOFF_FACTOR = 4;
+const RATE_LIMIT_MAX_JITTER_MS = 500;
 
 const browserSnapshotSchema = z.object({
   meta: z.object({
@@ -295,6 +314,60 @@ interface SnapshotFailure {
   readonly status: number;
   readonly elapsedMs: number;
   readonly body: string;
+  // Present only on a rate-limited response, and only when Cloudflare sends
+  // them: the wait it will honour, and the name of the quota that was hit.
+  readonly retryAfterSeconds?: number;
+  readonly rateLimitPolicy?: string;
+}
+
+/**
+ * Cloudflare documents `retry-after` on a throttled client API response as
+ * whole seconds until capacity returns, so only that form is read. A malformed
+ * value is treated as absent rather than as an immediate retry.
+ */
+function parseRetryAfterSeconds(value: string | null): number | undefined {
+  if (value === null || !/^\d+$/u.test(value.trim())) {
+    return undefined;
+  }
+  return Number(value.trim());
+}
+
+/**
+ * A 429 is an admission rejection: the gateway refused the request before any
+ * browser work, so the identical request can succeed once its window passes.
+ * The status is the gate rather than the body's `971`, because that is
+ * Cloudflare's generic client API throttle code and is not specific to this
+ * endpoint.
+ */
+function isRateLimitedResponse(status: number): boolean {
+  return status === 429;
+}
+
+/**
+ * Prefer the wait Cloudflare states over a guess. A stated wait beyond the
+ * ceiling, or one that would overrun the render's total waiting budget, cannot
+ * be absorbed here, so those stop instead of waiting.
+ */
+function rateLimitDelayMs(
+  failure: SnapshotFailure,
+  retries: number,
+  totalDelayMs: number,
+): number | null {
+  const statedMs =
+    failure.retryAfterSeconds === undefined
+      ? undefined
+      : failure.retryAfterSeconds * 1000;
+  if (statedMs !== undefined && statedMs > RATE_LIMIT_MAX_DELAY_MS) {
+    return null;
+  }
+  const waitMs =
+    statedMs === undefined
+      ? RATE_LIMIT_BACKOFF_BASE_MS * RATE_LIMIT_BACKOFF_FACTOR ** retries +
+        Math.floor(Math.random() * (RATE_LIMIT_MAX_JITTER_MS + 1))
+      : Math.max(statedMs, RATE_LIMIT_MIN_DELAY_MS);
+  return totalDelayMs + waitMs > RATE_LIMIT_TOTAL_DELAY_BUDGET_MS
+    ? null
+    : waitMs;
 }
 
 type SnapshotAttemptResult =
@@ -306,13 +379,18 @@ type SnapshotAttemptResult =
  * through `detail`, while the request runs independent navigation, selector and
  * action timers. Carry the stage and the duration on the error so the one warn
  * record this render already emits can be grouped by timer, which a message
- * string cannot be.
+ * string cannot be. The transport status and the rate-limit headers travel the
+ * same way: a throttled response carries no `detail`, and its quota name is the
+ * field that separates a per-token limit from a per-IP one.
  */
 class ArtifactSnapshotError extends Error {
   readonly attempt: SnapshotAttempt;
+  readonly status: number;
   readonly elapsedMs: number;
   readonly errorCode: number | undefined;
   readonly errorDetail: string | undefined;
+  readonly retryAfterSeconds: number | undefined;
+  readonly rateLimitPolicy: string | undefined;
 
   constructor(failure: SnapshotFailure) {
     super(
@@ -320,7 +398,10 @@ class ArtifactSnapshotError extends Error {
     );
     this.name = "ArtifactSnapshotError";
     this.attempt = failure.attempt;
+    this.status = failure.status;
     this.elapsedMs = failure.elapsedMs;
+    this.retryAfterSeconds = failure.retryAfterSeconds;
+    this.rateLimitPolicy = failure.rateLimitPolicy;
     const parsed = browserSnapshotErrorSchema.safeParse(
       safeJsonParse(failure.body),
     );
@@ -333,20 +414,30 @@ class ArtifactSnapshotError extends Error {
 /** Promotes a snapshot failure's carried stage and duration into log fields. */
 function snapshotFailureLogFields(error: unknown): {
   readonly attempt?: SnapshotAttempt;
+  readonly status?: number;
   readonly elapsedMs?: number;
   readonly errorCode?: number;
   readonly errorDetail?: string;
+  readonly retryAfterSeconds?: number;
+  readonly rateLimitPolicy?: string;
 } {
   if (!(error instanceof ArtifactSnapshotError)) {
     return {};
   }
   return {
     attempt: error.attempt,
+    status: error.status,
     elapsedMs: error.elapsedMs,
     ...(error.errorCode === undefined ? {} : { errorCode: error.errorCode }),
     ...(error.errorDetail === undefined
       ? {}
       : { errorDetail: error.errorDetail }),
+    ...(error.retryAfterSeconds === undefined
+      ? {}
+      : { retryAfterSeconds: error.retryAfterSeconds }),
+    ...(error.rateLimitPolicy === undefined
+      ? {}
+      : { rateLimitPolicy: error.rateLimitPolicy }),
   };
 }
 
@@ -367,6 +458,10 @@ async function observeArtifactSnapshot(
     return { ok: true, response };
   }
   const body = await response.text();
+  const retryAfterSeconds = parseRetryAfterSeconds(
+    response.headers.get("retry-after"),
+  );
+  const rateLimitPolicy = response.headers.get("ratelimit-policy");
   return {
     ok: false,
     failure: {
@@ -374,8 +469,61 @@ async function observeArtifactSnapshot(
       status: response.status,
       elapsedMs: Math.round(performance.now() - startedAt),
       body,
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+      ...(rateLimitPolicy === null ? {} : { rateLimitPolicy }),
     },
   };
+}
+
+/**
+ * Issue the snapshot request, absorbing the two failures another request can
+ * actually fix: a navigation-stage timeout, which needs a different navigation
+ * profile, and a gateway rate limit, which needs time. Everything else stops
+ * here, because action and request-stage timeouts need different fixes and
+ * should not double cost.
+ */
+async function requestArtifactSnapshot(
+  requestArgs: Omit<FetchArtifactSnapshotArgs, "navigationOptions">,
+  signal: AbortSignal,
+): Promise<Response> {
+  let navigationOptions: SnapshotNavigationOptions = PRIMARY_NAVIGATION_OPTIONS;
+  let attemptName: SnapshotAttempt = "primary";
+  let navigationRetried = false;
+  let rateLimitRetries = 0;
+  let totalDelayMs = 0;
+  for (let request = 1; ; request += 1) {
+    const attempt = await observeArtifactSnapshot(
+      { ...requestArgs, navigationOptions },
+      attemptName,
+      signal,
+    );
+    if (attempt.ok) {
+      return attempt.response;
+    }
+    const { failure } = attempt;
+    if (request >= MAX_SNAPSHOT_REQUESTS) {
+      throw new ArtifactSnapshotError(failure);
+    }
+    if (isRateLimitedResponse(failure.status)) {
+      const waitMs = rateLimitDelayMs(failure, rateLimitRetries, totalDelayMs);
+      if (waitMs === null) {
+        throw new ArtifactSnapshotError(failure);
+      }
+      await delay(waitMs, { signal });
+      totalDelayMs += waitMs;
+      rateLimitRetries += 1;
+      continue;
+    }
+    if (
+      navigationRetried ||
+      !isNavigationTimeoutResponse(failure.status, failure.body)
+    ) {
+      throw new ArtifactSnapshotError(failure);
+    }
+    navigationRetried = true;
+    navigationOptions = NAVIGATION_TIMEOUT_RETRY_OPTIONS;
+    attemptName = "navigation-retry";
+  }
 }
 
 async function renderArtifactSnapshot(
@@ -395,31 +543,12 @@ async function renderArtifactSnapshot(
     throw new Error("artifact preview URL must use a hosted-site domain");
   }
 
-  const requestArgs = { token, wafSecret, url, previewUrl } as const;
-  let attempt = await observeArtifactSnapshot(
-    { ...requestArgs, navigationOptions: PRIMARY_NAVIGATION_OPTIONS },
-    "primary",
+  const response = await requestArtifactSnapshot(
+    { token, wafSecret, url, previewUrl },
     signal,
   );
-  if (!attempt.ok) {
-    // Keep the extra Browser Rendering request exclusive to navigation: action
-    // and request-stage timeouts need different fixes and should not double cost.
-    if (
-      !isNavigationTimeoutResponse(attempt.failure.status, attempt.failure.body)
-    ) {
-      throw new ArtifactSnapshotError(attempt.failure);
-    }
-    attempt = await observeArtifactSnapshot(
-      { ...requestArgs, navigationOptions: NAVIGATION_TIMEOUT_RETRY_OPTIONS },
-      "navigation-retry",
-      signal,
-    );
-  }
-  if (!attempt.ok) {
-    throw new ArtifactSnapshotError(attempt.failure);
-  }
 
-  const responseBody: unknown = await attempt.response.json();
+  const responseBody: unknown = await response.json();
   const snapshot = browserSnapshotSchema.parse(responseBody);
   if (snapshot.meta.status !== undefined && snapshot.meta.status >= 400) {
     throw new Error(
