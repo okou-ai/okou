@@ -411,6 +411,42 @@ function stubGmail(
   };
 }
 
+/** One real Slack item, including the collector's final release proof. */
+function stubSlackMessage(
+  at: number,
+  onCollectionProved: () => void = () => {},
+): void {
+  let enumerations = 0;
+  server.use(
+    http.get(SLACK_CONVERSATIONS_URL, () => {
+      enumerations += 1;
+      // With one retained channel, discovery, protected-read admission and the
+      // collector's release proof are three canonical enumerations.
+      if (enumerations === 3) {
+        onCollectionProved();
+      }
+      return HttpResponse.json({
+        ok: true,
+        channels: [{ id: "C1", name: "general", is_private: false }],
+      });
+    }),
+    http.get(SLACK_HISTORY_URL, () => {
+      return HttpResponse.json({
+        ok: true,
+        has_more: false,
+        messages: [
+          {
+            type: "message",
+            ts: `${String(Math.floor((at - 2 * 60 * 60 * 1000) / 1000))}.000100`,
+            user: "U2",
+            text: "Morning update",
+          },
+        ],
+      });
+    }),
+  );
+}
+
 interface TestObjectStorageCommand {
   readonly input?: {
     readonly Bucket?: string;
@@ -935,37 +971,12 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
         "Write in Polish.",
       );
       await seedMembership(fixture);
-      let slackEnumerations = 0;
-      server.use(
-        http.get(SLACK_CONVERSATIONS_URL, () => {
-          slackEnumerations += 1;
-          // With one retained channel, the third enumeration is the collector's
-          // final release proof. Advance there so the source was admitted with
-          // the full budget, while language and retained proof share the four
-          // seconds left before the tighter outer reservation.
-          if (slackEnumerations === 3) {
-            mockNow(at + 6000);
-          }
-          return HttpResponse.json({
-            ok: true,
-            channels: [{ id: "C1", name: "general", is_private: false }],
-          });
-        }),
-        http.get(SLACK_HISTORY_URL, () => {
-          return HttpResponse.json({
-            ok: true,
-            has_more: false,
-            messages: [
-              {
-                type: "message",
-                ts: `${String(Math.floor((at - 2 * 60 * 60 * 1000) / 1000))}.000100`,
-                user: "U2",
-                text: "Morning update",
-              },
-            ],
-          });
-        }),
-      );
+      // Advance only after the source's own release proof. Language and the
+      // retained phase then share the four seconds left before the tighter
+      // outer reservation, without denying source admission at the cutoff.
+      stubSlackMessage(at, () => {
+        mockNow(at + 6000);
+      });
       const pending = startCompose(fixture, {
         anchor: anchorFor(at),
         deadlineAt: new Date(deadlineAt).toISOString(),
@@ -1012,10 +1023,10 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
   ])(
     "decides the held canonical instruction version read $name the deadline",
     async ({ offset, expired }) => {
-      const fixture = await setupOwner({ gmail: true });
+      const fixture = await setupOwner({ slack: true });
       const at = freezeClock();
       const deadlineAt = at + 10_000;
-      const authorityReady = createDeferredPromise<
+      const initialAuthorityReady = createDeferredPromise<
         ReturnType<typeof holdMorningBriefMembershipLookup>
       >(context.signal);
       let installed = false;
@@ -1024,7 +1035,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
           return;
         }
         installed = true;
-        authorityReady.resolve(
+        initialAuthorityReady.resolve(
           holdMorningBriefMembershipLookup(
             { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
             context.signal,
@@ -1037,21 +1048,27 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
         "Write in Polish.",
       );
       await seedMembership(fixture);
-      stubGmail({ messages: [{ id: "m-1", at: at - 30 * 60 * 1000 }] });
+      stubSlackMessage(at);
       const pending = startCompose(fixture, {
         anchor: anchorFor(at),
         deadlineAt: new Date(deadlineAt).toISOString(),
       });
 
-      const authority = await authorityReady.promise;
-      await authority.waitForArrival();
-      // The initial language read is complete and retained-source authority is
-      // waiting. Acquire the database boundary before releasing authority so
-      // only the final canonical version SELECT can arrive at this lock.
+      const initialAuthority = await initialAuthorityReady.promise;
+      await initialAuthority.waitForArrival();
+      const finalAuthority = holdMorningBriefMembershipLookup(
+        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+        context.signal,
+      );
+      initialAuthority.release();
+      await finalAuthority.waitForArrival();
+      // Source revalidation is complete and its final owner proof is now held.
+      // Acquire the database boundary before releasing that proof so only the
+      // canonical instruction-version SELECT can arrive at this lock.
       const versionRead = await holdMorningBriefInstructionVersionRead(
         context.signal,
       );
-      authority.release();
+      finalAuthority.release();
       await versionRead.waitForBlocked();
       mockNow(deadlineAt + offset);
       await versionRead.release();
