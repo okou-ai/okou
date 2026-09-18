@@ -356,6 +356,16 @@ function generationAdmissionOf(args: {
 }
 
 /** Which terminal facts the occurrence records for a composed attempt. */
+function requiredComposedLanguage(
+  composed: Extract<MorningBriefCompositionOutcome, { kind: "composed" }>,
+): MorningBriefLanguagePlan {
+  const language = composed.result.language;
+  if (language === null) {
+    throw new Error("Morning Brief composed a request without a language");
+  }
+  return language;
+}
+
 function completionOf(
   outcome: "composed" | "empty" | "incomplete",
   coverage: "complete" | "partial" | "empty",
@@ -592,6 +602,29 @@ async function admitComposedGeneration(
   readonly anchorConflict: boolean;
 }> {
   const { admission, transport, coverage } = args;
+  if ((args.composed.kind === "composed") !== (transport !== null)) {
+    throw new Error("Morning Brief composition and transport disagree");
+  }
+  const admittedTransport =
+    transport === null
+      ? {
+          body: "",
+          bodyBytes: 0,
+          inputDigest: NO_REQUEST_DIGEST,
+          citations: new Map(),
+          inputItems: 0,
+          includedItems: 0,
+          sourceCoverage: coverage,
+        }
+      : transport;
+  const language: MorningBriefLanguagePlan =
+    args.composed.kind === "composed"
+      ? requiredComposedLanguage(args.composed)
+      : {
+          authority: "default" as const,
+          fallbackLanguage: MORNING_BRIEF_DEFAULT_LANGUAGE,
+          instructions: { state: "no-storage" as const, versionId: null },
+        };
   let generationAdmission: MorningBriefGenerationAdmission | undefined;
   let anchorConflict = false;
 
@@ -618,28 +651,16 @@ async function admitComposedGeneration(
     if (result.kind !== "finalized") {
       return result;
     }
-    const language = args.composed.result.language;
     const pending = generationAdmissionOf({
       admission,
       scope: args.scope,
-      transport: transport ?? {
-        body: "",
-        bodyBytes: 0,
-        inputDigest: NO_REQUEST_DIGEST,
-        citations: new Map(),
-        inputItems: 0,
-        includedItems: 0,
-        sourceCoverage: coverage,
-      },
+      transport: admittedTransport,
       // A healthy empty composition resolves no language, because asking which
       // language to write a brief in that will not be written is work nobody
       // authorized. The row still needs one, so it records the declared default
-      // rather than an authority nothing resolved.
-      language: language ?? {
-        authority: "default",
-        fallbackLanguage: MORNING_BRIEF_DEFAULT_LANGUAGE,
-        instructions: { state: "no-storage", versionId: null },
-      },
+      // rather than an authority nothing resolved. A composed request, by
+      // contrast, must carry the exact language plan that built its body.
+      language,
       descriptors: args.composed.result.descriptors,
       at: result.at,
       occurrenceCreatedAt: result.occurrence.createdAt,
@@ -715,9 +736,9 @@ const invokeComposedTransport$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefComposedExecution> => {
     const clerk = get(clerk$);
-    const requestedLanguage =
-      input.composed.result.language?.fallbackLanguage ??
-      MORNING_BRIEF_DEFAULT_LANGUAGE;
+    const requestedLanguage = requiredComposedLanguage(
+      input.composed,
+    ).fallbackLanguage;
     const installation = await get(
       slackUserInstallation({
         orgId: input.scope.orgId,
@@ -802,7 +823,7 @@ const reserveAndInvoke$ = command(
   ): Promise<MorningBriefComposedExecution> => {
     const { db, admission, claim, composed } = input;
     const transport = composed.kind === "composed" ? composed.transport : null;
-    const coverage = transport?.sourceCoverage ?? "empty";
+    const coverage = transport === null ? "empty" : transport.sourceCoverage;
     const completion = completionOf(
       composed.kind === "composed" ? "composed" : "empty",
       coverage,
