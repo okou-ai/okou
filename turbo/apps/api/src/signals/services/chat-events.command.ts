@@ -190,7 +190,6 @@ import type { GenerationTemplateIdentity } from "@okouai/core/generation-templat
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   resolveMcpSubmission,
-  recordMcpSubmission,
   type McpSubmissionIdentity,
 } from "./mcp-chat-submission.service";
 
@@ -2188,9 +2187,6 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (inserted) {
-    if (params.mcpSubmission) {
-      await recordMcpSubmission(tx, params.mcpSubmission, params, inserted);
-    }
     await recordOfficialSourceThreadProvenance(tx, params);
     if (params.getStartedWorkflowId) {
       await recordGetStartedWorkflow(tx, {

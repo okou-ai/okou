@@ -515,7 +515,7 @@ describe("MCP chat mutations", () => {
     );
   });
 
-  it("does not adopt a first-party event whose identifier has no MCP receipt", async () => {
+  it("replays an equivalent owned first-party text input without creating another message", async () => {
     const f = await messageFixture();
     const thread = await f.chat.createThread(f.actor, {
       agentId: f.agent.agentId,
@@ -533,21 +533,86 @@ describe("MCP chat mutations", () => {
       [201],
     );
     const before = await f.chat.listThreadEvents(f.actor, thread.id);
-    const failed = await callTool(
-      f.auth.token({ scope: defaultScopes }),
-      "send_chat_message",
-      {
+    const original = before.events.find((event) => {
+      return event.id === requestId;
+    });
+    if (!original) {
+      throw new Error("Expected the original first-party input");
+    }
+    const token = f.auth.token({ scope: defaultScopes });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const replay = await sendMessage(token, {
         threadId: thread.id,
         text,
         requestId,
-      },
-    );
-    expect(failed.isError).toBeTruthy();
-    expect(failed.structuredContent).toBeUndefined();
+      });
+      expect(replay).toMatchObject({
+        inputRef: {
+          threadId: thread.id,
+          eventId: requestId,
+          seqId: original.seqId,
+        },
+        acceptedAt: original.createdAt,
+        replayed: true,
+        disposition: "rejected",
+        runId: null,
+      });
+    }
     await expect(
       f.chat.listThreadEvents(f.actor, thread.id),
     ).resolves.toStrictEqual(before);
   });
+
+  it.each(["different text", "additional user context"] as const)(
+    "rejects a first-party input with the same identity but %s",
+    async (difference) => {
+      const f = await messageFixture();
+      const thread = await f.chat.createThread(f.actor, {
+        agentId: f.agent.agentId,
+      });
+      const requestId = randomUUID();
+      const text = "An existing first-party input";
+      await f.chat.requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agent.agentId,
+          threadId: thread.id,
+          clientEventId: requestId,
+          prompt: text,
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text },
+              ...(difference === "additional user context"
+                ? [
+                    {
+                      type: "additional_info" as const,
+                      text: "Original context",
+                    },
+                  ]
+                : []),
+            ],
+          },
+        },
+        [201],
+      );
+      const before = await f.chat.listThreadEvents(f.actor, thread.id);
+      const failed = await callTool(
+        f.auth.token({ scope: defaultScopes }),
+        "send_chat_message",
+        {
+          threadId: thread.id,
+          text: difference === "different text" ? `${text} changed` : text,
+          requestId,
+        },
+      );
+      expect(failed.isError).toBeTruthy();
+      expect(failed.structuredContent).toBeUndefined();
+      await expect(
+        f.chat.listThreadEvents(f.actor, thread.id),
+      ).resolves.toStrictEqual(before);
+    },
+  );
 
   it("admits only one payload when concurrent requests reuse an identity with conflicting text", async () => {
     const f = await messageFixture();

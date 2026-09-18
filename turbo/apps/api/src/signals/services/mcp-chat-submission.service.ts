@@ -1,14 +1,17 @@
-import { mcpChatSubmissions } from "@okouai/db/schema/mcp-chat-submission";
+import { isDeepStrictEqual } from "node:util";
+import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { eq } from "drizzle-orm";
 import { now } from "../../lib/time";
 import type { Db } from "../external/db";
+import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 
 export const MCP_SUBMISSION_RETRY_MS = 24 * 60 * 60 * 1000;
 
 export interface McpSubmissionIdentity {
   readonly requestId: string;
-  readonly requestHash: string;
+  readonly text: string;
 }
 
 interface McpSubmissionOwner {
@@ -22,63 +25,52 @@ export async function resolveMcpSubmission(
   identity: McpSubmissionIdentity,
   owner: McpSubmissionOwner,
 ) {
-  const loadReceipt = async () => {
-    const [receipt] = await db
-      .select()
-      .from(mcpChatSubmissions)
-      .where(eq(mcpChatSubmissions.requestId, identity.requestId))
-      .limit(1);
-    return receipt;
-  };
-  let receipt = await loadReceipt();
-  if (!receipt) {
-    // Never adopt a first-party event. Recheck after observing a collision:
-    // another transaction may have committed its event and receipt together
-    // between these two READ COMMITTED queries.
-    const [event] = await db
-      .select({ id: chatEvents.id })
-      .from(chatEvents)
-      .where(eq(chatEvents.id, identity.requestId))
-      .limit(1);
-    if (!event) {
-      return { kind: "missing" } as const;
-    }
-    receipt = await loadReceipt();
-    if (!receipt) {
-      return { kind: "conflict" } as const;
-    }
+  // Original immutable inputs outlive the 24-hour retry window in the
+  // 30-day live event store. No guarantee extends beyond that window.
+  const [event] = await db
+    .select({
+      requestId: chatEvents.id,
+      threadId: chatEvents.chatThreadId,
+      userId: chatThreads.userId,
+      orgId: agents.orgId,
+      eventType: chatEvents.eventType,
+      runId: chatEvents.runId,
+      revokesEventId: chatEvents.revokesEventId,
+      userMessage: canonicalChatEventUserMessage(),
+      inputSeqId: chatEvents.seqId,
+      acceptedAt: chatEvents.createdAt,
+    })
+    .from(chatEvents)
+    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .where(eq(chatEvents.id, identity.requestId))
+    .limit(1);
+  if (!event) {
+    return { kind: "missing" } as const;
   }
   if (
-    receipt.threadId !== owner.threadId ||
-    receipt.userId !== owner.userId ||
-    receipt.orgId !== owner.orgId ||
-    receipt.requestHash !== identity.requestHash
+    event.threadId !== owner.threadId ||
+    event.userId !== owner.userId ||
+    event.orgId !== owner.orgId ||
+    event.eventType !== "input.prompt" ||
+    event.runId !== null ||
+    event.revokesEventId !== null ||
+    !isDeepStrictEqual(event.userMessage, {
+      version: 1,
+      parts: [{ type: "text", text: identity.text }],
+    })
   ) {
     return { kind: "conflict" } as const;
   }
-  if (receipt.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS <= now()) {
+  if (event.acceptedAt.getTime() + MCP_SUBMISSION_RETRY_MS <= now()) {
     return { kind: "expired" } as const;
   }
-  return { kind: "accepted", receipt } as const;
-}
-
-export async function recordMcpSubmission(
-  db: Pick<Db, "insert">,
-  identity: McpSubmissionIdentity,
-  owner: McpSubmissionOwner,
-  input: {
-    readonly id: string;
-    readonly seqId: number;
-    readonly createdAt: Date;
-  },
-): Promise<void> {
-  if (input.id !== identity.requestId) {
-    throw new Error("MCP submission identity does not match its input");
-  }
-  await db.insert(mcpChatSubmissions).values({
-    ...owner,
-    ...identity,
-    inputSeqId: input.seqId,
-    acceptedAt: input.createdAt,
-  });
+  return {
+    kind: "accepted",
+    receipt: {
+      requestId: event.requestId,
+      inputSeqId: event.inputSeqId,
+      acceptedAt: event.acceptedAt,
+    },
+  } as const;
 }

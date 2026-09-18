@@ -1,4 +1,3 @@
-import { createHmac } from "node:crypto";
 import type {
   McpSendChatMessageInput,
   McpSendChatMessageOutput,
@@ -31,26 +30,6 @@ interface Principal {
   readonly userId: string;
   readonly orgId: string;
   readonly orgRole: ApiOrgRole;
-}
-
-function submissionIdentity(
-  principal: Principal,
-  input: McpSendChatMessageInput,
-) {
-  return {
-    requestId: input.requestId,
-    requestHash: createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
-      .update("mcp:chat-submission:v1\n")
-      .update(
-        JSON.stringify([
-          principal.userId,
-          principal.orgId,
-          input.threadId,
-          input.text,
-        ]),
-      )
-      .digest("hex"),
-  };
 }
 
 async function inputDisposition(
@@ -140,7 +119,7 @@ export const sendMcpChatMessage$ = command(
     if (!thread) {
       return { kind: "error", message: "Conversation not found." };
     }
-    const identity = submissionIdentity(principal, input);
+    const identity = { requestId: input.requestId, text: input.text };
     const owner = {
       userId: principal.userId,
       orgId: principal.orgId,

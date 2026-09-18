@@ -269,27 +269,34 @@ different reference. Do not assume the original input is a valid visible
 history and retain the original `inputRef` separately.
 
 For a retry after timeout or a lost response, use the **same requestId, threadId
-and exact text**. A matching authorized request reuses the persisted input and
-never submits it again. Changed text, thread, user or organization conflicts;
-an unrelated first-party event with that UUID also conflicts. Refreshing an
-OAuth token does not change the retry identity. To intentionally submit another
-message, generate a new request ID. An expired request is rejected with recovery
-guidance, even when its live event has been archived. Inspect the conversation
-before deciding to submit new work after expiry.
+and exact text within 24 hours of acceptance**. A matching authorized request
+reuses the original input without submitting it again. Changed text, thread,
+user or organization conflicts. The UUID shares the existing `clientEventId`
+namespace: an equivalent authorized original text-only input can be reused
+regardless of which client submitted it; an input with different structured
+content conflicts. Refreshing an OAuth token does not change the retry identity.
+To intentionally submit another message, generate a new request ID.
+
+There is no deduplication guarantee after 24 hours. A retained original input
+past that window is rejected as expired. Once its live event has been removed
+by retention, its old request ID may be treated as a new submission. Inspect
+the conversation before intentionally submitting new work after the window;
+do not retry an uncertain old request automatically.
 
 Retry protection covers input creation and dispatch. Ordinary send preparation
 can reconcile obsolete model settings with current policy before a later
 admission failure or concurrent identity conflict, as it does for first-party
 sends. MCP does not accept explicit model or service-tier changes here.
 
-The additive `mcp_chat_submissions` migration stores the identity, keyed text
-fingerprint, original sequence and acceptance time atomically with the input.
-It stores no additional plaintext message. Receipts remain as expired identity
-tombstones after the retry window; event/run retention does not remove them.
-Thread deletion cascades to its receipts and ends the retry contract. Current
-thread ownership is checked before resolving a receipt. Apply the generated
-migration through the normal API deployment process; this does not enable the
-default-off `McpServer` feature or change OAuth configuration.
+Retry resolution reads the original immutable `chat_events` input, compares its
+full canonical text-only user document and derives the receipt from its ID,
+sequence and creation time. The existing 30-day live-event retention covers the
+24-hour retry window. A locked recheck and the event's unique ID prevent
+concurrent duplicate enqueue; losing writes roll back. No extra table,
+fingerprint, permanent identity record or migration is added. Current thread
+ownership is checked before resolving a receipt; deleting the thread ends the
+retry contract. The default-off `McpServer` feature and OAuth configuration are
+unchanged.
 
 `revoke_queued_message` takes `threadId` and the original `inputId` (the
 `inputRef.eventId`). It returns those identifiers, a nullable `runId`, and

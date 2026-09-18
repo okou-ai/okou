@@ -186,7 +186,7 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Submit text to your existing conversation in the authorized organization. The server may start a run, queue the input, or steer an active run. Generate a new UUID requestId for each intended message; retry only with identical threadId and exact text using that same requestId within 24 hours. Expired IDs never resend; inspect history before creating a new submission. inputRef identifies the original submitted input, which can be replaced in visible history. disposition is the current observation, not proof of delivery or run success; runId may be null. Use get_chat_messages to inspect subsequent activity.",
+          "Submit text to your existing conversation in the authorized organization. The server may start a run, queue the input, or steer an active run. Generate a new UUID requestId for each intended message; retry only with identical threadId and exact text using that same requestId within 24 hours of acceptance. Deduplication is not guaranteed after that window; inspect history before intentionally submitting new work, and never automatically retry an uncertain old request. inputRef identifies the original submitted input, which can be replaced in visible history. disposition is the current observation, not proof of delivery or run success; runId may be null. Use get_chat_messages to inspect subsequent activity.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
