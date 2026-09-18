@@ -22,11 +22,11 @@ writer already selected another deployment, retrying the original immutable
 publication must not reclaim the alias. Unmarked historical uploads retain the
 old ordered completion rule, including when a newer upload finishes first.
 
-`deploymentVersion=1` in each new manifest and physical column defaults are
-compatibility projections, not allocated identity. The latter prevents a retained
-old writer from trying to insert version 1 again. The private deployment table
-also still requires a non-null version. Old API responses, history and version
-selectors remain supported at the boundary below. New CLI output and commands
+`deploymentVersion=1` in each new manifest is a compatibility projection, not
+allocated identity. The runtime transition release additionally retains physical
+column defaults for its predecessor; the separately gated contraction removes
+them. Old API responses, history and version selectors remain supported at the
+boundary below. New CLI output and commands
 do not expose publication versions; `host clone` accepts the returned slug,
 deployment URL or artifact reference. The current App compares share target IDs,
 not publication numbers. Newly uploaded artifacts use the allocated filename
@@ -37,10 +37,10 @@ and execution-context protocol versions remain unchanged.
 
 ## Runtime version-column retirement
 
-The next release removes publication-version columns from the application
+The runtime transition release removes publication-version columns from the application
 mapping, including implicit `SELECT` and `RETURNING` lists. The canonical
 runtime tables share the physical schema's column factories; only the physical
-DDL retains the four compatibility columns during this release:
+DDL retains the four compatibility columns during that release:
 
 - `hosted_sites.next_deployment_version`
 - `hosted_sites.active_deployment_version`
@@ -88,6 +88,33 @@ tables, so it needs no R2 object or policy migration. Full DB/R2 reconciliation
 below remains required for changing site/catalog/share identities or table
 isolation. It is not a blocker for this metadata-only migration.
 
+## Physical version-column retirement
+
+Migration `1169_retire_hosted_publication_version_columns` is the separate
+contraction. It drops the four columns, their two relational version indexes and
+the temporary pointer projection trigger/function. The canonical manifest
+expression indexes remain. No deployment, site, share or uploaded-file row is
+deleted; IDs, manifests, byte locations, policies and legacy selectors stay
+unchanged.
+
+Before dropping anything, the migration checks the runtime transition journal,
+the old column definitions, exact manifest/version mappings, public bindings,
+the known temporary function and persisted SQL dependencies. An inconsistency
+or unexpected dependency aborts the complete transaction. Normal migration lock
+and statement timeouts still apply. These database guards cannot establish which
+API binaries are serving or eligible for rollback.
+
+**Release gate:** ship the runtime transition in its own release first, verify
+that API is serving and is the oldest supported API rollback target, and drain
+its predecessor before admitting the contraction for release. Keep the
+contraction PR in draft until this evidence exists. Merging the runtime PR alone
+does not satisfy the gate. This document and the migration do not establish
+production readiness or authorize production execution.
+
+The history audit now emits receipt version 2 and reads retained versions from
+manifests. It removes observations about the retired duplicate active-version
+column; pointer identity, ownership, status and reference checks remain.
+
 ## Reader and writer inventory
 
 | Surface                         | Current authority / dependency                                                           | Retirement condition                                                                                                    |
@@ -102,7 +129,7 @@ isolation. It is not a blocker for this metadata-only migration.
 | Sharing                         | DB `artifact_shares.target_id` is a **site ID** for HTML; R2 policy selects a deployment | Preserve each share ID, selected target, snapshot, audience and revocation state                                        |
 | Delivery / previews / snapshots | Stored manifests, reference index, aliases, policy and object prefixes                   | Validate original links and authorization against retained byte locations                                               |
 | Erasure                         | Site/deployment ownership, chat scope and existing cascades                              | Preserve deletion scope; never turn a historical group delete into unrelated publication deletion                       |
-| ORM / schema                    | Naked `select()` / `returning()` include version columns                                 | Deploy code without those references, drain that predecessor, then drop columns in a later release                      |
+| ORM / schema                    | Canonical runtime mapping omits the four physical version columns                        | Runtime transition must serve and define the rollback floor before physical contraction                                 |
 
 The Runner itself does not select a hosted publication version, but execution
 contexts pin the CLI by commit. Package semver or the merge time does not prove
@@ -175,11 +202,11 @@ After the complete mapping is verified, migrate these responsibilities to a
 fixed-content relation while retaining aliases and public/private storage
 classification. Keep the old relation as a compatibility projection until
 readers, writers and supported rollback binaries no longer require it. Only
-then remove obsolete counters, ordering fields/indexes and unused tables with
-Drizzle-generated migration metadata. No destructive migration is included in
-this preparation change.
+then remove unused tables with Drizzle-generated migration metadata. The
+duplicate version-column contraction described above does not perform this
+broader identity or table migration.
 
-## Required release gates and validation
+## Required gates for broader identity and table migration
 
 1. Record the serving API SHA, selected CLI package SHA, supported App floor and
    rollback targets. Verify old redeploy writers no longer serve, and queued,
@@ -200,6 +227,7 @@ this preparation change.
    migration and incompatible old code must not overlap.
 
 The preparation PR supplied the read-only audit. Runtime version-column
-retirement additionally normalizes duplicate database metadata without moving
-content or identities. Neither step promotes production, changes permissions,
-or establishes the physical-drop release gate.
+retirement normalizes duplicate database metadata; its separately gated
+contraction removes that duplication without moving content or identities.
+Local acceptance of either migration does not promote production, change
+permissions or establish the physical-drop release gate.

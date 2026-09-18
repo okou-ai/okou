@@ -638,6 +638,13 @@
       "when": 1789734203175,
       "tag": "1168_hosted_publication_runtime_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 1169,
+      "version": "7",
+      "when": 1789734959378,
+      "tag": "1169_retire_hosted_publication_version_columns",
+      "breakpoints": true
     }
   ]
 }
