@@ -554,9 +554,9 @@ test("An illustration template is tiled by the picture it was reversed from", as
   // A document with no cover falls back to a format badge. An illustration
   // never reaches that branch: its source is already a picture.
   expect(within(dialog).queryByText("PNG")).not.toBeInTheDocument();
-  const cover = within(dialog)
-    .getByRole("button", { name: "Preview Market day" })
-    .querySelector("img");
+  const cover = buttonByName("Preview Market day", dialog)?.querySelector(
+    "img",
+  );
   expect(cover).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
 });
 
