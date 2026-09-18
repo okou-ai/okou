@@ -155,6 +155,53 @@ describe("okou vnc host list", () => {
   });
 
   it.each([
+    [
+      "network failure",
+      () => {
+        return HttpResponse.error();
+      },
+    ],
+    [
+      "invalid JSON",
+      () => {
+        return new HttpResponse("SENSITIVE_UPSTREAM_DETAIL", {
+          headers: { "content-type": "application/json" },
+        });
+      },
+    ],
+    [
+      "invalid inventory",
+      () => {
+        return HttpResponse.json({ hosts: "SENSITIVE_UPSTREAM_DETAIL" });
+      },
+    ],
+  ] as const)(
+    "reports %s as a safe structured failure",
+    async (_, response) => {
+      let requests = 0;
+      server.use(
+        http.get("http://localhost:3000/api/vnc/hosts", () => {
+          requests++;
+          return response();
+        }),
+      );
+
+      await invoke("--json");
+
+      expect(requests).toBe(1);
+      expect(output).toHaveBeenCalledExactlyOnceWith(
+        JSON.stringify({
+          outcome: "failed",
+          reason: "authority_failure",
+          delivery: "not_dispatched",
+        }),
+      );
+      expect(errors).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    },
+  );
+
+  it.each([
     undefined,
     "personal-token",
     runToken(["vnc:write"]),

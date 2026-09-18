@@ -10,6 +10,18 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { outputVncCommandError, outputVncOutcome } from "./output";
 import { requireVncCapability } from "./validation";
 
+async function listVncHosts() {
+  const client = initClient(vncHostsContract, await getClientConfig());
+  const result = await client.list();
+  if (result.status === 200) {
+    return {
+      ...result,
+      body: vncHostsContract.list.responses[200].parse(result.body),
+    };
+  }
+  return result;
+}
+
 export function createVncHostCommand(): Command {
   return new Command("host")
     .description("Inspect authorized owner-configured VNC hosts")
@@ -27,11 +39,20 @@ export function createVncHostCommand(): Command {
               outputVncCommandError(error, options.json === true, false);
               return;
             }
-            const client = initClient(
-              vncHostsContract,
-              await getClientConfig(),
-            );
-            const result = await client.list();
+            let result;
+            try {
+              result = await listVncHosts();
+            } catch {
+              outputVncOutcome(
+                {
+                  outcome: "failed",
+                  reason: "authority_failure",
+                  delivery: "not_dispatched",
+                },
+                options.json,
+              );
+              return;
+            }
             if (result.status !== 200) {
               if (options.json) {
                 outputVncOutcome(
