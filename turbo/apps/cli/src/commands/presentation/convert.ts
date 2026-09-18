@@ -577,10 +577,8 @@ function render(options: Options, bundle: string): Rendered {
     }
     const { slides, length } = meta as { slides: number; length: number };
 
-    const transferred = transfer(page, length);
     return {
-      deck:
-        eastAsianFont === "" ? transferred : applyEastAsianFont(transferred, eastAsianFont),
+      deck: postProcess(transfer(page, length), eastAsianFont),
       eastAsianFont,
       selector,
       slides,
@@ -756,12 +754,12 @@ function packZip(entries: ReadonlyMap<string, Buffer>): Buffer {
 }
 
 /**
- * Points every East Asian script slot at a family that can draw the glyphs.
+ * Rewrites the parts of the deck the renderer gets to decide for itself.
  *
- * Only `a:ea` is rewritten, so Latin runs keep the deck's display face and a
- * mixed run like "TED 演讲" renders both halves in the intended font.
+ * Both edits exist because a .pptx is a set of instructions, not a picture: a
+ * viewer follows what the file says rather than what the browser showed.
  */
-function applyEastAsianFont(deck: Buffer, family: string): Buffer {
+function postProcess(deck: Buffer, eastAsianFont: string): Buffer {
   const entries = zipEntries(deck);
   let touched = false;
   for (const [name, content] of entries) {
@@ -769,10 +767,23 @@ function applyEastAsianFont(deck: Buffer, family: string): Buffer {
       continue;
     }
     const xml = content.toString("utf8");
-    const patched = xml.replace(
-      /<a:ea typeface="[^"]*"/gu,
-      `<a:ea typeface="${family}"`,
-    );
+    let patched = xml;
+
+    // spAutoFit tells the viewer to resize each shape around its own text,
+    // which discards the geometry the browser measured and re-derives it from
+    // whichever font metrics the viewer happens to have. normAutofit keeps the
+    // measured box and adjusts the text instead.
+    patched = patched.replace(/<a:spAutoFit\/>/gu, "<a:normAutofit/>");
+
+    // Only the East Asian slot moves, so Latin runs keep the deck's display
+    // face and a mixed run like "TED 演讲" renders both halves as intended.
+    if (eastAsianFont !== "") {
+      patched = patched.replace(
+        /<a:ea typeface="[^"]*"/gu,
+        `<a:ea typeface="${eastAsianFont}"`,
+      );
+    }
+
     if (patched !== xml) {
       entries.set(name, Buffer.from(patched, "utf8"));
       touched = true;
