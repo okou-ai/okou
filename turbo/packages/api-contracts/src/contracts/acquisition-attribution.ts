@@ -1,12 +1,7 @@
 import { z } from "zod";
-import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
 
-const c = initContract();
-
-// Canonical acquisition source-type taxonomy. Single source of truth shared by
-// the web classifier (apps/web), the app capture layer (apps/platform), and the
-// signup contract below, so the enum can't drift across the three.
+// Acquisition properties retained for App PostHog events and historical
+// migration tooling. Runtime attribution persistence belongs to Marketing.
 export const SOURCE_TYPES = [
   "paid",
   "organic_search",
@@ -59,91 +54,4 @@ export const adAttributionMetadataSchema = z
   })
   .strict();
 
-const recordSignupAttributionRequestSchema = z.object({
-  attribution: adAttributionMetadataSchema,
-  // A sibling field keeps old strict first-touch readers compatible.
-});
-
-const recordSignupAttributionResponseSchema = z.object({
-  recorded: z.boolean(),
-  googleAdsAccountId: z.string().nullable(),
-});
-
-export const GOOGLE_ADS_CONVERSION_MILESTONE_KINDS = [
-  "free_trial_completed",
-  "first_run_completed",
-  "second_run_completed",
-  "multi_day_run_completed",
-  "one_connector_connected",
-  "two_connectors_connected",
-] as const;
-
-const googleAdsConversionMilestoneSchema = z.object({
-  kind: z.enum(GOOGLE_ADS_CONVERSION_MILESTONE_KINDS),
-  transactionId: z.string().min(1),
-});
-
-const googleAdsConversionMilestonesResponseSchema = z.object({
-  milestones: z.array(googleAdsConversionMilestoneSchema),
-  googleAdsAccountId: z.string().nullable(),
-});
-
-export const acquisitionAttributionContract = c.router({
-  resolveGoogleAdsAccount: {
-    method: "POST",
-    path: "/api/attribution/google-ads-account",
-    headers: authHeadersSchema,
-    body: z.object({ attribution: adAttributionMetadataSchema.optional() }),
-    responses: {
-      200: z.object({ googleAdsAccountId: z.string().nullable() }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary:
-      "Resolve the Google Ads account from authoritative first-touch attribution",
-  },
-  googleAdsMilestones: {
-    method: "GET",
-    path: "/api/attribution/google-ads-milestones",
-    headers: authHeadersSchema,
-    responses: {
-      200: googleAdsConversionMilestonesResponseSchema,
-      401: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary:
-      "Get server-confirmed Google Ads conversion milestones for the current user",
-  },
-  recordSignup: {
-    method: "POST",
-    path: "/api/attribution/signup",
-    headers: authHeadersSchema,
-    body: recordSignupAttributionRequestSchema,
-    responses: {
-      200: recordSignupAttributionResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Record first-touch signup attribution on the current user",
-  },
-});
-
 export type AdAttributionMetadata = z.infer<typeof adAttributionMetadataSchema>;
-export type RecordSignupAttributionRequest = z.infer<
-  typeof recordSignupAttributionRequestSchema
->;
-export type RecordSignupAttributionResponse = z.infer<
-  typeof recordSignupAttributionResponseSchema
->;
-export type GoogleAdsConversionMilestoneKind =
-  (typeof GOOGLE_ADS_CONVERSION_MILESTONE_KINDS)[number];
-export type GoogleAdsConversionMilestone = z.infer<
-  typeof googleAdsConversionMilestoneSchema
->;
-export type GoogleAdsConversionMilestonesResponse = z.infer<
-  typeof googleAdsConversionMilestonesResponseSchema
->;
-export type AcquisitionAttributionContract =
-  typeof acquisitionAttributionContract;

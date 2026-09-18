@@ -66,11 +66,27 @@ touch "$marker/sandbox-reuse-marker"
 awk '$2 == "/sys/fs/cgroup" && $3 == "cgroup2" && $4 ~ /(^|,)favordynmods(,|$)/ { found = 1 } END { exit !found }' /proc/mounts \
   || { echo "guest cgroup2 mount is missing favordynmods" >&2; exit 1; }
 
-expected_path="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:$HOME/go/bin:$HOME/.cargo/bin"
+expected_path="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games:$HOME/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/bin"
 if [ "$PATH" != "$expected_path" ]; then
   echo "Guest Agent CLI child PATH changed: expected=$expected_path actual=$PATH" >&2
   exit 1
 fi
+# Install tools after the agent has started and resolve them by name, without
+# exporting PATH or sourcing a user profile.
+(
+  user_tool=
+  trap 'test -z "$user_tool" || rm -f "$user_tool"' EXIT
+  for user_bin in "$HOME/.local/bin" "$HOME/bin"; do
+    mkdir -p "$user_bin"
+    user_tool=$(mktemp "$user_bin/okou-user-path-smoke-XXXXXX")
+    printf '#!/bin/sh\nprintf user-tool-found\n' > "$user_tool"
+    chmod +x "$user_tool"
+    user_tool_name=${user_tool##*/}
+    test "$("$user_tool_name")" = user-tool-found
+    rm "$user_tool"
+    user_tool=
+  done
+)
 assert_env_value() {
   key=$1
   expected=$2
@@ -97,6 +113,20 @@ mkdir "$marker/rust-toolchain-smoke"
   cargo --version
   cargo fmt --version
 )
+# A Python version check does not exercise the separately packaged ensurepip.
+python3 -m venv "$marker/python-venv-smoke"
+"$marker/python-venv-smoke/bin/python" - <<'PY'
+import pathlib
+import sys
+
+import pip
+
+if sys.prefix == sys.base_prefix:
+    raise RuntimeError("venv Python is not isolated from the base interpreter")
+if not pathlib.Path(pip.__file__).resolve().is_relative_to(pathlib.Path(sys.prefix).resolve()):
+    raise RuntimeError("venv Python imported pip from outside its environment")
+PY
+"$marker/python-venv-smoke/bin/python" -m pip --version
 if sudo find /run/vm0-exec -mindepth 1 -maxdepth 2 -print -quit | grep -q .; then
   echo "Guest Agent startup left a generic environment script" >&2
   exit 1

@@ -12,6 +12,7 @@ import { getOkouToken } from "./lib/okou-env.js";
 import { introVideoCatalogCommand } from "./commands/__intro-video-catalog.js";
 import { introVideoAgentCommand } from "./commands/__intro-video-agent.js";
 import { artifactCommand } from "./commands/artifact/index.js";
+import { installPaidToolPolicy } from "./lib/command/paid-tools.js";
 
 interface CommandDefinition {
   name: string;
@@ -680,6 +681,7 @@ export function buildHelpText(
  */
 export function registerCommands(prog: Command, commands?: Command[]): void {
   instrumentCommand(prog);
+  installPaidToolPolicy(prog);
   const token = getOkouToken();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
 

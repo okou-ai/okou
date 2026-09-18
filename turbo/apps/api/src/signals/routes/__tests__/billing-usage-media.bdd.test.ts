@@ -499,8 +499,8 @@ describe("BILL-01: billing status and Stripe-backed actions through public API",
   });
 });
 
-describe("BILL-02: usage and attribution reads", () => {
-  it("chains empty usage records and attribution through visible APIs", async () => {
+describe("BILL-02: usage reads", () => {
+  it("reads empty usage records through visible APIs", async () => {
     const { api, admin } = testActors();
     await completeVisibleOnboarding(admin);
 
@@ -510,24 +510,6 @@ describe("BILL-02: usage and attribution reads", () => {
     const usageRecord = await api.readUsageRecord(admin);
     expect(usageRecord.body.pagination.total).toBe(0);
     expect(usageRecord.body.rows).toStrictEqual([]);
-
-    context.mocks.clerk.users.updateUserMetadata.mockResolvedValue({});
-    const attribution = await api.recordSignupAttribution(admin);
-    expect(attribution.body).toStrictEqual({
-      recorded: true,
-      googleAdsAccountId: null,
-    });
-    expect(context.mocks.clerk.users.updateUserMetadata).toHaveBeenCalledWith(
-      admin.userId,
-      expect.objectContaining({
-        privateMetadata: expect.objectContaining({
-          signup_attribution: expect.objectContaining({
-            source_type: "paid",
-            utm_source: "bdd",
-          }),
-        }),
-      }),
-    );
   });
 });
 

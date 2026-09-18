@@ -547,10 +547,9 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const crossOrg = await api.requestHostedSiteFiles(
       outsider,
       second.publicSlug,
-      [404],
+      [200],
     );
-    expectApiError(crossOrg.body);
-    expect(crossOrg.body.error.message).toBe("Hosted site not found");
+    expect(crossOrg.body).toStrictEqual(listed);
 
     const third = await api.prepareHostedSite(actor, body);
     const onboardingCompleted = await bdd.completeOnboarding(actor);

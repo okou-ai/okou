@@ -90,7 +90,6 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
-  chatEffortEnabled$,
   codexFastModeEnabled$,
   featureSwitch$,
 } from "../external/feature-switch.ts";
@@ -476,9 +475,7 @@ function createModelSelection(
   );
 
   const modelSettings$ = computed((get) => {
-    return get(chatEffortEnabled$)
-      ? (get(threadMeta$)?.modelSettings ?? {})
-      : {};
+    return get(threadMeta$)?.modelSettings ?? {};
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {

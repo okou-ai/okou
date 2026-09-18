@@ -5878,6 +5878,51 @@
         "resetTimePassedTitle": "O horário de redefinição já passou"
       }
     },
+    "paidTools": {
+      "description": "Escolha quais ferramentas pagas integradas você pode usar.",
+      "loadError": "Não foi possível carregar suas configurações.",
+      "loading": "Carregando suas configurações…",
+      "retry": "Tentar novamente",
+      "saveError": "Sua alteração não foi salva.",
+      "saving": "Salvando…",
+      "scope": "Estas configurações se aplicam apenas a você em {{workspace}}.",
+      "timing": "As alterações valem para execuções futuras. Tarefas em andamento ou já preparadas podem manter as configurações anteriores.",
+      "title": "Ferramentas pagas",
+      "tools": {
+        "finance": {
+          "description": "Consulte empresas, cotações e dados de mercado.",
+          "name": "Dados financeiros"
+        },
+        "image-recognition": {
+          "description": "Leia e analise imagens.",
+          "name": "Reconhecimento de imagens"
+        },
+        "maps": {
+          "description": "Encontre lugares, endereços e rotas.",
+          "name": "Mapas e lugares"
+        },
+        "people-search": {
+          "description": "Encontre perfis profissionais públicos.",
+          "name": "Pesquisa de pessoas"
+        },
+        "scrape": {
+          "description": "Leia e extraia conteúdo de páginas da web.",
+          "name": "Extração de páginas"
+        },
+        "seo": {
+          "description": "Pesquise posições, palavras-chave e backlinks.",
+          "name": "Pesquisa de SEO"
+        },
+        "social": {
+          "description": "Pesquise publicações públicas e colete mídia.",
+          "name": "Pesquisa em redes sociais"
+        },
+        "web-search": {
+          "description": "Encontre informações atuais na web.",
+          "name": "Pesquisa na web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Gerenciar",

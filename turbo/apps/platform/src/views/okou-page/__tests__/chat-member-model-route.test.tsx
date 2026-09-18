@@ -92,9 +92,7 @@ test.each(
       path: NEW_CHAT_PATH,
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-        [FeatureSwitchKey.Effort]: layout === "compact",
-        // Fast rides on Effort, and a second row per model would make the
-        // model options ambiguous here.
+        // A second row per model would make the model options ambiguous here.
         [FeatureSwitchKey.CodexFastMode]: layout === "compact",
         [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
@@ -171,8 +169,7 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
+      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });

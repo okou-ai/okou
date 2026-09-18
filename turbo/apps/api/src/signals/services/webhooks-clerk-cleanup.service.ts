@@ -25,6 +25,7 @@ import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-en
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -889,6 +890,9 @@ async function deleteOrgData(
   await db
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.orgId, orgId));
+  await db
+    .delete(userDisabledPaidTools)
+    .where(eq(userDisabledPaidTools.orgId, orgId));
   await db.delete(orgCache).where(eq(orgCache.orgId, orgId));
   await db
     .delete(morningBriefEnrollments)
@@ -963,6 +967,9 @@ async function deleteUserData(
   await db
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.userId, userId));
+  await db
+    .delete(userDisabledPaidTools)
+    .where(eq(userDisabledPaidTools.userId, userId));
   await db.delete(userCache).where(eq(userCache.userId, userId));
   signal.throwIfAborted();
   await db.transaction(async (tx) => {

@@ -5801,6 +5801,51 @@
         "resetTimePassedTitle": "Waktu reset telah lewat"
       }
     },
+    "paidTools": {
+      "description": "Pilih alat bawaan berbayar yang dapat Anda gunakan.",
+      "loadError": "Pengaturan alat tidak dapat dimuat.",
+      "loading": "Memuat pengaturan alat…",
+      "retry": "Coba lagi",
+      "saveError": "Perubahan Anda tidak tersimpan.",
+      "saving": "Menyimpan…",
+      "scope": "Pengaturan ini hanya berlaku untuk Anda di {{workspace}}.",
+      "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
+      "title": "Alat berbayar",
+      "tools": {
+        "finance": {
+          "description": "Cari perusahaan, harga, dan data pasar.",
+          "name": "Data keuangan"
+        },
+        "image-recognition": {
+          "description": "Baca dan analisis gambar.",
+          "name": "Pengenalan gambar"
+        },
+        "maps": {
+          "description": "Temukan tempat, alamat, dan rute.",
+          "name": "Peta dan tempat"
+        },
+        "people-search": {
+          "description": "Temukan profil profesional publik.",
+          "name": "Pencarian orang"
+        },
+        "scrape": {
+          "description": "Baca dan ekstrak konten halaman web.",
+          "name": "Ekstraksi halaman"
+        },
+        "seo": {
+          "description": "Teliti peringkat pencarian, kata kunci, dan backlink.",
+          "name": "Riset SEO"
+        },
+        "social": {
+          "description": "Teliti postingan sosial publik dan kumpulkan media.",
+          "name": "Riset sosial"
+        },
+        "web-search": {
+          "description": "Temukan informasi terkini di web.",
+          "name": "Pencarian web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Kelola",

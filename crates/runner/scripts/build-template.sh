@@ -356,7 +356,7 @@ install_packages() {
     fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
     libnss3 p11-kit-modules tzdata-legacy unzip \
     nodejs \
-    python3 python3-pip \
+    python3 python3-pip python3-venv \
     ruby-full bundler \
     php php-cli php-common php-curl php-mbstring php-xml php-zip \
     default-jdk maven gradle \

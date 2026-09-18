@@ -1,5 +1,5 @@
 {
-  "id": "18f02dc4-3d51-43ae-8e69-1b32a8227fc0",
+  "id": "9c0a0c94-8e31-4b13-9b08-66e2725f2127",
   "prevId": "baba5906-1274-4636-a571-f7726bbd7de2",
   "version": "7",
   "dialect": "postgresql",
@@ -18698,13 +18698,13 @@
           "name": "slack_workspace_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "slack_user_id": {
           "name": "slack_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "status": {
           "name": "status",
@@ -18891,10 +18891,6 @@
         "chk_morning_brief_collection_occurrence_outcome": {
           "name": "chk_morning_brief_collection_occurrence_outcome",
           "value": "(\"morning_brief_collection_occurrences\".\"status\" = 'running') = (\"morning_brief_collection_occurrences\".\"outcome\" IS NULL)"
-        },
-        "chk_morning_brief_collection_occurrence_slack_binding": {
-          "name": "chk_morning_brief_collection_occurrence_slack_binding",
-          "value": "(\"morning_brief_collection_occurrences\".\"collection_kind\" = 'slack') =\n          (\"morning_brief_collection_occurrences\".\"slack_workspace_id\" IS NOT NULL AND \"morning_brief_collection_occurrences\".\"slack_user_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -18950,12 +18946,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "native_owner_epoch": {
-          "name": "native_owner_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "workflow_id": {
           "name": "workflow_id",
@@ -19377,24 +19367,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "installation_id": {
-          "name": "installation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "automation_id": {
-          "name": "automation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "model": {
           "name": "model",
           "type": "text",
@@ -19455,36 +19427,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "instructions_version_id": {
-          "name": "instructions_version_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "instructions_digest": {
-          "name": "instructions_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reported_language": {
-          "name": "reported_language",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retained_sources": {
-          "name": "retained_sources",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retained_until": {
-          "name": "retained_until",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "reserved_at": {
           "name": "reserved_at",
           "type": "timestamp",
@@ -19505,12 +19447,6 @@
         },
         "finished_at": {
           "name": "finished_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "content_purged_at": {
-          "name": "content_purged_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
@@ -19608,40 +19544,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_morning_brief_generations_invoked_anchor": {
-          "name": "uq_morning_brief_generations_invoked_anchor",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scheduled_for",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "execution_purpose",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"morning_brief_generations\".\"state\" NOT IN ('not_invoked', 'skipped_empty', 'skipped_incomplete')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -19684,7 +19586,7 @@
       "checkConstraints": {
         "chk_morning_brief_generation_purpose": {
           "name": "chk_morning_brief_generation_purpose",
-          "value": "\"morning_brief_generations\".\"execution_purpose\" IN ('preview', 'production')"
+          "value": "\"morning_brief_generations\".\"execution_purpose\" IN ('preview')"
         },
         "chk_morning_brief_generation_state": {
           "name": "chk_morning_brief_generation_state",
@@ -19692,7 +19594,7 @@
         },
         "chk_morning_brief_generation_language_source": {
           "name": "chk_morning_brief_generation_language_source",
-          "value": "\"morning_brief_generations\".\"language_source\" IN ('agent-instructions', 'member-locale', 'default')"
+          "value": "\"morning_brief_generations\".\"language_source\" IN ('member-locale', 'default')"
         },
         "chk_morning_brief_generation_coverage": {
           "name": "chk_morning_brief_generation_coverage",
@@ -19712,7 +19614,7 @@
         },
         "chk_morning_brief_generation_decision": {
           "name": "chk_morning_brief_generation_decision",
-          "value": "(\"morning_brief_generations\".\"state\" = 'succeeded') = (\"morning_brief_generations\".\"decision\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"decision\" = 'deliver') =\n            ((\"morning_brief_generations\".\"result_markdown\" IS NOT NULL\n              AND \"morning_brief_generations\".\"result_title\" IS NOT NULL\n              AND \"morning_brief_generations\".\"result_bytes\" IS NOT NULL)\n             OR (\"morning_brief_generations\".\"content_purged_at\" IS NOT NULL\n              AND \"morning_brief_generations\".\"result_markdown\" IS NULL\n              AND \"morning_brief_generations\".\"result_title\" IS NULL\n              AND \"morning_brief_generations\".\"result_bytes\" IS NULL))\n          AND (\"morning_brief_generations\".\"content_purged_at\" IS NULL\n            OR (\"morning_brief_generations\".\"state\" = 'succeeded' AND \"morning_brief_generations\".\"decision\" = 'deliver'))\n          AND (\"morning_brief_generations\".\"result_bytes\" IS NULL OR \"morning_brief_generations\".\"result_bytes\" > 0)"
+          "value": "(\"morning_brief_generations\".\"state\" = 'succeeded') = (\"morning_brief_generations\".\"decision\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"decision\" = 'deliver') =\n            (\"morning_brief_generations\".\"result_markdown\" IS NOT NULL\n             AND \"morning_brief_generations\".\"result_title\" IS NOT NULL\n             AND \"morning_brief_generations\".\"result_bytes\" IS NOT NULL)\n          AND (\"morning_brief_generations\".\"result_bytes\" IS NULL OR \"morning_brief_generations\".\"result_bytes\" > 0)"
         },
         "chk_morning_brief_generation_included_items": {
           "name": "chk_morning_brief_generation_included_items",
@@ -19721,14 +19623,6 @@
         "chk_morning_brief_generation_reservation": {
           "name": "chk_morning_brief_generation_reservation",
           "value": "\"morning_brief_generations\".\"reservation_expires_at\" > \"morning_brief_generations\".\"reserved_at\"\n          AND \"morning_brief_generations\".\"expires_at\" > \"morning_brief_generations\".\"reserved_at\""
-        },
-        "chk_morning_brief_generation_retained_until": {
-          "name": "chk_morning_brief_generation_retained_until",
-          "value": "\"morning_brief_generations\".\"retained_until\" IS NULL\n          OR \"morning_brief_generations\".\"retained_until\" >= \"morning_brief_generations\".\"expires_at\""
-        },
-        "chk_morning_brief_generation_instructions": {
-          "name": "chk_morning_brief_generation_instructions",
-          "value": "(\"morning_brief_generations\".\"instructions_version_id\" IS NULL) =\n          (\"morning_brief_generations\".\"instructions_digest\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -20073,466 +19967,6 @@
       "compositePrimaryKeys": {
         "morning_brief_installed_preferences_pk": {
           "name": "morning_brief_installed_preferences_pk",
-          "columns": [
-            "org_id",
-            "user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.morning_brief_native_occurrences": {
-      "name": "morning_brief_native_occurrences",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scheduled_for": {
-          "name": "scheduled_for",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_epoch": {
-          "name": "owner_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "membership_id": {
-          "name": "membership_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "timezone": {
-          "name": "timezone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'claimed'"
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_token": {
-          "name": "lease_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attempt": {
-          "name": "attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "generation_attempt_id": {
-          "name": "generation_attempt_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "delivery_pending": {
-          "name": "delivery_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "deferred_until": {
-          "name": "deferred_until",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "defer_attempt": {
-          "name": "defer_attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "defer_reason": {
-          "name": "defer_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_at": {
-          "name": "claimed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settled_at": {
-          "name": "settled_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "settled_next_run_at": {
-          "name": "settled_next_run_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "uq_morning_brief_native_occurrences_attempt": {
-          "name": "uq_morning_brief_native_occurrences_attempt",
-          "columns": [
-            {
-              "expression": "generation_attempt_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_native_occurrences_open": {
-          "name": "idx_morning_brief_native_occurrences_open",
-          "columns": [
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "lease_expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_native_occurrences_delivery": {
-          "name": "idx_morning_brief_native_occurrences_delivery",
-          "columns": [
-            {
-              "expression": "delivery_pending",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fk_morning_brief_native_occurrences_schedule": {
-          "name": "fk_morning_brief_native_occurrences_schedule",
-          "tableFrom": "morning_brief_native_occurrences",
-          "tableTo": "morning_brief_native_schedules",
-          "columnsFrom": [
-            "org_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "org_id",
-            "user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "morning_brief_native_occurrences_pk": {
-          "name": "morning_brief_native_occurrences_pk",
-          "columns": [
-            "org_id",
-            "user_id",
-            "scheduled_for"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.morning_brief_native_schedules": {
-      "name": "morning_brief_native_schedules",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cron_expression": {
-          "name": "cron_expression",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "timezone": {
-          "name": "timezone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "next_run_at": {
-          "name": "next_run_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "schedule_owner": {
-          "name": "schedule_owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phase": {
-          "name": "phase",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "target": {
-          "name": "target",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_epoch": {
-          "name": "owner_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "membership_id": {
-          "name": "membership_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "chat_thread_id": {
-          "name": "chat_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "legacy_workflow_id": {
-          "name": "legacy_workflow_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "legacy_automation_id": {
-          "name": "legacy_automation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "draining_epoch": {
-          "name": "draining_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "drain_deadline_at": {
-          "name": "drain_deadline_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "drain_unresolved_reason": {
-          "name": "drain_unresolved_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "materialized_at": {
-          "name": "materialized_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_morning_brief_native_schedules_due": {
-          "name": "idx_morning_brief_native_schedules_due",
-          "columns": [
-            {
-              "expression": "schedule_owner",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "next_run_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_native_schedules_phase": {
-          "name": "idx_morning_brief_native_schedules_phase",
-          "columns": [
-            {
-              "expression": "phase",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_native_schedules_user": {
-          "name": "idx_morning_brief_native_schedules_user",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_native_schedules_agent": {
-          "name": "idx_morning_brief_native_schedules_agent",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_morning_brief_native_schedules_thread": {
-          "name": "idx_morning_brief_native_schedules_thread",
-          "columns": [
-            {
-              "expression": "chat_thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fk_morning_brief_native_schedules_thread": {
-          "name": "fk_morning_brief_native_schedules_thread",
-          "tableFrom": "morning_brief_native_schedules",
-          "tableTo": "chat_threads",
-          "columnsFrom": [
-            "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "morning_brief_native_schedules_pk": {
-          "name": "morning_brief_native_schedules_pk",
           "columns": [
             "org_id",
             "user_id"
@@ -34822,6 +34256,69 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.user_disabled_paid_tools": {
+      "name": "user_disabled_paid_tools",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_id": {
+          "name": "tool_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_user_disabled_paid_tools_user_id": {
+          "name": "idx_user_disabled_paid_tools_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "user_disabled_paid_tools_org_id_user_id_tool_id_pk": {
+          "name": "user_disabled_paid_tools_org_id_user_id_tool_id_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "tool_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
