@@ -18,10 +18,12 @@ import {
   morningBriefScopeDigest,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import type {
-  MorningBriefSourceCollection,
-  MorningBriefSourceCoverage,
-  MorningBriefSourceItem,
+import {
+  morningBriefItemFacts,
+  type MorningBriefSourceCollection,
+  type MorningBriefSourceCoverage,
+  type MorningBriefSourceItem,
+  type MorningBriefSourceProvenance,
 } from "./morning-brief-source-item";
 
 /**
@@ -42,6 +44,36 @@ function slackCoverage(
     return "partial";
   }
   return bundle.entries.length === 0 ? "empty" : "complete";
+}
+
+/**
+ * The half-open window and the channels this bundle was drawn from.
+ *
+ * A channel whose own history was bounded before the window end is named, so a
+ * complete-looking bundle cannot hide a conversation that was cut short.
+ */
+function slackProvenance(
+  bundle: MorningBriefSlackBundle,
+): MorningBriefSourceProvenance {
+  return {
+    startAt: bundle.windowStart,
+    endAt: bundle.windowEnd,
+    startDate: null,
+    endDateExclusive: null,
+    timezone: bundle.timezone,
+    observedAt: null,
+    collectedAt: null,
+    branches: bundle.channels.map((channel) => {
+      return {
+        name: channel.id,
+        status: channel.truncated ? "truncated" : "complete",
+        startAt: bundle.windowStart,
+        endAt: bundle.windowEnd,
+        observedAt: null,
+      };
+    }),
+    limitations: bundle.limits,
+  };
 }
 
 /**
@@ -82,6 +114,7 @@ export function normalizeMorningBriefSlack(
       // a reply pulled from an older root is still reported at its own time.
       timeSemantics: "instant",
       endsAt: null,
+      dateRange: null,
       title: `#${entry.channelName}`,
       body: entry.text,
       // Slack clips a long message at its own ceiling on a code point
@@ -92,6 +125,19 @@ export function normalizeMorningBriefSlack(
         channel === undefined
           ? [{ label: `#${entry.channelName}`, url: entry.channelUrl }]
           : [{ label: `#${channel.name}`, url: channel.url }],
+      // The exact timestamp travels verbatim beside the millisecond `Date` it
+      // was ordered by, because Slack's microseconds do not survive that trip.
+      facts: morningBriefItemFacts({
+        reasons: [
+          {
+            branch: entry.fromThread ? "thread" : "channel",
+            detail: entry.threadTs,
+            unread: null,
+          },
+        ],
+        startedAtRaw: entry.ts,
+        actor: entry.authorId,
+      }),
     };
   });
   return {
@@ -99,7 +145,15 @@ export function normalizeMorningBriefSlack(
     coverage: slackCoverage(bundle),
     items,
     requests: bundle.counts.requests,
-    omittedBySource: 0,
+    provenance: slackProvenance(bundle),
+    omittedBySource: {
+      known: 0,
+      unknownRemaining:
+        bundle.limits.length > 0 ||
+        bundle.channels.some((channel) => {
+          return channel.truncated;
+        }),
+    },
   };
 }
 

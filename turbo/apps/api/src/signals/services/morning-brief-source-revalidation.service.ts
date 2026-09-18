@@ -59,7 +59,7 @@ import { loadSlackUserBinding } from "./slack-data.service";
  * the same enumeration the collector spends, so it is bounded here rather than
  * given a budget of its own.
  */
-export const MORNING_BRIEF_REVALIDATION_PHASE_MS = 5000;
+const MORNING_BRIEF_REVALIDATION_PHASE_MS = 5000;
 
 /** Enumeration pages one re-proof may spend, matching the collector's ceiling. */
 const SLACK_REPROOF_PAGES = 3;
