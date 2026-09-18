@@ -160,11 +160,22 @@ bounded page number.
   that accepts a string proves the payload had a string there, not that the
   string is a state this reader knows.
 
-  | Surface                | Recognized values                                                                                                               |
-  | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-  | Check-run `status`     | `completed`; `queued`, `in_progress`, `waiting`, `requested`, `pending` are still running                                       |
-  | Check-run `conclusion` | `success`, `neutral`, `skipped` pass; `action_required`, `cancelled`, `failure`, `stale`, `startup_failure`, `timed_out` do not |
-  | Status context `state` | `pending`, `success`, and `error`/`failure` as failures                                                                         |
+  | Surface                | Recognized values                                                                                            |
+  | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+  | Check-run `status`     | `completed`; `queued`, `in_progress`, `waiting`, `requested`, `pending` are still running                    |
+  | Check-run `conclusion` | `success`, `neutral`, `skipped` pass; `action_required`, `cancelled`, `failure`, `stale`, `timed_out` do not |
+  | Status context `state` | `pending`, `success`, and `error`/`failure` as failures                                                      |
+
+  Status and conclusion are interpreted together. A recognized in-flight status
+  is pending only with an absent or `null` conclusion; pairing it with any
+  terminal conclusion contradicts the lifecycle because GitHub's
+  [update-check-run contract](https://docs.github.com/en/rest/checks/runs#update-a-check-run)
+  automatically sets the status to `completed` when a conclusion is supplied.
+  `startup_failure` belongs to the check-suite conclusion vocabulary in the
+  [pinned GitHub OpenAPI contract](https://github.com/github/rest-api-description/blob/d4278c869e367f5d6d4e0f46878119128abba77b/descriptions/api.github.com/api.github.com.json),
+  not the check-run vocabulary, and is therefore not inferred as a check-run
+  failure. `stale` remains recognized because the check-run endpoint explicitly
+  documents it as a conclusion only GitHub can set.
 
   Anything else is a state this reader cannot interpret, and an uninterpretable
   state is a **coverage gap rather than a new fact**: it adds nothing to
@@ -172,9 +183,9 @@ bounded page number.
   records `malformed-response` on the checks branch. `completed` with an absent
   or `null` conclusion contradicts GitHub's own contract and is treated the same
   way — it is not a failure. One uninterpretable entry never discards a readable
-  sibling: a real failing or pending check on the same head still reports
-  `failing` or `pending`, alongside the explicit incompleteness, and a head
-  whose checks were all read and all passed still reports `success`.
+  sibling: real failing, pending and successful checks on the same head retain
+  their counts and state alongside the explicit incompleteness, and a head whose
+  checks were all read and all passed still reports `success`.
 
 ### Provider-supplied URLs are data
 
