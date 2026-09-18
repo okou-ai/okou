@@ -123,6 +123,39 @@ test("Startup is reported once", async () => {
   expect(capturedEvents(BOOTSTRAP_PHASE_TIMING_EVENT)).toHaveLength(1);
 });
 
+test("Startup clears retired acquisition state", async () => {
+  const { sessionStorageSignals } =
+    await import("../external/session-storage.ts");
+  const adAttribution = sessionStorageSignals("vm0.adAttribution");
+  const impactAttribution = sessionStorageSignals("okou.impactAttribution");
+  await context.store.set(adAttribution.set$, "gclid=retired-click");
+  await context.store.set(impactAttribution.set$, "irclickid=retired-click");
+
+  const { initPostHog } = await import("../../lib/posthog.ts");
+  initPostHog();
+  await setupPage({
+    context,
+    path: ROUTES.error,
+    host: "app.okou.ai",
+    env: PAGE_ENV,
+  });
+
+  const retiredAdAttribution = sessionStorageSignals("vm0.adAttribution");
+  const retiredImpactAttribution = sessionStorageSignals(
+    "okou.impactAttribution",
+  );
+  expect(context.store.get(retiredAdAttribution.get$)).toBeNull();
+  expect(context.store.get(retiredImpactAttribution.get$)).toBeNull();
+  expect(context.mocks.posthog().unregistrations).toStrictEqual(
+    expect.arrayContaining([
+      "gclid",
+      "okou_campaign_id",
+      "utm_campaign",
+      "impact_click_id",
+    ]),
+  );
+});
+
 test("Startup timing is bounded and anonymous", async () => {
   mockMissingConversation();
 

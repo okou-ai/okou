@@ -1,6 +1,5 @@
 import type { BrowserClerk, UserResource } from "@clerk/shared/types";
 import { command, computed, state } from "ccstate";
-import { normalizeGoogleAdsAttributionParams } from "@okouai/core/google-ads-attribution";
 import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
 import {
   derivePlatformServiceOrigin,
@@ -14,7 +13,6 @@ import {
   setPostHogOrganization,
   setPostHogUser,
 } from "../lib/posthog.ts";
-import { appendCapturedPreviewBypassToUrl } from "../lib/preview-bypass-cookie.ts";
 import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
 import { BRAND_NAME, type BrandName } from "./branding.ts";
 import {
@@ -46,8 +44,6 @@ function authenticatedSessionKey(
     : null;
 }
 
-const ATTRIBUTION_SOURCE_PARAM = "vm0_source";
-const HOMEPAGE_ATTRIBUTION_VALUE = "homepage";
 const ONBOARDING_PATH = "/onboarding";
 const PRODUCTION_AUTH_REDIRECT_ORIGIN_PATTERN =
   /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*okou\.ai(?::\d+)?$/i;
@@ -58,32 +54,6 @@ export interface AuthBrandContext {
   readonly brandName: BrandName;
   readonly homeUrl: string;
 }
-
-const AD_ATTRIBUTION_PARAMS = [
-  "gclid",
-  "gbraid",
-  "wbraid",
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "okou_campaign_id",
-  "okou_ad_group_id",
-  "utm_content",
-  "utm_term",
-  "vm0_experiment",
-  "vm0_variant",
-  "lp_variant",
-] as const;
-
-const AD_TRAFFIC_MARKERS = [
-  "gclid",
-  "gbraid",
-  "wbraid",
-  "utm_source",
-  "utm_campaign",
-  "okou_campaign_id",
-  "okou_ad_group_id",
-] as const;
 
 const HTTP_URL_PREFIX_REGEX = /^https?:\/\//i;
 const LEGACY_HTTP_URL_REGEX = /^https?:\/\/([^/?#\s]+)([/?#][^\s]*)?$/i;
@@ -191,48 +161,6 @@ function getAllowedAuthRedirectOrigins(): AllowedAuthRedirectOrigin[] {
 
 export function getAllowedAuthRedirectOriginsForCurrentPage(): AllowedAuthRedirectOrigin[] {
   return getAllowedAuthRedirectOrigins();
-}
-
-function hasAdTraffic(params: URLSearchParams): boolean {
-  const normalized = normalizeGoogleAdsAttributionParams(params);
-  return AD_TRAFFIC_MARKERS.some((param) => {
-    return normalized.has(param);
-  });
-}
-
-function appendHomepageAttributionParams(
-  url: URLSearchParams,
-  landingSearch: string,
-): void {
-  const landingParams = normalizeGoogleAdsAttributionParams(
-    new URLSearchParams(landingSearch),
-  );
-  url.set(ATTRIBUTION_SOURCE_PARAM, HOMEPAGE_ATTRIBUTION_VALUE);
-  for (const param of AD_ATTRIBUTION_PARAMS) {
-    for (const value of landingParams.getAll(param)) {
-      url.append(param, value);
-    }
-  }
-}
-
-function setCurrentLandingContext(params: URLSearchParams): void {
-  if (!params.has("landing_host")) {
-    params.set("landing_host", location.hostname);
-  }
-  if (!params.has("landing_path")) {
-    params.set("landing_path", location.pathname);
-  }
-}
-
-function buildOnboardingEntryUrl(paramsInit?: URLSearchParams): string {
-  const params = normalizeGoogleAdsAttributionParams(
-    new URLSearchParams(paramsInit),
-  );
-  setCurrentLandingContext(params);
-  const url = new URL(ONBOARDING_PATH, resolveAppOrigin());
-  url.search = params.toString();
-  appendCapturedPreviewBypassToUrl(url);
-  return url.toString();
 }
 
 function isAllowedRedirectOrigin(
@@ -352,13 +280,7 @@ export function buildSignupRedirectUrl(
     return redirectUrl.toString();
   }
 
-  if (!hasAdTraffic(params)) {
-    return new URL(ONBOARDING_PATH, appUrl).toString();
-  }
-
-  const redirectParams = new URLSearchParams();
-  appendHomepageAttributionParams(redirectParams, params.toString());
-  return buildOnboardingEntryUrl(redirectParams);
+  return new URL(ONBOARDING_PATH, appUrl).toString();
 }
 
 export function buildSignInRedirectUrl(
