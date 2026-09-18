@@ -55,9 +55,9 @@ test.each(["png", "bin"])(
       expect(link).toHaveAttribute("target", "_blank");
       expect(link).toHaveAttribute("rel", "noopener noreferrer");
     }
-    expect(
-      within(imageLink).getByRole("img", { name: "screenshot.png" }),
-    ).toHaveAttribute(
+    await expect(
+      within(imageLink).findByRole("img", { name: "screenshot.png" }),
+    ).resolves.toHaveAttribute(
       "src",
       `https://a.okou.io/cdn-cgi/image/width=480,height=320,fit=scale-down,format=auto,quality=85,metadata=none/shared-threads/public/image/screenshot.${extension}`,
     );

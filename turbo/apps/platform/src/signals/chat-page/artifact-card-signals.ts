@@ -48,7 +48,7 @@ export type ArtifactCardSignalsRegistry = CardSignalsRegistry<
   ArtifactSignals
 >;
 
-function createArtifactSignals(
+export function createArtifactSignals(
   descriptor: ArtifactDescriptor,
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>,
 ): ArtifactSignals {
