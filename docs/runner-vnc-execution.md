@@ -114,6 +114,10 @@ publishing the session. Credentials are dropped after authentication.
 Status/list disclosure and every capture/input check current authority and the
 resolved generation. A denied check, API failure or changed generation closes
 the affected session instead of reconnecting or adopting replacement credentials.
+List omits sessions whose authority is unavailable or whose configuration changed
+and continues checking the other sessions. API failures, malformed authority
+responses and request cancellation still fail the list instead of appearing as
+an empty inventory.
 Explicit close remains available to clean up a Run-owned session after authority
 revocation. Checks are admission decisions: a later authority change cannot
 retract remote effects already started. As with SSH, deletion and recreation with

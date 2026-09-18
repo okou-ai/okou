@@ -124,8 +124,14 @@ impl Run {
                     for session in self.snapshot()? {
                         let scope = session_scope(&scope, &session);
                         let _engine = lock(&session, &scope).await?;
-                        self.authorize(&session, &scope).await?;
-                        infos.push(session.info.clone());
+                        match self.authorize(&session, &scope).await {
+                            Ok(()) => infos.push(session.info.clone()),
+                            // The authority owns saved connections. An expected
+                            // removal or change closes only that stale session;
+                            // it must not hide independently authorized siblings.
+                            Err(Failure::Unavailable | Failure::ConfigurationChanged) => {}
+                            Err(error) => return Err(error),
+                        }
                     }
                     Ok::<_, Failure>(infos)
                 }

@@ -330,20 +330,24 @@ impl Harness {
     }
 
     pub(super) async fn resolve(&self) -> Mock<'_> {
-        self.resolve_path(None).await
+        self.resolve_connection(CONNECTION).await
+    }
+
+    pub(super) async fn resolve_connection(&self, connection: &str) -> Mock<'_> {
+        self.resolve_path(None, connection).await
     }
 
     pub(super) async fn resolve_for_run(&self, run: RunId) -> Mock<'_> {
-        self.resolve_path(Some(run)).await
+        self.resolve_path(Some(run), CONNECTION).await
     }
 
-    async fn resolve_path(&self, run: Option<RunId>) -> Mock<'_> {
+    async fn resolve_path(&self, run: Option<RunId>, connection: &str) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             let when = when.method("POST");
             let when = match run { Some(run) => when.path(format!("/api/runners/runs/{run}/vnc/resolve")), None => when.path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$") };
             when
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc"}]}));
+                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":[{"authMethod":"vnc_password","securityType":"x509_vnc"}]}));
             then.status(200).json_body(json!({"outcome":"resolved","host":"vnc.example.test","port":5900,"generation":7,
                 "authentication":{"method":"vnc_password","password":" secret "},
                 "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":self.peer.ca}}}));
@@ -354,8 +358,29 @@ impl Harness {
         self.check_delayed(outcome, status, Duration::ZERO).await
     }
 
+    pub(super) async fn check_connection(
+        &self,
+        connection: &str,
+        outcome: &str,
+        status: u16,
+    ) -> Mock<'_> {
+        self.check_connection_delayed(connection, outcome, status, Duration::ZERO)
+            .await
+    }
+
     pub(super) async fn check_delayed(
         &self,
+        outcome: &str,
+        status: u16,
+        delay: Duration,
+    ) -> Mock<'_> {
+        self.check_connection_delayed(CONNECTION, outcome, status, delay)
+            .await
+    }
+
+    async fn check_connection_delayed(
+        &self,
+        connection: &str,
         outcome: &str,
         status: u16,
         delay: Duration,
@@ -363,7 +388,7 @@ impl Harness {
         self.api.mock_async(|when, then| {
             when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/check$")
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7}));
+                .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7}));
             then.status(status).delay(delay).json_body(json!({"outcome":outcome}));
         }).await
     }
