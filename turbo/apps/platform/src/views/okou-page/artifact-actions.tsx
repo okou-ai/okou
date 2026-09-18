@@ -42,7 +42,6 @@ import {
 } from "../../signals/external/connectors.ts";
 import { convertsToGoogleSlides } from "@okouai/core/google-slides-conversion";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { googleSlidesConversionEnabled$ } from "../../signals/external/feature-switch.ts";
 import { connectorConnectionPending$ } from "../../signals/connector-connection-progress.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -475,11 +474,13 @@ function GoogleDriveMenuItem({
   const { t } = useTranslation();
   const availability = useGoogleDriveAvailability(syncTarget);
   const connectionPending = useGet(connectorConnectionPending$);
-  const slidesConversionEnabled = useGet(googleSlidesConversionEnabled$);
+  const features = useLastResolved(featureSwitch$);
   const syncOrConnect = useGoogleDriveMenuAction(syncTarget, availability);
   // The service applies the same predicate, so the label never promises a
   // conversion the sync will not perform.
-  const slides = slidesConversionEnabled && convertsToGoogleSlides(filename);
+  const slides =
+    (features?.[FeatureSwitchKey.GoogleSlidesConversion] ?? false) &&
+    convertsToGoogleSlides(filename);
   const labels = useGoogleDriveMenuLabels(slides);
   const {
     connectorListLoaded,

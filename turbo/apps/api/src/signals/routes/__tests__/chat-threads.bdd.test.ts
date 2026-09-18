@@ -2230,9 +2230,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const peer = bdd.user({ orgId: actor.orgId });
 
-    const unauthenticated = await chat.requestDeleteThread(null, randomUUID(), [
-      401,
-    ]);
+    const unauthenticated = await chat.requestDeleteThread(
+      null,
+      randomUUID(),
+      [401],
+    );
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
@@ -2243,9 +2245,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       code: "NOT_FOUND",
     });
 
-    const malformed = await chat.requestDeleteThread(actor, "not-a-uuid", [
-      400,
-    ]);
+    const malformed = await chat.requestDeleteThread(
+      actor,
+      "not-a-uuid",
+      [400],
+    );
     expectApiError(malformed.body);
     expect(malformed.body.error.message).toContain("id");
 
@@ -2289,9 +2293,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       prompt: "other thread stays active",
     });
 
-    const peerDelete = await chat.requestDeleteThread(peer, main.threadId, [
-      404,
-    ]);
+    const peerDelete = await chat.requestDeleteThread(
+      peer,
+      main.threadId,
+      [404],
+    );
     expectApiError(peerDelete.body);
     expect(peerDelete.body.error.code).toBe("NOT_FOUND");
     await expect(chat.readThread(actor, main.threadId)).resolves.toStrictEqual({
@@ -2425,9 +2431,10 @@ describe("CHAT-01 chat thread read state", () => {
     const unauthenticated = await chat.requestIndicators(null, [401]);
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-    const orgless = await chat.requestIndicators(bdd.user({ orgId: null }), [
-      401,
-    ]);
+    const orgless = await chat.requestIndicators(
+      bdd.user({ orgId: null }),
+      [401],
+    );
     expectApiError(orgless.body);
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
@@ -3500,9 +3507,12 @@ async function projectChatEventSearch() {
 
 describe("CHAT-01 chat search", () => {
   it("rejects search without an org session or the chat-event:read capability", async () => {
-    const unauthenticated = await chat.requestSearchChat(null, "hello", {}, [
-      401,
-    ]);
+    const unauthenticated = await chat.requestSearchChat(
+      null,
+      "hello",
+      {},
+      [401],
+    );
     expectApiError(unauthenticated.body);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
 
