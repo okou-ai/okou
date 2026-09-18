@@ -155,6 +155,10 @@ impl SandboxFinalExecParkObserver for FinalizationTelemetry<'_> {
                 "runner_host_physical_park_balloon_settle",
                 (!success).then_some("balloon settle failed"),
             ),
+            SandboxFinalExecParkSubstage::BalloonDeflate => (
+                "runner_host_physical_park_balloon_deflate",
+                (!success).then_some("balloon deflation failed"),
+            ),
             SandboxFinalExecParkSubstage::VcpuPause => (
                 "runner_host_physical_park_vcpu_pause",
                 (!success).then_some("vCPU pause failed"),
@@ -196,39 +200,25 @@ fn deliver_exact_handoff(
     candidate: IdleParkCandidate,
     predecessor_run_id: RunId,
 ) -> ExactHandoffAttempt {
-    match candidate {
-        IdleParkCandidate::Ordinary(candidate) => {
-            match publisher.deliver_exact_handoff(candidate, predecessor_run_id) {
-                ActiveRunHandoffDeliveryResult::Delivered => ExactHandoffAttempt::Delivered {
-                    handoff_point: None,
-                },
-                ActiveRunHandoffDeliveryResult::NotRequested(candidate) => {
-                    ExactHandoffAttempt::ContinueIdle(candidate)
-                }
-                ActiveRunHandoffDeliveryResult::Failed(candidate) => ExactHandoffAttempt::Destroy {
-                    candidate: IdleParkCandidate::Ordinary(candidate),
-                    error: "receiver_unavailable",
-                },
-            }
+    let handoff_point = match &candidate {
+        IdleParkCandidate::Ordinary(_) => None,
+        IdleParkCandidate::Immediate(candidate) => Some(candidate.handoff_point()),
+    };
+    match publisher.deliver_exact_handoff(candidate, predecessor_run_id) {
+        ActiveRunHandoffDeliveryResult::Delivered => {
+            ExactHandoffAttempt::Delivered { handoff_point }
         }
-        IdleParkCandidate::Immediate(candidate) => {
-            let handoff_point = candidate.handoff_point();
-            match publisher.deliver_exact_immediate_handoff(candidate, predecessor_run_id) {
-                ActiveRunHandoffDeliveryResult::Delivered => ExactHandoffAttempt::Delivered {
-                    handoff_point: Some(handoff_point),
-                },
-                ActiveRunHandoffDeliveryResult::NotRequested(candidate) => {
-                    ExactHandoffAttempt::Destroy {
-                        candidate: IdleParkCandidate::Immediate(candidate),
-                        error: "request_unavailable",
-                    }
-                }
-                ActiveRunHandoffDeliveryResult::Failed(candidate) => ExactHandoffAttempt::Destroy {
-                    candidate: IdleParkCandidate::Immediate(candidate),
-                    error: "receiver_unavailable",
-                },
-            }
+        ActiveRunHandoffDeliveryResult::NotRequested(IdleParkCandidate::Ordinary(candidate)) => {
+            ExactHandoffAttempt::ContinueIdle(candidate)
         }
+        ActiveRunHandoffDeliveryResult::NotRequested(candidate) => ExactHandoffAttempt::Destroy {
+            candidate,
+            error: "request_unavailable",
+        },
+        ActiveRunHandoffDeliveryResult::Failed(candidate) => ExactHandoffAttempt::Destroy {
+            candidate,
+            error: "receiver_unavailable",
+        },
     }
 }
 
@@ -569,6 +559,36 @@ async fn finalize_sandbox_for_completion_inner(
                         workspace_cache_promoted,
                     );
                 }
+                IdleParkFailureParts::RunningHandoff {
+                    candidate,
+                    reason,
+                    error,
+                    expected_capacity_rejection,
+                } => {
+                    telemetry.record_idle_publication(false, Some(reason));
+                    warn!(
+                        %run_id,
+                        reason,
+                        error,
+                        expected_capacity_rejection,
+                        "running handoff failed reuse preparation validation; destroying sandbox"
+                    );
+                    close_network_log_session(
+                        run_id,
+                        network_log_session.take(),
+                        &network_log_drain,
+                    )
+                    .await;
+                    let (payload, budget_lease) = candidate.into_active_destroy_parts();
+                    let destroy_result = destroy_active_owned_idle_payload(
+                        payload,
+                        budget_lease,
+                        reason,
+                        destroy_bookkeeping,
+                    )
+                    .await;
+                    return FinalizationReady::new(destroy_result.budget);
+                }
             },
         };
         let (candidate, non_reusable) = park_outcome.into_parts();
@@ -737,6 +757,9 @@ async fn finalize_sandbox_for_completion_inner(
                             Some(SandboxFinalExecParkHandoffPoint::DuringBalloonSettle) => {
                                 "during_balloon"
                             }
+                            Some(SandboxFinalExecParkHandoffPoint::DuringDeflation) => {
+                                "during_deflation"
+                            }
                             None => "after_full_park",
                         };
                         telemetry.record_handoff(true, None, handoff_path);
@@ -745,7 +768,7 @@ async fn finalize_sandbox_for_completion_inner(
                             reuse_key_fingerprint = %reuse_key_fingerprint,
                             reuse_key_kind = reuse_kind,
                             handoff_path,
-                            "parked sandbox delivered directly to claimed exact successor"
+                            "sandbox delivered directly to claimed exact successor"
                         );
                         return FinalizationReady::new(BudgetOwnership::handoff_owned());
                     }
@@ -783,7 +806,7 @@ async fn finalize_sandbox_for_completion_inner(
                         reuse_key_fingerprint = %reuse_key_fingerprint,
                         reuse_key_kind = reuse_kind,
                         handoff_error = error,
-                        "exact handoff unavailable, destroying parked sandbox"
+                        "exact handoff unavailable, destroying sandbox"
                     );
                     let (payload, budget_lease) = candidate.into_active_destroy_parts();
                     let destroy_result = destroy_active_owned_idle_payload(

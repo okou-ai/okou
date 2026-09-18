@@ -2,6 +2,7 @@ import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
+import { env } from "../../lib/env";
 
 import {
   MCP_DEFAULT_SCOPES,
@@ -12,12 +13,17 @@ import {
 import type { McpPrincipal } from "../../types/mcp";
 import { request$ } from "../context/hono";
 import { verifyClerkOAuthAccessToken } from "../external/clerk";
-import { db$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
-import { chatIndicators } from "../services/chat-thread.service";
+import {
+  getMcpChatThread,
+  listMcpChatThreads,
+} from "../services/mcp-chat-threads.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
+import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
 import { awaitWithSignal, settle } from "../utils";
 
 function unavailable() {
@@ -140,12 +146,37 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
     {
       readScope: MCP_READ_SCOPE,
       scopes: principal.scopes,
-      readIndicators: async (readSignal) => {
-        const result = await awaitWithSignal(
-          get(chatIndicators(principal)),
+      searchMessages: async (input, readSignal) => {
+        return await get(
+          searchMcpChatMessages(
+            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
+            principal,
+            input,
+            readSignal,
+          ),
+        );
+      },
+      getMessages: async (input, readSignal) => {
+        return await get(
+          getMcpChatMessages(
+            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
+            principal,
+            input,
+            readSignal,
+          ),
+        );
+      },
+      listThreads: async (input, readSignal) => {
+        return await awaitWithSignal(
+          listMcpChatThreads(set(writeDb$), principal, input),
           readSignal,
         );
-        return result;
+      },
+      getThread: async (input, readSignal) => {
+        return await awaitWithSignal(
+          getMcpChatThread(set(writeDb$), principal, input),
+          readSignal,
+        );
       },
     },
     signal,

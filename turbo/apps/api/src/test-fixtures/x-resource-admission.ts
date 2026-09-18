@@ -4,12 +4,22 @@ import { z } from "zod";
 
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
+import type { Tx } from "../lib/db-types";
 import {
   lockXResourceAdmission,
   setXResourceTransactionTimeouts,
+  withXResourceAdmissionScopeForTest,
   withXResourceClockForTest,
 } from "../signals/services/x-resource-usage-lifecycle";
 import { createDeferredPromise } from "../signals/utils";
+
+/** Simulate another test owner, or the unscoped production boundary. */
+export async function withXResourceAdmissionScopeFixture<T>(
+  scope: string | undefined,
+  work: () => Promise<T>,
+): Promise<T> {
+  return await withXResourceAdmissionScopeForTest(scope, work);
+}
 
 /** Scope a database-clock override to one test-owned API operation. */
 export async function withXResourceClock<T>(
@@ -27,10 +37,30 @@ const waiterCountRowSchema = z.object({ count: z.int() });
  * this fixture only to prove cleanup waits, then samples its admission clock.
  */
 export async function holdXResourceAdmissionForTest(signal: AbortSignal) {
+  return await holdXResourceAdmission(signal, async (tx) => {
+    await lockXResourceAdmission(tx, "shared");
+  });
+}
+
+/** Independent SQL participant verifies the unchanged production lock key. */
+export async function holdProductionXResourceAdmissionForTest(
+  signal: AbortSignal,
+) {
+  return await holdXResourceAdmission(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock_shared(hashtext('vm0'), hashtext('x_resource_reads_admission'))`,
+    );
+  });
+}
+
+async function holdXResourceAdmission(
+  signal: AbortSignal,
+  acquire: (tx: Tx) => Promise<void>,
+) {
   const started = createDeferredPromise<number>(signal);
   const released = createDeferredPromise<void>(signal);
   const done = db().transaction(async (tx) => {
-    await lockXResourceAdmission(tx, "shared");
+    await acquire(tx);
     signal.throwIfAborted();
     const rows = await executeRawRows(
       tx,

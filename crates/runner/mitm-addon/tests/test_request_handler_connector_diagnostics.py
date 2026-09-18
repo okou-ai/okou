@@ -229,7 +229,7 @@ async def test_shared_base_active_connector_intent_keeps_active_auth_path(
     ],
     ids=["configured-header", "configured-query"],
 )
-async def test_shared_base_unknown_endpoint_with_configured_auth_keeps_active_auth_path(
+async def test_shared_base_unknown_endpoint_with_configured_auth_cannot_use_another_owner(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -270,14 +270,15 @@ async def test_shared_base_unknown_endpoint_with_configured_auth_keeps_active_au
     ):
         await mitm_addon.request(flow)
 
-    auth_fetch.assert_awaited_once()
-    assert flow.response is None
-    assert flow.request.headers["Authorization"] == "Bearer active"
+    auth_fetch.assert_not_awaited()
+    assert flow.response is not None
+    assert flow.response.status_code == 409
+    assert "Authorization" not in flow.request.headers
     assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG not in flow.metadata
 
 
-async def test_shared_base_malformed_connector_intent_is_ignored_and_stripped(
+async def test_shared_base_malformed_connector_intent_is_denied_and_stripped(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
 ):
     write_shared_base_diagnostic_catalog(tmp_path)
@@ -300,9 +301,10 @@ async def test_shared_base_malformed_connector_intent_is_ignored_and_stripped(
     ):
         await mitm_addon.request(flow)
 
-    auth_fetch.assert_awaited_once()
-    assert flow.response is None
-    assert flow.request.headers["Authorization"] == "Bearer active"
+    auth_fetch.assert_not_awaited()
+    assert flow.response is not None
+    assert flow.response.status_code == 409
+    assert "Authorization" not in flow.request.headers
     assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG not in flow.metadata
 

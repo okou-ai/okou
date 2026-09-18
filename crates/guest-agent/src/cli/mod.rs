@@ -70,7 +70,8 @@ use crate::timing;
 use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
 use event_delivery::{EventDeliveryReport, EventDeliveryRuntime, EventDeliverySender};
 use guest_contracts::diagnostics::{
-    CliObservedExitDiagnostic, CliTerminationDiagnostic, EventDeliveryDiagnostic,
+    CliObservedExitDiagnostic, CliTerminationDiagnostic,
+    CliTerminationReason as DiagnosticTerminationReason, EventDeliveryDiagnostic,
     FailureDetailSource, FailureReason, HeartbeatFailureDiagnostic,
 };
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
@@ -334,6 +335,196 @@ pub type HeartbeatMonitor = Option<oneshot::Receiver<HeartbeatStatus>>;
 struct AgentExecutionDeadline {
     at: Instant,
     timeout_secs: u64,
+}
+
+enum PreSpawnControlOutcome {
+    UserCancellation,
+    ExecutionTimeout { timeout_secs: u64 },
+    HeartbeatFailed(HeartbeatFailure),
+    HeartbeatStopped,
+    HeartbeatTaskFailed(String),
+    HeartbeatChannelClosed(String),
+}
+
+impl PreSpawnControlOutcome {
+    fn into_execution_result(self) -> CliExecutionResult {
+        let (control_error, cli_termination, heartbeat) = match self {
+            Self::UserCancellation => (
+                AgentError::Execution("Run cancelled by user".to_string()),
+                Some(CliTerminationDiagnostic::new(
+                    DiagnosticTerminationReason::UserCancellation,
+                )),
+                None,
+            ),
+            Self::ExecutionTimeout { timeout_secs } => (
+                AgentError::Execution(format!(
+                    "Agent execution timed out after {timeout_secs} seconds"
+                )),
+                Some(CliTerminationDiagnostic::new(
+                    DiagnosticTerminationReason::ExecutionTimeout,
+                )),
+                None,
+            ),
+            Self::HeartbeatFailed(failure) => (
+                failure.error,
+                Some(CliTerminationDiagnostic::new(
+                    DiagnosticTerminationReason::HeartbeatError,
+                )),
+                Some(failure.diagnostic),
+            ),
+            Self::HeartbeatStopped => (
+                AgentError::Execution("heartbeat stopped before CLI startup".to_string()),
+                None,
+                None,
+            ),
+            Self::HeartbeatTaskFailed(message) => (
+                AgentError::Execution(format!("heartbeat task panicked: {message}")),
+                Some(CliTerminationDiagnostic::new(
+                    DiagnosticTerminationReason::HeartbeatPanic,
+                )),
+                None,
+            ),
+            Self::HeartbeatChannelClosed(error) => (
+                AgentError::Execution(format!(
+                    "heartbeat task stopped before reporting status: {error}"
+                )),
+                Some(CliTerminationDiagnostic::new(
+                    DiagnosticTerminationReason::HeartbeatPanic,
+                )),
+                None,
+            ),
+        };
+        CliExecutionResult {
+            exit_code: 1,
+            cli_observed_exit: None,
+            stderr_lines: Vec::new(),
+            last_event_sequence: None,
+            event_delivery: None,
+            heartbeat,
+            jsonl_result: None,
+            post_result_cleanup_jsonl_result: None,
+            failure_diagnostic: None,
+            control_error: Some(control_error),
+            cli_termination,
+            active_input_delivery_ids: Vec::new(),
+        }
+    }
+}
+
+fn ready_pre_spawn_control(
+    user_cancellation: &CancellationToken,
+    execution_deadline: Option<AgentExecutionDeadline>,
+    heartbeat_monitor: &mut HeartbeatMonitor,
+) -> Option<PreSpawnControlOutcome> {
+    if user_cancellation.is_cancelled() {
+        return Some(PreSpawnControlOutcome::UserCancellation);
+    }
+    if let Some(deadline) = execution_deadline
+        && Instant::now() >= deadline.at
+    {
+        return Some(PreSpawnControlOutcome::ExecutionTimeout {
+            timeout_secs: deadline.timeout_secs,
+        });
+    }
+    let receiver = heartbeat_monitor.as_mut()?;
+    match receiver.try_recv() {
+        Ok(HeartbeatStatus::Failed(failure)) => {
+            Some(PreSpawnControlOutcome::HeartbeatFailed(failure))
+        }
+        Ok(HeartbeatStatus::Stopped) => Some(PreSpawnControlOutcome::HeartbeatStopped),
+        Ok(HeartbeatStatus::TaskFailed(message)) => {
+            Some(PreSpawnControlOutcome::HeartbeatTaskFailed(message))
+        }
+        Err(oneshot::error::TryRecvError::Closed) => Some(
+            PreSpawnControlOutcome::HeartbeatChannelClosed("channel closed".to_string()),
+        ),
+        Err(oneshot::error::TryRecvError::Empty) => None,
+    }
+}
+
+async fn wait_for_heartbeat_status(
+    heartbeat_monitor: &mut HeartbeatMonitor,
+) -> Result<HeartbeatStatus, oneshot::error::RecvError> {
+    match heartbeat_monitor.as_mut() {
+        Some(receiver) => receiver.await,
+        None => std::future::pending().await,
+    }
+}
+
+async fn prepare_deferred_handoff_with_controls(
+    runtime: &CliRuntimeConfig<'_>,
+    http: &HttpClient,
+    user_cancellation: &CancellationToken,
+    heartbeat_monitor: &mut HeartbeatMonitor,
+) -> Result<Result<Vec<u8>, PreSpawnControlOutcome>, AgentError> {
+    if let Some(outcome) = ready_pre_spawn_control(
+        user_cancellation,
+        runtime.agent_execution_deadline,
+        heartbeat_monitor,
+    ) {
+        return Ok(Err(outcome));
+    }
+
+    tokio::select! {
+        biased;
+        () = user_cancellation.cancelled() => {
+            Ok(Err(PreSpawnControlOutcome::UserCancellation))
+        }
+        () = async {
+            match runtime.agent_execution_deadline {
+                Some(deadline) => tokio::time::sleep_until(deadline.at.into()).await,
+                None => std::future::pending().await,
+            }
+        } => {
+            let timeout_secs = runtime.agent_execution_deadline
+                .map_or(0, |deadline| deadline.timeout_secs);
+            Ok(Err(PreSpawnControlOutcome::ExecutionTimeout { timeout_secs }))
+        }
+        heartbeat = wait_for_heartbeat_status(heartbeat_monitor) => {
+            let outcome = match heartbeat {
+                Ok(HeartbeatStatus::Failed(failure)) => {
+                    PreSpawnControlOutcome::HeartbeatFailed(failure)
+                }
+                Ok(HeartbeatStatus::Stopped) => PreSpawnControlOutcome::HeartbeatStopped,
+                Ok(HeartbeatStatus::TaskFailed(message)) => {
+                    PreSpawnControlOutcome::HeartbeatTaskFailed(message)
+                }
+                Err(error) => {
+                    PreSpawnControlOutcome::HeartbeatChannelClosed(error.to_string())
+                },
+            };
+            Ok(Err(outcome))
+        }
+        prepared = pi_deferred_handoff::prepare_for_cli(runtime, http) => {
+            // A response/body failure can become ready in the same scheduler
+            // turn as a terminal control. Re-poll the authoritative owner
+            // before classifying either success or failure as HTTP work.
+            match (
+                ready_pre_spawn_control(
+                    user_cancellation,
+                    runtime.agent_execution_deadline,
+                    heartbeat_monitor,
+                ),
+                prepared,
+            ) {
+                (Some(outcome), _) => Ok(Err(outcome)),
+                (None, Ok(payload)) => Ok(Ok(payload)),
+                (None, Err(error)) => Err(error),
+            }
+        }
+    }
+}
+
+fn discard_pi_pre_spawn_files(runtime: &CliRuntimeConfig<'_>) {
+    pi_deferred_handoff::discard_for_cli(runtime);
+    if let Err(error) = std::fs::remove_file(runtime.pi_launch_payload_file.as_ref())
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log_warn!(
+            LOG_TAG,
+            "Failed to remove Pi launch payload after pre-spawn control: {error}"
+        );
+    }
 }
 
 pub(super) struct CliRuntimeConfig<'a> {
@@ -1047,8 +1238,40 @@ async fn execute_cli_inner(
         // leave a CLI process running in the VM.
         .kill_on_drop(true);
 
+    let active_input_controller = active_input.controller();
+    let deferred_preparation = matches!(runtime.framework, env::Framework::Pi)
+        && pi_deferred_handoff::is_required(runtime)?;
+    if deferred_preparation {
+        // A run directory can survive a failed startup attempt. Remove any
+        // earlier private boundary before admitting a new authenticated read.
+        discard_pi_pre_spawn_files(runtime);
+        let payload = match prepare_deferred_handoff_with_controls(
+            runtime,
+            &http,
+            &user_cancellation,
+            &mut heartbeat_monitor,
+        )
+        .await?
+        {
+            Ok(payload) => payload,
+            Err(outcome) => {
+                active_input_controller.close_terminal();
+                discard_pi_pre_spawn_files(runtime);
+                return Ok(outcome.into_execution_result());
+            }
+        };
+        pi_deferred_handoff::publish_for_cli(runtime, &payload)?;
+        if let Some(outcome) = ready_pre_spawn_control(
+            &user_cancellation,
+            runtime.agent_execution_deadline,
+            &mut heartbeat_monitor,
+        ) {
+            active_input_controller.close_terminal();
+            discard_pi_pre_spawn_files(runtime);
+            return Ok(outcome.into_execution_result());
+        }
+    }
     if matches!(runtime.framework, env::Framework::Pi) {
-        pi_deferred_handoff::prepare_for_cli(runtime, &http).await?;
         write_pi_launch_payload_file(runtime)?;
     }
     let mut child_env_values = child_env::values_for_runtime(runtime);
@@ -1114,6 +1337,20 @@ async fn execute_cli_inner(
     // fail an otherwise healthy run because this sink is unavailable.
     let mut agent_log = BestEffortAgentLog::open(runtime.agent_log_file.as_ref());
 
+    // No asynchronous setup remains after this point. Revalidate at the exact
+    // child-start boundary so a control outcome that won after publication
+    // cannot resurrect deferred execution.
+    if deferred_preparation
+        && let Some(outcome) = ready_pre_spawn_control(
+            &user_cancellation,
+            runtime.agent_execution_deadline,
+            &mut heartbeat_monitor,
+        )
+    {
+        active_input_controller.close_terminal();
+        discard_pi_pre_spawn_files(runtime);
+        return Ok(outcome.into_execution_result());
+    }
     let mut child = cmd.spawn()?;
 
     let Some(cli_stdin) = child.stdin.take() else {
@@ -1134,7 +1371,6 @@ async fn execute_cli_inner(
     let mut stderr_handle =
         tokio::spawn(async move { diagnostics::collect_stderr_result_tail(stderr).await });
 
-    let active_input_controller = active_input.controller();
     let pi_execution = matches!(runtime.framework, env::Framework::Pi);
     let pi_rpc_execution = pi_execution && !maintenance_execution;
     let (pi_rpc_response_tx, pi_rpc_response_rx) = pi_rpc::response_channel();

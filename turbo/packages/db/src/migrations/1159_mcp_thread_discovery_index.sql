@@ -1,0 +1,1 @@
+CREATE INDEX "idx_chat_threads_user_last_message_id" ON "chat_threads" USING btree ("user_id","last_message_at" DESC NULLS LAST,"id" DESC NULLS LAST);

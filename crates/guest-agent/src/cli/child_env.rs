@@ -21,8 +21,9 @@ const OPTIONAL_BASE_ENV_KEYS: &[&str] = &[
     "LC_CTYPE",
     "TERM",
     // Rootfs-wide runtime settings from /etc/environment. Keep these out of
-    // guest-agent bootstrap control while preserving the CLI contract that
-    // tools trust the injected proxy CA by default.
+    // guest-agent bootstrap control while preserving access to preinstalled
+    // toolchains and the injected proxy CA by default.
+    "RUSTUP_HOME",
     "NPM_CONFIG_UPDATE_NOTIFIER",
     "NODE_EXTRA_CA_CERTS",
     "SSL_CERT_FILE",

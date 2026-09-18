@@ -31,9 +31,9 @@ const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
 const THIRD_WORKFLOW_NAME = "axiom-traces";
 
-// The unfiltered menu has five category rows before the workflows.
+// The unfiltered menu has four category rows before the workflows.
 const WORKFLOW_NAVIGATION_CASES = [
-  { query: "", downCount: 6 },
+  { query: "", downCount: 5 },
   { query: "axi", downCount: 1 },
 ] as const;
 
@@ -99,14 +99,20 @@ function detailPane(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-detail"]');
 }
 
-function slashButton(name: string): HTMLElement {
+function querySlashButton(name: string): HTMLElement | null {
   const menu = screen.getByTestId("slash-workflow-menu");
-  const result = queryAllByRoleFast("button", menu).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.replace(/\s+/gu, " ").trim() === name
-    );
-  });
+  return (
+    queryAllByRoleFast("button", menu).find((candidate) => {
+      return (
+        candidate.getAttribute("aria-label") === name ||
+        candidate.textContent?.replace(/\s+/gu, " ").trim() === name
+      );
+    }) ?? null
+  );
+}
+
+function slashButton(name: string): HTMLElement {
+  const result = querySlashButton(name);
   if (!result) {
     throw new Error(`Expected slash panel button ${name}`);
   }
@@ -133,19 +139,58 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   expect(within(pane).getByText(first.title)).toBeInTheDocument();
 });
 
-test("The pane carries more than one row of covers, so later templates are reachable", async () => {
+test("Make lists the four types it indexes, and Video is not one of them", async () => {
+  await openSlashMenu();
+  for (const category of [
+    "Presentation",
+    "Illustration",
+    "Website",
+    "Workflow",
+  ]) {
+    expect(slashButton(category)).toBeInTheDocument();
+  }
+  expect(querySlashButton("Video")).toBeNull();
+});
+
+test("The pane carries the whole category, so its covers match the count it heads", async () => {
   await openSlashMenu();
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
   }
-  // A template past the first row proves the pane scrolls its covers rather
-  // than showing the single row a fixed-height pane could hold.
-  const later = PRESENTATION_TEMPLATE_PICKER_ITEMS[7];
-  if (!later) {
-    throw new Error("Expected an eighth presentation template");
+  // The pane scrolls, so every template in the category is reachable — the
+  // header's count and the covers under it describe the same set.
+  expect(
+    pane.querySelectorAll("[data-slot='slash-template-cover']"),
+  ).toHaveLength(PRESENTATION_TEMPLATE_PICKER_ITEMS.length);
+  const last = PRESENTATION_TEMPLATE_PICKER_ITEMS.at(-1);
+  if (!last) {
+    throw new Error("Expected a presentation template");
   }
-  expect(within(pane).getByText(later.title)).toBeInTheDocument();
+  expect(within(pane).getByText(last.title)).toBeInTheDocument();
+});
+
+test("Moving to another type opens its covers at the top", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  const scroller = document.querySelector<HTMLElement>(
+    '[data-slot="slash-template-covers"]',
+  );
+  if (!scroller) {
+    throw new Error("Expected the cover scroller");
+  }
+  scroller.scrollTop = 200;
+  // The pane stays mounted across types, so without its own scroller per type
+  // the next one would open at whatever offset this one was left at.
+  expect(scroller.scrollTop).toBe(200);
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  expect(
+    document.querySelector<HTMLElement>('[data-slot="slash-template-covers"]')
+      ?.scrollTop,
+  ).toBe(0);
 });
 
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
@@ -333,20 +378,20 @@ test("Tab keeps the keyboard selection after the pointer leaves the menu", async
 
 test.each([
   { action: "Enter", expectedTab: "Presentation" },
-  { action: "click", expectedTab: "Video" },
+  { action: "click", expectedTab: "Illustration" },
 ])(
-  "$action opens the picker on the $expectedTab tab while Video is hovered",
+  "$action opens the picker on the $expectedTab tab while Illustration is hovered",
   async ({ action, expectedTab }) => {
     const user = userEvent.setup();
     await openSlashMenu();
-    const video = slashButton("Video");
-    await user.hover(video);
+    const illustration = slashButton("Illustration");
+    await user.hover(illustration);
     await waitFor(() => {
-      expect(detailPane()).toHaveAttribute("data-category", "video");
+      expect(detailPane()).toHaveAttribute("data-category", "illustration");
     });
 
     if (action === "click") {
-      await user.click(video);
+      await user.click(illustration);
     } else {
       await user.keyboard("{Enter}");
     }
@@ -441,11 +486,11 @@ test("Changing the slash query resets the pointer preview to the filtered select
     expect(detailPane()).toHaveAttribute("data-category", "website");
   });
 
-  await fill(editor, "Draft /vid");
+  await fill(editor, "Draft /illu");
   await waitFor(() => {
-    expect(detailPane()).toHaveAttribute("data-category", "video");
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
   });
-  expect(slashButton("Video")).toBeInTheDocument();
+  expect(slashButton("Illustration")).toBeInTheDocument();
 });
 
 test("Reopening the slash panel clears the previous pointer preview", async () => {

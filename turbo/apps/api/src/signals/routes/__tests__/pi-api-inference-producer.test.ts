@@ -43,6 +43,7 @@ import {
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
+import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
@@ -196,9 +197,11 @@ async function expirePiInference(runId: string, deadlineAt = new Date(0)) {
 }
 
 async function withPiTestLock<T>(
-  kind: "org-sandbox-capacity" | "run-output-projection",
+  kind: "org-sandbox-capacity" | "agent-run-row",
   key: string,
-  operation: () => Promise<T>,
+  operation: (lock: {
+    readonly waitForBlocked: (minimum?: number) => Promise<number>;
+  }) => Promise<T>,
 ): Promise<T> {
   const lockId = randomUUID();
   const holding = requestStateAction({
@@ -207,16 +210,33 @@ async function withPiTestLock<T>(
     lock_kind: kind,
     key,
   });
+  let holderPid: number | undefined;
   await expect
     .poll(async () => {
-      const state = await requestStateAction({
-        action: "get-pi-inference-test-lock",
-        lock_id: lockId,
-      });
-      return z.object({ held: z.boolean() }).parse(state).held;
+      const state = z
+        .object({ held: z.boolean(), pid: z.number().nullable() })
+        .parse(
+          await requestStateAction({
+            action: "get-pi-inference-test-lock",
+            lock_id: lockId,
+          }),
+        );
+      holderPid = state.pid ?? undefined;
+      return state.held;
     })
     .toBe(true);
-  const result = await settle(operation(), context.signal);
+  if (holderPid === undefined) {
+    throw new Error("Expected Pi test lock backend pid");
+  }
+  const blockerPid = holderPid;
+  const result = await settle(
+    operation({
+      waitForBlocked: async (minimum) => {
+        return await waitForDeferredBlocker(blockerPid, minimum);
+      },
+    }),
+    context.signal,
+  );
   await requestStateAction({
     action: "release-pi-inference-test-lock",
     lock_id: lockId,
@@ -829,22 +849,29 @@ describe("durable Pi API producer", () => {
     );
     await providerEntered.promise;
 
-    await withPiTestLock("run-output-projection", run.runId, async () => {
-      releaseProvider.resolve(undefined);
-      await expect
-        .poll(async () => {
-          await billing.processOrgUsageEvents(actor, usagePricingResolution);
-          return (await billing.readUsageRecord(actor)).body.pagination.total;
-        })
-        .toBeGreaterThan(0);
-      await api.requestCancelRun(
-        actor,
-        run.runId,
-        [200],
-        usagePricingResolution,
-      );
-      await waitForRunStatus(actor, run.runId, "cancelled", 10_000);
-    });
+    const queued = await withPiTestLock(
+      "agent-run-row",
+      run.runId,
+      async (lock) => {
+        const cancellation = api.requestCancelRun(
+          actor,
+          run.runId,
+          [200],
+          usagePricingResolution,
+        );
+        await lock.waitForBlocked();
+        releaseProvider.resolve(undefined);
+        return { cancellation };
+      },
+    );
+    await queued.cancellation;
+    await waitForRunStatus(actor, run.runId, "cancelled", 10_000);
+    await expect
+      .poll(async () => {
+        await billing.processOrgUsageEvents(actor, usagePricingResolution);
+        return (await billing.readUsageRecord(actor)).body.pagination.total;
+      })
+      .toBeGreaterThan(0);
     await flushWaitUntilForTest();
 
     expect(calls).toBe(1);
@@ -864,6 +891,10 @@ describe("durable Pi API producer", () => {
     await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
+    // Cancellation deliberately keeps the technical reservation until its
+    // bounded grace expires. Move that clock past the deadline so this test's
+    // completed ownership proof cannot consume the next test's global slot.
+    await expirePiInference(run.runId);
   }, 90_000);
 
   it("rejects fleet-wide org overload before a second provider attempt", async () => {

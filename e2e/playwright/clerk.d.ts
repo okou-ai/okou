@@ -2,6 +2,9 @@ export {};
 
 declare global {
   interface Window {
+    __okouClerkBootstrap?: {
+      readonly runtime: Promise<unknown>;
+    };
     Clerk?: {
       loaded: boolean;
       readonly publishableKey: string;

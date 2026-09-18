@@ -223,6 +223,7 @@ test("successful runner sign-in returns its token without a diagnostic artifact"
           history.replaceState(null, '', '/ready');
         }">
       <script>
+        window.__okouClerkBootstrap = { runtime: Promise.resolve() };
         window.Clerk = {
           loaded: true,
           organization: {id: 'org_fixture'},

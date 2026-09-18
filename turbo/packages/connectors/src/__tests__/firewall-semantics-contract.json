@@ -2544,7 +2544,7 @@
       }
     },
     {
-      "name": "irrelevant intent cannot hide a unique route owner",
+      "name": "irrelevant intent cannot bypass or inject credentials for a unique route owner",
       "firewalls": [
         {
           "name": "broad",
@@ -2583,12 +2583,11 @@
         "connectorIntent": { "status": "present", "value": "broad" }
       },
       "expected": {
-        "kind": "allow",
-        "firewallName": "specific",
-        "base": "https://api.example.com",
-        "relativePath": "/items/123",
-        "permission": "items-read",
-        "rule": "GET /items/{id}"
+        "kind": "ambiguous",
+        "method": "GET",
+        "path": "/items/123",
+        "candidates": ["specific"],
+        "reason": "connector_intent_not_candidate"
       }
     },
     {
@@ -3001,6 +3000,128 @@
         "firewallName": "custom_connector_00000000000040008000000000000002",
         "base": "https://mcp.example.com/api/mcp",
         "relativePath": "/"
+      }
+    },
+    {
+      "name": "builtin MCP intent selects its owner on a shared endpoint",
+      "firewalls": [
+        {
+          "name": "builtin-service",
+          "apis": [
+            {
+              "base": "https://mcp.example.com/api/mcp",
+              "auth": { "headers": { "Authorization": "Bearer builtin" } },
+              "permissions": []
+            }
+          ]
+        },
+        {
+          "name": "custom-service",
+          "customConnectorId": "00000000-0000-4000-8000-000000000002",
+          "apis": [
+            {
+              "base": "https://mcp.example.com/api/mcp",
+              "auth": { "headers": { "Authorization": "Bearer custom" } },
+              "permissions": []
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "builtin-service": {
+          "allow": [],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        },
+        "custom-service": {
+          "allow": ["call"],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://mcp.example.com/api/mcp",
+        "connectorIntent": { "status": "present", "value": "builtin-service" }
+      },
+      "expected": {
+        "kind": "allow",
+        "firewallName": "builtin-service",
+        "base": "https://mcp.example.com/api/mcp",
+        "relativePath": "/"
+      }
+    },
+    {
+      "name": "missing builtin MCP intent cannot inject the sole custom owner's credentials",
+      "firewalls": [
+        {
+          "name": "custom-service",
+          "customConnectorId": "00000000-0000-4000-8000-000000000002",
+          "apis": [
+            {
+              "base": "https://mcp.example.com/api/mcp",
+              "auth": { "headers": { "Authorization": "Bearer custom" } },
+              "permissions": []
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "custom-service": {
+          "allow": [],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://mcp.example.com/api/mcp",
+        "connectorIntent": { "status": "present", "value": "builtin-service" }
+      },
+      "expected": {
+        "kind": "ambiguous",
+        "method": "POST",
+        "path": "/api/mcp",
+        "candidates": ["custom-service"],
+        "reason": "connector_intent_not_candidate"
+      }
+    },
+    {
+      "name": "malformed MCP intent cannot inject the sole builtin owner's credentials",
+      "firewalls": [
+        {
+          "name": "builtin-service",
+          "apis": [
+            {
+              "base": "https://mcp.example.com/api/mcp",
+              "auth": { "headers": { "Authorization": "Bearer builtin" } },
+              "permissions": []
+            }
+          ]
+        }
+      ],
+      "networkPolicies": {
+        "builtin-service": {
+          "allow": [],
+          "deny": [],
+          "ask": [],
+          "unknownPolicy": "allow"
+        }
+      },
+      "request": {
+        "method": "POST",
+        "url": "https://mcp.example.com/api/mcp",
+        "connectorIntent": { "status": "malformed" }
+      },
+      "expected": {
+        "kind": "ambiguous",
+        "method": "POST",
+        "path": "/api/mcp",
+        "candidates": ["builtin-service"],
+        "reason": "malformed_connector_intent"
       }
     }
   ]

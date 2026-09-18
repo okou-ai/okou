@@ -220,7 +220,6 @@ test("The start page shows only task choices until one is selected", async () =>
     "Workflow",
     "Presentation",
     "Image",
-    "Video",
     "Website",
     "Visualization",
   ]);
@@ -232,14 +231,7 @@ test("The start page shows only task choices until one is selected", async () =>
   ).toBeNull();
 });
 
-test.each([
-  "Workflow",
-  "Presentation",
-  "Image",
-  "Video",
-  "Website",
-  "Visualization",
-])(
+test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
   "%s moves into the composer and can be removed without losing the draft",
   async (task) => {
     mockTemplateChat();
@@ -275,24 +267,20 @@ test.each([
   },
 );
 
-test.each([
-  "Workflow",
-  "Presentation",
-  "Image",
-  "Video",
-  "Website",
-  "Visualization",
-])("Backspace removes %s from an empty composer", async (task) => {
-  mockTemplateChat();
-  const user = userEvent.setup({ delay: null });
-  const editor = await setupChips();
-  click(button(task, screen.getByRole("group", { name: "Choose a task" })));
-  expect(selectedTask(editor, task)).toBeVisible();
-  await user.keyboard("{Backspace}");
-  await screen.findByRole("group", { name: "Choose a task" });
-  expect(screen.queryByRole("group", { name: task })).toBeNull();
-  expect(editor).toHaveFocus();
-});
+test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
+  "Backspace removes %s from an empty composer",
+  async (task) => {
+    mockTemplateChat();
+    const user = userEvent.setup({ delay: null });
+    const editor = await setupChips();
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+    expect(selectedTask(editor, task)).toBeVisible();
+    await user.keyboard("{Backspace}");
+    await screen.findByRole("group", { name: "Choose a task" });
+    expect(screen.queryByRole("group", { name: task })).toBeNull();
+    expect(editor).toHaveFocus();
+  },
+);
 
 test("Backspace edits a nonempty draft and preserves task selection during composition", async () => {
   mockTemplateChat();
@@ -555,7 +543,6 @@ test("Visualization preferences stay behind once another task is chosen", async 
 
 test.each([
   { task: "Image", mode: "image", instruction: "Create an image." },
-  { task: "Video", mode: "video", instruction: "Create a video." },
   {
     task: "Presentation",
     mode: "presentation",
@@ -620,24 +607,18 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   const restoredTasks = await screen.findByRole("group", {
     name: "Choose a task",
   });
-  click(button("Video", restoredTasks));
-  await screen.findByRole("combobox", { name: "Video models" });
-  const options = await waitFor(() => {
-    return button("Video options 16:9 · 8s · 720p");
+  click(button("Presentation", restoredTasks));
+  const slideCount = await screen.findByRole("combobox", {
+    name: "Slide count",
   });
-  expect(options).toHaveAttribute("aria-expanded", "false");
-  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
-  click(options);
-  const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
-  const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
-    return radio.textContent?.trim() === "9:16";
+  click(slideCount);
+  click(await screen.findByRole("option", { name: "16–20 slides" }));
+  await waitFor(() => {
+    expect(
+      screen.getByRole("combobox", { name: "Slide count" }),
+    ).toHaveTextContent("16–20 slides");
   });
-  if (!portrait) {
-    throw new Error("Portrait ratio missing");
-  }
-  click(portrait);
-  await user.keyboard("{Escape}");
-  click(selectedTask(editor, "Video"));
+  click(selectedTask(editor, "Presentation"));
   await composerModelTrigger("Claude Sonnet 4.6");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
@@ -661,12 +642,6 @@ test.each([
     prompt: "Put my product in a new scene.",
   },
   {
-    task: "Video",
-    first: "Turn a photo into a video",
-    next: "Explain an idea visually",
-    prompt: "Animate a photo I provide",
-  },
-  {
     task: "Website",
     first: "Build a website for my business",
     next: "Put my café menu online",
@@ -683,8 +658,7 @@ test.each([
   async ({ task, first, next, prompt }) => {
     const capture = mockTemplateChat();
     const editor = await setupChips();
-    const tasks = screen.getByRole("group", { name: "Choose a task" });
-    click(button(task, tasks));
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
     const ideas = await screen.findByRole("group", {
       name: "Ideas to get started",
     });
@@ -715,15 +689,6 @@ test.each([
       "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent.",
     secondPrompt:
       "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting.",
-  },
-  {
-    task: "Video",
-    first: "Turn a photo into a video",
-    second: "Show my product in motion",
-    firstPrompt:
-      "Animate a photo I provide with natural movement. Keep the subject recognizable and ask what should move.",
-    secondPrompt:
-      "Create a short product showcase from my product photo. Keep its appearance consistent and highlight the feature I choose.",
   },
   {
     task: "Website",
@@ -791,15 +756,15 @@ test("Slash commands keep the selected task and recommendations in sync", async 
   expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
   expect(editor).toHaveTextContent("A quiet garden");
   expect(editor).not.toHaveTextContent("/ill");
-  await fill(editor, "A quiet garden /vid");
-  const videoMenu = await screen.findByTestId("slash-workflow-menu");
-  await user.click(button("Video", videoMenu));
+  await fill(editor, "A quiet garden /pres");
+  const presentationMenu = await screen.findByTestId("slash-workflow-menu");
+  await user.click(button("Presentation", presentationMenu));
   await closeTemplatePicker();
   await waitFor(() => {
-    expect(selectedTask(editor, "Video")).toBeVisible();
+    expect(selectedTask(editor, "Presentation")).toBeVisible();
   });
   expect(screen.queryByRole("group", { name: "Image" })).toBeNull();
-  await screen.findByText("Turn a photo into a video");
+  await screen.findByText("Pitch my business to investors");
   expect(editor).toHaveTextContent("A quiet garden");
 });
 
@@ -1037,7 +1002,6 @@ test.each([
     browse: "Browse all templates",
   },
   { task: "Image", shelf: "Image styles", browse: "Browse all styles" },
-  { task: "Video", shelf: "Video templates", browse: "Browse all templates" },
 ])(
   "$task shows a cover shelf carrying its whole catalog and attaches a template",
   async ({ task, shelf, browse }) => {

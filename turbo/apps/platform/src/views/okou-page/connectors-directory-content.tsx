@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import { customConnectorMcpEnabled$ } from "../../signals/external/feature-switch.ts";
 import { reloadConnectors$ } from "../../signals/external/connectors.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import {
@@ -85,7 +84,6 @@ function DirectoryCustomSection({
 }) {
   const { t } = useTranslation();
   const retry = useSet(retryCustomConnectors$);
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   if (
     sourceState === "hasData" &&
     connectors.length === 0 &&
@@ -120,11 +118,7 @@ function DirectoryCustomSection({
           })}
         </p>
       ) : connectors.length > 0 ? (
-        <CustomConnectorGrid
-          connectors={connectors}
-          isAdmin={isAdmin}
-          mcpEnabled={mcpEnabled}
-        />
+        <CustomConnectorGrid connectors={connectors} isAdmin={isAdmin} />
       ) : (
         <p className="text-sm text-muted-foreground">
           {searching

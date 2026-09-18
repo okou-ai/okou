@@ -36,7 +36,6 @@ async function checkObservationTimes(
   events: readonly UsageObservation[],
   runCreatedAt: Date,
   runCompletedAt: Date | null,
-  startDate: string,
 ): Promise<void> {
   const clock = await readXResourceClock(tx);
   const today = clock.toISOString().slice(0, 10);
@@ -51,7 +50,6 @@ async function checkObservationTimes(
     const observedAt = Date.parse(event.observedAt);
     if (
       (day !== today && day !== yesterday) ||
-      day < startDate ||
       observedAt > clock.getTime() + CLOCK_TOLERANCE_MS ||
       observedAt < runCreatedAt.getTime() - CLOCK_TOLERANCE_MS ||
       (runCompletedAt !== null &&
@@ -154,6 +152,7 @@ async function claimResources(
   tx: Tx,
   events: readonly UsageObservation[],
   owned: ReadonlySet<string>,
+  deduplicationEnabled: boolean,
 ): Promise<Map<string, number>> {
   const quantities = new Map<string, number>();
   const claims = new Map<
@@ -170,9 +169,11 @@ async function claimResources(
     }
     quantities.set(
       event.idempotencyKey,
-      event.remainder.reduce((sum, item) => {
-        return sum + item.quantity;
-      }, 0),
+      deduplicationEnabled
+        ? event.remainder.reduce((sum, item) => {
+            return sum + item.quantity;
+          }, 0)
+        : event.quantity,
     );
     for (const resource of event.resources) {
       const read = {
@@ -201,6 +202,10 @@ async function claimResources(
     )
     .onConflictDoNothing()
     .returning();
+  // Keep the daily history warm even while every observation is count-priced.
+  if (!deduplicationEnabled) {
+    return quantities;
+  }
   for (const read of newReads) {
     const claim = claims.get(resourceKey(read));
     if (!claim) {
@@ -220,7 +225,7 @@ export async function ingestXResourceUsage(
   db: Db,
   body: UsageBody,
   auth: SandboxAuth,
-  startDate: string,
+  deduplicationEnabled: boolean,
   signal: AbortSignal,
 ): Promise<void> {
   // UUID spelling is case-insensitive in PostgreSQL; order/deduplicate that identity.
@@ -283,13 +288,7 @@ export async function ingestXResourceUsage(
       if (!run) {
         throw new XResourceUsageError(404, "Run not found");
       }
-      await checkObservationTimes(
-        tx,
-        events,
-        run.createdAt,
-        run.completedAt,
-        startDate,
-      );
+      await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
       signal.throwIfAborted();
 
       const billable = events.filter((event) => {
@@ -301,23 +300,16 @@ export async function ingestXResourceUsage(
         );
       });
       const owned = await reserveUsageSources(tx, billable, body.runId, auth);
-      await checkObservationTimes(
+      await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
+      const quantities = await claimResources(
         tx,
-        events,
-        run.createdAt,
-        run.completedAt,
-        startDate,
+        billable,
+        owned,
+        deduplicationEnabled,
       );
-      const quantities = await claimResources(tx, billable, owned);
       // Locks acquired by INSERT may have crossed midnight. Cleanup is still
       // excluded; an expired batch rolls all sources and claims back together.
-      await checkObservationTimes(
-        tx,
-        events,
-        run.createdAt,
-        run.completedAt,
-        startDate,
-      );
+      await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
       if (quantities.size > 0) {
         const cases = [...quantities].map(([source, quantity]) => {
           return sql`WHEN ${source}::uuid THEN ${quantity}::bigint`;

@@ -1975,7 +1975,6 @@ describe("actual compute transactions versus the B1 projector", () => {
         "user",
         "organization",
         "resource_identity_locks",
-        "output_advisory_lock",
         "thread_lock",
         "run_lock",
         "session_lock",
@@ -2003,11 +2002,6 @@ describe("actual compute transactions versus the B1 projector", () => {
                   .from(agents)
                   .where(eq(agents.id, f.agentId))
                   .for("update");
-              }
-              case "output_advisory_lock": {
-                return tx.execute(
-                  sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${f.runId}`}, 0))`,
-                );
               }
               case "thread_lock": {
                 return tx
@@ -2919,13 +2913,14 @@ describe("actual compute transactions versus the B1 projector", () => {
         };
       }
 
-      it.each([
-        "capture",
-        "claim",
-        "completion",
-        "cooldown",
-        "response",
-      ] as const)(
+      function unavailable(f: OutputFixture) {
+        return {
+          status: 200,
+          body: { runId: f.runId, status: "unavailable", messages: [] },
+        };
+      }
+
+      it.each(["capture", "claim", "completion", "cooldown"] as const)(
         "%s commits before closure can project and retains activity deadlines",
         async (stage) => {
           const f = await activityFixture();
@@ -2938,7 +2933,6 @@ describe("actual compute transactions versus the B1 projector", () => {
             {
               runId: f.runId,
               stage: stage === "cooldown" ? "completion" : stage,
-              position: "before",
               work: async (barrier) => {
                 const writing = accepted
                   ? settle(accepted.dispatch())
@@ -2970,14 +2964,17 @@ describe("actual compute transactions versus the B1 projector", () => {
                 } else {
                   expect(rows[0]?.summary).toBe("Checking launch materials");
                 }
-                if (stage === "response") {
+                if (stage === "completion" || stage === "cooldown") {
                   expect(written).toMatchObject({
                     ok: true,
                     value: {
                       status: 200,
                       body: {
                         status: "available",
-                        messages: [{ text: "Checking launch materials" }],
+                        messages:
+                          stage === "completion"
+                            ? [{ text: "Checking launch materials" }]
+                            : [],
                       },
                     },
                   });
@@ -3070,14 +3067,54 @@ describe("actual compute transactions versus the B1 projector", () => {
         },
       );
 
+      it.each(["current-run", "terminal", "cleanup"] as const)(
+        "%s first prevents stale completion and response state",
+        async (change) => {
+          const f = await activityFixture();
+          const entered = createDeferredPromise<void>(context.signal);
+          const release = createDeferredPromise<string>(context.signal);
+          activityProvider(async () => {
+            entered.resolve();
+            return await release.promise;
+          });
+          const pending = summarize(f);
+          await entered.promise;
+          const before = await snapshot(f);
+          if (change === "current-run") {
+            await db
+              .update(chatThreads)
+              .set({ agentSessionRunId: null })
+              .where(eq(chatThreads.id, f.threadId));
+          } else if (change === "terminal") {
+            await db
+              .update(agentRuns)
+              .set({ status: "completed", completedAt: nowDate() })
+              .where(eq(agentRuns.id, f.runId));
+          } else {
+            // Production cleanup owns the same row-level delete. No user API can
+            // remove one collector while a provider request is in flight.
+            await db
+              .delete(runActivitySnapshots)
+              .where(eq(runActivitySnapshots.runId, f.runId));
+          }
+          release.resolve("Stale provider phrase");
+          await expect(pending).resolves.toMatchObject(
+            change === "cleanup" ? unavailable(f) : ineligible(f),
+          );
+          await expect(snapshot(f)).resolves.toStrictEqual(
+            change === "cleanup" ? [] : before,
+          );
+        },
+      );
+
       it.each([
         "close",
-        "close-retained",
         "transfer",
         "current-run",
-        "remove-run",
+        "terminal",
+        "cleanup",
       ] as const)(
-        "reacquires the final INSERT/response barrier after completion: %s",
+        "returns committed completion state before %s can proceed",
         async (change) => {
           const f = await activityFixture();
           activityProvider();
@@ -3085,44 +3122,59 @@ describe("actual compute transactions versus the B1 projector", () => {
             {
               runId: f.runId,
               stage: "completion",
-              position: "after",
               work: async (barrier) => {
-                const pending = summarize(f);
-                await barrier.entered;
-                const closure =
-                  change === "close" || change === "close-retained"
-                    ? await holdClosure(decision(f.userId))
-                    : undefined;
-                if (change === "transfer") {
-                  await db
-                    .update(agents)
-                    .set({ owner: `survivor-${randomUUID()}` })
-                    .where(eq(agents.id, f.agentId));
-                } else if (change === "current-run") {
-                  await db
-                    .update(chatThreads)
-                    .set({ agentSessionRunId: null })
-                    .where(eq(chatThreads.id, f.threadId));
-                } else if (change === "remove-run") {
-                  await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
-                }
-                const before = await snapshot(f);
-                if (change !== "close-retained") {
-                  await db
-                    .delete(runActivitySnapshots)
-                    .where(eq(runActivitySnapshots.runId, f.runId));
-                }
+                let responded = false;
+                const observed = summarize(f).then(
+                  (value) => {
+                    responded = true;
+                    return value;
+                  },
+                  (error: unknown) => {
+                    responded = true;
+                    throw error;
+                  },
+                );
+                const settings = await barrier.entered;
+                const competing = (async () => {
+                  if (change === "close") {
+                    await close(decision(f.userId));
+                  } else if (change === "transfer") {
+                    await db
+                      .update(agents)
+                      .set({ owner: `survivor-${randomUUID()}` })
+                      .where(eq(agents.id, f.agentId));
+                  } else if (change === "current-run") {
+                    await db
+                      .update(chatThreads)
+                      .set({ agentSessionRunId: null })
+                      .where(eq(chatThreads.id, f.threadId));
+                  } else if (change === "terminal") {
+                    await db
+                      .update(agentRuns)
+                      .set({ status: "completed", completedAt: nowDate() })
+                      .where(eq(agentRuns.id, f.runId));
+                  } else {
+                    await db
+                      .delete(runActivitySnapshots)
+                      .where(eq(runActivitySnapshots.runId, f.runId));
+                  }
+                })();
+                await waitForBlockedBy(settings.pid);
+                expect(responded).toBeFalsy();
                 barrier.release();
-                if (closure) {
-                  await waitForBlockedBy(closure.pid);
-                  await closure.release();
-                }
-                await expect(pending).resolves.toMatchObject(ineligible(f));
-                if (change === "close-retained") {
-                  await expect(snapshot(f)).resolves.toStrictEqual(before);
-                } else {
-                  await expect(snapshot(f)).resolves.toHaveLength(0);
-                }
+                const [result] = await Promise.all([observed, competing]);
+                expect(result).toMatchObject({
+                  status: 200,
+                  body: {
+                    status: "available",
+                    messages: [{ text: "Checking launch materials" }],
+                  },
+                });
+                await expect(snapshot(f)).resolves.toMatchObject(
+                  change === "cleanup"
+                    ? []
+                    : [{ summary: "Checking launch materials" }],
+                );
               },
             },
             context.signal,
@@ -3417,7 +3469,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           {
             runId: f.runId,
             stage: "output",
-            position: "before",
             work: async (barrier) => {
               const pending = sendOutput(f);
               await expect(barrier.entered).resolves.toMatchObject({
@@ -3607,7 +3658,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           {
             runId: f.runId,
             stage: "output",
-            position: "before",
             work: async (barrier) => {
               const pending = invokeTerminal(f, "failed");
               await expect(barrier.entered).resolves.toMatchObject({
@@ -5038,11 +5088,13 @@ describe("actual compute transactions versus the B1 projector", () => {
       it("serializes the same run while an independent terminal writer in the organization commits", async () => {
         const first = await terminalFixture("failed");
         const independent = await terminalFixture("failed", first.orgId);
-        // The API cannot pause a writer at its run-specific projection lock.
+        // The run row is the common same-run mutex for every content writer.
         const held = await holdBusinessRow(async (tx) => {
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${first.runId}`}, 0))`,
-          );
+          await tx
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, first.runId))
+            .for("update");
         });
         await startTerminal(first, "failed");
         await startTerminal(first, "failed");

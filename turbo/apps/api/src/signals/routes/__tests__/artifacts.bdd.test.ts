@@ -85,10 +85,11 @@ interface SnapshotFixture {
   readonly content?: string;
   readonly error?: {
     readonly code: number;
-    readonly detail: string;
+    readonly detail?: string;
     readonly message: string;
     readonly status: number;
   };
+  readonly headers?: Record<string, string>;
   readonly screenshot?: string;
   readonly status?: number;
   readonly title?: string;
@@ -128,7 +129,12 @@ function mockCloudflareSnapshot(
             messages: [],
             result: null,
           },
-          { status: fixture.error.status },
+          {
+            status: fixture.error.status,
+            ...(fixture.headers === undefined
+              ? {}
+              : { headers: fixture.headers }),
+          },
         );
       }
       return HttpResponse.json({
@@ -148,6 +154,23 @@ function mockCloudflareSnapshot(
     }),
   );
   return requests;
+}
+
+/**
+ * Cloudflare's client API throttle response: HTTP 429 with generic code `971`
+ * and no `detail`, optionally stating the wait it will honour.
+ */
+function rateLimitedSnapshot(retryAfterSeconds?: string): SnapshotFixture {
+  return {
+    error: {
+      code: 971,
+      message: "Please wait and consider throttling your request speed",
+      status: 429,
+    },
+    ...(retryAfterSeconds === undefined
+      ? {}
+      : { headers: { "retry-after": retryAfterSeconds } }),
+  };
 }
 
 function mockCloudflareVideoFrame(
@@ -1147,6 +1170,158 @@ describe("hosted Artifact previews", () => {
         return put.key.endsWith(`/preview-v3-${artifact.deploymentId}.webp`);
       }),
     ).toBeFalsy();
+  }, 120_000);
+
+  it("retries a rate-limited snapshot after the stated wait", async () => {
+    const owner = await artifactActor("Artifacts API rate limit retry agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      rateLimitedSnapshot("1"),
+      {},
+    ]);
+    const site = `rate-limit-retry-${randomUUID().slice(0, 8)}`;
+
+    await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(2);
+    // An admission rejection happens before any render, so the retry repeats
+    // the primary profile rather than falling back to the navigation one.
+    expect(snapshotRequests[1]?.body).toMatchObject({
+      gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
+    });
+    const previewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(previewedArtifact?.thumbnail?.url).toMatch(
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+    );
+  }, 120_000);
+
+  it("retries a rate-limited snapshot that states no wait", async () => {
+    const owner = await artifactActor("Artifacts API rate limit backoff agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      rateLimitedSnapshot(),
+      {},
+    ]);
+    const site = `rate-limit-backoff-${randomUUID().slice(0, 8)}`;
+
+    await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(2);
+    const previewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(previewedArtifact?.thumbnail?.url).toMatch(
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+    );
+  }, 120_000);
+
+  it("stops rate-limit retries at the shared request budget", async () => {
+    const owner = await artifactActor("Artifacts API rate limit budget agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      rateLimitedSnapshot("1"),
+      rateLimitedSnapshot("1"),
+      rateLimitedSnapshot("1"),
+    ]);
+    const site = `rate-limit-budget-${randomUUID().slice(0, 8)}`;
+
+    const artifact = await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(3);
+    const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(unpreviewedArtifact?.thumbnail).toBeNull();
+    expect(
+      owner.objectStore.puts.some((put) => {
+        return put.key.endsWith(`/preview-v3-${artifact.deploymentId}.webp`);
+      }),
+    ).toBeFalsy();
+  }, 120_000);
+
+  it("counts navigation and rate-limit retries against one budget", async () => {
+    const owner = await artifactActor("Artifacts API retry sharing agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    // A third fixture is deliberately the last one: a rate-limit retry holding
+    // its own counter would ask for a fourth snapshot, which the handler has no
+    // fixture for. Only one shared budget stops here.
+    const snapshotRequests = mockCloudflareSnapshot([
+      {
+        error: {
+          code: 6002,
+          message:
+            "A timeout was reached. Check gotoOptions/waitForSelector/waitForTimeout/actionTimeout options.",
+          detail: "Navigation timeout of 20000 ms exceeded",
+          status: 422,
+        },
+      },
+      rateLimitedSnapshot("1"),
+      rateLimitedSnapshot("1"),
+    ]);
+    const site = `retry-sharing-${randomUUID().slice(0, 8)}`;
+
+    await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(3);
+    // The rate-limit retry repeats whichever profile the render had reached,
+    // so it must not reset the navigation fallback back to the primary one.
+    expect(snapshotRequests[2]?.body).toMatchObject({
+      gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
+      waitForTimeout: 3000,
+    });
+    const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(unpreviewedArtifact?.thumbnail).toBeNull();
+  }, 120_000);
+
+  it("gives up when the stated wait outlives the render budget", async () => {
+    const owner = await artifactActor("Artifacts API rate limit ceiling agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      rateLimitedSnapshot("600"),
+    ]);
+    const site = `rate-limit-ceiling-${randomUUID().slice(0, 8)}`;
+
+    await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(1);
+    const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(unpreviewedArtifact?.thumbnail).toBeNull();
   }, 120_000);
 
   it("rejects page errors and Cloudflare challenges instead of saving them as previews", async () => {

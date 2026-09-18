@@ -108,9 +108,9 @@ export interface MediaModelPanelCategory {
 }
 
 /**
- * Media-model categories share the run-model popover. Both layouts drive the
- * same active category: a desktop switches it from the flyout's type rail, a
- * narrow viewport from the menu's drill-in.
+ * Media-model categories share the run-model popover. The compact menu updates
+ * the composer's active category; the desktop flyout owns its navigation in
+ * the menu signals.
  */
 export interface MediaModelPanelState {
   readonly activeCategory: MediaModelCategoryId | null;

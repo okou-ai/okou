@@ -30,6 +30,7 @@ interface AttachmentPresignedToken {
   /** The temporary URL that authorizes this browser to load the resource. */
   readonly token: string;
   readonly expiresAt: string;
+  readonly contentType?: string;
   /**
    * Stable URL that another viewer can open. A signature cannot be converted
    * into one, so null means that the attachment remains private.
@@ -63,6 +64,7 @@ function createArtifactReferencePresignedToken$(
     return {
       token: withFragment(response.body.url, reference.fragment),
       expiresAt: response.body.expiresAt,
+      contentType: response.body.contentType,
       publicUrl: null,
     };
   });
@@ -136,9 +138,17 @@ export function createAttachmentPreviewSignals(
   options: {
     readonly contentType?: string;
     readonly resolvedToken?: AttachmentPresignedToken;
+    readonly thumbnailSize?: {
+      readonly width: number;
+      readonly height?: number;
+    };
   } = {},
 ) {
-  const { contentType, resolvedToken } = options;
+  const {
+    contentType,
+    resolvedToken,
+    thumbnailSize = { width: 800, height: 720 },
+  } = options;
   const url = publicAttachmentUrl(inputUrl);
   const presignedToken$ = resolvedToken
     ? computed(() => {
@@ -153,9 +163,10 @@ export function createAttachmentPreviewSignals(
     return token === null ? url : token.publicUrl;
   });
   const thumbnailUrl$ = computed(async (get) => {
+    const token = await get(presignedToken$);
     return r2ImageTransformUrl(
       await get(resourceUrl$),
-      { width: 800, height: 720, contentType },
+      { ...thumbnailSize, contentType: contentType ?? token?.contentType },
       resolveArtifactImageTransformOrigin(),
     );
   });

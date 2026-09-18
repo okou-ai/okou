@@ -43,6 +43,7 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         std::env::set_var("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt");
         std::env::set_var("REQUESTS_CA_BUNDLE", "/etc/ssl/certs/ca-certificates.crt");
         std::env::set_var("CARGO_HTTP_CAINFO", "/etc/ssl/certs/ca-certificates.crt");
+        std::env::set_var("RUSTUP_HOME", "/usr/local/rustup");
         std::env::set_var("NPM_CONFIG_UPDATE_NOTIFIER", "false");
         std::env::set_var("CLI_AGENT_TYPE", "claude-code");
         std::env::set_var(
@@ -215,6 +216,10 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         Some("/etc/ssl/certs/ca-certificates.crt")
     );
     assert_eq!(
+        cli_env.get("RUSTUP_HOME").map(String::as_str),
+        Some("/usr/local/rustup")
+    );
+    assert_eq!(
         cli_env
             .get("NPM_CONFIG_UPDATE_NOTIFIER")
             .map(String::as_str),
@@ -316,18 +321,18 @@ async fn execute_cli_injects_user_env_without_runner_owned_bootstrap_env()
         // canonical-only snapshot through `common::setup_env`.
         std::env::remove_var(guest_contracts::env::CANONICAL_API_URL_ENV);
     }
-    assert_home_value_reaches_claude(
+    assert_user_runtime_env_reaches_claude(
         &mock,
         &tmp.path().join("relative-home-case"),
         "relative-home",
     )
     .await?;
-    assert_home_value_reaches_claude(&mock, &tmp.path().join("empty-home-case"), "").await?;
+    assert_user_runtime_env_reaches_claude(&mock, &tmp.path().join("empty-home-case"), "").await?;
 
     Ok(())
 }
 
-async fn assert_home_value_reaches_claude(
+async fn assert_user_runtime_env_reaches_claude(
     mock: &Path,
     workdir: &Path,
     home: &str,
@@ -346,10 +351,13 @@ async fn assert_home_value_reaches_claude(
 
     let observed_home = workdir.join("observed-home");
     let observed_config_dir = workdir.join("observed-claude-config-dir");
+    let observed_rustup_home = workdir.join("observed-rustup-home");
+    let user_rustup_home = workdir.join("user-rustup");
     let prompt = format!(
-        "test -f \"$CLAUDE_CONFIG_DIR/CLAUDE.md\" && test -f \"$CLAUDE_CONFIG_DIR/skills/test-skill/SKILL.md\" && test -f \"$CLAUDE_CONFIG_DIR/projects/-home-user-workspace/memory/MEMORY.md\" && printf '%s' \"$HOME\" > {} && printf '%s' \"$CLAUDE_CONFIG_DIR\" > {}",
+        "test -f \"$CLAUDE_CONFIG_DIR/CLAUDE.md\" && test -f \"$CLAUDE_CONFIG_DIR/skills/test-skill/SKILL.md\" && test -f \"$CLAUDE_CONFIG_DIR/projects/-home-user-workspace/memory/MEMORY.md\" && printf '%s' \"$HOME\" > {} && printf '%s' \"$CLAUDE_CONFIG_DIR\" > {} && printf '%s' \"$RUSTUP_HOME\" > {}",
         observed_home.display(),
         observed_config_dir.display(),
+        observed_rustup_home.display(),
     );
 
     unsafe {
@@ -359,6 +367,10 @@ async fn assert_home_value_reaches_claude(
     let runtime_dir = guest_contracts::runtime_paths::run_dir_from_env(&run_id)?;
     let user_env = HashMap::from([
         ("HOME".to_string(), home.to_string()),
+        (
+            "RUSTUP_HOME".to_string(),
+            user_rustup_home.to_string_lossy().into_owned(),
+        ),
         (
             "CLAUDE_CONFIG_DIR".to_string(),
             rejected_config_dir.to_string_lossy().into_owned(),
@@ -385,6 +397,10 @@ async fn assert_home_value_reaches_claude(
 
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
     assert_eq!(std::fs::read_to_string(observed_home)?, home);
+    assert_eq!(
+        std::fs::read_to_string(observed_rustup_home)?,
+        user_rustup_home.to_string_lossy()
+    );
     assert_eq!(
         std::fs::read_to_string(observed_config_dir)?,
         claude_config_dir.to_string_lossy()

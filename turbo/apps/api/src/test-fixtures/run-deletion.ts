@@ -90,44 +90,6 @@ export async function readRunCallbackFixture(callbackId: string): Promise<{
   return callback ?? null;
 }
 
-/** Holds the production event projection lock until the test releases it. */
-export async function holdRunOutputProjectionLockFixture(args: {
-  readonly runId: string;
-  readonly signal: AbortSignal;
-}): Promise<HeldDatabaseBoundary> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const projectionLockKey = `run_output_projection:${args.runId}`;
-  const done = db().transaction(async (tx) => {
-    const pidRows = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS "pid"`,
-      databasePidRowSchema,
-    );
-    const pid = pidRows[0]?.pid;
-    if (!pid) {
-      throw new Error("Expected the projection lock holder pid");
-    }
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${projectionLockKey}, 0))`,
-    );
-    started.resolve(pid);
-    await released.promise;
-  });
-  const pid = await started.promise;
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await directBlockedWaiterCount(pid);
-    },
-  };
-}
-
 /** Holds the same per-org credit reconciliation lock as terminal side effects. */
 export async function holdOrgCreditLockFixture(args: {
   readonly orgId: string;

@@ -47,6 +47,7 @@ import {
   activityContentTransaction,
   eligibleActivityRun,
   lockActivitySnapshot,
+  lockExistingActivitySnapshot,
   type ActivityRunIdentity,
   type ActivitySnapshot,
   type ActivityTx,
@@ -376,57 +377,59 @@ async function generateSummary(
       "\n",
     ) ?? null;
   // A committed claim admits this finite auxiliary request. Closure cannot
-  // recall prior provider egress; every subsequent write needs fresh admission.
-  const completed = await activityContentTransaction(
-    db,
-    identity,
-    claimed.ownership,
-    async (tx) => {
-      await tx
-        .update(runActivitySnapshots)
-        .set({
-          claimId: null,
-          claimRevision: null,
-          claimExpiresAt: null,
-          ...(phrase
-            ? { summary: phrase, summaryRevision: claimed.revision }
-            : {
-                nextAttemptAt: sql`${activityClock} + ${FAILURE_COOLDOWN_MS} * interval '1 millisecond'`,
-              }),
-        })
-        .where(
-          and(
-            eq(runActivitySnapshots.runId, identity.runId),
-            eq(runActivitySnapshots.claimId, claimed.claimId),
-            eq(runActivitySnapshots.claimRevision, claimed.revision),
-            gt(runActivitySnapshots.claimExpiresAt, activityClock),
-            gt(runActivitySnapshots.expiresAt, activityClock),
-            exists(eligibleActivityRun(tx, identity)),
-          ),
-        );
-      return true;
-    },
-    signal,
+  // recall prior provider egress; completion and the response still need one
+  // fresh admission held through commit.
+  const completed = await settleIncludingAbort(
+    activityContentTransaction(
+      db,
+      identity,
+      claimed.ownership,
+      async (tx) => {
+        await tx
+          .update(runActivitySnapshots)
+          .set({
+            claimId: null,
+            claimRevision: null,
+            claimExpiresAt: null,
+            ...(phrase
+              ? { summary: phrase, summaryRevision: claimed.revision }
+              : {
+                  nextAttemptAt: sql`${activityClock} + ${FAILURE_COOLDOWN_MS} * interval '1 millisecond'`,
+                }),
+          })
+          .where(
+            and(
+              eq(runActivitySnapshots.runId, identity.runId),
+              eq(runActivitySnapshots.claimId, claimed.claimId),
+              eq(runActivitySnapshots.claimRevision, claimed.revision),
+              gt(runActivitySnapshots.claimExpiresAt, activityClock),
+              gt(runActivitySnapshots.expiresAt, activityClock),
+              exists(eligibleActivityRun(tx, identity)),
+            ),
+          );
+        // The provider phrase is never response authority. Read the actual row
+        // after the conditional update, without recreating a cleaned snapshot.
+        const stored = await lockExistingActivitySnapshot(tx, identity.runId);
+        if (!stored || stored.expiresAt <= stored.clock) {
+          return emptyResponse(identity.runId, "unavailable");
+        }
+        return response(stored);
+      },
+      signal,
+    ),
   );
-  if (!completed) {
-    return emptyResponse(identity.runId, "ineligible");
-  }
   signal.throwIfAborted();
-  // lockActivitySnapshot inserts before reading, so this is another writer.
-  const final = await activityContentTransaction(
-    db,
-    identity,
-    claimed.ownership,
-    async (tx) => {
-      const row = await lockActivitySnapshot(tx, identity.runId);
-      if (row.expiresAt <= row.clock) {
-        return emptyResponse(identity.runId, "unavailable");
-      }
-      return response(row);
-    },
-    signal,
-  );
-  return final ?? emptyResponse(identity.runId, "ineligible");
+  if (!completed.ok) {
+    if (!isLockNotAvailable(completed.error)) {
+      throw completed.error;
+    }
+    log.debug("Activity summary completion unavailable", {
+      operation: "completion_response",
+      code: safeSqlStateCode(completed.error),
+    });
+    return emptyResponse(identity.runId, "unavailable");
+  }
+  return completed.value ?? emptyResponse(identity.runId, "ineligible");
 }
 
 export async function requestActivitySummary(

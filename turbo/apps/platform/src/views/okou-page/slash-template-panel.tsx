@@ -9,7 +9,6 @@ import {
   Plus,
   Presentation,
   Route,
-  Video,
 } from "lucide-react";
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -18,12 +17,12 @@ import { i18n } from "../../i18n/index.ts";
 import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
+  isSlashTemplateDetailCategory,
   isSlashTemplateNativeAspectCategory,
-  isSlashTemplatePreviewCategory,
-  slashTemplatePreviewGroup,
+  slashTemplatePreviews,
   type SlashTemplateCategory,
+  type SlashTemplateDetailCategory,
   type SlashTemplatePreview,
-  type SlashTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
 
 // Concentric corners, the same rule the shared DropdownMenu states: an inner
@@ -32,7 +31,6 @@ import {
 const SLASH_TEMPLATE_CATEGORY_ICONS = {
   slides: Presentation,
   illustration: Image,
-  video: Video,
   website: Globe,
   workflow: Route,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
@@ -50,7 +48,7 @@ interface SlashTemplatePanelProps {
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplatePreviewCategory,
+    category: SlashTemplateDetailCategory,
   ) => void;
   readonly onImportDeck: (file: File) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
@@ -71,11 +69,6 @@ export function slashTemplateCategoryLabel(
     case "illustration": {
       return i18n.t(($) => {
         return $.artifacts.templates.illustration;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.video;
       });
     }
     case "website": {
@@ -176,6 +169,7 @@ function SlashTemplateCover({
   return (
     <button
       type="button"
+      data-slot="slash-template-cover"
       className={cn(
         "group min-w-0 text-left",
         aspect && "mb-2.5 block w-full break-inside-avoid",
@@ -224,15 +218,15 @@ function SlashTemplateDetailPane({
   onSelectTemplate,
   onImportDeck,
 }: {
-  readonly category: SlashTemplatePreviewCategory;
+  readonly category: SlashTemplateDetailCategory;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplatePreviewCategory,
+    category: SlashTemplateDetailCategory,
   ) => void;
   readonly onImportDeck: (file: File) => void;
 }) {
   const { t } = useTranslation();
-  const group = slashTemplatePreviewGroup(category);
+  const previews = slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
   return (
@@ -260,7 +254,7 @@ function SlashTemplateDetailPane({
                 ($) => {
                   return $.chat.composer.slashPanel.templateCount;
                 },
-                { count: group.total },
+                { count: previews.length },
               )}
             </span>
           </span>
@@ -282,7 +276,18 @@ function SlashTemplateDetailPane({
           property. The bottom stays unpadded, since the covers are meant to
           bleed off that edge.
         */}
-        <div className="mt-[11px] -ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px">
+        {/*
+          Keyed by category so each type gets its own scroller. The pane stays
+          mounted while the pointer moves down the rows, so a shared one keeps
+          the offset the previous type was left at — and now that a category
+          carries all of its covers, that offset is deep enough to open the next
+          type halfway down its wall.
+        */}
+        <div
+          key={category}
+          data-slot="slash-template-covers"
+          className="mt-[11px] -ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px"
+        >
           {/*
             Illustration keeps each cover's own proportion, so its covers go in
             a CSS multi-column masonry — the same shape the picker dialog uses.
@@ -299,7 +304,7 @@ function SlashTemplateDetailPane({
             {category === "slides" && (
               <SlashTemplateImportCard onImportDeck={onImportDeck} />
             )}
-            {group.previews.map((preview) => {
+            {previews.map((preview) => {
               return (
                 <SlashTemplateCover
                   key={preview.slug}
@@ -419,7 +424,7 @@ export function SlashTemplatePanel({
   // Narrowed here rather than inside the pane, so the pane has no unreachable
   // branch for a category that can never reach it.
   const detailCategory =
-    previewCategory !== null && isSlashTemplatePreviewCategory(previewCategory)
+    previewCategory !== null && isSlashTemplateDetailCategory(previewCategory)
       ? previewCategory
       : null;
   return (

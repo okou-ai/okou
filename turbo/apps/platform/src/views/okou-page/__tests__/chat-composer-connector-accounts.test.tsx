@@ -1,6 +1,5 @@
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -290,9 +289,6 @@ test("Choose an account for a custom MCP connector", async () => {
     locale: "en-US",
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    },
   });
 
   await loadComposer();
