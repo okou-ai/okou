@@ -66,7 +66,6 @@ import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
-import { acquisitionAttributionRoutes } from "./routes/acquisition-attribution";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
 import { billingConcurrencyCheckoutRoutes } from "./routes/billing-concurrency-checkout";
@@ -102,6 +101,7 @@ import { financeRoutes } from "./routes/finance";
 import { seoRoutes } from "./routes/seo";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
+import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { hostRoutes } from "./routes/host";
 import { builtInGenerationRoutes } from "./routes/built-in-generation";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
@@ -208,6 +208,7 @@ import { userTemplatesRoutes } from "./routes/user-templates";
 import { usageMembersRoutes } from "./routes/usage-members";
 import { usageRecordRoutes } from "./routes/usage-record";
 import { userPreferencesRoutes } from "./routes/user-preferences";
+import { paidToolsRoutes } from "./routes/paid-tools";
 import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { avatarVideoRoutes } from "./routes/avatar-video";
@@ -285,7 +286,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...artifactCatalogRoutes,
-  ...acquisitionAttributionRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
   ...billingConcurrencyCheckoutRoutes,
@@ -322,6 +322,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,
+  ...artifactDownloadRoutes,
   ...builtInGenerationRoutes,
   ...imageIoGenerateRoutes,
   ...avatarVideoRoutes,
@@ -381,6 +382,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...pushSubscriptionsRoutes,
   ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,
+  ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...morningBriefCalendarCollectionPreviewRoutes,

@@ -166,6 +166,7 @@ export function createHostMapsBddApi(context: TestContext) {
         copies: [],
         missingKeys: new Set<string>(),
       };
+      const objects = new Map<string, string>();
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://r2.example.com/hosted-sites/upload?sig=bdd",
       );
@@ -180,14 +181,25 @@ export function createHostMapsBddApi(context: TestContext) {
           if (capture.missingKeys.has(key)) {
             return Promise.reject(notFoundS3Error(key));
           }
+          const body =
+            objects.get(key) ??
+            ((key.startsWith("private-sites/") || key.startsWith("sites/")) &&
+            !/\/(?:manifest|active)\.json$/u.test(key)
+              ? "Hosted fixture"
+              : undefined);
+          if (body === undefined) {
+            return Promise.reject(notFoundS3Error(key));
+          }
           return Promise.resolve({
-            Body: Readable.from([Buffer.from("Hosted fixture")]),
+            Body: Readable.from([Buffer.from(body)]),
             ETag: '"hosted-fixture"',
-            ContentLength: 14,
+            ContentLength: Buffer.byteLength(body),
           });
         }
         if (name === "PutObjectCommand") {
-          capture.puts.push({ key, body: bodyText(input.Body) });
+          const body = bodyText(input.Body);
+          objects.set(key, body);
+          capture.puts.push({ key, body });
         }
         if (name === "CopyObjectCommand") {
           capture.copies.push({

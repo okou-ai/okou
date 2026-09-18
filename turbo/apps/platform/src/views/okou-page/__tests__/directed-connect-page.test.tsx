@@ -20,7 +20,6 @@ import {
   type CustomConnectorHttpResponse,
   type CustomConnectorMcpResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   connectorCatalogContract,
@@ -437,7 +436,6 @@ test("Connect and authorize a manual MCP connector", async () => {
   await setupPage({
     context,
     path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
-    featureSwitches: { [FeatureSwitchKey.CustomConnectorMcp]: true },
   });
 
   const heading = await screen.findByText("Okou needs DeepWiki to proceed");
@@ -526,7 +524,6 @@ test("Let an MCP server discover authentication from a directed connection", asy
   await setupPage({
     context,
     path: `/connectors/${connector.slug}/connect?agentId=${AGENT_ID}`,
-    featureSwitches: { [FeatureSwitchKey.CustomConnectorMcp]: true },
   });
 
   await expect(

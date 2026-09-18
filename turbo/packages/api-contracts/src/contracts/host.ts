@@ -231,6 +231,7 @@ export const hostContract = c.router({
     }),
     query: z.object({
       version: z.coerce.number().int().positive().optional(),
+      hostname: z.string().min(1).max(253).optional(),
     }),
     headers: authHeadersSchema,
     responses: {

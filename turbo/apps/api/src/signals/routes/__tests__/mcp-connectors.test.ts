@@ -7,7 +7,6 @@ import {
   type CreateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -144,9 +143,6 @@ describe("GET /api/mcp-connectors", () => {
     await runs.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP Discovery Agent",
-    });
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
     });
     const selected = await connectors.createCustomConnector(
       actor,
@@ -330,9 +326,6 @@ describe("GET /api/mcp-connectors", () => {
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor);
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const agent = await bdd.createAgent(actor, {
       displayName: "Public MCP Agent",
     });
@@ -394,9 +387,6 @@ describe("GET /api/mcp-connectors", () => {
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor);
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP exact identity Agent",
     });
@@ -496,9 +486,6 @@ describe("GET /api/mcp-connectors", () => {
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor);
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const agent = await bdd.createAgent(actor, {
       displayName: "Legacy MCP discovery Agent",
     });
@@ -598,9 +585,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       await runs.ensureOrgModelProvider(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "MCP scope reauthorization Agent",
-      });
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.CustomConnectorMcp]: true,
       });
       const connector = await connectors.createCustomConnector(actor, {
         kind: "mcp",
@@ -764,9 +748,6 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     await runs.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP no-auth reauthorization Agent",
-    });
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
     });
     const connector = await connectors.createCustomConnector(actor, {
       kind: "mcp",

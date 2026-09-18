@@ -1,12 +1,12 @@
 # External MCP server
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
-official MCP SDK and serves `list_chat_threads`, `get_chat_thread` and
-`get_chat_messages`. These
+official MCP SDK and serves `list_chat_threads`, `get_chat_thread`,
+`get_chat_messages` and `search_chat_messages`. These
 read-only tools query current user/organization-owned conversations. The OAuth
 foundation shipped in #34931; discovery and current context are tracked by
-#34932 under #34890. Message history is delivered in #34933; message search and
-mutations are separate slices. Results include both structured content and a
+#34932 under #34890. Message history is delivered in #34933 and search in
+#35100; mutations are separate slices. Results include both structured content and a
 JSON text representation.
 
 ## Conversation discovery
@@ -89,9 +89,9 @@ Replaced user messages preserve the original submission time.
 
 For example, begin with `{"threadId":"<thread UUID>","limit":20}`. The latest
 page is returned in conversation order. Follow `olderCursor` to read earlier
-messages. To inspect a future message-search hit, use
-`{"threadId":"<thread UUID>","around":{"seqId":123},"limit":10}`. A search
-position is a sequence number, not an event UUID. A revoked, replaced, absent or
+messages. To inspect a message-search hit, use
+`{"threadId":"<thread UUID>","around":{"seqId":123},"limit":10}`. In each hit,
+`ref.seqId` is a sequence number; `ref.eventId` is its canonical event ID. A revoked, replaced, absent or
 run-filtered anchor returns an explicit unavailable-reference error. Around
 pages expose older and newer continuations where applicable.
 
@@ -162,6 +162,72 @@ sample, or an OAuth/network/concurrency benchmark. Byte caps bound source data,
 not absolute process allocation. Larger supported histories would require
 measured justification and a separate indexed/chunked history design.
 
+## Message search
+
+`search_chat_messages` finds indexed visible user and assistant text, including
+retained messages whose live database events have been archived. It accepts:
+
+| Argument              | Meaning                                                                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `query`               | Required, trimmed, 1–200 UTF-16 units. Whole words are case-insensitive; CJK phrases are literal substrings. All groups must match. |
+| `threadId`, `agentId` | Optional UUID filters.                                                                                                              |
+| `role`                | Optional `user` or `assistant`.                                                                                                     |
+| `since`, `before`     | UTC ISO timestamps, up to six fractional digits; inclusive lower/exclusive upper source-event bounds.                               |
+| `limit`               | Default 20, maximum 50.                                                                                                             |
+| `cursor`              | Follow `nextCursor` with the identical query, filters and limit.                                                                    |
+
+For example, search with `{"query":"上海发布","limit":10}`. For each match,
+pass `ref.threadId` as `threadId` and `{eventId: ref.eventId, seqId: ref.seqId}`
+as `around` to `get_chat_messages`. Search returns a bounded excerpt, its UTF-16
+offset and `hasBefore`/`hasAfter`, thread title/truncation, current Agent, role,
+nullable run ID, source-event timestamp, authenticated conversation URL and the
+real canonical `ref`. Excerpts contain at most 1,000 UTF-16 units and do not split
+surrogate pairs. Use the message reader for complete text/files. This is lexical
+text search, not semantic search or attachment-content indexing. Punctuation-only
+queries and single-character CJK groups return a useful unsupported-query error.
+
+The durable search projection supplies candidates, never final visibility.
+Current owner, organization, Agent and request filters are checked before the
+SQL limit. The bounded candidates are verified against canonical archive plus
+tail history using the message reader's visibility rules and text fingerprints.
+Revoked, replaced, hidden or changed candidates are skipped. A missing/corrupt
+archive fails the whole call instead of returning a successful partial page.
+Search does not advance read state, run work, update projections or repair data.
+
+Order is indexed source-event time descending, then thread UUID and sequence descending;
+cursor ordering preserves the stored PostgreSQL microseconds. The live JavaScript
+projector stores millisecond dates; historical SQL-produced rows may have finer
+precision. Replacement-event timestamps
+can differ from the original input-submission time displayed by the message
+reader. Signed cursors bind the user, organization, query, every filter and page
+size and expire 24 hours after the initial page. Every request reauthorizes.
+Indexing is asynchronous and pages read live state, not a global snapshot. A
+newly indexed match can fall ahead of an existing cursor; restart for refreshed
+results. No total count, completeness, indexing-delay bound or global watermark
+is promised. For recently sent content, read `get_chat_messages` using the known
+thread ID; an empty search does not prove send failure or that a topic was never
+discussed. References can become stale after a result is returned; the context
+reader then reports the unavailable anchor.
+
+A call processes at most 100 candidates and reads one additional metadata row to
+detect continuation. `nextCursor` means more indexed candidates remain, not that
+another visible match is guaranteed. Stale candidates consume scan budget; an
+empty page can carry a cursor. `scanLimited: true` reports the candidate cap with
+more candidates remaining. Follow the cursor until it is null. Byte-limited
+pages never advance past an undelivered match.
+
+Canonical validation shares a **single** 32 MiB decoded/database-tail,
+50,000-event and 15-second budget across all encountered threads, with the
+reader's 8 MiB compressed limit per archive and three-second SQL deadline.
+Each distinct thread is reconstructed once per call. Index text fingerprints
+are calculated only after the candidate limit, and bodies over 32 MiB are
+rejected before hashing. Structured pages are capped at 160 KiB, keeping the
+SDK's duplicate text/JSON output within 512 KiB. Resource errors recommend
+narrowing thread/Agent/time filters or retrying; reducing page size cannot make
+one oversized history readable. These source-size caps are not absolute process
+memory limits. Existing lexical indexes are reused; no new index or migration
+is introduced.
+
 ## Configuration and authorization
 
 The `McpServer` feature switch defaults to off. Standard per-user/per-organization
@@ -228,7 +294,7 @@ clients can request them in one consent flow without relying on incremental
 authorization support.
 
 Only `user:org:read` and `okou:chat:read` are required for the current endpoint and
-all three conversation read tools. Tokens with just these two scopes remain valid. A
+all four conversation read tools. Tokens with just these two scopes remain valid. A
 `403 insufficient_scope` challenge names those required scopes. Each future tool
 must enforce its own permissions; listing a scope does not
 implement or authorize that operation. A tool argument cannot select or override

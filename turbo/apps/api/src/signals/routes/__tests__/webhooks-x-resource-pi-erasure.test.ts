@@ -5,7 +5,6 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { holdXResourceClaimForTest } from "../../../test-fixtures/x-resource-admission";
@@ -80,7 +79,6 @@ describe("X resource usage during Pi account erasure", () => {
   it("drains an admitted terminal Pi upload before the Clerk erasure preflight", async () => {
     const { actor, run } = await completedPiRun();
     const at = nowDate().toISOString();
-    mockEnv("X_RESOURCE_BILLING_START_DATE", at.slice(0, 10));
     const resourceId = BigInt(
       `0x${randomUUID().replaceAll("-", "").slice(0, 24)}`,
     ).toString();

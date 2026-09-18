@@ -69,16 +69,18 @@ export R2_ACCOUNT_ID=fixture-account R2_BUCKET_NAME=fixture-bucket
 export REPO=vm0-ai/vm0 CURRENT_RUN_ID=100 PRODUCER_RUN_ATTEMPT=1
 export PRODUCER_EVENT=pull_request PRODUCER_PR_NUMBER=123
 export PRODUCER_HEAD_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-export EXPECTED_BINARY_INPUT_DIGEST=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+guest_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 . "${SCRIPT_DIR}/runner-guest-binaries.sh"
 . "${SCRIPT_DIR}/runner-binary-build/contract.env"
 runner_guest_binaries_load
 guests=$(printf '%s\n' "${RUNNER_GUEST_BINARIES[@]}" | jq -Rn \
-  --arg sha "$EXPECTED_BINARY_INPUT_DIGEST" '[inputs | {key: ., value: $sha}] | from_entries')
+  --arg sha "$guest_sha" '[inputs | {key: ., value: $sha}] | from_entries')
 
 make_fresh() {
   export EXPECTED_TARGET=$1
+  EXPECTED_BINARY_INPUT_DIGEST=$(printf '%s\n' "$EXPECTED_TARGET" | sha256sum | cut -d' ' -f1)
+  export EXPECTED_BINARY_INPUT_DIGEST
   export RUNNER_PATH="${test_root}/${EXPECTED_TARGET}-runner"
   export FRESH_METADATA_PATH="${test_root}/${EXPECTED_TARGET}-metadata.json"
   printf 'fresh runner for %s\n' "$EXPECTED_TARGET" > "$RUNNER_PATH"
@@ -102,8 +104,8 @@ expect_failure() {
 }
 
 reference_path() {
-  printf '%s/runner-binaries/transports/%s/%s/%s/%s.json\n' \
-    "$AWS_STORE" "$REPO" "$CURRENT_RUN_ID" "$EXPECTED_TARGET" "$EXPECTED_BINARY_INPUT_DIGEST"
+  printf '%s/runner-binaries/transports/%s/%s.json\n' \
+    "$AWS_STORE" "$CURRENT_RUN_ID" "$EXPECTED_BINARY_INPUT_DIGEST"
 }
 
 for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
@@ -117,6 +119,13 @@ for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
   # Publishing again reuses and validates the content-addressed binary.
   PRODUCER_RUN_ATTEMPT=2 OUTPUT_DIR="${test_root}/republished-${target}" "$TRANSPORT" publish >/dev/null
   jq -e '.producer.runAttempt == 2' "$(reference_path)" >/dev/null
+done
+
+# Publishing both targets must preserve each target's ready reference.
+for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+  make_fresh "$target"
+  OUTPUT_DIR="${test_root}/both-targets-${target}" "$TRANSPORT" download >/dev/null
+  cmp "$RUNNER_PATH" "${test_root}/both-targets-${target}/runner"
 done
 
 # Independent concurrent runs each retain their own ready reference.

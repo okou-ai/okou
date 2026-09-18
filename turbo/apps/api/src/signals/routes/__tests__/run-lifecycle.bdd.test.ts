@@ -30,6 +30,7 @@ import type {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
@@ -125,6 +126,7 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
@@ -8323,9 +8325,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       authentication: "none",
     });
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const httpConnector = await connectors.createCustomConnector(actor, {
       kind: "http",
       displayName: "BDD No Auth HTTP Runtime",
@@ -9165,15 +9164,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("admits feature-gated MCP connectors with exact synchronized runtime state", async () => {
+  it("admits MCP connectors with exact synchronized runtime state", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcpDefinition = manualMcpRuntimeConnectorBody({
       displayName: "BDD MCP Runtime",
       endpoint: "https://mcp-runtime.example.test/api/mcp",
@@ -9201,48 +9197,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       http.id,
     ]);
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
-    const disabledRun = await api.createRun(actor, {
-      agentId,
-      prompt: "do not admit MCP while rollout is disabled",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const disabledClaim = await api.claimRunnerJob(disabledRun.runId);
-    const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
-    expect(disabledClaim.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({
-        kind: "custom",
-        customConnectorId: mcp.id,
-      }),
-    );
-    expect(
-      findFirewallEntry(disabledClaim.firewalls, mcpInternalName),
-    ).toBeUndefined();
-    expect(
-      expectCanonicalStorageManifest(disabledClaim.storageManifest)
-        ?.storageMounts,
-    ).not.toContainEqual(
-      expect.objectContaining({
-        name: getCustomConnectorSkillStorageName(mcp.id),
-      }),
-    );
-    expect(
-      mcpConnectorPromptSection(disabledClaim.appendSystemPrompt ?? ""),
-    ).toBeUndefined();
-    await api.requestCancelRun(actor, disabledRun.runId, [200]);
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const run = await api.createRun(actor, {
       agentId,
       prompt: "use the admitted MCP connector",
       modelProvider: "anthropic-api-key",
     });
+    await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
     const admittedIds = [http.id, mcp.id].sort();
     expect(
       claim.connectorRuntimeTargets
@@ -9348,20 +9310,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       reason: "connector-unavailable",
     });
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
-    const [activeWhileDisabledResult] = await api.syncConnectorRuntime(
-      run.runId,
-      { targets: [target] },
-    );
-    expect(
-      availableCustomConnectorRuntime(activeWhileDisabledResult).baseUrlVars,
-    ).toStrictEqual({});
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const movedDefinition = manualMcpRuntimeConnectorBody({
       displayName: "BDD MCP Runtime Moved",
       endpoint: "https://mcp-runtime.example.test/v2/mcp/",
@@ -9476,9 +9424,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const admittedSlugs = Array.from(
       { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
       (_, index) => {
@@ -10679,9 +10624,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcp = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "BDD MCP OAuth Runtime",
@@ -10770,9 +10712,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcp = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "BDD Automatic OAuth MCP Runtime",
@@ -13242,6 +13181,79 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     expect(socialGuidance).toHaveLength(1);
     expect(socialGuidance.join("\n").length).toBeLessThanOrEqual(500);
     await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
+  it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
+    const api = createRunsApi(context);
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PaidToolControls]: true,
+    });
+    await setPaidToolDisabled(context, actor, "web-search", true);
+    const queued = await api.createRun(actor, {
+      agentId,
+      prompt: "capture my paid tool preferences",
+      modelProvider: "anthropic-api-key",
+    });
+    await setPaidToolDisabled(context, actor, "web-search", false);
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(queued.runId);
+    expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["web-search"]',
+    );
+    expect(claim.environment).not.toHaveProperty(DISABLED_PAID_TOOLS_ENV_VAR);
+    await api.requestCancelRun(actor, queued.runId, [200]);
+
+    const enabled = await api.createRun(actor, {
+      agentId,
+      prompt: "use the updated paid tool preferences",
+      modelProvider: "anthropic-api-key",
+    });
+    const enabledClaim = await api.claimRunnerJob(enabled.runId);
+    expect(enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      "[]",
+    );
+    await api.requestCancelRun(actor, enabled.runId, [200]);
+
+    await setPaidToolDisabled(context, actor, "web-search", true);
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PaidToolControls]: false,
+    });
+    const rolloutOff = await api.createRun(actor, {
+      agentId,
+      prompt: "preserve paid tool preferences while the settings UI is hidden",
+      modelProvider: "anthropic-api-key",
+    });
+    const rolloutOffClaim = await api.claimRunnerJob(rolloutOff.runId);
+    expect(
+      rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
+    ).toBe('["web-search"]');
+    await api.requestCancelRun(actor, rolloutOff.runId, [200]);
+  });
+
+  it("uses the executing member's paid tool preferences for a shared agent", async () => {
+    const bdd = createBddApi(context);
+    const api = createRunsApi(context);
+    const { actor, runnerGroup } = await entitledRunActor();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Shared paid tool preferences agent",
+      visibility: "public",
+    });
+    const member = bdd.user({ orgId: actor.orgId });
+    await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, member, "scrape", true);
+    const run = await api.createRun(member, {
+      agentId: agent.agentId,
+      prompt: "respect the executing member's paid tool preferences",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["scrape"]',
+    );
+    await api.requestCancelRun(member, run.runId, [200]);
   });
 
   it("advertises banking tools only while the feature is enabled", async () => {

@@ -2,9 +2,11 @@
 
 This internal, unpublished crate establishes an authenticated connection for the
 VNC engine tracked by [#34778](https://github.com/vm0-ai/okou/issues/34778).
-It is not yet connected to Runner, guest RPC, CLI or owner settings. It provides
-verified authentication, framebuffer decoding and caller-driven capture/input
-sessions for the documented reference-server profile.
+It provides verified authentication, framebuffer decoding and caller-driven
+capture/input sessions for the documented reference-server profile. Runner
+integrates this engine through [Run-owned guest RPC](../../docs/runner-vnc-execution.md)
+and the private authority API. CLI and full product acceptance remain later
+delivery slices; VNC remains disabled by default.
 
 ## Contract
 
@@ -138,7 +140,7 @@ only their own memory reservations. No reconnect or input replay is automatic.
 The caller owns idle timers, current authorization and Run/session admission.
 `expires_at()` supplies a two-hour maximum operation deadline. Every operation is
 clamped to that expiry, but an idle, unpolled object does not close itself or detect
-a disconnect. The future Runner owner must close/drop it on expiry, revocation or
+a disconnect. The Runner owner must close/drop it on expiry, revocation or
 Run termination. This crate never establishes another socket or opens a destination.
 
 `capture(deadline)` starts a nonincremental full-frame request. It consumes one
@@ -204,7 +206,8 @@ Session tests additionally verify immutable PNG pixels, refresh/resize ordering,
 input bytes and outcomes, cancellation and output limits. The explicitly invoked
 [TigerVNC acceptance harness](tests/TIGERVNC.md) verifies the independent server
 profile; ordinary tests do not silently claim that interoperability test ran.
-Runner authority, RPC, CLI and product end-to-end acceptance remain later slices.
+Runner authority and RPC have their own integration coverage. CLI and product
+end-to-end acceptance remain later slices.
 
 ```sh
 cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client

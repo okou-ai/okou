@@ -4,7 +4,6 @@ import {
   connectorAccountsContract,
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -248,9 +247,6 @@ test.each(["http", "mcp"] as const)(
   "tracks successful and cancelled custom %s OAuth attempts independently",
   async (kind) => {
     const actor = bdd.user();
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
     });

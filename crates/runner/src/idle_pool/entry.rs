@@ -20,6 +20,8 @@ use crate::workspace_promotion::{
     abandon_unpublished_workspace_promotion, prepare_workspace_image_from_parked_sandbox,
 };
 
+use super::park_transition::IdleParkCandidate;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdleSandboxKind {
     Exact,
@@ -142,19 +144,21 @@ pub struct ParkedIdleCandidate {
     pub(super) budget_lease: BudgetLease,
 }
 
-/// Under-compacted parked sandbox that may only be handed to its waiting exact
-/// successor or destroyed.
+/// Quiesced, fenced, still-running sandbox that may only be handed to its
+/// waiting exact successor or destroyed. It is never generic idle inventory.
 #[must_use = "immediate handoff candidates must be bound to a claimant or explicitly destroyed"]
 pub(crate) struct ImmediateHandoffCandidate {
-    candidate: ParkedIdleCandidate,
-    handoff_point: SandboxFinalExecParkHandoffPoint,
+    pub(super) resources: IdleSandboxResources,
+    pub(super) metadata: IdleSandboxMetadata,
+    pub(super) budget_lease: BudgetLease,
+    pub(super) handoff_point: SandboxFinalExecParkHandoffPoint,
 }
 
-/// Parked sandbox bound to one claimed exact successor without entering the
+/// Sandbox bound to one claimed exact successor without entering the
 /// generic idle pool.
 #[must_use = "finalizing handoff candidates must be activated or explicitly destroyed"]
 pub(crate) struct FinalizingHandoffCandidate {
-    reservation: ReservedIdleSandbox,
+    candidate: IdleParkCandidate,
     successor_run_id: RunId,
     predecessor_run_id: RunId,
 }
@@ -235,21 +239,9 @@ impl ParkedIdleCandidate {
             Some(predecessor_run_id)
         );
         FinalizingHandoffCandidate {
-            reservation: ReservedIdleSandbox {
-                entry: self.into_idle_entry(Instant::now()),
-            },
+            candidate: IdleParkCandidate::Ordinary(self),
             successor_run_id,
             predecessor_run_id,
-        }
-    }
-
-    pub(crate) fn into_immediate_handoff(
-        self,
-        handoff_point: SandboxFinalExecParkHandoffPoint,
-    ) -> ImmediateHandoffCandidate {
-        ImmediateHandoffCandidate {
-            candidate: self,
-            handoff_point,
         }
     }
 
@@ -284,15 +276,9 @@ impl ImmediateHandoffCandidate {
         self.handoff_point
     }
 
-    pub(crate) fn with_last_completed_at(self, last_completed_at: String) -> Self {
-        let Self {
-            candidate,
-            handoff_point,
-        } = self;
-        Self {
-            candidate: candidate.with_last_completed_at(last_completed_at),
-            handoff_point,
-        }
+    pub(crate) fn with_last_completed_at(mut self, last_completed_at: String) -> Self {
+        self.metadata = self.metadata.with_last_completed_at(last_completed_at);
+        self
     }
 
     pub(crate) fn into_finalizing_handoff(
@@ -300,12 +286,70 @@ impl ImmediateHandoffCandidate {
         successor_run_id: RunId,
         predecessor_run_id: RunId,
     ) -> FinalizingHandoffCandidate {
-        self.candidate
-            .into_finalizing_handoff(successor_run_id, predecessor_run_id)
+        debug_assert_eq!(
+            self.metadata.history_generation_run_id,
+            Some(predecessor_run_id)
+        );
+        FinalizingHandoffCandidate {
+            candidate: IdleParkCandidate::Immediate(self),
+            successor_run_id,
+            predecessor_run_id,
+        }
     }
 
     pub(crate) fn into_active_destroy_parts(self) -> (IdleDestroyPayload, BudgetLease) {
-        self.candidate.into_active_destroy_parts()
+        (
+            self.resources
+                .into_destroy_payload(WorkspacePromotionPolicy::AbandonUnpublished(
+                    "running_handoff_not_activated",
+                )),
+            self.budget_lease,
+        )
+    }
+
+    fn into_destroy_job(self) -> IdleDestroyJob {
+        let reuse_key = self.metadata.reuse_key().map(str::to_owned);
+        let profile_name = self.metadata.profile_name.clone();
+        let (payload, budget_lease) = self.into_active_destroy_parts();
+        IdleDestroyJob {
+            payload,
+            budget_lease,
+            reuse_key,
+            profile_name,
+        }
+    }
+
+    async fn try_activate_for_run(mut self, run_id: RunId) -> IdleUnparkResult {
+        let activation = async {
+            self.resources
+                .sandbox
+                .bind_run_control(&run_id.to_string())?;
+            // The backend recognizes running handoff ownership: it finishes
+            // deflation and resumes Guest operations without resuming vCPUs.
+            self.resources.sandbox.unpark().await
+        };
+        let result = match AssertUnwindSafe(activation).catch_unwind().await {
+            Ok(result) => result.map_err(|error| error.to_string()),
+            Err(_) => Err("running handoff activation panicked".into()),
+        };
+        match result {
+            Ok(()) => {
+                let (sandbox, workspace_promotion) = self.resources.into_reuse_parts();
+                IdleUnparkResult::Reused {
+                    sandbox: Box::new(ReusableIdleSandbox {
+                        sandbox,
+                        metadata: self.metadata,
+                        workspace_promotion,
+                        guest_state_prepared: false,
+                    }),
+                    budget_lease: self.budget_lease,
+                }
+            }
+            Err(error) => IdleUnparkResult::Failed {
+                destroy_job: Box::new(self.into_destroy_job()),
+                error,
+            },
+        }
     }
 }
 
@@ -318,28 +362,30 @@ impl FinalizingHandoffCandidate {
         if self.successor_run_id == successor_run_id
             && self.predecessor_run_id == predecessor_run_id
         {
-            Ok(self.reservation)
+            Ok(match self.candidate {
+                IdleParkCandidate::Ordinary(candidate) => {
+                    ReservedIdleSandbox::parked(candidate.into_idle_entry(Instant::now()))
+                }
+                IdleParkCandidate::Immediate(candidate) => ReservedIdleSandbox {
+                    state: ReservedIdleSandboxState::Running(candidate),
+                },
+            })
         } else {
             Err(self)
         }
     }
 
     pub(crate) fn into_destroy_job(self: Box<Self>) -> IdleDestroyJob {
-        self.reservation.into_destroy_job()
+        match self.candidate {
+            IdleParkCandidate::Ordinary(candidate) => {
+                candidate.into_idle_entry(Instant::now()).into_destroy_job()
+            }
+            IdleParkCandidate::Immediate(candidate) => candidate.into_destroy_job(),
+        }
     }
 
-    pub(crate) fn into_parked_candidate(self: Box<Self>) -> ParkedIdleCandidate {
-        let IdleEntry {
-            resources,
-            metadata,
-            budget_lease,
-            parked_at: _,
-        } = self.reservation.entry;
-        ParkedIdleCandidate {
-            resources,
-            metadata,
-            budget_lease,
-        }
+    pub(crate) fn into_candidate(self: Box<Self>) -> IdleParkCandidate {
+        self.candidate
     }
 }
 
@@ -354,9 +400,16 @@ pub struct IdleEntry {
     pub(super) parked_at: Instant,
 }
 
-#[must_use = "reserved idle sandboxes must be activated, restored, or destroyed"]
+/// A sandbox reserved for reuse, preserving whether it is physically parked
+/// or a fenced running handoff. Only the parked state can return to the pool.
+#[must_use = "reserved sandboxes must be activated, restored, or destroyed"]
 pub struct ReservedIdleSandbox {
-    pub(super) entry: IdleEntry,
+    state: ReservedIdleSandboxState,
+}
+
+enum ReservedIdleSandboxState {
+    Parked(IdleEntry),
+    Running(ImmediateHandoffCandidate),
 }
 
 pub enum RestoreReservedIdleResult {
@@ -862,28 +915,52 @@ impl IdleEntry {
 }
 
 impl ReservedIdleSandbox {
+    pub(super) fn parked(entry: IdleEntry) -> Self {
+        Self {
+            state: ReservedIdleSandboxState::Parked(entry),
+        }
+    }
+
+    /// Only a physically parked reservation can return to generic inventory.
+    /// Running handoffs retain their cleanup obligation on cancellation.
+    pub(super) fn into_restore_entry(self) -> Result<IdleEntry, Box<IdleDestroyJob>> {
+        match self.state {
+            ReservedIdleSandboxState::Parked(entry) => Ok(entry),
+            ReservedIdleSandboxState::Running(candidate) => {
+                Err(Box::new(candidate.into_destroy_job()))
+            }
+        }
+    }
+
+    fn metadata(&self) -> &IdleSandboxMetadata {
+        match &self.state {
+            ReservedIdleSandboxState::Parked(entry) => &entry.metadata,
+            ReservedIdleSandboxState::Running(candidate) => &candidate.metadata,
+        }
+    }
+
     pub(crate) fn sandbox_id(&self) -> SandboxId {
-        self.entry.metadata.sandbox_id
+        self.metadata().sandbox_id
     }
 
     pub(crate) fn kind(&self) -> IdleSandboxKind {
-        self.entry.metadata.identity.kind()
+        self.metadata().identity.kind()
     }
 
     pub fn reuse_key(&self) -> Option<&str> {
-        self.entry.reuse_key()
+        self.metadata().reuse_key()
     }
 
     pub(crate) fn profile_name(&self) -> &str {
-        self.entry.profile_name()
+        &self.metadata().profile_name
     }
 
     pub(crate) fn device_rate_limits(&self) -> &Option<DeviceRateLimits> {
-        self.entry.device_rate_limits()
+        &self.metadata().device_rate_limits
     }
 
     pub(crate) fn guest_timezone_intent(&self) -> &GuestTimezoneIntent {
-        &self.entry.metadata.guest_timezone_intent
+        &self.metadata().guest_timezone_intent
     }
 
     pub fn validate_workspace_promotion_identity(
@@ -892,19 +969,54 @@ impl ReservedIdleSandbox {
         working_dir: &str,
         image_size_bytes: u64,
     ) -> Result<(), WorkspaceImagePromotionIdentityMismatch> {
-        self.entry
-            .validate_workspace_promotion_identity(cache, working_dir, image_size_bytes)
+        match &self.state {
+            ReservedIdleSandboxState::Parked(entry) => {
+                entry.validate_workspace_promotion_identity(cache, working_dir, image_size_bytes)
+            }
+            ReservedIdleSandboxState::Running(candidate) => {
+                let Some(promotion) = candidate.resources.workspace_promotion.as_ref() else {
+                    return Ok(());
+                };
+                let reuse_key = candidate
+                    .metadata
+                    .reuse_key()
+                    .ok_or(WorkspaceImagePromotionIdentityMismatch::ReuseKey)?;
+                promotion.validate_expected_identity(
+                    cache,
+                    WorkspaceImagePromotionIdentityRequest {
+                        sandbox_id: candidate.metadata.sandbox_id,
+                        profile_name: &candidate.metadata.profile_name,
+                        reuse_key,
+                        working_dir,
+                        image_size_bytes,
+                    },
+                )
+            }
+        }
     }
 
     pub async fn try_unpark_for_run(self, run_id: RunId) -> IdleUnparkResult {
-        self.entry.try_unpark_for_run(run_id).await
+        match self.state {
+            ReservedIdleSandboxState::Parked(entry) => entry.try_unpark_for_run(run_id).await,
+            ReservedIdleSandboxState::Running(candidate) => {
+                candidate.try_activate_for_run(run_id).await
+            }
+        }
     }
 
     pub(crate) async fn try_unpark_for_speculation(
         self,
         run_id: RunId,
     ) -> SpeculativeIdleUnparkResult {
-        let mut entry = self.entry;
+        let mut entry = match self.into_restore_entry() {
+            Ok(entry) => entry,
+            Err(destroy_job) => {
+                return SpeculativeIdleUnparkResult::Failed {
+                    destroy_job,
+                    error: "running handoff cannot be activated speculatively".into(),
+                };
+            }
+        };
         match entry.activate_for_run(run_id).await {
             Ok(()) => {
                 SpeculativeIdleUnparkResult::Ready(Box::new(SpeculativeIdleSandbox { entry }))
@@ -927,12 +1039,19 @@ impl ReservedIdleSandbox {
     }
 
     pub fn into_destroy_job(self) -> IdleDestroyJob {
-        self.entry.into_destroy_job()
+        match self.state {
+            ReservedIdleSandboxState::Parked(entry) => entry.into_destroy_job(),
+            ReservedIdleSandboxState::Running(candidate) => candidate.into_destroy_job(),
+        }
     }
 
     pub fn into_destroy_job_without_workspace_promotion_for_mismatch(self) -> IdleDestroyJob {
-        self.entry
-            .into_destroy_job_without_workspace_promotion_for_mismatch()
+        match self.state {
+            ReservedIdleSandboxState::Parked(entry) => {
+                entry.into_destroy_job_without_workspace_promotion_for_mismatch()
+            }
+            ReservedIdleSandboxState::Running(candidate) => candidate.into_destroy_job(),
+        }
     }
 }
 

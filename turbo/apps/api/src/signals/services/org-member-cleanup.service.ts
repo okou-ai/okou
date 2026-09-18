@@ -1,5 +1,6 @@
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
@@ -119,6 +120,16 @@ export async function cleanupOrgMemberResources(
       and(
         eq(orgMembersMetadata.userId, args.userId),
         eq(orgMembersMetadata.orgId, args.orgId),
+      ),
+    );
+  signal.throwIfAborted();
+
+  await db
+    .delete(userDisabledPaidTools)
+    .where(
+      and(
+        eq(userDisabledPaidTools.userId, args.userId),
+        eq(userDisabledPaidTools.orgId, args.orgId),
       ),
     );
   signal.throwIfAborted();

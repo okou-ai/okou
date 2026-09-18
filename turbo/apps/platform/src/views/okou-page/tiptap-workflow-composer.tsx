@@ -38,8 +38,8 @@ import {
 import {
   SLASH_TEMPLATE_CATEGORIES,
   type SlashTemplateCategory,
+  type SlashTemplateDetailCategory,
   type SlashTemplatePreview,
-  type SlashTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 
@@ -317,7 +317,7 @@ interface ComposerSuggestionMenuState {
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplatePreviewCategory,
+    category: SlashTemplateDetailCategory,
   ) => void;
   readonly importDeck: (file: File) => void;
   readonly browseAllTemplates: () => void;
@@ -342,7 +342,6 @@ interface ComposerSuggestionMenuState {
 const SLASH_TEMPLATE_CATEGORY_TASK = {
   slides: "presentation",
   illustration: "image",
-  video: "video",
   website: "website",
   workflow: "workflow",
 } as const satisfies Record<SlashTemplateCategory, ComposerTask>;
@@ -415,7 +414,7 @@ function useSlashTemplatePanelActions(
      */
     selectTemplate(
       preview: SlashTemplatePreview,
-      category: SlashTemplatePreviewCategory,
+      category: SlashTemplateDetailCategory,
     ): void {
       clearSlashRange();
       close();

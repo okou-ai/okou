@@ -343,7 +343,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
@@ -362,7 +361,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
@@ -408,19 +406,16 @@ describe("getAllFeatureStates", () => {
 
   it("releases the composer run controls to every org and keeps the off lever", () => {
     const states = getAllFeatureStates({ orgId: "org_nonexistent" });
-    expect(states[FeatureSwitchKey.Effort]).toBe(true);
     expect(states[FeatureSwitchKey.CodexFastMode]).toBe(true);
     expect(states[FeatureSwitchKey.ModelPickerFlyout]).toBe(true);
 
     const reverted = getAllFeatureStates({
       orgId: "org_nonexistent",
       overrides: {
-        [FeatureSwitchKey.Effort]: false,
         [FeatureSwitchKey.CodexFastMode]: false,
         [FeatureSwitchKey.ModelPickerFlyout]: false,
       },
     });
-    expect(reverted[FeatureSwitchKey.Effort]).toBe(false);
     expect(reverted[FeatureSwitchKey.CodexFastMode]).toBe(false);
     expect(reverted[FeatureSwitchKey.ModelPickerFlyout]).toBe(false);
   });

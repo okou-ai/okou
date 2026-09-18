@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
+import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type {
   HostedArtifactKind,
@@ -23,7 +24,6 @@ import { type Db, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import type { Tx } from "../../lib/db-types";
 import {
-  generateHostedSitesPresignedGetUrl,
   generateHostedSitesPresignedPutUrl,
   hostedSitesS3ObjectExists,
   putHostedSitesS3Object,
@@ -47,6 +47,11 @@ import {
   HostedSiteScopeError,
   lockHostedRunChatThreadId,
 } from "./hosted-site-scope.service";
+import { signHostedSiteFiles$ } from "./hosted-site-files.service";
+import {
+  resolveArtifactShareDownload$,
+  resolveHostedSitePublicationDownload$,
+} from "./artifact-shares.service";
 const MAX_HOSTED_SITE_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_PUBLIC_SLUG_ATTEMPTS = 5;
@@ -74,10 +79,11 @@ interface CompleteDeploymentArgs {
 }
 
 interface GetHostedSiteFilesArgs {
-  readonly orgId: string;
+  readonly orgId?: string;
   readonly userId: string;
   readonly publicSlug: string;
   readonly version?: number;
+  readonly hostname?: string;
 }
 
 interface GetHostedSiteDeploymentsArgs {
@@ -136,6 +142,7 @@ type GetHostedSiteFilesResult =
       readonly body: HostedSiteFilesResponse;
     }
   | { readonly status: "not_found"; readonly message: string }
+  | { readonly status: "bad_request"; readonly message: string }
   | { readonly status: "conflict"; readonly message: string }
   | { readonly status: "config_error"; readonly message: string };
 
@@ -1214,7 +1221,10 @@ async function loadImmutableHostedSiteFilesTarget(
     .where(
       and(
         eq(hostedDeployments.id, deploymentId),
-        eq(hostedDeployments.orgId, args.orgId),
+        or(
+          eq(hostedDeployments.status, "ready"),
+          args.orgId ? eq(hostedDeployments.orgId, args.orgId) : undefined,
+        ),
       ),
     )
     .limit(1);
@@ -1236,11 +1246,7 @@ async function loadImmutableHostedSiteFilesTarget(
     .select()
     .from(hostedSites)
     .where(
-      and(
-        eq(hostedSites.id, deployment.siteId),
-        eq(hostedSites.orgId, args.orgId),
-        isNull(hostedSites.deletedAt),
-      ),
+      and(eq(hostedSites.id, deployment.siteId), isNull(hostedSites.deletedAt)),
     )
     .limit(1);
   signal.throwIfAborted();
@@ -1260,13 +1266,15 @@ async function loadAliasedHostedSiteFilesTarget(
     .where(
       and(
         eq(hostedSites.publicSlug, args.publicSlug),
-        eq(hostedSites.orgId, args.orgId),
         isNull(hostedSites.deletedAt),
       ),
     )
     .limit(1);
   signal.throwIfAborted();
   if (!site) {
+    return { status: "not_found", message: "Hosted site not found" };
+  }
+  if (args.hostname && hostedDownloadBrand(args) !== site.publicBrand) {
     return { status: "not_found", message: "Hosted site not found" };
   }
   let deployment: HostedDeploymentRow | undefined;
@@ -1278,7 +1286,10 @@ async function loadAliasedHostedSiteFilesTarget(
         .where(eq(hostedDeployments.siteId, site.id))
         .limit(1);
       signal.throwIfAborted();
-      if (!publicDeployment && site.userId !== args.userId) {
+      if (
+        site.orgId !== args.orgId ||
+        (!publicDeployment && site.userId !== args.userId)
+      ) {
         return { status: "not_found", message: "Hosted site not found" };
       }
       return {
@@ -1293,7 +1304,10 @@ async function loadAliasedHostedSiteFilesTarget(
         and(
           eq(hostedDeployments.id, site.activeDeploymentId),
           eq(hostedDeployments.siteId, site.id),
-          eq(hostedDeployments.orgId, args.orgId),
+          or(
+            eq(hostedDeployments.status, "ready"),
+            args.orgId ? eq(hostedDeployments.orgId, args.orgId) : undefined,
+          ),
         ),
       )
       .limit(1);
@@ -1305,7 +1319,10 @@ async function loadAliasedHostedSiteFilesTarget(
         and(
           eq(hostedDeployments.deploymentVersion, args.version),
           eq(hostedDeployments.siteId, site.id),
-          eq(hostedDeployments.orgId, args.orgId),
+          or(
+            eq(hostedDeployments.status, "ready"),
+            args.orgId ? eq(hostedDeployments.orgId, args.orgId) : undefined,
+          ),
         ),
       )
       .limit(1);
@@ -1329,6 +1346,11 @@ async function loadPrivateHostedSiteFilesTarget(
   deploymentId: string | undefined,
   signal: AbortSignal,
 ): Promise<HostedSiteFilesTargetResult | null> {
+  // Explicit site URLs name published content; owner editing uses bare slugs
+  // or exact deployment identities.
+  if (!args.orgId || (!deploymentId && args.hostname !== undefined)) {
+    return null;
+  }
   const [target] = await db
     .select({ site: hostedSites, deployment: privateHostedDeployments })
     .from(privateHostedDeployments)
@@ -1364,36 +1386,153 @@ async function loadPrivateHostedSiteFilesTarget(
   return target ? { status: "ok", ...target } : null;
 }
 
-async function loadHostedSiteFilesTarget(
-  db: Db,
-  args: GetHostedSiteFilesArgs,
-  signal: AbortSignal,
-): Promise<HostedSiteFilesTargetResult> {
-  const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
-    args.publicSlug,
-  )?.[1];
-  const privateTarget = await loadPrivateHostedSiteFilesTarget(
-    db,
-    args,
-    deploymentId,
-    signal,
-  );
-  return (
-    privateTarget ??
-    (deploymentId
-      ? await loadImmutableHostedSiteFilesTarget(db, args, deploymentId, signal)
-      : await loadAliasedHostedSiteFilesTarget(db, args, signal))
-  );
+const sharedHostedSiteFiles$ = command(
+  async (
+    { set },
+    args: GetHostedSiteFilesArgs,
+    deploymentId: string | undefined,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const [site] = deploymentId
+      ? await db
+          .select({ id: hostedSites.id })
+          .from(privateHostedDeployments)
+          .innerJoin(
+            hostedSites,
+            eq(hostedSites.id, privateHostedDeployments.siteId),
+          )
+          .where(
+            and(
+              eq(privateHostedDeployments.id, deploymentId),
+              isNull(hostedSites.deletedAt),
+            ),
+          )
+          .limit(1)
+      : await db
+          .select({ id: hostedSites.id })
+          .from(hostedSites)
+          .where(
+            and(
+              eq(hostedSites.publicSlug, args.publicSlug),
+              isNull(hostedSites.deletedAt),
+            ),
+          )
+          .limit(1);
+    signal.throwIfAborted();
+    if (!site) {
+      return null;
+    }
+    const download = await set(
+      resolveArtifactShareDownload$,
+      {
+        userId: args.userId,
+        selector: deploymentId
+          ? {
+              kind: "target",
+              target: { kind: "html", id: deploymentId },
+              targetId: site.id,
+            }
+          : { kind: "site", id: site.id },
+      },
+      signal,
+    );
+    return download?.kind === "html" &&
+      matchesHostedSiteVersion(download.site, args.version)
+      ? download.site
+      : null;
+  },
+);
+
+function matchesHostedSiteVersion(
+  site: Pick<HostedSiteFilesResponse, "deploymentVersion">,
+  version: number | undefined,
+): boolean {
+  return version === undefined || version === site.deploymentVersion;
+}
+
+function hostedDownloadBrand(args: GetHostedSiteFilesArgs): PublicBrand | null {
+  if (!args.hostname) {
+    return PUBLIC_BRAND;
+  }
+  for (const brand of ["okou", "vm0"] as const) {
+    if (
+      args.hostname.toLowerCase() ===
+      `${args.publicSlug}.${publicHostDomain(brand)}`.toLowerCase()
+    ) {
+      return brand;
+    }
+  }
+  return null;
 }
 
 export const getHostedSiteFiles$ = command(
   async (
-    { get, set },
+    { set },
     args: GetHostedSiteFilesArgs,
     signal: AbortSignal,
   ): Promise<GetHostedSiteFilesResult> => {
     const writeDb = set(writeDb$);
-    const target = await loadHostedSiteFilesTarget(writeDb, args, signal);
+    const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
+      args.publicSlug,
+    )?.[1];
+    const publicBrand = deploymentId ? PUBLIC_BRAND : hostedDownloadBrand(args);
+    if (!publicBrand) {
+      return {
+        status: "bad_request",
+        message:
+          "Hosted site hostname does not match its slug and configured domain",
+      };
+    }
+    const owned = await loadPrivateHostedSiteFilesTarget(
+      writeDb,
+      args,
+      deploymentId,
+      signal,
+    );
+    const publication =
+      deploymentId || owned
+        ? null
+        : await set(
+            resolveHostedSitePublicationDownload$,
+            { ...args, publicBrand },
+            signal,
+          );
+    if (publication?.kind === "unavailable") {
+      return { status: "not_found", message: "Hosted site not found" };
+    }
+    if (publication?.kind === "shared") {
+      return matchesHostedSiteVersion(publication.site, args.version)
+        ? { status: "ok", body: publication.site }
+        : {
+            status: "not_found",
+            message: "Hosted deployment version not found",
+          };
+    }
+    // A public site URL identifies its published bytes, including older sites
+    // that predate the delivery registry. It cannot select a newer private draft.
+    const legacyUrl = !deploymentId && args.hostname !== undefined;
+    if (!owned && !legacyUrl) {
+      const shared = await set(
+        sharedHostedSiteFiles$,
+        args,
+        deploymentId,
+        signal,
+      );
+      if (shared) {
+        return { status: "ok", body: shared };
+      }
+    }
+    const target =
+      owned ??
+      (deploymentId
+        ? await loadImmutableHostedSiteFilesTarget(
+            writeDb,
+            args,
+            deploymentId,
+            signal,
+          )
+        : await loadAliasedHostedSiteFilesTarget(writeDb, args, signal));
     signal.throwIfAborted();
     if (target.status !== "ok") {
       return target;
@@ -1406,44 +1545,28 @@ export const getHostedSiteFiles$ = command(
       };
     }
 
-    const manifestFiles = Object.values(deployment.manifest.files).sort(
-      (a, b) => {
-        return a.path.localeCompare(b.path);
-      },
-    );
-    signal.throwIfAborted();
-
     const hostedR2 = hostedR2Config();
     if (hostedR2.status === "config_error") {
       return hostedR2;
     }
 
-    const files = await Promise.all(
-      manifestFiles.map(async (file) => {
-        const downloadUrl = await get(
-          generateHostedSitesPresignedGetUrl(
-            hostedR2.config.bucket,
-            fileKey(deployment.r2Prefix, file.path),
-            true,
-          ),
-        );
-        return { ...file, downloadUrl };
-      }),
-    );
-    signal.throwIfAborted();
-
     return {
       status: "ok",
-      body: {
-        siteId: site.id,
-        deploymentId: deployment.id,
-        publicSlug: site.publicSlug,
-        url: deployment.url,
-        ...deploymentVersionResponseFields(deployment),
-        fileCount: deployment.fileCount,
-        size: deployment.sizeBytes,
-        files,
-      },
+      body: await set(
+        signHostedSiteFiles$,
+        {
+          metadata: {
+            siteId: site.id,
+            deploymentId: deployment.id,
+            publicSlug: site.publicSlug,
+            url: deployment.url,
+            ...deploymentVersionResponseFields(deployment),
+          },
+          manifest: deployment.manifest,
+          prefix: deployment.r2Prefix,
+        },
+        signal,
+      ),
     };
   },
 );

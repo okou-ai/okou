@@ -29,13 +29,44 @@ fn pool_config(max_idle: usize) -> IdlePoolConfig {
     IdlePoolConfig { max_idle }
 }
 
+struct ParkObserver;
+
+impl sandbox::SandboxFinalExecParkObserver for ParkObserver {
+    fn record_stage(
+        &mut self,
+        _stage: sandbox::SandboxFinalExecParkStage,
+        _duration: Duration,
+        _success: bool,
+    ) {
+    }
+}
+
+fn request_running_handoff(request: &mut IdleParkRequest, overrides: &MockSandboxOverrides) {
+    let signal = sandbox::SandboxFinalExecParkHandoff::new();
+    assert!(signal.request());
+    request.parts.handoff = Some(signal);
+    request.parts.history_generation_run_id = Some(request.parts.run_id);
+    overrides.push_final_exec_park_handoff_point(
+        sandbox::SandboxFinalExecParkHandoffPoint::DuringDeflation,
+    );
+}
+
 async fn make_idle_park_request(
     overrides: Arc<MockSandboxOverrides>,
     reuse_key: &str,
     budget_lease: BudgetLease,
 ) -> IdleParkRequest {
+    make_idle_park_request_with_sandbox_id(overrides, reuse_key, budget_lease, SandboxId::new_v4())
+        .await
+}
+
+async fn make_idle_park_request_with_sandbox_id(
+    overrides: Arc<MockSandboxOverrides>,
+    reuse_key: &str,
+    budget_lease: BudgetLease,
+    sandbox_id: SandboxId,
+) -> IdleParkRequest {
     add_healthy_reuse_preparation_matcher(&overrides);
-    let sandbox_id = SandboxId::new_v4();
     let factory: Arc<Box<dyn SandboxFactory>> =
         Arc::new(Box::new(MockSandboxFactory::with_overrides(overrides)));
     let sandbox = factory
@@ -131,6 +162,165 @@ async fn idle_park_request_semantic_rejection_returns_parked_ownership() {
 }
 
 #[tokio::test]
+async fn cancelled_running_handoff_cannot_return_to_idle_inventory() {
+    use crate::workspace_promotion::test_support::{
+        TEST_WORKSPACE_IMAGE_SIZE_BYTES, WorkspacePromotionFixture,
+    };
+
+    let fixture = WorkspacePromotionFixture::new("running-cancel").await;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let budget = Arc::new(ResourceBudget::new(2, 2048, 1.0, 0));
+    let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+    let mut request = make_idle_park_request_with_sandbox_id(
+        Arc::clone(&overrides),
+        "running-cancel",
+        lease,
+        fixture.sandbox_id,
+    )
+    .await;
+    request.parts.workspace_promotion = Some(fixture.promotion);
+    request.parts.workspace_image_size_bytes = TEST_WORKSPACE_IMAGE_SIZE_BYTES;
+    request_running_handoff(&mut request, &overrides);
+    let predecessor = request.parts.run_id;
+    let outcome = request
+        .park_for_idle_with_observer(&mut ParkObserver)
+        .await
+        .unwrap_or_else(|_| panic!("running handoff should succeed"));
+    let super::park_transition::IdleParkOutcome::Handoff(candidate) = outcome else {
+        panic!("requested handoff must retain running ownership");
+    };
+    let successor = RunId::new_v4();
+    let reservation = Box::new(candidate.into_finalizing_handoff(successor, predecessor))
+        .into_reservation(successor, predecessor)
+        .unwrap_or_else(|_| panic!("matching successor should own the reservation"));
+    let mut pool = IdlePool::new(pool_config(1));
+    let RestoreReservedIdleResult::Rejected(destroy_job) = pool.restore_reserved(reservation)
+    else {
+        panic!("cancelled running handoff must be destroyed rather than restored");
+    };
+
+    assert_eq!(pool.len(), 0);
+    assert_eq!(budget.allocated(), (2, 2048, 1));
+    assert_eq!(overrides.park_call_count(), 0);
+    destroy_job.run().await;
+    assert_eq!(overrides.unpark_call_count(), 0);
+    assert_eq!(overrides.destroy_call_count(), 1);
+    assert_eq!(budget.allocated(), (0, 0, 0));
+    assert!(fixture.cache.held_workspace_states().await.is_empty());
+}
+
+#[tokio::test]
+async fn running_handoff_activation_error_or_panic_retains_budget_until_destroyed() {
+    use crate::workspace_promotion::test_support::{
+        TEST_WORKSPACE_IMAGE_SIZE_BYTES, WorkspacePromotionFixture,
+    };
+
+    for panic_activation in [false, true] {
+        let fixture = WorkspacePromotionFixture::new("running-activation-failure").await;
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        if panic_activation {
+            overrides.push_unpark_panic("test running activation panic");
+        } else {
+            overrides.push_unpark_result(Err(sandbox::SandboxError::IdleTransition {
+                transition: sandbox::SandboxIdleTransition::Unpark,
+                message: "test running activation failure".into(),
+            }));
+        }
+        let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+        overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+        let budget = Arc::new(ResourceBudget::new(2, 2048, 1.0, 0));
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+        let mut request = make_idle_park_request_with_sandbox_id(
+            Arc::clone(&overrides),
+            "running-activation-failure",
+            lease,
+            fixture.sandbox_id,
+        )
+        .await;
+        request.parts.workspace_promotion = Some(fixture.promotion);
+        request.parts.workspace_image_size_bytes = TEST_WORKSPACE_IMAGE_SIZE_BYTES;
+        request_running_handoff(&mut request, &overrides);
+        let predecessor = request.parts.run_id;
+        let outcome = request
+            .park_for_idle_with_observer(&mut ParkObserver)
+            .await
+            .unwrap_or_else(|_| panic!("running handoff should succeed"));
+        let super::park_transition::IdleParkOutcome::Handoff(candidate) = outcome else {
+            panic!("requested handoff must retain running ownership");
+        };
+        let successor = RunId::new_v4();
+        let reservation = Box::new(candidate.into_finalizing_handoff(successor, predecessor))
+            .into_reservation(successor, predecessor)
+            .unwrap_or_else(|_| panic!("matching successor should own the reservation"));
+        let IdleUnparkResult::Failed { destroy_job, error } =
+            reservation.try_unpark_for_run(successor).await
+        else {
+            panic!("failed running activation must return destruction ownership");
+        };
+        assert!(error.contains(if panic_activation {
+            "panicked"
+        } else {
+            "test running activation failure"
+        }));
+        assert_eq!(overrides.unpark_call_count(), 1);
+        assert_eq!(overrides.park_call_count(), 0);
+        assert_eq!(budget.allocated(), (2, 2048, 1));
+        let destroy = tokio::spawn(destroy_job.run());
+        destroy_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .expect("failed activation should reach owned destruction");
+        assert_eq!(budget.allocated(), (2, 2048, 1));
+        destroy_gate.release_one();
+        destroy.await.unwrap();
+        assert_eq!(overrides.unpark_call_count(), 1);
+        assert_eq!(overrides.park_call_count(), 0);
+        assert_eq!(overrides.destroy_call_count(), 1);
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        assert!(fixture.cache.held_workspace_states().await.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn running_handoff_validation_failure_retains_running_cleanup_ownership() {
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "prepare-for-reuse".into(),
+        exit_code: 0,
+        stdout: b"not-json".to_vec(),
+        stderr: Vec::new(),
+    });
+    let budget = Arc::new(ResourceBudget::new(2, 2048, 1.0, 0));
+    let lease = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
+    let mut request =
+        make_idle_park_request(Arc::clone(&overrides), "running-invalid", lease).await;
+    request_running_handoff(&mut request, &overrides);
+    let failure = match request.park_for_idle_with_observer(&mut ParkObserver).await {
+        Ok(_) => panic!("invalid preparation must reject the running handoff"),
+        Err(failure) => failure,
+    };
+    let IdleParkFailureParts::RunningHandoff {
+        candidate,
+        reason,
+        error,
+        ..
+    } = failure.into_parts()
+    else {
+        panic!("a running handoff must never be described as parked ownership");
+    };
+    assert_eq!(reason, "reuse_preparation_failed");
+    assert!(error.contains("invalid report"));
+    assert_eq!(overrides.park_call_count(), 0);
+    let (payload, lease) = candidate.into_active_destroy_parts();
+    assert_eq!(budget.allocated(), (2, 2048, 1));
+    assert_eq!(payload.stop_and_destroy().await, DestroyOutcome::Completed);
+    assert_eq!(overrides.unpark_call_count(), 0);
+    assert_eq!(overrides.destroy_call_count(), 1);
+    drop(lease);
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
+
+#[tokio::test]
 async fn speculative_repark_preserves_expected_capacity_rejection() {
     let overrides = Arc::new(MockSandboxOverrides::new());
     let mut request = make_idle_park_request(
@@ -161,9 +351,7 @@ async fn speculative_repark_preserves_expected_capacity_rejection() {
         .unwrap(),
         stderr: Vec::new(),
     });
-    let reservation = ReservedIdleSandbox {
-        entry: candidate.into_idle_entry(Instant::now()),
-    };
+    let reservation = ReservedIdleSandbox::parked(candidate.into_idle_entry(Instant::now()));
     let SpeculativeIdleUnparkResult::Ready(speculative) = reservation
         .try_unpark_for_speculation(RunId::new_v4())
         .await
@@ -392,9 +580,7 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
     };
 
     let original_parked_at = Instant::now() - Duration::from_secs(120);
-    let reservation = ReservedIdleSandbox {
-        entry: candidate.into_idle_entry(original_parked_at),
-    };
+    let reservation = ReservedIdleSandbox::parked(candidate.into_idle_entry(original_parked_at));
     let SpeculativeIdleUnparkResult::Ready(speculative) = reservation
         .try_unpark_for_speculation(RunId::new_v4())
         .await
@@ -409,22 +595,22 @@ async fn speculative_repark_preserves_original_idle_age_and_metadata() {
         panic!("speculative repark should succeed");
     };
 
-    assert_eq!(restored.entry.parked_at, original_parked_at);
-    assert_eq!(restored.entry.reuse_key(), Some(reuse_key));
-    assert_eq!(restored.entry.profile_name(), profile_name);
-    assert_eq!(
-        restored.entry.device_rate_limits(),
-        &Some(device_rate_limits)
-    );
-    assert_eq!(restored.entry.budget_vcpu(), 2);
-    assert_eq!(restored.entry.budget_memory_mb(), 2048);
-    assert_eq!(
-        restored.entry.metadata.history_generation_run_id,
-        Some(history_generation_run_id)
-    );
     assert_eq!(
         restored.guest_timezone_intent(),
         &crate::guest_timezone::GuestTimezoneIntent::Configured("Asia/Shanghai".into())
+    );
+    let entry = restored
+        .into_restore_entry()
+        .unwrap_or_else(|_| panic!("restored entry must be parked"));
+    assert_eq!(entry.parked_at, original_parked_at);
+    assert_eq!(entry.reuse_key(), Some(reuse_key));
+    assert_eq!(entry.profile_name(), profile_name);
+    assert_eq!(entry.device_rate_limits(), &Some(device_rate_limits));
+    assert_eq!(entry.budget_vcpu(), 2);
+    assert_eq!(entry.budget_memory_mb(), 2048);
+    assert_eq!(
+        entry.metadata.history_generation_run_id,
+        Some(history_generation_run_id)
     );
     assert_eq!(overrides.unpark_call_count(), 1);
     assert_eq!(overrides.park_call_count(), 2);
@@ -465,9 +651,7 @@ async fn speculative_repark_without_history_generation_returns_owned_destroy_job
         Ok(outcome) => outcome.expect_reusable(),
         Err(_) => panic!("initial park should succeed"),
     };
-    let reservation = ReservedIdleSandbox {
-        entry: candidate.into_idle_entry(Instant::now()),
-    };
+    let reservation = ReservedIdleSandbox::parked(candidate.into_idle_entry(Instant::now()));
     let SpeculativeIdleUnparkResult::Ready(speculative) = reservation
         .try_unpark_for_speculation(RunId::new_v4())
         .await

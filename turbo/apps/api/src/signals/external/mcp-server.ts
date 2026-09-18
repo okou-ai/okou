@@ -1,5 +1,11 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import {
+  mcpSearchChatMessagesInputSchema,
+  mcpSearchChatMessagesOutputSchema,
+  type McpSearchChatMessagesInput,
+  type McpChatSearchResult,
+} from "@okouai/api-contracts/contracts/mcp-chat-search";
+import {
   mcpGetChatMessagesInputSchema,
   mcpGetChatMessagesOutputSchema,
   type McpGetChatMessagesInput,
@@ -21,6 +27,10 @@ import { onRejection, settle, settleIncludingAbort } from "../utils";
 interface McpChatAccess {
   readonly readScope: string;
   readonly scopes: readonly string[];
+  readonly searchMessages: (
+    input: McpSearchChatMessagesInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatSearchResult>;
   readonly listThreads: (
     input: McpListChatThreadsInput,
     signal: AbortSignal,
@@ -122,6 +132,37 @@ function createReadServer(
   );
   if (access.scopes.includes(access.readScope)) {
     registerMessageTool(server, access, requestSignal);
+    server.registerTool(
+      "search_chat_messages",
+      {
+        description:
+          "Search visible message text in your conversations in the authorized organization. " +
+          "Use whole words or CJK phrases of at least two characters; all query groups must match. " +
+          "Filter by threadId, agentId, role and source-event since (inclusive)/before (exclusive). " +
+          "Returns newest source events first, bounded excerpts and real ref identifiers; pass a ref's " +
+          "threadId and around:{eventId,seqId} to get_chat_messages for context and full content. " +
+          "Follow nextCursor with the identical query, filters and limit (default 20, maximum 50). " +
+          "An empty page may still have a nextCursor: scanLimited means the 100-candidate scan budget " +
+          "was reached. Indexing is asynchronous; use get_chat_messages for recently sent content. " +
+          "An empty search does not prove absence or send failure. Restart to refresh. Search does not mark messages " +
+          "read. Canonical validation shares a 32 MiB/50,000-event/15-second history budget across " +
+          "candidate threads; resource/archive failures are explicit errors, not partial successes.",
+        inputSchema: mcpSearchChatMessagesInputSchema,
+        outputSchema: mcpSearchChatMessagesOutputSchema,
+        annotations: readAnnotations,
+      },
+      async (args, context) => {
+        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+        return await readTool(
+          access,
+          () => {
+            return access.searchMessages(args, signal);
+          },
+          signal,
+          "Message search is temporarily unavailable. Retry or narrow the thread, Agent or time filters.",
+        );
+      },
+    );
     server.registerTool(
       "list_chat_threads",
       {

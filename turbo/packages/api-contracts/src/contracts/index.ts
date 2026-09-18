@@ -1321,11 +1321,7 @@ export {
 } from "./github-oauth";
 export {
   adAttributionMetadataSchema,
-  acquisitionAttributionContract,
   type AdAttributionMetadata,
-  type RecordSignupAttributionRequest,
-  type RecordSignupAttributionResponse,
-  type AcquisitionAttributionContract,
 } from "./acquisition-attribution";
 export {
   billingStatusContract,

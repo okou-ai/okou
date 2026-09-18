@@ -38,7 +38,6 @@ import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { addUserCustomConnector } from "../services/user-connectors.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
 import { publishCustomConnectorUserInvalidationAfterCommit as publishCustomUserInvalidation } from "../services/connector-client-invalidation.service";
-import { isCustomConnectorMcpEnabled } from "../services/custom-connector-mcp-feature.service";
 import {
   getCustomConnectorById,
   type CustomConnectorOAuthConfigRow,
@@ -254,9 +253,6 @@ async function authorizeCustomConnectorAgent(
     }
     case "invalidCustomConnectorPermissions": {
       return `OAuth connected, but agent authorization failed: ${authorization.message}`;
-    }
-    case "mcpFeatureDisabled": {
-      return "OAuth connected, but MCP custom connector management is not enabled";
     }
   }
 }
@@ -655,15 +651,6 @@ const completeOAuth2Callback$ = command(
       userFeatureSwitchContext(claimed.state.orgId, claimed.state.userId),
     );
     signal.throwIfAborted();
-    if (
-      connector.kind === "mcp" &&
-      !isCustomConnectorMcpEnabled(featureContext)
-    ) {
-      return callbackError(
-        origin,
-        "MCP custom connector management is not enabled",
-      );
-    }
     const persistence = await completeCurrentOAuthCallback(
       {
         db: set(writeDb$),

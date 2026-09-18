@@ -67,7 +67,11 @@ impl Harness {
     fn new() -> Self {
         let (incoming, receiver) = mpsc::channel(16);
         let cancelled = CancellationToken::new();
-        let run = Runtime { ssh: None }.start(
+        let run = Runtime {
+            ssh: None,
+            vnc: None,
+        }
+        .start(
             Arc::new(Acceptor(Mutex::new(receiver))),
             "assigned-sandbox".into(),
             crate::ids::RunId::new_v4(),
@@ -134,13 +138,21 @@ async fn closed(mut guest: DuplexStream) {
 }
 
 #[tokio::test]
-async fn dispatch_without_ssh_rejects_known_unavailable_and_unknown_methods() {
+async fn dispatch_without_consumers_rejects_known_unavailable_and_unknown_methods() {
     let h = Harness::new();
     for (method, code) in [
         ("ssh.exec", "unavailable"),
         ("ssh.session.list", "unavailable"),
         ("ssh.file.upload", "unavailable"),
         ("ssh.file.download", "unavailable"),
+        ("vnc.session.start", "unavailable"),
+        ("vnc.session.list", "unavailable"),
+        ("vnc.session.status", "unavailable"),
+        ("vnc.session.close", "unavailable"),
+        ("vnc.capture", "unavailable"),
+        ("vnc.input", "unavailable"),
+        ("vnc.session.reconnect", "unknown_method"),
+        ("vnc.capture.extra", "unknown_method"),
         ("unrelated.query", "unknown_method"),
     ] {
         let mut guest = h.open("assigned-sandbox").await;
@@ -163,6 +175,9 @@ async fn malformed_requests_are_rejected_before_consumer_availability() {
         br#"{"version":1,"method":"ssh.exec","params":null}"#.as_slice(),
         br#"{"version":1,"method":"ssh.exec","params":{},"runId":"guest-authority"}"#,
         br#"{"version":1,"method":"ssh.exec","params":{}}{}"#,
+        br#"{"version":1,"method":"vnc.session.start","params":null}"#,
+        br#"{"version":1,"method":"vnc.capture","params":{},"runId":"guest-authority"}"#,
+        br#"{"version":1,"method":"vnc.input","params":{}}{}"#,
     ] {
         let mut guest = h.open("assigned-sandbox").await;
         send(&mut guest, request).await;

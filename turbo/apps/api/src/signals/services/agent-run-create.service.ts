@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
+import { readDisabledPaidTools } from "./paid-tools.service";
 import {
   resolveAgentRunStorage,
   materializeAgentRunStorage,
@@ -5222,22 +5224,13 @@ async function loadCustomConnectorContext(
     return emptyCustomConnectorRuntimeContext();
   }
   signal.throwIfAborted();
-  const newRunRows = rows.filter((row) => {
-    return (
-      row.connector.kind !== "mcp" ||
-      isFeatureEnabled(
-        FeatureSwitchKey.CustomConnectorMcp,
-        args.featureSwitchContext,
-      )
-    );
-  });
   const context = await measureApiDispatchTiming(
     timing,
     "api_dispatch_prepare_context_build_custom_connector_firewalls",
     "nested",
     async () => {
       return await buildNewRunCustomConnectorRuntimeContext({
-        rows: newRunRows,
+        rows,
         featureSwitchContext: args.featureSwitchContext,
         connectorCatalogSnapshot: args.connectorCatalogSnapshot,
         grants: args.customConnectorGrants,
@@ -7832,6 +7825,22 @@ function runnerStoragePlan(
       });
 }
 
+async function withPaidToolPlatformEnvironment(
+  db: Db,
+  owner: Pick<BuildRunnerJobPayloadInput, "orgId" | "userId">,
+  platformEnvironment: Record<string, string> | undefined,
+): Promise<Record<string, string>> {
+  const disabledTools = await readDisabledPaidTools(
+    db,
+    owner.orgId,
+    owner.userId,
+  );
+  return {
+    ...platformEnvironment,
+    [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
+  };
+}
+
 function buildRunnerJobPayload(
   db: Db,
   args: BuildRunnerJobPayloadInput,
@@ -7875,10 +7884,16 @@ function buildRunnerJobPayload(
       "api_dispatch_build_stored_execution_context",
       "nested",
       async () => {
+        const paidToolEnvironment = await withPaidToolPlatformEnvironment(
+          db,
+          args,
+          platformEnvironment,
+        );
+        signal.throwIfAborted();
         return await buildStoredExecutionContextDraft({
           ...args,
           body,
-          platformEnvironment,
+          platformEnvironment: paidToolEnvironment,
           runId: args.run.id,
         });
       },

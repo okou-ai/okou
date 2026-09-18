@@ -301,7 +301,6 @@ import {
 import {
   codexFastModeEnabled$,
   modelPickerFlyoutEnabled$,
-  customConnectorMcpEnabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
@@ -10260,7 +10259,6 @@ function ComposerTemporaryModelNotice({
     updateUserModelPreference$,
   );
   const codexFastModeEnabled = useGet(codexFastModeEnabled$);
-  const featureSwitches = useGet(featureSwitch$);
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveModelFirstUserDefaultSelection({
     userPreference,
@@ -10274,11 +10272,8 @@ function ComposerTemporaryModelNotice({
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
-  const effort = preferredChatReasoningEffort(selection, featureSwitches);
-  const defaultEffort = preferredChatReasoningEffort(
-    defaultSelection,
-    featureSwitches,
-  );
+  const effort = preferredChatReasoningEffort(selection);
+  const defaultEffort = preferredChatReasoningEffort(defaultSelection);
   const effortChanged = effort !== defaultEffort;
   if (
     !selection ||
@@ -10475,7 +10470,6 @@ function resolveComposerConnectorCollections({
   authorizedConnectorSlugs,
   customConnectorGrants,
   selectedCustomConnectorId,
-  mcpEnabled,
 }: {
   relatedCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
   addDialogCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
@@ -10483,7 +10477,6 @@ function resolveComposerConnectorCollections({
   authorizedConnectorSlugs: readonly ConnectorSlug[] | null;
   customConnectorGrants: readonly AgentCustomConnectorGrant[] | null;
   selectedCustomConnectorId: string | null;
-  mcpEnabled: boolean;
 }): ResolvedComposerConnectorCollections {
   const resolvedRelatedCatalogItems = relatedCatalogItems;
   const resolvedAddDialogCatalogItems = addDialogCatalogItems;
@@ -10493,13 +10486,6 @@ function resolveComposerConnectorCollections({
       return grant.customConnectorId;
     }) ?? [],
   );
-  const resolvedCustomConnectors = customConnectors.filter((connector) => {
-    return (
-      connector.kind === "http" ||
-      mcpEnabled ||
-      authorizedCustomSet.has(connector.id)
-    );
-  });
   const connectorMap = new Map(
     [...resolvedRelatedCatalogItems, ...resolvedAddDialogCatalogItems].map(
       (connector) => {
@@ -10512,15 +10498,11 @@ function resolveComposerConnectorCollections({
       return !connector.connected;
     },
   );
-  const unconnectedCustomConnectors = resolvedCustomConnectors.filter(
-    (connector) => {
-      return (
-        !connector.connected &&
-        !isIntegrationManagedCustomConnector(connector) &&
-        (connector.kind === "http" || mcpEnabled)
-      );
-    },
-  );
+  const unconnectedCustomConnectors = customConnectors.filter((connector) => {
+    return (
+      !connector.connected && !isIntegrationManagedCustomConnector(connector)
+    );
+  });
   const agentConnectors = resolvedRelatedCatalogItems
     .filter((connector) => {
       return connector.connected;
@@ -10531,7 +10513,7 @@ function resolveComposerConnectorCollections({
         authorized: authorizedSet.has(connector.slug),
       };
     });
-  const agentCustomConnectors = resolvedCustomConnectors
+  const agentCustomConnectors = customConnectors
     .filter((connector) => {
       return connector.connected;
     })
@@ -10542,7 +10524,7 @@ function resolveComposerConnectorCollections({
       };
     });
   const selectedCustomConnector = selectedCustomConnectorId
-    ? resolvedCustomConnectors.find((connector) => {
+    ? customConnectors.find((connector) => {
         return connector.id === selectedCustomConnectorId;
       })
     : undefined;
@@ -10711,7 +10693,6 @@ function ComposerConnectorsSlot({
 }) {
   const computerUse = useComposerComputerUse(signals);
   const { t } = useTranslation();
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   const connectorDirectoryEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const connectorData = useLastResolved(signals.connector.data$);
@@ -10751,7 +10732,6 @@ function ComposerConnectorsSlot({
     customConnectorGrants:
       connectorData?.authorization.customConnectorGrants ?? null,
     selectedCustomConnectorId,
-    mcpEnabled,
   });
   const selectedConnector = selectedConnectorSlug
     ? connectorMap.get(selectedConnectorSlug)

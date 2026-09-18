@@ -9,7 +9,6 @@ import {
   Plus,
   Presentation,
   Route,
-  Video,
 } from "lucide-react";
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -18,12 +17,12 @@ import { i18n } from "../../i18n/index.ts";
 import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
+  isSlashTemplateDetailCategory,
   isSlashTemplateNativeAspectCategory,
-  isSlashTemplatePreviewCategory,
   slashTemplatePreviews,
   type SlashTemplateCategory,
+  type SlashTemplateDetailCategory,
   type SlashTemplatePreview,
-  type SlashTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
 
 // Concentric corners, the same rule the shared DropdownMenu states: an inner
@@ -32,7 +31,6 @@ import {
 const SLASH_TEMPLATE_CATEGORY_ICONS = {
   slides: Presentation,
   illustration: Image,
-  video: Video,
   website: Globe,
   workflow: Route,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
@@ -50,7 +48,7 @@ interface SlashTemplatePanelProps {
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplatePreviewCategory,
+    category: SlashTemplateDetailCategory,
   ) => void;
   readonly onImportDeck: (file: File) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
@@ -71,11 +69,6 @@ export function slashTemplateCategoryLabel(
     case "illustration": {
       return i18n.t(($) => {
         return $.artifacts.templates.illustration;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.video;
       });
     }
     case "website": {
@@ -225,10 +218,10 @@ function SlashTemplateDetailPane({
   onSelectTemplate,
   onImportDeck,
 }: {
-  readonly category: SlashTemplatePreviewCategory;
+  readonly category: SlashTemplateDetailCategory;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
-    category: SlashTemplatePreviewCategory,
+    category: SlashTemplateDetailCategory,
   ) => void;
   readonly onImportDeck: (file: File) => void;
 }) {
@@ -431,7 +424,7 @@ export function SlashTemplatePanel({
   // Narrowed here rather than inside the pane, so the pane has no unreachable
   // branch for a category that can never reach it.
   const detailCategory =
-    previewCategory !== null && isSlashTemplatePreviewCategory(previewCategory)
+    previewCategory !== null && isSlashTemplateDetailCategory(previewCategory)
       ? previewCategory
       : null;
   return (

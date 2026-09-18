@@ -136,10 +136,7 @@ import {
 } from "./chat-body-cards.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatConversationLocator } from "./chat-conversation-locator.tsx";
-import {
-  customConnectorMcpEnabled$,
-  featureSwitch$,
-} from "../../signals/external/feature-switch.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isStandalonePwa } from "../../lib/keyboard-dismiss-gesture.ts";
 import {
   captureChatWorkHistoryExpanded,
@@ -4649,7 +4646,6 @@ function ChatConnectorActionConnectModal() {
 
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const runCallback = useSet(runChatActionCallback$);
   const pageSignal = useGet(pageSignal$);
@@ -4674,10 +4670,7 @@ function ActiveChatConnectorActionConnectModal() {
 
   if (active.kind === "custom") {
     const connector = customConnectors?.find((candidate) => {
-      return (
-        candidate.slug === active.connectorSlug &&
-        (candidate.kind === "http" || mcpEnabled)
-      );
+      return candidate.slug === active.connectorSlug;
     });
     const accountOptions = connector
       ? defaultCustomConnectorAccountOptions(connector)

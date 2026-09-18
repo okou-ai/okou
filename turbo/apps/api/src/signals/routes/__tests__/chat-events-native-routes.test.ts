@@ -501,7 +501,6 @@ describe("shared native Pi route activation", () => {
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
-        [FeatureSwitchKey.Effort]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
       mockPiResourceArchiveDownloads();
