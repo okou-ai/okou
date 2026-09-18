@@ -25,6 +25,7 @@ import {
 } from "../services/mcp-chat-threads.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
+import { getMcpChatStatus } from "../services/mcp-chat-status.service";
 import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
 import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
 import {
@@ -169,11 +170,20 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
   if (!isFeatureEnabled(FeatureSwitchKey.McpServer, features)) {
     return featureDenied();
   }
+  const historyRuntime = {
+    db: set(writeDb$),
+    bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+  };
   return serveMcpRequest(
     new Request(original, { signal }),
     {
       readScope: MCP_READ_SCOPE,
       scopes: principal.scopes,
+      getStatus: (input, readSignal) => {
+        return get(
+          getMcpChatStatus(historyRuntime, principal, input, readSignal),
+        );
+      },
       sendMessage: async (input, operationSignal) => {
         return await admitMutation((signal) => {
           return set(
@@ -195,22 +205,12 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
       },
       searchMessages: async (input, readSignal) => {
         return await get(
-          searchMcpChatMessages(
-            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
-            principal,
-            input,
-            readSignal,
-          ),
+          searchMcpChatMessages(historyRuntime, principal, input, readSignal),
         );
       },
       getMessages: async (input, readSignal) => {
         return await get(
-          getMcpChatMessages(
-            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
-            principal,
-            input,
-            readSignal,
-          ),
+          getMcpChatMessages(historyRuntime, principal, input, readSignal),
         );
       },
       listThreads: async (input, readSignal) => {

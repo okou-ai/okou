@@ -1,5 +1,11 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import {
+  mcpGetChatStatusInputSchema,
+  mcpGetChatStatusOutputSchema,
+  type McpGetChatStatusInput,
+  type McpChatStatusResult,
+} from "@okouai/api-contracts/contracts/mcp-chat-status";
+import {
   mcpSendChatMessageInputSchema,
   mcpSendChatMessageOutputSchema,
   mcpRevokeQueuedMessageInputSchema,
@@ -42,6 +48,10 @@ import { onRejection, settle, settleIncludingAbort } from "../utils";
 interface McpChatAccess {
   readonly readScope: string;
   readonly scopes: readonly string[];
+  readonly getStatus: (
+    input: McpGetChatStatusInput,
+    signal: AbortSignal,
+  ) => Promise<McpChatStatusResult>;
   readonly sendMessage: (
     input: McpSendChatMessageInput,
     signal: AbortSignal,
@@ -186,7 +196,7 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Submit text to your existing conversation in the authorized organization. The server may start a run, queue the input, or steer an active run. Generate a new UUID requestId for each intended message; retry only with identical threadId and exact text using that same requestId within 24 hours of acceptance. Deduplication is not guaranteed after that window; inspect history before intentionally submitting new work, and never automatically retry an uncertain old request. inputRef identifies the original submitted input, which can be replaced in visible history. disposition is the current observation, not proof of delivery or run success; runId may be null. Use get_chat_messages to inspect subsequent activity.",
+          "Submit text to your existing conversation in the authorized organization. The server may start a run, queue the input, or steer an active run. Generate a new UUID requestId for each intended message; retry only with identical threadId and exact text using that same requestId within 24 hours of acceptance. Deduplication is not guaranteed after that window; inspect history before intentionally submitting new work, and never automatically retry an uncertain old request. inputRef identifies the original submitted input, which can be replaced in visible history. disposition is the current observation, not proof of delivery or run success; runId may be null. Pass threadId and inputRef to get_chat_status, then use its get_chat_messages handoff to read output.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
@@ -300,6 +310,38 @@ function createChatServer(
           },
           signal,
           "Message search is temporarily unavailable. Retry or narrow the thread, Agent or time filters.",
+        );
+      },
+    );
+    server.registerTool(
+      "get_chat_status",
+      {
+        description:
+          "Observe input delivery, run state and readable output separately in your conversation. " +
+          "Pass threadId and the complete original inputRef returned by send_chat_message; without " +
+          "inputRef, observes the latest run. Missing input associations never select another run. " +
+          "queued/reserved/associated do not prove delivery; delivered means an acknowledged active " +
+          "input, not model compliance. deliveryMode is launch/steer only with evidence, otherwise unknown. " +
+          "Several inputs can share a run and its output. A terminal run may still have pending/partial " +
+          "output, including cancellation recovery. ready means current materialized output is readable; " +
+          "late output may still arrive. Follow the messages tool handoff for content and pagination. " +
+          "Honor retryAfterMs and back off repeated polls. Original references survive live retention " +
+          "through retained archives within the same 8 MiB gzip, 32 MiB history, 50,000-event and " +
+          "15-second limits as get_chat_messages; absent linkage is unavailable and archive failures " +
+          "are explicit errors. This immediate read does not mark read, change execution or cancel runs.",
+        inputSchema: mcpGetChatStatusInputSchema,
+        outputSchema: mcpGetChatStatusOutputSchema,
+        annotations: readAnnotations,
+      },
+      async (args, context) => {
+        const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
+        return await readTool(
+          access,
+          () => {
+            return access.getStatus(args, signal);
+          },
+          signal,
+          "Chat status is temporarily unavailable. Retry later.",
         );
       },
     );

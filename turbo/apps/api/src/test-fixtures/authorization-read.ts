@@ -476,11 +476,31 @@ function isAgentIdentityLock(queryArgs: unknown[]): boolean {
   );
 }
 
-function isReadThreadPin(queryArgs: unknown[], chatThreadId: string): boolean {
+function isReadIdentityThreadLock(
+  queryArgs: unknown[],
+  chatThreadId: string,
+): boolean {
   const text = barrierQueryText(queryArgs);
   return (
     text.startsWith("select") &&
+    text.includes('select "id" from "chat_threads"') &&
+    text.includes("for update") &&
+    barrierQueryBinds(queryArgs, chatThreadId)
+  );
+}
+
+function isReadThreadPin(
+  queryArgs: unknown[],
+  kind: AuthorizationReadKind,
+  chatThreadId: string,
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  const projectionColumn =
+    kind === "browser" ? '"cloud_browser_enabled"' : '"computer_use_host_id"';
+  return (
+    text.startsWith("select") &&
     text.includes('from "chat_threads"') &&
+    text.includes(projectionColumn) &&
     text.includes("for update") &&
     barrierQueryBinds(queryArgs, chatThreadId)
   );
@@ -521,6 +541,7 @@ function tookReadRequestPin(
 
 type AuthorizationReadStop =
   | "before-agent-lock"
+  | "before-identity-thread-lock"
   | "before-thread-pin"
   | "commit"
   | "hosts"
@@ -552,11 +573,14 @@ async function withAuthorizationReadBarrierFixture<T>(
         if (args.stopAt === "before-agent-lock") {
           return isAgentIdentityLock(queryArgs);
         }
+        if (args.stopAt === "before-identity-thread-lock") {
+          return isReadIdentityThreadLock(queryArgs, args.chatThreadId);
+        }
         if (
           args.stopAt === "before-thread-pin" ||
           args.stopAt === "thread-pin"
         ) {
-          return isReadThreadPin(queryArgs, args.chatThreadId);
+          return isReadThreadPin(queryArgs, args.kind, args.chatThreadId);
         }
         if (args.stopAt === "request-pin") {
           return isReadRequestPin(queryArgs, args.kind);

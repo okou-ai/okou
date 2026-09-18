@@ -367,6 +367,59 @@ export async function holdMorningBriefGenerationRow(
   return { waitForArrival: held.waitForBlocked, release: held.release };
 }
 
+/**
+ * Replace the attempt identity atomically while an exact recovery waits.
+ *
+ * Production replacement would be a delete/recreate across owner generations;
+ * this fixture uses one in-place identity mutation under the same row lock so
+ * the test can prove the waiting CAS does not write the replacement row. No
+ * generation outcome is seeded.
+ */
+export async function replaceMorningBriefGenerationAttemptOnRelease(
+  owner: MorningBriefGenerationOwner,
+  args: {
+    readonly expectedAttemptId: string;
+    readonly replacementAttemptId: string;
+  },
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(
+    signal,
+    async (tx) => {
+      await tx
+        .select({ attemptId: morningBriefGenerations.attemptId })
+        .from(morningBriefGenerations)
+        .where(
+          and(
+            ownerRows(owner),
+            eq(morningBriefGenerations.attemptId, args.expectedAttemptId),
+          ),
+        )
+        .for("update");
+    },
+    async (tx) => {
+      const [replaced] = await tx
+        .update(morningBriefGenerations)
+        .set({ attemptId: args.replacementAttemptId })
+        .where(
+          and(
+            ownerRows(owner),
+            eq(morningBriefGenerations.attemptId, args.expectedAttemptId),
+          ),
+        )
+        .returning({ attemptId: morningBriefGenerations.attemptId });
+      if (replaced?.attemptId !== args.replacementAttemptId) {
+        throw new Error("Expected to replace the held generation attempt");
+      }
+    },
+  );
+  onTestFinished(held.release);
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
 /** Hold the first canonical read after authority and generation rows are held. */
 export async function holdMorningBriefFeatureSwitchRead(
   signal: AbortSignal,

@@ -355,8 +355,8 @@ export function createComputerUseBddApi(context: TestContext) {
     return { authorization: "Bearer clerk-session" };
   }
 
-  function hostsClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function hostsClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseHostsContract,
     );
   }
@@ -492,18 +492,20 @@ export function createComputerUseBddApi(context: TestContext) {
     async requestListComputerUseHosts(
       actor: ComputerUseAuth,
       statuses: readonly (200 | 401 | 403)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        hostsClient().list({ headers: authenticate(actor) }),
+        hostsClient(signal).list({ headers: authenticate(actor) }),
         statuses,
       );
     },
 
     async listComputerUseHosts(
       actor: ComputerUseAuth,
+      signal?: AbortSignal,
     ): Promise<ComputerUseHostListResponse> {
       const response = await accept(
-        hostsClient().list({ headers: authenticate(actor) }),
+        hostsClient(signal).list({ headers: authenticate(actor) }),
         [200],
       );
       return response.body;

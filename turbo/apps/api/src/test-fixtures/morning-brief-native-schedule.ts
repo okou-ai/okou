@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
@@ -13,6 +13,7 @@ import { usageEvent } from "@okouai/db/schema/usage-event";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, eq, sql } from "drizzle-orm";
+import { onTestFinished } from "vitest";
 
 import {
   buildOneClickUnsubscribeUrl,
@@ -20,7 +21,9 @@ import {
 } from "../signals/services/email-common.service";
 import { db } from "../lib/db";
 import { now } from "../lib/time";
+import { purgeExpiredMorningBriefGenerations } from "../signals/services/morning-brief-generation-store.service";
 import { loadResumableOccurrences } from "../signals/services/morning-brief-native-schedule.service";
+import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
  * Infrastructure the native Morning Brief cron suite needs and no production
@@ -185,6 +188,236 @@ export async function makeNativeOccurrenceDue(
       ),
     );
   return due;
+}
+
+function nativeOwnerDigest(owner: MorningBriefNativeOwner): string {
+  return createHash("sha256")
+    .update(`${owner.orgId}:${owner.userId}`, "utf8")
+    .digest("hex")
+    .slice(0, 32);
+}
+
+async function installNativeOccurrenceInterruption(
+  owner: MorningBriefNativeOwner,
+  mode: "settlement" | "delivery-clear",
+  signal: AbortSignal,
+): Promise<() => Promise<void>> {
+  const digest = nativeOwnerDigest(owner);
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
+  const functionName = `test_mb_native_${mode.replace("-", "_")}_${suffix}`;
+  const triggerName = `mbn_${mode === "settlement" ? "settle" : "clear"}_${digest}_${suffix}`;
+  const interrupted =
+    mode === "settlement"
+      ? sql`OLD.delivery_pending = true
+            AND OLD.generation_attempt_id IS NOT NULL
+            AND OLD.settled_at IS NULL
+            AND NEW.settled_at IS NOT NULL`
+      : sql`OLD.delivery_pending = true
+            AND OLD.settled_at IS NOT NULL
+            AND NEW.delivery_pending = false`;
+
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF substring(
+             encode(
+               sha256(convert_to(OLD.org_id || ':' || OLD.user_id, 'UTF8')),
+               'hex'
+             ) from 1 for 32
+           ) = split_part(TG_NAME, '_', 3)
+           AND ${interrupted} THEN
+          RETURN NULL;
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(triggerName)}
+      BEFORE UPDATE ON morning_brief_native_occurrences
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
+  });
+
+  let restored = false;
+  const restore = async () => {
+    if (restored) {
+      return;
+    }
+    restored = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(triggerName)} ON morning_brief_native_occurrences`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+    });
+  };
+  onTestFinished(restore);
+  return restore;
+}
+
+/**
+ * Interrupt only the native settlement statement after a bound S5 attempt.
+ *
+ * Returning `NULL` from this owner-scoped PostgreSQL trigger makes the real CAS
+ * affect zero rows. S5 and any S6 receipt have already committed in earlier
+ * transactions, while the native occurrence remains claimed and pending — the
+ * exact restart state this suite needs without seeding a generation outcome.
+ */
+export async function interruptNativeSettlementAfterGeneration(
+  owner: MorningBriefNativeOwner,
+  signal: AbortSignal,
+): Promise<() => Promise<void>> {
+  return await installNativeOccurrenceInterruption(owner, "settlement", signal);
+}
+
+/** Keep settled delivery obligations pending while a test builds a full batch. */
+export async function suppressNativeDeliveryRecovery(
+  owner: MorningBriefNativeOwner,
+  signal: AbortSignal,
+): Promise<() => Promise<void>> {
+  return await installNativeOccurrenceInterruption(
+    owner,
+    "delivery-clear",
+    signal,
+  );
+}
+
+/**
+ * Hold S6 at its final delivery-receipt insert.
+ *
+ * Every content and retention check has passed by this statement, and the S6
+ * transaction already holds the native schedule row. A competing recovery can
+ * therefore read the pre-commit absence and then be observed waiting on the
+ * exact lock whose release makes that receipt durable.
+ */
+export async function holdNativeDeliveryReceiptCommit(
+  owner: MorningBriefNativeOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const digest = nativeOwnerDigest(owner);
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
+  const functionName = `test_mb_delivery_hold_${suffix}`;
+  const triggerName = `mbd_hold_${digest}_${suffix}`;
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF substring(
+             encode(
+               sha256(convert_to(NEW.org_id || ':' || NEW.user_id, 'UTF8')),
+               'hex'
+             ) from 1 for 32
+           ) = split_part(TG_NAME, '_', 3) THEN
+          PERFORM pg_advisory_xact_lock(
+            hashtextextended(
+              'morning-brief-delivery-commit:' || split_part(TG_NAME, '_', 3),
+              0
+            )
+          );
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(triggerName)}
+      BEFORE INSERT ON morning_brief_deliveries
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
+  });
+
+  let restored = false;
+  const restore = async () => {
+    if (restored) {
+      return;
+    }
+    restored = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(triggerName)} ON morning_brief_deliveries`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+    });
+  };
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`morning-brief-delivery-commit:${digest}`}, 0))`,
+    );
+  });
+  onTestFinished(async () => {
+    await held.release();
+    await restore();
+  });
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
+/** Hold the real schedule parent row so competing recovery ticks both arrive. */
+export async function holdNativeScheduleRow(
+  owner: MorningBriefNativeOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ userId: morningBriefNativeSchedules.userId })
+      .from(morningBriefNativeSchedules)
+      .where(
+        and(
+          eq(morningBriefNativeSchedules.orgId, owner.orgId),
+          eq(morningBriefNativeSchedules.userId, owner.userId),
+        ),
+      )
+      .for("update");
+  });
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
+/** Install a newer epoch with its own future obligation, as replacement does. */
+export async function replaceNativeEpochWithFutureObligation(
+  owner: MorningBriefNativeOwner,
+): Promise<{ readonly ownerEpoch: number; readonly nextRunAt: Date }> {
+  const nextRunAt = new Date(now() + 24 * 60 * 60 * 1000);
+  const [row] = await db()
+    .update(morningBriefNativeSchedules)
+    .set({
+      ownerEpoch: sql`${morningBriefNativeSchedules.ownerEpoch} + 1`,
+      nextRunAt,
+      scheduleOwner: "native",
+      updatedAt: new Date(now()),
+    })
+    .where(
+      and(
+        eq(morningBriefNativeSchedules.orgId, owner.orgId),
+        eq(morningBriefNativeSchedules.userId, owner.userId),
+      ),
+    )
+    .returning({ ownerEpoch: morningBriefNativeSchedules.ownerEpoch });
+  if (row === undefined) {
+    throw new Error("Expected a native schedule to replace");
+  }
+  return { ownerEpoch: row.ownerEpoch, nextRunAt };
+}
+
+/** Run the real bounded retention purge for this test owner only. */
+export async function purgeExpiredNativeGenerations(
+  owner: MorningBriefNativeOwner,
+): Promise<number> {
+  return await purgeExpiredMorningBriefGenerations(db(), new Date(now()), 25, [
+    owner,
+  ]);
 }
 
 /**

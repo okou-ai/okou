@@ -8,6 +8,7 @@ import {
   isTextPreviewKind,
 } from "../text-preview.ts";
 import {
+  artifactReferenceLookupKey,
   createAttachmentPreviewSignals,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
@@ -62,7 +63,7 @@ export function createArtifactSignals(
     }
     const previewImageUrlsByUrl = await get(previewImageUrlsByUrl$);
     const url =
-      previewImageUrlsByUrl.get(descriptor.url) ??
+      previewImageUrlsByUrl.get(artifactReferenceLookupKey(descriptor.url)) ??
       (await get(preview.presignedToken$))?.previewImageUrl;
     return url
       ? await get(createAttachmentPreviewSignals(url).thumbnailUrl$)

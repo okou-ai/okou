@@ -260,7 +260,7 @@ const uploadFileToStorage$ = command(
       throw new Error(`storage returned ${putRes.status} ${putRes.statusText}`);
     }
 
-    if (parseArtifactReference(prepared.body.url)) {
+    if (parseArtifactReference(prepared.body.url, location.origin)) {
       const completed = await accept(
         client.complete({
           body: { id: prepared.body.id },

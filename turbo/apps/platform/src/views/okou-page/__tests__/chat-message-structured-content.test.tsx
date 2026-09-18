@@ -342,7 +342,7 @@ test("Structured message context survives navigation away and back", async () =>
   await expect(
     findFastControl("link", "Open chat Source thread"),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Page not found")).not.toBeInTheDocument();
+  expect(screen.queryByText("That page isn't here.")).not.toBeInTheDocument();
   await expect(screen.findByText("source-context.bin")).resolves.toBeVisible();
 });
 

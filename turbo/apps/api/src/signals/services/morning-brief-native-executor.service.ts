@@ -18,6 +18,7 @@ import {
   loadDueNativeOwners,
   loadPendingDeliveryOccurrences,
   loadResumableOccurrences,
+  lockMorningBriefNativeSchedule,
   loadTransitionCandidates,
   materializeMorningBriefNativeSchedule,
   resumeMorningBriefNativeOccurrence,
@@ -241,12 +242,33 @@ function outcomeFor(execution: NativeSlotExecution): {
  * receipt exists may the same saved result be retried under current authority.
  * Neither path regenerates, and neither settles the schedule a second time.
  */
+export type NativeDeliveryRecoveryResolution =
+  | { readonly kind: "pending" }
+  | {
+      readonly kind: "settle";
+      readonly outcome: Parameters<
+        typeof settleMorningBriefNativeOccurrence
+      >[2]["outcome"];
+    };
+
 export interface NativeDeliveryRecovery {
   readonly resolve: (
     owner: MorningBriefMemberIdentity,
     occurrence: MorningBriefNativeOccurrenceRow,
     signal: AbortSignal,
-  ) => Promise<"delivered" | "pending" | "terminal-failure">;
+  ) => Promise<NativeDeliveryRecoveryResolution>;
+  /**
+   * Recheck S6's durable receipt after the schedule row serializes this close.
+   *
+   * An already-admitted S6 transaction holds that same schedule lock until its
+   * receipt commits. Recovery can therefore decide from the post-wait truth
+   * instead of settling from a receipt read that became stale while it waited.
+   */
+  readonly hasCommittedReceipt: (
+    db: Pick<ReadonlyDb, "select">,
+    owner: MorningBriefMemberIdentity,
+    occurrence: MorningBriefNativeOccurrenceRow,
+  ) => Promise<boolean>;
 }
 
 /** Everything the tick needs from outside itself. */
@@ -308,34 +330,54 @@ const runDeliveryRecoveryPass$ = command(
       }
       const owner = { orgId: occurrence.orgId, userId: occurrence.userId };
       const resolution = await deps.delivery.resolve(owner, occurrence, signal);
-      if (resolution === "pending") {
+      if (resolution.kind === "pending") {
         continue;
       }
-      const closed = await db.transaction(async (tx) => {
-        return await closeRecoveredMorningBriefDelivery(tx, owner, {
+      const generationAttemptId = occurrence.generationAttemptId;
+      if (generationAttemptId === null) {
+        // The discovery query requires this value, but retain the guard at the
+        // mutation boundary rather than widening a malformed obligation.
+        continue;
+      }
+      const closure = await db.transaction(async (tx) => {
+        // S6 holds this same row until its delivery receipt commits. Take it
+        // before the final receipt read so a delivery that was in flight during
+        // `resolve` wins over that pre-wait snapshot.
+        if ((await lockMorningBriefNativeSchedule(tx, owner)) === undefined) {
+          return {
+            status: "absent" as const,
+            effectiveOutcome: resolution.outcome,
+          };
+        }
+        const receiptCommitted = await deps.delivery.hasCommittedReceipt(
+          tx,
+          owner,
+          occurrence,
+        );
+        const effectiveOutcome = receiptCommitted
+          ? "delivered"
+          : resolution.outcome;
+        const status = await closeRecoveredMorningBriefDelivery(tx, owner, {
           scheduledFor: occurrence.scheduledFor,
           expectedEpoch: occurrence.ownerEpoch,
+          expectedGenerationAttemptId: generationAttemptId,
           leaseToken: occurrence.leaseToken,
           // A slot that bound its attempt but crashed before its own settlement
           // still owes that settlement; one already settled only owes the clear.
-          settleAs:
-            occurrence.settledAt !== null
-              ? null
-              : resolution === "delivered"
-                ? "delivered"
-                : "generation-unknown",
+          settleAs: occurrence.settledAt === null ? effectiveOutcome : null,
           at: nowDate(),
         });
+        return { status, effectiveOutcome };
       });
       signal.throwIfAborted();
-      if (closed !== "closed") {
+      if (closure.status !== "closed") {
         // Reclaimed or revoked between the receipt read and this mutation. The
         // new owner keeps its own obligation; nothing is cleared behind it.
         continue;
       }
       counters.deliveriesRecovered += 1;
-      if (resolution === "terminal-failure") {
-        log.warn("Morning Brief delivery exhausted its retention", {
+      if (closure.effectiveOutcome === "generation-unknown") {
+        log.warn("Morning Brief generation recovery resolved unknown", {
           orgId: occurrence.orgId,
           scheduledFor: occurrence.scheduledFor.toISOString(),
         });

@@ -2,13 +2,13 @@
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
 official MCP SDK and serves `list_chat_threads`, `get_chat_thread`,
-`get_chat_messages`, `search_chat_messages`, `send_chat_message`,
+`get_chat_messages`, `search_chat_messages`, `get_chat_status`, `send_chat_message`,
 `revoke_queued_message` and `cancel_run`. The read tools query current
 user/organization-owned conversations; mutations reuse the existing input queue
 and run lifecycle. The OAuth
 foundation shipped in #34931; discovery and current context are tracked by
 #34932 under #34890. Message history is delivered in #34933 and search in
-#35100; sending and cancellation are delivered in #34934. Results include both structured content and a
+#35100; sending and cancellation are delivered in #34934, status in #35101. Results include both structured content and a
 JSON text representation.
 
 ## Conversation discovery
@@ -263,7 +263,7 @@ A definitive admission failure after input persistence can leave its disposition
 its current disposition; it does not mean the input was never accepted.
 This call does not wait for the whole run. A later read can observe a newer state.
 
-`inputRef` identifies the original submission for withdrawal and future input
+`inputRef` identifies the original submission for withdrawal and input
 status reads. Queue dispatch or active-input delivery can append a replacement
 event, so the currently visible message from `get_chat_messages` can have a
 different reference. Do not assume the original input is a valid visible
@@ -299,6 +299,82 @@ fingerprint, permanent identity record or migration is added. Current thread
 ownership is checked before resolving a receipt; deleting the thread ends the
 retry contract. The default-off `McpServer` feature and OAuth configuration are
 unchanged.
+
+### Input, execution and output status
+
+Call `get_chat_status` with `threadId` and the complete original `inputRef`
+returned by send (`threadId`, `eventId`, `seqId`). All three coordinates must
+match. With no input reference, `runSelection: "latest"` observes the latest
+authorized run by creation time, with run ID as a deterministic tie breaker.
+With an input reference, `runSelection: "input"` observes only its associated
+or reserved run. A queued, revoked, missing or inaccessible association never
+falls back to another run in the conversation.
+
+The result separates three observations:
+
+| Field                | Meaning                                                                                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input.state`        | `queued`, `reserved`, `associated`, `delivered`, `rejected`, `revoked`, or `unavailable`; null input means no reference was requested.                     |
+| `input.deliveryMode` | `launch` only when the exact initial callback input proves launch admission; `steer` only with a delivered active-input receipt; otherwise `unknown`.      |
+| `run`                | Authorized run ID, actual status, timestamps and cancellation recovery; null means no accessible selected run.                                             |
+| `output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
+| `output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
+| `messages`           | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
+| `retryAfterMs`       | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
+
+Initial admission is `associated`, even when the run has started: the service
+does not invent a runtime delivery receipt for the initial prompt. `reserved`
+means an active-input handoff is open. `delivered` requires an acknowledged
+active-input receipt and its canonical replacement; it never proves model
+compliance. Several inputs may share one run and its conversation output.
+`visibleMessageRef` can differ from the immutable original `ref` and may be
+null after revocation. Reads never submit, revoke, cancel, change recency or
+mark a conversation read.
+
+Run status preserves `queued`, `pending`, `running`, `completed`, `failed`,
+`timeout` and `cancelled`. A terminal run is not enough for output readiness.
+Actual visible assistant output plus the matching canonical terminal marker
+is required for `ready`; unresolved cancellation recovery keeps it `partial`.
+Without messages the state is `pending` until materialization completes, then
+`unavailable` with `no_output`. Missing associations use `no_associated_run`,
+and a deleted or inaccessible associated run uses `run_unavailable`. Terminal
+error/control markers are not fabricated as message references. Read the run
+status to distinguish success, failure and cancellation.
+
+`ready` describes the current materialized view, not an immutable final answer:
+late output can still arrive. Cancellation recovery reports `pending`,
+`complete` or `not_applicable`; a stale recovery barrier does not count as
+complete merely because the scheduler permits another run.
+
+Status uses the same verified archive plus live tail as message history, with
+run/receipt metadata inside that reader's repeatable-read, read-only snapshot.
+`observedAt` records completion of that bounded observation; concurrent later
+changes appear on the next call. Every call reconstructs the supported history
+and inherits the limits above, including three-second SQL statements and a
+15-second overall budget. Disconnect cancels the read only.
+Status data is capped at 16 KiB, leaving space for the duplicated MCP wire
+representation below 64 KiB. Oversized historical reference metadata fails
+explicitly instead of truncating identities. Poll no faster
+than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
+and stop automatic polling when it is null or the tool returns a resource
+error. A queued input with no run has unavailable output but a non-null retry
+delay: continue tracking that original input instead of submitting it again.
+
+Original input lookup lasts while the exact canonical input and linkage remain
+in readable retained thread history. It continues through archives after the
+30-day live-event window, within the stated history limits; it is not a new
+permanent identity store. Deleted/mismatched/absent references return
+`input.state: "unavailable"`; corrupt, missing or oversized required archives
+fail the tool explicitly. Historical launch/steer evidence can become `unknown`
+when receipt or callback records are no longer available. None of this extends
+the independent 24-hour send retry guarantee. References and artifact links
+retain their existing user/org/thread authorization and grant no new access.
+
+Combined native Codex acceptance in #34936 should exercise send returning a
+null run ID → status by inputRef → queued/associated execution → partial/ready
+output → `get_chat_messages`, then repeat with an active steer, queued revoke
+and cancellation recovery. Also verify that a missing reference does not show
+an unrelated latest run. ChatGPT acceptance remains deferred.
 
 `revoke_queued_message` takes `threadId` and the original `inputId` (the
 `inputRef.eventId`). It returns those identifiers, a nullable `runId`, and

@@ -2159,6 +2159,7 @@ export async function closeRecoveredMorningBriefDelivery(
   args: {
     readonly scheduledFor: Date;
     readonly expectedEpoch: number;
+    readonly expectedGenerationAttemptId: string;
     readonly leaseToken: string | null;
     /** Non-null when this slot still owes its one settlement. */
     readonly settleAs: MorningBriefNativeOutcome | null;
@@ -2178,6 +2179,11 @@ export async function closeRecoveredMorningBriefDelivery(
         eq(morningBriefNativeOccurrences.userId, owner.userId),
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         eq(morningBriefNativeOccurrences.ownerEpoch, args.expectedEpoch),
+        eq(
+          morningBriefNativeOccurrences.generationAttemptId,
+          args.expectedGenerationAttemptId,
+        ),
+        eq(morningBriefNativeOccurrences.deliveryPending, true),
         args.leaseToken === null
           ? isNull(morningBriefNativeOccurrences.leaseToken)
           : eq(morningBriefNativeOccurrences.leaseToken, args.leaseToken),

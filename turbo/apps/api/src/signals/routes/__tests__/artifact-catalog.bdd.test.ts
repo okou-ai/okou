@@ -465,7 +465,9 @@ describe("GET /api/artifacts/catalog", () => {
         claimRun: false,
       });
       const canonical = hosted.url;
-      expect(canonical).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+      expect(canonical).toMatch(
+        /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
+      );
       const list = await chat.listArtifactCatalog(owner.actor);
       const entry = list.artifacts.find((item) => {
         return item.title === site;

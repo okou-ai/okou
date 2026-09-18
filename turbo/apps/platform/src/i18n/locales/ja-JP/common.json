@@ -604,9 +604,7 @@
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
       "publicDescription": "リンクを知っている全員が表示できます",
-      "retry": "再試行",
-      "savedAutomatically": "変更は自動的に保存されます",
-      "saving": "保存中…"
+      "retry": "再試行"
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",
@@ -6176,8 +6174,9 @@
     },
     "notFound": {
       "action": "ホームに戻る",
-      "description": "お探しのページは存在しません。",
-      "title": "ページが見つかりません"
+      "browse": "ワークフローを見る",
+      "description": "移動されたか、リンクが古い可能性があります。それ以外はすべて元の場所にあります。",
+      "title": "そのページはここにありません。"
     },
     "workerFailure": {
       "action": "リフレッシュ",

@@ -166,19 +166,43 @@ deferred at most **3 times, 15 minutes apart** (`NATIVE_CONFIGURATION_DEFER_LIMI
 provider call, no false invocation receipt, and no enabled owner left with an
 unowned `NULL` schedule.
 
-### Delivery recovery
+### Bound-attempt recovery
 
-`delivery_pending` is owned by the delivery consumer, not by the scheduler. The
-slot is already settled, so the next daily occurrence may become due while this
-recovery is still running; a pending receipt must never wedge the future
-scheduler or re-open its slot.
+S5 binds `generation_attempt_id` and sets `delivery_pending` in the reservation
+transaction, before the sole provider POST. Recovery therefore owns two forms
+of the same durable obligation: an accepted result whose native slot already
+settled with delivery pending, and a process interruption after a bound S5
+attempt committed but before native settlement. A bound attempt is never
+reachable through ordinary occurrence resume, so neither form can recollect or
+open a second invocation.
 
-The consumer resolves the **durable receipt by the native occurrence identity
-first**, without requiring the S5 result to still be present. A Chat receipt
-committed before a crash stays delivered after the result expires, and its
-shared-outbox email recovery is preserved. Only when no committed receipt
-exists may the same saved result be retried under current authority and valid
-retention. Neither path regenerates, and neither settles the schedule again.
+The consumer resolves the **durable S6 receipt by the native occurrence
+identity first**, without requiring the S5 result to still be present. A Chat
+receipt committed before a crash stays delivered after the result expires or
+is physically purged, and its shared-outbox email recovery remains with S2.
+
+Without a receipt, recovery consults S5's content-free readback for that exact
+attempt:
+
+- a retained accepted `deliver` result alone enters S6 under current authority;
+- a validated model skip settles `model-skip`;
+- `provider_failed`, `output_rejected`, `not_invoked`, and `result_discarded`
+  settle `generation-failed`;
+- `invocation_outcome_unknown`, a lapsed reservation, or a conclusively missing
+  result settles `generation-unknown`;
+- a live reservation and a temporarily unreleasable accepted result stay
+  pending.
+
+Logical retention does not erase known terminal metadata while its row still
+exists. Physical deletion does make a receipt-less result unknown. A lapsed
+reservation transition is fenced by that exact attempt, so a replacement row
+cannot inherit the old attempt's unknown outcome. Closing is a compare-and-set
+over the exact occurrence epoch, lease, bound attempt and pending flag. It locks
+the schedule before rechecking the S6 receipt, so a delivery that commits while
+recovery waits still wins as `delivered`; overlapping ticks can consume the
+obligation once, and an old epoch cannot rewrite a newer schedule obligation.
+Neither recovery path changes platform receipt/cost facts, reparses provider
+output, or settles the schedule twice.
 
 ### Missed ticks coalesce
 

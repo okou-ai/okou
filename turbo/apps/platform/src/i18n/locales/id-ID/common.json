@@ -604,9 +604,7 @@
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
       "publicDescription": "Siapa pun yang memiliki tautan dapat melihat",
-      "retry": "Coba lagi",
-      "savedAutomatically": "Perubahan disimpan otomatis",
-      "saving": "Menyimpan…"
+      "retry": "Coba lagi"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",
@@ -6176,8 +6174,9 @@
     },
     "notFound": {
       "action": "Kembali ke beranda",
-      "description": "Halaman yang Anda cari tidak ada.",
-      "title": "Halaman tidak ditemukan"
+      "browse": "Jelajahi alur kerja",
+      "description": "Mungkin sudah dipindahkan, atau tautannya sudah lama. Semua yang lain masih ada di tempatnya.",
+      "title": "Halaman itu tidak ada di sini."
     },
     "workerFailure": {
       "action": "Muat ulang",

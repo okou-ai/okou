@@ -315,6 +315,75 @@ export async function readMorningBriefGeneration(
   return row;
 }
 
+/**
+ * The content-free S5 facts needed to recover one already-bound attempt.
+ *
+ * Recovery identifies the exact attempt the native occurrence durably bound;
+ * it never searches by a reconstructed time window and never reads the saved
+ * title or Markdown before S6 has re-proved release authority.
+ */
+interface MorningBriefGenerationRecoveryRow {
+  readonly owner: MorningBriefCollectionOwner;
+  readonly scheduledFor: Date;
+  readonly collectionKind: string;
+  readonly collectionVersion: number;
+  readonly attemptId: string;
+  readonly state: MorningBriefGenerationState;
+  readonly decision: "deliver" | "skip" | null;
+  readonly reservationExpiresAt: Date;
+  readonly expiresAt: Date;
+  readonly contentPurgedAt: Date | null;
+}
+
+export async function readMorningBriefGenerationRecovery(
+  db: Pick<ReadonlyDb, "select">,
+  args: {
+    readonly owner: MorningBriefCollectionOwner;
+    readonly attemptId: string;
+    readonly purpose: (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
+  },
+): Promise<MorningBriefGenerationRecoveryRow | undefined> {
+  const [row] = await db
+    .select({
+      orgId: morningBriefGenerations.orgId,
+      userId: morningBriefGenerations.userId,
+      scheduledFor: morningBriefGenerations.scheduledFor,
+      collectionKind: morningBriefGenerations.collectionKind,
+      collectionVersion: morningBriefGenerations.collectionVersion,
+      attemptId: morningBriefGenerations.attemptId,
+      state: morningBriefGenerations.state,
+      decision: morningBriefGenerations.decision,
+      reservationExpiresAt: morningBriefGenerations.reservationExpiresAt,
+      expiresAt: morningBriefGenerations.expiresAt,
+      contentPurgedAt: morningBriefGenerations.contentPurgedAt,
+    })
+    .from(morningBriefGenerations)
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, args.owner.orgId),
+        eq(morningBriefGenerations.userId, args.owner.userId),
+        eq(morningBriefGenerations.attemptId, args.attemptId),
+        eq(morningBriefGenerations.executionPurpose, args.purpose),
+      ),
+    )
+    .limit(1);
+  if (row === undefined) {
+    return undefined;
+  }
+  return {
+    owner: { orgId: row.orgId, userId: row.userId },
+    scheduledFor: row.scheduledFor,
+    collectionKind: row.collectionKind,
+    collectionVersion: row.collectionVersion,
+    attemptId: row.attemptId,
+    state: row.state,
+    decision: row.decision,
+    reservationExpiresAt: row.reservationExpiresAt,
+    expiresAt: row.expiresAt,
+    contentPurgedAt: row.contentPurgedAt,
+  };
+}
+
 function fenceCondition(fence: MorningBriefGenerationFence) {
   return and(
     generationKey(fence.key),
@@ -474,18 +543,23 @@ export async function recordMorningBriefGenerationOutcome(
  * This is the observable recovery path, and it deliberately resolves to
  * *unknown* rather than to a retryable state: the original request may already
  * have reached the provider. It is driven by an explicit invocation, so no
- * background scheduler or queue is introduced. The attempt id is not required,
- * because the attempt that would have supplied it is exactly the one that
- * disappeared.
+ * background scheduler or queue is introduced. The attempt id is part of both
+ * the lock and update predicates: a row replaced while recovery waits is a new
+ * obligation and must never inherit the older attempt's unknown outcome.
  */
 export async function resolveStaleMorningBriefGeneration(
   tx: Tx,
   key: MorningBriefGenerationKey,
+  expectedAttemptId: string,
 ): Promise<MorningBriefGenerationRow | undefined> {
+  const exactAttempt = and(
+    generationKey(key),
+    eq(morningBriefGenerations.attemptId, expectedAttemptId),
+  );
   const [locked] = await tx
     .select({ attemptId: morningBriefGenerations.attemptId })
     .from(morningBriefGenerations)
-    .where(generationKey(key))
+    .where(exactAttempt)
     .for("update")
     .limit(1);
   if (!locked) {
@@ -504,7 +578,7 @@ export async function resolveStaleMorningBriefGeneration(
     })
     .where(
       and(
-        generationKey(key),
+        exactAttempt,
         eq(morningBriefGenerations.state, "reserved"),
         lte(morningBriefGenerations.reservationExpiresAt, at),
       ),

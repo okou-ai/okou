@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
 import { mcpSearchChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { mcpGetChatStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-status";
 import {
   mcpSendChatMessageOutputSchema,
   mcpRevokeQueuedMessageOutputSchema,
@@ -42,7 +43,12 @@ import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
+import {
+  completeRunWithoutCallbacksFixture,
+  holdChatThreadRowLockFixture,
+  setQueuedUserMessageCreatedAtFixture,
+  timeoutRunWithoutCallbacksFixture,
+} from "../../../test-fixtures/chat-events";
 import {
   rejectSearchablePromptFixture,
   setChatSearchEventTimestampPrecisionFixture,
@@ -245,6 +251,12 @@ async function searchMessages(token: string, args: Record<string, unknown>) {
   return mcpSearchChatMessagesOutputSchema.parse(result.structuredContent);
 }
 
+async function getStatus(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "get_chat_status", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpGetChatStatusOutputSchema.parse(result.structuredContent);
+}
+
 async function sendMessage(token: string, args: Record<string, unknown>) {
   const result = await callTool(token, "send_chat_message", args);
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
@@ -346,6 +358,470 @@ async function chatRunFixture() {
   return { auth, actor, chat, agent, runs };
 }
 
+describe("MCP chat status", () => {
+  it("reports an empty thread without changing its unread or message state", async () => {
+    const f = await threadFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const before = await f.chat.readThread(f.actor, thread.id);
+    const status = await getStatus(f.auth.token(), { threadId: thread.id });
+    expect(status).toMatchObject({
+      threadId: thread.id,
+      input: null,
+      run: null,
+      runSelection: "latest",
+      output: {
+        state: "unavailable",
+        messageRefs: [],
+        hasMore: false,
+        reason: "no_associated_run",
+      },
+      messages: null,
+      retryAfterMs: null,
+    });
+    expect(Number.isNaN(Date.parse(status.observedAt))).toBeFalsy();
+    await expect(f.chat.readThread(f.actor, thread.id)).resolves.toStrictEqual(
+      before,
+    );
+  });
+
+  it("tracks an original launch through running, partial output and materialized completion", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "PRIVATE_STATUS_PROMPT: summarize the findings",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const pending = await getStatus(token, args);
+    expect(pending).toMatchObject({
+      input: {
+        ref: sent.inputRef,
+        state: "associated",
+        // Immediate admission does not retain a launch receipt. Association
+        // proves the run identity, not how the runtime consumed the input.
+        deliveryMode: "unknown",
+        runId,
+      },
+      run: { id: runId, status: "pending", completedAt: null },
+      runSelection: "input",
+      output: { state: "pending", messageRefs: [], reason: null },
+      messages: {
+        tool: "get_chat_messages",
+        arguments: { threadId: thread.id, runId, limit: 20 },
+      },
+    });
+    expect(pending.retryAfterMs).toBeGreaterThan(0);
+    expect(pending.input?.visibleMessageRef).not.toStrictEqual(sent.inputRef);
+    expect(JSON.stringify(pending)).not.toContain("PRIVATE_STATUS_PROMPT");
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    await expect(getStatus(token, args)).resolves.toMatchObject({
+      run: { id: runId, status: "running", completedAt: null },
+      output: { state: "pending" },
+    });
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              content: [
+                { type: "text", text: "A readable intermediate result." },
+              ],
+            },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const partial = await getStatus(token, args);
+    expect(partial).toMatchObject({
+      run: { status: "running" },
+      output: { state: "partial", hasMore: false, reason: null },
+    });
+    expect(partial.output.messageRefs).toHaveLength(1);
+    await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    const ready = await getStatus(token, args);
+    expect(ready).toMatchObject({
+      run: { id: runId, status: "completed", completedAt: expect.any(String) },
+      output: { state: "ready", messageRefs: partial.output.messageRefs },
+      retryAfterMs: null,
+    });
+    if (!ready.messages) {
+      throw new Error("Expected a message retrieval handoff");
+    }
+    const messages = await getMessages(token, ready.messages.arguments);
+    expect(
+      messages.messages
+        .filter((message) => {
+          return message.role === "assistant";
+        })
+        .map((message) => {
+          return message.ref;
+        }),
+    ).toStrictEqual(ready.output.messageRefs);
+    await expect(
+      getStatus(token, { threadId: thread.id }),
+    ).resolves.toMatchObject({
+      input: null,
+      runSelection: "latest",
+      run: { id: runId, status: "completed" },
+      output: { state: "ready" },
+    });
+    const invalidRefs = [
+      { ...sent.inputRef, eventId: randomUUID() },
+      { ...sent.inputRef, seqId: sent.inputRef.seqId + 1 },
+      pending.input?.visibleMessageRef,
+    ];
+    for (const inputRef of invalidRefs) {
+      if (!inputRef) {
+        throw new Error("Expected a visible replacement reference");
+      }
+      await expect(
+        getStatus(token, { threadId: thread.id, inputRef }),
+      ).resolves.toMatchObject({
+        input: { state: "unavailable", runId: null },
+        run: null,
+        runSelection: "input",
+        messages: null,
+      });
+    }
+    await expect(
+      getStatus(token, {
+        threadId: thread.id.toUpperCase(),
+        inputRef: {
+          ...sent.inputRef,
+          threadId: thread.id.toUpperCase(),
+          eventId: sent.inputRef.eventId.toUpperCase(),
+        },
+      }),
+    ).resolves.toMatchObject({
+      threadId: thread.id,
+      input: { ref: sent.inputRef, runId },
+      run: { id: runId, status: "completed" },
+    });
+  });
+
+  it("keeps cancellation recovery separate from readable partial and late output", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Cancel after partial progress",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: sent.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: { content: [{ type: "text", text: "Partial progress" }] },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const token = auth.token({ scope: defaultScopes });
+    await cancelRun(token, sent.runId);
+    await flushWaitUntilForTest();
+    const recovering = await getStatus(token, { threadId: sent.threadId });
+    expect(recovering).toMatchObject({
+      run: {
+        id: sent.runId,
+        status: "cancelled",
+        cancellationRecovery: "pending",
+      },
+      output: { state: "partial" },
+    });
+    expect(recovering.retryAfterMs).toBeGreaterThan(0);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: sent.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 1,
+            message: {
+              content: [{ type: "text", text: "Recovered final progress" }],
+            },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await f.completeChatRunOk(sent.runId, claimed.sandboxHeaders, {
+      lastEventSequence: 1,
+    });
+    await flushWaitUntilForTest();
+    const recovered = await getStatus(token, { threadId: sent.threadId });
+    expect(recovered).toMatchObject({
+      run: {
+        id: sent.runId,
+        status: "cancelled",
+        cancellationRecovery: "complete",
+      },
+      output: { state: "ready" },
+      retryAfterMs: null,
+    });
+    expect(recovered.output.messageRefs).toHaveLength(2);
+  });
+
+  it("reports failed runs without inventing assistant messages from terminal errors", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Fail before producing output",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    await f.failChatRun(
+      sent.runId,
+      claimed.sandboxHeaders,
+      "PRIVATE_RAW_ERROR",
+    );
+    await flushWaitUntilForTest();
+    const status = await getStatus(auth.token(), { threadId: sent.threadId });
+    expect(status).toMatchObject({
+      run: { id: sent.runId, status: "failed" },
+      output: { state: "unavailable", reason: "no_output", messageRefs: [] },
+      retryAfterMs: null,
+    });
+    expect(JSON.stringify(status)).not.toContain("PRIVATE_RAW_ERROR");
+  });
+
+  it("identifies a queued launch and preserves its association after original-input retention", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const puts: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, puts);
+    const active = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: "Finish before the queued launch",
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
+    const token = auth.token({ scope: defaultScopes });
+    const submitted = await sendMessage(token, {
+      threadId: active.threadId,
+      requestId: randomUUID(),
+      text: "Start a new run when the previous one completes",
+    });
+    const args = { threadId: active.threadId, inputRef: submitted.inputRef };
+    await expect(getStatus(token, args)).resolves.toMatchObject({
+      input: { state: "queued", runId: null, deliveryMode: "unknown" },
+      run: null,
+    });
+    await f.completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    const launched = await getStatus(token, args);
+    const nextRunId = launched.run?.id;
+    if (!nextRunId) {
+      throw new Error("Expected the queued input to start its own run");
+    }
+    onTestFinished(async () => {
+      await f.api.requestCancelRun(actor.actor, nextRunId, [200, 400, 404]);
+    });
+    expect(nextRunId).not.toBe(active.runId);
+    expect(launched).toMatchObject({
+      input: {
+        ref: submitted.inputRef,
+        state: "associated",
+        deliveryMode: "launch",
+        runId: nextRunId,
+      },
+      run: { id: nextRunId, status: "pending" },
+      output: { state: "pending" },
+    });
+    // Infrastructure exception: the retention cutoff uses the database clock;
+    // public requests cannot backdate this original submission by 31 days.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: submitted.inputRef.eventId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await snapshotMessages(active.threadId);
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [active.threadId] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const archived = await getStatus(token, args);
+    expect(archived.input).toStrictEqual(launched.input);
+    expect(archived.run).toStrictEqual(launched.run);
+    expect(archived.output).toStrictEqual(launched.output);
+  });
+
+  it.each(["completed", "timeout"] as const)(
+    "keeps %s output pending or partial until its canonical terminal marker exists",
+    async (status) => {
+      const auth = await fixture();
+      const f = createChatEventsFixture(context);
+      const actor = await f.entitledChatActor({
+        userId: auth.userId,
+        orgId: auth.orgId,
+      });
+      const sent = await f.sendChatRun(actor.actor, {
+        agentId: actor.agentId,
+        prompt: "Observe a delayed terminal callback",
+      });
+      const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+      // Infrastructure exception: a successful public completion schedules its
+      // callback. Only a process crash can leave the committed terminal run
+      // without that dispatch; the existing scoped fixture recreates this gap.
+      if (status === "completed") {
+        await completeRunWithoutCallbacksFixture({ runId: sent.runId });
+      } else {
+        await timeoutRunWithoutCallbacksFixture({ runId: sent.runId });
+      }
+      const token = auth.token();
+      await expect(
+        getStatus(token, { threadId: sent.threadId }),
+      ).resolves.toMatchObject({
+        run: { id: sent.runId, status },
+        output: { state: "pending", messageRefs: [] },
+        retryAfterMs: expect.any(Number),
+      });
+      await f.webhooks.requestAgentEvents(
+        {
+          runId: sent.runId,
+          events: [
+            {
+              type: "assistant",
+              sequenceNumber: 0,
+              message: {
+                content: [{ type: "text", text: "Late canonical output" }],
+              },
+            },
+          ],
+        },
+        claimed.sandboxHeaders,
+        [200],
+      );
+      const observed = await getStatus(token, { threadId: sent.threadId });
+      expect(observed.run?.status).toBe(status);
+      // Timeout fencing discards late output; an ordinary completed run can
+      // materialize it, but neither case invents the missing terminal marker.
+      expect(observed.output.state).toBe(
+        status === "completed" ? "partial" : "pending",
+      );
+      expect(observed.output.messageRefs).toHaveLength(
+        status === "completed" ? 1 : 0,
+      );
+      expect(observed.retryAfterMs).toBeGreaterThan(0);
+    },
+  );
+
+  it("resolves archived original inputs and rejects an incomplete archive", async () => {
+    const f = await messageFixture();
+    const puts: RecordedChatEventPut[] = [];
+    installFakeChatEventR2(context, puts);
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const token = f.auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Retain my original input reference",
+    });
+    const args = { threadId: thread.id, inputRef: sent.inputRef };
+    const before = await getStatus(token, args);
+    // Infrastructure exception: public sends cannot backdate acceptance past
+    // the database-clock retention cutoff. Archive, retention and all status
+    // assertions still execute their real HTTP endpoints.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: sent.inputRef.eventId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await snapshotMessages(thread.id);
+    const archive = puts.at(-1);
+    if (!archive) {
+      throw new Error("Expected the canonical archive");
+    }
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [thread.id] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const after = await getStatus(token, args);
+    expect(after.input).toStrictEqual(before.input);
+    expect(after.output).toStrictEqual(before.output);
+    await deleteFakeChatEventObject(archive.key);
+    const failure = await callTool(token, "get_chat_status", args);
+    expect(failure.isError).toBeTruthy();
+    expect(failure.content[0]?.text).toContain("could not be read completely");
+  });
+
+  it("rejects cross-thread references and unsupported status controls", async () => {
+    const f = await threadFixture();
+    const thread = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+    });
+    const token = f.auth.token();
+    const before = await f.chat.readThread(f.actor, thread.id);
+    for (const args of [
+      { threadId: thread.id, waitMs: 30_000 },
+      { threadId: thread.id, runId: randomUUID() },
+      {
+        threadId: thread.id,
+        inputRef: { threadId: randomUUID(), eventId: randomUUID(), seqId: 1 },
+      },
+      {
+        threadId: thread.id,
+        inputRef: { threadId: thread.id, eventId: randomUUID(), seqId: 0 },
+      },
+    ]) {
+      expect(
+        (await callTool(token, "get_chat_status", args)).isError,
+      ).toBeTruthy();
+    }
+    await expect(f.chat.readThread(f.actor, thread.id)).resolves.toStrictEqual(
+      before,
+    );
+  });
+});
+
 describe("MCP chat mutations", () => {
   it("treats UUID letter case as the same submission identity", async () => {
     const f = await messageFixture();
@@ -410,6 +886,26 @@ describe("MCP chat mutations", () => {
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
     ).toMatchObject([{ text, eventType: "input.rejected", runId: null }]);
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: result.inputRef,
+    });
+    expect(status).toMatchObject({
+      input: {
+        ref: result.inputRef,
+        state: "rejected",
+        deliveryMode: "unknown",
+        runId: null,
+      },
+      run: null,
+      runSelection: "input",
+      output: { state: "unavailable", reason: "no_associated_run" },
+      messages: null,
+      retryAfterMs: null,
+    });
+    expect(status.input?.visibleMessageRef).toStrictEqual(
+      (await getMessages(token, { threadId: thread.id })).messages[0]?.ref,
+    );
     const replay = await sendMessage(token, {
       threadId: thread.id,
       text,
@@ -895,7 +1391,7 @@ describe("MCP chat mutations", () => {
       requestId: randomUUID(),
     };
     const token = f.auth.token({ scope: defaultScopes });
-    await sendMessage(token, args);
+    const submitted = await sendMessage(token, args);
     const strangers = [
       f.bdd.user({ orgId: f.auth.orgId }),
       f.bdd.user({ userId: f.auth.userId }),
@@ -937,6 +1433,19 @@ describe("MCP chat mutations", () => {
       expect(failure).toStrictEqual(missing);
       expect(failure.isError).toBeTruthy();
       expect(JSON.stringify(failure)).not.toContain("PRIVATE_MCP_RECEIPT");
+      const hiddenStatus = await callTool(foreignToken, "get_chat_status", {
+        threadId: thread.id,
+        inputRef: submitted.inputRef,
+      });
+      const missingThreadId = randomUUID();
+      await expect(
+        callTool(foreignToken, "get_chat_status", {
+          threadId: missingThreadId,
+          inputRef: { ...submitted.inputRef, threadId: missingThreadId },
+        }),
+      ).resolves.toStrictEqual(hiddenStatus);
+      expect(hiddenStatus.isError).toBeTruthy();
+      expect(hiddenStatus.structuredContent).toBeUndefined();
       await expect(
         revokeMessage(foreignToken, thread.id, args.requestId),
       ).resolves.toMatchObject({ outcome: "unavailable", runId: null });
@@ -944,6 +1453,14 @@ describe("MCP chat mutations", () => {
     await f.chat.deleteThread(f.actor, thread.id);
     expect(
       (await callTool(token, "send_chat_message", args)).isError,
+    ).toBeTruthy();
+    expect(
+      (
+        await callTool(token, "get_chat_status", {
+          threadId: thread.id,
+          inputRef: submitted.inputRef,
+        })
+      ).isError,
     ).toBeTruthy();
   });
 
@@ -1065,6 +1582,14 @@ describe("MCP chat mutations", () => {
       };
       const sent = await sendMessage(token, args);
       expect(sent).toMatchObject({ disposition: "queued", runId: null });
+      await expect(
+        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+      ).resolves.toMatchObject({
+        input: { state: "queued", runId: null },
+        run: null,
+        runSelection: "input",
+        output: { state: "unavailable", reason: "no_associated_run" },
+      });
       const revoked = await revokeMessage(
         token,
         letterCase === "uppercase"
@@ -1087,6 +1612,19 @@ describe("MCP chat mutations", () => {
         replayed: true,
         disposition: "revoked",
         runId: null,
+      });
+      await expect(
+        getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+      ).resolves.toMatchObject({
+        input: {
+          ref: sent.inputRef,
+          state: "revoked",
+          runId: null,
+          visibleMessageRef: null,
+        },
+        run: null,
+        output: { state: "unavailable", reason: "no_associated_run" },
+        retryAfterMs: null,
       });
       expect(
         (await getMessages(token, { threadId: args.threadId })).messages.map(
@@ -1192,15 +1730,23 @@ describe("MCP chat mutations", () => {
       userId: auth.userId,
       orgId: auth.orgId,
     });
-    const active = await f.sendChatRun(actor.actor, {
+    const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
-      prompt: "Active steer target",
     });
+    const token = auth.token({ scope: defaultScopes });
+    const initial = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Active steer target",
+    });
+    if (!initial.runId) {
+      throw new Error("Expected MCP input to start the steer target");
+    }
+    const active = { threadId: thread.id, runId: initial.runId };
     onTestFinished(async () => {
       await f.cancelChatRun(actor.actor, active.runId);
     });
     const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
-    const token = auth.token({ scope: defaultScopes });
     const args = {
       threadId: active.threadId,
       text: "Steer the current run",
@@ -1228,6 +1774,18 @@ describe("MCP chat mutations", () => {
       runId: active.runId,
     });
     await expect(
+      getStatus(token, { threadId: args.threadId, inputRef: sent.inputRef }),
+    ).resolves.toMatchObject({
+      input: {
+        ref: sent.inputRef,
+        state: "reserved",
+        deliveryMode: "unknown",
+        runId: active.runId,
+      },
+      run: { id: active.runId, status: "running" },
+      output: { state: "pending", messageRefs: [] },
+    });
+    await expect(
       f.api.recordRunnerActiveInputDelivery(
         claimed.claim.sandboxToken,
         active.runId,
@@ -1240,6 +1798,22 @@ describe("MCP chat mutations", () => {
       disposition: "associated",
       runId: active.runId,
     });
+    const delivered = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: sent.inputRef,
+    });
+    expect(delivered).toMatchObject({
+      input: {
+        ref: sent.inputRef,
+        state: "delivered",
+        deliveryMode: "steer",
+        runId: active.runId,
+      },
+      run: { id: active.runId, status: "running" },
+      runSelection: "input",
+      output: { state: "pending", messageRefs: [] },
+    });
+    expect(delivered.input?.visibleMessageRef).not.toStrictEqual(sent.inputRef);
     await expect(
       revokeMessage(token, args.threadId, args.requestId),
     ).resolves.toMatchObject({
@@ -1258,6 +1832,73 @@ describe("MCP chat mutations", () => {
     ).resolves.toMatchObject({
       status: "running",
     });
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: active.runId,
+        events: Array.from({ length: 21 }, (_, sequenceNumber) => {
+          return {
+            type: "assistant",
+            sequenceNumber,
+            message: {
+              content: [
+                { type: "text", text: `Shared output ${sequenceNumber}` },
+              ],
+            },
+          };
+        }),
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    const steered = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: sent.inputRef,
+    });
+    const launched = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: initial.inputRef,
+    });
+    expect(launched.run).toStrictEqual(steered.run);
+    expect(launched.output).toStrictEqual(steered.output);
+    expect(steered.output).toMatchObject({ state: "partial", hasMore: true });
+    expect(steered.output.messageRefs).toHaveLength(20);
+    if (!steered.messages) {
+      throw new Error("Expected shared output retrieval instructions");
+    }
+    const page = await getMessages(token, steered.messages.arguments);
+    expect(
+      page.messages.map((message) => {
+        return message.ref;
+      }),
+    ).toStrictEqual(steered.output.messageRefs);
+    expect(page.olderCursor).not.toBeNull();
+    installFakeChatEventR2(context, []);
+    // Infrastructure exception: public sends cannot backdate acceptance past
+    // the database retention cutoff. Retaining this settled source also removes
+    // its delivery receipt, while canonical archived replacement links survive.
+    await setQueuedUserMessageCreatedAtFixture({
+      eventId: sent.inputRef.eventId,
+      createdAt: new Date(now() - 31 * 24 * 60 * 60 * 1000),
+    });
+    await snapshotMessages(args.threadId);
+    const retained = await accept(
+      setupApp({ context, routes: testChatEventRetentionRoutes })(
+        testChatEventRetentionContract,
+      ).retain({ body: { chat_thread_ids: [args.threadId] } }),
+      [200],
+    );
+    expect(retained.body.deleted).toBe(1);
+    const archived = await getStatus(token, {
+      threadId: args.threadId,
+      inputRef: sent.inputRef,
+    });
+    expect(archived.input).toStrictEqual({
+      ...steered.input,
+      state: "associated",
+      deliveryMode: "unknown",
+    });
+    expect(archived.run).toStrictEqual(steered.run);
+    expect(archived.output).toStrictEqual(steered.output);
   });
 
   it.each(["lowercase", "uppercase"] as const)(
@@ -3428,6 +4069,7 @@ describe("external MCP entry", () => {
               name: "search_chat_messages",
               annotations: { readOnlyHint: true },
             },
+            { name: "get_chat_status", annotations: { readOnlyHint: true } },
             { name: "list_chat_threads", annotations: { readOnlyHint: true } },
             { name: "get_chat_thread", annotations: { readOnlyHint: true } },
             ...(scopes === defaultScopes
@@ -3527,6 +4169,7 @@ describe("external MCP entry", () => {
       ).toStrictEqual([
         "get_chat_messages",
         "search_chat_messages",
+        "get_chat_status",
         "list_chat_threads",
         "get_chat_thread",
         "send_chat_message",
@@ -3659,6 +4302,11 @@ describe("external MCP entry", () => {
       {
         method: "tools/call",
         name: "get_chat_thread",
+        args: { threadId: randomUUID() },
+      },
+      {
+        method: "tools/call",
+        name: "get_chat_status",
         args: { threadId: randomUUID() },
       },
     ]) {

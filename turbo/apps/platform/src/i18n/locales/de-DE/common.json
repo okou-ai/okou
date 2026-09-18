@@ -605,9 +605,7 @@
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
       "publicDescription": "Alle mit dem Link können es ansehen",
-      "retry": "Erneut versuchen",
-      "savedAutomatically": "Änderungen werden automatisch gespeichert",
-      "saving": "Wird gespeichert…"
+      "retry": "Erneut versuchen"
     },
     "sidebar": {
       "openSharedConversation": "Geteilte Unterhaltung öffnen",
@@ -6190,8 +6188,9 @@
     },
     "notFound": {
       "action": "Zurück zur Startseite",
-      "description": "Die gesuchte Seite existiert nicht.",
-      "title": "Seite nicht gefunden"
+      "browse": "Workflows durchsuchen",
+      "description": "Sie wurde möglicherweise verschoben oder der Link ist veraltet. Alles andere ist dort, wo Sie es verlassen haben.",
+      "title": "Diese Seite ist nicht hier."
     },
     "workerFailure": {
       "action": "Aktualisieren",

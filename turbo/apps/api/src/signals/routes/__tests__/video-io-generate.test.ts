@@ -1543,7 +1543,9 @@ describe("POST /api/video-io/generate", () => {
         );
         expect(putInput.Bucket).toBe("test-private-artifacts");
         expect(putInput.Key).toBe(`private-artifacts/${fileId}/${filename}`);
-        expect(url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.mp4$/u);
+        expect(url).toMatch(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.mp4$/u,
+        );
         expect(
           JSON.stringify(context.mocks.ably.publish.mock.calls),
         ).not.toContain(BYTEPLUS_VIDEO_URL);

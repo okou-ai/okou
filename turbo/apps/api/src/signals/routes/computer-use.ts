@@ -28,10 +28,10 @@ import {
   getComputerUseCommandScreenshot$,
   heartbeatComputerUseHost$,
   listComputerUseAuditEvents$,
-  listComputerUseHosts$,
   startComputerUseHost$,
   stopComputerUseHost$,
 } from "../services/computer-use.service";
+import { listAdmittedComputerUseHosts$ } from "../services/computer-use-host-directory-erasure-admission.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -177,28 +177,24 @@ const hostStopInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 const hostsListInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const result = await set(
-    listComputerUseHosts$,
-    { orgId: auth.orgId, userId: auth.userId },
+    listAdmittedComputerUseHosts$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      ...(auth.tokenType === "agent"
+        ? { boundHostId: auth.computerUseHostId ?? null }
+        : {}),
+    },
     signal,
   );
   signal.throwIfAborted();
-
-  if (auth.tokenType === "agent") {
-    const hostId = auth.computerUseHostId;
-    if (!hostId) {
-      return computerUseHostNotAuthorized;
-    }
-    return {
-      status: 200 as const,
-      body: {
-        hosts: result.hosts.filter((host) => {
-          return host.id === hostId;
-        }),
-      },
-    };
+  if (result.outcome === "closed") {
+    return forbidden("Computer-use host directory is not available");
   }
-
-  return { status: 200 as const, body: result };
+  if (result.outcome === "unbound") {
+    return computerUseHostNotAuthorized;
+  }
+  return { status: 200 as const, body: result.value };
 });
 
 const commandCreateBody$ = bodyResultOf(computerUseCommandContract.create);
