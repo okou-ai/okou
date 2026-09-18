@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
+import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
@@ -14,17 +15,14 @@ import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
-  barrierQueryBinds,
-  barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
-} from "../../../test-fixtures/account-erasure-subject";
-import {
   clearMorningBriefInstructionsHead,
   holdMorningBriefMembershipLookup,
   pauseMorningBriefAutomation,
+  withMorningBriefInstructionVersionReadFixture,
 } from "../../../test-fixtures/morning-brief-collection";
 import { installMorningBriefFixture } from "../../../test-fixtures/morning-brief-gmail-collection";
 import { createDeferredPromise } from "../../utils";
+import { agentInstructionsRoutes } from "../agent-instructions";
 import { morningBriefCompositionPreviewRoutes } from "../morning-brief-composition-preview";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -1168,50 +1166,59 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       );
       await seedMembership(fixture);
       stubSlackMessage(at);
-      let awaitingVersionRead = false;
-      const response = await withDatabaseTransactionBarrierFixture(
-        {
-          select: (queryArgs) => {
-            const text = barrierQueryText(queryArgs);
-            return (
-              awaitingVersionRead &&
-              text.startsWith('select "head_version_id"') &&
-              text.includes('from "storages"') &&
-              barrierQueryBinds(queryArgs, fixture.actor.orgId)
-            );
-          },
-          stopAt: (_queryArgs, selectingStatement) => {
-            return selectingStatement;
-          },
-          pauseAfter: true,
-          work: async (versionRead) => {
-            const pending = startCompose(fixture, {
-              anchor: anchorFor(at),
-              deadlineAt: new Date(deadlineAt).toISOString(),
-            });
-            const initialAuthority = await initialAuthorityReady.promise;
-            await initialAuthority.waitForArrival();
-            const finalAuthority = holdMorningBriefMembershipLookup(
-              { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-              context.signal,
-            );
-            initialAuthority.release();
-            await finalAuthority.waitForArrival();
-            awaitingVersionRead = true;
-            // An unrelated storage operation must neither satisfy the target
-            // boundary nor wait on a table-wide lock held by this test.
-            await bdd.updateAgentInstructions(
-              otherOwner.actor,
-              otherOwner.agentId,
-              "Write in English.",
-            );
-            expect(versionRead.enteredYet()).toBeFalsy();
-            finalAuthority.release();
-            await versionRead.entered;
-            mockNow(deadlineAt + offset);
-            versionRead.release();
-            return await accept(pending, [200]);
-          },
+      const sibling = await bdd.createAgent(fixture.actor);
+      await bdd.updateAgentInstructions(
+        fixture.actor,
+        sibling.agentId,
+        "Unrelated Agent instructions.",
+      );
+      // No HTTP input can suspend this final database read. Pause delivery of
+      // its real result, scoped to this Agent, to test the post-await deadline
+      // fence without locking other requests out of the shared storage table.
+      const response = await withMorningBriefInstructionVersionReadFixture(
+        fixture.agentId,
+        async (versionRead) => {
+          const pending = startCompose(fixture, {
+            anchor: anchorFor(at),
+            deadlineAt: new Date(deadlineAt).toISOString(),
+          });
+
+          const initialAuthority = await initialAuthorityReady.promise;
+          await initialAuthority.waitForArrival();
+          const finalAuthority = holdMorningBriefMembershipLookup(
+            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+            context.signal,
+          );
+          initialAuthority.release();
+          await finalAuthority.waitForArrival();
+          versionRead.arm();
+
+          // A different organization's storage write must also remain free
+          // to complete while this Agent's final read is armed.
+          await bdd.updateAgentInstructions(
+            otherOwner.actor,
+            otherOwner.agentId,
+            "Write in English.",
+          );
+
+          // The same SELECT for another Agent in this organization must finish
+          // without either entering our barrier or waiting for its release.
+          const unrelated = await accept(
+            setupApp({ context, routes: agentInstructionsRoutes })(
+              agentInstructionsContract,
+            ).get({
+              headers: authHeaders(fixture),
+              params: { id: sibling.agentId },
+            }),
+            [200],
+          );
+          expect(unrelated.body.content).toBe("Unrelated Agent instructions.");
+
+          finalAuthority.release();
+          await versionRead.waitForArrival();
+          mockNow(deadlineAt + offset);
+          versionRead.release();
+          return await accept(pending, [200]);
         },
         context.signal,
       );

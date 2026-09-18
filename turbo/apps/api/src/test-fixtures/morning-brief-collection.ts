@@ -18,6 +18,11 @@ import { getApiTestMocks } from "../__tests__/mocks";
 import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
 import { createDeferredPromise } from "../signals/utils";
+import {
+  barrierQueryBinds,
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "./account-erasure-subject";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
@@ -298,6 +303,69 @@ export async function clearMorningBriefInstructionsHead(
         eq(storages.name, getInstructionsStorageName(agent.name)),
       ),
     );
+}
+
+/**
+ * Pause delivery of one Agent's real canonical instruction-version SELECT.
+ *
+ * There is no product input that pauses a read after retained-source authority
+ * and before request admission. Arm this infrastructure barrier after the
+ * initial language read. The query and its result remain real, but only this
+ * Agent's result delivery pauses: a global table lock would block unrelated
+ * storage traffic and let another request masquerade as this read's arrival.
+ */
+export async function withMorningBriefInstructionVersionReadFixture<T>(
+  agentId: string,
+  work: (read: {
+    readonly arm: () => void;
+    readonly waitForArrival: () => Promise<void>;
+    readonly release: () => void;
+  }) => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  const [agent] = await db()
+    .select({ name: agents.name, orgId: agents.orgId })
+    .from(agents)
+    .where(eq(agents.id, agentId))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!agent) {
+    throw new Error("Expected the Agent whose instruction read is held");
+  }
+  const storageName = getInstructionsStorageName(agent.name);
+  let armed = false;
+  return await withDatabaseTransactionBarrierFixture(
+    {
+      select: (queryArgs) => {
+        const text = barrierQueryText(queryArgs);
+        return (
+          armed &&
+          text.startsWith("select") &&
+          text.includes('from "storages"') &&
+          text.includes('"head_version_id"') &&
+          barrierQueryBinds(queryArgs, agent.orgId) &&
+          barrierQueryBinds(queryArgs, VOLUME_ORG_USER_ID) &&
+          barrierQueryBinds(queryArgs, storageName)
+        );
+      },
+      stopAt: (_queryArgs, selectingStatement) => {
+        return selectingStatement;
+      },
+      pauseAfter: true,
+      work: async (barrier) => {
+        return await work({
+          arm: () => {
+            armed = true;
+          },
+          waitForArrival: async () => {
+            await barrier.entered;
+          },
+          release: barrier.release,
+        });
+      },
+    },
+    signal,
+  );
 }
 
 /** Pause the seeded schedule the way the Settings surface would. */
