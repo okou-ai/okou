@@ -332,6 +332,7 @@ interface MorningBriefGenerationRecoveryRow {
   readonly decision: "deliver" | "skip" | null;
   readonly reservationExpiresAt: Date;
   readonly expiresAt: Date;
+  readonly contentPurgedAt: Date | null;
 }
 
 export async function readMorningBriefGenerationRecovery(
@@ -354,6 +355,7 @@ export async function readMorningBriefGenerationRecovery(
       decision: morningBriefGenerations.decision,
       reservationExpiresAt: morningBriefGenerations.reservationExpiresAt,
       expiresAt: morningBriefGenerations.expiresAt,
+      contentPurgedAt: morningBriefGenerations.contentPurgedAt,
     })
     .from(morningBriefGenerations)
     .where(
@@ -378,6 +380,7 @@ export async function readMorningBriefGenerationRecovery(
     decision: row.decision,
     reservationExpiresAt: row.reservationExpiresAt,
     expiresAt: row.expiresAt,
+    contentPurgedAt: row.contentPurgedAt,
   };
 }
 

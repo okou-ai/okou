@@ -1306,10 +1306,13 @@ function recoveryOfGeneration(
         return recovered("model-skip");
       }
       // S6 must not be asked to release owner content after its retention
-      // boundary. The row can still exist until maintenance physically purges
-      // it, but the content is already conclusively unavailable to delivery.
+      // boundary. Current maintenance clears body bytes first and retains the
+      // content-free invocation fence through the replay window, so either the
+      // explicit purge marker or an elapsed deadline makes delivery unknown.
       return recovered(
-        row.decision === "deliver" && row.expiresAt.getTime() > at.getTime()
+        row.decision === "deliver" &&
+          row.contentPurgedAt === null &&
+          row.expiresAt.getTime() > at.getTime()
           ? "deliverable"
           : "generation-unknown",
       );

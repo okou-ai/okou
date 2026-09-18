@@ -272,7 +272,11 @@ function scriptProviders(outcome: ProviderOutcome = "deliver"): {
             message: {
               content: JSON.stringify(
                 outcome === "model-skip"
-                  ? { decision: "skip", reason: "nothing_actionable" }
+                  ? {
+                      decision: "skip",
+                      language: "en-US",
+                      reason: "nothing_actionable",
+                    }
                   : {
                       decision: "deliver",
                       language: "en-US",
@@ -488,15 +492,23 @@ describe("native Morning Brief cron", () => {
     ]);
     await interrupt();
 
-    // The accepted body is logically expired and then physically removed by
-    // the real bounded retention engine. The Chat receipt and S2 outbox intent
-    // survive independently and are the first recovery authority.
+    // The accepted body is logically expired and then physically cleared by
+    // the real bounded retention engine. Its content-free invocation fence,
+    // the Chat receipt and S2 outbox intent survive independently.
     await expireMorningBriefGenerationRetention(
       { orgId: f.orgId, userId: f.userId },
       new Date(now() - 1000),
     );
     await expect(purgeExpiredNativeGenerations(f)).resolves.toBe(1);
-    await expect(readNativeGenerations(f)).resolves.toHaveLength(0);
+    await expect(readNativeGenerations(f)).resolves.toMatchObject([
+      {
+        state: "succeeded",
+        decision: "deliver",
+        resultTitle: null,
+        resultMarkdown: null,
+        contentPurgedAt: expect.any(Date),
+      },
+    ]);
 
     const recovery = await accept(tick(f), [200]);
     expect(recovery.body.deliveriesRecovered).toBe(1);
@@ -545,9 +557,13 @@ describe("native Morning Brief cron", () => {
     ]);
 
     // Recovery observes no receipt and an expired result, then reaches the real
-    // schedule lock behind S6. The receipt that commits on lock release must
-    // supersede that stale `generation-unknown` snapshot.
-    await expireMorningBriefGenerationRetention(f, new Date(now() - 1000));
+    // schedule lock behind S6. Move only the process clock past the immutable
+    // retention boundary: updating the row here would wait on S6's real row
+    // lock and would no longer describe this race. The receipt that commits on
+    // schedule-lock release must supersede the stale unknown snapshot.
+    const [generation] = await readNativeGenerations(f);
+    expect(generation?.expiresAt).toBeDefined();
+    mockNow((generation?.expiresAt.getTime() ?? now()) + 1000);
     const recovering = tick(f);
     await waitForDeferredBlocker(deliveryPid);
     await receiptCommit.release();
@@ -882,8 +898,13 @@ describe("native Morning Brief cron", () => {
     expect(generation?.state).toBe("succeeded");
     await interrupt();
 
-    await expireMorningBriefGenerationRetention(f, new Date(now() - 1000));
+    // Cross the production seven-day replay fence so the real retention engine
+    // removes the content-free row rather than only clearing accepted body
+    // bytes. The native occurrence keeps its exact attempt binding.
+    const afterReplayFence = now() + 8 * 24 * 60 * 60 * 1000;
+    mockNow(afterReplayFence);
     await expect(purgeExpiredNativeGenerations(f)).resolves.toBe(1);
+    await expect(readNativeGenerations(f)).resolves.toHaveLength(0);
     const recovery = await accept(tick(f), [200]);
 
     expect(recovery.body.deliveriesRecovered).toBe(1);
