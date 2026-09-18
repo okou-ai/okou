@@ -647,7 +647,7 @@
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Eigene Datei importieren",
-      "importFileHint": "({{formats}})",
+      "importFileHint": "Design Ihrer Datei wiederverwenden",
       "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
       "introVideo": "Intro-Video",
       "introVideoUnavailable": "Diese Videovorlage ist nicht mehr verfügbar. Entferne sie, um deine Nachricht zu senden.",

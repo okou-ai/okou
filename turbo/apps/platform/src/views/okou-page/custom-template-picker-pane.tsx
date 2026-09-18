@@ -63,9 +63,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 const CARD_MEDIA =
   "relative block aspect-video w-full overflow-hidden rounded-xl border border-border bg-muted";
 
-/** The accept list read as prose, for the hint under an upload entry. */
-const IMPORT_FORMATS = CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ");
-
 /**
  * One meta line: who can see it — or, for a colleague's template, whose it is,
  * because a visibility the reader cannot change is not worth the row.
@@ -342,16 +339,16 @@ function CustomTemplateUploadCard({
   const label = t(($) => {
     return $.artifacts.templates.importFile;
   });
-  // Every accepted extension is more than one tile-width of this line, so it
-  // is the truncated one that needs the whole list reachable on hover. The
-  // file picker enforces the list either way; this is only what tells the
-  // member before they open it.
-  const hint = t(
-    ($) => {
-      return $.artifacts.templates.importFileHint;
-    },
-    { formats: IMPORT_FORMATS },
-  );
+  // What the entry produces, not which extensions it takes. This line sits
+  // where every other tile carries its meta, so it is read down a column of
+  // "who can see this"; the accept list read as prose was both a different
+  // kind of line and longer than the tile, and it grew by one extension every
+  // time the import learned a format. Which files are allowed stays enforced
+  // by the input's `accept` and spelled out by `importUnsupported` when a
+  // member reaches for one that is not.
+  const hint = t(($) => {
+    return $.artifacts.templates.importFileHint;
+  });
   return (
     <label className="group/tile flex cursor-pointer flex-col gap-2">
       <span
@@ -371,9 +368,7 @@ function CustomTemplateUploadCard({
         <span className="truncate text-sm font-medium text-foreground">
           {label}
         </span>
-        <span className="truncate text-xs text-muted-foreground" title={hint}>
-          {hint}
-        </span>
+        <span className="truncate text-xs text-muted-foreground">{hint}</span>
       </span>
     </label>
   );
@@ -405,17 +400,11 @@ function CustomTemplatesEmpty({
         strokeWidth={1.5}
         aria-hidden
       />
-      <span className="flex flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{label}</span>
-        <span className="text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.artifacts.templates.importFileHint;
-            },
-            { formats: IMPORT_FORMATS },
-          )}
-        </span>
-      </span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      {/* The tile's caption is absent here on purpose: it says the entry
+          reuses the file's design, which is the sentence below said short,
+          and a zone with room for the whole sentence should not say it
+          twice. */}
       <span className="max-w-md text-xs text-muted-foreground">
         {t(($) => {
           return $.templates.empty.description;

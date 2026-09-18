@@ -666,7 +666,7 @@
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa il tuo file",
-      "importFileHint": "({{formats}})",
+      "importFileHint": "Riutilizza il design del tuo file",
       "importUnsupported": "Scegli un file {{formats}} per creare un modello.",
       "introVideo": "Video introduttivo",
       "introVideoUnavailable": "Questo modello video non è più disponibile. Rimuovilo per inviare il messaggio.",
