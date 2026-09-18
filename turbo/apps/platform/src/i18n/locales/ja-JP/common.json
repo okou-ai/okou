@@ -6313,7 +6313,7 @@
       "host": "例: ssh.example.com",
       "passphrase": "鍵が暗号化されていなければ空欄",
       "password": "SSH ユーザーのパスワードを入力",
-      "privateKey": "秘密鍵全体を貼り付け",
+      "privateKey": "秘密鍵全体を貼り付けるか、「ファイルを選択」からインポート",
       "username": "例: ubuntu"
     },
     "port": "ポート",

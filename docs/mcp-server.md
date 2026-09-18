@@ -1,17 +1,69 @@
 # External MCP server
 
 The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
-official MCP SDK and serves `get_indicators`, a read-only tool backed by the same
-user/organization projection as the app's indicators endpoint. This is the first
-slice of #34890, tracked by #34931. Thread history and mutations are separate slices.
+official MCP SDK and serves `list_chat_threads` and `get_chat_thread`. These
+read-only tools query current user/organization-owned conversations. The OAuth
+foundation shipped in #34931; discovery and current context are tracked by
+#34932 under #34890. Thread history, message search and mutations are separate
+slices. Results include both structured content and a JSON text representation.
 
-`get_indicators` accepts an empty object and returns `agents` and `threads` maps.
-Each entry is `active` or `unread`; absent entries have no indicator. These sparse
-maps are not a list of all runs or an authoritative terminal run status. Results
-include both structured content and a JSON text representation.
-Active threads are complete; unread threads use the existing projection's latest
-50 terminal markers from the last seven days. An unread agent indicator takes
-precedence when another thread of that agent is active.
+## Conversation discovery
+
+`list_chat_threads` accepts these optional arguments:
+
+| Argument          | Meaning                                                                                       |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| `agentId`         | Restrict to one Agent UUID.                                                                   |
+| `title`           | Case-insensitive literal substring, up to 200 characters. `%` and `_` are literal characters. |
+| `since`, `before` | ISO timestamps filtering last-message time: inclusive lower and exclusive upper bounds.       |
+| `activity`        | `active` or `idle`, using the canonical queued/pending/running projection.                    |
+| `unread`          | Filter the canonical retained-watermark unread state.                                         |
+| `limit`           | Page size, default 20 and maximum 50.                                                         |
+| `cursor`          | Continuation from `nextCursor`; keep the same filters.                                        |
+
+For example, call `list_chat_threads` with `{"title":"release","limit":10}`,
+then pass a result's `threadId` to `get_chat_thread` as
+`{"threadId":"<thread UUID>"}`. Discovery returns `threads`, `nextCursor` and
+`unreadCoverage`; detail returns `thread` and `unreadCoverage`.
+
+Each thread includes its current title, Agent identity/name, selected and
+effective model metadata, timestamps, authenticated App URL, queued/pending/
+running activity flags and unread state. Titles are bounded to 500 Unicode
+characters, with an explicit truncation flag. Agent names retain their existing
+256-character storage bound. Private drafts, Agent
+instructions, message content and provider credentials are excluded.
+
+Model metadata is a read-only view of current policy. A null `effectiveModel`
+means no usable policy route was resolved; it does not invent a default or
+repair stored settings. `admission: "checked_on_send"` means credentials, quota,
+policy and other execution checks still apply when a future message is sent.
+The selected thread model does not change an already-running execution.
+
+Pagination orders by last-message time descending, then thread ID descending.
+The opaque cursor preserves database timestamp precision, expires after 24
+hours and is authenticated and bound to the user, selected organization and
+filters. Invalid or expired cursors require restarting without a cursor.
+Every page rechecks current ownership. This is live pagination: new activity
+can move a thread ahead of the cursor, and edits/deletions can change matches.
+Start a fresh traversal when a complete refreshed collection is required; the
+cursor is not a global metadata snapshot or the App's pinned-sidebar order.
+
+Filters run in SQL before the page limit. An owner/recency index supports
+ordered reads, and read transactions enforce a three-second statement deadline.
+Selective filters can still inspect many candidates; a deadline failure returns
+a tool error, not a partial result. Retry or narrow the Agent/time filters.
+
+`unreadCoverage` is `retained_terminal_events_and_native_deliveries`. It combines
+retained run terminal events with durable native Morning Brief deliveries,
+compares the latest watermark to the user's read cursor, and suppresses unread
+while a queued/pending/running run with a trigger source exists. It has no sparse
+50-thread/seven-day cap, but terminal-event retention means it is not an
+archive-complete unread history. Missing activity does not prove a run succeeded;
+`unread: false` does not prove every historical result was read.
+
+Listing and reading never mark a thread read, change recency or reconcile model
+settings. The MCP catalog replaces `get_indicators` with these two tools; the
+first-party indicators API and its existing sparse semantics remain unchanged.
 
 ## Configuration and authorization
 
@@ -79,7 +131,7 @@ clients can request them in one consent flow without relying on incremental
 authorization support.
 
 Only `user:org:read` and `okou:chat:read` are required for the current endpoint and
-`get_indicators`. Tokens with just these two scopes remain valid. A
+both conversation read tools. Tokens with just these two scopes remain valid. A
 `403 insufficient_scope` challenge names those required scopes. Each future tool
 must enforce its own permissions; listing a scope does not
 implement or authorize that operation. A tool argument cannot select or override

@@ -179,6 +179,7 @@ export function createWorkflowsBddApi(context: TestContext) {
       options: {
         readonly agentId: string;
         readonly name: string;
+        readonly displayName?: string;
         readonly chatThreadId?: string;
         readonly visibility?: "public" | "private";
         readonly description?: string;
@@ -194,6 +195,9 @@ export function createWorkflowsBddApi(context: TestContext) {
           body: {
             agentId: options.agentId,
             name: options.name,
+            ...(options.displayName === undefined
+              ? {}
+              : { displayName: options.displayName }),
             ...(options.chatThreadId
               ? { chatThreadId: options.chatThreadId }
               : {}),

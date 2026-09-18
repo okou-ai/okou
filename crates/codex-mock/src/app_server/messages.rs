@@ -589,15 +589,6 @@ pub(super) fn turn_failed_notification(
     turn_id: &str,
     failure: TurnFailure,
 ) -> Value {
-    let message = turn_failure_message(failure);
-    let error = match turn_failure_error_info(failure) {
-        Some(codex_error_info) => json!({
-            "message": message,
-            "codexErrorInfo": codex_error_info
-        }),
-        None => json!({ "message": message }),
-    };
-
     json!({
         "method": "turn/completed",
         "params": {
@@ -607,7 +598,7 @@ pub(super) fn turn_failed_notification(
                 "items": [],
                 "itemsView": "notLoaded",
                 "status": "failed",
-                "error": error,
+                "error": turn_failure_error(failure),
                 "startedAt": 1,
                 "completedAt": 3,
                 "durationMs": 2
@@ -616,8 +607,39 @@ pub(super) fn turn_failed_notification(
     })
 }
 
+pub(super) fn turn_error_notification(
+    thread_id: &str,
+    turn_id: &str,
+    failure: TurnFailure,
+) -> Value {
+    json!({
+        "method": "error",
+        "params": {
+            "threadId": thread_id,
+            "turnId": turn_id,
+            "willRetry": false,
+            "error": turn_failure_error(failure)
+        }
+    })
+}
+
+fn turn_failure_error(failure: TurnFailure) -> Value {
+    let message = turn_failure_message(failure);
+    match turn_failure_error_info(failure) {
+        Some(codex_error_info) => json!({
+            "message": message,
+            "codexErrorInfo": codex_error_info,
+            "additionalDetails": null
+        }),
+        None => json!({ "message": message }),
+    }
+}
+
 fn turn_failure_message(failure: TurnFailure) -> &'static str {
     match failure {
+        TurnFailure::OutputTokenLimit => {
+            "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens"
+        }
         TurnFailure::ContentPolicyRejection => {
             r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#
         }
@@ -636,7 +658,9 @@ fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
         TurnFailure::Generic
         | TurnFailure::ContentPolicyRejection
         | TurnFailure::InvalidRequestFormat => None,
-        TurnFailure::BiologicalRiskRejection => Some(json!("other")),
+        TurnFailure::BiologicalRiskRejection | TurnFailure::OutputTokenLimit => {
+            Some(json!("other"))
+        }
         TurnFailure::ContextWindowExceeded => Some(json!("contextWindowExceeded")),
         TurnFailure::InternalServerError | TurnFailure::BiologicalRiskInternalServerError => {
             Some(json!("internalServerError"))

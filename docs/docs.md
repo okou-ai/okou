@@ -56,6 +56,9 @@ surface; the index does not replace their detailed rules.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
   dated sink/copy inventory, provider capability gaps, and the parent-worker
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
+- [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
+  account-erasure admission, retained thread/run identity, SQL cost inventory
+  and failure boundaries for minting cloud-browser authorization links.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

@@ -572,8 +572,15 @@
     {
       "idx": 1159,
       "version": "7",
-      "when": 1789699053803,
-      "tag": "1159_slim_hannibal_king",
+      "when": 1789695181649,
+      "tag": "1159_mcp_thread_discovery_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1160,
+      "version": "7",
+      "when": 1789701421955,
+      "tag": "1160_orange_ares",
       "breakpoints": true
     }
   ]

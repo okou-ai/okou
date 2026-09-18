@@ -106,6 +106,44 @@ async fn nonzero_job_parks_and_successor_reuses_sandbox() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn full_root_filesystem_remains_failed_and_destroys_sandbox() {
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.push_wait_process_exit(sandbox::ProcessExit::new(1, 126, Vec::new(), Vec::new()));
+    overrides.add_exec_matcher(sandbox_mock::ExecMatcher {
+        pattern: "guest-agent-binary".to_string(),
+        exit_code: 0,
+        stdout: b"/dev/root 8388608 8388608 0 100% /\n".to_vec(),
+        stderr: Vec::new(),
+    });
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 5, 8192, 4, Arc::clone(&overrides));
+    let budget = Arc::clone(&config.capacity.budget);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let run_handle = tokio::spawn(run(config));
+    let run_id = RunId::new_v4();
+    push_job(
+        &env,
+        run_id,
+        "vm0/default",
+        Some(context_with_session(run_id, "sess-rootfs-full")),
+    );
+
+    let failed = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("rootfs exhaustion should report completion");
+    assert_eq!(failed.exit_code, 126);
+    assert_eq!(failed.error.as_deref(), Some("Agent exited with code 126"));
+    wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+    assert_eq!(overrides.park_call_count(), 0);
+    assert_eq!(overrides.destroy_call_count(), 1);
+    assert!(idle_pool.lock().await.held_sandbox_states().is_empty());
+
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn confirmed_execution_timeout_parks_and_successor_reuses_sandbox() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.push_wait_process_exit(sandbox::ProcessExit::new(

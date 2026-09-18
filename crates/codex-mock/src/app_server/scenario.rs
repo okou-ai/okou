@@ -32,6 +32,8 @@ pub(super) enum Scenario {
     RuntimeTurnComplete,
     RuntimeTurnCompleteBeforeHeartbeat,
     RuntimeTurnFailed,
+    RuntimeTurnFailedOutputTokenLimit,
+    RuntimeOutputTokenLimitError,
     RuntimeTurnFailedContextWindowExceeded,
     RuntimeTurnFailedInternalServerError,
     RuntimeTurnFailedResponseStreamConnectionFailed,
@@ -140,6 +142,10 @@ impl Scenario {
                     Ok(Self::RuntimeTurnCompleteBeforeHeartbeat)
                 }
                 "runtime-turn-failed" => Ok(Self::RuntimeTurnFailed),
+                "runtime-turn-failed-output-token-limit" => {
+                    Ok(Self::RuntimeTurnFailedOutputTokenLimit)
+                }
+                "runtime-output-token-limit-error" => Ok(Self::RuntimeOutputTokenLimitError),
                 "runtime-turn-failed-context-window-exceeded" => {
                     Ok(Self::RuntimeTurnFailedContextWindowExceeded)
                 }
@@ -250,6 +256,9 @@ impl Scenario {
     pub(super) const fn turn_failure(self) -> Option<TurnFailure> {
         match self {
             Self::RuntimeTurnFailed => Some(TurnFailure::Generic),
+            Self::RuntimeTurnFailedOutputTokenLimit | Self::RuntimeOutputTokenLimitError => {
+                Some(TurnFailure::OutputTokenLimit)
+            }
             Self::RuntimeTurnFailedContextWindowExceeded => {
                 Some(TurnFailure::ContextWindowExceeded)
             }
@@ -298,6 +307,7 @@ pub(super) enum TurnStartRpcError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TurnFailure {
     Generic,
+    OutputTokenLimit,
     ContextWindowExceeded,
     InternalServerError,
     ResponseStreamConnectionFailed,

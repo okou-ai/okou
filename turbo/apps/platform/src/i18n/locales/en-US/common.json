@@ -6325,7 +6325,7 @@
       "host": "e.g. ssh.example.com",
       "passphrase": "Leave blank if not encrypted",
       "password": "Enter the SSH user's password",
-      "privateKey": "Paste the complete private key",
+      "privateKey": "Paste the complete private key or import it using ‘Choose file’",
       "username": "e.g. ubuntu"
     },
     "port": "Port",

@@ -250,6 +250,7 @@ function classifyAssistantErrorFromText(
 
 const STRUCTURED_RECOVERY_KIND = Object.freeze({
   session_history_limit: null,
+  guest_root_filesystem_full: null,
   execution_timeout: "execution-timeout",
   insufficient_credits: null,
   provider_insufficient_credits: null,

@@ -8,6 +8,7 @@ mod common;
 use guest_agent::error::AgentError;
 use guest_agent::masker::SecretMasker;
 use guest_contracts::diagnostics::{FailureClass, FailureReason};
+use serde_json::Value;
 use std::time::Duration;
 
 struct StructuredErrorCase {
@@ -26,6 +27,14 @@ async fn codex_app_server_classifies_supported_structured_errors()
     let mock = common::build_and_locate_mock_codex()?;
     let original_directory = std::env::current_dir()?;
     let cases = [
+        StructuredErrorCase {
+            scenario: "runtime-turn-failed-output-token-limit",
+            expected_reason: Some(FailureReason::OutputTokenLimit),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-output-token-limit-error",
+            expected_reason: Some(FailureReason::OutputTokenLimit),
+        },
         StructuredErrorCase {
             scenario: "runtime-turn-failed-context-window-exceeded",
             expected_reason: Some(FailureReason::ContextWindowExceeded),
@@ -131,6 +140,45 @@ async fn codex_app_server_classifies_supported_structured_errors()
             "scenario: {}",
             case.scenario
         );
+
+        if case.expected_reason == Some(FailureReason::OutputTokenLimit) {
+            assert_eq!(
+                diagnostic.message,
+                "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens"
+            );
+            let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
+            let events = log
+                .lines()
+                .map(serde_json::from_str::<Value>)
+                .collect::<Result<Vec<_>, _>>()?;
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event["type"] == "turn.started")
+                    .count(),
+                1
+            );
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event.pointer("/item/text").and_then(Value::as_str)
+                        == Some("Partial answer before output limit"))
+                    .count(),
+                1
+            );
+            // Native non-retrying errors end the backend immediately, before
+            // a subsequent turn/completed notification needs to be consumed.
+            if case.scenario == "runtime-output-token-limit-error" {
+                assert!(events.iter().any(|event| event["type"] == "error"));
+            } else {
+                let completed = events
+                    .iter()
+                    .find(|event| event["type"] == "turn.completed")
+                    .ok_or("missing failed completion")?;
+                assert_eq!(completed["turn"]["status"], "failed");
+                assert_eq!(completed["usage"], common::expected_codex_turn_usage());
+            }
+        }
 
         drop(run_files);
         std::env::set_current_dir(&original_directory)?;

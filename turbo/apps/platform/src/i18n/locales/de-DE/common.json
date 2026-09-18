@@ -6333,7 +6333,7 @@
       "host": "z. B. ssh.example.com",
       "passphrase": "Leer lassen, wenn unverschlüsselt",
       "password": "Passwort des SSH-Benutzers eingeben",
-      "privateKey": "Vollständigen privaten Schlüssel einfügen",
+      "privateKey": "Vollständigen privaten Schlüssel einfügen oder über „Datei auswählen“ importieren",
       "username": "z. B. ubuntu"
     },
     "port": "Port",

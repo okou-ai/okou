@@ -61,9 +61,6 @@ const ANCHOR_ISO = "2026-03-10T02:30:00.000Z";
 const WINDOW_START = "2026-03-09T16:00:00.000Z";
 const WINDOW_END = "2026-03-12T16:00:00.000Z";
 const HOUR_MS = 60 * 60 * 1000;
-// Both bounded provider-read worker lanes must be held before a revocation
-// test changes authority; otherwise one lane can legitimately race the change.
-const HELD_EVENT_READ_COUNT = 2;
 
 const OWNER_CALENDAR = "owner@example.test";
 const TEAM_CALENDAR = "team@example.test";
@@ -205,14 +202,12 @@ function stubCalendar(args: {
   readonly malformed?: ReadonlySet<string>;
   readonly listStatus?: number;
   readonly pages?: ReadonlyMap<string, string>;
-  readonly holdEvents?: Promise<void>;
-  readonly holdFirstEvents?: Promise<void>;
-  readonly onFirstEventsHeld?: () => void;
+  readonly holdEvents?: ReadonlyMap<string, Promise<void>>;
+  readonly onEventsHeld?: () => void;
   /** Sent with a failing event response, as a real rate limit would be. */
   readonly retryAfterSeconds?: number;
 }): CalendarStub {
   const calls: CalendarCall[] = [];
-  let held = false;
   let listPage = 0;
 
   const record = (request: Request): URL => {
@@ -249,15 +244,10 @@ function stubCalendar(args: {
     http.get(CALENDAR_EVENTS_URL, async ({ request, params }) => {
       record(request);
       const calendarId = decodeURIComponent(String(params["calendarId"]));
-      const firstHeldEvent = !held;
-      if (firstHeldEvent) {
-        held = true;
-        args.onFirstEventsHeld?.();
-      }
-      if (args.holdEvents) {
-        await args.holdEvents;
-      } else if (args.holdFirstEvents && firstHeldEvent) {
-        await args.holdFirstEvents;
+      const hold = args.holdEvents?.get(calendarId);
+      if (hold) {
+        args.onEventsHeld?.();
+        await hold;
       }
       const status = args.eventStatus?.get(calendarId);
       if (status !== undefined) {
@@ -764,6 +754,7 @@ describe("Morning Brief calendar collection preview", () => {
     const fixture = await setupOwner();
     const arrived = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    let held = 0;
     const stub = stubCalendar({
       calendars: [
         { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
@@ -776,16 +767,23 @@ describe("Morning Brief calendar collection preview", () => {
           OWNER_CALENDAR,
           [
             timed(
-              "held-event",
+              "collected-event",
               "2026-03-10T01:00:00.000Z",
               "2026-03-10T01:30:00.000Z",
             ),
           ],
         ],
       ]),
-      holdEvents: release.promise,
-      onFirstEventsHeld: () => {
-        if (!arrived.settled()) {
+      // Let the owner's event be collected, then stop both workers so no
+      // sibling can advance while the grant withdrawal is still committing.
+      holdEvents: new Map([
+        [TEAM_CALENDAR, release.promise],
+        ["third@example.test", release.promise],
+        ["fourth@example.test", release.promise],
+      ]),
+      onEventsHeld: () => {
+        held += 1;
+        if (held === 2 && !arrived.settled()) {
           arrived.resolve();
         }
       },
@@ -795,27 +793,21 @@ describe("Morning Brief calendar collection preview", () => {
     async function expectRevokedCollection() {
       // Observe an early request failure while waiting for the actual hold.
       await Promise.race([arrived.promise, collection]);
-      // Every bounded lane must be inside the provider stub before the
-      // authority change; otherwise a legitimate pre-revocation lane can look
-      // like a post-revocation read.
-      await expect
-        .poll(() => {
-          return eventCalls(stub).length;
-        })
-        .toBe(HELD_EVENT_READ_COUNT);
+      const heldCalls = eventCalls(stub);
+      expect(heldCalls).toHaveLength(3);
       await revokeAgentConnectorGrantFixture(
         { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
         { agentId: fixture.agentId, connectorSlug: "google-calendar" },
       );
-      const callsAtRevocation = eventCalls(stub).length;
       if (!release.settled()) {
         release.resolve();
       }
 
       const response = await collection;
-      // The release fence discards everything collected before withdrawal and
-      // no new provider request is issued after the completed authority fence.
-      expect(eventCalls(stub)).toHaveLength(callsAtRevocation);
+      // The release fence discards everything collected before the withdrawal,
+      // including the calendars that had already answered.
+      // Nothing new was issued after the revocation landed.
+      expect(eventCalls(stub)).toStrictEqual(heldCalls);
       return response;
     }
     const result = await settleIncludingAbort(expectRevokedCollection());
@@ -865,6 +857,7 @@ describe("Morning Brief calendar collection preview", () => {
     const fixture = await setupOwner();
     const arrived = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    let held = 0;
     const stub = stubCalendar({
       calendars: [
         { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
@@ -877,16 +870,23 @@ describe("Morning Brief calendar collection preview", () => {
           OWNER_CALENDAR,
           [
             timed(
-              "held-event",
+              "collected-event",
               "2026-03-10T01:00:00.000Z",
               "2026-03-10T01:30:00.000Z",
             ),
           ],
         ],
       ]),
-      holdEvents: release.promise,
-      onFirstEventsHeld: () => {
-        if (!arrived.settled()) {
+      // Keep both workers held while the membership is replaced, after the
+      // owner's event has already been collected under the old membership.
+      holdEvents: new Map([
+        [TEAM_CALENDAR, release.promise],
+        ["third@example.test", release.promise],
+        ["fourth@example.test", release.promise],
+      ]),
+      onEventsHeld: () => {
+        held += 1;
+        if (held === 2 && !arrived.settled()) {
           arrived.resolve();
         }
       },
@@ -895,21 +895,17 @@ describe("Morning Brief calendar collection preview", () => {
     const collection = collectOk(fixture);
     async function expectRevokedCollection() {
       await Promise.race([arrived.promise, collection]);
-      await expect
-        .poll(() => {
-          return eventCalls(stub).length;
-        })
-        .toBe(HELD_EVENT_READ_COUNT);
+      const heldCalls = eventCalls(stub);
+      expect(heldCalls).toHaveLength(3);
       // A removal and rejoin issues a new immutable membership id. The new
       // membership does not speak for what the previous one started.
       await seedMembership(fixture.actor, `orgmem_${randomUUID()}`);
-      const callsAtReplacement = eventCalls(stub).length;
       if (!release.settled()) {
         release.resolve();
       }
 
       const response = await collection;
-      expect(eventCalls(stub)).toHaveLength(callsAtReplacement);
+      expect(eventCalls(stub)).toStrictEqual(heldCalls);
       return response;
     }
     const result = await settleIncludingAbort(expectRevokedCollection());

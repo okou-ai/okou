@@ -179,7 +179,7 @@ rollback API can settle or perform ordinary Run deletion without shared
 compaction admission; otherwise those transactions could invert the combined
 cleanup's ledger/allowance/Run lock order.
 
-## Runner, annotation and activation
+## Runner and activation
 
 [#34612](https://github.com/vm0-ai/okou/issues/34612) preserves exact IDs,
 occurrences, Q and transient reasons through extraction, bounded chunks,
@@ -229,13 +229,10 @@ no durable queue or new guarantee against loss during sustained saturation or
 process death. Existing buffer limits trigger flushing rather than imposing a
 new hard admission/memory ceiling.
 
-Transient per-category/reason totals remain on the current flow for the result
-annotation slice. They are not financial metadata and never enter ledger rows.
-[#34614](https://github.com/vm0-ai/okou/issues/34614) displays
-**Cannot deduplicate** / **无法去重** with the current operation when R is
-positive, including funded or zero-credit outcomes. A webhook acknowledgement
-alone is not that visible annotation. Do not add a second usage report or
-historical remainder metadata.
+The protocol remainder stays internal to ingestion so the consumer can validate
+Q = K + R and bill N + R. User-facing usage and bills show the ordinary net
+quantity, with no separate deduplication status or result transport. Do not keep
+a flow-local remainder summary or add historical remainder metadata.
 
 [#34615](https://github.com/vm0-ai/okou/issues/34615) verifies the single-account
 serving configuration, compatible producers/readers and rollback targets,

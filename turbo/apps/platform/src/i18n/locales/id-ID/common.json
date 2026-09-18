@@ -6313,7 +6313,7 @@
       "host": "mis. ssh.example.com",
       "passphrase": "Kosongkan jika kunci tidak dienkripsi",
       "password": "Masukkan kata sandi pengguna SSH",
-      "privateKey": "Tempel seluruh kunci privat",
+      "privateKey": "Tempel seluruh kunci privat atau impor melalui ‘Pilih file’",
       "username": "mis. ubuntu"
     },
     "port": "Port",

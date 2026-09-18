@@ -6401,7 +6401,7 @@
       "host": "ex.: ssh.example.com",
       "passphrase": "Deixe em branco se a chave não for criptografada",
       "password": "Digite a senha do usuário SSH",
-      "privateKey": "Cole a chave privada completa",
+      "privateKey": "Cole a chave privada completa ou importe-a usando ‘Escolher arquivo’",
       "username": "ex.: ubuntu"
     },
     "port": "Porta",
