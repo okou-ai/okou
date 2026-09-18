@@ -74,9 +74,12 @@ const NAVIGATION_TIMEOUT_RETRY_OPTIONS = {
 // repeated render charges. The waiting ceilings come from the function
 // lifetime #34772 measured: the longest render observed in production is ~121s
 // and the surrounding storage and database work adds ~15s, so 45s of total
-// waiting keeps the worst case near 225s of the 300s budget. A wait that
-// outlives the function loses the failure record #34591 exists to produce,
-// which is why a stated wait past the ceiling stops instead of sleeping.
+// waiting keeps the longest chain near 211s of the 300s budget: a 20s primary
+// navigation timeout, the retry's 15s navigation, 3s settle and full action
+// budget, then an action retry on that same profile under the short budget.
+// A wait that outlives the function loses the failure record #34591 exists to
+// produce, which is why a stated wait past the ceiling stops instead of
+// sleeping.
 const MAX_SNAPSHOT_REQUESTS = 3;
 const RATE_LIMIT_MIN_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 30_000;
@@ -96,8 +99,9 @@ const SNAPSHOT_REQUEST_TIMEOUT_DETAIL = "Request timed out";
 // 2026-09-17 with the identical request: all four returned in 3.7-8.2s, so a
 // session that is going to finish finishes far inside this. And the primary has
 // already spent 120s by the time this runs, so repeating that budget would put
-// the worst render near 256s of the 300s function budget and risk losing the
-// failure record #34591 exists to produce. 20s keeps the worst case near 157s.
+// a plain primary-then-retry render near 256s of the 300s function budget and
+// risk losing the failure record #34591 exists to produce. 20s keeps that
+// chain near 157s; the request-budget comment above states the longest chain.
 const ACTION_TIMEOUT_RETRY_MS = 20_000;
 
 const browserSnapshotSchema = z.object({
@@ -299,8 +303,9 @@ interface FetchArtifactSnapshotArgs {
   readonly url: string;
   readonly previewUrl: URL;
   readonly navigationOptions: SnapshotNavigationOptions;
-  // Only the action retry varies this; every other request gets the full budget.
-  readonly actionTimeout?: number;
+  // Required rather than defaulted: the request loop is the only thing that
+  // decides a budget, and it always states one.
+  readonly actionTimeout: number;
 }
 
 function fetchArtifactSnapshot(
@@ -310,7 +315,7 @@ function fetchArtifactSnapshot(
     url,
     previewUrl,
     navigationOptions,
-    actionTimeout = SNAPSHOT_ACTION_TIMEOUT_MS,
+    actionTimeout,
   }: FetchArtifactSnapshotArgs,
   signal: AbortSignal,
 ): Promise<Response> {
@@ -526,7 +531,10 @@ async function observeArtifactSnapshot(
  * fails, not the page. Everything else still stops here.
  */
 async function requestArtifactSnapshot(
-  requestArgs: Omit<FetchArtifactSnapshotArgs, "navigationOptions">,
+  requestArgs: Omit<
+    FetchArtifactSnapshotArgs,
+    "navigationOptions" | "actionTimeout"
+  >,
   signal: AbortSignal,
 ): Promise<Response> {
   let navigationOptions: SnapshotNavigationOptions = PRIMARY_NAVIGATION_OPTIONS;
@@ -562,7 +570,9 @@ async function requestArtifactSnapshot(
     if (isActionTimeoutResponse(failure.status, failure.body)) {
       // A second full budget cannot fit in the function, so one repeat under
       // the short budget is the whole allowance regardless of what remains of
-      // the shared request budget.
+      // the shared request budget. Navigation already succeeded to reach the
+      // action stage, so this keeps whichever navigation profile the render had
+      // reached rather than resetting to the primary one.
       if (actionRetried) {
         throw new ArtifactSnapshotError(failure);
       }
