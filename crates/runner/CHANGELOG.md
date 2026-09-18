@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.199.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.1...runner-rs-v0.199.0) (2026-09-18)
+
+
+### Features
+
+* **runner:** record archive size mismatch diagnostics ([#35149](https://github.com/vm0-ai/okou/issues/35149)) ([b6ce895](https://github.com/vm0-ai/okou/commit/b6ce8952ca15bb670cc4e592676c8d2a21b88332))
+
 ## [0.198.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.198.0...runner-rs-v0.198.1) (2026-09-18)
 
 
