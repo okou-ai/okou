@@ -488,6 +488,21 @@ const videoGenerationTemplateRequestSchema = z.object({
   }),
 });
 
+/**
+ * Intro Video selections written before the product was removed.
+ *
+ * Read-only. No surface produces this type any more and the prompt builder
+ * rejects it, so it contributes no behaviour. It stays in the union because
+ * `chat_events` is append-only — `chat_events_reject_update` blocks UPDATE, so
+ * the rows can be neither rewritten nor migrated. Dropping the arm makes
+ * `userMessageDocumentSchema.parse` throw for every archived message carrying
+ * one, which 500s thread sharing and user export. `selection` is unread.
+ */
+const retiredIntroVideoGenerationTemplateRequestSchema = z.object({
+  type: z.literal("intro-video"),
+  selection: z.unknown(),
+});
+
 const illustrationGenerationTemplateRequestSchema = z.object({
   type: z.literal("illustration"),
   selection: z.object({
@@ -533,6 +548,7 @@ const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   presentationGenerationTemplateRequestSchema,
   customGenerationTemplateRequestSchema,
   videoGenerationTemplateRequestSchema,
+  retiredIntroVideoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   workflowGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,

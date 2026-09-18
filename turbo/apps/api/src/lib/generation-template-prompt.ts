@@ -78,6 +78,17 @@ interface WebsiteGenerationTemplateInput {
   };
 }
 
+/**
+ * Intro Video selections that survive in the append-only chat event log.
+ *
+ * The product is gone, so this never resolves to a prompt: a selection that
+ * somehow reaches a send is rejected rather than silently producing an
+ * untemplated run. The arm exists so archived messages stay parseable.
+ */
+interface RetiredIntroVideoGenerationTemplateInput {
+  readonly type: "intro-video";
+}
+
 interface CustomGenerationTemplateInput {
   readonly type: "custom";
   readonly selection: { readonly userTemplateId: string };
@@ -87,6 +98,7 @@ type GenerationTemplateInput =
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
   | VideoGenerationTemplateInput
+  | RetiredIntroVideoGenerationTemplateInput
   | IllustrationGenerationTemplateInput
   | WorkflowGenerationTemplateInput
   | WebsiteGenerationTemplateInput;
@@ -133,6 +145,9 @@ export function buildGenerationTemplatePrompt(
 
   if (generationTemplate.type === "video") {
     return buildVideoGenerationTemplatePrompt(generationTemplate);
+  }
+  if (generationTemplate.type === "intro-video") {
+    return { status: "invalid", message: "Intro video is no longer available" };
   }
   if (generationTemplate.type === "illustration") {
     return buildIllustrationGenerationTemplatePrompt(generationTemplate);

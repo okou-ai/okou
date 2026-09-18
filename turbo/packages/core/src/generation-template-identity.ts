@@ -65,6 +65,9 @@ export interface GenerationTemplateIdentity {
  */
 const USER_IMPORTED_TEMPLATE_ID = "user-template";
 
+/** What Intro Video selections reported before they had their own wire type. */
+const RETIRED_INTRO_VIDEO_TEMPLATE_ID = "explainer-video";
+
 function unreachableGenerationTemplateType(request: never): never {
   throw new Error(
     `Unsupported generation template type: ${JSON.stringify(request)}`,
@@ -194,6 +197,12 @@ export function generationTemplateIdentity(
         templateSlug: USER_IMPORTED_TEMPLATE_ID,
         source: "user-imported",
       };
+    }
+    case "intro-video": {
+      // Retired product; the rows are append-only. Reported in the video
+      // bucket under the identifier the pre-split selections already used, so
+      // one removed product does not open a permanent reporting category.
+      return builtinIdentity("video", RETIRED_INTRO_VIDEO_TEMPLATE_ID);
     }
     default: {
       return unreachableGenerationTemplateType(request);

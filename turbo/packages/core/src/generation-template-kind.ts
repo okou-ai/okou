@@ -39,10 +39,21 @@ export type GenerationTemplateKindSource =
     }
   | { readonly type: Exclude<GenerationTemplateType, "video"> };
 
-/** Classify one template selection. */
+/**
+ * Classify one template selection.
+ *
+ * A retired Intro Video selection reports as creative video. Its rows survive
+ * in the append-only chat event log, and the wire type is the only thing left
+ * of the product, so it is folded into the envelope it came from rather than
+ * kept as a kind no surface can render. This matches how selections stored
+ * before Intro Video had its own wire type already classify.
+ */
 export function generationTemplateKind(
   source: GenerationTemplateKindSource,
 ): GenerationTemplateKind {
+  if (source.type === "intro-video") {
+    return "video";
+  }
   if (source.type !== "video") {
     return source.type;
   }
