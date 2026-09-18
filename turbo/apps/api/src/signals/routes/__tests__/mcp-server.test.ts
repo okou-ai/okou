@@ -2025,67 +2025,55 @@ describe("MCP message search", () => {
     expect(JSON.stringify(combined)).not.toContain("VISIBLE_EXCERPT_CANARY_");
   });
 
-  it("continues after a full scan of stale candidates without hiding an older visible match", async () => {
-    const f = await chatRunFixture();
-    const active = await f.chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agent.agentId, prompt: "Keep the input queue pending" },
-      [201],
-    );
-    if (active.status !== 201 || active.body.runId === null) {
-      throw new Error("Expected an active run for the stale candidate batch");
-    }
-    const { threadId, runId } = active.body;
+  it("continues after a full scan of lexical false positives without hiding an older exact match", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const query = "scanbudgetneedle 上海滩";
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      prompt: `${query} visible older input`,
+    });
     onTestFinished(async () => {
-      await f.runs.requestCancelRun(f.actor, runId, [200]);
-      await flushWaitUntilForTest();
+      await f.cancelChatRun(actor.actor, sent.runId);
     });
-    const visibleEventId = randomUUID();
-    await f.chat.requestSendEvent(
-      f.actor,
+    const token = auth.token();
+    const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
+    const before = await getMessages(token, { threadId: sent.threadId });
+    expect(before.messages).toHaveLength(1);
+    const visible = before.messages[0];
+    if (!visible) {
+      throw new Error("Expected the canonical older input reference");
+    }
+    // One runner batch creates 100 indexed candidates with the same CJK
+    // bigrams; canonical phrase verification rejects their disconnected text.
+    await f.webhooks.requestAgentEvents(
       {
-        agentId: f.agent.agentId,
-        threadId,
-        clientEventId: visibleEventId,
-        prompt: "scanbudgetneedle visible older input",
-      },
-      [201],
-    );
-    const revokedIds = Array.from({ length: 100 }, () => {
-      return randomUUID();
-    });
-    // Each input is independent; only the visible oldest input above must
-    // precede them. Small batches overlap HTTP setup without an unbounded fanout.
-    for (let offset = 0; offset < revokedIds.length; offset += 8) {
-      await Promise.all(
-        revokedIds.slice(offset, offset + 8).map(async (eventId) => {
-          await f.chat.requestSendEvent(
-            f.actor,
-            {
-              agentId: f.agent.agentId,
-              threadId,
-              clientEventId: eventId,
-              prompt: `scanbudgetneedle stale input ${eventId}`,
+        runId: sent.runId,
+        events: Array.from({ length: 100 }, (_, sequenceNumber) => {
+          return {
+            type: "assistant" as const,
+            sequenceNumber,
+            message: {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `scanbudgetneedle 上海 海滩 candidate ${sequenceNumber}`,
+                },
+              ],
             },
-            [201],
-          );
+          };
         }),
-      );
-    }
-    await projectSearchMessages([threadId]);
-    for (let offset = 0; offset < revokedIds.length; offset += 8) {
-      await Promise.all(
-        revokedIds.slice(offset, offset + 8).map(async (eventId) => {
-          await f.chat.requestSendEvent(
-            f.actor,
-            { agentId: f.agent.agentId, threadId, revokesEventId: eventId },
-            [201],
-          );
-        }),
-      );
-    }
-    const token = f.auth.token();
-    const args = { query: "scanbudgetneedle", limit: 1 };
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await projectSearchMessages([sent.threadId]);
+    const args = { query, limit: 1 };
     const first = await searchMessages(token, args);
     expect(first.matches).toStrictEqual([]);
     expect(first.scanLimited).toBeTruthy();
@@ -2097,8 +2085,8 @@ describe("MCP message search", () => {
     expect(next).toMatchObject({
       matches: [
         {
-          ref: { eventId: visibleEventId, threadId },
-          excerpt: { text: "scanbudgetneedle visible older input" },
+          ref: visible.ref,
+          excerpt: { text: `${query} visible older input` },
         },
       ],
       scanLimited: false,
