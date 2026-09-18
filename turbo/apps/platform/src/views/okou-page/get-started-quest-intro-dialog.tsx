@@ -336,7 +336,7 @@ function PromptFigure() {
  * carries a full picture rather than a row of tiles.
  */
 const CHECKIN_ILLUSTRATION_IMG = platformStaticAssetUrl(
-  "views/okou-page/assets/get-started-checkin-e874ac69afb0.webp",
+  "views/okou-page/assets/get-started-checkin-269a14fb7633.webp",
 );
 
 function CheckinFigure() {
@@ -346,7 +346,7 @@ function CheckinFigure() {
         src={CHECKIN_ILLUSTRATION_IMG}
         alt=""
         aria-hidden
-        className="block h-auto w-[300px] max-w-full"
+        className="block h-auto w-[320px] max-w-full"
       />
     </div>
   );
