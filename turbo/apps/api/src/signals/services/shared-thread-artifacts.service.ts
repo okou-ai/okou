@@ -2,6 +2,8 @@ import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
+import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/artifact-delivery";
+import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
@@ -13,11 +15,14 @@ import {
 import { writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
+  isS3NotFoundError,
   deleteArtifactSnapshotObjects,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
+import { env } from "../../lib/env";
+import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import {
   privateArtifactCreationEnabled,
   privateArtifactsBucket,
@@ -33,6 +38,86 @@ type SnapshotIdentity = Pick<
   typeof sharedThreads.$inferSelect,
   "id" | "userId" | "orgId" | "publicBrand" | "hasArtifactSnapshot"
 >;
+
+/** Match the delivery Worker's authority without reopening the owner's live resource. */
+export const resolveSharedThreadHostedDownload$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly publicSlug: string;
+      readonly record: Extract<
+        ArtifactDeliveryRecord,
+        { kind: "thread-resource" }
+      >;
+    },
+    signal: AbortSignal,
+  ): Promise<HostedSiteFilesResponse | null> => {
+    const { record } = args;
+    const stored = await settle(
+      get(
+        readArtifactSharePolicyObject(
+          sharedThreadArtifactsBucket(),
+          sharedThreadArtifactPolicyKey(record.publicBrand, record.threadId),
+          signal,
+        ),
+      ),
+      signal,
+    );
+    if (!stored.ok) {
+      if (isS3NotFoundError(stored.error)) {
+        return null;
+      }
+      throw stored.error;
+    }
+    const policy = sharedThreadArtifactPolicySchema.parse(
+      JSON.parse(stored.value.buffer.toString("utf8")),
+    );
+    if (
+      policy.status !== "active" ||
+      policy.threadId !== record.threadId ||
+      policy.publicBrand !== record.publicBrand
+    ) {
+      return null;
+    }
+    const target = policy.resources[record.publicToken];
+    if (
+      target?.kind !== "html" ||
+      record.targetKind !== "html" ||
+      (record.targetId !== undefined && record.targetId !== target.id)
+    ) {
+      return null;
+    }
+    const scheme = env(
+      record.publicBrand === "okou" ? "OKOU_HOST_SCHEME" : "ZERO_HOST_SCHEME",
+    );
+    const domain = env(
+      record.publicBrand === "okou"
+        ? "OKOU_PUBLIC_HOST_DOMAIN"
+        : "ZERO_HOST_DOMAIN",
+    );
+    if (!scheme || !domain) {
+      throw new Error("Public hosted artifact delivery is not configured");
+    }
+    const url = `${scheme}://${args.publicSlug}.${domain}/`;
+    return await set(
+      signHostedSiteFiles$,
+      {
+        metadata: {
+          siteId: target.siteId,
+          deploymentId: target.id,
+          deploymentVersion: target.deploymentVersion,
+          publicSlug: args.publicSlug,
+          url,
+          artifactUrl: url,
+          aliasUrl: url,
+        },
+        manifest: target.manifest,
+        prefix: `shared-artifacts/${record.publicBrand}/${target.snapshotId}/${target.id}`,
+      },
+      signal,
+    );
+  },
+);
 
 function readPolicy(identity: SnapshotIdentity, signal: AbortSignal) {
   return computed(async (get) => {

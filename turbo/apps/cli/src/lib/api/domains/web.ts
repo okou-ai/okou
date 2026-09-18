@@ -6,12 +6,12 @@ import {
 } from "@okouai/api-contracts/contracts/intro-video-render";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import {
-  readArtifactReference,
+  readArtifactDownload,
   resolveOwnedArtifactReference,
 } from "./artifact-references";
 import { isUtf8 } from "node:buffer";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -64,6 +64,7 @@ import {
   withAbsoluteArtifactUrl,
 } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
+import { downloadHostedSiteFiles } from "../../host/clone-hosted-site";
 
 const BUILT_IN_GENERATION_POLL_INTERVAL_MS = 2_000;
 const BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE = {
@@ -198,6 +199,8 @@ interface DownloadWebFileResult {
   path: string;
   mimetype: string;
   size: number;
+  fileCount?: number;
+  entrypoint?: string;
 }
 
 /** Only the configured API origin may receive the CLI credential. */
@@ -269,8 +272,18 @@ export async function downloadWebFile(
 ): Promise<DownloadWebFileResult> {
   const reference = parseArtifactReference(fileId, await getPlatformOrigin());
   const artifact = reference
-    ? await readArtifactReference(`${reference.hash}${reference.extension}`)
+    ? await readArtifactDownload(`${reference.hash}${reference.extension}`)
     : undefined;
+  if (artifact?.kind === "html") {
+    await downloadHostedSiteFiles(artifact.site, outPath);
+    return {
+      path: outPath,
+      mimetype: "text/html",
+      size: artifact.site.size,
+      fileCount: artifact.site.fileCount,
+      entrypoint: join(outPath, "index.html"),
+    };
+  }
   const response = artifact
     ? await fetch(artifact.url)
     : await fetchWebFile((await webFileReferenceId(fileId)) ?? fileId);

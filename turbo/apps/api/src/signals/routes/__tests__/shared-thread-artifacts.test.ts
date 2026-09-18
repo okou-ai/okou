@@ -17,6 +17,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -25,6 +26,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { artifactShareRoutes } from "../artifact-shares";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { hostRoutes } from "../host";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -483,6 +485,132 @@ test("copies a complete fixed site and rewrites its managed private dependencies
   expect(f.objects.get(`${prefix}/index.html`)?.toString()).not.toContain(
     "/artifacts/",
   );
+});
+
+test("clones a complete conversation site snapshot independently of the original artifact visibility", async () => {
+  const f = await fixture();
+  const asset = await f.upload();
+  const site = await f.site([
+    {
+      path: "/index.html",
+      content: `<a href="${asset.url}">Download</a><a href="pages/report.html">Report</a>`,
+    },
+    { path: "/pages/report.html", content: "<h1>Shared version one</h1>" },
+    {
+      path: "/assets/style.css",
+      content: "body{color:green}",
+      contentType: "text/css",
+    },
+  ]);
+  const created = await accept(
+    share(f.actor, await f.selection(site.url)),
+    [201],
+  );
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const url = new URL(shared.body.messages[0]!.content);
+  const publicSlug = url.hostname.split(".")[0]!;
+  const outsider = bdd.user({ orgId: null });
+  const host = setupApp({ context, routes: hostRoutes })(hostContract);
+  const clone = (version?: number) => {
+    return host.files({
+      headers: headers(outsider),
+      params: { publicSlug },
+      query: {
+        hostname: url.hostname,
+        ...(version === undefined ? {} : { version }),
+      },
+    });
+  };
+  const first = await accept(clone(), [200]);
+  expect(first.body).toMatchObject({
+    deploymentId: site.deploymentId,
+    deploymentVersion: site.deploymentVersion,
+    fileCount: 3,
+    url: url.href,
+    artifactUrl: url.href,
+    aliasUrl: url.href,
+  });
+  expect(first.body.files.map((file) => file.path).sort()).toStrictEqual([
+    "/assets/style.css",
+    "/index.html",
+    "/pages/report.html",
+  ]);
+  const prefix = `test-hosted-sites/shared-artifacts/okou/${created.body.id}/${site.deploymentId}`;
+  for (const file of first.body.files) {
+    const key = decodeURIComponent(new URL(file.downloadUrl).pathname.slice(1));
+    expect(key).toBe(`${prefix}${file.path}`);
+    const bytes = f.objects.get(key);
+    expect(bytes).toBeDefined();
+    expect(file.size).toBe(bytes!.length);
+    expect(file.sha256).toBe(createHash("sha256").update(bytes!).digest("hex"));
+  }
+  expect(first.body.size).toBe(
+    first.body.files.reduce((total, file) => total + file.size, 0),
+  );
+  expect(f.objects.get(`${prefix}/index.html`)?.toString()).toMatch(
+    /https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf/u,
+  );
+  expect(f.objects.get(`${prefix}/index.html`)?.toString()).not.toContain(
+    asset.url,
+  );
+
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [
+        {
+          publicUserData: { userId: f.actor.userId },
+          organization: { id: f.actor.orgId, name: "Owner organization" },
+        },
+      ],
+    },
+  );
+  const originalStatus = await accept(
+    api()(artifactSharesContract).status({
+      headers: headers(f.actor),
+      body: { kind: "html", id: site.deploymentId },
+    }),
+    [200],
+  );
+  expect(originalStatus.body.audience).toBe("private");
+  const second = await f.site(
+    [{ path: "/index.html", content: "<h1>Private version two</h1>" }],
+    site.name,
+  );
+  for (const audience of ["public", "private"] as const) {
+    await accept(
+      api()(artifactSharesContract).update({
+        headers: headers(f.actor),
+        body: { target: { kind: "html", id: second.deploymentId }, audience },
+      }),
+      [200],
+    );
+    const retained = await accept(clone(), [200]);
+    expect(retained.body).toStrictEqual(first.body);
+  }
+  expect(second.deploymentVersion).toBe(2);
+  const wrongVersion = await accept(clone(2), [404]);
+  expect(wrongVersion.body).not.toHaveProperty("files");
+
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: created.body.id },
+    }),
+    [204],
+  );
+  const revoked = await accept(clone(), [404]);
+  expect(revoked.body).not.toHaveProperty("files");
+  const original = await createHostMapsBddApi(context).readHostedSiteFiles(
+    f.actor,
+    `dpl-${second.deploymentId}`,
+  );
+  expect(original).toMatchObject({
+    deploymentId: second.deploymentId,
+    fileCount: 1,
+  });
 });
 
 test("rejects hosted text that exceeds the per-file limit after rewriting", async () => {
