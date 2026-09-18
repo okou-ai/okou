@@ -111,9 +111,8 @@ describe("okou generate image command", () => {
         "--json",
       ]);
 
-      expect(
-        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
-      ).toMatchObject({
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(output)).toMatchObject({
         url: artifact.url,
         ownerUrl: artifact.ownerUrl,
         visibility,
@@ -125,9 +124,10 @@ describe("okou generate image command", () => {
             : expect.stringContaining("okou slack upload-file"),
       });
       if (visibility === "org") {
-        expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-          "organization-only",
-        );
+        expect(output).toContain("organization-only");
+      }
+      if (visibility === "public") {
+        expect(output).not.toContain(artifact.sharingUrl);
       }
     },
   );

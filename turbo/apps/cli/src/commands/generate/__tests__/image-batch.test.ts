@@ -263,6 +263,8 @@ describe("okou generate image-batch command", () => {
       const artifact = visibility
         ? serveGenerationVisibility("image.png", visibility)
         : { url: `https://app.okou.ai${reference}` };
+      const sharingUrl =
+        "sharingUrl" in artifact ? artifact.sharingUrl : undefined;
       let authorization: string | null = null;
       server.use(
         http.post(
@@ -368,7 +370,11 @@ describe("okou generate image-batch command", () => {
       expect(stdout).toContain(join(stateDirectory, "artifacts.json"));
       expect(stdout).toContain("only available inside the agent runtime");
       if (visibility === "public") {
+        if (sharingUrl === undefined) {
+          throw new Error("Public fixture did not provide its delivery alias");
+        }
         expect(stdout).not.toContain("upload-file");
+        expect(stdout).not.toContain(sharingUrl);
       } else {
         expect(stdout).toContain("okou slack upload-file");
       }
@@ -396,9 +402,17 @@ describe("okou generate image-batch command", () => {
           },
         ],
       });
-      expect(
-        await readFile(join(stateDirectory, "artifacts.json"), "utf8"),
-      ).not.toContain("upload-file");
+      const artifactsJson = await readFile(
+        join(stateDirectory, "artifacts.json"),
+        "utf8",
+      );
+      expect(artifactsJson).not.toContain("upload-file");
+      if (visibility === "public") {
+        if (sharingUrl === undefined) {
+          throw new Error("Public fixture did not provide its delivery alias");
+        }
+        expect(artifactsJson).not.toContain(sharingUrl);
+      }
     },
   );
 

@@ -206,7 +206,7 @@ describe.each(surfaces)("$label visibility", (surface) => {
   });
 
   it.each(["org", "public"] as const)(
-    "returns the %s URL in JSON and Markdown after sharing the created version",
+    "returns the stable App URL in JSON and Markdown after sharing with %s visibility",
     async (visibility) => {
       available();
       serveCreation({ guarded: true });
@@ -216,10 +216,14 @@ describe.each(surfaces)("$label visibility", (surface) => {
         { from: "user" },
       );
       const result = JSON.parse(log.mock.calls.flat().join("\n"));
-      const url = visibility === "public" ? PUBLIC_URL : OWNER_URL;
-      expect(result).toMatchObject({ url, ownerUrl: OWNER_URL, visibility });
-      expect(result.inlineMarkdownLink).toContain(`(<${url}>)`);
-      expect(result.previewMarkdownBlock).toContain(`(<${url}>)`);
+      expect(result).toMatchObject({
+        url: OWNER_URL,
+        ownerUrl: OWNER_URL,
+        visibility,
+      });
+      expect(result.inlineMarkdownLink).toContain(`(<${OWNER_URL}>)`);
+      expect(result.previewMarkdownBlock).toContain(`(<${OWNER_URL}>)`);
+      expect(JSON.stringify(result)).not.toContain(PUBLIC_URL);
     },
   );
 
