@@ -1032,7 +1032,7 @@ describe("createApp", () => {
           origin: "https://app.okou.ai",
           "access-control-request-method": "GET",
           "access-control-request-headers":
-            "authorization,accept-version,x-client-version,x-client-type,x-client-product,x-client-session-id,x-client-request-id,x-chat-event-schema-version",
+            "authorization,x-client-version,x-client-type,x-client-product,x-client-session-id,x-client-request-id,x-chat-event-schema-version",
         },
       });
 
@@ -1049,7 +1049,6 @@ describe("createApp", () => {
       expect(allowHeaders).toContain("X-Vercel-Protection-Bypass");
       expect(allowHeaders).toContain("X-Client-Version");
       expect(allowHeaders).toContain("X-Client-Type");
-      expect(allowHeaders).toContain("Accept-Version");
       expect(allowHeaders).toContain("X-Client-Product");
       expect(allowHeaders).toContain("X-Client-Session-Id");
       expect(allowHeaders).toContain("X-Client-Request-Id");

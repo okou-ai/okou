@@ -50,11 +50,7 @@ import { readPiInferenceObject } from "../services/pi-inference-object.service";
 import { piDeferredConfigurationSchema } from "../services/pi-deferred-sandbox-contract";
 import { command } from "ccstate";
 import { activePiMemoryPhase2MaintenanceRunCondition } from "../services/pi-memory-phase2-maintenance.service";
-import {
-  CLIENT_VERSION_HEADER,
-  CONNECTOR_CONTRACT_HEADER,
-  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-} from "@okouai/api-contracts/contracts/client-headers";
+import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
   runStatusSchema,
   type RunStatus,
@@ -2217,7 +2213,6 @@ async function buildClaimResponseBody(
       signal.throwIfAborted();
       const {
         connectorPermissionBaseline: _connectorPermissionBaseline,
-        requiresBuiltinMcp: _requiresBuiltinMcp,
         secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
         storageMounts: _storedStorageMounts,
         ...runnerStoredContext
@@ -2782,7 +2777,6 @@ async function resolveStoredExecutionContextForClaim(
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
-    readonly supportsBuiltinMcp: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2809,15 +2803,6 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
-    };
-  }
-  if (
-    storedContextResult.data.requiresBuiltinMcp === true &&
-    !args.supportsBuiltinMcp
-  ) {
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
     };
   }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2881,7 +2866,6 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
-      readonly supportsBuiltinMcp: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2900,7 +2884,6 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
-        supportsBuiltinMcp: args.supportsBuiltinMcp,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs);
@@ -3079,9 +3062,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
-      supportsBuiltinMcp:
-        get(request$).header(CONNECTOR_CONTRACT_HEADER) ===
-        CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
       jobWithRun,
       telemetry: body.data.telemetry,
       claimRequestStartedAtMs,

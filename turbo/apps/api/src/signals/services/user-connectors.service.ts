@@ -1,4 +1,4 @@
-import { and, eq, inArray, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { agents } from "@okouai/db/schema/agent";
@@ -246,10 +246,6 @@ export async function updateUserConnectors(
     readonly agentId: string;
     readonly enabledConnectorSlugs: readonly ConnectorSlug[];
     readonly operation?: UserConnectorUpdateOperation;
-    /** Compatibility projection: replace only the connector inventory the client can see. */
-    // #34913: remove once capable App rollout, the later client floor, and old
-    // API serving/rollback drain eliminate clients replacing a projected list.
-    readonly preserveConnectorSlugs?: readonly ConnectorSlug[];
   },
 ): Promise<UpdateUserConnectorsResult> {
   const enabledConnectorSlugs = Array.from(new Set(args.enabledConnectorSlugs));
@@ -268,18 +264,7 @@ export async function updateUserConnectors(
     );
 
     if (operation === "replace") {
-      await tx
-        .delete(userConnectors)
-        .where(
-          and(
-            connectorScope,
-            args.preserveConnectorSlugs?.length
-              ? notInArray(userConnectors.connectorSlug, [
-                  ...args.preserveConnectorSlugs,
-                ])
-              : undefined,
-          ),
-        );
+      await tx.delete(userConnectors).where(connectorScope);
     } else if (operation === "remove" && enabledConnectorSlugs.length > 0) {
       await tx
         .delete(userConnectors)
@@ -307,7 +292,7 @@ export async function updateUserConnectors(
         .onConflictDoNothing();
     }
 
-    if (operation === "replace" && !args.preserveConnectorSlugs?.length) {
+    if (operation === "replace") {
       return { status: "updated", enabledConnectorSlugs };
     }
 

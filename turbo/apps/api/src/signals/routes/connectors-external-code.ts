@@ -1,7 +1,3 @@
-import {
-  connectorClientProjection$,
-  connectorClientUpgradeRequired,
-} from "../services/connector-client-compatibility.service";
 import { connectorExternalCodeSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { command } from "ccstate";
 
@@ -32,11 +28,6 @@ const startConnectorExternalCodeSessionInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const projection = await get(connectorClientProjection$);
-    signal.throwIfAborted();
-    if (!projection.allowsSlug(params.connectorSlug)) {
-      return connectorClientUpgradeRequired();
-    }
 
     return await set(
       startConnectorExternalCodeSession$,
@@ -66,11 +57,6 @@ const completeConnectorExternalCodeSessionInner$ = command(
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
-    }
-    const projection = await get(connectorClientProjection$);
-    signal.throwIfAborted();
-    if (!projection.allowsSlug(params.connectorSlug)) {
-      return connectorClientUpgradeRequired();
     }
 
     return await set(

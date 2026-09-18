@@ -77,12 +77,13 @@ error logs and do not reject an otherwise valid catalog. MCP generated firewalls
 participate in named builtin execution, but cannot supply HTTP permission bundles
 or permission editors. Existing supported HTTP methods remain usable through v4.
 
-MCP Run admission requires the exact commit-addressed CLI artifact built with
-the serving API. Its signed builtin account mapping comes from the final admitted
-runtime targets; later default changes cannot substitute another account. MCP
-credential values and aliases remain outside the sandbox environment and skill
-mounts. The proxy resolves the exact selected account at the network boundary,
-including for no-auth accounts. Shared MCP discovery supplies tools and schemas.
+Builtin MCP uses the current CLI without client-version negotiation or requiring
+its package URL to match the serving API commit. Its signed builtin account
+mapping comes from the final admitted runtime targets; later default changes
+cannot substitute another account. MCP credential values and aliases remain
+outside the sandbox environment and skill mounts. The proxy resolves the exact
+selected account at the network boundary, including for no-auth accounts. Shared
+MCP discovery supplies tools and schemas.
 Builtin MCP authorization is cached for at most 30 seconds from account
 validation, even when the provider credential has no expiry. Deleting an
 account removes it from discovery immediately; subsequent proxy requests can

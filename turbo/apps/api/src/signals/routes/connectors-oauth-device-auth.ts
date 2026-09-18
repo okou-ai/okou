@@ -1,7 +1,3 @@
-import {
-  connectorClientProjection$,
-  connectorClientUpgradeRequired,
-} from "../services/connector-client-compatibility.service";
 import { connectorOauthDeviceAuthSessionContract } from "@okouai/api-contracts/contracts/connectors";
 import { command } from "ccstate";
 
@@ -31,11 +27,6 @@ const startConnectorOauthDeviceAuthSessionInner$ = command(
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
-    }
-    const projection = await get(connectorClientProjection$);
-    signal.throwIfAborted();
-    if (!projection.allowsSlug(params.connectorSlug)) {
-      return connectorClientUpgradeRequired();
     }
 
     return await set(
@@ -67,11 +58,6 @@ const pollConnectorOauthDeviceAuthSessionInner$ = command(
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
-    }
-    const projection = await get(connectorClientProjection$);
-    signal.throwIfAborted();
-    if (!projection.allowsSlug(params.connectorSlug)) {
-      return connectorClientUpgradeRequired();
     }
 
     return await set(

@@ -1,8 +1,4 @@
 import { randomUUID } from "node:crypto";
-import {
-  CONNECTOR_CONTRACT_HEADER,
-  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-} from "@okouai/api-contracts/contracts/client-headers";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -17,10 +13,7 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const contractHeaders = Object.freeze({
-  [CONNECTOR_CONTRACT_HEADER]: CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-});
-const connectors = createConnectorBddApi(context, { headers: contractHeaders });
+const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
 
 function client() {
@@ -59,7 +52,6 @@ async function discovery(
   return await accept(
     client().list({
       headers: { authorization: `Bearer ${token(actor, runId, sources)}` },
-      extraHeaders: contractHeaders,
     }),
     [200],
   );
@@ -149,7 +141,7 @@ describe("builtin MCP discovery authority", () => {
     ).toStrictEqual([]);
   });
 
-  it("returns reconnect guidance for the exact non-default account and requires the client contract", async () => {
+  it("returns reconnect guidance for the exact non-default account", async () => {
     const { actor, run } = await setupRun();
     mockEnv("APP_URL", "https://app.okou.ai");
     await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
@@ -176,16 +168,10 @@ describe("builtin MCP discovery authority", () => {
       target: { kind: "builtin" as const, connectorSlug: "manual-mcp" },
       scopes: ["read"],
     };
-    const incompatible = await accept(
-      client().reauthorizeOAuth({ headers, body }),
-      [426],
-    );
-    expect(incompatible.headers.get("cache-control")).toBe("no-store");
     const result = await accept(
       client().reauthorizeOAuth({
         headers,
         body,
-        extraHeaders: contractHeaders,
       }),
       [200],
     );
@@ -203,7 +189,6 @@ describe("builtin MCP discovery authority", () => {
       client().reauthorizeOAuth({
         headers,
         body,
-        extraHeaders: contractHeaders,
       }),
       [409],
     );

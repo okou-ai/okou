@@ -9,10 +9,6 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { startCustomConnectorAutomaticOAuthReauthorization$ } from "../services/custom-connector-oauth2.service";
 import { runMcpConnectorList } from "../services/run-mcp-connectors.service";
-import {
-  connectorClientSupportsBuiltinMcp$,
-  connectorClientUpgradeRequired,
-} from "../services/connector-client-compatibility.service";
 
 const listRunMcpConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -25,9 +21,7 @@ const listRunMcpConnectorsInner$ = computed(async (get) => {
       userId: auth.userId,
       runId: auth.runId,
       customConnectorSourceIds: auth.customConnectorSourceIds,
-      builtinConnectorSourceIds: get(connectorClientSupportsBuiltinMcp$)
-        ? auth.builtinConnectorSourceIds
-        : undefined,
+      builtinConnectorSourceIds: auth.builtinConnectorSourceIds,
     }),
   );
   return { status: 200 as const, body: { connectors: [...connectors] } };
@@ -50,9 +44,6 @@ const reauthorizeMcpOAuthInner$ = command(
     }
     const target = body.data.target;
     if (target.kind === "builtin") {
-      if (!get(connectorClientSupportsBuiltinMcp$)) {
-        return connectorClientUpgradeRequired();
-      }
       const connectionId =
         auth.builtinConnectorSourceIds?.[target.connectorSlug];
       const descriptors = await get(

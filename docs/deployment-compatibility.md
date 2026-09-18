@@ -1936,45 +1936,21 @@ bridge cleanup after every serving source and supported bootstrap target has
 accepted v4 and the deployment/rollback window no longer needs the bridge.
 Historical v3 object and row retention for old binaries remains independent.
 
-### Builtin MCP execution and client negotiation
+### Builtin MCP execution
 
-Capable App and CLI requests advertise
-`Accept-Version: builtin-mcp-v1`. This response-contract header is already in
-older APIs' CORS allowlist. Production, preview and Desktop App requests use a
-separate API origin, so introducing a new header name would break their HTTP
-requests against an older API before MCP activation. Older APIs ignore the
-negotiation value without an extra handshake or deployment setting.
-Missing or unknown contract values
-receive HTTP-compatible catalog, account, Agent and chat collections. Filtering
-precedes directory pagination and counts. Direct MCP connection, reconnect,
-selection and grant actions receive `426` with `Cache-Control: no-store` before
-effects. Old-client Agent replacement preserves MCP grants hidden from that
-client. The header changes compatibility, never account or Agent authority.
-Custom MCP remains pre-GA and uses the current typed builtin/custom descriptor
-without a legacy custom response reader.
+Builtin MCP uses the current App, CLI and Runner contract directly. There is no
+MCP-specific request-header negotiation, old-client HTTP projection, upgrade
+response or Runner claim capability flag. Agent connector replacement applies
+to the complete submitted list, including MCP grants. The CLI is kept current;
+its package URL does not need to match the serving API commit for MCP admission.
+Custom and builtin MCP use the same typed discovery response.
 
-Before this API cutover, finish and drain existing pre-GA custom MCP Runs,
-including queued Runs that captured an older CLI package, or cancel and recreate
-them with the current CLI. Their custom-only descriptor reader cannot consume
-the new typed response. Updating the API or Runner does not replace a captured
-Run package; do not resume those older contexts for MCP execution after cutover.
-Resume custom MCP execution only once all serving APIs use the typed contract;
-a new CLI also cannot read an old API's custom-only descriptor. Any rollback
-must pair custom MCP execution with a matching API and captured CLI contract.
-
-The API admits builtin MCP only with its own exact immutable CLI artifact:
-`https://static.okou.io/okou-cli/<GIT_COMMIT_SHA>/package.tgz`. Unknown or mutable
-packages receive no builtin MCP authority. Queued Runs retain their captured
-package and exact account mapping. None/manual methods are executable; the
-published Plaud Automatic method remains unavailable until its handler lands.
-
-Runs with admitted builtin MCP require a capable Runner. The Runner advertises
-the same contract header on job claim, and the API leaves such a job queued when
-the claimant lacks it. A new Runner's additive header is ignored by an older API
-for existing HTTP/custom jobs; the strict Pi capability body is unchanged. The
-new addon honors explicit owner intent and never injects another owner's
-credentials when the requested owner is absent, including overlapping
-builtin/custom destinations.
+Queued Runs retain their captured CLI package and exact account mapping.
+Builtin MCP admission requires the Run's Okou token for authenticated MCP
+discovery. None/manual methods are executable; the published Plaud Automatic
+method remains unavailable until its handler lands. The addon honors explicit
+owner intent and never injects another owner's credentials when the requested
+owner is absent, including overlapping builtin/custom destinations.
 
 Account-bound builtin proxy requests resolve authorization even when they
 inject no credentials. Builtin MCP auth responses use the existing `expiresAt`
@@ -1985,21 +1961,10 @@ expiry. Expiry does not interrupt an in-flight request or stream. After
 resolution, the addon rechecks the current owner before forwarding. No new
 Runner wire field or HTTP/custom cache policy is introduced.
 
-Before publishing an executable MCP method or enabling Automatic, every serving
-and supported rollback API must include this claim guard. An API predating it
-does not understand the new stored Run requirement and is not a supported
-rollback target once builtin MCP jobs exist. This initial implementation does
-not activate the published Automatic service, so the API/Runner deployment can
-complete before activation. Rollback after activation preserves the capable
-API, Runner and exact account credential readers; restoring an old catalog
-alone does not make queued jobs safe for an old Runner.
-
-[#34913](https://github.com/vm0-ai/okou/issues/34913) owns removing the old-client
-HTTP projection/preservation branches after the capable App is live, a later
-App floor excludes old builds, and old API serving/rollback targets have drained.
-The recognized contract requirement for MCP actions and Runner claim remains an
-execution capability boundary. Existing HTTP requests keep their contract, and
-no environment variable, release workflow change or per-service skill is added.
+The v3 catalog read bridge and its cleanup under
+[#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.
+This execution change adds no environment variable, release workflow change or
+per-service skill.
 
 ## PostHog CIMD OAuth
 

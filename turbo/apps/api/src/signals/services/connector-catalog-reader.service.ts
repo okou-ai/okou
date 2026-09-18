@@ -25,7 +25,6 @@ export function isConnectorCatalogUnavailableError(error: unknown): boolean {
 }
 
 interface ConnectorCatalogReadArgs {
-  readonly includeBuiltinMcp?: boolean;
   readonly db: ReadonlyDb;
   readonly featureStates: ConnectorFeatureStates;
 }

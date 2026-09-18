@@ -1,7 +1,3 @@
-import {
-  connectorClientProjection$,
-  connectorClientUpgradeRequired,
-} from "../services/connector-client-compatibility.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -440,7 +436,6 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
     }),
   );
   const resolver = await get(connectorActionResolver());
-  const projection = await get(connectorClientProjection$);
   const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
     [];
   for (const connectorSlug of enabledConnectorSlugs) {
@@ -448,7 +443,7 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
       connectorSlug,
       requireExecutable: true,
     });
-    if (resolved.ok && projection.allowsSlug(connectorSlug)) {
+    if (resolved.ok) {
       availableEnabledConnectorSlugs.push(connectorSlug);
     }
   }
@@ -829,15 +824,6 @@ const updateAgentUserConnectorsInner$ = command(
     const uniqueConnectorSlugs = Array.from(
       new Set(body.data.enabledConnectorSlugs),
     );
-    const projection = await get(connectorClientProjection$);
-    signal.throwIfAborted();
-    if (
-      uniqueConnectorSlugs.some((slug) => {
-        return !projection.allowsSlug(slug);
-      })
-    ) {
-      return connectorClientUpgradeRequired();
-    }
     const operation = body.data.operation ?? "replace";
     if (operation !== "remove") {
       // Agent connector selection is persisted execution configuration, not a
@@ -864,16 +850,13 @@ const updateAgentUserConnectorsInner$ = command(
       agentId: params.id,
       enabledConnectorSlugs: uniqueConnectorSlugs,
       operation,
-      preserveConnectorSlugs: [...projection.hiddenSlugs],
     });
     signal.throwIfAborted();
     if (updated.status === "agentNotFound") {
       return agentNotFound(params.id);
     }
 
-    const enabledConnectorSlugs = updated.enabledConnectorSlugs.filter(
-      projection.allowsSlug,
-    );
+    const enabledConnectorSlugs = [...updated.enabledConnectorSlugs];
     return {
       status: 200 as const,
       body: {

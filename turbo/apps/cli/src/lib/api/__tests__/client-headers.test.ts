@@ -6,8 +6,6 @@ import {
   CLIENT_TYPE_CLI,
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
-  CONNECTOR_CONTRACT_HEADER,
-  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
 } from "@okouai/api-contracts/contracts/client-headers";
 import {
   initClient,
@@ -58,9 +56,6 @@ describe("CLI client headers", () => {
 
     expect(first.get(CLIENT_VERSION_HEADER)).toBe("1.2.3");
     expect(first.get(CLIENT_TYPE_HEADER)).toBe(CLIENT_TYPE_CLI);
-    expect(first.get(CONNECTOR_CONTRACT_HEADER)).toBe(
-      CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-    );
     expect(first.get(CLIENT_SESSION_ID_HEADER)).toBe("session-id");
     expect(first.get(CLIENT_REQUEST_ID_HEADER)).toBe("request-id-1");
     expect(second.get(CLIENT_VERSION_HEADER)).toBe("1.2.3");
@@ -128,9 +123,6 @@ describe("CLI client headers", () => {
     );
     expect(firstHeaders.get(CLIENT_VERSION_HEADER)).toBe("0.0.0-test");
     expect(firstHeaders.get(CLIENT_TYPE_HEADER)).toBe(CLIENT_TYPE_CLI);
-    expect(firstHeaders.get(CONNECTOR_CONTRACT_HEADER)).toBe(
-      CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-    );
     expect(secondHeaders.get(CLIENT_VERSION_HEADER)).toBe("0.0.0-test");
     expect(secondHeaders.get(CLIENT_TYPE_HEADER)).toBe(CLIENT_TYPE_CLI);
 

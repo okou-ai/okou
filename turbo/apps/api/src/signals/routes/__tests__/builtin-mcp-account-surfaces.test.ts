@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, it } from "vitest";
-import {
-  CONNECTOR_CONTRACT_HEADER,
-  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-} from "@okouai/api-contracts/contracts/client-headers";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -40,14 +36,10 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
-describe("builtin MCP client compatibility", () => {
+describe("builtin MCP account surfaces", () => {
   const context = testContext();
   const mocks = createRouteMocks(context);
   const headers = { authorization: "Bearer clerk-session" };
-  const capableHeaders = {
-    ...headers,
-    [CONNECTOR_CONTRACT_HEADER]: CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-  };
   const target = { kind: "builtin", connectorSlug: "public-mcp" } as const;
   const routes = [
     ...connectorCatalogRoutes,
@@ -82,7 +74,7 @@ describe("builtin MCP client compatibility", () => {
     for (const connectionId of createdAccounts.splice(0)) {
       await accept(
         accounts().delete({
-          headers: capableHeaders,
+          headers,
           params: { connectionId },
           body: { target },
         }),
@@ -91,41 +83,38 @@ describe("builtin MCP client compatibility", () => {
     }
   });
 
-  it("projects one compatible inventory through catalog, search and category totals", async () => {
+  it("includes MCP in catalog discovery, search and category totals", async () => {
     authenticate();
-    const legacy = await accept(
-      catalog().discovery({ headers, query: {} }),
+    const listed = await accept(catalog().list({ headers }), [200]);
+    const discovery = await accept(
+      catalog().discovery({ headers, query: { category: "test-connectors" } }),
       [200],
     );
-    const capable = await accept(
-      catalog().discovery({ headers: capableHeaders, query: {} }),
-      [200],
+    expect(discovery.body.totalConnectorCount).toBe(
+      listed.body.connectors.length,
     );
-    expect(capable.body.totalConnectorCount).toBe(
-      legacy.body.totalConnectorCount + 2,
+    expect(discovery.body.categoryConnectorCounts?.["test-connectors"]).toBe(
+      discovery.body.connectors.length,
     );
-    expect(capable.body.categoryConnectorCounts?.["test-connectors"]).toBe(
-      (legacy.body.categoryConnectorCounts?.["test-connectors"] ?? 0) + 2,
+    expect(discovery.body.connectors).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: "public-mcp" }),
+        expect.objectContaining({ slug: "manual-mcp" }),
+      ]),
     );
-    const search = setupApp({ context, routes })(connectorsSearchContract);
-    const oldSearch = await accept(
-      search.search({ headers, query: { keyword: "public-mcp" } }),
-      [200],
-    );
-    const newSearch = await accept(
-      search.search({
-        headers: capableHeaders,
+    const search = await accept(
+      setupApp({ context, routes })(connectorsSearchContract).search({
+        headers,
         query: { keyword: "public-mcp" },
       }),
       [200],
     );
-    expect(oldSearch.body.connectors).toStrictEqual([]);
-    expect(newSearch.body.connectors).toMatchObject([
+    expect(search.body.connectors).toMatchObject([
       { slug: "public-mcp", label: "Public Tools" },
     ]);
     const detail = await accept(
       catalog().get({
-        headers: capableHeaders,
+        headers,
         params: { connectorSlug: target.connectorSlug },
       }),
       [200],
@@ -136,47 +125,18 @@ describe("builtin MCP client compatibility", () => {
     expect(detail.body.connector.permissionSummary.hasPermissions).toBeFalsy();
     await accept(
       catalog().permissions({
-        headers: capableHeaders,
+        headers,
         params: { connectorSlug: target.connectorSlug },
       }),
       [404],
     );
   });
 
-  it.each([undefined, "unknown-contract"])(
-    "rejects an incompatible direct connection before persistence (%s)",
-    async (contract) => {
-      authenticate();
-      const result = await accept(
-        setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
-          headers,
-          extraHeaders:
-            contract === undefined
-              ? undefined
-              : { [CONNECTOR_CONTRACT_HEADER]: contract },
-          params: { connectorSlug: target.connectorSlug },
-          body: { authMethod: "none", account: { intent: "add" } },
-        }),
-        [426],
-      );
-      expect(result.body.error.code).toBe("CONNECTOR_CLIENT_UPGRADE_REQUIRED");
-      expect(result.headers.get("Cache-Control")).toBe("no-store");
-      const remaining = await accept(
-        accounts().connections({
-          headers: capableHeaders,
-          query: { ...target, limit: 50 },
-        }),
-        [200],
-      );
-      expect(remaining.body.connections).toStrictEqual([]);
-    },
-  );
-
-  it("keeps builtin accounts usable for capable clients while older account collections remain HTTP-compatible", async () => {
+  it("connects and manages MCP accounts through ordinary connector endpoints", async () => {
     authenticate();
     const connected = await accept(
       setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
-        headers: capableHeaders,
+        headers,
         params: { connectorSlug: target.connectorSlug },
         body: {
           authMethod: "none",
@@ -188,21 +148,33 @@ describe("builtin MCP client compatibility", () => {
     const connectionId = connected.body.id;
     createdAccounts.push(connectionId);
     const summaries = await accept(accounts().summaries({ headers }), [200]);
-    expect(summaries.body.summaries).toStrictEqual([]);
+    expect(summaries.body.summaries).toMatchObject([
+      { target, accountCount: 1, defaultConnection: { id: connectionId } },
+    ]);
     const list = await accept(
       setupApp({ context, routes })(connectorsMainContract).list({ headers }),
       [200],
     );
-    expect(list.body.connectors).toStrictEqual([]);
-    const incompatibleReads = await Promise.all([
-      accept(accounts().connections({ headers, query: target }), [426]),
+    expect(list.body.connectors).toMatchObject([
+      { slug: target.connectorSlug, connectionStatus: "connected" },
+    ]);
+    const [
+      connections,
+      account,
+      scopeDiff,
+      impact,
+      inspection,
+      detail,
+      defaultScopeDiff,
+    ] = await Promise.all([
+      accept(accounts().connections({ headers, query: target }), [200]),
       accept(
         accounts().connection({
           headers,
           params: { connectionId },
           query: target,
         }),
-        [426],
+        [200],
       ),
       accept(
         accounts().scopeDiff({
@@ -210,7 +182,7 @@ describe("builtin MCP client compatibility", () => {
           params: { connectionId },
           query: { connectorSlug: target.connectorSlug },
         }),
-        [426],
+        [200],
       ),
       accept(
         accounts().deletionImpact({
@@ -218,45 +190,61 @@ describe("builtin MCP client compatibility", () => {
           params: { connectionId },
           query: target,
         }),
-        [426],
+        [200],
       ),
       accept(
         accounts().inspect({
           headers,
           body: { selections: [{ target, connectionId }] },
         }),
-        [426],
+        [200],
       ),
       accept(
         setupApp({ context, routes })(connectorsBySlugContract).get({
           headers,
           params: { connectorSlug: target.connectorSlug },
         }),
-        [426],
+        [200],
       ),
       accept(
         setupApp({ context, routes })(connectorScopeDiffContract).getScopeDiff({
           headers,
           params: { connectorSlug: target.connectorSlug },
         }),
-        [426],
+        [200],
       ),
     ]);
-    for (const result of incompatibleReads) {
-      expect(result.body.error.code).toBe("CONNECTOR_CLIENT_UPGRADE_REQUIRED");
-      expect(result.headers.get("Cache-Control")).toBe("no-store");
-    }
+    expect(connections.body.connections).toMatchObject([
+      { id: connectionId, target },
+    ]);
+    expect(account.body).toMatchObject({ id: connectionId, target });
+    expect(scopeDiff.body).toMatchObject({
+      addedScopes: [],
+      removedScopes: [],
+    });
+    expect(impact.body).toMatchObject({
+      connectionId,
+      explicitSelectionCount: 0,
+    });
+    expect(inspection.body.results).toMatchObject([
+      { kind: "available", connectionId, target },
+    ]);
+    expect(detail.body).toMatchObject({ slug: target.connectorSlug });
+    expect(defaultScopeDiff.body).toMatchObject({
+      addedScopes: [],
+      removedScopes: [],
+    });
     await accept(
       accounts().setDefault({
         headers,
         params: { connectionId },
         body: { target },
       }),
-      [426],
+      [200],
     );
     const current = await accept(
       accounts().connection({
-        headers: capableHeaders,
+        headers,
         params: { connectionId },
         query: target,
       }),
@@ -269,7 +257,7 @@ describe("builtin MCP client compatibility", () => {
     });
   });
 
-  it("preserves hidden MCP grants when an older client replaces its visible Agent connector list", async () => {
+  it("replaces and removes MCP Agent grants through the ordinary connector list", async () => {
     authenticate();
     context.mocks.s3.send.mockResolvedValue({});
     const created = await accept(
@@ -284,14 +272,16 @@ describe("builtin MCP client compatibility", () => {
     const client = setupApp({ context, routes })(userConnectorsContract);
     await accept(
       client.update({
-        headers: capableHeaders,
+        headers,
         params,
         body: { enabledConnectorSlugs: ["public-mcp", "github"] },
       }),
       [200],
     );
     const visible = await accept(client.get({ headers, params }), [200]);
-    expect(visible.body.enabledConnectorSlugs).toStrictEqual(["github"]);
+    expect(new Set(visible.body.enabledConnectorSlugs)).toStrictEqual(
+      new Set(["public-mcp", "github"]),
+    );
     const replaced = await accept(
       client.update({
         headers,
@@ -301,24 +291,28 @@ describe("builtin MCP client compatibility", () => {
       [200],
     );
     expect(replaced.body.enabledConnectorSlugs).toStrictEqual(["slack"]);
+    const actual = await accept(client.get({ headers, params }), [200]);
+    expect(actual.body.enabledConnectorSlugs).toStrictEqual(["slack"]);
     await accept(
+      client.update({
+        headers,
+        params,
+        body: { enabledConnectorSlugs: ["public-mcp"], operation: "add" },
+      }),
+      [200],
+    );
+    const removed = await accept(
       client.update({
         headers,
         params,
         body: { enabledConnectorSlugs: ["public-mcp"], operation: "remove" },
       }),
-      [426],
-    );
-    const actual = await accept(
-      client.get({ headers: capableHeaders, params }),
       [200],
     );
-    expect(new Set(actual.body.enabledConnectorSlugs)).toStrictEqual(
-      new Set(["public-mcp", "slack"]),
-    );
+    expect(removed.body.enabledConnectorSlugs).toStrictEqual(["slack"]);
   });
 
-  it("projects selected MCP accounts and rejects legacy changes without reading the full catalog", async () => {
+  it("manages selected MCP accounts and keeps reads available during catalog outages", async () => {
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `test-mcp-selection-${randomUUID()}`,
@@ -336,7 +330,7 @@ describe("builtin MCP client compatibility", () => {
     createdAgents.push(agent.agentId);
     await accept(
       setupApp({ context, routes })(userConnectorsContract).update({
-        headers: capableHeaders,
+        headers,
         params: { id: agent.agentId },
         body: { enabledConnectorSlugs: [target.connectorSlug] },
       }),
@@ -344,7 +338,7 @@ describe("builtin MCP client compatibility", () => {
     );
     const connected = await accept(
       setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
-        headers: capableHeaders,
+        headers,
         params: { connectorSlug: target.connectorSlug },
         body: { authMethod: "none", account: { intent: "add" } },
       }),
@@ -365,7 +359,7 @@ describe("builtin MCP client compatibility", () => {
       connectorSelections: [selection],
     };
     const createdThread = await accept(
-      threads.create({ headers: capableHeaders, body: threadBody }),
+      threads.create({ headers, body: threadBody }),
       [201],
     );
     const params = { id: createdThread.body.id };
@@ -375,36 +369,30 @@ describe("builtin MCP client compatibility", () => {
     setApiTestConnectorCatalogExternalReaderIdentityReadHook(() => {
       return Promise.reject(new Error("Full catalog read is unavailable"));
     });
-    const legacy = await accept(selections.get({ headers, params }), [200]);
-    expect(legacy.body).toStrictEqual({
+    const selected = await accept(selections.get({ headers, params }), [200]);
+    expect(selected.body.selections).toStrictEqual([selection]);
+    expect(selected.body.selectedConnections).toMatchObject([
+      { id: connectionId, target, connectionStatus: "connected" },
+    ]);
+    const inspected = await accept(
+      accounts().inspect({ headers, body: { selections: [selection] } }),
+      [200],
+    );
+    expect(inspected.body.results).toMatchObject([
+      { kind: "available", connectionId, target },
+    ]);
+    await accept(selections.clear({ headers, params, body: target }), [204]);
+    const cleared = await accept(selections.get({ headers, params }), [200]);
+    expect(cleared.body).toStrictEqual({
       selections: [],
       selectedConnections: [],
     });
-    const rejected = await Promise.all([
-      accept(selections.update({ headers, params, body: selection }), [426]),
-      accept(selections.clear({ headers, params, body: target }), [426]),
-      accept(
-        accounts().inspect({
-          headers,
-          body: { selections: [selection] },
-        }),
-        [426],
-      ),
-      accept(threads.create({ headers, body: threadBody }), [426]),
-    ]);
-    for (const response of rejected) {
-      expect(response.body.error.code).toBe(
-        "CONNECTOR_CLIENT_UPGRADE_REQUIRED",
-      );
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
-    }
-    const retained = await accept(
-      selections.get({ headers: capableHeaders, params }),
+    clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
+    await accept(
+      selections.update({ headers, params, body: selection }),
       [200],
     );
-    expect(retained.body.selections).toStrictEqual([selection]);
-    expect(retained.body.selectedConnections).toMatchObject([
-      { id: connectionId, target, connectionStatus: "connected" },
-    ]);
+    const restored = await accept(selections.get({ headers, params }), [200]);
+    expect(restored.body.selections).toStrictEqual([selection]);
   });
 });

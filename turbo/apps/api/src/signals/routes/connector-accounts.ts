@@ -1,8 +1,3 @@
-import {
-  connectorClientProjection$,
-  connectorClientSelectionProjection,
-  connectorClientUpgradeRequired,
-} from "../services/connector-client-compatibility.service";
 import { command, computed } from "ccstate";
 import {
   connectorAccountTargetKey,
@@ -65,17 +60,9 @@ const oauthCompletionInner$ = command(
       },
       signal,
     );
-    if (!completion) {
-      return notFound("OAuth completion not found");
-    }
-    if (target.kind === "builtin") {
-      const projection = await get(connectorClientProjection$);
-      signal.throwIfAborted();
-      if (!projection.allowsTarget(target)) {
-        return connectorClientUpgradeRequired();
-      }
-    }
-    return { status: 200 as const, body: completion };
+    return completion
+      ? { status: 200 as const, body: completion }
+      : notFound("OAuth completion not found");
   },
 );
 
@@ -92,20 +79,6 @@ const inspectInner$ = computed(async (get) => {
       return selection.connectionId;
     }),
   });
-  if (
-    accounts.some((account) => {
-      return account.target.kind === "builtin";
-    })
-  ) {
-    const projection = await get(connectorClientSelectionProjection(accounts));
-    if (
-      body.data.selections.some((selection) => {
-        return !projection.allowsTarget(selection.target);
-      })
-    ) {
-      return connectorClientUpgradeRequired();
-    }
-  }
   const accountsById = new Map(
     accounts.map((account) => {
       return [account.id, account];
@@ -143,19 +116,7 @@ const inspectInner$ = computed(async (get) => {
 const summariesInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const summaries = await listConnectorAccountSummaries(get(db$), auth);
-  const projection = summaries.some((summary) => {
-    return summary.target.kind === "builtin";
-  })
-    ? await get(connectorClientProjection$)
-    : null;
-  return {
-    status: 200 as const,
-    body: {
-      summaries: summaries.filter((summary) => {
-        return !projection || projection.allowsTarget(summary.target);
-      }),
-    },
-  };
+  return { status: 200 as const, body: { summaries: [...summaries] } };
 });
 
 const connectionsInner$ = computed(async (get) => {
@@ -177,12 +138,6 @@ const connectionsInner$ = computed(async (get) => {
   }
   if (result.kind === "missing") {
     return notFound("Connector target not found");
-  }
-  if (
-    query.kind === "builtin" &&
-    !(await get(connectorClientProjection$)).allowsTarget(query)
-  ) {
-    return connectorClientUpgradeRequired();
   }
   return {
     status: 200 as const,
@@ -206,16 +161,9 @@ const connectionInner$ = computed(async (get) => {
     target: targetFromQuery(query),
     connectionId: params.connectionId,
   });
-  if (!account) {
-    return notFound("Connector account not found");
-  }
-  if (
-    query.kind === "builtin" &&
-    !(await get(connectorClientProjection$)).allowsTarget(query)
-  ) {
-    return connectorClientUpgradeRequired();
-  }
-  return { status: 200 as const, body: account };
+  return account
+    ? { status: 200 as const, body: account }
+    : notFound("Connector account not found");
 });
 
 const scopeDiffInner$ = computed(async (get) => {
@@ -230,15 +178,9 @@ const scopeDiffInner$ = computed(async (get) => {
       selection: { kind: "exact", connectorId: params.connectionId },
     }),
   );
-  if (!diff) {
-    return notFound("Connector account not found");
-  }
-  if (
-    !(await get(connectorClientProjection$)).allowsSlug(query.connectorSlug)
-  ) {
-    return connectorClientUpgradeRequired();
-  }
-  return { status: 200 as const, body: diff };
+  return diff
+    ? { status: 200 as const, body: diff }
+    : notFound("Connector account not found");
 });
 
 const renameInner$ = command(
@@ -250,13 +192,6 @@ const renameInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      body.data.target.kind === "builtin" &&
-      !(await get(connectorClientProjection$)).allowsTarget(body.data.target)
-    ) {
-      return connectorClientUpgradeRequired();
-    }
-    signal.throwIfAborted();
     const request = {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -297,13 +232,6 @@ const setDefaultInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      body.data.target.kind === "builtin" &&
-      !(await get(connectorClientProjection$)).allowsTarget(body.data.target)
-    ) {
-      return connectorClientUpgradeRequired();
-    }
-    signal.throwIfAborted();
     const request = {
       orgId: auth.orgId,
       userId: auth.userId,
@@ -386,12 +314,6 @@ const deletionImpactInner$ = computed(async (get) => {
   if (!(await getConnectorAccount(get(db$), request))) {
     return notFound("Connector account not found");
   }
-  if (
-    query.kind === "builtin" &&
-    !(await get(connectorClientProjection$)).allowsTarget(query)
-  ) {
-    return connectorClientUpgradeRequired();
-  }
   const impact = await connectorAccountDeletionImpact(get(db$), request);
   if (!impact) {
     return notFound("Connector account not found");
@@ -411,13 +333,6 @@ const deleteInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      body.data.target.kind === "builtin" &&
-      !(await get(connectorClientProjection$)).allowsTarget(body.data.target)
-    ) {
-      return connectorClientUpgradeRequired();
-    }
-    signal.throwIfAborted();
     const request = {
       orgId: auth.orgId,
       userId: auth.userId,

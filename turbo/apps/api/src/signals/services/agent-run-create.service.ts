@@ -6773,12 +6773,6 @@ function piLangfuseExecutionEnvironment(args: {
   };
 }
 
-function builtinMcpRunnerRequirement(context: ConnectorRuntimeContext) {
-  return context.mcpConnectorSlugs.length > 0
-    ? { requiresBuiltinMcp: true as const }
-    : {};
-}
-
 async function buildStoredExecutionContextDraft(args: {
   readonly runId: string;
   readonly userId: string;
@@ -6872,7 +6866,6 @@ async function buildStoredExecutionContextDraft(args: {
     : null;
   return {
     context: {
-      ...builtinMcpRunnerRequirement(args.connectorContext),
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,
@@ -9294,33 +9287,20 @@ interface FinalizedPreparedRunContext extends PreparedRunContext {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
 }
 
-function hasCurrentCliArtifact(): boolean {
-  // Run context captures this immutable package. Its commit, rather than its
-  // semantic version or the Runner version, identifies the reader capability.
-  const commit = env("GIT_COMMIT_SHA");
-  const packageUrl = env("CLI_PKG_URL");
-  if (!commit || !packageUrl || !/^[0-9a-f]{40}$/u.test(commit)) {
-    return false;
-  }
-  const parsed = safeSync(() => {
-    return new URL(packageUrl);
-  });
-  if ("error" in parsed) {
-    return false;
-  }
-  const cliUrl = parsed.ok;
-  return (
-    cliUrl.origin === "https://static.okou.io" &&
-    cliUrl.username === "" &&
-    cliUrl.password === "" &&
-    cliUrl.search === "" &&
-    cliUrl.hash === "" &&
-    cliUrl.pathname === `/okou-cli/${commit}/package.tgz`
-  );
-}
-
 function assertCurrentPiCliArtifact(): void {
-  if (!hasCurrentCliArtifact()) {
+  // The writer and CLI reader are built from the same commit. A mutable or
+  // differently pinned package cannot consume a newly captured model.
+  const commit = env("GIT_COMMIT_SHA");
+  const cliUrl = new URL(env("CLI_PKG_URL"));
+  if (
+    !/^[0-9a-f]{40}$/u.test(commit) ||
+    cliUrl.origin !== "https://static.okou.io" ||
+    cliUrl.username ||
+    cliUrl.password ||
+    cliUrl.search ||
+    cliUrl.hash ||
+    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
+  ) {
     throw new PiNativeConfigurationError(
       "Pi requires the current commit-addressed CLI reader artifact",
     );
@@ -10132,8 +10112,7 @@ async function prepareRunConnectorContexts(
         const connectorCatalogSnapshot =
           args.connectorCatalogSelection.selection;
         const builtinMcpAvailable =
-          args.createArgs.includeOkouTokenSecret === true &&
-          hasCurrentCliArtifact();
+          args.createArgs.includeOkouTokenSecret === true;
         return await loadRunConnectorContexts(
           args.db,
           {

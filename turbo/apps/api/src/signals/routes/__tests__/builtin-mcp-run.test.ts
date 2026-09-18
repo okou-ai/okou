@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import {
-  CONNECTOR_CONTRACT_BUILTIN_MCP_V1,
-  CONNECTOR_CONTRACT_HEADER,
-} from "@okouai/api-contracts/contracts/client-headers";
 import { connectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 
@@ -23,18 +19,12 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-function contractHeaders() {
-  return { [CONNECTOR_CONTRACT_HEADER]: CONNECTOR_CONTRACT_BUILTIN_MCP_V1 };
-}
 const bdd = createBddApi(context);
-const connectors = createConnectorBddApi(context, {
-  headers: contractHeaders(),
-});
+const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
 const firewall = createFirewallApi(context);
 const mocks = createRouteMocks(context);
-const packageCommit = "a".repeat(40);
-const packageUrl = `https://static.okou.io/okou-cli/${packageCommit}/package.tgz`;
+const packageUrl = "https://static.okou.io/okou-cli/latest/package.tgz";
 
 async function runActor() {
   const actor = bdd.user();
@@ -47,7 +37,6 @@ async function runActor() {
   const agent = await bdd.createAgent(actor, {
     displayName: "Builtin MCP Agent",
   });
-  mockEnv("GIT_COMMIT_SHA", packageCommit);
   mockEnv("CLI_PKG_URL", packageUrl);
   return { actor, agentId: agent.agentId, runnerGroup };
 }
@@ -59,7 +48,6 @@ async function connectPublic(actor: ApiTestUser, agentId: string) {
       connectorNoAuthGrantContract,
     ).connect({
       headers: { authorization: "Bearer clerk-session" },
-      extraHeaders: contractHeaders(),
       params: { connectorSlug: "public-mcp" },
       body: {
         authMethod: "none",
@@ -117,17 +105,8 @@ describe("builtin MCP Run admission", () => {
       "manual-mcp",
       replacementAccount.id,
     );
-    // A queued context keeps the capable reader captured at admission.
-    mockEnv(
-      "CLI_PKG_URL",
-      `https://static.okou.io/okou-cli/${"b".repeat(40)}/package.tgz`,
-    );
     await runs.heartbeatRunner(runnerGroup);
-    await runs.requestClaimRunnerJob(true, run.runId, [404]);
-    await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "pending",
-    });
-    const claim = await runs.claimRunnerJob(run.runId, {}, contractHeaders());
+    const claim = await runs.claimRunnerJob(run.runId);
     expect(claim.platformEnvironment.CLI_PKG_URL).toBe(packageUrl);
     expect(claim.environment).not.toHaveProperty("MCP_API_KEY");
     expect(claim.platformEnvironment).not.toHaveProperty("MCP_API_KEY");
@@ -170,7 +149,6 @@ describe("builtin MCP Run admission", () => {
         mcpConnectorsContract,
       ).list({
         headers: { authorization: `Bearer ${token}` },
-        extraHeaders: contractHeaders(),
       }),
       [200],
     );
@@ -277,47 +255,6 @@ describe("builtin MCP Run admission", () => {
     });
     await runs.requestCancelRun(actor, run.runId, [200]);
   });
-
-  it.each([
-    `https://static.okou.io/okou-cli/${"b".repeat(40)}/package.tgz`,
-    "https://static.okou.io/okou-cli/latest/package.tgz",
-  ])(
-    "does not admit builtin MCP for the unsupported CLI artifact %s",
-    async (unsupportedPackage) => {
-      const { actor, agentId, runnerGroup } = await runActor();
-      await connectPublic(actor, agentId);
-      mockEnv("CLI_PKG_URL", unsupportedPackage);
-      const run = await runs.createRun(actor, {
-        agentId,
-        prompt: "Inspect admitted connectors",
-        modelProvider: "anthropic-api-key",
-      });
-      await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(run.runId);
-      expect(
-        claim.firewalls?.some((entry) => {
-          return entry.kind === "builtin" && entry.name === "public-mcp";
-        }) ?? false,
-      ).toBeFalsy();
-      expect(claim.networkPolicies).not.toHaveProperty("public-mcp");
-      expect(claim.appendSystemPrompt).not.toContain("`public-mcp`");
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected the Run token");
-      }
-      const discovery = await accept(
-        setupApp({ context, routes: mcpConnectorsRoutes })(
-          mcpConnectorsContract,
-        ).list({
-          headers: { authorization: `Bearer ${token}` },
-          extraHeaders: contractHeaders(),
-        }),
-        [200],
-      );
-      expect(discovery.body.connectors).toStrictEqual([]);
-      await runs.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
 
   it("does not let an HTTP custom connector reuse MCP transport permissions", async () => {
     const actor = bdd.user();

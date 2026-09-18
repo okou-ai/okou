@@ -2621,7 +2621,6 @@ export function connectorScopeDiff(args: {
 }
 
 export function connectorSearch(args: {
-  readonly includeBuiltinMcp?: boolean;
   readonly orgId: string | undefined;
   readonly userId: string;
   readonly keyword: string | undefined;
@@ -2638,7 +2637,6 @@ export function connectorSearch(args: {
     return searchConnectorCatalog({
       db: get(db$),
       keyword: args.keyword,
-      includeBuiltinMcp: args.includeBuiltinMcp,
       featureStates,
     });
   });

@@ -5,10 +5,6 @@ export const CLIENT_TYPE_HEADER = "X-Client-Type";
 export const CLIENT_PRODUCT_HEADER = "X-Client-Product";
 export const CLIENT_SESSION_ID_HEADER = "X-Client-Session-Id";
 export const CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id";
-// Already CORS-allowlisted by older APIs, so new App builds can negotiate
-// connector responses without breaking cross-origin HTTP requests on rollback.
-export const CONNECTOR_CONTRACT_HEADER = "Accept-Version";
-export const CONNECTOR_CONTRACT_BUILTIN_MCP_V1 = "builtin-mcp-v1";
 export { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "./chat-event-schema-version";
 export const CLIENT_FORCE_UPGRADE_STATUS = 426;
 
@@ -43,6 +39,5 @@ export const CLIENT_HEADER_NAMES = [
   CLIENT_PRODUCT_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_REQUEST_ID_HEADER,
-  CONNECTOR_CONTRACT_HEADER,
   CHAT_EVENT_SCHEMA_VERSION_HEADER,
 ] as const;

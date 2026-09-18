@@ -1,7 +1,3 @@
-import {
-  connectorClientSelectionProjection,
-  connectorClientUpgradeRequired,
-} from "../services/connector-client-compatibility.service";
 import { command, computed } from "ccstate";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -34,18 +30,11 @@ const getSelectionsInner$ = computed(async (get): Promise<unknown> => {
   if (!result) {
     return notFound("Chat thread not found");
   }
-  const projection = await get(
-    connectorClientSelectionProjection(result.selections),
-  );
   return {
     status: 200 as const,
     body: {
-      selections: result.selections.filter((selection) => {
-        return projection.allowsTarget(selection.target);
-      }),
-      selectedConnections: result.selectedConnections.filter((connection) => {
-        return projection.allowsTarget(connection.target);
-      }),
+      selections: [...result.selections],
+      selectedConnections: [...result.selectedConnections],
     },
   };
 });
@@ -63,15 +52,6 @@ const updateSelectionInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      body.data.target.kind === "builtin" &&
-      !(
-        await get(connectorClientSelectionProjection([body.data]))
-      ).allowsTarget(body.data.target)
-    ) {
-      return connectorClientUpgradeRequired();
-    }
-    signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const result = await updateChatThreadConnectorSelection(
       writeDb,
@@ -139,15 +119,6 @@ const clearSelectionInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      body.data.kind === "builtin" &&
-      !(
-        await get(connectorClientSelectionProjection([{ target: body.data }]))
-      ).allowsTarget(body.data)
-    ) {
-      return connectorClientUpgradeRequired();
-    }
-    signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const result = await clearChatThreadConnectorSelection(
       writeDb,
