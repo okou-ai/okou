@@ -100,8 +100,9 @@ export type SlashTemplateCategory = (typeof SLASH_TEMPLATE_CATEGORIES)[number];
 
 /**
  * The catalogs that carry cover art, so they can fill a pane or a shelf of
- * them. Video keeps its covers for the task chips' shelf even though it is no
- * longer a slash row.
+ * them. `video` stays in the union because the task chips' shelf is typed over
+ * every create mode, not because a surface still previews it; the note on
+ * `VIDEO_IDEAS` in `composer-task-chips.tsx` records what reaches that shelf.
  */
 export type SlashTemplatePreviewCategory =
   | "slides"
