@@ -22,6 +22,7 @@ import {
   expireMorningBriefGenerationRetention,
   failMorningBriefGenerationUpdates,
   readPlatformGenerationReceipts,
+  replaceMorningBriefGenerationAttemptOnRelease,
 } from "../../../test-fixtures/morning-brief-generation";
 import {
   drainEmailOutbox,
@@ -34,6 +35,7 @@ import {
   enqueueUnsentLegacyEmail,
   countOrgAgentRuns,
   deleteLegacyMorningBriefInstallation,
+  holdNativeDeliveryReceiptCommit,
   holdNativeScheduleRow,
   interruptNativeSettlement,
   interruptNativeSettlementAfterGeneration,
@@ -522,6 +524,55 @@ describe("native Morning Brief cron", () => {
     expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
   });
 
+  it("lets an S6 receipt committed while recovery waits override an expired S5 snapshot", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(f);
+    const receiptCommit = await holdNativeDeliveryReceiptCommit(
+      f,
+      context.signal,
+    );
+    await makeNativeOccurrenceDue(f);
+
+    // S6 has passed its final result-retention check and holds the schedule row,
+    // but its delivery receipt is not committed yet.
+    const delivering = tick(f);
+    const deliveryPid = await receiptCommit.waitForBlocked();
+    expect(calls.generation).toHaveLength(1);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      { settledAt: null, deliveryPending: true },
+    ]);
+
+    // Recovery observes no receipt and an expired result, then reaches the real
+    // schedule lock behind S6. The receipt that commits on lock release must
+    // supersede that stale `generation-unknown` snapshot.
+    await expireMorningBriefGenerationRetention(f, new Date(now() - 1000));
+    const recovering = tick(f);
+    await waitForDeferredBlocker(deliveryPid);
+    await receiptCommit.release();
+    const [delivered, recovered] = await Promise.all([
+      accept(delivering, [200]),
+      accept(recovering, [200]),
+    ]);
+
+    expect(delivered.body.claimed).toBe(1);
+    expect(recovered.body.deliveriesRecovered).toBe(1);
+    expect(calls.generation).toHaveLength(1);
+    await expect(readNativeDeliveries(f)).resolves.toHaveLength(1);
+    const [settled] = await readNativeOccurrences(f);
+    expect(settled).toMatchObject({
+      state: "settled",
+      outcome: "delivered",
+      settledAt: expect.any(Date),
+      deliveryPending: false,
+    });
+    const [delivery] = await readNativeDeliveries(f);
+    await expect(
+      readThreadEventTypes(delivery?.chatThreadId ?? ""),
+    ).resolves.toHaveLength(1);
+  }, 20_000);
+
   // Each case commits the real S5 outcome, then the owner-scoped PostgreSQL
   // fault interrupts native settlement. The next tick must recover from that
   // exact durable state without routing a non-deliver result through S6.
@@ -755,6 +806,64 @@ describe("native Morning Brief cron", () => {
       },
     ]);
     expect(calls.generation).toHaveLength(1);
+  });
+
+  it("does not transition a replacement row while resolving the exact lapsed attempt", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(f);
+    const failOwnerWrite = await failMorningBriefGenerationUpdates(
+      f,
+      context.signal,
+    );
+    const interrupt = await interruptNativeSettlementAfterGeneration(
+      f,
+      context.signal,
+    );
+    await makeNativeOccurrenceDue(f);
+    await accept(tick(f), [200]);
+    const [original] = await readNativeGenerations(f);
+    const originalAttemptId = original?.attemptId;
+    expect(originalAttemptId).toBeDefined();
+    await failOwnerWrite();
+    await interrupt();
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+
+    // Recovery reads the old attempt before its stale-transition transaction.
+    // Replace only the identity while that transaction is waiting on the real
+    // row lock; its CAS must not transfer the old attempt's outcome to this row.
+    const replacementAttemptId = randomUUID();
+    const replacement = await replaceMorningBriefGenerationAttemptOnRelease(
+      f,
+      {
+        expectedAttemptId: originalAttemptId ?? "",
+        replacementAttemptId,
+      },
+      context.signal,
+    );
+    const recovering = tick(f);
+    await replacement.waitForBlocked();
+    await replacement.release();
+    const recovered = await accept(recovering, [200]);
+
+    expect(recovered.body.deliveriesRecovered).toBe(1);
+    expect(calls.generation).toHaveLength(1);
+    await expect(readNativeGenerations(f)).resolves.toMatchObject([
+      {
+        attemptId: replacementAttemptId,
+        state: "reserved",
+        failureReason: null,
+      },
+    ]);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        generationAttemptId: originalAttemptId,
+        outcome: "generation-unknown",
+        settledAt: expect.any(Date),
+        deliveryPending: false,
+      },
+    ]);
   });
 
   it("settles a physically missing bound S5 result as unknown, never as an empty day", async () => {

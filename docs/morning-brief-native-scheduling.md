@@ -169,11 +169,15 @@ attempt:
   pending.
 
 Logical retention does not erase known terminal metadata while its row still
-exists. Physical deletion does make a receipt-less result unknown. Closing is a
-compare-and-set over the exact occurrence epoch, lease, bound attempt and
-pending flag; overlapping ticks can consume it once, and an old epoch cannot
-rewrite a newer schedule obligation. Neither recovery path changes platform
-receipt/cost facts, reparses provider output, or settles the schedule twice.
+exists. Physical deletion does make a receipt-less result unknown. A lapsed
+reservation transition is fenced by that exact attempt, so a replacement row
+cannot inherit the old attempt's unknown outcome. Closing is a compare-and-set
+over the exact occurrence epoch, lease, bound attempt and pending flag. It locks
+the schedule before rechecking the S6 receipt, so a delivery that commits while
+recovery waits still wins as `delivered`; overlapping ticks can consume the
+obligation once, and an old epoch cannot rewrite a newer schedule obligation.
+Neither recovery path changes platform receipt/cost facts, reparses provider
+output, or settles the schedule twice.
 
 ### Missed ticks coalesce
 

@@ -540,18 +540,23 @@ export async function recordMorningBriefGenerationOutcome(
  * This is the observable recovery path, and it deliberately resolves to
  * *unknown* rather than to a retryable state: the original request may already
  * have reached the provider. It is driven by an explicit invocation, so no
- * background scheduler or queue is introduced. The attempt id is not required,
- * because the attempt that would have supplied it is exactly the one that
- * disappeared.
+ * background scheduler or queue is introduced. The attempt id is part of both
+ * the lock and update predicates: a row replaced while recovery waits is a new
+ * obligation and must never inherit the older attempt's unknown outcome.
  */
 export async function resolveStaleMorningBriefGeneration(
   tx: Tx,
   key: MorningBriefGenerationKey,
+  expectedAttemptId: string,
 ): Promise<MorningBriefGenerationRow | undefined> {
+  const exactAttempt = and(
+    generationKey(key),
+    eq(morningBriefGenerations.attemptId, expectedAttemptId),
+  );
   const [locked] = await tx
     .select({ attemptId: morningBriefGenerations.attemptId })
     .from(morningBriefGenerations)
-    .where(generationKey(key))
+    .where(exactAttempt)
     .for("update")
     .limit(1);
   if (!locked) {
@@ -570,7 +575,7 @@ export async function resolveStaleMorningBriefGeneration(
     })
     .where(
       and(
-        generationKey(key),
+        exactAttempt,
         eq(morningBriefGenerations.state, "reserved"),
         lte(morningBriefGenerations.reservationExpiresAt, at),
       ),

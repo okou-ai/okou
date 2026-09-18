@@ -287,6 +287,81 @@ export async function suppressNativeDeliveryRecovery(
   );
 }
 
+/**
+ * Hold S6 at its final delivery-receipt insert.
+ *
+ * Every content and retention check has passed by this statement, and the S6
+ * transaction already holds the native schedule row. A competing recovery can
+ * therefore read the pre-commit absence and then be observed waiting on the
+ * exact lock whose release makes that receipt durable.
+ */
+export async function holdNativeDeliveryReceiptCommit(
+  owner: MorningBriefNativeOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForBlocked: () => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const digest = nativeOwnerDigest(owner);
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 8);
+  const functionName = `test_mb_delivery_hold_${suffix}`;
+  const triggerName = `mbd_hold_${digest}_${suffix}`;
+  await db().transaction(async (tx) => {
+    await tx.execute(sql`
+      CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
+      LANGUAGE plpgsql AS $$
+      BEGIN
+        IF substring(
+             encode(
+               sha256(convert_to(NEW.org_id || ':' || NEW.user_id, 'UTF8')),
+               'hex'
+             ) from 1 for 32
+           ) = split_part(TG_NAME, '_', 3) THEN
+          PERFORM pg_advisory_xact_lock(
+            hashtextextended(
+              'morning-brief-delivery-commit:' || split_part(TG_NAME, '_', 3),
+              0
+            )
+          );
+        END IF;
+        RETURN NEW;
+      END;
+      $$
+    `);
+    signal.throwIfAborted();
+    await tx.execute(sql`
+      CREATE TRIGGER ${sql.identifier(triggerName)}
+      BEFORE INSERT ON morning_brief_deliveries
+      FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
+    `);
+    signal.throwIfAborted();
+  });
+
+  let restored = false;
+  const restore = async () => {
+    if (restored) {
+      return;
+    }
+    restored = true;
+    await db().transaction(async (tx) => {
+      await tx.execute(
+        sql`DROP TRIGGER ${sql.identifier(triggerName)} ON morning_brief_deliveries`,
+      );
+      await tx.execute(sql`DROP FUNCTION ${sql.identifier(functionName)}()`);
+    });
+  };
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`morning-brief-delivery-commit:${digest}`}, 0))`,
+    );
+  });
+  onTestFinished(async () => {
+    await held.release();
+    await restore();
+  });
+  return { waitForBlocked: held.waitForBlocked, release: held.release };
+}
+
 /** Hold the real schedule parent row so competing recovery ticks both arrive. */
 export async function holdNativeScheduleRow(
   owner: MorningBriefNativeOwner,

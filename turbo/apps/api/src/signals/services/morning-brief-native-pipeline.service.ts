@@ -435,6 +435,26 @@ export const executeNativeMorningBriefSlot$ = command(
   },
 );
 
+async function hasNativeMorningBriefDeliveryReceipt(
+  db: Pick<ReadonlyDb, "select">,
+  owner: MorningBriefMemberIdentity,
+  occurrence: MorningBriefNativeOccurrenceRow,
+): Promise<boolean> {
+  const [receipt] = await db
+    .select({ chatEventId: morningBriefDeliveries.chatEventId })
+    .from(morningBriefDeliveries)
+    .where(
+      and(
+        eq(morningBriefDeliveries.orgId, owner.orgId),
+        eq(morningBriefDeliveries.userId, owner.userId),
+        eq(morningBriefDeliveries.scheduledFor, occurrence.scheduledFor),
+        eq(morningBriefDeliveries.executionPurpose, "production"),
+      ),
+    )
+    .limit(1);
+  return receipt !== undefined;
+}
+
 /**
  * Resolve one pending delivery recovery, receipt first.
  *
@@ -455,20 +475,13 @@ export const recoverNativeMorningBriefDelivery$ = command(
     signal: AbortSignal,
   ): Promise<NativeDeliveryRecoveryResolution> => {
     const db = set(writeDb$);
-    const [receipt] = await db
-      .select({ chatEventId: morningBriefDeliveries.chatEventId })
-      .from(morningBriefDeliveries)
-      .where(
-        and(
-          eq(morningBriefDeliveries.orgId, args.owner.orgId),
-          eq(morningBriefDeliveries.userId, args.owner.userId),
-          eq(morningBriefDeliveries.scheduledFor, args.occurrence.scheduledFor),
-          eq(morningBriefDeliveries.executionPurpose, "production"),
-        ),
-      )
-      .limit(1);
+    const receiptCommitted = await hasNativeMorningBriefDeliveryReceipt(
+      db,
+      args.owner,
+      args.occurrence,
+    );
     signal.throwIfAborted();
-    if (receipt !== undefined) {
+    if (receiptCommitted) {
       // Already delivered. Email recovery stays with S6's receipt and the S2
       // shared outbox; this consumer only releases the scheduler's obligation.
       return { kind: "settle", outcome: "delivered" };
@@ -542,14 +555,23 @@ export const recoverNativeMorningBriefDelivery$ = command(
 export function productionNativeTickDependencies(args: {
   readonly db: ReadonlyDb;
   readonly executor: NativeSlotExecutor;
-  readonly delivery: NativeDeliveryRecovery;
+  readonly delivery: Pick<NativeDeliveryRecovery, "resolve">;
   readonly scope?: MorningBriefMemberIdentity;
 }): NativeTickDependencies {
   const { db } = args;
   return {
     scope: args.scope,
     executor: args.executor,
-    delivery: args.delivery,
+    delivery: {
+      resolve: args.delivery.resolve,
+      hasCommittedReceipt: async (receiptDb, owner, occurrence) => {
+        return await hasNativeMorningBriefDeliveryReceipt(
+          receiptDb,
+          owner,
+          occurrence,
+        );
+      },
+    },
     legacyDrain: async (owner) => {
       const schedule = await readMorningBriefNativeSchedule(db, owner);
       return await proveLegacyMorningBriefDrain(db, owner, schedule);

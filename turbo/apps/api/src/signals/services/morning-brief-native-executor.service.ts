@@ -18,6 +18,7 @@ import {
   loadDueNativeOwners,
   loadPendingDeliveryOccurrences,
   loadResumableOccurrences,
+  lockMorningBriefNativeSchedule,
   loadTransitionCandidates,
   materializeMorningBriefNativeSchedule,
   resumeMorningBriefNativeOccurrence,
@@ -256,6 +257,18 @@ export interface NativeDeliveryRecovery {
     occurrence: MorningBriefNativeOccurrenceRow,
     signal: AbortSignal,
   ) => Promise<NativeDeliveryRecoveryResolution>;
+  /**
+   * Recheck S6's durable receipt after the schedule row serializes this close.
+   *
+   * An already-admitted S6 transaction holds that same schedule lock until its
+   * receipt commits. Recovery can therefore decide from the post-wait truth
+   * instead of settling from a receipt read that became stale while it waited.
+   */
+  readonly hasCommittedReceipt: (
+    db: Pick<ReadonlyDb, "select">,
+    owner: MorningBriefMemberIdentity,
+    occurrence: MorningBriefNativeOccurrenceRow,
+  ) => Promise<boolean>;
 }
 
 /** Everything the tick needs from outside itself. */
@@ -327,6 +340,17 @@ const runDeliveryRecoveryPass$ = command(
         continue;
       }
       const closed = await db.transaction(async (tx) => {
+        // S6 holds this same row until its delivery receipt commits. Take it
+        // before the final receipt read so a delivery that was in flight during
+        // `resolve` wins over that pre-wait snapshot.
+        if ((await lockMorningBriefNativeSchedule(tx, owner)) === undefined) {
+          return "absent" as const;
+        }
+        const receiptCommitted = await deps.delivery.hasCommittedReceipt(
+          tx,
+          owner,
+          occurrence,
+        );
         return await closeRecoveredMorningBriefDelivery(tx, owner, {
           scheduledFor: occurrence.scheduledFor,
           expectedEpoch: occurrence.ownerEpoch,
@@ -334,7 +358,12 @@ const runDeliveryRecoveryPass$ = command(
           leaseToken: occurrence.leaseToken,
           // A slot that bound its attempt but crashed before its own settlement
           // still owes that settlement; one already settled only owes the clear.
-          settleAs: occurrence.settledAt !== null ? null : resolution.outcome,
+          settleAs:
+            occurrence.settledAt !== null
+              ? null
+              : receiptCommitted
+                ? "delivered"
+                : resolution.outcome,
           at: nowDate(),
         });
       });

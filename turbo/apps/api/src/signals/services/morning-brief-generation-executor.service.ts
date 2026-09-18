@@ -1181,7 +1181,7 @@ const resolveExistingGeneration$ = command(
       // Settling a lapsed reservation records an operational fact and releases
       // no content, so it is not gated on the content-release authority below.
       const resolved = await db.transaction(async (tx) => {
-        return await resolveStaleMorningBriefGeneration(tx, key);
+        return await resolveStaleMorningBriefGeneration(tx, key, row.attemptId);
       });
       signal.throwIfAborted();
       if (!resolved) {
@@ -1365,7 +1365,7 @@ export const recoverMorningBriefGeneration$ = command(
         collectionVersion: row.collectionVersion,
       };
       await db.transaction(async (tx) => {
-        await resolveStaleMorningBriefGeneration(tx, key);
+        await resolveStaleMorningBriefGeneration(tx, key, args.attemptId);
       });
       signal.throwIfAborted();
       // The stale transition may have lost to the original terminal writer.
