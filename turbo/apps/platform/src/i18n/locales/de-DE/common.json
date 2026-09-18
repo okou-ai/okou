@@ -541,12 +541,14 @@
       "synced": "Mit Google Drive synchronisiert",
       "syncedFiles_one": "Mit Google Drive synchronisiert",
       "syncedFiles_other": "{{count}} Dateien mit Google Drive synchronisiert",
+      "syncedSlides": "Mit Google Slides synchronisiert",
       "syncFailed": "Synchronisierung mit Google Drive fehlgeschlagen",
       "syncingArtifact": "Artefakt wird synchronisiert...",
       "syncingFiles_one": "{{count}} Datei wird synchronisiert...",
       "syncingFiles_other": "{{count}} Dateien werden synchronisiert...",
       "syncingNamed": "{{filename}} wird synchronisiert...",
-      "upload": "Auf Google Drive hochladen"
+      "upload": "Auf Google Drive hochladen",
+      "uploadSlides": "Auf Google Slides hochladen"
     },
     "kinds": {
       "audio": "Audio",
@@ -646,7 +648,6 @@
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Eigene Datei importieren",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} wird analysiert. Die Vorlage erscheint unter „Custom“, sobald sie fertig ist.",
       "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
       "introVideo": "Intro-Video",
       "introVideoUnavailable": "Diese Videovorlage ist nicht mehr verfügbar. Entferne sie, um deine Nachricht zu senden.",
@@ -667,6 +668,7 @@
       "renameImportedTemplate": "Vorlage umbenennen",
       "searchConnector": "Vorlagen suchen",
       "searchConnectors": "Vorlagen suchen",
+      "selected": "Ausgewählt",
       "selectStyle": "Stil auswählen {{style}}",
       "selectTemplate": "Wählen Sie die Vorlage {{title}} aus.",
       "selectVideo": "Wählen Sie die Videovorlage {{title}} aus.",
@@ -1887,6 +1889,7 @@
         "heading": "Avatar auswählen",
         "label": "Avatar",
         "none": "Kein Avatar",
+        "noneDetail": "Nur Stil",
         "previewLook": "Look {{name}} ansehen"
       },
       "catalog": {
@@ -1899,16 +1902,29 @@
         "cancel": "Abbrechen"
       },
       "picker": {
-        "autoVoiceDescription": "Finde eine Stimme, die zu deinem Inhalt passt.",
+        "allPresenters": "Alle Moderatoren",
+        "allPresentersCount": "Alle Moderatoren ({{total}})",
+        "allVoices": "Alle Stimmen",
+        "allVoicesCount": "Alle Stimmen ({{total}})",
+        "autoVoiceDescription": "Eine Stimme, die zu deinem Stil passt",
         "avatarVoice": "Stimme des Avatars",
-        "changeAvatar": "Avatar ändern",
-        "chooseStyle": "Stil auswählen",
-        "chooseStyleAndVoice": "Wähle einen Stil und eine Stimme.",
+        "back": "Zurück",
+        "closeOptions": "Optionen schließen",
+        "done": "Fertig",
+        "moreOptions": "Weitere Optionen",
         "noMatches": "Keine Treffer.",
-        "ready": "Bereit. Füge deinen Inhalt im Chat hinzu.",
+        "optionsNote": "Du kannst das jederzeit über den Chip im Chat ändern.",
+        "pickStyle": "Stil wählen",
+        "reset": "Zurücksetzen",
+        "searchPresenters": "Moderatoren suchen",
+        "searchStyles": "Stile suchen",
+        "searchVoices": "Stimmen suchen",
+        "selectedStyle": "Ausgewählt: {{name}}",
         "settings": "Einstellungen für Intro-Videos",
-        "style": "Stil",
-        "useSelection": "Auswahl verwenden"
+        "styleCount_one": "{{count}} Stil",
+        "styleCount_other": "{{count}} Stile",
+        "styleCountOf": "{{shown}} von {{total}}",
+        "useStyle": "{{name}} verwenden"
       },
       "style": {
         "auto": "Okou wählen lassen",
@@ -1927,10 +1943,9 @@
       "voice": {
         "auto": "Okou wählen lassen",
         "defaultDescription": "Die Standardstimme des gewählten Avatars verwenden",
-        "heading": "Stimme auswählen",
         "label": "Stimme",
         "none": "Kein Voiceover",
-        "noneDescription": "Keine Erzählstimme hinzufügen; Originalton behalten, sofern du ihn nicht stummschalten möchtest."
+        "noneShortDescription": "Originalton beibehalten"
       }
     },
     "mail": {
@@ -1976,10 +1991,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Chat öffnen",
+      "openChatIn": "Chat in {{integration}} öffnen",
       "openFeishuChat": "Öffnen Sie den Original-Chat in Feishu",
       "openGithubMessage": "Ursprünglichen Issue oder Pull Request in GitHub öffnen",
       "openLarkChat": "Öffnen Sie den Original-Chat in Lark",
       "openMessage": "Nachricht öffnen",
+      "openMessages": "Nachrichten öffnen",
       "openSlackMessage": "Originalnachricht in Slack öffnen",
       "openTeamsMessage": "Originalnachricht in Microsoft Teams öffnen",
       "openTelegramMessage": "Originalnachricht in Telegram öffnen",
@@ -2111,7 +2128,10 @@
       "number": "Nummer"
     },
     "sidebar": {
+      "allArchived": "Alle deine Chats sind archiviert",
+      "allCaughtUp": "Alles erledigt",
       "allChats": "Alle Chats",
+      "archive": "Chat archivieren",
       "chatsWith": "Chats mit {{agentName}}",
       "chatThreads": "Chat-Threads",
       "delete": "Chat löschen",
@@ -2130,7 +2150,10 @@
       "pinned": "Angepinnt",
       "rename": "Chat umbenennen",
       "renameDescription": "Geben Sie einen neuen Namen für diesen Chat-Thread ein.",
+      "showArchived": "Archivierte anzeigen",
+      "showArchivedChats": "Archivierte Chats anzeigen",
       "titlePlaceholder": "Chattitel",
+      "unarchive": "Archivierung aufheben",
       "unpin": "Chat nicht mehr anheften",
       "unread": "Ungelesen",
       "unreadOnly": "Nur ungelesen"
@@ -2842,6 +2865,7 @@
       "ariaLabel": "Chat-Thread",
       "changeIcon": "Symbol ändern",
       "emoji": {
+        "archive": "Archivieren",
         "done": "Erledigt",
         "idea": "Idee",
         "no": "Nein",
@@ -3559,6 +3583,7 @@
           "sourceUnavailable": "Quelle nicht verfügbar",
           "stale": "Veraltet",
           "unchanged": "Unverändert",
+          "unsupportedProtocol": "Nicht unterstütztes Protokoll",
           "unsupportedSchema": "Nicht unterstütztes Schema"
         }
       },
@@ -4672,6 +4697,8 @@
         "tiny-wanderer": "Kleiner Wanderer"
       },
       "presentation": {
+        "bloom-pitch": "Petal pitch",
+        "blueprint-academy": "Drafting campus",
         "botane-organic-deck": "Mauve garden",
         "business-data-presentation": "Berry dashboard",
         "crayon-learning-deck": "Crayon doodle",
@@ -4680,9 +4707,19 @@
         "editorial-magazine-deck": "Paper magazine",
         "landing-consulting-deck": "Neon browser",
         "lumina-creative-studio": "Brush stickers",
+        "meridian": "Cobalt blocks",
         "mosaic-geometric-pitch": "Bauhaus tiles",
+        "neo-brutalism": "Shadow shop",
+        "nocturne": "Midnight stage",
+        "pixel-glitch": "Arcade pixels",
         "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy"
+        "playful-pop-deck": "Neon candy",
+        "prospectus": "Homepage pitch",
+        "schoolhouse": "Kraft poster",
+        "sticker-scrapbook": "Sticker notebook",
+        "strata": "Red staircase",
+        "taped-consulting": "Polaroid wall",
+        "vantage": "Numbered boardroom"
       },
       "video": {
         "chinese-ink-art": "Chinesische Tuschemalerei",
@@ -5779,7 +5816,8 @@
     "status": {
       "availableNow": "Jetzt verfügbar",
       "inUse_one": "{{active}} von {{limit}} Slot belegt",
-      "inUse_other": "{{active}} von {{limit}} Slots belegt"
+      "inUse_other": "{{active}} von {{limit}} Slots belegt",
+      "waitingForSandbox": "Warten auf Sandbox"
     },
     "tiers": {
       "custom": "Benutzerdefiniert",
@@ -5918,7 +5956,7 @@
         "usage": {
           "balanceDescription": "Was deinem Team noch zum Ausgeben bleibt.",
           "balanceTitle": "Credit-Guthaben",
-          "usageDescription": "Ihre Credit-Nutzung über Chats, Automatisierungen und Kanäle hinweg.",
+          "usageDescription": "Ihre Credit-Nutzung, nach Thread gruppiert.",
           "usageTitle": "Credit-Nutzung"
         }
       },
@@ -6082,9 +6120,12 @@
         "codexDescription": "Stellen Sie eine Verbindung mit der Codex-Geräteanmeldung her, um von Codex unterstützte Modellrouten zu erhalten.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Wird nur bei Ihren Ausführungen mit Ihren eigenen Anmeldeinformationen verwendet.",
+        "disconnectAccount": "Konto trennen",
+        "disconnectDescription": "Dadurch wird das Konto aus Okou entfernt. Ihr Abonnement beim Anbieter wird nicht gekündigt.",
+        "disconnecting": "Verbindung wird getrennt…",
+        "disconnectTitle": "{{account}} trennen?",
         "noAccounts": "Keine Konten verbunden.",
         "reconnectAccount": "Erneut verbinden",
-        "removeAccount": "Entfernen",
         "sectionTitle": "Persönlich",
         "status": {
           "connected": "Verbunden",
@@ -6211,7 +6252,7 @@
         "codexTitle": "Die ChatGPT-Sitzung muss erneut verbunden werden"
       },
       "toasts": {
-        "accountRemoved": "Konto entfernt",
+        "accountDisconnected": "Konto getrennt",
         "accountSwitched": "Aktives Konto gewechselt",
         "disconnected": "{{provider}} getrennt",
         "policiesUpdated": "Modellanbietereinstellungen aktualisiert",
@@ -6231,6 +6272,73 @@
         "resetsRelative": "Setzt {{relative}} zurück",
         "resetTimePassed": "Reset-Zeit verstrichen",
         "resetTimePassedTitle": "Die Rücksetzzeit ist abgelaufen"
+      }
+    },
+    "paidTools": {
+      "description": "Wähle, welche kostenpflichtigen integrierten Tools du verwenden kannst.",
+      "disabledForCreation": "{{tool}} ist in deinen Einstellungen für kostenpflichtige Tools deaktiviert.",
+      "loadError": "Deine Tool-Einstellungen konnten nicht geladen werden.",
+      "loading": "Deine Tool-Einstellungen werden geladen…",
+      "openSettings": "Einstellungen für kostenpflichtige Tools öffnen",
+      "retry": "Erneut versuchen",
+      "saveError": "Deine Änderung wurde nicht gespeichert.",
+      "saving": "Wird gespeichert…",
+      "scope": "Diese Einstellungen gelten nur für dich in {{workspace}}.",
+      "timing": "Änderungen gelten für zukünftige Ausführungen. Laufende oder bereits vorbereitete Aufgaben können die bisherigen Einstellungen behalten.",
+      "title": "Kostenpflichtige Tools",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "Videos mit sprechenden Avataren erstellen.",
+          "name": "Avatar-Videoerzeugung"
+        },
+        "finance": {
+          "description": "Suche nach Unternehmen, Kursen und Marktdaten.",
+          "name": "Finanzdaten"
+        },
+        "image-generation": {
+          "description": "Bilder mit integrierten Modellen erstellen.",
+          "name": "Bilderzeugung"
+        },
+        "image-recognition": {
+          "description": "Lies und analysiere Bilder.",
+          "name": "Bilderkennung"
+        },
+        "maps": {
+          "description": "Finde Orte, Adressen und Wegbeschreibungen.",
+          "name": "Karten und Orte"
+        },
+        "people-search": {
+          "description": "Finde öffentliche berufliche Profile.",
+          "name": "Personensuche"
+        },
+        "scrape": {
+          "description": "Lies und extrahiere Inhalte von Webseiten.",
+          "name": "Seitenextraktion"
+        },
+        "seo": {
+          "description": "Recherchiere Suchrankings, Keywords und Backlinks.",
+          "name": "SEO-Recherche"
+        },
+        "social": {
+          "description": "Recherchiere öffentliche Beiträge und sammle Medien.",
+          "name": "Social-Media-Recherche"
+        },
+        "video-generation": {
+          "description": "Videos mit integrierten Modellen erstellen.",
+          "name": "Videoerzeugung"
+        },
+        "video-rendering": {
+          "description": "Videokompositionen in der Cloud rendern.",
+          "name": "Video-Rendering"
+        },
+        "voice-generation": {
+          "description": "Sprache mit integrierten Stimmen erstellen.",
+          "name": "Spracherzeugung"
+        },
+        "web-search": {
+          "description": "Finde aktuelle Informationen im Web.",
+          "name": "Websuche"
+        }
       }
     },
     "preferences": {
@@ -6741,6 +6849,18 @@
     "manage": "SSH-Hosts verwalten",
     "notLearned": "Noch kein Hostschlüssel gespeichert",
     "passphrase": "Passphrase (optional)",
+    "placeholders": {
+      "accessName": "z. B. Produktionszugriff",
+      "clientId": "Client-ID des Service-Tokens einfügen",
+      "clientSecret": "Client-Secret des Service-Tokens einfügen",
+      "credentialName": "z. B. Deployment-Zugang",
+      "displayName": "z. B. Produktionsserver",
+      "host": "z. B. ssh.example.com",
+      "passphrase": "Leer lassen, wenn unverschlüsselt",
+      "password": "Passwort des SSH-Benutzers eingeben",
+      "privateKey": "Vollständigen privaten Schlüssel einfügen oder über „Datei auswählen“ importieren",
+      "username": "z. B. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Privater Schlüssel",
     "reset": "Hostschlüssel zurücksetzen",
@@ -6776,8 +6896,7 @@
       "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
     },
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
-    "pageCount_one": "{{count}} Seite",
-    "pageCount_other": "{{count}} Seiten",
+    "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",
     "sharedBy": "Geteilt von {{owner}}",
     "visibility": {
@@ -6819,36 +6938,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Keine Nutzung in diesem Abrechnungszeitraum",
-        "description": "Credits, die du für Chats, Automationen und Kanäle ausgibst, erscheinen hier.",
+        "description": "Credits, die du in Threads ausgibst, erscheinen hier.",
         "noBillingPeriodDescription": "Die Team-Nutzung erscheint, sobald ein Abrechnungszeitraum beginnt.",
         "noBillingPeriodTitle": "Kein aktiver Abrechnungszeitraum",
         "rangeTitle": "Keine Nutzung in diesem Zeitraum",
-        "teamDescription": "Credits, die dein Team für Chats, Automationen und Kanäle ausgibt, erscheinen hier."
+        "teamDescription": "Credits, die dein Team in Threads ausgibt, erscheinen hier."
       },
       "loadError": "Ihre Nutzung konnte nicht geladen werden.",
       "loadMore": "Mehr laden",
       "myUsage": "Meine Nutzung",
       "teamLoadError": "Die Teamnutzung konnte nicht geladen werden.",
       "teamUsage": "Teamnutzung",
+      "thread": "Thread",
+      "unavailableThread": "Nicht verfügbarer Thread",
       "untitled": "(ohne Titel)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automatisierung",
-      "chat": "Chat",
-      "email": "E-Mail",
-      "github": "GitHub",
-      "other": "Andere",
-      "phone": "Telefon",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} Chat",
-      "chat_other": "{{value}} Chats",
       "credit_one": "{{value}} Credit",
-      "credit_other": "{{value}} Credits"
+      "credit_other": "{{value}} Credits",
+      "thread_one": "{{value}} Thread",
+      "thread_other": "{{value}} Threads"
     }
   },
   "workflows": {

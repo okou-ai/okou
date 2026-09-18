@@ -558,13 +558,15 @@
       "syncedFiles_one": "Synchronisé sur Google Drive",
       "syncedFiles_many": "{{count}} fichiers synchronisés sur Google Drive",
       "syncedFiles_other": "{{count}} fichiers synchronisés sur Google Drive",
+      "syncedSlides": "Synchronisé sur Google Slides",
       "syncFailed": "Échec de la synchronisation vers Google Drive",
       "syncingArtifact": "Synchronisation de l'artéfact...",
       "syncingFiles_one": "Synchronisation de {{count}} fichier...",
       "syncingFiles_many": "Synchronisation de {{count}} fichiers...",
       "syncingFiles_other": "Synchronisation de {{count}} fichiers...",
       "syncingNamed": "Synchronisation de {{filename}}...",
-      "upload": "Téléverser sur Google Drive"
+      "upload": "Téléverser sur Google Drive",
+      "uploadSlides": "Téléverser sur Google Slides"
     },
     "kinds": {
       "audio": "Audio",
@@ -665,7 +667,6 @@
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer votre propre fichier",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analyse de {{filename}} en cours. Le modèle apparaîtra dans Custom une fois prêt.",
       "importUnsupported": "Choisissez un fichier {{formats}} pour créer un modèle.",
       "introVideo": "Vidéo d’intro",
       "introVideoUnavailable": "Ce modèle vidéo n’est plus disponible. Retirez-le pour envoyer votre message.",
@@ -686,6 +687,7 @@
       "renameImportedTemplate": "Renommer le modèle",
       "searchConnector": "Rechercher des modèles",
       "searchConnectors": "Rechercher des modèles",
+      "selected": "Sélectionné",
       "selectStyle": "Sélectionner le style {{style}}",
       "selectTemplate": "Sélectionner le modèle {{title}}",
       "selectVideo": "Sélectionner le modèle vidéo {{title}}",
@@ -1925,6 +1927,7 @@
         "heading": "Choisir un avatar",
         "label": "Avatar",
         "none": "Aucun avatar",
+        "noneDetail": "Style seul",
         "previewLook": "Aperçu de l’apparence {{name}}"
       },
       "catalog": {
@@ -1937,16 +1940,30 @@
         "cancel": "Annuler"
       },
       "picker": {
-        "autoVoiceDescription": "Trouvez une voix adaptée à votre contenu.",
+        "allPresenters": "Tous les présentateurs",
+        "allPresentersCount": "Tous les présentateurs ({{total}})",
+        "allVoices": "Toutes les voix",
+        "allVoicesCount": "Toutes les voix ({{total}})",
+        "autoVoiceDescription": "Une voix adaptée à votre style",
         "avatarVoice": "Voix de l’avatar",
-        "changeAvatar": "Changer d’avatar",
-        "chooseStyle": "Choisir un style",
-        "chooseStyleAndVoice": "Choisissez un style et une voix.",
+        "back": "Retour",
+        "closeOptions": "Fermer les options",
+        "done": "Terminé",
+        "moreOptions": "Plus d’options",
         "noMatches": "Aucun résultat.",
-        "ready": "Prêt à utiliser. Ajoutez votre contenu dans le chat.",
+        "optionsNote": "Vous pouvez les modifier à tout moment depuis la puce dans le chat.",
+        "pickStyle": "Choisir un style",
+        "reset": "Réinitialiser",
+        "searchPresenters": "Rechercher des présentateurs",
+        "searchStyles": "Rechercher des styles",
+        "searchVoices": "Rechercher des voix",
+        "selectedStyle": "Sélectionné : {{name}}",
         "settings": "Paramètres de la vidéo d’intro",
-        "style": "Style",
-        "useSelection": "Utiliser la sélection"
+        "styleCount_one": "{{count}} style",
+        "styleCount_many": "{{count}} styles",
+        "styleCount_other": "{{count}} styles",
+        "styleCountOf": "{{shown}} sur {{total}}",
+        "useStyle": "Utiliser {{name}}"
       },
       "style": {
         "auto": "Laisser Okou choisir",
@@ -1965,10 +1982,9 @@
       "voice": {
         "auto": "Laisser Okou choisir",
         "defaultDescription": "Utiliser la voix par défaut de l’avatar choisi",
-        "heading": "Choisir une voix",
         "label": "Voix",
         "none": "Sans voix off",
-        "noneDescription": "Ne pas ajouter de narration ; conserver le son d’origine sauf demande de mise en sourdine."
+        "noneShortDescription": "Conserver le son d’origine"
       }
     },
     "mail": {
@@ -2014,10 +2030,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Ouvrir la discussion",
+      "openChatIn": "Ouvrir la conversation dans {{integration}}",
       "openFeishuChat": "Ouvrir le chat original dans Feishu",
       "openGithubMessage": "Ouvrir le problème ou la demande d'extraction d'origine dans GitHub",
       "openLarkChat": "Ouvrir le chat original dans Lark",
       "openMessage": "Ouvrir le message",
+      "openMessages": "Ouvrir Messages",
       "openSlackMessage": "Ouvrir le message original dans Slack",
       "openTeamsMessage": "Ouvrir le message original dans Microsoft Teams",
       "openTelegramMessage": "Ouvrir le message original dans Telegram",
@@ -2158,7 +2176,10 @@
       "number": "numéro"
     },
     "sidebar": {
+      "allArchived": "Toutes vos discussions sont archivées",
+      "allCaughtUp": "Tout est à jour",
       "allChats": "Toutes les discussions",
+      "archive": "Archiver la discussion",
       "chatsWith": "Discussions avec {{agentName}}",
       "chatThreads": "Fils de discussion",
       "delete": "Supprimer la discussion",
@@ -2177,7 +2198,10 @@
       "pinned": "Épinglé",
       "rename": "Renommer la discussion",
       "renameDescription": "Entrez un nouveau nom pour ce fil de discussion.",
+      "showArchived": "Afficher les archives",
+      "showArchivedChats": "Afficher les discussions archivées",
       "titlePlaceholder": "Titre de la discussion",
+      "unarchive": "Désarchiver la discussion",
       "unpin": "Détacher la discussion",
       "unread": "Non lu",
       "unreadOnly": "Seulement non lu"
@@ -2889,6 +2913,7 @@
       "ariaLabel": "Fil de discussion",
       "changeIcon": "Changer l'icône",
       "emoji": {
+        "archive": "Archiver",
         "done": "Terminé",
         "idea": "Idée",
         "no": "Non",
@@ -3614,6 +3639,7 @@
           "sourceUnavailable": "Source indisponible",
           "stale": "Périmé",
           "unchanged": "Inchangé",
+          "unsupportedProtocol": "Protocole non pris en charge",
           "unsupportedSchema": "Schéma non pris en charge"
         }
       },
@@ -4727,6 +4753,8 @@
         "tiny-wanderer": "Petit Vagabond"
       },
       "presentation": {
+        "bloom-pitch": "Petal pitch",
+        "blueprint-academy": "Drafting campus",
         "botane-organic-deck": "Mauve garden",
         "business-data-presentation": "Berry dashboard",
         "crayon-learning-deck": "Crayon doodle",
@@ -4735,9 +4763,19 @@
         "editorial-magazine-deck": "Paper magazine",
         "landing-consulting-deck": "Neon browser",
         "lumina-creative-studio": "Brush stickers",
+        "meridian": "Cobalt blocks",
         "mosaic-geometric-pitch": "Bauhaus tiles",
+        "neo-brutalism": "Shadow shop",
+        "nocturne": "Midnight stage",
+        "pixel-glitch": "Arcade pixels",
         "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy"
+        "playful-pop-deck": "Neon candy",
+        "prospectus": "Homepage pitch",
+        "schoolhouse": "Kraft poster",
+        "sticker-scrapbook": "Sticker notebook",
+        "strata": "Red staircase",
+        "taped-consulting": "Polaroid wall",
+        "vantage": "Numbered boardroom"
       },
       "video": {
         "chinese-ink-art": "Peinture à l'encre chinoise",
@@ -5837,7 +5875,8 @@
       "availableNow": "Disponible maintenant",
       "inUse_one": "{{active}} sur {{limit}} emplacement utilisé",
       "inUse_many": "{{active}} sur {{limit}} emplacements utilisés",
-      "inUse_other": "{{active}} sur {{limit}} emplacements utilisés"
+      "inUse_other": "{{active}} sur {{limit}} emplacements utilisés",
+      "waitingForSandbox": "En attente de Sandbox"
     },
     "tiers": {
       "custom": "Personnalisé",
@@ -5977,7 +6016,7 @@
         "usage": {
           "balanceDescription": "Ce qu'il reste à dépenser à votre équipe.",
           "balanceTitle": "Solde de crédits",
-          "usageDescription": "Votre utilisation des crédits dans les conversations, automatisations et canaux.",
+          "usageDescription": "Votre utilisation des crédits, regroupée par fil de discussion.",
           "usageTitle": "Utilisation des crédits"
         }
       },
@@ -6141,9 +6180,12 @@
         "codexDescription": "Connectez-vous avec l'appareil Codex pour les itinéraires de modèles soutenus par Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Utilisé uniquement dans vos sessions, avec vos propres identifiants.",
+        "disconnectAccount": "Déconnecter le compte",
+        "disconnectDescription": "Cette action supprime le compte d’Okou. Elle n’annule pas votre abonnement auprès du fournisseur.",
+        "disconnecting": "Déconnexion…",
+        "disconnectTitle": "Déconnecter {{account}} ?",
         "noAccounts": "Aucun compte connecté.",
         "reconnectAccount": "Reconnecter",
-        "removeAccount": "Supprimer",
         "sectionTitle": "Personnel",
         "status": {
           "connected": "Connecté",
@@ -6272,7 +6314,7 @@
         "codexTitle": "La session ChatGPT nécessite une reconnexion"
       },
       "toasts": {
-        "accountRemoved": "Compte supprimé",
+        "accountDisconnected": "Compte déconnecté",
         "accountSwitched": "Compte actif changé",
         "disconnected": "{{provider}} déconnecté",
         "policiesUpdated": "Paramètres du fournisseur de modèle mis à jour",
@@ -6292,6 +6334,73 @@
         "resetsRelative": "Réinitialisations {{relative}}",
         "resetTimePassed": "temps écoulé depuis la réinitialisation",
         "resetTimePassedTitle": "Temps écoulé depuis la réinitialisation"
+      }
+    },
+    "paidTools": {
+      "description": "Choisissez les outils payants intégrés que vous pouvez utiliser.",
+      "disabledForCreation": "{{tool}} est désactivé dans vos paramètres d’outils payants.",
+      "loadError": "Impossible de charger vos paramètres.",
+      "loading": "Chargement de vos paramètres…",
+      "openSettings": "Ouvrir les paramètres des outils payants",
+      "retry": "Réessayer",
+      "saveError": "Votre modification n’a pas été enregistrée.",
+      "saving": "Enregistrement…",
+      "scope": "Ces paramètres ne concernent que vous dans {{workspace}}.",
+      "timing": "Les modifications s’appliquent aux prochaines exécutions. Les tâches en cours ou déjà préparées peuvent conserver leurs anciens paramètres.",
+      "title": "Outils payants",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "Créez des vidéos avec des avatars parlants.",
+          "name": "Génération de vidéos avec avatar"
+        },
+        "finance": {
+          "description": "Consultez les entreprises, les cours et les données de marché.",
+          "name": "Données financières"
+        },
+        "image-generation": {
+          "description": "Créez des images avec les modèles intégrés.",
+          "name": "Génération d’images"
+        },
+        "image-recognition": {
+          "description": "Lisez et analysez des images.",
+          "name": "Reconnaissance d’images"
+        },
+        "maps": {
+          "description": "Trouvez des lieux, des adresses et des itinéraires.",
+          "name": "Cartes et lieux"
+        },
+        "people-search": {
+          "description": "Trouvez des profils professionnels publics.",
+          "name": "Recherche de personnes"
+        },
+        "scrape": {
+          "description": "Lisez et extrayez le contenu de pages web.",
+          "name": "Extraction de pages"
+        },
+        "seo": {
+          "description": "Analysez les classements, les mots-clés et les liens entrants.",
+          "name": "Recherche SEO"
+        },
+        "social": {
+          "description": "Analysez des publications publiques et collectez des médias.",
+          "name": "Recherche sur les réseaux sociaux"
+        },
+        "video-generation": {
+          "description": "Créez des vidéos avec les modèles intégrés.",
+          "name": "Génération de vidéos"
+        },
+        "video-rendering": {
+          "description": "Effectuez le rendu de compositions vidéo dans le cloud.",
+          "name": "Rendu vidéo"
+        },
+        "voice-generation": {
+          "description": "Créez des paroles avec les voix intégrées.",
+          "name": "Génération de voix"
+        },
+        "web-search": {
+          "description": "Trouvez des informations actuelles sur le web.",
+          "name": "Recherche web"
+        }
       }
     },
     "preferences": {
@@ -6808,6 +6917,18 @@
     "manage": "Gérer les hôtes SSH",
     "notLearned": "Aucune clé d’hôte mémorisée",
     "passphrase": "Phrase secrète (facultative)",
+    "placeholders": {
+      "accessName": "p. ex. Accès à la production",
+      "clientId": "Collez le Client ID du Service Token",
+      "clientSecret": "Collez le Client Secret du Service Token",
+      "credentialName": "p. ex. Accès de déploiement",
+      "displayName": "p. ex. Serveur de production",
+      "host": "p. ex. ssh.example.com",
+      "passphrase": "Laissez vide si la clé n’est pas chiffrée",
+      "password": "Saisissez le mot de passe de l’utilisateur SSH",
+      "privateKey": "Collez la clé privée complète ou importez-la avec « Choisir un fichier »",
+      "username": "p. ex. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Clé privée",
     "reset": "Réinitialiser la clé d’hôte",
@@ -6845,9 +6966,7 @@
       "description": "Okou transforme le design de votre fichier en un modèle que vous pouvez réutiliser."
     },
     "loadFailed": "Impossible de charger les modèles.",
-    "pageCount_one": "{{count}} page",
-    "pageCount_many": "{{count}} pages",
-    "pageCount_other": "{{count}} pages",
+    "renameFailed": "Impossible de renommer le modèle.",
     "retry": "Réessayer",
     "sharedBy": "Partagé par {{owner}}",
     "visibility": {
@@ -6889,38 +7008,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Aucune utilisation pendant cette période de facturation",
-        "description": "Les crédits dépensés dans les chats, automatisations et canaux s'affichent ici.",
+        "description": "Les crédits dépensés dans les fils de discussion s'affichent ici.",
         "noBillingPeriodDescription": "L'utilisation de l'équipe s'affiche dès qu'une période de facturation commence.",
         "noBillingPeriodTitle": "Aucune période de facturation active",
         "rangeTitle": "Aucune utilisation pour cette plage horaire",
-        "teamDescription": "Les crédits dépensés par votre équipe dans les chats, automatisations et canaux s'affichent ici."
+        "teamDescription": "Les crédits dépensés par votre équipe dans les fils de discussion s'affichent ici."
       },
       "loadError": "Impossible de charger votre utilisation.",
       "loadMore": "Charger plus",
       "myUsage": "Mon utilisation",
       "teamLoadError": "Impossible de charger l'utilisation de l'équipe.",
       "teamUsage": "Utilisation de l'équipe",
+      "thread": "Fil de discussion",
+      "unavailableThread": "Fil de discussion indisponible",
       "untitled": "(sans titre)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automatisation",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Autre",
-      "phone": "Téléphone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_many": "{{value}} chats",
-      "chat_other": "{{value}} chats",
       "credit_one": "{{value}} crédit",
       "credit_many": "{{value}} crédits",
-      "credit_other": "{{value}} crédits"
+      "credit_other": "{{value}} crédits",
+      "thread_one": "{{value}} fil",
+      "thread_many": "{{value}} fils",
+      "thread_other": "{{value}} fils"
     }
   },
   "workflows": {

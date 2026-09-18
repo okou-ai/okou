@@ -57,6 +57,28 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "Not a release-please context"
 
+  detect-native-only:
+    needs: [detect-release]
+    if: needs.detect-release.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ios-only: ${{ steps.detect.outputs.ios-only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Detect native-only changes
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: |
+          selection=$(bash .github/scripts/detect-native-only.sh)
+          printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
+
   pr-title:
     needs: [detect-release]
     name: Pull Request Title
@@ -137,10 +159,10 @@ jobs:
           category: semgrep
 
   codeql:
-    needs: [detect-release]
+    needs: [detect-release, detect-native-only]
     name: CodeQL SAST
     # PR and main results are uploaded for CASA; merge groups cannot upload SARIF.
-    if: needs.detect-release.outputs.skip != 'true' && github.event_name != 'merge_group'
+    if: needs.detect-release.outputs.skip != 'true' && github.event_name != 'merge_group' && needs.detect-native-only.outputs.ios-only == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -160,10 +182,10 @@ jobs:
           category: codeql
 
   pnpm-audit:
-    needs: [detect-release]
+    needs: [detect-release, detect-native-only]
     name: pnpm audit (SCA)
-    # Skip for release-please PRs, commits, and merge queue entries
-    if: needs.detect-release.outputs.skip != 'true'
+    # Pure iOS changes cannot alter the pnpm dependency graph; main still scans it.
+    if: needs.detect-release.outputs.skip != 'true' && needs.detect-native-only.outputs.ios-only == 'false'
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -253,6 +275,9 @@ jobs:
             .github/scripts/check-workflow-shell-compatibility.sh \
             .github/scripts/cleanup-pr-runner-namespace.sh \
             .github/scripts/discover-runner-pr-namespaces.sh \
+            .github/scripts/detect-native-only.sh \
+            .github/scripts/tests/native-only-ci-test.sh \
+            .github/scripts/tests/native-only-gates-test.sh \
             .github/scripts/cloudflare-ssh-command.sh \
             .github/scripts/cloudflare-ssh-diagnostics.sh \
             .github/scripts/cloudflare-ssh-preconnect.sh \
@@ -379,6 +404,7 @@ jobs:
     timeout-minutes: 5
     needs:
       - detect-release
+      - detect-native-only
       - pr-title
       - semgrep
       - codeql
@@ -406,25 +432,30 @@ jobs:
           fi
           echo "::group::CI Gate Results"
           FAILED=0
+          IOS_ONLY="${{ needs.detect-native-only.outputs.ios-only }}"
 
           check_result() {
-            local job="$1" result="$2"
+            local job="$1" result="$2" allow_skip="${3:-false}"
             if [ "$result" = "success" ]; then
               echo "✅ $job: $result"
+            elif [ "$result" = "skipped" ] && [ "$allow_skip" = "true" ]; then
+              echo "⏭️ $job: skipped (not applicable)"
             else
               echo "::error::$job: expected success, got $result"
               FAILED=1
             fi
           }
 
+          check_result "detect-release" "${{ needs.detect-release.result }}"
+          check_result "detect-native-only" "${{ needs.detect-native-only.result }}"
           check_result "pr-title" "${{ needs.pr-title.result }}"
           check_result "semgrep" "${{ needs.semgrep.result }}"
           if [[ "$EVENT_NAME" == "merge_group" ]]; then
-            echo "⏭️ codeql: skipped (merge_group cannot upload SARIF)"
+            check_result "codeql" "${{ needs.codeql.result }}" "true"
           else
-            check_result "codeql" "${{ needs.codeql.result }}"
+            check_result "codeql" "${{ needs.codeql.result }}" "$IOS_ONLY"
           fi
-          check_result "pnpm-audit" "${{ needs.pnpm-audit.result }}"
+          check_result "pnpm-audit" "${{ needs.pnpm-audit.result }}" "$IOS_ONLY"
           check_result "actionlint" "${{ needs.actionlint.result }}"
           check_result "gitleaks" "${{ needs.gitleaks.result }}"
 

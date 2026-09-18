@@ -13,7 +13,7 @@ import {
   withAbsoluteArtifactUrl,
 } from "../../artifact-url";
 
-async function withAbsoluteHostedUrls<
+export async function withAbsoluteHostedUrls<
   T extends {
     readonly url: string;
     readonly artifactUrl?: string;
@@ -133,6 +133,7 @@ export async function completeHostedSite(
 export async function getHostedSiteFiles(
   publicSlug: string,
   version?: number,
+  hostname?: string,
 ): Promise<HostedSiteFilesResponse> {
   const { baseUrl, token } = await getAuthContext();
   const url = new URL(
@@ -141,6 +142,9 @@ export async function getHostedSiteFiles(
   );
   if (version !== undefined) {
     url.searchParams.set("version", String(version));
+  }
+  if (hostname !== undefined) {
+    url.searchParams.set("hostname", hostname);
   }
   const response = await fetch(url, {
     method: "GET",

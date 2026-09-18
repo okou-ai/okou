@@ -1,14 +1,38 @@
 import type { IntroVideoStyle } from "@okouai/api-contracts/contracts/intro-video-presenter";
 import { cn } from "@okouai/ui";
-import { Check, LayoutTemplate, Play } from "lucide-react";
+import { Check, LayoutTemplate, LoaderCircle, Pause, Play } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import {
+  TEMPLATE_TILE_CAPTION,
+  TEMPLATE_TILE_MEDIA,
+  TEMPLATE_TILE_NAME,
+  TEMPLATE_TILE_RING,
+  TEMPLATE_TILE_RING_SELECTED,
+  TEMPLATE_TILE_SCRIM,
+  TEMPLATE_TILE_SELECTED_BADGE,
+  TEMPLATE_TILE_USE,
+  TEMPLATE_TILE_WRAPPER,
+} from "./template-tile.ts";
 import {
   markVideoPreviewPlaying,
   resetVideoPreview,
   startVideoPreview,
 } from "./video-preview-hover.ts";
 
+/**
+ * The cover's only chrome is a chip in the bottom-left corner: the middle of
+ * the artwork is what the user is reading, so nothing is drawn over it. The
+ * chip is the preview's whole state in one 18px square — play at rest, a
+ * spinner while the clip buffers, pause while it runs — and it grows to 22px
+ * on hover, where it is the thing being aimed at. Everything else — the hover
+ * scrim, the Use pill, the selected ring and badge — comes from the shared
+ * tile chrome, so this wall matches the presentation, illustration and
+ * creative video walls.
+ *
+ * The chip states no duration: the styles catalog does not return one, and a
+ * number invented from nothing is worse than no number.
+ */
 function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
   const { t } = useTranslation();
   return (
@@ -19,7 +43,7 @@ function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
           alt=""
           loading="lazy"
           decoding="async"
-          className="h-full w-full object-contain"
+          className="h-full w-full object-cover"
         />
       ) : (
         <span className="grid h-full place-items-center text-muted-foreground">
@@ -30,12 +54,13 @@ function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
         <>
           <video
             src={style.previewVideoUrl}
+            poster={style.thumbnailUrl ?? undefined}
             preload="none"
             playsInline
             muted
             loop
             aria-hidden="true"
-            className="peer pointer-events-none absolute inset-0 h-full w-full object-contain opacity-0 data-[preview-playing=true]:opacity-100"
+            className="peer pointer-events-none absolute inset-0 h-full w-full object-cover opacity-0 data-[preview-playing=true]:opacity-100"
             onPlaying={(event) => {
               markVideoPreviewPlaying(event.currentTarget, true);
             }}
@@ -46,8 +71,9 @@ function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
               markVideoPreviewPlaying(event.currentTarget, false);
             }}
           />
-          <button
-            type="button"
+          <span
+            role="button"
+            tabIndex={-1}
             aria-label={t(
               ($) => {
                 return $.chat.introVideo.style.preview;
@@ -55,17 +81,44 @@ function StylePreviewMedia({ style }: { readonly style: IntroVideoStyle }) {
               { title: style.name },
             )}
             onClick={(event) => {
-              startVideoPreview(
+              event.preventDefault();
+              event.stopPropagation();
+              const video =
                 event.currentTarget.parentElement?.querySelector("video") ??
-                  null,
-              );
+                null;
+              if (video && !video.paused) {
+                resetVideoPreview(video);
+                return;
+              }
+              startVideoPreview(video);
             }}
-            className="absolute inset-0 grid place-items-center bg-black/10 text-white transition-colors hover:bg-black/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:opacity-0"
+            className={cn(
+              "absolute bottom-2 left-2 z-20 grid size-[18px] cursor-pointer place-items-center rounded-md bg-black/45 text-white backdrop-blur-[2px] transition-all hover:bg-black/70 group-hover/tile:size-[22px] group-hover/tile:bg-black/60 group-focus-visible/tile:size-[22px]",
+              // The video is this chip's `peer`, so its own state picks the
+              // glyph. React state would need this component to own playback,
+              // which the shared hover helpers own instead.
+              "peer-data-[preview-playing=true]:[&_[data-glyph=play]]:hidden peer-data-[preview-playing=true]:[&_[data-glyph=pause]]:block",
+              "peer-data-[preview-buffering=true]:[&_[data-glyph=play]]:hidden peer-data-[preview-buffering=true]:[&_[data-glyph=spinner]]:block",
+            )}
           >
-            <span className="grid size-11 place-items-center rounded-full bg-black/55">
-              <Play size={20} fill="currentColor" />
-            </span>
-          </button>
+            <Play
+              data-glyph="play"
+              size={9}
+              fill="currentColor"
+              className="col-start-1 row-start-1"
+            />
+            <Pause
+              data-glyph="pause"
+              size={9}
+              fill="currentColor"
+              className="col-start-1 row-start-1 hidden"
+            />
+            <LoaderCircle
+              data-glyph="spinner"
+              size={11}
+              className="col-start-1 row-start-1 hidden animate-spin"
+            />
+          </span>
         </>
       ) : null}
     </>
@@ -83,23 +136,7 @@ export function IntroVideoStyleCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div
-      className={cn(
-        "min-w-0 overflow-hidden rounded-xl border bg-card transition-colors hover:border-foreground/20",
-        selected ? "border-primary" : "border-border",
-      )}
-    >
-      <div
-        className="relative aspect-video overflow-hidden bg-muted"
-        onMouseEnter={(event) => {
-          startVideoPreview(event.currentTarget.querySelector("video"));
-        }}
-        onMouseLeave={(event) => {
-          resetVideoPreview(event.currentTarget.querySelector("video"));
-        }}
-      >
-        <StylePreviewMedia style={style} />
-      </div>
+    <div className={TEMPLATE_TILE_WRAPPER}>
       <button
         type="button"
         aria-label={t(
@@ -110,21 +147,40 @@ export function IntroVideoStyleCard({
         )}
         aria-pressed={selected}
         onClick={onSelect}
-        className="flex min-h-12 w-full min-w-0 items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="block w-full min-w-0 text-left focus-visible:outline-none"
       >
-        <strong className="min-w-0 flex-1 text-sm font-medium text-foreground">
-          {style.name}
-        </strong>
-        {style.aspectRatio ? (
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {style.aspectRatio}
+        <div
+          className={cn(
+            TEMPLATE_TILE_MEDIA,
+            TEMPLATE_TILE_RING,
+            "aspect-video group-focus-visible/tile:ring-1 group-focus-visible/tile:ring-ring",
+            selected && TEMPLATE_TILE_RING_SELECTED,
+          )}
+          onMouseEnter={(event) => {
+            startVideoPreview(event.currentTarget.querySelector("video"));
+          }}
+          onMouseLeave={(event) => {
+            resetVideoPreview(event.currentTarget.querySelector("video"));
+          }}
+        >
+          <StylePreviewMedia style={style} />
+          <div className={TEMPLATE_TILE_SCRIM} />
+          {selected ? (
+            <span className={TEMPLATE_TILE_SELECTED_BADGE}>
+              <Check size={14} />
+            </span>
+          ) : null}
+          <span className={cn(TEMPLATE_TILE_USE, "grid place-items-center")}>
+            {t(($) => {
+              return selected
+                ? $.artifacts.templates.selected
+                : $.artifacts.templates.use;
+            })}
           </span>
-        ) : null}
-        {selected ? (
-          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-            <Check size={12} />
-          </span>
-        ) : null}
+        </div>
+        <div className={TEMPLATE_TILE_CAPTION}>
+          <p className={TEMPLATE_TILE_NAME}>{style.name}</p>
+        </div>
       </button>
     </div>
   );

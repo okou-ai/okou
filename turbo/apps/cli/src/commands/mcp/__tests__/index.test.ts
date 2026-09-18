@@ -251,7 +251,7 @@ describe("okou mcp command", () => {
     server.use(
       stubRunMcpConnectors([
         runMcpConnector({
-          id: secondId,
+          target: { kind: "custom", customConnectorId: secondId },
           slug: "_alpha",
           displayName: "Alpha MCP",
           endpoint: "https://alpha-mcp.example.test/server",
@@ -268,6 +268,8 @@ describe("okou mcp command", () => {
         connectors: [
           {
             slug: "_alpha",
+            target: { kind: "custom", customConnectorId: secondId },
+            connectionId: "77777777-7777-4777-8777-777777777777",
             displayName: "Alpha MCP",
             transport: "streamable-http",
             endpoint: "https://alpha-mcp.example.test/server",
@@ -275,6 +277,8 @@ describe("okou mcp command", () => {
           },
           {
             slug: "_zulu",
+            target: { kind: "custom", customConnectorId: CONNECTOR_ID },
+            connectionId: "77777777-7777-4777-8777-777777777777",
             displayName: "Acme MCP",
             transport: "streamable-http",
             endpoint: MCP_ENDPOINT,
@@ -293,7 +297,10 @@ describe("okou mcp command", () => {
     server.use(
       stubRunMcpConnectors([
         runMcpConnector(),
-        runMcpConnector({ id: otherId, slug: "_other" }),
+        runMcpConnector({
+          target: { kind: "custom", customConnectorId: otherId },
+          slug: "_other",
+        }),
       ]),
     );
     const seen = stubMcpServer({ era: "modern" });
@@ -628,10 +635,11 @@ describe("okou mcp command", () => {
     let requestedScopes: unknown;
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         async ({ request }) => {
           requestedScopes = await request.json();
           return HttpResponse.json({
+            kind: "oauth",
             authorizationUrl: "https://authorize.example.test/consent",
             expiresAt: "2026-09-03T12:15:00.000Z",
           });
@@ -643,7 +651,10 @@ describe("okou mcp command", () => {
       mcpCommand.parseAsync(["node", "okou", "list-tools", "_acme-mcp"]),
     ).rejects.toThrow("process.exit called");
 
-    expect(requestedScopes).toStrictEqual({ scopes: ["read", "write"] });
+    expect(requestedScopes).toStrictEqual({
+      target: { kind: "custom", customConnectorId: CONNECTOR_ID },
+      scopes: ["read", "write"],
+    });
     expect(
       seen.filter((request) => {
         return request.method === "tools/list";
@@ -659,7 +670,121 @@ describe("okou mcp command", () => {
     expect(errors).not.toContain("untrusted.example.test");
   });
 
-  it("reports an older API without retrying the insufficient-scope request", async () => {
+  it.each(["catalog-service", "builtin:catalog-service", "Catalog Service"])(
+    "calls a builtin MCP tool selected by %s with the builtin owner intent",
+    async (selector) => {
+      stubConnectorList({
+        target: { kind: "builtin", connectorSlug: "catalog-service" },
+        slug: "catalog-service",
+        displayName: "Catalog Service",
+      });
+      const seen = stubMcpServer({
+        era: "modern",
+        pages: [[{ name: "search", inputSchema: { type: "object" } }]],
+      });
+
+      await mcpCommand.parseAsync([
+        "node",
+        "okou",
+        "call",
+        selector,
+        "search",
+        "--input",
+        "{}",
+        "--json",
+      ]);
+
+      expect(
+        seen.every((request) => {
+          return request.intent === "catalog-service";
+        }),
+      ).toBe(true);
+      expect(
+        seen.filter((request) => {
+          return request.method === "tools/call";
+        }),
+      ).toHaveLength(1);
+      expect(outputText(consoleLog)).toContain("tool completed");
+    },
+  );
+
+  it("requires an explicit owner for a builtin/custom shared display name", async () => {
+    server.use(
+      stubRunMcpConnectors([
+        runMcpConnector(),
+        runMcpConnector({
+          target: { kind: "builtin", connectorSlug: "acme-mcp" },
+          slug: "acme-mcp",
+        }),
+      ]),
+    );
+    const seen = stubMcpServer({ era: "modern" });
+
+    await expect(
+      mcpCommand.parseAsync(["node", "okou", "list-tools", "Acme MCP"]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(seen).toHaveLength(0);
+    expect(outputText(consoleError)).toContain("builtin:acme-mcp");
+    expect(outputText(consoleError)).toContain(`custom:${CONNECTOR_ID}`);
+  });
+
+  it("returns the exact builtin account reconnect link without replaying a failed tool", async () => {
+    const target = {
+      kind: "builtin" as const,
+      connectorSlug: "catalog-service",
+    };
+    const connectionId = "88888888-8888-4888-8888-888888888888";
+    stubConnectorList({ target, connectionId, slug: "catalog-service" });
+    const seen = stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "write", inputSchema: { type: "object" } }]],
+      callResponse: () => {
+        return insufficientScopeResponse("write");
+      },
+    });
+    const authorizationUrl = `https://app.okou.ai/connect/catalog-service?connectionId=${connectionId}`;
+    let requestedBody: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
+        async ({ request }) => {
+          requestedBody = await request.json();
+          return HttpResponse.json({
+            kind: "reconnect",
+            connectionId,
+            authorizationUrl,
+          });
+        },
+      ),
+    );
+
+    await expect(
+      mcpCommand.parseAsync([
+        "node",
+        "okou",
+        "call",
+        "catalog-service",
+        "write",
+        "--input",
+        "{}",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(requestedBody).toStrictEqual({ target, scopes: ["write"] });
+    expect(
+      seen.filter((request) => {
+        return request.method === "tools/call";
+      }),
+    ).toHaveLength(1);
+    expect(outputText(consoleError)).toContain(authorizationUrl);
+    expect(outputText(consoleError)).toContain(
+      "Start a new run after authorization",
+    );
+    expect(outputText(consoleError)).not.toContain("expires at");
+  });
+
+  it("reports unavailable reauthorization without retrying the insufficient-scope request", async () => {
     stubConnectorList();
     const seen = stubMcpServer({
       era: "modern",
@@ -669,9 +794,17 @@ describe("okou mcp command", () => {
     });
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         () => {
-          return HttpResponse.json({ error: "Not found" }, { status: 404 });
+          return HttpResponse.json(
+            {
+              error: {
+                message: "MCP account is unavailable",
+                code: "NOT_FOUND",
+              },
+            },
+            { status: 404 },
+          );
         },
       ),
     );
@@ -681,7 +814,7 @@ describe("okou mcp command", () => {
     ).rejects.toThrow("process.exit called");
 
     expect(outputText(consoleError)).toContain(
-      "MCP scope reauthorization is unavailable on the current API",
+      "MCP scope reauthorization failed: MCP account is unavailable",
     );
     expect(
       seen.filter((request) => {
@@ -700,10 +833,11 @@ describe("okou mcp command", () => {
     });
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         async () => {
           await delay(2_000);
           return HttpResponse.json({
+            kind: "oauth",
             authorizationUrl: "https://authorize.example.test/consent",
             expiresAt: "2026-09-03T12:15:00.000Z",
           });
@@ -744,10 +878,11 @@ describe("okou mcp command", () => {
     let apiCalls = 0;
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         () => {
           apiCalls += 1;
           return HttpResponse.json({
+            kind: "oauth",
             authorizationUrl: "https://authorize.example.test/consent",
             expiresAt: "2026-09-03T12:15:00.000Z",
           });

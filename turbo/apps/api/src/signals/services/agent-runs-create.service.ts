@@ -30,6 +30,8 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
+
+import type { Tx } from "../../lib/db-types";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -207,6 +209,8 @@ interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 > {
   readonly chatThreadId: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
+  /** Binds a caller-journaled occurrence inside the launch transaction. */
+  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin: AgentRunModelPin;
 }
 
@@ -364,7 +368,6 @@ function buildIntegrationToolsPrompt(
   const localFileContextLines = localFileContext.map((line) => {
     return `- ${line}`;
   });
-
   switch (triggerSource) {
     case "web":
     case "agent": {
@@ -431,7 +434,6 @@ function buildIntegrationToolsPrompt(
 function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly feishuPlatform: FeishuPlatform | undefined;
-  readonly sshEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
@@ -447,14 +449,10 @@ function buildAgentToolsPrompt(args: {
     ...(args.privateArtifactsEnabled
       ? [
           "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
-          "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
+          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
         ]
       : []),
-    ...(args.sshEnabled
-      ? [
-          "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
-        ]
-      : []),
+    "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",
     "- Capability questions: when the user asks what Okou can do, whether Okou can do a category of work, or compares Okou to another assistant, run `okou intro` first. Use its output to synthesize a concise answer in the user's language. Do not paste the intro verbatim.",
     "- Locate local agent-session files, search web chat messages, or inspect external services via connectors: `okou search --help`.",
@@ -591,7 +589,6 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
 
 function buildAppendSystemPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly sshEnabled: boolean;
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
   readonly triggerSource: TriggerSource;
@@ -608,7 +605,6 @@ function buildAppendSystemPrompt(args: {
     buildAgentToolsPrompt({
       privateArtifactsEnabled: args.privateArtifactsEnabled,
       feishuPlatform: args.userInfo.feishuPlatform,
-      sshEnabled: args.sshEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
@@ -675,13 +671,29 @@ async function loadAgent(
 
 function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
+  readonly triggerSource: TriggerSource;
+  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly chatThreadId: string | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
 }): Record<string, string> {
+  const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
+    web: "web",
+    agent: "web",
+    slack: "slack",
+    teams: "teams",
+    feishu: args.feishuPlatform ?? "feishu",
+    telegram: "telegram",
+    agentphone: "phone",
+    github: "github",
+  };
+  const currentIntegration = integrationByTriggerSource[args.triggerSource];
   return {
     OKOU_APP_URL: env("APP_URL"),
     OKOU_AGENT_ID: args.agentId,
+    ...(currentIntegration
+      ? { OKOU_CURRENT_INTEGRATION: currentIntegration }
+      : {}),
     ...(args.reasoningEffort !== null && args.reasoningEffort !== undefined
       ? { OKOU_REASONING_EFFORT: args.reasoningEffort }
       : {}),
@@ -780,7 +792,6 @@ function agentRunOrigin(args: {
 
 function createRunBody(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly sshEnabled: boolean;
   readonly body: AgentRunCreateBody;
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
@@ -796,7 +807,6 @@ function createRunBody(args: {
   const triggerSource = args.triggerSource ?? "web";
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
     privateArtifactsEnabled: args.privateArtifactsEnabled,
-    sshEnabled: args.sshEnabled,
     agent: args.agent,
     userInfo: args.userInfo,
     triggerSource,
@@ -982,6 +992,7 @@ function buildCreateAgentRunArgs(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
 }): CreateAgentRunArgs {
   const command = args.command;
+  const userInfo = { ...args.userInfo, ...command.userInfoExtras };
   const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
   const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
   const introVideoEnabled = isFeatureEnabled(
@@ -1000,13 +1011,9 @@ function buildCreateAgentRunArgs(args: {
         FeatureSwitchKey.PrivateArtifacts,
         args.featureSwitchContext,
       ),
-      sshEnabled: isFeatureEnabled(
-        FeatureSwitchKey.SshAccess,
-        args.featureSwitchContext,
-      ),
       body: command.body,
       agent: args.agent,
-      userInfo: { ...args.userInfo, ...command.userInfoExtras },
+      userInfo,
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,
@@ -1045,6 +1052,8 @@ function buildCreateAgentRunArgs(args: {
       : {}),
     platformEnvironment: buildAgentRunPlatformEnvironment({
       agentId: args.agent.id,
+      triggerSource: command.triggerSource ?? "web",
+      feishuPlatform: userInfo.feishuPlatform,
       chatThreadId: command.chatThreadId,
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,
@@ -1078,6 +1087,10 @@ function buildCreateAgentRunArgs(args: {
     piExecution: command.piExecution,
     ...("queueFirstAssociation" in command
       ? { queueFirstAssociation: command.queueFirstAssociation }
+      : {}),
+    ...("bindClaimedQueueFirstRun" in command &&
+    command.bindClaimedQueueFirstRun
+      ? { bindClaimedQueueFirstRun: command.bindClaimedQueueFirstRun }
       : {}),
     timing: args.timing,
     timingDimensions: agentRunTimingDimensions({
@@ -1210,7 +1223,13 @@ const THREAD_SESSION_PREPARATION_ATTEMPTS = 3;
 const createAgentRunAfterPreCreate$ = command(
   async ({ set }, input: AgentRunAfterPreCreate, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const capturedInput = await captureSubscriptionAccount(db, input, signal);
+    const capturedInput = await measureAgentRunPreCreate(
+      input.timing,
+      "api_dispatch_pre_create_agent_capture_subscription_account",
+      () => {
+        return captureSubscriptionAccount(db, input, signal);
+      },
+    );
     signal.throwIfAborted();
     if ("status" in capturedInput) {
       return capturedInput;

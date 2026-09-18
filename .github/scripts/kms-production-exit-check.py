@@ -19,6 +19,8 @@ SOURCE = "arn:aws:kms:us-west-2:072707626411:key/a1b3922b-fab1-4ed3-aa9e-40f86f9
 TARGET = "arn:aws:kms:us-west-2:251964670836:key/e68917e2-5541-4597-b6ef-7e9eb5670947"
 PROJECT = "hidden-lab-39609750"
 REGISTRY_LIMIT = 16 * 1024 * 1024
+# GitHub keeps this numeric identity stable across owner and repository renames.
+OKOU_REPOSITORY_ID = "1096175506"
 PRODUCTION_VERSION = re.compile(r"v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?")
 REGISTRY_FAILURE_CODES = {
     "invalid_runner_directory",
@@ -930,12 +932,14 @@ def main():
         "productionResourcesChanged": False,
     }
     try:
+        repository = os.environ.get("GITHUB_REPOSITORY")
         require(
-            os.environ.get("GITHUB_REPOSITORY") == "vm0-ai/vm0"
+            os.environ.get("GITHUB_REPOSITORY_ID") == OKOU_REPOSITORY_ID
+            and bool(repository)
             and os.environ.get("GITHUB_REF") == "refs/heads/main"
             and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
             and os.environ.get("GITHUB_WORKFLOW_REF")
-            == "vm0-ai/vm0/.github/workflows/kms-production-exit-check.yml@refs/heads/main",
+            == f"{repository}/.github/workflows/kms-production-exit-check.yml@refs/heads/main",
             "protected_workflow_required",
         )
         report["inventory"] = (

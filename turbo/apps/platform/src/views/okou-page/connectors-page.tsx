@@ -22,10 +22,7 @@ import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { Tabs, TabsList, TabsTrigger } from "@okouai/ui/components/ui/tabs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  customConnectorMcpEnabled$,
-  featureSwitch$,
-} from "../../signals/external/feature-switch.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import {
   connectorsPageTab$,
@@ -51,7 +48,7 @@ import {
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
-  connectConnectorOAuthAuthCode$,
+  connectConnectorOAuthAuthCodeAndSettle$,
   connectConnectorNoAuth$,
   connectFlowConnectorSlug$,
   runConnectorConnectSuccess$,
@@ -71,6 +68,7 @@ import {
 } from "../../signals/okou-page/settings/connectors.ts";
 import {
   buildConnectorShelves,
+  emptyConnectorShelfLayout,
   type ConnectorShelfLayout,
 } from "../../signals/okou-page/settings/connector-shelves.ts";
 import {
@@ -83,6 +81,12 @@ import {
   type ConnectorCategoryGroup,
   type ConnectorCategorySection,
 } from "../../signals/okou-page/settings/connector-categories.ts";
+import {
+  bindConnectorCategoryGrid$,
+  connectorCategoryGridMetrics$,
+  connectorCategoryGridWindow,
+  CONNECTOR_CATEGORY_GRID_ROW_HEIGHT,
+} from "../../signals/okou-page/settings/connector-category-grid.ts";
 import { localizeConnectorCategoryMetadata } from "./components/settings/connector-category-labels.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
@@ -843,8 +847,13 @@ function ConnectorsDirectoryToolbar({
     // strip is latched, so it is the page's 24px rather than the 12px the
     // controls keep between themselves -- a gap equal to the one inside the
     // group reads as a crop against the viewport edge.
+    // The strip paints the workspace canvas rather than `background`: the
+    // surface it covers is `WorkspaceInset`'s paint layer, and under a colour
+    // palette that layer fills from `--card` while `--background` is a darker
+    // 98.8% -- so a `bg-background` strip stood out as a flat block the width
+    // of the 900px column, hard-edged against the canvas on both sides.
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
-      <div className="flex flex-col gap-3 bg-background pt-6">
+      <div className="flex flex-col gap-3 bg-workspace-canvas pt-6">
         <div className="flex items-center">
           <ConnectorsScopeSegment
             scope={scope}
@@ -995,7 +1004,7 @@ function ConnectorsDirectoryToolbar({
       </div>
       <div
         aria-hidden="true"
-        className="h-6 bg-gradient-to-b from-background to-transparent"
+        className="h-6 bg-gradient-to-b from-workspace-canvas to-transparent"
       />
     </div>
   );
@@ -1167,6 +1176,58 @@ function ConnectorCategoryGroupSection({
  * not repeated here -- it is the other scope, and a connected connector still
  * shows its account on its own card wherever it appears.
  */
+/**
+ * The open category, rendered a viewport at a time. The reserved rows are grid
+ * items spanning the tracks their cards would occupy, so the scrollbar, the
+ * column count and the row rhythm stay the browser's own -- the grid keeps its
+ * responsive template and only the cards near the viewport are mounted.
+ */
+function ConnectorCategoryGrid({
+  connectors,
+  renderCard,
+}: {
+  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
+  readonly renderCard: (
+    connector: PlatformConnectorCatalogStatusItem,
+  ) => ReactNode;
+}) {
+  const bindGrid = useSet(bindConnectorCategoryGrid$);
+  const metrics = useGet(connectorCategoryGridMetrics$);
+  const visible = connectorCategoryGridWindow(connectors.length, metrics);
+  return (
+    <div
+      ref={bindGrid}
+      data-testid="connector-category-grid"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      style={{
+        gridAutoRows: `${CONNECTOR_CATEGORY_GRID_ROW_HEIGHT}px`,
+      }}
+    >
+      {visible.leadingRows > 0 && (
+        <div
+          aria-hidden="true"
+          data-testid="connector-category-reserved-rows"
+          style={{
+            gridColumn: "1 / -1",
+            gridRow: `span ${visible.leadingRows}`,
+          }}
+        />
+      )}
+      {connectors.slice(visible.startIndex, visible.endIndex).map(renderCard)}
+      {visible.trailingRows > 0 && (
+        <div
+          aria-hidden="true"
+          data-testid="connector-category-reserved-rows"
+          style={{
+            gridColumn: "1 / -1",
+            gridRow: `span ${visible.trailingRows}`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function ConnectorShelfBrowse({
   layout,
   renderCard,
@@ -1293,16 +1354,22 @@ function buildConnectorsBrowseModel({
       return group.sections;
     });
   };
-  const layout = buildConnectorShelves({
-    // Shelves cover the whole catalog, connected included: a connector this
-    // workspace already has is still the answer to "what talks to Slack", and
-    // its card says so by showing the account instead of an add button.
-    sections: sectionsOf(catalogItems),
-    categoryCounts,
-    headLabel,
-    // The page's card grid is three wide, so six is two whole rows.
-    previewSize: 6,
-  });
+  // Shelving is the unfiltered view's own work, and a filtered one throws the
+  // result away. Inside a category that discarded pass groups and shelves the
+  // whole category -- the largest holds over a thousand connectors -- on every
+  // render of the page.
+  const layout = filtered
+    ? emptyConnectorShelfLayout<PlatformConnectorCatalogStatusItem>()
+    : buildConnectorShelves({
+        // Shelves cover the whole catalog, connected included: a connector this
+        // workspace already has is still the answer to "what talks to Slack",
+        // and its card says so by showing the account instead of an add button.
+        sections: sectionsOf(catalogItems),
+        categoryCounts,
+        headLabel,
+        // The page's card grid is three wide, so six is two whole rows.
+        previewSize: 6,
+      });
   // The filter lists the catalog's categories, not the ones the current
   // response happens to contain: inside a category the response holds only
   // that category, and a filter that offers nothing else is a dead end.
@@ -1364,12 +1431,10 @@ function ConnectorsBuiltinPanel({
       {browse.showShelves ? (
         <ConnectorShelfBrowse layout={browse.layout} renderCard={renderCard} />
       ) : browse.categoryConnectors ? (
-        <div
-          data-testid="connector-category-grid"
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          {browse.categoryConnectors.map(renderCard)}
-        </div>
+        <ConnectorCategoryGrid
+          connectors={browse.categoryConnectors}
+          renderCard={renderCard}
+        />
       ) : (
         fallback
       )}
@@ -1875,7 +1940,7 @@ export function ConnectorsPage() {
   const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
   const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
   const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const connect = useSet(connectConnectorOAuthAuthCode$);
+  const connect = useSet(connectConnectorOAuthAuthCodeAndSettle$);
   const connectNoAuth = useSet(connectConnectorNoAuth$);
   const signal = useGet(pageSignal$);
   const scopeReviewSelection = useGet(scopeReviewSelection$);
@@ -1910,7 +1975,6 @@ export function ConnectorsPage() {
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
   );
-  const customMcpEnabled = useGet(customConnectorMcpEnabled$);
   const scopeBadge = connectorsScopeBadge(connectedBadge, custom.all.length);
   // SSH belongs to the connected scope once hosts exist; until then it is only
   // a thing to discover, and the catalog already carries it.
@@ -1938,10 +2002,11 @@ export function ConnectorsPage() {
   const finishExplicitAccountAdd = async (
     connector: PlatformConnectorCatalogStatusItem,
     connectionId: string | null,
+    attemptSignal: AbortSignal,
   ): Promise<void> => {
     await runConnectSuccess(
       connector.slug,
-      (completedConnectionId) => {
+      (completedConnectionId, continuationSignal) => {
         return finishAccountConnection(
           {
             target: { kind: "builtin", connectorSlug: connector.slug },
@@ -1949,11 +2014,11 @@ export function ConnectorsPage() {
             connectorLabel: connector.label,
             mode: { kind: "add" },
           },
-          signal,
+          continuationSignal,
         );
       },
       connectionId,
-      signal,
+      attemptSignal,
     );
   };
 
@@ -1965,21 +2030,26 @@ export function ConnectorsPage() {
         openAccountConnect(connector, { kind: "add" });
       },
       connectBrowserAuth: async (authMethod) => {
-        const result = await connect(
-          connector.slug,
-          authMethod,
+        await connect(
           {
-            account: { intent: "add" },
-            authorizeVisibleAgents: true,
-            connectorLabel: connector.label,
-            connectorIcon: connector.icon,
+            connectorSlug: connector.slug,
+            method: authMethod,
+            options: {
+              account: { intent: "add" },
+              authorizeVisibleAgents: true,
+              connectorLabel: connector.label,
+              connectorIcon: connector.icon,
+            },
+            onSuccess: (connectionId, attemptSignal) => {
+              return finishExplicitAccountAdd(
+                connector,
+                connectionId,
+                attemptSignal,
+              );
+            },
           },
           signal,
         );
-        if (result) {
-          await finishExplicitAccountAdd(connector, result.connectionId);
-        }
-        return result;
       },
       connectNoAuth: async (authMethod) => {
         const result = await connectNoAuth(
@@ -1995,7 +2065,11 @@ export function ConnectorsPage() {
           signal,
         );
         if (result) {
-          await finishExplicitAccountAdd(connector, result.connectionId);
+          await finishExplicitAccountAdd(
+            connector,
+            result.connectionId,
+            signal,
+          );
         }
         return result;
       },
@@ -2194,7 +2268,6 @@ export function ConnectorsPage() {
                         <CustomConnectorGrid
                           connectors={custom.connected}
                           isAdmin={isAdmin}
-                          mcpEnabled={customMcpEnabled}
                           className="contents"
                         />
                       )}
@@ -2250,7 +2323,7 @@ export function ConnectorsPage() {
           onClose={() => {
             closeAccountConnect();
           }}
-          onSuccess={async (connectionId) => {
+          onSuccess={async (connectionId, attemptSignal) => {
             await finishAccountConnection(
               {
                 target: {
@@ -2261,7 +2334,7 @@ export function ConnectorsPage() {
                 connectorLabel: accountConnect.connector.label,
                 mode: accountConnect.mode,
               },
-              signal,
+              attemptSignal,
             );
           }}
         />
@@ -2275,7 +2348,6 @@ export function ConnectorsPage() {
           }}
           connectorLabel={managedAccountConnector.label}
           icon={<ConnectorIcon icon={managedAccountConnector.icon} size={20} />}
-          connectionActionsEnabled
           onClose={() => {
             closeAccountManager();
           }}

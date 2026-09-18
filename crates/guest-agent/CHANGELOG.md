@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.91.19](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.18...guest-agent-v0.91.19) (2026-09-18)
+
+## [0.91.18](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.17...guest-agent-v0.91.18) (2026-09-18)
+
+
+### Bug Fixes
+
+* **runner:** preserve preinstalled rust toolchain in agent environments ([#35214](https://github.com/vm0-ai/okou/issues/35214)) ([889718b](https://github.com/vm0-ai/okou/commit/889718b259e92a3c96994b88204aaa05077b73ad))
+
+## [0.91.17](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.16...guest-agent-v0.91.17) (2026-09-18)
+
+
+### Bug Fixes
+
+* **guest:** control deferred handoff preparation ([#34919](https://github.com/vm0-ai/okou/issues/34919)) ([702150d](https://github.com/vm0-ai/okou/commit/702150d070cd14919171d2a88fc629fcad1a79b0))
+
+## [0.91.16](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.15...guest-agent-v0.91.16) (2026-09-18)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify explicit codex output token limits ([#35139](https://github.com/vm0-ai/okou/issues/35139)) ([5dd23b6](https://github.com/vm0-ai/okou/commit/5dd23b67b36fe199796cfc97cddcbfa719ed6541))
+
+## [0.91.15](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.14...guest-agent-v0.91.15) (2026-09-18)
+
+## [0.91.14](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.13...guest-agent-v0.91.14) (2026-09-18)
+
+
+### Bug Fixes
+
+* classify explicit biological risk refusals ([#35036](https://github.com/vm0-ai/okou/issues/35036)) ([3b89f3e](https://github.com/vm0-ai/okou/commit/3b89f3e687af19e8989a5f7612e9c51b6179e571)), closes [#34764](https://github.com/vm0-ai/okou/issues/34764)
+
+## [0.91.13](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.12...guest-agent-v0.91.13) (2026-09-17)
+
+
+### Bug Fixes
+
+* align bedrock, api-first and codex failure handling ([#34921](https://github.com/vm0-ai/okou/issues/34921)) ([1b958dd](https://github.com/vm0-ai/okou/commit/1b958dd56b9c2a137d615de646bfa5b392a35d52))
+
+## [0.91.12](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.11...guest-agent-v0.91.12) (2026-09-17)
+
 ## [0.91.11](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.10...guest-agent-v0.91.11) (2026-09-17)
 
 

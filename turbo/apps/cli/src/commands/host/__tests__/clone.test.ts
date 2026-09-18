@@ -67,24 +67,43 @@ describe("okou host clone command", () => {
     const script = Buffer.from("console.log('hello');");
     const destination = join(tempDir, "site");
 
+    const siteFiles = {
+      siteId: "00000000-0000-4000-8000-000000000001",
+      deploymentId: "00000000-0000-4000-8000-000000000002",
+      publicSlug: "demo-site-a1b2c3d4-release-01",
+      url: HOSTED_SITE_URL,
+      deploymentVersion: 1,
+      artifactUrl: ARTIFACT_URL,
+      aliasUrl: HOSTED_SITE_URL,
+      fileCount: 2,
+      size: index.byteLength + script.byteLength,
+      files: [
+        {
+          path: "/index.html",
+          size: index.byteLength,
+          sha256: sha256(index),
+          contentType: "text/html; charset=utf-8",
+          downloadUrl: `${R2_DOWNLOAD_URL}/index.html?sig=test`,
+        },
+        {
+          path: "/assets/app.js",
+          size: script.byteLength,
+          sha256: sha256(script),
+          contentType: "application/javascript; charset=utf-8",
+          immutable: true,
+          downloadUrl: `${R2_DOWNLOAD_URL}/assets/app.js?sig=test`,
+        },
+      ],
+    };
+
     server.use(
       http.get(
-        "http://localhost:3000/api/artifact-references/abcxyz1234.html",
+        "http://localhost:3000/api/artifact-references/:reference/files",
         ({ request }) => {
-          expect(new URL(request.url).searchParams.get("kind")).toBe("html");
           expect(request.headers.get("authorization")).toBe(
             "Bearer test-token",
           );
-          return HttpResponse.json({
-            url: "https://preview.example.com/",
-            expiresAt: "2026-09-18T00:00:00Z",
-            filename: "index.html",
-            contentType: "text/html",
-            target: {
-              kind: "html",
-              id: "00000000-0000-4000-8000-000000000002",
-            },
-          });
+          return HttpResponse.json(siteFiles);
         },
       ),
       http.get(FILES_URL, ({ params, request }) => {
@@ -93,34 +112,10 @@ describe("okou host clone command", () => {
         );
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
         expect(new URL(request.url).searchParams.get("version")).toBe("1");
-        return HttpResponse.json({
-          siteId: "00000000-0000-4000-8000-000000000001",
-          deploymentId: "00000000-0000-4000-8000-000000000002",
-          publicSlug: "demo-site-a1b2c3d4-release-01",
-          url: HOSTED_SITE_URL,
-          deploymentVersion: 1,
-          artifactUrl: ARTIFACT_URL,
-          aliasUrl: HOSTED_SITE_URL,
-          fileCount: 2,
-          size: index.byteLength + script.byteLength,
-          files: [
-            {
-              path: "/index.html",
-              size: index.byteLength,
-              sha256: sha256(index),
-              contentType: "text/html; charset=utf-8",
-              downloadUrl: `${R2_DOWNLOAD_URL}/index.html?sig=test`,
-            },
-            {
-              path: "/assets/app.js",
-              size: script.byteLength,
-              sha256: sha256(script),
-              contentType: "application/javascript; charset=utf-8",
-              immutable: true,
-              downloadUrl: `${R2_DOWNLOAD_URL}/assets/app.js?sig=test`,
-            },
-          ],
-        });
+        expect(new URL(request.url).searchParams.get("hostname")).toBe(
+          new URL(sourceUrl).hostname,
+        );
+        return HttpResponse.json(siteFiles);
       }),
       http.get(`${R2_DOWNLOAD_URL}/index.html`, () => {
         return new HttpResponse(index);
@@ -159,10 +154,10 @@ describe("okou host clone command", () => {
     });
   });
 
-  it("keeps organization share references on the app authorization path", async () => {
+  it("preserves visibility denial without downloading site files", async () => {
     server.use(
       http.get(
-        "http://localhost:3000/api/artifact-references/a1b2c3d4e5.html",
+        "http://localhost:3000/api/artifact-references/a1b2c3d4e5.html/files",
         () => {
           return HttpResponse.json(
             { error: { message: "Artifact unavailable", code: "NOT_FOUND" } },
@@ -189,52 +184,64 @@ describe("okou host clone command", () => {
     expect(existsSync(destination)).toBe(false);
   });
 
-  it("uses the public slug as the default destination", async () => {
-    const index = Buffer.from("<!doctype html>");
+  it.each([
+    "demo-site-a1b2c3d4-release-01",
+    HOSTED_SITE_URL,
+    new URL(HOSTED_SITE_URL).hostname,
+  ])(
+    "uses the public slug as the default destination for %s",
+    async (source) => {
+      const index = Buffer.from("<!doctype html>");
 
-    server.use(
-      http.get(FILES_URL, () => {
-        return HttpResponse.json({
-          siteId: "00000000-0000-4000-8000-000000000001",
-          deploymentId: "00000000-0000-4000-8000-000000000002",
-          publicSlug: "demo-site-a1b2c3d4-release-01",
-          url: HOSTED_SITE_URL,
-          fileCount: 1,
-          size: index.byteLength,
-          files: [
-            {
-              path: "/index.html",
-              size: index.byteLength,
-              sha256: sha256(index),
-              contentType: "text/html; charset=utf-8",
-              downloadUrl: `${R2_DOWNLOAD_URL}/index.html?sig=test`,
-            },
-          ],
-        });
-      }),
-      http.get(`${R2_DOWNLOAD_URL}/index.html`, () => {
-        return new HttpResponse(index);
-      }),
-    );
+      server.use(
+        http.get(FILES_URL, ({ request }) => {
+          expect(new URL(request.url).searchParams.get("hostname")).toBe(
+            source.includes(".") ? new URL(HOSTED_SITE_URL).hostname : null,
+          );
+          return HttpResponse.json({
+            siteId: "00000000-0000-4000-8000-000000000001",
+            deploymentId: "00000000-0000-4000-8000-000000000002",
+            publicSlug: "demo-site-a1b2c3d4-release-01",
+            url: HOSTED_SITE_URL,
+            fileCount: 1,
+            size: index.byteLength,
+            files: [
+              {
+                path: "/index.html",
+                size: index.byteLength,
+                sha256: sha256(index),
+                contentType: "text/html; charset=utf-8",
+                downloadUrl: `${R2_DOWNLOAD_URL}/index.html?sig=test`,
+              },
+            ],
+          });
+        }),
+        http.get(`${R2_DOWNLOAD_URL}/index.html`, () => {
+          return new HttpResponse(index);
+        }),
+      );
 
-    const originalCwd = process.cwd();
-    process.chdir(tempDir);
-    try {
-      await hostCommand.parseAsync([
-        "node",
-        "cli",
-        "clone",
-        "demo-site-a1b2c3d4-release-01",
-        "--json",
-      ]);
-    } finally {
-      process.chdir(originalCwd);
-    }
+      const originalCwd = process.cwd();
+      process.chdir(tempDir);
+      try {
+        await hostCommand.parseAsync([
+          "node",
+          "cli",
+          "clone",
+          source,
+          "--json",
+        ]);
+      } finally {
+        process.chdir(originalCwd);
+      }
 
-    expect(
-      existsSync(join(tempDir, "demo-site-a1b2c3d4-release-01", "index.html")),
-    ).toBe(true);
-  });
+      expect(
+        existsSync(
+          join(tempDir, "demo-site-a1b2c3d4-release-01", "index.html"),
+        ),
+      ).toBe(true);
+    },
+  );
 
   it("fails when the destination directory is not empty", async () => {
     const destination = join(tempDir, "existing");

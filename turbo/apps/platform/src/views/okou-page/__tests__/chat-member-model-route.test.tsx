@@ -46,7 +46,7 @@ function policy(
 }
 
 test.each(
-  (["select", "compact", "flyout"] as const).flatMap((layout) => {
+  (["compact", "flyout"] as const).flatMap((layout) => {
     return [
       { layout, modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
       {
@@ -92,21 +92,16 @@ test.each(
       path: NEW_CHAT_PATH,
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-        [FeatureSwitchKey.Effort]: layout === "compact",
-        [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
-    const trigger =
-      layout === "select"
-        ? await screen.findByRole("combobox", { name: "GPT 5.6 Sol" })
-        : await waitFor(() => {
-            // Wait for the requested menu while feature switches load.
-            const button = queryButton("GPT 5.6 Sol");
-            if (button?.getAttribute("aria-haspopup") !== "dialog") {
-              throw new Error("The model menu trigger is not ready");
-            }
-            return button;
-          });
+    const trigger = await waitFor(() => {
+      // Wait for the requested menu while feature switches load.
+      const button = queryButton("GPT 5.6 Sol");
+      if (button?.getAttribute("aria-haspopup") !== "dialog") {
+        throw new Error("The model menu trigger is not ready");
+      }
+      return button;
+    });
     expect(trigger).not.toHaveTextContent("BYOK");
     click(trigger);
     if (layout === "compact") {
@@ -128,8 +123,9 @@ test.each(
             await screen.findByRole("region", { name: "Chat models" }),
           )
         : await screen.findByRole("option", {
+            // A Fast-capable model adds its own " Fast" row beside the plain one.
             name: (name) => {
-              return name.includes(modelLabel);
+              return name.includes(modelLabel) && !name.endsWith(" Fast");
             },
           });
     if (!option) {
@@ -168,8 +164,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });

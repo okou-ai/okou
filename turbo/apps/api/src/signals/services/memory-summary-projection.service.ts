@@ -3,6 +3,11 @@ import { gunzipSync } from "node:zlib";
 
 import { PI_MEMORY_SUMMARY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import {
+  computeContentHashFromHashes,
+  hashFileContent,
+  type FileEntryWithHash,
+} from "@okouai/api-contracts/contracts/storage-content-hash";
+import {
   MAX_FILE_SIZE_BYTES,
   STORAGE_MANIFEST_MAX_FILES,
   STORAGE_MANIFEST_MAX_PATH_BYTES,
@@ -30,11 +35,6 @@ import {
   s3ObjectHead,
 } from "../external/s3";
 import { safeJsonParse, safeSync, settle } from "../utils";
-import {
-  computeContentHashFromHashes,
-  hashFileContent,
-  type FileEntryWithHash,
-} from "./storage-content-hash.service";
 
 const log = logger("MemorySummaryProjection");
 

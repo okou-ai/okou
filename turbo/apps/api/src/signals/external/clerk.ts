@@ -1,13 +1,113 @@
 import { computed, type Computed } from "ccstate";
 
-import { createClerkClient } from "@clerk/backend";
-import { isClerkAPIResponseError } from "@clerk/backend/errors";
+import { createClerkClient, verifyToken } from "@clerk/backend";
+import {
+  isClerkAPIResponseError,
+  TokenVerificationError,
+  TokenVerificationErrorReason,
+} from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
 import { z } from "zod";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
 import { settle } from "../utils";
+
+export interface ClerkOAuthIdentity {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly clientId: string;
+  readonly scopes: readonly string[];
+  readonly expiresAt: number;
+}
+
+const oauthClaimsSchema = z.object({
+  iss: z.string(),
+  aud: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+  sub: z.string().startsWith("user_").min(6),
+  org_id: z.string().startsWith("org_").min(5),
+  client_id: z.string().min(1),
+  exp: z.number().int().positive(),
+  scope: z.string().optional(),
+  scp: z.array(z.string().min(1)).optional(),
+});
+
+const invalidOAuthTokenReasons: readonly string[] = Object.freeze([
+  TokenVerificationErrorReason.TokenExpired,
+  TokenVerificationErrorReason.TokenInvalid,
+  TokenVerificationErrorReason.TokenInvalidAlgorithm,
+  TokenVerificationErrorReason.TokenInvalidAuthorizedParties,
+  TokenVerificationErrorReason.TokenInvalidSignature,
+  TokenVerificationErrorReason.TokenNotActiveYet,
+  TokenVerificationErrorReason.TokenIatInTheFuture,
+  TokenVerificationErrorReason.TokenVerificationFailed,
+  TokenVerificationErrorReason.JWKKidMismatch,
+]);
+
+/** Full, signed OAuth claims; the provider's reduced token wrapper omits org/aud. */
+export async function verifyClerkOAuthAccessToken(
+  token: string,
+  config: { readonly issuer: string; readonly resource: string },
+): Promise<ClerkOAuthIdentity | undefined> {
+  const verified = await settle(
+    verifyToken(token, {
+      secretKey: env("CLERK_SECRET_KEY"),
+      audience: config.resource,
+      headerType: ["at+jwt", "application/at+jwt"],
+      clockSkewInMs: 0,
+    }),
+  );
+  if (!verified.ok) {
+    if (
+      verified.error instanceof TokenVerificationError &&
+      invalidOAuthTokenReasons.includes(verified.error.reason)
+    ) {
+      return undefined;
+    }
+    // Key-service and configuration failures do not mean invalid credentials.
+    throw new Error("OAuth verification is temporarily unavailable");
+  }
+  const parsed = oauthClaimsSchema.safeParse(verified.value);
+  if (
+    !parsed.success ||
+    parsed.data.iss !== config.issuer ||
+    !(typeof parsed.data.aud === "string"
+      ? parsed.data.aud === config.resource
+      : parsed.data.aud.includes(config.resource))
+  ) {
+    return undefined;
+  }
+  const {
+    sub,
+    org_id: orgId,
+    client_id: clientId,
+    scope,
+    scp,
+    exp,
+  } = parsed.data;
+  const scopes =
+    scope === undefined ? scp : scope.split(/\s+/u).filter(Boolean);
+  if (
+    !scopes ||
+    (scopes &&
+      scp &&
+      (scopes.some((item) => {
+        return !scp.includes(item);
+      }) ||
+        scp.some((item) => {
+          return !scopes.includes(item);
+        })))
+  ) {
+    return undefined;
+  }
+  return {
+    userId: sub,
+    orgId,
+    clientId,
+    scopes,
+    expiresAt: exp,
+  };
+}
 
 /**
  * Clerk gateway. This module is the only place `@clerk/backend` is resolved:

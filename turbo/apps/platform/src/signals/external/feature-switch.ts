@@ -6,10 +6,6 @@ import {
 } from "@okouai/core/feature-switch";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  isChatEffortEnabled,
-  isCodexFastModeEnabled,
-} from "@okouai/core/model-feature-switch";
 import { clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
@@ -96,33 +92,12 @@ export const composerImageAnnotationEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ComposerImageAnnotation] ?? false;
 });
 
-/** Effort is a run setting, not a way of drawing the model list. */
-export const chatEffortEnabled$ = computed((get): boolean => {
-  return isChatEffortEnabled({ overrides: get(featureSwitch$) });
-});
-
-/**
- * How the composer draws the model list: the menu instead of the legacy
- * select, and on a desktop two detached panels instead of the menu's pages.
- */
-export const modelPickerFlyoutEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.ModelPickerFlyout] ?? false;
-});
-
-export const codexFastModeEnabled$ = computed((get): boolean => {
-  return isCodexFastModeEnabled({ overrides: get(featureSwitch$) });
-});
-
 export const avatarNeckSweaterEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.AvatarNeckSweater] ?? false;
 });
 
 export const avatarFramingEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.AvatarFraming] ?? false;
-});
-
-export const customConnectorMcpEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.CustomConnectorMcp] ?? false;
 });
 
 export const applyFeatureSwitches$ = command(

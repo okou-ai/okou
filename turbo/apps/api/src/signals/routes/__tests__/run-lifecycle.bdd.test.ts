@@ -30,6 +30,7 @@ import type {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { INTRO_VIDEO_SKILL_NAME, SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
@@ -66,6 +67,7 @@ import {
 } from "../../../test-fixtures/org-plan-entitlement";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import {
+  API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   apiTestConnectorCatalogValidationAuthority,
   clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
@@ -124,6 +126,7 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
@@ -237,7 +240,7 @@ function runnerPreference(job: RunnerJob | null | undefined) {
 }
 
 const CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET = "okou web upload-file -f <path>";
-const MCP_CONNECTOR_PROMPT_HEADING = "# MCP Custom Connectors";
+const MCP_CONNECTOR_PROMPT_HEADING = "# MCP Connectors";
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
 function mcpConnectorPromptSection(prompt: string): string | undefined {
@@ -1151,7 +1154,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       ).toBe(enabled);
       expect(
         prompt.includes(
-          "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
+          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
         ),
       ).toBe(enabled);
       await api.requestCancelRun(actor, created.runId, [200]);
@@ -5163,7 +5166,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       await api.requestCancelRun(actor, first.runId, [200]);
       const failed = await waitForRunStatus(api, actor, queued.runId, "failed");
       expect(failed.error).toBe(
-        "Claude Fable 5 has been retired. Select Claude Fable 5.1.",
+        "This model has been retired. Select another available model.",
       );
       expect(
         (await waitForRunQueueLength(api, actor, 0)).body.queue,
@@ -8445,9 +8448,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       authentication: "none",
     });
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const httpConnector = await connectors.createCustomConnector(actor, {
       kind: "http",
       displayName: "BDD No Auth HTTP Runtime",
@@ -9287,15 +9287,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(cancelled.status).toBe("cancelled");
   });
 
-  it("admits feature-gated MCP connectors with exact synchronized runtime state", async () => {
+  it("admits MCP connectors with exact synchronized runtime state", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcpDefinition = manualMcpRuntimeConnectorBody({
       displayName: "BDD MCP Runtime",
       endpoint: "https://mcp-runtime.example.test/api/mcp",
@@ -9323,48 +9320,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       http.id,
     ]);
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
-    const disabledRun = await api.createRun(actor, {
-      agentId,
-      prompt: "do not admit MCP while rollout is disabled",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.heartbeatRunner(runnerGroup);
-    const disabledClaim = await api.claimRunnerJob(disabledRun.runId);
-    const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
-    expect(disabledClaim.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({
-        kind: "custom",
-        customConnectorId: mcp.id,
-      }),
-    );
-    expect(
-      findFirewallEntry(disabledClaim.firewalls, mcpInternalName),
-    ).toBeUndefined();
-    expect(
-      expectCanonicalStorageManifest(disabledClaim.storageManifest)
-        ?.storageMounts,
-    ).not.toContainEqual(
-      expect.objectContaining({
-        name: getCustomConnectorSkillStorageName(mcp.id),
-      }),
-    );
-    expect(
-      mcpConnectorPromptSection(disabledClaim.appendSystemPrompt ?? ""),
-    ).toBeUndefined();
-    await api.requestCancelRun(actor, disabledRun.runId, [200]);
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const run = await api.createRun(actor, {
       agentId,
       prompt: "use the admitted MCP connector",
       modelProvider: "anthropic-api-key",
     });
+    await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
     const admittedIds = [http.id, mcp.id].sort();
     expect(
       claim.connectorRuntimeTargets
@@ -9470,20 +9433,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       reason: "connector-unavailable",
     });
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
-    const [activeWhileDisabledResult] = await api.syncConnectorRuntime(
-      run.runId,
-      { targets: [target] },
-    );
-    expect(
-      availableCustomConnectorRuntime(activeWhileDisabledResult).baseUrlVars,
-    ).toStrictEqual({});
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const movedDefinition = manualMcpRuntimeConnectorBody({
       displayName: "BDD MCP Runtime Moved",
       endpoint: "https://mcp-runtime.example.test/v2/mcp/",
@@ -9598,9 +9547,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const admittedSlugs = Array.from(
       { length: MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT + 1 },
       (_, index) => {
@@ -10801,9 +10747,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcp = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "BDD MCP OAuth Runtime",
@@ -10880,7 +10823,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it("synthesizes bearer auth for Automatic MCP accounts resolved to OAuth", async () => {
+  it("synthesizes OAuth bearer auth and omits stale credentials for Automatic MCP no-auth accounts", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
@@ -10892,9 +10835,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     const connectors = createConnectorBddApi(context);
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcp = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "BDD Automatic OAuth MCP Runtime",
@@ -10954,6 +10894,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     if (!actor.orgId) {
       throw new Error("Expected an Automatic MCP actor with an organization");
     }
+    // The production no-auth transition clears OAuth material. Seed historical
+    // inconsistent storage here to verify that none never reuses stale tokens.
     await setCustomConnectorCredentialStorageState(context, {
       orgId: actor.orgId,
       userId: actor.userId,
@@ -10962,20 +10904,41 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       storageVersion: 1,
     });
     await api.requestCancelRun(actor, run.runId, [200]);
-    const partialRun = await api.createRun(actor, {
+    const noAuthRun = await api.createRun(actor, {
       agentId,
-      prompt: "reject a partial Automatic OAuth account",
+      prompt: "use the Automatic MCP connector without credentials",
       modelProvider: "anthropic-api-key",
     });
     await api.heartbeatRunner(runnerGroup);
-    const partialClaim = await api.claimRunnerJob(partialRun.runId);
-    expect(partialClaim.connectorRuntimeTargets).not.toContainEqual(
-      expect.objectContaining({
-        kind: "custom",
-        customConnectorId: mcp.id,
-      }),
+    const noAuthClaim = await api.claimRunnerJob(noAuthRun.runId);
+    const noAuthTarget = customConnectorRuntimeRegistration(
+      noAuthClaim,
+      mcp.id,
     );
-    await api.requestCancelRun(actor, partialRun.runId, [200]);
+    expect(noAuthTarget).toStrictEqual(target);
+    expect(
+      inlineFirewallApis(noAuthClaim.firewalls, internalName)[0]?.auth,
+    ).toStrictEqual({ headers: {}, query: {} });
+    const [noAuthRuntimeResult] = await api.syncConnectorRuntime(
+      noAuthRun.runId,
+      {
+        targets: [noAuthTarget],
+      },
+    );
+    const noAuthRuntime = availableCustomConnectorRuntime(noAuthRuntimeResult);
+    expect(noAuthRuntime.firewall.sourceId).toBe(target.sourceId);
+    expect(noAuthRuntime.firewall.firewall.apis[0]?.auth).toStrictEqual({
+      headers: {},
+      query: {},
+    });
+    const noAuthResponses = JSON.stringify({
+      claim: noAuthClaim,
+      runtime: noAuthRuntime,
+    });
+    expect(noAuthResponses).not.toContain("automatic-initial-access-token");
+    expect(noAuthResponses).not.toContain("automatic-refresh-token");
+    expect(noAuthResponses).not.toContain(secretKey);
+    await api.requestCancelRun(actor, noAuthRun.runId, [200]);
   });
 
   it("injects proposed custom connector fields into headers, query, and host templates", async () => {
@@ -12694,7 +12657,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.requestCancelRun(actor, resumed.runId, [200]);
   });
 
-  it("preserves defaults and overrides across a broad connector scope", async () => {
+  it("preserves defaults and overrides across a broad HTTP connector scope", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
@@ -12711,13 +12674,18 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     // Nintendo Store owns a catalog skill, so enabling it without its account
     // intentionally fails run preparation before firewall policy assembly.
-    const broadConnectorScope = API_TEST_CONNECTOR_FIREWALL_CONFIGS.filter(
-      (firewall) => {
-        return firewall.name !== "nintendo-store";
-      },
-    ).map((firewall) => {
-      return firewall.name;
-    });
+    // MCP connectors do not participate in HTTP permission grants.
+    const broadConnectorScope = API_TEST_CONNECTOR_CATALOG.connectors
+      .filter((connector) => {
+        return (
+          connector.mcp === undefined &&
+          connector.firewall.kind !== "none" &&
+          connector.slug !== "nintendo-store"
+        );
+      })
+      .map((connector) => {
+        return connector.slug;
+      });
     expect(broadConnectorScope.length).toBeGreaterThanOrEqual(17);
     await api.enableAgentConnectors(actor, agentId, broadConnectorScope);
 
@@ -13147,6 +13115,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     expect(claim.platformEnvironment).toMatchObject({
       OKOU_APP_URL: appUrl,
       OKOU_AGENT_ID: agent.agentId,
+      OKOU_CURRENT_INTEGRATION: "web",
       OKOU_TOKEN: claim.platformEnvironment.OKOU_TOKEN,
       CLI_PKG_URL: "https://static.okou.io/okou-cli/test-commit/package.tgz",
     });
@@ -13338,6 +13307,82 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
+  it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
+    const api = createRunsApi(context);
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PaidToolControls]: true,
+    });
+    await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, actor, "image-generation", true);
+    const queued = await api.createRun(actor, {
+      agentId,
+      prompt: "capture my paid tool preferences",
+      modelProvider: "anthropic-api-key",
+    });
+    await setPaidToolDisabled(context, actor, "web-search", false);
+    await setPaidToolDisabled(context, actor, "image-generation", false);
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(queued.runId);
+    expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["image-generation","web-search"]',
+    );
+    expect(claim.environment).not.toHaveProperty(DISABLED_PAID_TOOLS_ENV_VAR);
+    await api.requestCancelRun(actor, queued.runId, [200]);
+
+    const enabled = await api.createRun(actor, {
+      agentId,
+      prompt: "use the updated paid tool preferences",
+      modelProvider: "anthropic-api-key",
+    });
+    const enabledClaim = await api.claimRunnerJob(enabled.runId);
+    expect(enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      "[]",
+    );
+    await api.requestCancelRun(actor, enabled.runId, [200]);
+
+    await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, actor, "video-rendering", true);
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PaidToolControls]: false,
+    });
+    const rolloutOff = await api.createRun(actor, {
+      agentId,
+      prompt: "preserve paid tool preferences while the settings UI is hidden",
+      modelProvider: "anthropic-api-key",
+    });
+    const rolloutOffClaim = await api.claimRunnerJob(rolloutOff.runId);
+    expect(
+      rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
+    ).toBe('["video-rendering","web-search"]');
+    await api.requestCancelRun(actor, rolloutOff.runId, [200]);
+  });
+
+  it("uses the executing member's paid tool preferences for a shared agent", async () => {
+    const bdd = createBddApi(context);
+    const api = createRunsApi(context);
+    const { actor, runnerGroup } = await entitledRunActor();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Shared paid tool preferences agent",
+      visibility: "public",
+    });
+    const member = bdd.user({ orgId: actor.orgId });
+    await setPaidToolDisabled(context, actor, "web-search", true);
+    await setPaidToolDisabled(context, member, "scrape", true);
+    const run = await api.createRun(member, {
+      agentId: agent.agentId,
+      prompt: "respect the executing member's paid tool preferences",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["scrape"]',
+    );
+    await api.requestCancelRun(member, run.runId, [200]);
+  });
+
   it("advertises banking tools only while the feature is enabled", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
@@ -13424,55 +13469,39 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it.each([true, false])(
-    "gates SSH guidance and Run scopes only on enabled=%s for an ordinary organization",
-    async (enabled) => {
-      const api = createRunsApi(context);
-      const connectors = createConnectorBddApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SshAccess]: enabled,
-      });
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "inspect my SSH hosts",
-        modelProvider: "anthropic-api-key",
-      });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-      if (enabled) {
-        expect(prompt).toContain("okou ssh host list --json");
-        expect(prompt).toContain("okou ssh exec");
-        expect(prompt).toContain("okou ssh session");
-        expect(prompt).toContain("okou ssh upload");
-        expect(prompt).toContain("okou ssh download");
-        expect(prompt).toContain("okou ssh --help");
-        expect(prompt).toContain("relevant subcommand's `--help` before use");
-        const sshGuidance = prompt.split("\n").filter((line) => {
-          return line.startsWith("- SSH");
-        });
-        expect(sshGuidance).toHaveLength(1);
-        expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
-      } else {
-        expect(prompt).not.toContain("okou ssh");
-      }
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a minted Run token");
-      }
-      const capabilities = verifyOkouToken(token)?.capabilities;
-      if (enabled) {
-        expect(capabilities).toContain("ssh:read");
-        expect(capabilities).toContain("ssh:write");
-      } else {
-        expect(capabilities).not.toContain("ssh:read");
-        expect(capabilities).not.toContain("ssh:write");
-      }
-      await api.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
+  it("advertises SSH guidance and grants Run scopes for an ordinary organization", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "inspect my SSH hosts",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou ssh host list --json");
+    expect(prompt).toContain("okou ssh exec");
+    expect(prompt).toContain("okou ssh session");
+    expect(prompt).toContain("okou ssh upload");
+    expect(prompt).toContain("okou ssh download");
+    expect(prompt).toContain("okou ssh --help");
+    expect(prompt).toContain("relevant subcommand's `--help` before use");
+    const sshGuidance = prompt.split("\n").filter((line) => {
+      return line.startsWith("- SSH");
+    });
+    expect(sshGuidance).toHaveLength(1);
+    expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected a minted Run token");
+    }
+    const capabilities = verifyOkouToken(token)?.capabilities;
+    expect(capabilities).toContain("ssh:read");
+    expect(capabilities).toContain("ssh:write");
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
 
   it("advertises connector account switching", async () => {
     const api = createRunsApi(context);
@@ -15635,7 +15664,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       expect.objectContaining({
         source: "chat",
         runId: null,
-        title: "Deleted chats",
+        title: "Unavailable thread",
         credits: 17,
       }),
     );
@@ -15682,7 +15711,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     });
     expect(listedUsage).toMatchObject({
       runId: null,
-      title: "Deleted chats",
+      title: "Unavailable thread",
     });
     expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
 
@@ -15808,6 +15837,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 14,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 14,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 14,
+              usageKinds: [{ kind: "image", credits: 14 }],
+            },
+          ],
+        },
+      ],
     });
     expect(aggregated.body.members[1]).toMatchObject({
       userId: actor.userId,
@@ -15817,6 +15859,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 7,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 7,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 7,
+              usageKinds: [{ kind: "image", credits: 7 }],
+            },
+          ],
+        },
+      ],
     });
 
     await api.requestCancelRun(actor, actorRun.runId, [200]);
@@ -16261,6 +16316,19 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       },
     );
 
+    it.each(["anthropic-api-key", "built-in"] as const)(
+      "preserves failed completion when sandbox root storage fills on %s",
+      async (modelProvider) => {
+        const { runId } = await completeFailure({
+          modelProvider,
+          failureReason: "guest_root_filesystem_full",
+        });
+        await expect(readRunFailureReasonFixture(context, runId)).resolves.toBe(
+          "guest_root_filesystem_full",
+        );
+      },
+    );
+
     it("keeps the first failure when a duplicate repeats the capacity failure", async () => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
@@ -16345,6 +16413,14 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       },
       {
         firstReason: "unsupported_model",
+        lateReason: "provider_overloaded",
+      },
+      {
+        firstReason: "provider_overloaded",
+        lateReason: "guest_root_filesystem_full",
+      },
+      {
+        firstReason: "guest_root_filesystem_full",
         lateReason: "provider_overloaded",
       },
     ] as const)(

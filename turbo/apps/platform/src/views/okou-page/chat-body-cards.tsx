@@ -199,8 +199,7 @@ type ChatVideoPreviewButtonProps = {
   onPreview: () => void;
   posterClassName: string;
   posterLoad: ImageLoadSignals;
-  previewImagePending?: boolean;
-  previewImageUrl?: string;
+  previewImageUrl$: ArtifactSignals["previewImageUrl$"];
   videoClassName: string;
 };
 
@@ -218,10 +217,15 @@ export function ChatVideoPreviewButton({
   onPreview,
   posterClassName,
   posterLoad,
-  previewImagePending,
-  previewImageUrl,
+  previewImageUrl$,
   videoClassName,
 }: ChatVideoPreviewButtonProps) {
+  const previewImageLoadable = useLastLoadable(previewImageUrl$);
+  const previewImagePending = previewImageLoadable.state === "loading";
+  const previewImageUrl =
+    previewImageLoadable.state === "hasData"
+      ? previewImageLoadable.data
+      : undefined;
   const videoUrl = useLastResolved(resourceUrl$) ?? null;
   const posterVideoUrl =
     videoUrl === null ? undefined : videoPosterFrameUrl(videoUrl);
@@ -398,15 +402,14 @@ function ArtifactCardView({
         }}
         posterClassName="h-full w-full"
         posterLoad={signals.previewImageLoad}
-        previewImagePending={previewImagePending}
-        previewImageUrl={previewImageUrl}
+        previewImageUrl$={signals.previewImageUrl$}
         videoClassName="h-full w-full object-contain"
       />
     );
   }
   return (
     <AttachmentPreview
-      resourceUrl$={signals.resourceUrl$}
+      preview={signals}
       attachment={{
         filename: signals.kind === "html" && label ? label : signals.filename,
         url: signals.url,

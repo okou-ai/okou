@@ -215,6 +215,130 @@ function isSlackPlatformError(
   );
 }
 
+const SLACK_REQUEST_ERROR = "slack_webapi_request_error";
+const SLACK_HTTP_ERROR = "slack_webapi_http_error";
+const SLACK_RATE_LIMITED_ERROR = "slack_webapi_rate_limited_error";
+
+function isRetryableSlackPlatformError(code: string): boolean {
+  return (
+    code === "internal_error" ||
+    code === "ratelimited" ||
+    code === "request_timeout" ||
+    code === "service_unavailable"
+  );
+}
+
+function isOptionalContextAuthorizationError(code: string): boolean {
+  return (
+    code === "channel_not_found" ||
+    code === "missing_scope" ||
+    code === "no_permission" ||
+    code === "not_in_channel"
+  );
+}
+
+class SlackMessageClientError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly retryAfterMs: number | null;
+
+  constructor(
+    error: unknown,
+    args: {
+      readonly code: string;
+      readonly retryable: boolean;
+      readonly retryAfterMs?: number;
+    },
+  ) {
+    super(error instanceof Error ? error.message : "Slack request failed", {
+      cause: error,
+    });
+    this.name = "SlackMessageClientError";
+    this.code = args.code;
+    this.retryable = args.retryable;
+    this.retryAfterMs = args.retryAfterMs ?? null;
+  }
+}
+
+interface SlackMessageClientFailure {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly retryAfterMs: number | null;
+}
+
+export function slackMessageClientFailure(
+  error: unknown,
+): SlackMessageClientFailure | null {
+  if (!(error instanceof SlackMessageClientError)) {
+    return null;
+  }
+  return {
+    code: error.code,
+    retryable: error.retryable,
+    retryAfterMs: error.retryAfterMs,
+  };
+}
+
+export function isOptionalSlackConversationContextFailure(
+  error: unknown,
+): boolean {
+  const failure = slackMessageClientFailure(error);
+  return Boolean(failure && isOptionalContextAuthorizationError(failure.code));
+}
+
+function slackMessageClientError(error: unknown): SlackMessageClientError {
+  if (error instanceof SlackMessageClientError) {
+    return error;
+  }
+  if (isSlackPlatformError(error)) {
+    return new SlackMessageClientError(error, {
+      code: error.data.error,
+      retryable: isRetryableSlackPlatformError(error.data.error),
+    });
+  }
+  if (error instanceof Error && "code" in error) {
+    const code = (error as { readonly code: unknown }).code;
+    if (code === SLACK_RATE_LIMITED_ERROR) {
+      const retryAfter =
+        "retryAfter" in error && typeof error.retryAfter === "number"
+          ? error.retryAfter
+          : 0;
+      return new SlackMessageClientError(error, {
+        code,
+        retryable: true,
+        retryAfterMs: Math.max(0, retryAfter * 1000),
+      });
+    }
+    if (code === SLACK_REQUEST_ERROR) {
+      return new SlackMessageClientError(error, { code, retryable: true });
+    }
+    if (code === SLACK_HTTP_ERROR) {
+      const statusCode =
+        "statusCode" in error && typeof error.statusCode === "number"
+          ? error.statusCode
+          : 0;
+      return new SlackMessageClientError(error, {
+        code: `${code}:${statusCode || "unknown"}`,
+        retryable: statusCode >= 500,
+      });
+    }
+  }
+  return new SlackMessageClientError(error, {
+    code: "unknown_slack_error",
+    retryable: false,
+  });
+}
+
+async function readSlackConversation<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  const result = await settle(operation());
+  if (!result.ok) {
+    throw slackMessageClientError(result.error);
+  }
+  return result.value;
+}
+
 export function formatSenderBlock(info: SlackUserInfo): string {
   const parts = [`id: ${info.id}`];
   if (info.name) {
@@ -549,10 +673,12 @@ async function fetchThreadMessages(
   channel: string,
   threadTs: string,
 ): Promise<readonly SlackConversationMessage[]> {
-  const result = await web.conversations.replies({
-    channel,
-    ts: threadTs,
-    limit: THREAD_CONTEXT_MESSAGE_LIMIT,
+  const result = await readSlackConversation(async () => {
+    return await web.conversations.replies({
+      channel,
+      ts: threadTs,
+      limit: THREAD_CONTEXT_MESSAGE_LIMIT,
+    });
   });
   return (result.messages ?? []) as SlackConversationMessage[];
 }
@@ -563,10 +689,12 @@ async function fetchChannelMessages(
   limit: number,
   latest?: string,
 ): Promise<readonly SlackConversationMessage[]> {
-  const result = await web.conversations.history({
-    channel,
-    limit,
-    ...(latest && { latest }),
+  const result = await readSlackConversation(async () => {
+    return await web.conversations.history({
+      channel,
+      limit,
+      ...(latest && { latest }),
+    });
   });
   return [...((result.messages ?? []) as SlackConversationMessage[])].reverse();
 }

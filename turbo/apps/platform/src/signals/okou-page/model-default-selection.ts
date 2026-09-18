@@ -49,12 +49,8 @@ function resolveModelFirstWorkspaceDefaultSelection(
 export function isCodexFastModeAvailableForSelection(params: {
   readonly policies: OrgModelPoliciesResponse | null | undefined;
   readonly selectedModel: string | null | undefined;
-  readonly codexFastModeEnabled: boolean;
 }): boolean {
-  if (
-    !params.codexFastModeEnabled ||
-    !isCodexFastModeModel(params.selectedModel)
-  ) {
+  if (!isCodexFastModeModel(params.selectedModel)) {
     return false;
   }
   const policy = params.policies?.policies.find((candidate) => {
@@ -72,7 +68,6 @@ export function isCodexFastModeAvailableForSelection(params: {
 export function resolveModelFirstUserDefaultSelection(params: {
   userPreference: UserModelDefaultSource | null | undefined;
   policies: OrgModelPoliciesResponse | null | undefined;
-  codexFastModeEnabled: boolean;
 }): ModelProviderSelection | null {
   const userSelection = resolveModelFirstStoredUserSelection(params);
   return (
@@ -87,7 +82,6 @@ export function resolveModelFirstUserDefaultSelection(params: {
 export function resolveModelFirstStoredUserSelection(params: {
   userPreference: UserModelDefaultSource | null | undefined;
   policies: OrgModelPoliciesResponse | null | undefined;
-  codexFastModeEnabled: boolean;
 }): ModelProviderSelection | null {
   const userSelection = createModelFirstSelection(
     params.userPreference?.selectedModel,
@@ -101,7 +95,6 @@ export function resolveModelFirstStoredUserSelection(params: {
     isCodexFastModeAvailableForSelection({
       policies: params.policies,
       selectedModel: userSelection.selectedModel,
-      codexFastModeEnabled: params.codexFastModeEnabled,
     })
   ) {
     return { ...userSelection, codexServiceTier: "fast" };

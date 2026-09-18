@@ -10,12 +10,10 @@ import {
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { badRequestMessage } from "../../lib/error";
 
-/** Keep saved preferences dormant while rollout is disabled. */
 export function resolveChatReasoningEffort(args: {
   readonly selectedModel: string | null;
   readonly modelSettings?: ModelSettings | null;
   readonly requested?: ReasoningEffort;
-  readonly enabled: boolean;
 }):
   | {
       readonly reasoningEffort: ReasoningEffort | undefined;
@@ -24,16 +22,6 @@ export function resolveChatReasoningEffort(args: {
     }
   | ReturnType<typeof badRequestMessage> {
   const storedSettings = args.modelSettings ?? {};
-  if (!args.enabled) {
-    if (args.requested !== undefined) {
-      return badRequestMessage("Reasoning effort selection is not enabled");
-    }
-    return {
-      reasoningEffort: undefined,
-      modelSettings: storedSettings,
-      modelSettingsPatch: undefined,
-    };
-  }
   if (args.requested !== undefined) {
     if (!isModelReasoningEffortSupported(args.selectedModel, args.requested)) {
       return badRequestMessage(

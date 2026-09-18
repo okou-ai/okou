@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import addon_process_logging
+import flow_metadata
 import matching
 import registry_firewalls
 import registry_observation
@@ -49,6 +50,8 @@ class InvalidSandboxEntry:
     - ``empty_run_id``: ``runId`` is a string whose stripped value is empty.
     - ``invalid_billable_firewalls``: ``billableFirewalls`` is not a list of
       strings.
+    - ``invalid_x_resource_billing``: the advertised X resource capability is
+      malformed or unsupported.
     - ``missing_cli_agent_type``: the ``cliAgentType`` field is absent.
     - ``invalid_cli_agent_type``: ``cliAgentType`` is not a string.
     - ``empty_cli_agent_type``: ``cliAgentType`` is an empty string.
@@ -334,6 +337,15 @@ def _classify_registry_sandboxes(
                 "proxy registry sandbox entry billableFirewalls must be a list of strings",
             )
             continue
+
+        if "xResourceBilling" in sandbox:
+            try:
+                flow_metadata.parse_x_resource_billing(sandbox["xResourceBilling"])
+            except ValueError as error:
+                invalid_sandboxes[client_ip] = InvalidSandboxEntry(
+                    "invalid_x_resource_billing", str(error)
+                )
+                continue
 
         if "cliAgentType" not in sandbox:
             invalid_sandboxes[client_ip] = InvalidSandboxEntry(

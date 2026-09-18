@@ -226,7 +226,10 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
                 identity,
             )
             .unwrap()
-            .map(|ssh| crate::guest_rpc::Runtime { ssh: Some(ssh) });
+            .map(|ssh| crate::guest_rpc::Runtime {
+                ssh: Some(ssh),
+                vnc: None,
+            });
             assert_eq!(config.guest_rpc.is_some(), enabled);
             let ctx = minimal_context();
             let (pending, incoming) = tokio::sync::mpsc::channel(2);

@@ -442,6 +442,12 @@ fn classify_cli_failure_reason(
     {
         return Some(reason);
     }
+    if framework == AgentFramework::Codex
+        && source == FailureDetailSource::CodexJsonl
+        && failure_patterns::is_codex_output_token_limit_message(failure_message)
+    {
+        return Some(FailureReason::OutputTokenLimit);
+    }
     // Subscription/usage limits are an expected quota state for both Codex
     // (ChatGPT plan "usage limit" or API billing "quota exceeded") and Claude
     // Code (Max plan "session limit" / "weekly limit" /

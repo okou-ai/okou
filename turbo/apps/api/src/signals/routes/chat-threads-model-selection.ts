@@ -1,5 +1,3 @@
-import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
@@ -119,17 +117,10 @@ async function writeModelSelection(
   if ("status" in pin) {
     return pin;
   }
-  const context = await loadUserFeatureSwitchContext(
-    tx,
-    auth.orgId,
-    auth.userId,
-  );
-  signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
     selectedModel: pin.selectedModel,
     modelSettings: modelSettingsSchema.parse(current.modelSettings),
     requested: body.reasoningEffort,
-    enabled: isChatEffortEnabled(context),
   });
   if ("status" in effort) {
     return effort;
@@ -140,10 +131,7 @@ async function writeModelSelection(
     body.codexServiceTier === undefined && body.reasoningEffort !== undefined
       ? current.codexServiceTier
       : (body.codexServiceTier ?? null);
-  const tierError = await validateCodexServiceTier({
-    db: tx,
-    orgId: auth.orgId,
-    userId: auth.userId,
+  const tierError = validateCodexServiceTier({
     pin,
     codexServiceTier,
   });

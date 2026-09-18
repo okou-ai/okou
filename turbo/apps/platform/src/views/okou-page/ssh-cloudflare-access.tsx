@@ -18,7 +18,6 @@ import {
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   sshCloudflareConfigs$,
-  sshEnabled$,
   sshTransportEditor$,
   chooseSshAccessConfig$,
   openSshCloudflareDialog$,
@@ -218,6 +217,9 @@ export function AccessFields({
         })}
         <Input
           name="accessName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.accessName;
+          })}
           required
           pattern=".*\S.*"
           maxLength={128}
@@ -251,6 +253,9 @@ export function AccessFields({
             })}
             <Input
               name="clientId"
+              placeholder={t(($) => {
+                return $.ssh.placeholders.clientId;
+              })}
               required
               type="password"
               pattern="[!-~]+"
@@ -265,6 +270,9 @@ export function AccessFields({
             })}
             <Input
               name="clientSecret"
+              placeholder={t(($) => {
+                return $.ssh.placeholders.clientSecret;
+              })}
               required
               type="password"
               pattern="[!-~]+"
@@ -281,11 +289,10 @@ export function AccessFields({
 
 export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const enabled = useGet(sshEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshAccessConfig$);
-  if (!enabled || (configs.state === "hasData" && configs.data === null)) {
+  if (configs.state === "hasData" && configs.data === null) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
         {t(($) => {

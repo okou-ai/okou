@@ -16,6 +16,7 @@ let mockUserTemplates: UserTemplateDetail[] = [];
 function summary(template: UserTemplateDetail): UserTemplateSummary {
   const {
     pageUrls: _pageUrls,
+    sourceUrl: _sourceUrl,
     previewAssets: _previewAssets,
     ...templateSummary
   } = template;
@@ -23,7 +24,7 @@ function summary(template: UserTemplateDetail): UserTemplateSummary {
 }
 
 function catalogEntry(template: UserTemplateDetail): UserTemplateCatalogEntry {
-  const { pageUrls: _pageUrls, ...entry } = template;
+  const { pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry } = template;
   return entry;
 }
 

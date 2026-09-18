@@ -1,4 +1,3 @@
-import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import {
   agentsByIdContract,
   agentsMainContract,
@@ -6,7 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { screen, waitFor, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
@@ -90,55 +89,6 @@ function firstItem<Item>(items: readonly Item[]): Item {
     throw new Error("Expected onboarding template data");
   }
   return item;
-}
-
-const ONBOARDING_START_SEND_TO = "AW-18144854014/GVKdCLbQ9LscEP7_kcxD";
-const CHECKOUT_START_SEND_TO = "AW-18144854014/EEovCKmuvbscEP7_kcxD";
-const ADSMARCH_ONBOARDING_START_SEND_TO = "AW-18407336975/xkGcCLaRrOccEI_YpslE";
-const ADSMARCH_CHECKOUT_START_SEND_TO = "AW-18407336975/hWi8CPWRrOccEI_YpslE";
-const ADSMARCH_PAID_IN_ONBOARDING_SEND_TO =
-  "AW-18407336975/M7QYCPiRrOccEI_YpslE";
-
-type GtagFn = (...args: unknown[]) => void;
-
-type WindowWithGtag = Window & {
-  gtag?: GtagFn;
-};
-
-function installGtagMock(): ReturnType<typeof vi.fn<GtagFn>> {
-  const windowWithGtag = window as WindowWithGtag;
-  const originalGtag = windowWithGtag.gtag;
-  const gtag = vi.fn<GtagFn>();
-
-  Object.defineProperty(windowWithGtag, "gtag", {
-    configurable: true,
-    value: gtag,
-    writable: true,
-  });
-  context.signal.addEventListener("abort", () => {
-    if (originalGtag !== undefined) {
-      Object.defineProperty(windowWithGtag, "gtag", {
-        configurable: true,
-        value: originalGtag,
-        writable: true,
-      });
-      return;
-    }
-    Reflect.deleteProperty(windowWithGtag, "gtag");
-  });
-
-  return gtag;
-}
-
-function sentConversions(gtag: ReturnType<typeof vi.fn<GtagFn>>): string[] {
-  return gtag.mock.calls.flatMap((call) => {
-    const [command, eventName, params] = call;
-    if (command !== "event" || eventName !== "conversion") {
-      return [];
-    }
-    const sendTo = (params as { readonly send_to?: unknown }).send_to;
-    return typeof sendTo === "string" ? [sendTo] : [];
-  });
 }
 
 function mockOnboardingNeeded(currentContext = context): void {
@@ -864,7 +814,7 @@ test("Custom workflow onboarding preserves an explicit assistant mention", async
   );
 });
 
-test("Connecting an OAuth account starts its standard authorization", async () => {
+test("Onboarding OAuth can be cancelled and retried", async () => {
   mockOAuthCompletions(context);
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
@@ -895,7 +845,31 @@ test("Connecting an OAuth account starts its standard authorization", async () =
     );
   });
   expect(connectButton).toBeDisabled();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const progress = screen.getByRole("dialog", {
+    name: "Connecting your account",
+  });
+  click(within(progress).getByText("Cancel", { selector: "button" }));
+  await waitFor(() => {
+    expect(connectButton).toBeEnabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(authWindow.closed).toBeTruthy();
+  const retryWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(retryWindow, "location", {
+    value: { href: "" },
+    configurable: true,
+  });
+  context.mocks.browser.open(retryWindow);
+  click(connectButton);
+  await waitFor(() => {
+    expect(retryWindow.location.href).toBe(
+      "https://oauth.test/github/authorize",
+    );
+  });
+  expect(connectButton).toBeDisabled();
+  expect(
+    screen.getByRole("dialog", { name: "Connecting your account" }),
+  ).toBeVisible();
 });
 
 test("An existing account connection is recognized during onboarding", async () => {
@@ -1322,7 +1296,6 @@ test("Video onboarding offers Pro with an initial usage pack", async () => {
 });
 
 test("A completed video checkout resumes onboarding and the run", async () => {
-  const gtag = installGtagMock();
   const template = firstItem(VIDEO_TEMPLATE_ITEMS);
   let runPrompt: string | undefined;
   let generationType: string | undefined;
@@ -1340,11 +1313,6 @@ test("A completed video checkout resumes onboarding and the run", async () => {
       checkoutCompletionAttempts >= 2
         ? {
             completed: true,
-            googleAdsConversion: {
-              googleAdsAccountId: "7935750692",
-              transactionId: "in_onboarding_paid",
-              valueUsd: 49,
-            },
           }
         : { completed: false },
     );
@@ -1368,12 +1336,6 @@ test("A completed video checkout resumes onboarding and the run", async () => {
     expect(generationType).toBe("video");
     expect(checkoutCompletionAttempts).toBe(2);
     expect(pathname()).toMatch(/^\/chats\//u);
-  });
-  expect(gtag).toHaveBeenCalledWith("event", "conversion", {
-    send_to: ADSMARCH_PAID_IN_ONBOARDING_SEND_TO,
-    value: 49,
-    currency: "USD",
-    transaction_id: "in_onboarding_paid",
   });
 });
 
@@ -1414,79 +1376,3 @@ test("An invalid template link returns to the matching picker", async () => {
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe("/onboarding/image-template");
 });
-
-test.each([
-  {
-    accountId: "1001302527",
-    onboarding: [ONBOARDING_START_SEND_TO],
-    checkout: [CHECKOUT_START_SEND_TO],
-  },
-  {
-    accountId: "7935750692",
-    onboarding: [ADSMARCH_ONBOARDING_START_SEND_TO],
-    checkout: [ADSMARCH_CHECKOUT_START_SEND_TO],
-  },
-  { accountId: null, onboarding: [], checkout: [] },
-])(
-  "Onboarding and checkout route only to $accountId",
-  async ({ accountId, onboarding, checkout }) => {
-    const marketing = "https://www.okou.ai/api/marketing";
-    const requests: Request[] = [];
-    context.mocks.http.post(`${marketing}/finish-onboarding`, ({ request }) => {
-      requests.push(request);
-      return new Response(null, { status: 204 });
-    });
-    context.mocks.api(
-      acquisitionAttributionContract.resolveGoogleAdsAccount,
-      ({ respond }) => {
-        return respond(200, { googleAdsAccountId: accountId });
-      },
-    );
-    const gtag = installGtagMock();
-    const template = firstItem(VIDEO_TEMPLATE_ITEMS);
-    mockChatLifecycle(context);
-    context.mocks.api(billingCheckoutContract.create, ({ respond }) => {
-      return respond(200, {
-        url: "https://checkout.stripe.com/test/onboarding-video",
-      });
-    });
-
-    mockOnboardingNeeded();
-    await setupPage({
-      context,
-      path: "/onboarding/video-template?choice=video",
-      host: "app.okou.ai",
-    });
-
-    await expect(
-      screen.findByRole("heading", {
-        name: "Pick a video template to start from",
-      }),
-    ).resolves.toBeInTheDocument();
-
-    await waitFor(() => {
-      return expect(sentConversions(gtag)).toStrictEqual(onboarding);
-    });
-    chooseTemplate(template.title, "video");
-
-    await expect(
-      screen.findByRole("heading", { name: "Customize your video" }),
-    ).resolves.toBeInTheDocument();
-    await fill(
-      screen.getByLabelText("Custom video prompt"),
-      "A 20-second launch teaser for a habit-tracking app.",
-    );
-    click(
-      await waitFor(() => {
-        return buttonByText("Upgrade Pro to run");
-      }),
-    );
-
-    await waitFor(() => {
-      expect(window.location.href).toContain("checkout.stripe.com");
-      expect(sentConversions(gtag)).toStrictEqual([...onboarding, ...checkout]);
-    });
-    expect(requests).toHaveLength(1);
-    await expect(requests[0]?.text()).resolves.toBe("");
-  },
-);

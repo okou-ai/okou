@@ -22,13 +22,16 @@ import {
   listAccessibleUserTemplates,
   loadAccessibleUserTemplate,
   parseUserTemplatePreviewAssetId,
+  userTemplateCoverKeys,
   userTemplatePageKeys,
   userTemplatePreviewAssetId,
+  userTemplateStorageVersionId,
   userTemplateSummary,
   type UserTemplateRow,
 } from "../services/user-template-data.service";
 import { deleteUserTemplate$ } from "../services/user-template-delete.service";
 import { publishUserTemplate$ } from "../services/user-template-publish.service";
+import { replaceUserTemplatePackage$ } from "../services/user-template-repackage.service";
 import { templateArtifactBucket } from "../services/private-artifact-storage.service";
 import {
   presentationTemplatePreviewPresignedUrlCacheKey,
@@ -130,9 +133,37 @@ function userTemplatePreviewAssetsForRow(args: {
   readonly row: UserTemplateRow;
   readonly orgId: string;
 }): readonly AccessibleUserTemplatePreviewAsset[] {
-  return userTemplatePageKeys(args.row).map((objectKey) => {
+  return userTemplateCoverKeys(args.row).map((objectKey) => {
     return userTemplatePreviewAsset({ ...args, objectKey });
   });
+}
+
+/**
+ * The file the template was compiled from, signed the same way its pages are.
+ *
+ * Not reached through a preview asset id: an asset id is a handle a client
+ * hands back to have one picture's URL reissued, and the detail this request
+ * belongs to already carries the URL. Minting a second handle for a file the
+ * reader has been handed anyway buys nothing.
+ *
+ * An illustration's source is separately a cover, and therefore does have an
+ * asset id — one produced by `userTemplateCoverKeys`, which the resolve
+ * endpoint reads too, so that handle is one it accepts. Both paths sign the
+ * same object with the same version, so they share a cache key and the second
+ * one costs nothing.
+ */
+function userTemplateSourceRequest(args: {
+  readonly row: UserTemplateRow;
+  readonly orgId: string;
+}): PresentationTemplatePreviewPresignedUrlRequest {
+  const objectKey = args.row.sourceStorageKey;
+  return {
+    bucket: templateArtifactBucket(objectKey),
+    objectKey,
+    storageVersionId: userTemplateStorageVersionId(objectKey),
+    resolvedOrgId: args.orgId,
+    publicEndpoint: true,
+  };
 }
 
 function resolvedUserTemplatePreviewAssets(
@@ -171,8 +202,10 @@ function accessibleUserTemplatePreviewAssets(args: {
     const identity = parseUserTemplatePreviewAssetId(previewAssetId);
     const row = identity ? rowById.get(identity.templateId) : undefined;
     const objectKey = row
-      ? userTemplatePageKeys(row).find((pageKey) => {
-          return userTemplatePreviewAssetId(row.id, pageKey) === previewAssetId;
+      ? userTemplateCoverKeys(row).find((coverKey) => {
+          return (
+            userTemplatePreviewAssetId(row.id, coverKey) === previewAssetId
+          );
         })
       : undefined;
     return identity === null || row === undefined || objectKey === undefined
@@ -306,12 +339,16 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     row,
     orgId: auth.orgId,
   });
+  const sourceRequest = userTemplateSourceRequest({ row, orgId: auth.orgId });
   const urlsByCacheKey = await get(
     resolvePresentationTemplatePreviewPresignedUrls({
       db: set(writeDb$),
-      requests: previewAssets.map((asset) => {
-        return asset.request;
-      }),
+      requests: [
+        ...previewAssets.map((asset) => {
+          return asset.request;
+        }),
+        sourceRequest,
+      ],
     }),
   );
   signal.throwIfAborted();
@@ -319,14 +356,36 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     previewAssets,
     urlsByCacheKey,
   );
-  const pageUrls = resolvedPreviewAssets.map((asset) => {
-    return asset.url;
+  // Narrowed from the resolved covers rather than resolved again: for a deck
+  // the two lists are the same objects, and for an illustration the cover is
+  // the source, which is not a page and must not be stacked as one.
+  const pageAssetIds = new Set(
+    userTemplatePageKeys(row).map((pageKey) => {
+      return userTemplatePreviewAssetId(row.id, pageKey);
+    }),
+  );
+  const pageUrls = resolvedPreviewAssets.flatMap((asset) => {
+    return pageAssetIds.has(asset.previewAssetId) ? [asset.url] : [];
   });
+  const source = urlsByCacheKey.get(
+    presentationTemplatePreviewPresignedUrlCacheKey(sourceRequest),
+  );
+  if (source === undefined) {
+    throw new Error(`Source URL not resolved: ${row.id}`);
+  }
   return {
     status: 200 as const,
     body: {
-      ...userTemplateSummary(row, pageUrls[0] ?? null, auth.userId),
+      // The cover comes from the resolved covers, not from the pages: they are
+      // the same picture for a deck, and for an illustration only the former
+      // has one.
+      ...userTemplateSummary(
+        row,
+        resolvedPreviewAssets[0]?.url ?? null,
+        auth.userId,
+      ),
       pageUrls,
+      sourceUrl: source.url,
       previewAssets: resolvedPreviewAssets,
     },
   };
@@ -371,6 +430,60 @@ const resolvePreviewUrlsInner$ = command(
       body: {
         assets: resolvedUserTemplatePreviewAssets(assets, urlsByCacheKey),
       },
+    };
+  },
+);
+
+const replacePackageParams$ = pathParamsOf(
+  userTemplatesContract.replacePackage,
+);
+const replacePackageBody$ = bodyResultOf(userTemplatesContract.replacePackage);
+const replacePackageInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!(await get(customTemplatesEnabled$))) {
+      return customTemplatesDisabled;
+    }
+    signal.throwIfAborted();
+    const auth = get(organizationAuthContext$);
+    const params = get(replacePackageParams$);
+    const bodyResult = await get(replacePackageBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    const result = await set(
+      replaceUserTemplatePackage$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        templateId: params.templateId,
+        packageFileId: bodyResult.data.packageFileId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.kind === "not-found") {
+      return templateNotFound(params.templateId);
+    }
+    if (result.kind === "rejected") {
+      return result.response;
+    }
+    const coverUrl = await set(coverUrlFor$, {
+      row: result.row,
+      orgId: auth.orgId,
+    });
+    signal.throwIfAborted();
+    // The guidance changed, not who can see it, so the same readers are told
+    // as would be told about any other edit to this row.
+    if (result.row.visibility === "organization") {
+      await publishPresentationTemplatesChangedForOrgSafely(auth.orgId);
+    } else {
+      await publishPresentationTemplatesChangedForUserSafely(auth.userId);
+    }
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: userTemplateSummary(result.row, coverUrl, auth.userId),
     };
   },
 );
@@ -490,6 +603,10 @@ export const userTemplatesRoutes: readonly RouteEntry[] = [
   {
     route: userTemplatesContract.resolvePreviewUrls,
     handler: authRoute(templateReadAuth, resolvePreviewUrlsInner$),
+  },
+  {
+    route: userTemplatesContract.replacePackage,
+    handler: authRoute(templatePublishAuth, replacePackageInner$),
   },
   {
     route: userTemplatesContract.update,

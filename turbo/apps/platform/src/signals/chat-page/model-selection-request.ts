@@ -41,11 +41,10 @@ export function withSelectedModelAnnotation(
  */
 export function runOptionsFromModelProviderSelection(
   value: ModelProviderSelection | null,
-  codexFastModeEnabled: boolean,
   videoRunOptions?: ChatRunVideoOptionsRequest,
 ): ChatRunOptionsRequest | undefined {
   const runOptions: ChatRunOptionsRequest = {
-    ...(codexFastModeEnabled && value?.codexServiceTier === "fast"
+    ...(value?.codexServiceTier === "fast"
       ? { codexServiceTier: "fast" as const }
       : {}),
     ...(videoRunOptions === undefined ? {} : { video: videoRunOptions }),

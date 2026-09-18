@@ -7,10 +7,12 @@ import {
   cronCompactChatThreadSnapshotsContract,
   cronCompactUsageEventsContract,
   cronCleanupSandboxesContract,
+  cronCleanupXResourceReadsContract,
   cronConnectorCatalogContract,
   cronConnectorOauthStateCleanupContract,
   cronComputerUseScreenshotCleanupContract,
   cronDrainEmailOutboxContract,
+  cronExecuteMorningBriefsContract,
   cronExecuteWorkflowAutomationsContract,
   cronMonitorChatEventQueueContract,
   cronMaterializeMemorySummariesContract,
@@ -60,6 +62,10 @@ const expectedVercelCrons = [
     schedule: "* * * * *",
   },
   {
+    path: cronCleanupXResourceReadsContract.cleanup.path,
+    schedule: "* * * * *",
+  },
+  {
     path: cronMonitorChatEventQueueContract.monitor.path,
     schedule: "* * * * *",
   },
@@ -77,6 +83,10 @@ const expectedVercelCrons = [
   },
   {
     path: cronExecuteWorkflowAutomationsContract.execute.path,
+    schedule: "* * * * *",
+  },
+  {
+    path: cronExecuteMorningBriefsContract.execute.path,
     schedule: "* * * * *",
   },
   {

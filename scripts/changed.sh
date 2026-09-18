@@ -53,8 +53,9 @@ extract_all_hashes() {
 
 report_hash_failure() {
   local phase=$1 commit=$2 status=$3 reason=$4
+  local command=${5:-'turbo --skip-infer run build --dry=json'}
   echo "Error: $phase hash calculation for $commit: $reason (exit $status)" >&2
-  echo 'Command: npx -y turbo@^2.5.6 run build --dry=json' >&2
+  echo "Command: $command" >&2
   # Never expose dry-run JSON: it may contain resolved environment values.
   # A formatter failure must not replace the original command status.
   node "$SCRIPT_DIR/turbo-hash-diagnostics.mjs" \
@@ -65,7 +66,7 @@ report_hash_failure() {
 calculate_hashes() {
   local phase=$1 commit=$2 status hashes
   echo "Calculating hashes for $phase commit..." >&2
-  if npx -y turbo@^2.5.6 run build --dry=json \
+  if "$TURBO_BIN" --skip-infer run build --dry=json \
     >"$TEMP_DIR/$phase.json" 2>"$TEMP_DIR/$phase.stderr"; then
     :
   else
@@ -91,6 +92,18 @@ echo "Base commit:    $BASE_COMMIT" >&2
 
 # Get task hashes for current commit
 cd "$REPO_ROOT/turbo"
+# Resolve once, then invoke the same binary with the inherited PATH in both
+# worktrees. npx injects cwd-specific PATH entries, which globalEnv hashes.
+# Skip version inference so a worktree-local install cannot change the tool.
+if TURBO_BIN=$(npx -y turbo@^2.5.6 --skip-infer bin 2>"$TEMP_DIR/current.stderr"); then
+  :
+else
+  status=$?
+  printf '%s' "$TURBO_BIN" >"$TEMP_DIR/current.json"
+  report_hash_failure current "$CURRENT_COMMIT" "$status" "Turbo executable resolution failed" \
+    'npx -y turbo@^2.5.6 --skip-infer bin'
+  exit "$status"
+fi
 CURRENT_HASHES=$(calculate_hashes current "$CURRENT_COMMIT")
 
 # Create a temporary worktree for base commit

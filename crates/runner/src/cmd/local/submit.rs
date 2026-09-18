@@ -743,6 +743,13 @@ impl SubmitPlan {
 }
 
 #[cfg(test)]
+pub(super) fn cleanup_completed_for_test(group_dir: &Path, profile: &str, job_id: RunId) {
+    SubmitQueueEntry::for_job(group_dir, profile, job_id)
+        .unwrap()
+        .cleanup_completed();
+}
+
+#[cfg(test)]
 pub(crate) fn abandon_cancelled_submit_for_test(group_dir: &Path, job_id: RunId) {
     SubmitQueueEntry::for_job(group_dir, crate::profile::DEFAULT_PROFILE, job_id)
         .unwrap()

@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import {
   chatEventsContract,
   chatThreadDraftContract,
@@ -22,21 +22,18 @@ import {
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 
 async function selectClaudeSonnet(): Promise<void> {
-  click(await screen.findByRole("combobox"));
-  let option: HTMLElement | undefined;
-  await waitFor(() => {
-    option = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="option"]'),
-    ).find((candidate) => {
-      return candidate.textContent?.includes("Claude Sonnet 4.6");
-    });
-    expect(option).toBeDefined();
+  click(await composerModelTrigger("GPT 5.6 Luna"));
+  const chatModels = await screen.findByRole("listbox", {
+    name: "Chat models",
   });
-  click(option!);
+  click(
+    within(chatModels).getByRole("option", { name: /Claude Sonnet 4\.6/u }),
+  );
 }
 
 async function sendComposerMessage(message: string): Promise<void> {
@@ -111,10 +108,7 @@ async function openUnconfirmedConversation() {
 
 test("A new conversation appears before server confirmation", async () => {
   const { confirmation, requests } = await openUnconfirmedConversation();
-  const defaultModel = await screen.findByRole("combobox", {
-    name: "GPT 5.6 Luna",
-  });
-  expect(defaultModel).toBeVisible();
+  await expect(composerModelTrigger("GPT 5.6 Luna")).resolves.toBeVisible();
   await sendComposerMessage("Start the local conversation");
 
   await waitFor(() => {
@@ -132,19 +126,15 @@ test("A new conversation appears before server confirmation", async () => {
 
 test("The changed model survives the first send before server confirmation", async () => {
   const { confirmation, requests } = await openUnconfirmedConversation();
-  const defaultModel = await screen.findByRole("combobox", {
-    name: "GPT 5.6 Luna",
-  });
-  expect(defaultModel).toBeVisible();
+  await expect(composerModelTrigger("GPT 5.6 Luna")).resolves.toBeVisible();
   await selectClaudeSonnet();
   await sendComposerMessage("Start the local conversation");
   await waitFor(() => {
     expect(requests.model).toBe("claude-sonnet-4-6");
   });
-  const selectedModel = await screen.findByRole("combobox", {
-    name: "Claude Sonnet 4.6",
-  });
-  expect(selectedModel).toBeVisible();
+  await expect(
+    composerModelTrigger("Claude Sonnet 4.6"),
+  ).resolves.toBeVisible();
   expect(requests.draftRequested).toBeFalsy();
   expect(confirmation.settled()).toBeFalsy();
 });

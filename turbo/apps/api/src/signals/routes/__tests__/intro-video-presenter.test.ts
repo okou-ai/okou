@@ -807,6 +807,7 @@ describe("Intro Video HeyGen presenter route", () => {
       await expect(response.json()).resolves.toMatchObject({
         id: expect.any(String),
         filename: expect.stringMatching(/^intro-video-voice-.*\.mp3$/u),
+        privateArtifacts,
         contentType: "audio/mpeg",
         size: AUDIO_BYTES.byteLength,
         url: privateArtifacts
@@ -1099,6 +1100,7 @@ describe("Intro Video HeyGen presenter route", () => {
       expect(statusBody.result).toStrictEqual({
         id: expect.any(String),
         filename: expect.stringMatching(/^intro-video-presenter-.*\.webm$/u),
+        privateArtifacts,
         contentType: "video/webm",
         size: VIDEO_BYTES.byteLength,
         url: privateArtifacts

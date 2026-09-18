@@ -1811,6 +1811,50 @@ mod tests {
     }
 
     #[test]
+    fn failed_turn_preserves_queue_expiry_over_generic_server_variants() {
+        let queue_message = "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
+        for (info, expected) in [
+            (
+                json!("serverOverloaded"),
+                FailureReason::ProviderQueueTimeout,
+            ),
+            (
+                json!("internalServerError"),
+                FailureReason::ProviderQueueTimeout,
+            ),
+            (
+                json!({"responseTooManyFailedAttempts": {"httpStatusCode": 503}}),
+                FailureReason::ProviderQueueTimeout,
+            ),
+            (json!("unauthorized"), FailureReason::InvalidCredentials),
+            (json!("usageLimitExceeded"), FailureReason::UsageLimit),
+            (
+                json!("rateLimitExceeded"),
+                FailureReason::ProviderRateLimited,
+            ),
+            (
+                json!("contextWindowExceeded"),
+                FailureReason::ContextWindowExceeded,
+            ),
+            (json!("cyberPolicy"), FailureReason::SafetyPolicyRefusal),
+        ] {
+            let event = mapped_event(
+                "turn/completed",
+                json!({
+                    "threadId": "thread-1",
+                    "turn": {"id": "turn-1", "status": "failed", "error": {
+                        "message": queue_message, "codexErrorInfo": info
+                    }}
+                }),
+            );
+            let diagnostic =
+                events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                    .expect("failed turn diagnostic");
+            assert_eq!(diagnostic.failure_reason, Some(expected), "{info}");
+        }
+    }
+
+    #[test]
     fn failed_turn_completed_preserves_nested_error_for_diagnostics() {
         let event = mapped_event(
             "turn/completed",
@@ -2570,6 +2614,40 @@ mod tests {
                 failure_reason: Some(FailureReason::UsageLimit),
             })
         );
+    }
+
+    #[test]
+    fn output_token_limit_is_classified_only_after_native_terminal_error() {
+        let message = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
+        for will_retry in [true, false] {
+            let event = mapped_event(
+                "error",
+                json!({
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "willRetry": will_retry,
+                    "error": {
+                        "message": message,
+                        "codexErrorInfo": "other",
+                        "additionalDetails": null
+                    }
+                }),
+            );
+            let diagnostic =
+                events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""));
+            if will_retry {
+                assert_eq!(event["type"], "warning");
+                assert_eq!(diagnostic, None);
+            } else {
+                assert_eq!(event["type"], "error");
+                let diagnostic = diagnostic.expect("terminal error diagnostic");
+                assert_eq!(diagnostic.message, message);
+                assert_eq!(
+                    diagnostic.failure_reason,
+                    Some(FailureReason::OutputTokenLimit)
+                );
+            }
+        }
     }
 
     #[test]

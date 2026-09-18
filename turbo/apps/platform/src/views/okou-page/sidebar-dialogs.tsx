@@ -23,7 +23,6 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import type { ChatSearchResult } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
@@ -607,7 +606,6 @@ function SpotlightMessageCommandItem({
 
 const SPOTLIGHT_RESOURCE_ICON_CLASS =
   "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground";
-const SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX = 64;
 
 function SpotlightAgentCommandItem({
   agent,
@@ -754,10 +752,7 @@ function SpotlightArtifactThumbnail({
   }
   return (
     <ArtifactThumbnailImage
-      src={r2ImageTransformUrl(thumbnailUrl, {
-        width: SPOTLIGHT_ARTIFACT_THUMBNAIL_WIDTH_PX,
-        fit: "scale-down",
-      })}
+      src={thumbnailUrl}
       load={artifact.thumbnailLoad}
       loading="eager"
       className="h-8 w-8 shrink-0 rounded-lg bg-gray-50 object-cover"

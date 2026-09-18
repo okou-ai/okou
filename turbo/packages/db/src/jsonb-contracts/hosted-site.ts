@@ -28,6 +28,8 @@ export interface HostedSiteSnapshotDependencies {
 
 export interface HostedSiteManifest {
   readonly version: 1;
+  /** Checksum-bound uploads; #35240 owns sealing unmarked legacy deployments. */
+  readonly immutableContent?: true;
   readonly access?: "owner-private-v1";
   readonly publicBrand?: PublicBrand;
   readonly deploymentId: string;

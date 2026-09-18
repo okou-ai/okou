@@ -14,7 +14,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::{ids::RunId, ssh};
+use crate::{ids::RunId, ssh, vnc};
 
 const RUN_REQUEST_CAPACITY: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
@@ -22,6 +22,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 #[derive(Clone)]
 pub(crate) struct Runtime {
     pub(crate) ssh: Option<Arc<ssh::SshRuntime>>,
+    pub(crate) vnc: Option<Arc<vnc::VncRuntime>>,
 }
 
 /// The stream and permit move together into a consumer. Host work may retain
@@ -60,13 +61,26 @@ impl Runtime {
             .ssh
             .as_ref()
             .map(|runtime| runtime.for_run(run, &cancel));
+        let vnc = self
+            .vnc
+            .as_ref()
+            .map(|runtime| runtime.for_run(run, &cancel));
         let task_cancel = cancel.clone();
         let task_ssh = ssh.clone();
-        let task = tokio::spawn(serve(acceptor, sandbox, run, task_cancel, task_ssh));
+        let task_vnc = vnc.clone();
+        let task = tokio::spawn(serve(
+            acceptor,
+            sandbox,
+            run,
+            task_cancel,
+            task_ssh,
+            task_vnc,
+        ));
         Run {
             cancel,
             task: Some(task),
             ssh,
+            vnc,
         }
     }
 }
@@ -77,6 +91,7 @@ async fn serve(
     run: RunId,
     cancel: CancellationToken,
     ssh: Option<Arc<ssh::Run>>,
+    vnc: Option<Arc<vnc::Run>>,
 ) {
     let permits = Arc::new(Semaphore::new(RUN_REQUEST_CAPACITY));
     let mut prune = tokio::time::interval(Duration::from_secs(30));
@@ -120,15 +135,22 @@ async fn serve(
             run,
             scope,
             ssh.clone(),
+            vnc.clone(),
         ));
     }
     cancel.cancel();
     if let Some(ssh) = &ssh {
         ssh.close();
     }
+    if let Some(vnc) = &vnc {
+        vnc.close();
+    }
     while tasks.join_next().await.is_some() {}
     if let Some(ssh) = &ssh {
         ssh.shutdown().await;
+    }
+    if let Some(vnc) = &vnc {
+        vnc.shutdown().await;
     }
 }
 
@@ -138,6 +160,7 @@ async fn dispatch(
     run: RunId,
     scope: Scope,
     ssh: Option<Arc<ssh::Run>>,
+    vnc: Option<Arc<vnc::Run>>,
 ) {
     let _cancel_on_drop = scope.cancelled.clone().drop_guard();
     let started = Instant::now();
@@ -157,6 +180,30 @@ async fn dispatch(
             // Only request parsing uses the setup deadline here. The consumer
             // owns execution budgets, including the longer file-transfer bound.
             ssh.dispatch(Request {
+                input,
+                lease,
+                run,
+                started,
+                deadline: scope.deadline,
+                cancelled: scope.cancelled,
+                sandbox_cancelled: scope.sandbox_cancelled,
+                request,
+            })
+            .await;
+        } else {
+            scope.error(input, ErrorCode::Unavailable).await;
+        }
+    } else if matches!(
+        request.method.as_str(),
+        "vnc.session.start"
+            | "vnc.session.list"
+            | "vnc.session.status"
+            | "vnc.session.close"
+            | "vnc.capture"
+            | "vnc.input"
+    ) {
+        if let Some(vnc) = vnc {
+            vnc.dispatch(Request {
                 input,
                 lease,
                 run,
@@ -214,6 +261,7 @@ pub(crate) struct Run {
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
     ssh: Option<Arc<ssh::Run>>,
+    vnc: Option<Arc<vnc::Run>>,
 }
 
 impl Run {
@@ -221,6 +269,9 @@ impl Run {
         self.cancel.cancel();
         if let Some(ssh) = &self.ssh {
             ssh.close();
+        }
+        if let Some(vnc) = &self.vnc {
+            vnc.close();
         }
     }
 

@@ -40,6 +40,7 @@ import {
   RUN_PATH,
   sendText,
 } from "./chat-run-test-fixtures.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const RUN_A = "a0000000-0000-4000-a000-000000000301";
@@ -156,11 +157,17 @@ async function selectComposerModel(
   currentModelName: string,
   nextModelName: string,
 ): Promise<void> {
-  const picker = await screen.findByRole("combobox", {
-    name: currentModelName,
+  await user.click(await composerModelTrigger(currentModelName));
+  const chatModels = await screen.findByRole("listbox", {
+    name: "Chat models",
   });
-  await user.click(picker);
-  await user.click(await screen.findByRole("option", { name: nextModelName }));
+  await user.click(
+    within(chatModels).getByRole("option", {
+      name: (name) => {
+        return name.includes(nextModelName);
+      },
+    }),
+  );
 }
 
 describe("a model or speed change during an active run", () => {
@@ -189,7 +196,6 @@ describe("a model or speed change during an active run", () => {
     await setupPage({
       context,
       path: RUN_PATH,
-      featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
     });
 
     await readyChat();
@@ -239,7 +245,6 @@ test("Keep a next-run model choice through active-run steering", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await readyChat();
@@ -310,7 +315,6 @@ test("Preserve the current execution mode for an active-run follow-up", async ()
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await readyChat();
@@ -346,7 +350,7 @@ test("Preserve which model a message was sent with", async () => {
 
   await readyChat();
   await expect(
-    screen.findByRole("combobox", { name: "Claude Sonnet 4.6" }),
+    composerModelTrigger("Claude Sonnet 4.6"),
   ).resolves.toHaveTextContent("Claude Sonnet 4.6");
   await sendText("Preserve this model attribution");
   await expect(
@@ -443,7 +447,6 @@ test("Mark model and speed transitions between runs", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await readyChat();
@@ -877,6 +880,63 @@ test("Recover from a personal model account limit", async () => {
   await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
+// The transcript's scroll result when this card resolves is a layout contract:
+// jsdom reports the scroller as zero-height, so `isAtBottom` is trivially true
+// here. `e2e/playwright/regressions/chat-card-scroll.ts` owns that result for
+// the recovery card in Chromium and WebKit. This case covers what the page
+// shows: the generic failure copy while the run detail is held, then the
+// resolved recovery copy in its place.
+test("Replace the failure card copy when recovery resolves", async () => {
+  configureModelPolicies(["gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-luna",
+    chatEvents: failedRunEvents(
+      "Selected model is at capacity. Please try a different model.",
+      "gpt-5.6-luna",
+    ),
+  });
+  const detailRequested = context.mocks.deferred<void>();
+  const releaseDetail = context.mocks.deferred<void>();
+  context.mocks.api(runsByIdContract.getById, async ({ params, respond }) => {
+    detailRequested.resolve();
+    await releaseDetail.promise;
+    return respond(200, {
+      runId: params.id,
+      status: "failed",
+      prompt: "Continue the analysis",
+      appendSystemPrompt: null,
+      source: {
+        providerType: null,
+        runtimeProviderType: null,
+        model: null,
+        credentialScope: null,
+        account: { status: "unknown" },
+      },
+      createdAt: "2026-08-01T10:00:02.000Z",
+    });
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await detailRequested.promise;
+  await expect(
+    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
+      "This run couldn't finish",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
+
+  releaseDetail.resolve();
+
+  await expect(
+    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
+      "This model is busy right now",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("This run couldn't finish")).toBeNull();
+});
+
 test("Recover when a model is at capacity", async () => {
   const user = userEvent.setup({ delay: null });
   configureModelPolicies(["gpt-5.6-luna", "deepseek-v4-flash", "gpt-5.6-sol"]);
@@ -900,15 +960,15 @@ test("Recover when a model is at capacity", async () => {
   const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
+  // Fast-capable models always carry their own Fast row, so each plain row is
+  // addressed by its exact label rather than a shared prefix.
   await expect(
-    screen.findByRole("option", { name: /^GPT 5\.6 Luna/iu }),
+    screen.findByRole("option", { name: "GPT 5.6 Luna" }),
   ).resolves.toBeVisible();
   expect(
     screen.getByRole("option", { name: /^DeepSeek V4 Flash/iu }),
   ).toBeVisible();
-  const paidOnlyOption = screen.getByRole("option", {
-    name: /^GPT 5\.6 Sol/iu,
-  });
+  const paidOnlyOption = screen.getByRole("option", { name: "GPT 5.6 Sol" });
   expect(within(paidOnlyOption).getByText("Pro")).toBeVisible();
   await user.keyboard("{Escape}");
 
@@ -1448,9 +1508,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   expect(
     screen.queryByRole("option", { name: /^GPT 5\.6 Sol/iu }),
   ).not.toBeInTheDocument();
-  await user.click(
-    await screen.findByRole("option", { name: /^GPT 5\.6 Luna/iu }),
-  );
+  await user.click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
 
   expect(picker).toHaveTextContent("GPT 5.6 Luna");
   expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);

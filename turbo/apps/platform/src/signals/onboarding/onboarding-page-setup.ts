@@ -1,4 +1,3 @@
-import { bestEffort } from "../utils.ts";
 import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
@@ -45,8 +44,7 @@ import {
   capturePaidOnboardingStepViewed$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
-import { authenticatedIdentity$ } from "../auth.ts";
-import { enterFinishOnboarding$ } from "./finish-onboarding.ts";
+import { sendEvent$ } from "../marketing/events.ts";
 
 interface OnboardingPageConfig {
   readonly step: OnboardingRouteStep;
@@ -148,9 +146,7 @@ function createOnboardingPageSetup(
       return;
     }
 
-    const identity = await get(authenticatedIdentity$);
-    signal.throwIfAborted();
-    set(enterFinishOnboarding$, identity);
+    set(sendEvent$, "onboarding-start");
     set(hydrateOnboardingRoute$, config.step, searchParams);
     const draft = get(onboardingDraft$);
     if (config.fallbackPath && !hasRequiredSelection(config.step, draft)) {
@@ -165,10 +161,7 @@ function createOnboardingPageSetup(
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, title);
     await set(hideAppSkeleton$, signal);
-    await bestEffort(
-      set(capturePaidOnboardingStepViewed$, config.step, signal),
-      signal,
-    );
+    set(capturePaidOnboardingStepViewed$, config.step);
   });
 }
 

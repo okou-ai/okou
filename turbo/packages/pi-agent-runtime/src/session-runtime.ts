@@ -11,6 +11,7 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
   SettingsManager,
+  type AgentSessionServices,
   type CreateAgentSessionFromServicesOptions,
   type ExtensionAPI,
   type ExtensionFactory,
@@ -33,7 +34,10 @@ import {
   buildOkouHarnessSystemPrompt,
   type OkouHarnessToolPrompt,
 } from "./okou-harness-prompt";
-import { piPreheatedResourceLoaderOptions } from "./resources";
+import {
+  createPiPreheatedResourceLoader,
+  piPreheatedResourceLoaderOptions,
+} from "./resources";
 import {
   createPiModelRuntime,
   initializePiSessionResourceRegistry,
@@ -158,22 +162,47 @@ function recordConfiguredThinkingLevel(
   }
 }
 
+interface PiAgentSessionRuntimeArgs {
+  readonly cwd: string;
+  readonly agentDir: string;
+  readonly sessionManager: SessionManager;
+  readonly model: PiAgentModelConfig;
+  readonly appendSystemPrompt: string | null;
+  readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
+  readonly memoryRecall?: PiMemoryRecallSelection;
+  readonly memoryRoot?: string;
+  readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
+  readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
+  readonly onPreparationTiming?: PiPreparationObserver;
+  readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
+  readonly enableLangfuseObservability?: boolean;
+}
+
+type PiApiFirstAgentSessionRuntimeArgs = Omit<
+  PiAgentSessionRuntimeArgs,
+  "enableLangfuseObservability" | "memoryRecall" | "memoryRoot"
+> & {
+  readonly resourceSnapshot: PiPreheatedResourceSnapshot;
+};
+
 export async function createPiAgentSessionForRuntime(
-  args: {
-    readonly cwd: string;
-    readonly agentDir: string;
-    readonly sessionManager: SessionManager;
-    readonly model: PiAgentModelConfig;
-    readonly appendSystemPrompt: string | null;
-    readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
-    readonly memoryRecall?: PiMemoryRecallSelection;
-    readonly memoryRoot?: string;
-    readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
-    readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
-    readonly onPreparationTiming?: PiPreparationObserver;
-    readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
-    readonly enableLangfuseObservability?: boolean;
-  },
+  args: PiAgentSessionRuntimeArgs,
+  signal?: AbortSignal,
+) {
+  return await createPiAgentSession(args, "generic", signal);
+}
+
+/** API-only entry: use frozen inputs without generic package discovery. */
+export async function createPiApiFirstAgentSessionForRuntime(
+  args: PiApiFirstAgentSessionRuntimeArgs,
+  signal?: AbortSignal,
+) {
+  return await createPiAgentSession(args, "api-first", signal);
+}
+
+async function createPiAgentSession(
+  args: PiAgentSessionRuntimeArgs,
+  mode: "api-first" | "generic",
   signal?: AbortSignal,
 ) {
   const finishResources = startPiPreparationObservation(
@@ -229,6 +258,36 @@ export async function createPiAgentSessionForRuntime(
     args.onPreparationTiming,
     "session_services",
     () => {
+      if (mode === "api-first") {
+        if (!resourceSnapshot) {
+          throw new Error("Pi API preparation requires a resource snapshot");
+        }
+        const settingsManager = SettingsManager.inMemory(
+          {},
+          { projectTrusted: true },
+        );
+        const resourceLoader = measurePiPreparationSync(
+          args.onPreparationTiming,
+          "resource_loader",
+          () => {
+            return createPiPreheatedResourceLoader({
+              snapshot: resourceSnapshot,
+              appendSystemPrompt,
+              systemPrompt,
+            });
+          },
+          signal,
+        );
+        const apiServices: AgentSessionServices = {
+          cwd: args.cwd,
+          agentDir: args.agentDir,
+          modelRuntime,
+          settingsManager,
+          resourceLoader,
+          diagnostics: [],
+        };
+        return apiServices;
+      }
       return createAgentSessionServices({
         cwd: args.cwd,
         agentDir: args.agentDir,
@@ -299,7 +358,7 @@ export async function createPiAgentSessionForRuntime(
 }
 
 function prepareModelAndPrompt(
-  args: Parameters<typeof createPiAgentSessionForRuntime>[0],
+  args: PiAgentSessionRuntimeArgs,
   memoryRecall: Awaited<ReturnType<typeof loadPiSandboxMemoryRecall>>,
 ) {
   const memorySelection = args.resourceSnapshot

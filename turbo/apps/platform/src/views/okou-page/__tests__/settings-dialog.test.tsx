@@ -178,7 +178,7 @@ test("Offer only the workspace's supported languages", async () => {
   expect(screen.queryByRole("option", { name: "Italiano" })).toBeNull();
 });
 
-test("Keep a saved single-language preference after closing and reopening Settings", async () => {
+async function saveSingleLanguagePreference() {
   await openSupportedLanguagePicker();
   click(screen.getByRole("option", { name: "English" }));
 
@@ -188,7 +188,10 @@ test("Keep a saved single-language preference after closing and reopening Settin
       screen.queryByRole("combobox", { name: "Language" }),
     ).not.toBeInTheDocument();
   });
+}
 
+test("Closing Settings preserves the saved language throughout its exit animation", async () => {
+  await saveSingleLanguagePreference();
   const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
   const finishCloseTransition = holdElementAnimations(settingsDialog);
   click(screen.getByLabelText("Close"));
@@ -197,6 +200,16 @@ test("Keep a saved single-language preference after closing and reopening Settin
   ).toBeFalsy();
   expect(settingsDialog).toBeVisible();
   finishCloseTransition();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Reopening Settings retains the saved single-language preference", async () => {
+  await saveSingleLanguagePreference();
+  click(screen.getByLabelText("Close"));
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", { name: "Settings" }),
@@ -1013,6 +1026,7 @@ test("Inspect connector catalog diagnostics", async () => {
 test("Summarize a connector catalog that has never synced", async () => {
   context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
     return respond(200, {
+      schemaVersion: 4,
       state: "never-synced",
       active: null,
       lastAttempt: null,
@@ -1051,6 +1065,7 @@ test("Refresh connector diagnostics on each Debug entry", async () => {
   context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
     const requestedAt = "2026-08-19T04:00:00.000Z";
     return respond(200, {
+      schemaVersion: 4,
       state: "current",
       active: {
         catalogVersion,
@@ -1133,6 +1148,7 @@ test("Refresh connector diagnostics on each Debug entry", async () => {
 test("Distinguish an uncached connector-catalog rejection", async () => {
   context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
     return respond(200, {
+      schemaVersion: 4,
       state: "stale",
       active: {
         catalogVersion: "2026-07-25.1",

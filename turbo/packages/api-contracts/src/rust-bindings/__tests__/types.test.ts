@@ -29,6 +29,20 @@ import {
 } from "../../contracts/webhooks";
 
 const expectedBindings = [
+  ...["Resolve", "Check"].flatMap((name) => {
+    return [
+      {
+        rustModulePath: ["runners", "vnc"],
+        rustTypeName: `${name}Request`,
+        direction: "request",
+      },
+      {
+        rustModulePath: ["runners", "vnc"],
+        rustTypeName: `${name}Response`,
+        direction: "response",
+      },
+    ];
+  }),
   {
     rustModulePath: ["runners", "ssh"],
     rustTypeName: "ObservationRequest",
@@ -291,12 +305,13 @@ function compareBindingName(
 }
 
 describe("Rust type bindings", () => {
-  it("renders private SSH handoffs without aggregate debug, clone or tagged value buffering", () => {
+  it("renders private SSH and VNC handoffs without aggregate debug, clone or tagged value buffering", () => {
     const source = renderRustTypes(rustTypeBindings);
     expect(source).toContain("pub enum ResolveResponse {");
     expect(source).toContain("private_key: crate::SecretText<65536>");
     expect(source).toContain("passphrase: Option<crate::SecretText<4096>>");
     expect(source).toContain("password: crate::SecretText<4096>");
+    expect(source).toContain("password: crate::SecretText<8>");
     expect(source).toContain("ResolvedPassword {");
     expect(
       source.match(/pub struct ResolveResponseResolvedLearnedHostKey \{/gu),

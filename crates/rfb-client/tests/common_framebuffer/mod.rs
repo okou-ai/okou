@@ -1,11 +1,11 @@
 use std::{future::Future, io, sync::Arc, time::Duration};
 
 use rfb_client::{
-    Authenticated, Error, FramebufferConnection, TrustRoots, VncPassword, authenticate,
+    Authenticated, Error, FramebufferConnection, SharingMode, TrustRoots, VncPassword, authenticate,
 };
 use rustls::{ServerConfig, pki_types::PrivatePkcs8KeyDer};
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     time::{Instant, timeout},
 };
@@ -30,6 +30,13 @@ pub async fn bounded<T>(future: impl Future<Output = T>) -> T {
 }
 
 pub async fn authenticated() -> (Authenticated<TcpStream>, Peer) {
+    authenticated_with(|stream| stream).await
+}
+
+pub async fn authenticated_with<S>(wrap: impl FnOnce(TcpStream) -> S) -> (Authenticated<S>, Peer)
+where
+    S: AsyncRead + AsyncWrite + Unpin + 'static,
+{
     let key = rcgen::KeyPair::generate().unwrap();
     let cert = rcgen::CertificateParams::new(vec!["vnc.example.test".to_owned()])
         .unwrap()
@@ -59,6 +66,7 @@ pub async fn authenticated() -> (Authenticated<TcpStream>, Peer) {
     let mut server = server.unwrap().0;
     client.set_nodelay(true).unwrap();
     server.set_nodelay(true).unwrap();
+    let client = wrap(client);
     let caller = authenticate(
         client,
         "vnc.example.test",
@@ -113,8 +121,12 @@ pub fn server_init(width: u16, height: u16, pixel_format: [u8; 16], name: &[u8])
     bytes
 }
 
-pub async fn negotiate_framebuffer(peer: &mut Peer, init: &[u8]) {
-    assert_eq!(peer.read_u8().await.unwrap(), 1, "shared ClientInit");
+pub async fn negotiate_framebuffer(peer: &mut Peer, init: &[u8], shared_flag: u8) {
+    assert_eq!(
+        peer.read_u8().await.unwrap(),
+        shared_flag,
+        "ClientInit sharing request"
+    );
     peer.write_all(init).await.unwrap();
     peer.flush().await.unwrap();
     let mut format = [0; 20];
@@ -143,8 +155,8 @@ pub async fn initialized_with_format(width: u16, height: u16, format: [u8; 16]) 
     let init = server_init(width, height, format, b"fixture desktop");
     let (client, ()) = bounded(async {
         tokio::join!(
-            client.initialize(deadline()),
-            negotiate_framebuffer(&mut peer, &init)
+            client.initialize(SharingMode::Shared, deadline()),
+            negotiate_framebuffer(&mut peer, &init, 1)
         )
     })
     .await;
@@ -259,7 +271,7 @@ pub async fn disconnected(peer: &mut Peer) {
 
 pub async fn rejected_init(init: &[u8]) -> Error {
     let (client, mut peer) = authenticated().await;
-    let caller = client.initialize(deadline());
+    let caller = client.initialize(SharingMode::Shared, deadline());
     let server = async {
         assert_eq!(peer.read_u8().await.unwrap(), 1);
         peer.write_all(init).await.unwrap();

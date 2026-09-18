@@ -2,8 +2,13 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+  CHAT_RUN_USAGE_LIMIT_MESSAGE,
+  CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
   PI_DEFERRED_SANDBOX_HEADER,
@@ -24,6 +29,7 @@ import { createDeferredPromise, settle } from "../../utils";
 import { runnersRoutes } from "../runners";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
@@ -39,6 +45,7 @@ import {
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
+import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
@@ -49,6 +56,7 @@ const {
   entitledChatActor,
   configureBuiltInPiModel,
   configureUserOwnedGptPiModel,
+  upsertOrgModelProvider,
   sendChatRun,
   waitForRunStatus,
   mockPiCheckpointObjectStore,
@@ -165,6 +173,7 @@ async function seedProducerRecoveryRun(
   kind: "ready" | "publishing",
   options?: {
     readonly omitBillingCapture?: boolean;
+    readonly missingModelKey?: boolean;
     readonly deadlineAt?: Date;
   },
 ): Promise<string> {
@@ -173,6 +182,7 @@ async function seedProducerRecoveryRun(
     source_run_id: sourceRunId,
     kind,
     ...(options?.omitBillingCapture ? { omit_billing_capture: true } : {}),
+    ...(options?.missingModelKey ? { missing_model_key: true } : {}),
     ...(options?.deadlineAt
       ? { deadline_at: options.deadlineAt.toISOString() }
       : {}),
@@ -188,17 +198,12 @@ async function expirePiInference(runId: string, deadlineAt = new Date(0)) {
   });
 }
 
-async function deleteCapturedPiModelKey(runId: string) {
-  await requestStateAction({
-    action: "delete-pi-inference-model-key",
-    run_id: runId,
-  });
-}
-
 async function withPiTestLock<T>(
-  kind: "org-sandbox-capacity" | "run-output-projection",
+  kind: "org-sandbox-capacity" | "agent-run-row",
   key: string,
-  operation: () => Promise<T>,
+  operation: (lock: {
+    readonly waitForBlocked: (minimum?: number) => Promise<number>;
+  }) => Promise<T>,
 ): Promise<T> {
   const lockId = randomUUID();
   const holding = requestStateAction({
@@ -207,16 +212,33 @@ async function withPiTestLock<T>(
     lock_kind: kind,
     key,
   });
+  let holderPid: number | undefined;
   await expect
     .poll(async () => {
-      const state = await requestStateAction({
-        action: "get-pi-inference-test-lock",
-        lock_id: lockId,
-      });
-      return z.object({ held: z.boolean() }).parse(state).held;
+      const state = z
+        .object({ held: z.boolean(), pid: z.number().nullable() })
+        .parse(
+          await requestStateAction({
+            action: "get-pi-inference-test-lock",
+            lock_id: lockId,
+          }),
+        );
+      holderPid = state.pid ?? undefined;
+      return state.held;
     })
     .toBe(true);
-  const result = await settle(operation(), context.signal);
+  if (holderPid === undefined) {
+    throw new Error("Expected Pi test lock backend pid");
+  }
+  const blockerPid = holderPid;
+  const result = await settle(
+    operation({
+      waitForBlocked: async (minimum) => {
+        return await waitForDeferredBlocker(blockerPid, minimum);
+      },
+    }),
+    context.signal,
+  );
   await requestStateAction({
     action: "release-pi-inference-test-lock",
     lock_id: lockId,
@@ -324,6 +346,24 @@ describe("durable Pi API producer", () => {
         },
         {
           provider: "openai-api-key",
+          status: 400,
+          code: "model_not_found",
+          reason: "unsupported_model",
+        },
+        {
+          provider: "aws-bedrock",
+          status: 429,
+          code: "ThrottlingException",
+          reason: "provider_rate_limited",
+        },
+        {
+          provider: "aws-bedrock",
+          status: 503,
+          code: "ServiceUnavailableException",
+          reason: "provider_server_error",
+        },
+        {
+          provider: "openai-api-key",
           status: 429,
           code: "rate_limit_exceeded",
           reason: "provider_rate_limited",
@@ -377,10 +417,35 @@ describe("durable Pi API producer", () => {
       configureNativeCliArtifact();
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const selectedModel =
-        scenario.provider === "built-in" ? SELECTED_MODEL : "gpt-5.6-terra";
+        scenario.provider === "built-in"
+          ? SELECTED_MODEL
+          : scenario.provider === "aws-bedrock"
+            ? "claude-sonnet-4-6"
+            : "gpt-5.6-terra";
       let providerUrl = PROVIDER_URL;
       if (scenario.provider === "built-in") {
         await configureBuiltInPiModel(actor, selectedModel);
+      } else if (scenario.provider === "aws-bedrock") {
+        const { providerId } = await upsertOrgModelProvider(actor, {
+          type: "aws-bedrock",
+          authMethod: "api-key",
+          selectedModel:
+            "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/production",
+          secrets: {
+            AWS_BEARER_TOKEN_BEDROCK: "selected-bedrock-bearer",
+            AWS_REGION: "us-east-1",
+          },
+        });
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: selectedModel,
+            isDefault: true,
+            defaultProviderType: "aws-bedrock",
+            credentialScope: "org",
+            modelProviderId: providerId,
+          },
+        ]);
+        providerUrl = "https://bedrock-runtime.us-east-1.amazonaws.com/*";
       } else {
         const route = USER_OWNED_GPT_FAST_BDD_ROUTES.find((candidate) => {
           return (
@@ -416,6 +481,15 @@ describe("durable Pi API producer", () => {
               )}\n\n`,
             );
           }
+          if (scenario.provider === "aws-bedrock") {
+            return HttpResponse.json(
+              { __type: scenario.code, message: "Provider rejected request" },
+              {
+                status: scenario.status,
+                headers: { "x-amzn-errortype": scenario.code },
+              },
+            );
+          }
           return HttpResponse.json(
             {
               error: {
@@ -438,7 +512,8 @@ describe("durable Pi API producer", () => {
               ? "/native-command"
               : "preserve the provider failure without replaying this turn",
           model: selectedModel,
-          ...(scenario.provider === "built-in"
+          ...(scenario.provider === "built-in" ||
+          scenario.provider === "aws-bedrock"
             ? {}
             : { runOptions: { codexServiceTier: "fast" as const } }),
         },
@@ -489,6 +564,12 @@ describe("durable Pi API producer", () => {
         expect(failureEvent?.error).toBe(
           CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
         );
+      }
+      if (scenario.reason === "usage_limit") {
+        expect(failureEvent?.error).toBe(CHAT_RUN_USAGE_LIMIT_MESSAGE);
+      }
+      if (scenario.reason === "unsupported_model") {
+        expect(failureEvent?.error).toBe(CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE);
       }
       await expectNoDeferredPiRun(run.runId, runnerGroup);
       expect(calls).toBe(scenario.execution === "sandbox" ? 0 : 1);
@@ -770,22 +851,29 @@ describe("durable Pi API producer", () => {
     );
     await providerEntered.promise;
 
-    await withPiTestLock("run-output-projection", run.runId, async () => {
-      releaseProvider.resolve(undefined);
-      await expect
-        .poll(async () => {
-          await billing.processOrgUsageEvents(actor, usagePricingResolution);
-          return (await billing.readUsageRecord(actor)).body.pagination.total;
-        })
-        .toBeGreaterThan(0);
-      await api.requestCancelRun(
-        actor,
-        run.runId,
-        [200],
-        usagePricingResolution,
-      );
-      await waitForRunStatus(actor, run.runId, "cancelled", 10_000);
-    });
+    const queued = await withPiTestLock(
+      "agent-run-row",
+      run.runId,
+      async (lock) => {
+        const cancellation = api.requestCancelRun(
+          actor,
+          run.runId,
+          [200],
+          usagePricingResolution,
+        );
+        await lock.waitForBlocked();
+        releaseProvider.resolve(undefined);
+        return { cancellation };
+      },
+    );
+    await queued.cancellation;
+    await waitForRunStatus(actor, run.runId, "cancelled", 10_000);
+    await expect
+      .poll(async () => {
+        await billing.processOrgUsageEvents(actor, usagePricingResolution);
+        return (await billing.readUsageRecord(actor)).body.pagination.total;
+      })
+      .toBeGreaterThan(0);
     await flushWaitUntilForTest();
 
     expect(calls).toBe(1);
@@ -805,6 +893,10 @@ describe("durable Pi API producer", () => {
     await billing.processOrgUsageEvents(actor, usagePricingResolution);
     const usage = await billing.readUsageRecord(actor);
     expect(usage.body.pagination.total).toBeGreaterThan(0);
+    // Cancellation deliberately keeps the technical reservation until its
+    // bounded grace expires. Move that clock past the deadline so this test's
+    // completed ownership proof cannot consume the next test's global slot.
+    await expirePiInference(run.runId);
   }, 90_000);
 
   it("rejects fleet-wide org overload before a second provider attempt", async () => {
@@ -1189,11 +1281,14 @@ describe("durable Pi API producer", () => {
     );
   }, 90_000);
 
-  it("rejects a recovered ready owner after its captured model source disappears", async () => {
+  it("rejects a recovered ready owner with a missing model source without disrupting another actor", async () => {
     configureNativeCliArtifact();
     const { actor, agentId } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const other = await entitledChatActor();
+    await enableDurablePi(other.actor);
+    await configureBuiltInPiModel(other.actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
     mockPiResourceArchiveDownloads();
@@ -1222,8 +1317,26 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, source.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-    const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready");
-    await deleteCapturedPiModelKey(recoveryRunId);
+    expect(calls).toBe(1);
+
+    // Platform-managed key removal has no product API. Capture an absent key
+    // only in the synthetic recovery run while another actor owns the live key.
+    const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready", {
+      missingModelKey: true,
+    });
+
+    const unaffected = await sendChatRun(
+      other.actor,
+      {
+        agentId: other.agentId,
+        prompt: "keep the shared model source available",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(other.actor, unaffected.runId, "completed", 10_000);
+    await flushWaitUntilForTest();
+    expect(calls).toBe(2);
 
     await expect(
       cleanupRun(recoveryRunId, orgId, usagePricingResolution),
@@ -1233,9 +1346,10 @@ describe("durable Pi API producer", () => {
     await waitForRunStatus(actor, recoveryRunId, "failed", 10_000);
     await flushWaitUntilForTest();
 
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
     await expect(api.readRun(actor, recoveryRunId)).resolves.toMatchObject({
       status: "failed",
+      error: expect.stringContaining("[PI_API_MODEL_CREDENTIAL_INVALID]"),
     });
   }, 90_000);
 
@@ -1590,6 +1704,11 @@ describe("durable Pi API producer", () => {
     configureNativeCliArtifact();
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PaidToolControls]: false },
+    );
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -1629,6 +1748,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     expect(calls).toBe(1);
 
+    // The API first turn is already prepared. The Sandbox should capture the
+    // owner's latest preference when it is materialized by the runner claim.
+    await setPaidToolDisabled(context, actor, "web-search", true);
     await expect(
       cleanupRun(run.runId, orgId, usagePricingResolution),
     ).resolves.toMatchObject({
@@ -1637,6 +1759,9 @@ describe("durable Pi API producer", () => {
     const { claim, runnerId } = await claimDeferredPiRun(
       run.runId,
       runnerGroup,
+    );
+    expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+      '["web-search"]',
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,

@@ -4,7 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { resolveOwnedArtifactReference } from "../api/domains/artifact-references";
+import { readHostedArtifactFiles } from "../api/domains/artifact-references";
 import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
 import { getPlatformOrigin } from "../platform-url";
 import { getBaseUrl } from "../api/core/client-factory";
@@ -31,23 +31,13 @@ interface CloneHostedSiteResult {
 
 interface CloneHostedSiteOptions {
   readonly site: string;
-  readonly destination: string;
+  readonly destination?: string;
   readonly version?: number;
   readonly onProgress?: (progress: CloneHostedSiteProgress) => void;
 }
 
-export async function publicSlugFromSite(value: string): Promise<string> {
+async function publicSlugFromSite(value: string): Promise<string> {
   const trimmed = value.trim();
-  const reference = parseArtifactReference(trimmed, await getPlatformOrigin());
-  if (reference) {
-    const id =
-      reference.id ??
-      (await resolveOwnedArtifactReference(
-        `${reference.hash}${reference.extension}`,
-        "html",
-      ));
-    return `dpl-${id}`;
-  }
   if (URL.canParse(trimmed)) {
     const deploymentId = privateHostedDeploymentId(trimmed, await getBaseUrl());
     if (deploymentId) {
@@ -60,6 +50,32 @@ export async function publicSlugFromSite(value: string): Promise<string> {
     return trimmed.split(".")[0] ?? trimmed;
   }
   return trimmed;
+}
+
+async function siteFilesFromSource(options: CloneHostedSiteOptions) {
+  const source = options.site.trim();
+  const reference = parseArtifactReference(source, await getPlatformOrigin());
+  if (!reference) {
+    return getHostedSiteFiles(
+      await publicSlugFromSite(source),
+      options.version,
+      URL.canParse(source)
+        ? new URL(source).hostname
+        : source.includes(".")
+          ? source
+          : undefined,
+    );
+  }
+  const site = await readHostedArtifactFiles(
+    `${reference.hash}${reference.extension}`,
+  );
+  if (
+    options.version !== undefined &&
+    site.deploymentVersion !== options.version
+  ) {
+    throw new Error(`Hosted deployment version not found: ${options.version}`);
+  }
+  return site;
 }
 
 function isInsideDirectory(parent: string, target: string): boolean {
@@ -134,28 +150,44 @@ async function downloadHostedFile(
   await writeFile(outputPath, bytes);
 }
 
-export async function cloneHostedSite(
-  options: CloneHostedSiteOptions,
-): Promise<CloneHostedSiteResult> {
-  const publicSlug = await publicSlugFromSite(options.site);
-  const dirStatus = checkDirectoryStatus(options.destination);
+function requireEmptyDirectory(destination: string): void {
+  const dirStatus = checkDirectoryStatus(destination);
   if (dirStatus.exists && !dirStatus.empty) {
-    throw new Error(`Directory "${options.destination}" is not empty`);
+    throw new Error(`Directory "${destination}" is not empty`);
   }
+}
 
-  options.onProgress?.({ phase: "checking" });
-  const hostedSite = await getHostedSiteFiles(publicSlug, options.version);
-
-  options.onProgress?.({
+export async function downloadHostedSiteFiles(
+  hostedSite: HostedSiteFilesResponse,
+  destination: string,
+  onProgress?: (progress: CloneHostedSiteProgress) => void,
+): Promise<void> {
+  requireEmptyDirectory(destination);
+  for (const file of hostedSite.files) {
+    outputPathForHostedFile(destination, file.path);
+  }
+  onProgress?.({
     phase: "creating",
     fileCount: hostedSite.fileCount,
   });
-  await mkdir(options.destination, { recursive: true });
+  await mkdir(destination, { recursive: true });
 
   for (const file of hostedSite.files) {
-    options.onProgress?.({ phase: "downloading", path: file.path });
-    await downloadHostedFile(file, options.destination);
+    onProgress?.({ phase: "downloading", path: file.path });
+    await downloadHostedFile(file, destination);
   }
+}
+
+export async function cloneHostedSite(
+  options: CloneHostedSiteOptions,
+): Promise<CloneHostedSiteResult> {
+  if (options.destination !== undefined) {
+    requireEmptyDirectory(options.destination);
+  }
+  options.onProgress?.({ phase: "checking" });
+  const hostedSite = await siteFilesFromSource(options);
+  const destination = options.destination ?? hostedSite.publicSlug;
+  await downloadHostedSiteFiles(hostedSite, destination, options.onProgress);
 
   return {
     siteId: hostedSite.siteId,
@@ -168,7 +200,7 @@ export async function cloneHostedSite(
     ...(hostedSite.artifactUrl === undefined
       ? {}
       : { artifactUrl: hostedSite.artifactUrl }),
-    destination: options.destination,
+    destination,
     fileCount: hostedSite.fileCount,
     size: hostedSite.size,
   };

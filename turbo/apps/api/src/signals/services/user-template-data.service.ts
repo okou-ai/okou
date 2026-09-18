@@ -1,14 +1,19 @@
 import { createHash } from "node:crypto";
 
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
+import { getUserTemplateStorageName } from "@okouai/core/storage-names";
+import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type {
   UserTemplateKind,
   UserTemplateSummary,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 
 import type { ReadonlyDb } from "../external/db";
+import type { PresentationTemplateVolume } from "./presentation-template-data.service";
 
 export type UserTemplateRow = typeof userTemplates.$inferSelect;
 
@@ -25,6 +30,16 @@ interface UserTemplatePreviewAssetIdentity {
 }
 
 /**
+ * The cache identity of one storage object.
+ *
+ * Presigned URLs are cached per object rather than per row, so a rendered page
+ * and the file the template was compiled from are keyed the same way.
+ */
+export function userTemplateStorageVersionId(objectKey: string): string {
+  return createHash("sha256").update(objectKey).digest("base64url");
+}
+
+/**
  * Give a rendered page a stable public identity without exposing its object
  * key. The hash follows the immutable page object if page order changes.
  */
@@ -32,10 +47,7 @@ export function userTemplatePreviewAssetId(
   templateId: string,
   objectKey: string,
 ): string {
-  const storageVersionId = createHash("sha256")
-    .update(objectKey)
-    .digest("base64url");
-  return `${USER_TEMPLATE_PREVIEW_ASSET_PREFIX}${templateId}:${storageVersionId}`;
+  return `${USER_TEMPLATE_PREVIEW_ASSET_PREFIX}${templateId}:${userTemplateStorageVersionId(objectKey)}`;
 }
 
 export function parseUserTemplatePreviewAssetId(
@@ -61,7 +73,7 @@ export function parseUserTemplatePreviewAssetId(
 }
 
 /**
- * The rendered pages this row owns, in page order. Element 0 is the cover.
+ * The rendered pages this row owns, in page order.
  *
  * Every kind answers for itself rather than one being what the others fall
  * through to, so a kind added to the manifest union fails this switch until
@@ -72,8 +84,39 @@ export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
     case "presentation": {
       return row.manifest.pageKeys;
     }
+    case "document":
+    case "illustration": {
+      return [];
+    }
+  }
+}
+
+/**
+ * The objects this row is recognised by in the catalog, in order. Element 0 is
+ * the cover.
+ *
+ * Separate from the pages above because a cover is what a grid shows and a
+ * page is what a reader scrolls, and for one kind those are different files. A
+ * deck is recognised by its first slide, so its pages are both. An
+ * illustration has no pages at all and is recognised by the picture it was
+ * reversed from, which is the source — the one kind whose source file is
+ * already an image a browser can draw.
+ *
+ * Sharing one list between the cover and the pages is what would put that
+ * source into `pageUrls`, where a reader would be shown the same picture the
+ * cover is already showing, and where it would contradict the `pageCount` of
+ * null that travels beside it.
+ */
+export function userTemplateCoverKeys(row: UserTemplateRow): readonly string[] {
+  switch (row.manifest.kind) {
+    case "presentation": {
+      return row.manifest.pageKeys;
+    }
     case "document": {
       return [];
+    }
+    case "illustration": {
+      return [row.sourceStorageKey];
     }
   }
 }
@@ -81,15 +124,17 @@ export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
 /**
  * How many pages to report, or null for a kind that has none.
  *
- * Null rather than zero: a document template is its styles, so counting its
- * pages would report an emptiness it does not have.
+ * Null rather than zero: a document template is its styles and an illustration
+ * template is one picture, so counting their pages would report an emptiness
+ * neither has.
  */
 function userTemplatePageCount(row: UserTemplateRow): number | null {
   switch (row.manifest.kind) {
     case "presentation": {
       return row.manifest.pageKeys.length;
     }
-    case "document": {
+    case "document":
+    case "illustration": {
       return null;
     }
   }
@@ -153,6 +198,99 @@ export async function loadAccessibleUserTemplate(
     .where(and(eq(userTemplates.id, args.templateId), accessibleWhere(args)))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * One selected custom template, reduced to what a run needs: where to mount it
+ * and what the package inside will turn out to be.
+ */
+export interface MountedUserTemplate {
+  readonly templateId: string;
+  readonly kind: UserTemplateKind;
+}
+
+/**
+ * The custom templates one message names.
+ *
+ * Syntax only, and no database yet: the prompt builder rejects a selection
+ * this run does not mount, so the candidate set has to be known before the
+ * rows are read.
+ */
+export function selectedUserTemplateIds(
+  generationTemplates: readonly GenerationTemplateRequest[],
+): readonly string[] {
+  const templateIds = new Set<string>();
+  for (const template of generationTemplates) {
+    if (template.type === "custom") {
+      templateIds.add(template.selection.userTemplateId);
+    }
+  }
+  return [...templateIds];
+}
+
+/**
+ * The subset of those the caller may use, in selection order, each with the
+ * kind its row says it is.
+ *
+ * The row is the authority for its own existence and visibility, and for what
+ * it produces. A caller cannot claim a kind: an id that does not come back is
+ * indistinguishable from an inaccessible template and from a deleted one, so
+ * the answer cannot be used to probe which.
+ */
+export async function authorizedUserTemplates(
+  db: ReadonlyDb,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly templateIds: readonly string[];
+    /**
+     * Whether this member has the feature. Required rather than read here, so
+     * every caller states it: the routes that read and write this catalog are
+     * gated, but a send is not, and a crafted selection would otherwise reach
+     * the table through a path with no gate of its own.
+     */
+    readonly enabled: boolean;
+  },
+): Promise<readonly MountedUserTemplate[]> {
+  if (!args.enabled || args.templateIds.length === 0) {
+    return [];
+  }
+  const rows = await db
+    .select()
+    .from(userTemplates)
+    .where(
+      and(
+        inArray(userTemplates.id, [...args.templateIds]),
+        accessibleWhere(args),
+      ),
+    );
+  const byId = new Map(
+    rows.map((row) => {
+      return [row.id, row.manifest.kind];
+    }),
+  );
+  return args.templateIds.flatMap((templateId) => {
+    const kind = byId.get(templateId);
+    return kind === undefined ? [] : [{ templateId, kind }];
+  });
+}
+
+/**
+ * The storage volumes that carry those templates' packages.
+ *
+ * Mounted under the working directory rather than the skills root because the
+ * skills root is chosen per framework inside run creation, while the prompt
+ * naming this path is built before a framework exists.
+ */
+export function userTemplateVolumes(
+  mounted: readonly MountedUserTemplate[],
+): readonly PresentationTemplateVolume[] {
+  return mounted.map((template) => {
+    return {
+      name: getUserTemplateStorageName(template.templateId),
+      mountPath: `${CANONICAL_WORKING_DIR}/${userTemplateDirectory(template.templateId)}`,
+    };
+  });
 }
 
 /**

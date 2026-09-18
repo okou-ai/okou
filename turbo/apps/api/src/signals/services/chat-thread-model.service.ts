@@ -59,9 +59,7 @@ interface ResolvePersistedChatThreadModelParams {
   readonly threadSnapshot?: PersistedChatThreadModelSnapshot;
   readonly requestedCodexServiceTier?: CodexServiceTier;
   readonly requestedReasoningEffort?: ReasoningEffort;
-  readonly reasoningEffortEnabled?: boolean;
   readonly persistRequestedCodexServiceTier: boolean;
-  readonly codexFastModeEnabled: boolean;
 }
 
 export function persistedChatThreadModelSnapshotColumns() {
@@ -385,7 +383,6 @@ async function evaluatePersistedChatThreadModel(
     selectedModel: pin.selectedModel,
     modelSettings,
     requested: params.requestedReasoningEffort,
-    enabled: params.reasoningEffortEnabled ?? false,
   });
   if ("status" in effort) {
     return { kind: "error", error: effort };
@@ -408,7 +405,6 @@ async function evaluatePersistedChatThreadModel(
     persistRequestedTier: params.persistRequestedCodexServiceTier,
     fastSupported: isCodexFastServiceTierSupported({
       selectedModel: pin.selectedModel,
-      codexFastModeEnabled: params.codexFastModeEnabled,
     }),
     selectedModelChanged,
   });

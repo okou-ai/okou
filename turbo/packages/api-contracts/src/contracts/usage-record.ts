@@ -43,7 +43,7 @@ export const usageRecordKindSchema = z.enum([
 ]);
 export type UsageRecordKind = z.infer<typeof usageRecordKindSchema>;
 
-const usageRecordProviderBreakdownSchema = z.object({
+export const usageRecordProviderBreakdownSchema = z.object({
   provider: z.string(),
   credits: z.number(),
   usageKinds: z.array(
@@ -54,27 +54,31 @@ const usageRecordProviderBreakdownSchema = z.object({
   ),
 });
 
-const usageRecordKindBreakdownSchema = z.object({
+export const usageRecordKindBreakdownSchema = z.object({
   kind: usageRecordKindSchema,
   credits: z.number(),
   providers: z.array(usageRecordProviderBreakdownSchema),
 });
+
+export type UsageRecordKindBreakdown = z.infer<
+  typeof usageRecordKindBreakdownSchema
+>;
 
 const usageRecordMemberSchema = z.object({
   userId: z.string(),
   email: z.string(),
 });
 
-// One usage row. Threaded sources (chat, automation) aggregate every run in the
-// thread into a single row that links to the thread. Deleted threaded sources
-// aggregate into a synthetic non-clickable row. Unthreaded sources are one row
-// per run that links to the run's activity detail. Ordered by most recent
-// activity so the list reads as a chronological record.
+// One usage row. Every run with a thread id aggregates into one row per
+// user/thread, independent of trigger source. Historical usage without a
+// recoverable thread id aggregates into one non-navigable fallback row.
 const usageRecordRowSchema = z.object({
+  // Old App -> new API rollout bridge for source-icon and run-link readers.
+  // New consumers must not use these fields. Remove after the replacement App
+  // is live and the client floor excludes those readers; tracked by #35077.
   source: usageRecordSourceSchema,
-  // Set for threaded sources (web chat, automation) — links to the chat thread.
+  // Set for navigable thread usage.
   threadId: z.string().nullable(),
-  // Set for unthreaded sources (slack, telegram, …) — links to the run.
   runId: z.string().nullable(),
   title: z.string().nullable(),
   credits: z.number(),
@@ -114,7 +118,6 @@ export const usageRecordContract = c.router({
       scope: usageRecordScopeSchema.default("mine"),
       range: usageRecordRangeSchema.default("today"),
       tz: z.string().default("UTC"),
-      source: usageRecordSourceSchema.optional(),
     }),
     responses: {
       200: usageRecordResponseSchema,

@@ -55,6 +55,7 @@ import {
 import {
   customConnectorAccountAuthMethodIsCompatible,
   customConnectorAccountHasRequiredCredentialMaterial,
+  customConnectorAccountStorageIsCompatible,
 } from "./custom-connector-credential-access.service";
 import {
   connectorCredentialReconnectReasonWithMethod,
@@ -72,7 +73,6 @@ const log = logger("connector-account-lifecycle");
 
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
-const idTokenSecret = alias(secrets, "connector_account_id_token");
 const oauthScopesSchema = z.array(z.string());
 const cursorSchema = z
   .object({
@@ -122,11 +122,11 @@ function accountSelection() {
     createdAt: connectors.createdAt,
     updatedAt: connectors.updatedAt,
     definitionAuthMode: orgCustomConnectors.authMode,
+    definitionMcpTransport: orgCustomConnectors.mcpTransport,
     definitionStorageVersion: orgCustomConnectors.storageVersion,
     providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
     accessTokenId: accessTokenSecret.id,
     refreshTokenId: refreshTokenSecret.id,
-    idTokenId: idTokenSecret.id,
     automaticOAuthBindingId:
       customConnectorAccountOauthBindings.connectorAccountId,
   };
@@ -243,13 +243,6 @@ async function loadConnectorAccountRows(
       ),
     )
     .leftJoin(
-      idTokenSecret,
-      and(
-        eq(idTokenSecret.connectorId, connectors.id),
-        eq(idTokenSecret.name, "id_token"),
-      ),
-    )
-    .leftJoin(
       customConnectorAccountOauthBindings,
       and(
         eq(
@@ -288,17 +281,11 @@ async function loadConnectorAccountSummaryGroups(
     isNotNull(connectors.tokenExpiresAt),
     lte(connectors.tokenExpiresAt, sql`clock_timestamp()`),
   )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-  const hasTokenExpiry = sql`CASE WHEN ${isNotNull(
-    connectors.tokenExpiresAt,
-  )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
   const hasAccessToken = sql`CASE WHEN ${isNotNull(
     accessTokenSecret.id,
   )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
   const hasRefreshToken = sql`CASE WHEN ${isNotNull(
     refreshTokenSecret.id,
-  )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-  const hasIdToken = sql`CASE WHEN ${isNotNull(
-    idTokenSecret.id,
   )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
   const hasAutomaticOAuthBinding = sql`CASE WHEN ${isNotNull(
     customConnectorAccountOauthBindings.connectorAccountId,
@@ -311,13 +298,12 @@ async function loadConnectorAccountSummaryGroups(
       storageVersion: connectors.storageVersion,
       needsReconnect: connectors.needsReconnect,
       definitionAuthMode: orgCustomConnectors.authMode,
+      definitionMcpTransport: orgCustomConnectors.mcpTransport,
       definitionStorageVersion: orgCustomConnectors.storageVersion,
       providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
       tokenExpired,
-      hasTokenExpiry,
       hasAccessToken,
       hasRefreshToken,
-      hasIdToken,
       hasAutomaticOAuthBinding,
       accountCount: count(),
     })
@@ -351,13 +337,6 @@ async function loadConnectorAccountSummaryGroups(
       ),
     )
     .leftJoin(
-      idTokenSecret,
-      and(
-        eq(idTokenSecret.connectorId, connectors.id),
-        eq(idTokenSecret.name, "id_token"),
-      ),
-    )
-    .leftJoin(
       customConnectorAccountOauthBindings,
       and(
         eq(
@@ -380,13 +359,12 @@ async function loadConnectorAccountSummaryGroups(
       connectors.storageVersion,
       connectors.needsReconnect,
       orgCustomConnectors.authMode,
+      orgCustomConnectors.mcpTransport,
       orgCustomConnectors.storageVersion,
       orgCustomConnectorOauthConfigs.providerAdapter,
       tokenExpired,
-      hasTokenExpiry,
       hasAccessToken,
       hasRefreshToken,
-      hasIdToken,
       hasAutomaticOAuthBinding,
     );
 }
@@ -516,22 +494,29 @@ function customConnection(
     customConnectorAccountAuthMethodIsCompatible(
       row.definitionAuthMode,
       row.authMethod,
-    ) && row.storageVersion === row.definitionStorageVersion;
-  const credentialStatus = connectorCredentialStatusForAccess({
-    storedNeedsReconnect: row.needsReconnect,
-    tokenExpiresAt: row.authMethod === "oauth" ? row.tokenExpiresAt : null,
-    now,
-    isRefreshable: row.refreshTokenId !== null,
-  });
+    ) &&
+    customConnectorAccountStorageIsCompatible({
+      authMethod: row.authMethod,
+      mcpTransport: row.definitionMcpTransport,
+      storageVersion: row.storageVersion,
+      definitionStorageVersion: row.definitionStorageVersion,
+    });
+  const credentialStatus =
+    row.authMethod === "none"
+      ? "available"
+      : connectorCredentialStatusForAccess({
+          storedNeedsReconnect: row.needsReconnect,
+          tokenExpiresAt:
+            row.authMethod === "oauth" ? row.tokenExpiresAt : null,
+          now,
+          isRefreshable: row.refreshTokenId !== null,
+        });
   const hasRequiredCredentialMaterial =
     customConnectorAccountHasRequiredCredentialMaterial({
       definitionAuthMode: row.definitionAuthMode,
       storedAuthMethod: row.authMethod,
       hasAccessToken: row.accessTokenId !== null,
-      hasRefreshToken: row.refreshTokenId !== null,
-      hasIdToken: row.idTokenId !== null,
       hasAutomaticOAuthBinding: row.automaticOAuthBindingId !== null,
-      hasTokenExpiry: row.tokenExpiresAt !== null,
     });
   const connectionStatus =
     contractCurrent &&
@@ -639,22 +624,29 @@ function projectSummaryGroup(
     customConnectorAccountAuthMethodIsCompatible(
       row.definitionAuthMode,
       row.authMethod,
-    ) && row.storageVersion === row.definitionStorageVersion;
-  const credentialStatus = connectorCredentialStatusForAccess({
-    storedNeedsReconnect: row.needsReconnect,
-    tokenExpiresAt: row.authMethod === "oauth" && row.tokenExpired ? now : null,
-    now,
-    isRefreshable: row.hasRefreshToken,
-  });
+    ) &&
+    customConnectorAccountStorageIsCompatible({
+      authMethod: row.authMethod,
+      mcpTransport: row.definitionMcpTransport,
+      storageVersion: row.storageVersion,
+      definitionStorageVersion: row.definitionStorageVersion,
+    });
+  const credentialStatus =
+    row.authMethod === "none"
+      ? "available"
+      : connectorCredentialStatusForAccess({
+          storedNeedsReconnect: row.needsReconnect,
+          tokenExpiresAt:
+            row.authMethod === "oauth" && row.tokenExpired ? now : null,
+          now,
+          isRefreshable: row.hasRefreshToken,
+        });
   const hasRequiredCredentialMaterial =
     customConnectorAccountHasRequiredCredentialMaterial({
       definitionAuthMode: row.definitionAuthMode,
       storedAuthMethod: row.authMethod,
       hasAccessToken: row.hasAccessToken,
-      hasRefreshToken: row.hasRefreshToken,
-      hasIdToken: row.hasIdToken,
       hasAutomaticOAuthBinding: row.hasAutomaticOAuthBinding,
-      hasTokenExpiry: row.hasTokenExpiry,
     });
   return {
     target: { kind: "custom", customConnectorId: row.customConnectorId },

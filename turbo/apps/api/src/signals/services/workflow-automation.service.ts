@@ -1,3 +1,4 @@
+import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isDeepStrictEqual } from "node:util";
 
 import { command } from "ccstate";
@@ -69,7 +70,14 @@ import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
 
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
+import {
+  applyMorningBriefLogicalChoice,
+  lockMorningBriefNativeSchedule,
+  type MorningBriefChoiceApplication,
+} from "./morning-brief-native-schedule.service";
+import { recordMorningBriefChoice } from "./morning-brief-enrollment-data.service";
 import { nowDate } from "../../lib/time";
+import type { Tx } from "../../lib/db-types";
 import {
   bestEffort,
   isValidTimeZone,
@@ -138,6 +146,7 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
 import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   buildWorkflowWebhookSummaryFields,
   defaultWebhookReceivedEventConfig,
@@ -1541,6 +1550,7 @@ interface CreateWebhookEventAutomationInput {
   readonly eventConfig?: WebhookReceivedEventConfig;
   readonly enabled: boolean;
   readonly autonomyBudget?: number;
+  readonly officialInstallation?: OfficialAutomationCreationMetadata;
 }
 
 export interface OfficialAutomationCreationMetadata {
@@ -1761,26 +1771,74 @@ async function insertEventAutomation(
   });
 }
 
+type PreparedWebhookCredentials = Pick<
+  typeof workflowWebhookAutomations.$inferInsert,
+  "tokenHash" | "encryptedToken" | "encryptedSecret" | "secretLastFour"
+>;
+
+async function prepareWebhookCredentials(
+  args: { readonly orgId: string; readonly userId: string },
+  signal: AbortSignal,
+): Promise<{
+  readonly token: string;
+  readonly secret: string;
+  readonly row: PreparedWebhookCredentials;
+}> {
+  const token = mintWorkflowWebhookToken();
+  const secret = mintWorkflowWebhookSecret();
+  const encryptedToken = await encryptWorkflowWebhookToken(token, args);
+  signal.throwIfAborted();
+  const encryptedSecret = await encryptWorkflowWebhookSecret(secret, args);
+  signal.throwIfAborted();
+  return {
+    token,
+    secret,
+    row: {
+      tokenHash: hashWorkflowWebhookToken(token),
+      encryptedToken,
+      encryptedSecret,
+      secretLastFour: secret.slice(-4),
+    },
+  };
+}
+
 async function insertWebhookEventAutomation(
   db: Db,
   args: {
     readonly input: CreateWebhookEventAutomationInput;
     readonly workflowId: string;
     readonly agentId: string;
-    readonly workflowTitle: string;
     readonly automationId?: string;
     readonly currentTime: Date;
   },
   signal: AbortSignal,
-): Promise<WorkflowAutomationSummary | null> {
+): Promise<AutomationResult> {
+  const capabilities = await loadOrgPlanCapabilities(db, args.input.orgId);
+  signal.throwIfAborted();
+  if (capabilities?.workflowWebhookAutomationAllowed !== true) {
+    return workflowWebhookTeamRequiredResult();
+  }
+  // KMS can stall independently of PostgreSQL. Prepare both ciphertexts before
+  // taking the entitlement, workflow binding, or shared chat sequence locks.
+  const credentials = await prepareWebhookCredentials(
+    { orgId: args.input.orgId, userId: args.input.member.userId },
+    signal,
+  );
+  signal.throwIfAborted();
   return await db.transaction(async (tx) => {
+    // A downgrade may have committed while credentials were being prepared.
     const tierEligible = await lockWorkflowWebhookAutomationTierEligibleForOrg(
       tx,
       { orgId: args.input.orgId },
       signal,
     );
     if (!tierEligible) {
-      return null;
+      return workflowWebhookTeamRequiredResult();
+    }
+    const access = await lockWebhookAutomationCreationAccess(tx, args);
+    signal.throwIfAborted();
+    if (access.kind !== "ok") {
+      return access;
     }
 
     const chatThreadId = await ensureWorkflowUserAutomationThread(tx, {
@@ -1788,7 +1846,7 @@ async function insertWebhookEventAutomation(
       userId: args.input.member.userId,
       workflowId: args.workflowId,
       agentId: args.agentId,
-      workflowTitle: args.workflowTitle,
+      workflowTitle: access.workflow.displayName ?? access.workflow.name,
       currentTime: args.currentTime,
     });
 
@@ -1818,30 +1876,94 @@ async function insertWebhookEventAutomation(
       throw new Error("Failed to create workflow automation");
     }
 
-    const token = mintWorkflowWebhookToken();
-    const secret = mintWorkflowWebhookSecret();
     await tx.insert(workflowWebhookAutomations).values({
       automationId: row.id,
-      tokenHash: hashWorkflowWebhookToken(token),
-      encryptedToken: await encryptWorkflowWebhookToken(token, {
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-      }),
-      encryptedSecret: await encryptWorkflowWebhookSecret(secret, {
-        orgId: args.input.orgId,
-        userId: args.input.member.userId,
-      }),
-      secretLastFour: secret.slice(-4),
+      ...credentials.row,
       createdAt: args.currentTime,
       updatedAt: args.currentTime,
     });
 
-    return await rowToSummary(tx, row, {
-      chatThreadId,
-      webhookToken: token,
-      webhookSecret: secret,
-    });
+    return {
+      kind: "ok",
+      summary: await rowToSummary(tx, row, {
+        chatThreadId,
+        webhookToken: credentials.token,
+        webhookSecret: credentials.secret,
+      }),
+    };
   });
+}
+
+async function lockWebhookAutomationCreationAccess(
+  tx: Tx,
+  args: {
+    readonly input: CreateWebhookEventAutomationInput;
+    readonly workflowId: string;
+    readonly agentId: string;
+  },
+): Promise<
+  | { readonly kind: "ok"; readonly workflow: WorkflowRow }
+  | AutomationActionFailure
+> {
+  // Freeze the source permissions in agent -> workflow order. Access may have
+  // been revoked while KMS prepared the credentials outside this transaction.
+  const [agent] = await tx
+    .select({
+      id: agents.id,
+      owner: agents.owner,
+      visibility: agents.visibility,
+    })
+    .from(agents)
+    .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.input.orgId)))
+    .for("share");
+  const [workflow] = await tx
+    .select({ agentId: workflows.agentId })
+    .from(workflows)
+    .where(
+      and(
+        eq(workflows.id, args.workflowId),
+        eq(workflows.orgId, args.input.orgId),
+      ),
+    )
+    .for("share");
+  if (!agent || workflow?.agentId !== agent.id) {
+    return { kind: "not-found" };
+  }
+  const visible = await loadVisibleWorkflowById(tx, {
+    orgId: args.input.orgId,
+    member: args.input.member,
+    workflowId: args.workflowId,
+    includeInstallingOfficial: args.input.officialInstallation !== undefined,
+  });
+  if (!visible) {
+    return { kind: "not-found" };
+  }
+  const official = args.input.officialInstallation;
+  if (
+    official !== undefined &&
+    (visible.workflow.officialDefinitionName !== official.definitionName ||
+      visible.workflow.officialInstallationState !==
+        (official.installationState ?? "installing") ||
+      visible.workflow.ownerUserId !== args.input.member.userId)
+  ) {
+    return { kind: "not-found" };
+  }
+  if (
+    visible.workflow.officialDefinitionName !== null &&
+    official === undefined
+  ) {
+    return {
+      kind: "conflict",
+      message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
+    };
+  }
+  if (!canUseAgent(agent, args.input.member)) {
+    return {
+      kind: "forbidden",
+      message: "You do not have access to the workflow's agent",
+    };
+  }
+  return { kind: "ok", workflow: visible.workflow };
 }
 
 async function prepareGmailEventConfigForPersist(
@@ -2138,23 +2260,19 @@ async function createWebhookEventAutomationForWorkflow(
   },
   signal: AbortSignal,
 ): Promise<AutomationResult> {
-  const summary = await insertWebhookEventAutomation(
+  const result = await insertWebhookEventAutomation(
     args.context.db,
     {
       input: args.input,
       workflowId: args.context.workflowId,
       agentId: args.context.agentId,
-      workflowTitle: args.context.workflowTitle,
       automationId: args.context.automationId,
       currentTime: nowDate(),
     },
     signal,
   );
   signal.throwIfAborted();
-  if (!summary) {
-    return workflowWebhookTeamRequiredResult();
-  }
-  return { kind: "ok", summary };
+  return result;
 }
 
 async function createGithubWorkflowRunEventAutomationForWorkflow(
@@ -3397,6 +3515,7 @@ export interface OfficialAutomationEventPreparation {
   readonly eventConfig: WorkflowAutomationEventConfig;
   readonly eventConnectorId?: string;
   readonly googleFormsSeedCursor?: string;
+  readonly webhookCredentials?: PreparedWebhookCredentials;
 }
 
 type OfficialAutomationSubtypeTransitionAutomation = Pick<
@@ -3430,20 +3549,13 @@ export async function syncOfficialAutomationSubtypeRows(
       return workflowWebhookTeamRequiredResult();
     }
     if (!webhook) {
-      const token = mintWorkflowWebhookToken();
-      const secret = mintWorkflowWebhookSecret();
+      const credentials = args.preparation?.webhookCredentials;
+      if (!credentials) {
+        throw new Error("Missing prepared Official webhook credentials");
+      }
       await db.insert(workflowWebhookAutomations).values({
         automationId: args.current.id,
-        tokenHash: hashWorkflowWebhookToken(token),
-        encryptedToken: await encryptWorkflowWebhookToken(token, {
-          orgId: args.current.orgId,
-          userId: args.current.ownerUserId,
-        }),
-        encryptedSecret: await encryptWorkflowWebhookSecret(secret, {
-          orgId: args.current.orgId,
-          userId: args.current.ownerUserId,
-        }),
-        secretLastFour: secret.slice(-4),
+        ...credentials,
         createdAt: args.currentTime,
         updatedAt: args.currentTime,
       });
@@ -3922,8 +4034,24 @@ export const prepareOfficialAutomationReconfiguration$ = command(
         : stripeInvoicePaidWorkflowAutomationsDisabledResult();
     }
     if (input.eventType === "webhook-received") {
+      const [webhook] = await db
+        .select({ automationId: workflowWebhookAutomations.automationId })
+        .from(workflowWebhookAutomations)
+        .where(eq(workflowWebhookAutomations.automationId, automation.id))
+        .limit(1);
+      signal.throwIfAborted();
+      // Finalization keeps its existing catalog, entitlement, identity, and
+      // updatedAt guards. It only consumes prepared ciphertext under locks.
+      const credentials = webhook
+        ? undefined
+        : await prepareWebhookCredentials(
+            { orgId: input.orgId, userId: input.member.userId },
+            signal,
+          );
+      signal.throwIfAborted();
       return preparedOfficialEvent(
         input.eventConfig ?? defaultWebhookReceivedEventConfig(),
+        credentials ? { webhookCredentials: credentials.row } : undefined,
       );
     }
     return { kind: "not-found" };
@@ -5845,6 +5973,146 @@ const validateStripeFeature$ = command(
   },
 );
 
+/**
+ * Commit the Settings choice to native authority and the retained legacy row.
+ *
+ * Rollback needs the latter to reflect the same user choice even though legacy
+ * admission is closed while native owns scheduling. Keeping both writes in this
+ * schedule-first transaction also means no failure can expose opposite choices.
+ */
+export async function persistNativeMorningBriefPreferenceChoice(
+  db: Db,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly automationId: string | null;
+    readonly enabled: boolean;
+    readonly expectedEpoch: number;
+    readonly at: Date;
+  },
+): Promise<MorningBriefChoiceApplication> {
+  const owner = { orgId: args.orgId, userId: args.userId };
+  return await db.transaction(async (tx) => {
+    const schedule = await lockMorningBriefNativeSchedule(tx, owner);
+    if (
+      schedule === undefined ||
+      schedule.phase === "legacy" ||
+      schedule.ownerEpoch !== args.expectedEpoch ||
+      schedule.legacyAutomationId !== args.automationId
+    ) {
+      return schedule === undefined
+        ? { kind: "absent" }
+        : { kind: "stale", row: schedule };
+    }
+    await recordMorningBriefChoice(tx, owner, args.enabled);
+    if (args.automationId !== null) {
+      await tx
+        .update(workflowAutomations)
+        .set({
+          enabled: args.enabled,
+          officialIntendedEnabled: args.enabled,
+          nextRunAt: null,
+          ...(args.enabled ? { consecutiveFailures: 0 } : {}),
+          updatedAt: args.at,
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            eq(
+              workflowAutomations.officialBlueprintKey,
+              MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+            ),
+          ),
+        );
+    }
+    return await applyMorningBriefLogicalChoice(
+      tx,
+      owner,
+      { enabled: args.enabled, expectedEpoch: args.expectedEpoch },
+      args.at,
+    );
+  });
+}
+
+/**
+ * Commit a generic Morning Brief automation toggle and its durable logical
+ * choice as one write.
+ *
+ * Every writer follows the same lock order: the caller's member-preference
+ * advisory lock (when present), then the native schedule, then the legacy
+ * automation, and finally any occurrence read by the choice application. A
+ * native owner never receives a new legacy `next_run_at`; rollback restores the
+ * future legacy obligation only after its drain commits.
+ */
+async function persistMorningBriefAutomationToggle(
+  db: Db,
+  args: {
+    readonly automation: AutomationRow;
+    readonly enabled: boolean;
+    readonly nextRunAt: Date | null;
+    readonly now: Date;
+    readonly inheritedAutonomyBudget?: number;
+  },
+): Promise<AutomationRow | undefined> {
+  if (
+    args.automation.officialBlueprintKey !==
+      MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    args.automation.ownerUserId === null ||
+    args.automation.kind !== "schedule"
+  ) {
+    return undefined;
+  }
+  const owner = {
+    orgId: args.automation.orgId,
+    userId: args.automation.ownerUserId,
+  };
+  return await db.transaction(async (tx) => {
+    const native = await lockMorningBriefNativeSchedule(tx, owner);
+    await recordMorningBriefChoice(tx, owner, args.enabled);
+    const [row] = await tx
+      .update(workflowAutomations)
+      .set({
+        enabled: args.enabled,
+        nextRunAt:
+          args.enabled && native !== undefined && native.phase !== "legacy"
+            ? null
+            : args.nextRunAt,
+        consecutiveFailures: args.enabled
+          ? 0
+          : args.automation.consecutiveFailures,
+        updatedAt: args.now,
+        officialIntendedEnabled: args.enabled,
+        ...(args.inheritedAutonomyBudget === undefined
+          ? {}
+          : { autonomyBudget: args.inheritedAutonomyBudget }),
+      })
+      .where(officialAutomationLifecycleCondition(args.automation))
+      .returning(workflowAutomationColumns());
+    if (row === undefined) {
+      return undefined;
+    }
+    if (
+      native !== undefined &&
+      native.legacyAutomationId === args.automation.id
+    ) {
+      const applied = await applyMorningBriefLogicalChoice(
+        tx,
+        owner,
+        { enabled: args.enabled, expectedEpoch: native.ownerEpoch },
+        args.now,
+      );
+      if (applied.kind !== "applied") {
+        throw new Error(
+          "Morning Brief choice changed during automation toggle",
+        );
+      }
+    }
+    return row;
+  });
+}
+
 export const enableWorkflowAutomation$ = command(
   async (
     { set },
@@ -5928,6 +6196,25 @@ export const enableWorkflowAutomation$ = command(
         return failure;
       }
     }
+    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
+      automation,
+      enabled: true,
+      nextRunAt,
+      now,
+      inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+    });
+    signal.throwIfAborted();
+    if (morningBriefRow !== undefined) {
+      return await finalizeAndPublishEnabledWorkflowAutomation(
+        writeDb,
+        {
+          previousAutomation: automation,
+          enabledAutomation: morningBriefRow,
+          memberUserId: args.member.userId,
+        },
+        signal,
+      );
+    }
     return await persistAndReconcileEnabledWorkflowAutomation(
       writeDb,
       {
@@ -5964,18 +6251,29 @@ export const disableWorkflowAutomation$ = command(
     const now = nowDate();
     const nextRunAt =
       owned.automation.kind === "schedule" ? null : owned.automation.nextRunAt;
-    const [row] = await writeDb
-      .update(workflowAutomations)
-      .set({
-        enabled: false,
-        nextRunAt,
-        updatedAt: now,
-        ...(owned.automation.officialBlueprintKey === null
-          ? {}
-          : { officialIntendedEnabled: false }),
-      })
-      .where(officialAutomationLifecycleCondition(owned.automation))
-      .returning(workflowAutomationColumns());
+    const morningBriefRow = await persistMorningBriefAutomationToggle(writeDb, {
+      automation: owned.automation,
+      enabled: false,
+      nextRunAt,
+      now,
+    });
+    signal.throwIfAborted();
+    const [ordinaryRow] =
+      morningBriefRow === undefined
+        ? await writeDb
+            .update(workflowAutomations)
+            .set({
+              enabled: false,
+              nextRunAt,
+              updatedAt: now,
+              ...(owned.automation.officialBlueprintKey === null
+                ? {}
+                : { officialIntendedEnabled: false }),
+            })
+            .where(officialAutomationLifecycleCondition(owned.automation))
+            .returning(workflowAutomationColumns())
+        : [];
+    const row = morningBriefRow ?? ordinaryRow;
     signal.throwIfAborted();
     if (!row) {
       if (owned.automation.officialBlueprintKey !== null) {

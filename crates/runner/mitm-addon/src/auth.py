@@ -251,6 +251,11 @@ def _prepare_firewall_metadata(
     flow.metadata[metadata_keys.FIREWALL_PARAMS] = allow.params
     flow.metadata[metadata_keys.FIREWALL_BILLABLE] = firewall_billable
     flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = sandbox_info.get("modelUsageProvider")
+    flow.metadata[metadata_keys.X_RESOURCE_BILLING] = (
+        flow_metadata.parse_x_resource_billing(sandbox_info["xResourceBilling"])
+        if "xResourceBilling" in sandbox_info
+        else None
+    )
 
 
 def prepare_firewall_metadata(
@@ -266,6 +271,8 @@ def _build_firewall_auth_context(
     flow: http.HTTPFlow,
     allow: matching.FirewallAllow,
     sandbox_info: dict,
+    *,
+    needs_resolution: bool,
 ) -> _FirewallAuthContext:
     """Capture request-local auth inputs after matched-firewall metadata exists."""
     api_entry = allow.api_entry
@@ -277,7 +284,7 @@ def _build_firewall_auth_context(
     source_id = api_entry.get("sourceId")
     connector_routing_variables = sandbox_info.get("connectorRoutingVariables", {})
     matched_firewall: dict | None = None
-    if isinstance(custom_connector_id, str):
+    if needs_resolution and isinstance(custom_connector_id, str):
         routing_variables = connector_routing_variables.get(f"custom:{custom_connector_id}")
         if not isinstance(routing_variables, dict):
             raise TypeError("custom connector routing variables are missing from proxy registry")
@@ -288,7 +295,7 @@ def _build_firewall_auth_context(
             "routingVariables": routing_variables,
             **({"sourceId": source_id} if isinstance(source_id, str) else {}),
         }
-    else:
+    elif needs_resolution:
         routing_variables = connector_routing_variables.get(f"builtin:{allow.name}")
         if isinstance(routing_variables, dict):
             matched_firewall = {
@@ -1692,7 +1699,9 @@ async def handle_firewall_request(
     try:
         plan = _build_firewall_auth_plan(flow, allow, sandbox_info)
         _prepare_firewall_metadata(flow, allow, sandbox_info)
-        context = _build_firewall_auth_context(flow, allow, sandbox_info)
+        context = _build_firewall_auth_context(
+            flow, allow, sandbox_info, needs_resolution=plan.needs_resolution
+        )
 
         preflight_result = _preflight_firewall_auth(flow, context, plan)
         if preflight_result is not None:
@@ -1794,7 +1803,9 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
         return FirewallHeaderPhaseAuthResult.FALLBACK
 
     _prepare_firewall_metadata(flow, allow, sandbox_info)
-    context = _build_firewall_auth_context(flow, allow, sandbox_info)
+    context = _build_firewall_auth_context(
+        flow, allow, sandbox_info, needs_resolution=plan.needs_resolution
+    )
 
     try:
         token_meta = await _resolve_firewall_auth(plan, context)

@@ -1,0 +1,435 @@
+# Morning Brief Gmail collection and the shared OAuth reader
+
+Simple Morning Brief ([#34637](https://github.com/vm0-ai/okou/issues/34637))
+needs real authorized source content without an agent Run. This document records
+the first consumed OAuth source, Gmail, and the shared authorization boundary
+every later source reads through
+([#34809](https://github.com/vm0-ai/okou/issues/34809)).
+
+It does not describe scheduling, generation or delivery. Nothing here claims
+durable occurrence ownership.
+
+## The shared reader
+
+`turbo/apps/api/src/signals/services/morning-brief-connector-reader.service.ts`
+exposes one entry point:
+
+```ts
+startMorningBriefSourceDeadline(budgetMs: number): MorningBriefSourceDeadline;
+
+withMorningBriefConnectorReader<T>(
+  { scope, connectorSlug, apiBase, environmentName, budget, deadline, db, clerk },
+  collect: (reader: MorningBriefConnectorReader) => Promise<T>,
+  signal: AbortSignal,
+): Promise<MorningBriefAccessResult<T>>;
+```
+
+`budget` carries the request and byte caps only. The source deadline is a
+separate `MorningBriefSourceDeadline` — an absolute `at` and the `AbortSignal`
+that enforces it — because it is started by the composition that admits the
+source, not by the reader.
+
+The signal is a separate final parameter, as the repository's lint boundary
+requires. `clerk` is the mirrored `ClerkClient`, because membership is read from
+the membership authority rather than from a cache row.
+
+A collector supplies a `pathname`, an optional query and a Zod schema. It never
+sees a credential, never chooses a host and never decides whether it may read.
+The reader performs GET only, against the source's fixed provider base; it is
+not an authenticated fetch proxy.
+
+`admitMorningBriefCollection({ db, clerk, orgId, userId, anchor, deadline }, signal)`
+derives the `MorningBriefCollectionScope` — owner, installation, exact
+automation, Agent, nullable bound thread, anchor, timezone and the immutable
+membership id — from
+`simpleMorningBrief`, the canonical
+[migration state](./morning-brief-migration-state.md), the member's current
+Clerk membership and erasure admission. Nothing in a request body contributes to
+it.
+
+### What "authorized" means here
+
+Every gate must produce an unambiguous allow. Missing metadata, no route match,
+an ambiguous route, `deny`, `ask` and an expired grant are all refusals, and
+holding a credential is never permission. Each authorization pass re-derives:
+
+1. the member's current Clerk membership generation, compared against the
+   immutable id this collection was admitted under,
+2. after that external answer, transaction-level erasure admission and a
+   canonical Morning Brief that is still `installed`, still enabled, and still
+   the same installation, automation, Agent and nullable destination,
+3. the Agent's current visibility to this member in that same local transaction,
+4. the pinned connector account,
+5. the Agent's connector grants,
+6. accepted-catalog visibility for this member,
+7. the effective URL-level decision from live permission grants, through
+   `matchFirewallRequestDecision`.
+
+Items 1-6 are identity; item 7 always names a real URL. There is deliberately
+no authorization outcome for "no endpoint": the identity pass runs first and the
+credential is decrypted **lazily, behind the first endpoint a live policy
+allowed**, so a credential is never touched on the strength of connector
+presence alone.
+
+The pass runs **before the credential is decrypted or refreshed**, **before
+every request**, and **again after `collect` returns** as a release fence. Clerk
+is always queried before the short final local transaction, so no network call
+runs under erasure or database locks. That transaction is the local decision
+point; it does not make Clerk and PostgreSQL globally atomic or recall a payload
+after a later revocation. The release fence re-evaluates identity plus **every
+distinct permission whose
+result the source still holds**, not only the last request's. A source that read
+a list under one permission and bodies under another withholds everything if the
+list permission is denied while the final body request is in flight.
+
+The policy map is keyed by the connector's runtime target key, because that is
+the firewall name `matchFirewallRequestDecision` looks a policy up by. Keying it
+by the bare slug silently misses every active `deny` and `ask` and evaluates as
+if the member held no grants at all.
+
+### Account selection fails closed
+
+The explicit selection on the canonical workflow/user thread wins. The org
+default applies only when no selection exists at all. An explicit choice that no
+longer resolves to a live account of this owner terminates the source; it never
+falls back to a default mailbox. This reader deliberately does not reuse the Run
+account materializer's invalid-selection fallback.
+
+### Two failure altitudes
+
+- **Endpoint-local denial** is a bounded coverage gap, reported as
+  `{ kind: "denied", scope, meta }`. `scope: "policy"` is this member's own
+  effective permission refusing the endpoint; `scope: "provider"` is a `403`.
+  One resource can refuse a read while its siblings stay authorized, and a
+  provider secondary rate limit arrives as `403` with `Retry-After`, so neither
+  proves the credential is gone and neither terminates the source.
+- **Owner, membership, Agent, installation or selected-account invalidation** is
+  terminal. The reader latches, issues no further request, and discards the
+  collected payload rather than releasing it. A provider `401` latches the same
+  way as `reconnect-required`, because it withdraws the credential itself.
+
+A refusal at admission names what was missing — `not-authorized`,
+`not-connected`, `reconnect-required`. The same change observed once collection
+is under way is always `source-revoked`, because it invalidates data the source
+already holds.
+
+### Response metadata
+
+`ok`, `denied` and `rate-limited` carry `MorningBriefResponseMetadata`: bounded
+`X-RateLimit-Remaining`, an ISO `X-RateLimit-Reset`, a clamped `Retry-After`,
+and whether an RFC 8288 `Link` header advertises a next page together with its
+validated page number. The `Link` URL itself is dropped: adapters learn that a
+page exists and keep constructing their own fixed paths, so nothing here can
+become a followable provider URL.
+
+### Credentials that do not expire
+
+A null stored expiry means the credential does not expire, not that it expired
+now. GitHub OAuth tokens, personal access tokens and every manual method store
+`NULL`; forcing a refresh on them drives an unsupported refresh that fails
+before a single provider request. Gmail's expiring credential still refreshes
+inside its buffer, and a method that genuinely cannot refresh still fails closed
+at the next authorization.
+
+### Authority is re-derived after credential preparation
+
+The credential is resolved behind the first endpoint a live policy allowed, and
+resolving it can await a real OAuth refresh round trip and its persistence. That
+wait is long enough for the authority the decision was made under to be
+withdrawn, so the same live identity and policy implementation answers a second
+time — for the account preparation actually produced, and for that exact URL —
+immediately before the source's first provider request. A withdrawn grant,
+membership, installation or account choice refuses there: the source spends no
+request, never falls back to another mailbox and never refreshes again. An
+endpoint whose own permission was denied during the wait keeps the prepared
+credential, because a sibling endpoint that is still allowed must not pay for a
+second refresh. The deadline and cancellation are re-read at the same boundary.
+
+### One absolute deadline
+
+The deadline is started by the composition that admits the source, **before**
+the public admission runs, and is then carried unchanged: the preview starts it,
+`admitMorningBriefCollection` runs inside it, and the reader spends what is left
+rather than starting a second one. A slow preflight therefore shortens the
+collection instead of earning it a fresh allowance, and a source whose budget
+was already spent is refused before any identity, credential or provider work.
+
+It is both an `AbortSignal` composed into the provider request and its body, and
+a clock the reader re-reads **after authorization returns and before the request
+is admitted**, so authorization that takes real time cannot start a request past
+its own deadline. Caller cancellation keeps its own propagation — it stays a
+cancellation and never becomes a collected envelope — while deadline exhaustion
+surfaces as `budget-exhausted / deadline` per request and `deadline-exceeded`
+for the source, never as a healthy empty read.
+
+The deadline is read from the **clock**, not from the timer.
+`AbortSignal.timeout` only reports `aborted` once its callback has been
+scheduled and run, so between the instant a budget expires and that callback the
+bit is still false. Every decision about whether the source may continue
+compares the absolute deadline; the timer is left to do the one thing a clock
+cannot, which is interrupt I/O already in flight.
+
+That includes the last decision of all. The release fence re-derives identity
+and every retained permission, which takes real time and can outlast the budget.
+Its local erasure, complete-binding and Agent-visibility transaction spends the
+same deadline as the external membership read, so an external answer that
+arrives just inside the boundary does not create a fresh allowance for those
+queries. The clock is compared again **after** the whole fence and before any
+payload is handed back. A collection accepted after its absolute deadline is
+late content, not a healthy read. The boundary is inclusive: the whole fence
+must finish before it, while equality is already too late.
+
+The preflight spends the same budget. `admitMorningBriefCollection` composes the
+caller's signal with the source deadline for its own reads and compares the
+clock before it returns a scope, so a membership answer or failure released
+after the budget expired stops there — no retry, no further admission read and
+no provider request. It reports that as its own `unavailable / deadline-exceeded`
+outcome, which the preview answers as `504`: a spent budget is not a refusal of
+authority a member could act on, and admission is the one phase with no
+collection envelope to answer with, because the installation and timezone that
+envelope names are exactly what it had not read yet. Caller cancellation
+released under an unspent budget still surfaces as cancellation.
+
+Passing that composed signal to a provider SDK is not a claim that an in-flight
+SDK request is physically cancelled; what is guaranteed is that nothing further
+runs once it returns. The shared Clerk gateway's own bounding remains
+[#34946](https://github.com/vm0-ai/okou/issues/34946).
+
+### Limits this reader does not exceed
+
+Provider work already in flight cannot be retracted. The guarantee is admission
+fencing plus final-payload fencing, not instantaneous revocation. Erasure
+admission runs in its own short transaction with finite `lock_timeout` and
+`statement_timeout` and no network call inside it.
+
+## Gmail collection
+
+`morning-brief-gmail-collection.service.ts` collects two branches and merges
+them by message ID, retaining every branch that selected a message:
+
+- **recent** — `[anchor - 24h, anchor)`, half-open. Provider `after`/`before`
+  filters are second-resolution, so the query is widened to whole seconds and
+  each candidate is rechecked against millisecond `internalDate`. List ordering
+  is not assumed.
+- **unread** — the mailbox's current unread backlog with no invented lower
+  bound. It is a read-time snapshot stamped with `unreadObservedAt`, **not**
+  unread state as of the anchor.
+
+Detail requests interleave the branches, so the unread backlog cannot starve
+behind a busy recent window.
+
+Preserved per message: bounded subject/from/to/date headers, IDs, timestamps,
+unread labels, a readable inline excerpt and a safe Gmail deep link whose
+`authuser` names the pinned account, so a selected non-default account never
+points at another mailbox. No attachment is retrieved and no remote URL is
+fetched.
+
+`internalDate` is decoded as epoch milliseconds **at the provider boundary**. A
+value outside that shape, or outside the range a `Date` can represent, is
+provider data this collector cannot normalize: the message is rejected as a
+malformed response so its branch reports a failure, its authorized siblings
+survive, and no timestamp is invented. Accepting any string instead dropped an
+unusable recent message into a healthy-looking read and threw out of
+`toISOString` during normalization, after the reader had already returned.
+
+### Retained text is one budget
+
+Every character the result keeps is charged to the same 40,000-character
+normalized budget: the four retained headers as well as the excerpt, in that
+order. Each header is first projected to its own small ceiling, because a
+provider header is transport-valid long before it is reasonable — a single
+50,000-character `Subject` fits comfortably inside the 256 KiB response ceiling.
+A value that no longer fits is shortened to what remains rather than dropping
+the item that owns it, and the shortfall is named in `coverage.truncations`:
+`header-characters` for a per-field ceiling, `text-characters` for the
+aggregate. None of this widens a transport, request or aggregate cap.
+
+### Inline text, attachments and MIME caps
+
+Inline `text/plain` is preferred; an HTML-only message goes through the
+repository's existing bounded `html-to-text` normalizer, and when that yields
+nothing usable the item declares `excerptSource: "html-only"` instead of
+inventing content.
+
+A part carrying a filename is an attachment and its **whole subtree** is pruned
+before its descendants are visited. A `message/rfc822` attachment contains a
+complete message, so walking into it let attached content supply the excerpt of
+the message that carried it. Pruning content already present in the response is
+not a cap and is not reported as one; it never reaches for another provider
+endpoint.
+
+A MIME depth or node cap that stops the walk is its own state:
+`excerptSource: "mime-truncated"` plus a `mime-nodes` truncation. Reporting it
+as `html-only` claimed the message really carried no inline text, when a
+plaintext part may simply never have been reached.
+
+### Caps
+
+| Cap                            | Value    |
+| ------------------------------ | -------- |
+| List pages per branch          | 2        |
+| Candidates per page            | 25       |
+| Unique message detail requests | 40       |
+| Total API requests (attempted) | 44       |
+| Concurrency                    | 3        |
+| Deadline                       | 20 s     |
+| Bytes per response             | 256 KiB  |
+| Cumulative response bytes      | 4 MiB    |
+| Characters per excerpt         | 2,000    |
+| Characters per subject         | 300      |
+| Characters per `From`          | 320      |
+| Characters per `To`            | 1,000    |
+| Characters per `Date`          | 64       |
+| Final text characters          | 40,000   |
+| MIME depth / nodes             | 12 / 200 |
+
+Byte ceilings are enforced while streaming, never after an unbounded
+`response.text()`. A request slot is reserved before the first await and a
+response's whole byte allowance before it is streamed, so concurrent readers
+cannot each observe the same remaining budget. An unattempted request returns
+its slot.
+
+`reservedBytes` bounds **reserved** bytes, not consumed ones. The bounded reader
+stops at the allowance and reports no consumed count for an oversized body, so an
+abandoned body keeps its whole reservation charged and only a completed body
+releases the difference between its allowance and its actual size. It is an upper
+bound on what this source was permitted to consume, and the underlying streaming
+helper cannot establish a tighter one.
+
+Each refusal names the allowance that actually bound it. A response that overran
+the 256 KiB per-response ceiling while the cumulative budget still had a full
+ceiling left reports `response-bytes` alone; `total-response-bytes` is reported
+when the cumulative budget is what clipped a response's allowance, or when it
+refuses a request outright. Reporting every oversized body as cumulative
+exhaustion overstates how much of the source was skipped.
+
+Redirects are disabled, so a credential cannot follow a provider redirect
+off-host. The earliest cap wins and every truncation is named in
+`coverage.truncations`.
+
+`Retry-After` is surfaced as bounded metadata (≤ 60 s); the reader never sleeps
+or retries on it. The rate limit itself is recorded as an occurrence, separately
+from that optional advice, so a `429` carrying no header stays `rate-limited`
+rather than collapsing into a generic provider failure. When several requests
+are limited the longest advised delay is retained, so a caller that honors it
+never retries earlier than a provider asked; each value is already clamped by
+the reader, which keeps the retained one inside the same bound. A provider `403`
+stays an endpoint-local denial and a `404` stays a deleted message.
+
+### The envelope
+
+The result is memory-only. It identifies the source, anchor, `collectedAt`,
+`unreadObservedAt`, both branch windows, normalized items with branch
+provenance, coverage and sanitized failure codes. Status is:
+
+| Status        | Meaning                               |
+| ------------- | ------------------------------------- |
+| `ok`          | Complete read with content.           |
+| `empty`       | Complete read with nothing in it.     |
+| `partial`     | Usable content with reduced coverage. |
+| `unavailable` | No usable content.                    |
+
+A cap, an unknown page, a malformed response, a denied branch or an all-source
+error can never be reported as `empty`. `not-connected`, `not-authorized`,
+`reconnect-required`, `source-revoked`, `rate-limited` and `provider-failed` are
+distinct. Raw bodies, credentials and provider error payloads are never
+persisted or logged; a schema failure logs only the connector slug and org.
+
+## The preview entrypoint
+
+`POST /api/morning-brief/preview/gmail-collection` is registered in the ordinary
+application composition (`signals/route.ts`), so the deployed production gate,
+authentication and ownership checks are the ones under test. It exists to make
+the reader a real consumed boundary, not to ship a feature:
+
+- **Production answers 404 before authentication**, whether or not
+  `simpleMorningBrief` is on. The gate is the existing production
+  `isTestEndpointAllowed` helper; no test fixture or test-only helper is imported
+  into production code.
+- Development and protected preview additionally require the authenticated
+  org/user, the implementation switch, a live canonical installed **and enabled**
+  Morning Brief, valid Agent access and current membership/erasure admission.
+- The only request input is a validated anchor. There is no Settings UI.
+- The result is ephemeral. It claims no occurrence, no schedule and no delivery,
+  and it creates no Run, Chat message, email, LLM call or credit operation.
+
+## Coverage limits, stated exactly
+
+- **`ask` and no-match are not constructible from Gmail's surface.** The
+  accepted-catalog fixture allows `messages.read` by default and defaults
+  unknown permissions to `deny`, and the collector only builds two allowlisted
+  paths. `deny`, an ungranted default-deny permission and an expired allow are
+  all exercised end to end; every non-`allow` decision leaves the reader through
+  one `decision.kind === "allow"` check, and the remaining shapes are exercised
+  by the GitHub adapter's own surface.
+- **A dangling account selection cannot be built.** The real account-deletion
+  endpoint deletes the thread selection before removing the account, and the
+  schema restricts deleting a referenced connector, so a later invocation
+  legitimately sees no explicit selection and follows the existing no-selection
+  policy. What is proven instead is that an explicit selection that is still
+  present but unusable fails closed, and that deleting the pinned account while
+  its requests are in flight never substitutes another account.
+- **A malformed `internalDate` is proven as a rejected provider response, not
+  as a partially usable message.** The message is not normalized at all, so its
+  branch reports `failed` and its siblings carry the collection. Which siblings
+  survive depends on how many detail requests were already in flight when the
+  malformed one arrived; the guarantee is that authorized siblings already read
+  are kept, not that every remaining candidate is still fetched.
+- **The in-flight body deadline is proven with a short real budget.** The
+  20-second production budget cannot be waited out in a test, and a production
+  parameter for shortening it would be a debug surface rather than a contract, so
+  the deadline case drives the deployed `admitMorningBriefCollection` →
+  `collectMorningBriefGmail` composition with the same budget argument the route
+  supplies and a value a test can spend. Bodies that never finish are left open,
+  and the invocation returning `deadline-exceeded` at all is the deadline
+  reaching work already in flight.
+- **The mocked transport does not break a delivered body by itself.** A real
+  socket fails an in-flight body when its request is aborted; the HTTP double
+  fails the stream with the request's own abort reason to match. The reason is
+  always the request's, so the reader still distinguishes its own timeout from
+  its caller's cancellation from what actually aborted.
+- **Cumulative byte exhaustion is proven by arithmetic, not by timing.** Message
+  bodies are released in exact concurrency-sized batches, so at each release
+  every earlier batch is already charged and the number of requests the budget
+  still admits is deterministic. Sixteen full 256 KiB allowances exhaust 4 MiB
+  exactly; without the refund of what the two list responses did not use, their
+  reservations alone would stop the same run a whole batch earlier.
+- **The last allowance is proven to be spent once, by allocation rather than by
+  labels.** The cumulative budget is filled until what remains is smaller than
+  one per-response ceiling, and exactly one concurrency-sized batch of ordinary
+  bodies is then parked _after_ each reader has taken its allowance and before
+  any of them reads. Exactly one of the three becomes content, because the
+  remainder belonged to whichever reader claimed it. Taking the allowance after
+  the body instead — the one-line reordering of the production reservation —
+  hands all three the same bytes and all three succeed, so the case fails. That
+  reordering is a test counterexample; the deployed reservation is already
+  before the await.
+- **Cleanup is observed, not inferred from arrival counts.** One socket is made
+  to finish tearing down after its siblings, and the number of settled bodies is
+  read at the instant the public operation completes. Joining every started
+  worker keeps that number at the full concurrency; propagating the first
+  rejection instead completes with the lagging body still unravelling, which
+  fails the case.
+
+## Rollout, scale and compatibility
+
+`simpleMorningBrief` stays default-off and unchanged; existing Settings and
+legacy execution remain authoritative. Rollback removes the optional preview
+consumer with no source-content cleanup or backfill, because nothing is
+persisted. Old and new API binaries can run together: this change adds one route
+and reads only tables that already exist, so an older binary simply does not
+serve the route. See
+[deployment compatibility](./deployment-compatibility.md).
+
+A paginated masked production read on 2026-09-17 at 03:47:44–03:47:45 UTC,
+including internal owners, found 94 Gmail account rows across 89 owner pairs
+with 3 needing reconnect, and 213 Morning Brief daily-delivery automations — 206
+enabled, 7 disabled — across 212 owners and 209 organizations. Those are
+inventory counts. They are not a count of selected, granted or authorized
+sources: Agent grants and thread account choices were not counted, and
+enrollment, canonical thread binding and native state tables are not exposed
+through MaskDB. No migration or backfill is proposed here.
+
+S5/S7 will integrate this same collector under real occurrence ownership. They
+must call the collection service directly and must never call this public
+preview endpoint in production.

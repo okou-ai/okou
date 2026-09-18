@@ -1,7 +1,11 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadRenameContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -16,14 +20,26 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 
-function setupEmojiPage(threadTitle = "Emoji planning"): Promise<void> {
+function setupEmojiPage(
+  threadTitle = "Emoji planning",
+  archiveEnabled?: boolean,
+): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle,
   });
+  if (archiveEnabled) {
+    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+      return respond(200, { unreads: [] });
+    });
+  }
   return setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
+    featureSwitches:
+      archiveEnabled === undefined
+        ? undefined
+        : { [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled },
   });
 }
 
@@ -97,6 +113,36 @@ function nextAnimationFrame(): Promise<void> {
   });
   return frame.promise;
 }
+
+test("Keep the check-mark thread icon Done when archiving is disabled", async () => {
+  await setupEmojiPage("Emoji planning", false);
+  await waitFor(() => {
+    expect(buttonByLabel("Change icon")).toBeInTheDocument();
+  });
+
+  click(buttonByLabel("Change icon"));
+  await screen.findByLabelText("Search emoji");
+
+  expect(emojiButton("Done")).toHaveTextContent("✅");
+  expect(
+    document.querySelector('[data-chat-thread-emoji][aria-label="Archive"]'),
+  ).not.toBeInTheDocument();
+});
+
+test("Name the check-mark thread icon Archive when archiving is enabled", async () => {
+  await setupEmojiPage("Emoji planning", true);
+  await waitFor(() => {
+    expect(buttonByLabel("Change icon")).toBeInTheDocument();
+  });
+
+  click(buttonByLabel("Change icon"));
+  await screen.findByLabelText("Search emoji");
+
+  expect(emojiButton("Archive")).toHaveTextContent("✅");
+  expect(
+    document.querySelector('[data-chat-thread-emoji][aria-label="Done"]'),
+  ).not.toBeInTheDocument();
+});
 
 test("Retain a thread icon when resizing from mobile to desktop", async () => {
   const viewport = context.mocks.browser.matchMedia(false);

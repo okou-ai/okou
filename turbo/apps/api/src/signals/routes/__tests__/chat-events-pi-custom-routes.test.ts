@@ -150,7 +150,6 @@ async function configureCustomPiModel(
   ]);
   await authDeviceSupport.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.PiLoop]: true,
-    [FeatureSwitchKey.CodexFastMode]: true,
   });
   return {
     connection: created.body,
@@ -207,7 +206,6 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
-        [FeatureSwitchKey.CodexFastMode]: true,
       });
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
@@ -310,7 +308,6 @@ describe("CHAT-02: model-first provider policies", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
-          [FeatureSwitchKey.Effort]: true,
         },
       );
       mockPiResourceArchiveDownloads();
@@ -765,7 +762,6 @@ describe("CHAT-02: model-first provider policies", () => {
       // Mutating current settings after API ownership cannot rewrite the captured claim.
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: false,
-        [FeatureSwitchKey.CodexFastMode]: false,
       });
       await chat.updateThreadModelSelection(
         actor,
@@ -1347,7 +1343,6 @@ describe("CHAT-02: model-first provider policies", () => {
       );
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: false,
-        [FeatureSwitchKey.CodexFastMode]: false,
       });
       gate.release();
       await completion;
@@ -1472,7 +1467,6 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each([
     { selectedModel: "gpt-6-astra", tier: undefined, piLoop: true },
     { selectedModel: "gpt-6-astra", tier: "fast", piLoop: true },
-    { selectedModel: "gpt-5.5", tier: undefined, piLoop: true },
     ...GPT_PI_BDD_MODELS.map((selectedModel) => {
       return { selectedModel, tier: "fast", piLoop: false } as const;
     }),
@@ -1498,37 +1492,6 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
       await expectNoBuiltInModelUsage(run.runId);
-    },
-    90_000,
-  );
-
-  it.each(GPT_PI_BDD_MODELS)(
-    "rejects custom %s Fast admission when the existing Fast gate is disabled",
-    async (selectedModel) => {
-      const { actor, agentId } = await entitledChatActor();
-      await configureCustomPiModel(actor, selectedModel);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.CodexFastMode]: false,
-      });
-      const clientThreadId = randomUUID();
-      const rejected = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          clientEventId: randomUUID(),
-          clientThreadId,
-          model: selectedModel,
-          prompt: "respect the custom Fast feature gate",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        [400],
-      );
-      expect(rejected.body).toMatchObject({
-        error: {
-          message: "Codex fast mode is not enabled for this workspace",
-        },
-      });
-      await chat.requestReadThread(actor, clientThreadId, [404]);
     },
     90_000,
   );

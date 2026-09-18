@@ -215,7 +215,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const modelRequests: unknown[] = [];
       server.use(
         http.post(
-          `https://${usRoutingEnabled && selectedModel !== "deepseek-v4.1-flash" ? "us." : ""}openrouter.ai/api/v1/responses`,
+          `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`,
           async ({ request }) => {
             modelRequests.push(await request.json());
             return new HttpResponse(
@@ -685,7 +685,6 @@ describe("CHAT-02: model-first provider policies", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
-          [FeatureSwitchKey.CodexFastMode]: true,
         },
       );
       mockPiResourceArchiveDownloads();
@@ -964,7 +963,6 @@ describe("CHAT-02: model-first provider policies", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
-          [FeatureSwitchKey.CodexFastMode]: true,
         },
       );
       mockPiResourceArchiveDownloads();
@@ -1061,7 +1059,6 @@ describe("CHAT-02: model-first provider policies", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
-          [FeatureSwitchKey.CodexFastMode]: true,
         },
       );
       mockPiResourceArchiveDownloads();

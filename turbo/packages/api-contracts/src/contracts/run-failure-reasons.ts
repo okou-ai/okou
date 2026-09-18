@@ -10,6 +10,7 @@ export type RunFailureReasonToken = z.infer<typeof runFailureReasonTokenSchema>;
 
 export const knownRunFailureReasonSchema = z.enum([
   "session_history_limit",
+  "guest_root_filesystem_full",
   "execution_timeout",
   "insufficient_credits",
   "provider_insufficient_credits",

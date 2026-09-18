@@ -39,7 +39,8 @@ capture is not admission.
 Each actual terminal transaction uses `withRunContentWrite`: READ COMMITTED,
 1-second lock timeout, 5-second statement timeout, and at most three fresh
 transactions for a proven ownership race. The order remains **all distinct B1
-subjects -> resources -> output -> thread -> run -> session**. Locked ownership
+subjects -> resources -> thread -> run -> session**; the exact run row is the
+common same-run mutex before callback writes. Locked ownership
 and supplied snapshot/destination are checked before every admitted write; B1
 locks remain held through COMMIT. Closed may precede supplied-identity mismatch,
 and grants no write capability. Optional `users` rows and current compute leases

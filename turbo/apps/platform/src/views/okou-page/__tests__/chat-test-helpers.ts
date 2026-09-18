@@ -25,6 +25,7 @@ import {
   runsCancelContract,
   runsByIdContract,
 } from "@okouai/api-contracts/contracts/run-routes";
+import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { queuePositionContract } from "@okouai/api-contracts/contracts/queue-position";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -915,6 +916,13 @@ export function mockChatLifecycle(
       status: runStatus,
       prompt: runPrompt ?? "Hello",
       appendSystemPrompt: null,
+      source: {
+        providerType: null,
+        runtimeProviderType: null,
+        model: null,
+        credentialScope: null,
+        account: { status: "unknown" },
+      },
       result: { agentSessionId: "session-1", output: resultContent },
       createdAt: "2026-03-10T00:00:00Z",
     });
@@ -925,6 +933,20 @@ export function mockChatLifecycle(
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [] });
   });
+  // Thread activity summaries are generally available, so any active run now
+  // demands this endpoint. Answer `ineligible` so a chat test that is not about
+  // summaries leaves the indicator inert instead of reaching an unhandled
+  // request; the summary tests register their own handler after this one.
+  context.mocks.api(
+    chatThreadActivitySummaryContract.summarize,
+    ({ body, respond }) => {
+      return respond(200, {
+        runId: body.runId,
+        messages: [],
+        status: "ineligible",
+      });
+    },
+  );
 
   return {
     setRunStatus: (s) => {

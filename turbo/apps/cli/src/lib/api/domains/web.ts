@@ -5,10 +5,13 @@ import {
   type IntroVideoRenderResponse,
 } from "@okouai/api-contracts/contracts/intro-video-render";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { resolveOwnedArtifactReference } from "./artifact-references";
+import {
+  readArtifactDownload,
+  resolveOwnedArtifactReference,
+} from "./artifact-references";
 import { isUtf8 } from "node:buffer";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
-import { basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
@@ -61,6 +64,7 @@ import {
   withAbsoluteArtifactUrl,
 } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
+import { downloadHostedSiteFiles } from "../../host/clone-hosted-site";
 
 const BUILT_IN_GENERATION_POLL_INTERVAL_MS = 2_000;
 const BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE = {
@@ -195,6 +199,8 @@ interface DownloadWebFileResult {
   path: string;
   mimetype: string;
   size: number;
+  fileCount?: number;
+  entrypoint?: string;
 }
 
 /** Only the configured API origin may receive the CLI credential. */
@@ -256,17 +262,31 @@ async function fetchWebFile(fileId: string): Promise<Response> {
 }
 
 /**
- * Download a web-uploaded file to a local path, streaming the response body
- * to disk. Authenticates via OKOU_TOKEN. Response is binary, so this bypasses
- * the typed contract client.
+ * Download an authorized artifact or web-uploaded file to a local path.
+ * Artifact authorization uses OKOU_TOKEN, but its delivery URL never receives
+ * the CLI credential. Raw file IDs retain the authenticated download route.
  */
 export async function downloadWebFile(
   fileId: string,
   outPath: string,
 ): Promise<DownloadWebFileResult> {
-  const response = await fetchWebFile(
-    (await webFileReferenceId(fileId)) ?? fileId,
-  );
+  const reference = parseArtifactReference(fileId, await getPlatformOrigin());
+  const artifact = reference
+    ? await readArtifactDownload(`${reference.hash}${reference.extension}`)
+    : undefined;
+  if (artifact?.kind === "html") {
+    await downloadHostedSiteFiles(artifact.site, outPath);
+    return {
+      path: outPath,
+      mimetype: "text/html",
+      size: artifact.site.size,
+      fileCount: artifact.site.fileCount,
+      entrypoint: join(outPath, "index.html"),
+    };
+  }
+  const response = artifact
+    ? await fetch(artifact.url)
+    : await fetchWebFile((await webFileReferenceId(fileId)) ?? fileId);
 
   if (!response.ok) {
     let message = `Failed to download web file (HTTP ${response.status})`;
@@ -294,6 +314,7 @@ export async function downloadWebFile(
   const mimetype =
     response.headers.get("x-file-mimetype") ??
     response.headers.get("content-type") ??
+    artifact?.contentType ??
     "application/octet-stream";
 
   // Cast required: Web API ReadableStream and Node.js ReadableStream are
@@ -303,8 +324,7 @@ export async function downloadWebFile(
     createWriteStream(outPath),
   );
 
-  const contentLengthHeader = response.headers.get("content-length");
-  const size = contentLengthHeader ? Number(contentLengthHeader) : 0;
+  const size = statSync(outPath).size;
 
   return { path: outPath, mimetype, size };
 }
@@ -325,6 +345,7 @@ interface GenerateWebVoiceOptions {
 }
 
 interface GenerateWebVoiceResult {
+  privateArtifacts?: boolean;
   id: string;
   filename: string;
   contentType: string;
@@ -356,6 +377,7 @@ interface GenerateWebImageOptions {
 }
 
 interface GenerateWebImageResult {
+  privateArtifacts?: boolean;
   id: string;
   filename: string;
   contentType: string;
@@ -409,6 +431,7 @@ interface GenerateWebVideoOptions {
 }
 
 interface GenerateWebVideoResult {
+  privateArtifacts?: boolean;
   id: string;
   filename: string;
   contentType: string;

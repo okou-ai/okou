@@ -16,7 +16,7 @@ use crate::lock;
 use crate::state_file::PROXY_REGISTRY_MAX_BYTES;
 use crate::types::{
     ConnectorRuntimeTarget, ConnectorRuntimeTargetRegistration, FirewallEntry, NetworkPolicy,
-    SecretConnectorMetadata,
+    SecretConnectorMetadata, XResourceBilling,
 };
 
 #[derive(Serialize, Deserialize)]
@@ -56,6 +56,12 @@ struct SandboxEntry {
     billable_firewalls: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_usage_provider: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::types::deserialize_x_resource_billing"
+    )]
+    x_resource_billing: Option<XResourceBilling>,
 }
 
 /// Parameters for registering a sandbox in the proxy registry.
@@ -76,6 +82,7 @@ pub struct SandboxRegistration<'a> {
     pub capture_network_bodies: bool,
     pub billable_firewalls: &'a [String],
     pub model_usage_provider: Option<&'a str>,
+    pub x_resource_billing: Option<&'a XResourceBilling>,
 }
 
 async fn read_registry(path: &std::path::Path) -> RunnerResult<ProxyRegistry> {
@@ -666,6 +673,7 @@ impl ProxyRegistryHandle {
                 capture_network_bodies: registration.capture_network_bodies,
                 billable_firewalls: registration.billable_firewalls.to_vec(),
                 model_usage_provider: registration.model_usage_provider.map(String::from),
+                x_resource_billing: registration.x_resource_billing.cloned(),
             },
         );
         registry.updated_at = now;
@@ -1074,7 +1082,45 @@ mod tests {
             capture_network_bodies: false,
             billable_firewalls: &[],
             model_usage_provider: None,
+            x_resource_billing: None,
         }
+    }
+
+    #[tokio::test]
+    async fn registry_rewrite_rejects_null_x_resource_capability() {
+        let fixture = RegistryHarness::new().await;
+        fixture
+            .handle
+            .register_sandbox("10.200.0.2", &base_registration())
+            .await
+            .unwrap();
+        let mut registry: serde_json::Value = serde_json::from_str(
+            &tokio::fs::read_to_string(fixture.registry_path())
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        registry["sandboxes"]["10.200.0.2"]["xResourceBilling"] = serde_json::Value::Null;
+        let malformed = serde_json::to_string(&registry).unwrap();
+        tokio::fs::write(fixture.registry_path(), &malformed)
+            .await
+            .unwrap();
+
+        // A refresh for another sandbox must not rewrite malformed advertised
+        // state into an absent capability before Python can reject it.
+        assert!(
+            fixture
+                .handle
+                .register_sandbox("10.200.0.3", &base_registration())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(fixture.registry_path())
+                .await
+                .unwrap(),
+            malformed
+        );
     }
 
     #[tokio::test]
@@ -1311,6 +1357,7 @@ mod tests {
                 capture_network_bodies: false,
                 billable_firewalls: vec![],
                 model_usage_provider: None,
+                x_resource_billing: None,
             },
         );
         write_registry(&registry_path, &registry).await.unwrap();

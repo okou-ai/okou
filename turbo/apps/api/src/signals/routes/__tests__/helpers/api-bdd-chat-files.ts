@@ -257,6 +257,17 @@ function chatFilesApp(context: TestContext, signal?: AbortSignal) {
   return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
 }
 
+/**
+ * The same chat routes on an app whose **operation** signal the caller owns.
+ * `honoSignalHandler` hands that app signal, never `c.req.raw.signal`, to every
+ * route command, and no chat route reads `requestSignal$`, so aborting it is the
+ * only way a test can drive these routes' production cancellation path. A
+ * `fetchOptions.signal` only abandons the client's own promise.
+ */
+function chatFilesOperationApp(context: TestContext, signal: AbortSignal) {
+  return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
+}
+
 /** The optional pin query a client may send; omitted keys stay omitted. */
 interface PinQuery {
   readonly eventId?: string;
@@ -276,6 +287,18 @@ interface EventIdQuery {
 
 function unpinQuery(query: EventIdQuery) {
   return query.eventId === undefined ? {} : { eventId: query.eventId };
+}
+
+/** The image or video model pin body; an omitted event id stays omitted so the
+ * route keeps generating one for itself. */
+function generationModelBody<TModel extends string>(
+  model: TModel | null,
+  options: EventIdQuery | undefined,
+) {
+  return {
+    model,
+    ...(options?.eventId === undefined ? {} : { eventId: options.eventId }),
+  };
 }
 
 export function persistedAttachment(
@@ -987,6 +1010,39 @@ export function createChatFilesBddApi(context: TestContext) {
       return response.body;
     },
 
+    /**
+     * The read-cursor writers driven through an app whose operation signal the
+     * caller aborts, which is the signal those route commands actually receive:
+     * the two single-thread writers and the bulk per-Agent one. The requests
+     * are returned unnarrowed so a caller can assert the off-contract response
+     * a cancelled operation produces.
+     */
+    readCursorWritesWithOperationSignal(signal: AbortSignal) {
+      const operationApp = chatFilesOperationApp(context, signal);
+      return {
+        async markRead(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkReadContract).markRead({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+        async markUnread(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkUnreadContract).markUnread({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+        async markAgentRead(actor: ApiTestUser, agentId: string) {
+          return await operationApp(
+            chatThreadMarkAgentReadContract,
+          ).markAgentRead({
+            headers: authenticate(context, actor),
+            body: { agentId },
+          });
+        },
+      };
+    },
+
     async requestMarkThreadRead(
       actor: ApiTestUser | null,
       threadId: string,
@@ -1052,14 +1108,32 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       imageModel: ImageModelId | null,
+      options?: EventIdQuery,
     ): Promise<void> {
       await accept(
         threadImageModelClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { model: imageModel },
+          body: generationModelBody(imageModel, options),
         }),
         [204],
+      );
+    },
+
+    async requestUpdateThreadImageModel(
+      actor: ApiTestUser | null,
+      threadId: string,
+      imageModel: ImageModelId | null,
+      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+      options?: EventIdQuery,
+    ) {
+      return await accept(
+        threadImageModelClient().update({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: generationModelBody(imageModel, options),
+        }),
+        statuses,
       );
     },
 
@@ -1067,15 +1141,68 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       videoModel: VideoModelId | null,
+      options?: EventIdQuery,
     ): Promise<void> {
       await accept(
         threadVideoModelClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: { model: videoModel },
+          body: generationModelBody(videoModel, options),
         }),
         [204],
       );
+    },
+
+    async requestUpdateThreadVideoModel(
+      actor: ApiTestUser | null,
+      threadId: string,
+      videoModel: VideoModelId | null,
+      statuses: readonly (204 | 400 | 401 | 403 | 404)[],
+      options?: EventIdQuery,
+    ) {
+      return await accept(
+        threadVideoModelClient().update({
+          headers: authenticate(context, actor),
+          params: { id: threadId },
+          body: generationModelBody(videoModel, options),
+        }),
+        statuses,
+      );
+    },
+
+    /**
+     * The image and video model pin writers driven through an app whose
+     * **operation** signal the caller owns, the same mechanism
+     * {@link readCursorWritesWithOperationSignal} documents. The requests are
+     * returned unnarrowed so a caller can assert the off-contract response a
+     * cancelled operation produces.
+     */
+    generationModelWritesWithOperationSignal(signal: AbortSignal) {
+      const operationApp = chatFilesOperationApp(context, signal);
+      return {
+        async updateImageModel(
+          actor: ApiTestUser,
+          threadId: string,
+          imageModel: ImageModelId | null,
+        ) {
+          return await operationApp(chatThreadImageModelContract).update({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+            body: { model: imageModel },
+          });
+        },
+        async updateVideoModel(
+          actor: ApiTestUser,
+          threadId: string,
+          videoModel: VideoModelId | null,
+        ) {
+          return await operationApp(chatThreadVideoModelContract).update({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+            body: { model: videoModel },
+          });
+        },
+      };
     },
 
     async updateUserModelPreference(

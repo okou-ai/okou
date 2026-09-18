@@ -1198,9 +1198,14 @@ describe("managed SocialKit route", () => {
     );
 
     expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
-    expect(usage.body.rows).toHaveLength(1);
-    expect(usage.body.rows[0]?.runId).toBe(run.runId);
-    expect(usage.body.rows[0]?.credits).toBe(SOCIALKIT_REQUEST_CREDITS);
+    expect(usage.body.rows).toStrictEqual([
+      expect.objectContaining({
+        title: "Unavailable thread",
+        threadId: null,
+        runId: null,
+        credits: SOCIALKIT_REQUEST_CREDITS,
+      }),
+    ]);
   });
 
   it("forwards representative GET operations with only managed auth", async () => {

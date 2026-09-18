@@ -14,12 +14,28 @@ interface ExtractedBinaryTarFile {
   readonly content: Buffer;
 }
 
-interface TarExtractionOptions {
-  readonly strictUtf8?: boolean;
+/**
+ * Every entry claiming one of the requested paths, whatever its type.
+ *
+ * The ordinary extractors drop nonregular entries, which is right for callers
+ * that only want file contents but hides the fact that a path was claimed. A
+ * caller that must prove a path resolves to exactly one regular file needs to
+ * see the symlink or directory that also claimed it, so it is reported here
+ * with a null body rather than filtered away. Nothing in this module follows a
+ * link.
+ */
+interface TarTargetOccurrence {
+  readonly path: string;
+  readonly content: Buffer | null;
 }
 
 function normalizeTarPath(path: string): string {
   return path.replace(/^\.\//, "");
+}
+
+/** The entry types that carry file bytes; everything else is a claim only. */
+function isRegularTarEntry(type: string): boolean {
+  return type === "File" || type === "OldFile" || type === "ContiguousFile";
 }
 
 function isEmptyTarArchive(buffer: Buffer): boolean {
@@ -32,11 +48,12 @@ function isEmptyTarArchive(buffer: Buffer): boolean {
   );
 }
 
-export function extractBinaryFilesFromTarGz(
+function parseTarGz(
   gzBuffer: Buffer,
-  targetPaths?: readonly string[],
-  maxOutputBytes?: number,
-): readonly ExtractedBinaryTarFile[] {
+  targetPaths: readonly string[] | undefined,
+  maxOutputBytes: number | undefined,
+  includeNonRegular: boolean,
+): readonly TarTargetOccurrence[] {
   const tarBuffer =
     maxOutputBytes === undefined
       ? gunzipSync(gzBuffer)
@@ -54,16 +71,24 @@ export function extractBinaryFilesFromTarGz(
   if (isEmptyTarArchive(tarBuffer)) {
     return [];
   }
-  const files: ExtractedBinaryTarFile[] = [];
+  const entries: TarTargetOccurrence[] = [];
   let parseError: unknown;
   const parser = new Parser({
     strict: true,
     onReadEntry(entry) {
       const path = normalizeTarPath(entry.path);
+      const regular = isRegularTarEntry(entry.type);
       if (
-        !["File", "OldFile", "ContiguousFile"].includes(entry.type) ||
+        (!regular && !includeNonRegular) ||
         (normalizedTargets !== null && !normalizedTargets.has(path))
       ) {
+        entry.resume();
+        return;
+      }
+      if (!regular) {
+        // A symlink or a directory has no body to read, and following either
+        // one is exactly what this must not do: record the claim and move on.
+        entries.push({ path, content: null });
         entry.resume();
         return;
       }
@@ -72,7 +97,7 @@ export function extractBinaryFilesFromTarGz(
         chunks.push(chunk);
       });
       entry.on("end", () => {
-        files.push({ path, content: Buffer.concat(chunks) });
+        entries.push({ path, content: Buffer.concat(chunks) });
       });
     },
   });
@@ -83,24 +108,50 @@ export function extractBinaryFilesFromTarGz(
   if (parseError !== undefined) {
     throw parseError;
   }
-  return files;
+  return entries;
+}
+
+export function extractBinaryFilesFromTarGz(
+  gzBuffer: Buffer,
+  targetPaths?: readonly string[],
+  maxOutputBytes?: number,
+): readonly ExtractedBinaryTarFile[] {
+  return parseTarGz(gzBuffer, targetPaths, maxOutputBytes, false).flatMap(
+    (entry) => {
+      // Nonregular entries were never collected for this caller, so there is
+      // no bodiless entry here to invent an empty buffer for.
+      return entry.content === null
+        ? []
+        : [{ path: entry.path, content: entry.content }];
+    },
+  );
+}
+
+/**
+ * Every entry claiming one of these paths, including the nonregular ones.
+ *
+ * Filtering by type before counting is how a regular file and a same-path
+ * symlink look like a single unambiguous file. A caller that requires one
+ * regular file at a promised path has to see both claims to reject them, so
+ * this is deliberately separate from the extractors above and leaves their
+ * behaviour untouched.
+ */
+export function extractTarGzTargetOccurrences(
+  gzBuffer: Buffer,
+  targetPaths: readonly string[],
+  maxOutputBytes: number,
+): readonly TarTargetOccurrence[] {
+  return parseTarGz(gzBuffer, targetPaths, maxOutputBytes, true);
 }
 
 export function extractFilesFromTarGz(
   gzBuffer: Buffer,
   targetPaths?: readonly string[],
   maxOutputBytes?: number,
-  options?: TarExtractionOptions,
 ): readonly ExtractedTarFile[] {
-  const strictUtf8 = options?.strictUtf8 === true;
   return extractBinaryFilesFromTarGz(gzBuffer, targetPaths, maxOutputBytes).map(
     (file) => {
-      return {
-        path: file.path,
-        content: strictUtf8
-          ? new TextDecoder("utf-8", { fatal: true }).decode(file.content)
-          : file.content.toString("utf8"),
-      };
+      return { path: file.path, content: file.content.toString("utf8") };
     },
   );
 }

@@ -27,6 +27,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
@@ -213,10 +214,10 @@ test("Connect Codex before sending with a personal route", async () => {
   const user = userEvent.setup({ delay: null });
   const clipboard = context.mocks.browser.clipboardWriteText();
   const opened = context.mocks.browser.open(context.mocks.browser.authWindow());
-  installRunChat({ selectedModel: "gpt-5.5" });
+  installRunChat({ selectedModel: "gpt-5.6-luna" });
   configurePersonalRoute({
-    model: "gpt-5.5",
-    modelLabel: "GPT 5.5",
+    model: "gpt-5.6-luna",
+    modelLabel: "GPT 5.6 Luna",
     providerType: "codex-oauth-token",
   });
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
@@ -247,9 +248,7 @@ test("Connect Codex before sending with a personal route", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await expect(
-    screen.findByRole("combobox", { name: "GPT 5.5" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("GPT 5.6 Luna")).resolves.toBeVisible();
 
   await user.click(composer);
   await user.keyboard("Hello");
@@ -327,9 +326,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   await fillComposer(composer, "Explain this failure");
   const sendButton = await findButton("Send");
   expect(sendButton).toBeDisabled();
@@ -411,9 +408,7 @@ test("Reconnect the personal provider used by the selected model", async () => {
 
   await setupPage({ context, path: NEW_CHAT_PATH });
 
-  await expect(
-    screen.findByRole("combobox", { name: "GPT 5.6 Sol" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("GPT 5.6 Sol")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
 
   click(configureButton);
@@ -472,9 +467,7 @@ test("Reconnect Claude Code for an existing chat", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   const configureButton = await findButton("Configure model");
 
   click(configureButton);
@@ -493,9 +486,9 @@ test("Reconnect Claude Code for an existing chat", async () => {
   expect(dialog).not.toHaveTextContent("inactive.claude@example.com");
 });
 
-test("Refresh model availability without losing useful options", async () => {
+async function openLimitedModelAvailability() {
   type BillingMode = "failed" | "limited" | "upgraded";
-  let billingMode: BillingMode = "limited";
+  const billing: { mode: BillingMode } = { mode: "limited" };
   const failedRefresh = context.mocks.deferred<void>();
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   context.mocks.data.orgModelPolicies([
@@ -509,7 +502,7 @@ test("Refresh model availability without losing useful options", async () => {
     }),
   ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    if (billingMode === "failed") {
+    if (billing.mode === "failed") {
       failedRefresh.resolve();
       return respond(500, {
         error: {
@@ -518,7 +511,7 @@ test("Refresh model availability without losing useful options", async () => {
         },
       });
     }
-    if (billingMode === "upgraded") {
+    if (billing.mode === "upgraded") {
       return respond(
         200,
         billingStatus({
@@ -538,12 +531,13 @@ test("Refresh model availability without losing useful options", async () => {
     );
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
 
   await readyChat();
-  const picker = await screen.findByRole("combobox", {
-    name: "GPT 5.6 Luna",
-  });
+  const picker = await composerModelTrigger("GPT 5.6 Luna");
   click(picker);
   await expect(
     screen.findByRole("option", { name: /GPT 5\.6 Luna/iu }),
@@ -555,19 +549,40 @@ test("Refresh model availability without losing useful options", async () => {
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
+  return { billing, failedRefresh };
+}
 
-  billingMode = "upgraded";
+async function expectUpgradedModelsAvailable(
+  scenario: Awaited<ReturnType<typeof openLimitedModelAvailability>>,
+) {
+  scenario.billing.mode = "upgraded";
   context.mocks.ably.trigger("billing:changed");
 
-  const personalOption = await screen.findByRole("option", {
+  await waitFor(() => {
+    const personalOption = screen.getByRole("option", {
+      name: /Claude Opus 4\.8/iu,
+    });
+    expect(personalOption).toBeVisible();
+    expect(within(personalOption).queryByText("Pro")).toBeNull();
+  });
+}
+
+test("A billing upgrade makes previously gated personal models available", async () => {
+  const scenario = await openLimitedModelAvailability();
+  await expectUpgradedModelsAvailable(scenario);
+  const personalOption = screen.getByRole("option", {
     name: /Claude Opus 4\.8/iu,
   });
   expect(personalOption).toBeVisible();
   expect(within(personalOption).queryByText("Pro")).toBeNull();
+});
 
-  billingMode = "failed";
+test("A failed availability refresh keeps models resolved by the preceding billing upgrade", async () => {
+  const scenario = await openLimitedModelAvailability();
+  await expectUpgradedModelsAvailable(scenario);
+  scenario.billing.mode = "failed";
   context.mocks.ably.trigger("billing:changed");
-  await failedRefresh.promise;
+  await scenario.failedRefresh.promise;
 
   await expect(
     screen.findByText("Model availability could not be refreshed"),
@@ -606,9 +621,7 @@ test("Show the last resolved chat model after visiting Agents", async () => {
 
   await setupPage({ context, path: NEW_CHAT_PATH });
 
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
@@ -623,8 +636,6 @@ test("Show the last resolved chat model after visiting Agents", async () => {
   await refreshStarted.promise;
   click(await findLink("Chat"));
 
-  await expect(
-    screen.findByRole("combobox", { name: "Claude Opus 4.8" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
   releaseRefresh.resolve();
 });

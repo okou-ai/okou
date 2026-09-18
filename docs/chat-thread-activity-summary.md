@@ -1,13 +1,12 @@
 # Thread activity summaries
 
-`threadActivitySummary` remains globally disabled (`enabled: false`). Once the
-staff-cohort configuration is deployed, its registry default enables only the
-existing staff organization through `STAFF_ORG_ID_HASHES`. Explicit database
-overrides still take precedence: a staff user's `false` override opts out, and
-the existing non-staff `true` opt-in remains available. Both accepted-event
-capture and direct summary requests resolve the canonical owner's
-organization/user database overrides. The same switch hands off the
-initial-thinking producer to demand from the visible main thread. Disabled
+`threadActivitySummary` is generally available (`enabled: true`). Its registry
+default now enables every account, so the switch no longer carries a
+`STAFF_ORG_ID_HASHES` cohort. Explicit database overrides still take
+precedence: a `false` override opts an individual account out. Both
+accepted-event capture and direct summary requests resolve the canonical
+owner's organization/user database overrides. The same switch hands off the
+initial-thinking producer to demand from the visible main thread. Opted-out
 accounts retain the existing producer, display and historical behavior.
 
 ## API contract
@@ -149,23 +148,23 @@ The migration only creates an empty table and index; it changes no existing
 persisted contract and backfills no historical rows. Existing API/Runner/App
 versions continue their current paths. Apply the additive migration before
 activating readers/writers; normal API production promotion already enforces
-that ordering. The staff-cohort configuration adds no migration, backfill or
-production override mutation.
+that ordering. The general-availability configuration adds no migration,
+backfill or production override mutation.
 
-The staff default takes effect only after a subsequent release containing this
-registry change is deployed. Merging the configuration does not establish
-production activation. General availability remains off; no additional user,
-email or organization exceptions are added, and the shared staff identity list
-and override scope are unchanged.
+The general-availability default takes effect only after a subsequent release
+containing this registry change is deployed. Merging the configuration does not
+establish production activation. No user, email or organization exception is
+added, the shared staff identity list is unchanged, and stored overrides are
+untouched.
 
 New App against an older API without this endpoint receives 404 and retains the
 generic indicator without repeated requests. Older Apps against a new API retain
 their generic indicator for enabled runs because opening-copy generation is
 suppressed. Switch rollback restores the legacy path for subsequent runs; it
-does not backfill opening copy into an already-created run. A staff user's
-explicit `false` override provides an individual opt-out. Removing
-`enabledOrgIdHashes` from this registry entry restores the no-cohort source
-default without changing the shared staff identity list or stored overrides.
+does not backfill opening copy into an already-created run. An explicit `false`
+override provides an individual opt-out. Setting `enabled` back to `false` in
+this registry entry restores the previous default without changing stored
+overrides.
 
 The Epic #32819 controller owns independent acceptance of the merged change,
 subsequent release coordination, and production behavior and billing

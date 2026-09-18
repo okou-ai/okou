@@ -53,6 +53,17 @@ _SHUTDOWN_RETAINED_WITHOUT_RETRY_REASON = "shutdown_retained_without_retry"
 _USAGE_QUANTITY_OUT_OF_RANGE_REASON = "usage_quantity_out_of_range"
 
 
+def _log_rejected_resource_size(proxy_log_path: str, run_id: str) -> None:
+    log_usage_underbilling(
+        proxy_log_path,
+        "Immutable X resource event exceeds webhook bounds",
+        "x_resource_event_too_large",
+        "confirmed",
+        run_id=run_id,
+        log_type="usage_event",
+    )
+
+
 def _log_rejected_usage_quantity(
     proxy_log_path: str,
     run_id: str,

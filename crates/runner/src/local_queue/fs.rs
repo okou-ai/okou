@@ -5,7 +5,31 @@ use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
+use nix::fcntl::{Flock, FlockArg};
+
 use crate::host_file::{self, DirMode};
+
+/// The group directory outlives individual runs. Lock its existing inode so
+/// cleanup cannot unlink a lock file while a publisher is waiting on it.
+pub(super) fn lock_active_inputs(group_dir: &Path) -> io::Result<Flock<File>> {
+    let dir = host_file::open_dir(
+        group_dir,
+        DirMode::SharedTrustedParent,
+        "local queue group directory",
+    )?;
+    #[cfg(test)]
+    crate::cmd::active_input_lock_attempt_for_test(&dir);
+
+    Flock::lock(dir, FlockArg::LockExclusive).map_err(|(_, error)| {
+        io::Error::new(
+            io::Error::from(error).kind(),
+            format!(
+                "lock local active inputs in {}: {error}",
+                group_dir.display()
+            ),
+        )
+    })
+}
 
 pub(crate) fn ensure_profile_jobs_dir(group_dir: &Path, profile: &str) -> io::Result<PathBuf> {
     ensure_group_dir(group_dir)?;

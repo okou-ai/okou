@@ -12,6 +12,7 @@ import {
   getWebIntroVideoAgent,
 } from "../lib/api/domains/web";
 import { withErrorHandler } from "../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../lib/command/paid-tools";
 import { createArtifactPresentation } from "./shared/artifact-return";
 
 interface IntroVideoAgentCommandOptions {
@@ -47,7 +48,12 @@ function resumeCommand(generationId: string): string {
 function printResult(result: IntroVideoAgentResponse, json?: boolean): void {
   const presentation =
     result.status === "completed" && result.url
-      ? createArtifactPresentation(result.filename ?? "Intro video", result.url)
+      ? createArtifactPresentation(
+          result.filename ?? "Intro video",
+          result.url,
+          undefined,
+          result,
+        )
       : undefined;
   const continuation =
     result.status === "queued" || result.status === "running"
@@ -95,6 +101,7 @@ function printResult(result: IntroVideoAgentResponse, json?: boolean): void {
 async function runIntroVideoAgentCommand(
   options: IntroVideoAgentCommandOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("video-generation");
   if (options.prompt === undefined && options.promptFile === undefined) {
     throw new Error("Provide --prompt or --prompt-file.");
   }

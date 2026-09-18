@@ -1,8 +1,41 @@
+import type { ConnectorCatalogAuthMethod } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+
 import { API_TEST_CONNECTOR_CATALOG } from "../../../../test-fixtures/connector-catalog";
 
 interface SensitiveStringValues {
   readonly byConnector: ReadonlyMap<string, ReadonlySet<string>>;
   readonly global: ReadonlySet<string>;
+}
+
+function addAccessSensitiveValues(
+  access: ConnectorCatalogAuthMethod["access"],
+  values: Set<string>,
+): void {
+  if ("envBindings" in access) {
+    for (const [name, binding] of Object.entries(access.envBindings)) {
+      values.add(name);
+      const valueRef = typeof binding === "string" ? binding : binding.valueRef;
+      values.add(valueRef.slice(valueRef.indexOf(".") + 1));
+    }
+  }
+  if ("platformSecrets" in access) {
+    for (const name of access.platformSecrets ?? []) {
+      values.add(name);
+    }
+  }
+  if (access.kind === "refresh-token" || access.kind === "automatic") {
+    for (const valueRef of [
+      ...Object.values(access.inputs),
+      ...Object.values(access.outputs),
+    ]) {
+      values.add(valueRef.slice(valueRef.indexOf(".") + 1));
+    }
+  }
+  if (access.kind === "refresh-token") {
+    for (const name of access.refreshableSecrets) {
+      values.add(name);
+    }
+  }
 }
 
 function sensitiveStringValues(): SensitiveStringValues {
@@ -29,31 +62,12 @@ function sensitiveStringValues(): SensitiveStringValues {
         for (const field of method.grant.fields) {
           values.add(field.privateName);
         }
-      } else {
+      } else if (method.grant.kind !== "none") {
         for (const valueRef of Object.values(method.grant.outputs)) {
           values.add(valueRef.slice(valueRef.indexOf(".") + 1));
         }
       }
-      for (const [name, binding] of Object.entries(method.access.envBindings)) {
-        values.add(name);
-        const valueRef =
-          typeof binding === "string" ? binding : binding.valueRef;
-        values.add(valueRef.slice(valueRef.indexOf(".") + 1));
-      }
-      for (const name of method.access.platformSecrets ?? []) {
-        values.add(name);
-      }
-      if (method.access.kind === "refresh-token") {
-        for (const valueRef of [
-          ...Object.values(method.access.inputs),
-          ...Object.values(method.access.outputs),
-        ]) {
-          values.add(valueRef.slice(valueRef.indexOf(".") + 1));
-        }
-        for (const name of method.access.refreshableSecrets) {
-          values.add(name);
-        }
-      }
+      addAccessSensitiveValues(method.access, values);
       if (method.revoke.kind === "token-revoke") {
         for (const valueRef of Object.values(method.revoke.inputs)) {
           values.add(valueRef.slice(valueRef.indexOf(".") + 1));

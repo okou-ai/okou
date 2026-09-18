@@ -89,11 +89,7 @@ import { runOptionsFromModelProviderSelection } from "./model-selection-request.
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
-import {
-  chatEffortEnabled$,
-  codexFastModeEnabled$,
-  featureSwitch$,
-} from "../external/feature-switch.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
@@ -110,19 +106,21 @@ import type {
 import { isCancelledRunEvent } from "./chat-run-lifecycle.ts";
 import {
   deriveRunIndicatorStateFromChatEvents,
+  liveRunIdsFromChatEvents,
+  queuedEventsFromChatEvents,
+  type RunIndicatorState,
+} from "./chat-event-state.ts";
+import {
   groupSemanticChatEvents,
   isGoalMarkerEvent,
   isInterruptControlEvent,
   isInterruptedAssistantCancellation,
   isQueueMarkerEvent,
   isUsageEvent,
-  liveRunIdsFromChatEvents,
-  queuedEventsFromChatEvents,
   semanticChatEventsFromChatEvents,
-  type RunIndicatorState,
   type SemanticChatEventState,
   type SemanticChatGroups as GenericSemanticChatGroups,
-} from "./chat-event-state.ts";
+} from "@okouai/api-contracts/contracts/chat-event-semantics";
 import { logger } from "../log.ts";
 import {
   createCancellationRecoverySignals,
@@ -135,6 +133,9 @@ import {
   subscribeChatThreadRealtime$,
 } from "./chat-thread-remote-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
+import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
+import { compareCreatedAt } from "./compare-created-at.ts";
+import { unreadThroughAt } from "./unread-through-at.ts";
 import {
   cardSlotUrl,
   classifyChatAttachment,
@@ -471,24 +472,13 @@ function createModelSelection(
   );
 
   const modelSettings$ = computed((get) => {
-    return get(chatEffortEnabled$)
-      ? (get(threadMeta$)?.modelSettings ?? {})
-      : {};
+    return get(threadMeta$)?.modelSettings ?? {};
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
-    if (!get(codexFastModeEnabled$)) {
-      return false;
-    }
     const selectedModel = await get(selectedModel$);
     const policies = await get(orgModelPolicies$);
-    if (
-      !isCodexFastModeAvailableForSelection({
-        policies,
-        selectedModel,
-        codexFastModeEnabled: true,
-      })
-    ) {
+    if (!isCodexFastModeAvailableForSelection({ policies, selectedModel })) {
       return false;
     }
     return get(threadMeta$)?.serviceTier === "priority";
@@ -1113,28 +1103,6 @@ interface RegisteredChatEvent {
   readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
 }
 
-function compareCursorString(left: string, right: string): number {
-  if (left < right) {
-    return -1;
-  }
-  if (left > right) {
-    return 1;
-  }
-  return 0;
-}
-
-function compareCreatedAt(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
-  const leftTime = Date.parse(left);
-  const rightTime = Date.parse(right);
-  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
-    return compareCursorString(left, right);
-  }
-  return leftTime - rightTime;
-}
-
 const registerFeedbackNoteRenderPart$ = command(
   (
     { set },
@@ -1728,6 +1696,10 @@ function createArtifactPreviewImageUrls(
           continue;
         }
         previewImageUrlsByUrl.set(file.url, file.previewImageUrl);
+        previewImageUrlsByUrl.set(
+          canonicalUserMessageFileUrl(file.id),
+          file.previewImageUrl,
+        );
         if (file.aliasUrl) {
           previewImageUrlsByUrl.set(file.aliasUrl, file.previewImageUrl);
         }
@@ -2338,6 +2310,30 @@ interface MarkThreadReadDeps {
   locallyMarkedReadAt$: State<string | undefined>;
 }
 
+/**
+ * The newest instant this open thread has to be read through.
+ *
+ * A Run leaves a terminal event in the local projection, so its timestamp is
+ * available without asking the server. A native Morning Brief delivery has no
+ * Run and no terminal event at all, so its unread state only exists in the
+ * server watermark. Taking the later of the two covers a thread whose only
+ * unread is native, a second native delivery arriving while the thread is
+ * open, and a Run finishing after a native delivery.
+ */
+function createUnreadThroughAt$(
+  threadId: string,
+  latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>,
+) {
+  const unreadAt$ = serverUnreadAt$(threadId);
+  return computed(async (get): Promise<string | undefined> => {
+    const [runFinishAt, serverUnreadAt] = await Promise.all([
+      get(latestRunFinishCreatedAt$),
+      get(unreadAt$),
+    ]);
+    return unreadThroughAt(runFinishAt, serverUnreadAt);
+  });
+}
+
 function createMarkThreadReadIfNeeded({
   threadId,
   latestRunFinishCreatedAt$,
@@ -2345,8 +2341,12 @@ function createMarkThreadReadIfNeeded({
 }: MarkThreadReadDeps) {
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
+  const unreadThroughAt$ = createUnreadThroughAt$(
+    threadId,
+    latestRunFinishCreatedAt$,
+  );
   return command(async ({ get, set }, sig: AbortSignal) => {
-    const latestRunFinishCreatedAt = await get(latestRunFinishCreatedAt$);
+    const latestRunFinishCreatedAt = await get(unreadThroughAt$);
     sig.throwIfAborted();
     if (!latestRunFinishCreatedAt) {
       return;
@@ -2369,7 +2369,15 @@ function createMarkThreadReadIfNeeded({
 
     const newLastReadAt = await set(markChatThreadRead$, { threadId }, sig);
     sig.throwIfAborted();
-    if (newLastReadAt !== null) {
+    // A response that resolves after a newer delivery already arrived must not
+    // record a read mark past it, or the newer unread would be swallowed
+    // without ever being read.
+    const heldLastReadAt = get(locallyMarkedReadAt$);
+    if (
+      newLastReadAt !== null &&
+      (heldLastReadAt === undefined ||
+        compareCreatedAt(newLastReadAt, heldLastReadAt) > 0)
+    ) {
       set(locallyMarkedReadAt$, newLastReadAt);
     }
     // No sidebar reload needed: markRead$ records an optimistic read mark
@@ -3261,7 +3269,6 @@ function sendRuntimeOptions(
   return {
     runOptions: runOptionsFromModelProviderSelection(
       modelSelection,
-      features[FeatureSwitchKey.CodexFastMode] ?? false,
       videoRunOptions,
     ),
     realAgentInPreviewEnabled:

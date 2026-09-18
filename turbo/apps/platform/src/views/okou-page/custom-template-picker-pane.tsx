@@ -2,15 +2,13 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Lock,
   MoreHorizontal,
   Plus,
   Search,
   Trash2,
   User,
-  Users,
 } from "lucide-react";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Button,
@@ -23,25 +21,30 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
   cn,
 } from "@okouai/ui";
 import type {
   UserTemplateCatalogEntry,
-  UserTemplateDetail,
   UserTemplateVisibility,
 } from "@okouai/api-contracts/contracts/user-templates";
 
+import {
+  CustomTemplateDetailSidebar,
+  VISIBILITY_OPTIONS,
+  VisibilityLabel,
+} from "./custom-template-detail-sidebar.tsx";
+import { CustomTemplateSourcePreviewDialog } from "./custom-template-source-preview-dialog.tsx";
+import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import {
   closeCustomTemplate$,
   customTemplateSearchQuery$,
+  customTemplateSurface,
   deleteCustomTemplate$,
   openCustomTemplate$,
   openCustomTemplateDetail$,
   openCustomTemplateId$,
+  openCustomTemplateKind$,
   reloadCustomTemplates$,
   setCustomTemplateSearchQuery$,
   updateCustomTemplate$,
@@ -63,41 +66,14 @@ const CARD_MEDIA =
 /** The accept list read as prose, for the hint under an upload entry. */
 const IMPORT_FORMATS = CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ");
 
-/** Two levels only, ordered least to most reachable. */
-const VISIBILITY_OPTIONS: readonly UserTemplateVisibility[] = [
-  "private",
-  "organization",
-];
-
-function VisibilityLabel({
-  visibility,
-}: {
-  readonly visibility: UserTemplateVisibility;
-}) {
-  const { t } = useTranslation();
-  const Icon = visibility === "private" ? Lock : Users;
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <Icon size={13} className="shrink-0" aria-hidden />
-      {visibility === "private"
-        ? t(($) => {
-            return $.templates.visibility.private;
-          })
-        : t(($) => {
-            return $.templates.visibility.organization;
-          })}
-    </span>
-  );
-}
-
 /**
  * One meta line: who can see it — or, for a colleague's template, whose it is,
  * because a visibility the reader cannot change is not worth the row.
  *
- * The page count is dropped when there is none. A document template is its
- * styles, so the API reports `null` rather than a zero; printing "0 pages"
- * would describe it as an empty deck instead of a kind that never had pages.
- * The row still names the file it was compiled from.
+ * It carries nothing else. Which file the template was compiled from and how
+ * many pages it has describe the template rather than distinguish it, and a
+ * grid is read by what tells its tiles apart; both are still answered by the
+ * detail column, which is where they are asked for.
  */
 function CustomTemplateMeta({
   template,
@@ -106,7 +82,7 @@ function CustomTemplateMeta({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+    <div className="min-w-0 text-xs text-muted-foreground">
       {template.canManage ? (
         <VisibilityLabel visibility={template.visibility} />
       ) : (
@@ -120,75 +96,6 @@ function CustomTemplateMeta({
           )}
         </span>
       )}
-      {template.pageCount === null ? null : (
-        <span>
-          {t(
-            ($) => {
-              return $.templates.pageCount;
-            },
-            { count: template.pageCount },
-          )}
-        </span>
-      )}
-      <span className="truncate">{template.sourceFilename}</span>
-    </div>
-  );
-}
-
-function VisibilityOptionList({
-  visibility,
-  onChange,
-}: {
-  readonly visibility: UserTemplateVisibility;
-  readonly onChange: (next: UserTemplateVisibility) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div
-      role="radiogroup"
-      aria-label={t(($) => {
-        return $.templates.visibility.change;
-      })}
-    >
-      {VISIBILITY_OPTIONS.map((value) => {
-        const selected = value === visibility;
-        return (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            className={cn(
-              "flex w-full flex-col items-start gap-0.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-              selected && "bg-state-selected",
-            )}
-            onClick={() => {
-              if (!selected) {
-                onChange(value);
-              }
-            }}
-          >
-            <span className="text-sm text-foreground">
-              {value === "private"
-                ? t(($) => {
-                    return $.templates.visibility.private;
-                  })
-                : t(($) => {
-                    return $.templates.visibility.organization;
-                  })}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {value === "private"
-                ? t(($) => {
-                    return $.templates.visibility.privateState;
-                  })
-                : t(($) => {
-                    return $.templates.visibility.organizationState;
-                  })}
-            </span>
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -280,14 +187,19 @@ function CustomTemplateActions({
 
 function CustomTemplateCard({
   template,
+  onSelect,
 }: {
   readonly template: UserTemplateCatalogEntry;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
   const deleteTemplate = useSet(deleteCustomTemplate$);
+  const open = () => {
+    openTemplate({ templateId: template.id, kind: template.kind });
+  };
   return (
     <div className="group/tile flex min-w-0 flex-col">
       <div className="relative">
@@ -300,26 +212,52 @@ function CustomTemplateCard({
             },
             { title: template.title },
           )}
-          onClick={() => {
-            openTemplate(template.id);
-          }}
+          onClick={open}
         >
           {template.coverUrl ? (
+            // Cropped from the top rather than the middle: a cover taller than
+            // this tile is a page, and a page is recognised by its head.
             <img
               src={template.coverUrl}
               alt=""
               loading="lazy"
-              className="absolute inset-0 h-full w-full object-cover"
+              className="absolute inset-0 h-full w-full object-cover object-top"
             />
-          ) : null}
+          ) : (
+            // A template with no rendered cover is named by its file instead.
+            // The icon says which format it was compiled from, which is the
+            // one thing about it that a rendering would also have shown.
+            //
+            // Centred by a wrapper rather than by positioning the icon: the
+            // icon carries `relative` of its own, which wins over an
+            // `absolute` passed in from here and drops it half a tile low.
+            <span className="absolute inset-0 flex items-center justify-center">
+              <FilePreviewIcon filename={template.sourceFilename} size="lg" />
+            </span>
+          )}
           <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100" />
         </button>
+        {/* Beside the preview rather than inside it: the tile opens the
+            template, and using it is a different decision from looking at
+            it. Revealed on hover like the actions menu above, and kept
+            reachable where hover does not exist. */}
+        <div className="absolute bottom-2 right-2 z-20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/tile:opacity-100 [@media(hover:hover)]:has-[:focus-visible]:opacity-100">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              onSelect(template);
+            }}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </Button>
+        </div>
         {template.canManage ? (
           <CustomTemplateActions
             template={template}
-            onRename={() => {
-              openTemplate(template.id);
-            }}
+            onRename={open}
             onVisibilityChange={(visibility) => {
               detach(
                 updateTemplate(
@@ -404,6 +342,16 @@ function CustomTemplateUploadCard({
   const label = t(($) => {
     return $.artifacts.templates.importFile;
   });
+  // Every accepted extension is more than one tile-width of this line, so it
+  // is the truncated one that needs the whole list reachable on hover. The
+  // file picker enforces the list either way; this is only what tells the
+  // member before they open it.
+  const hint = t(
+    ($) => {
+      return $.artifacts.templates.importFileHint;
+    },
+    { formats: IMPORT_FORMATS },
+  );
   return (
     <label className="group/tile flex cursor-pointer flex-col gap-2">
       <span
@@ -423,13 +371,8 @@ function CustomTemplateUploadCard({
         <span className="truncate text-sm font-medium text-foreground">
           {label}
         </span>
-        <span className="truncate text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.artifacts.templates.importFileHint;
-            },
-            { formats: IMPORT_FORMATS },
-          )}
+        <span className="truncate text-xs text-muted-foreground" title={hint}>
+          {hint}
         </span>
       </span>
     </label>
@@ -509,135 +452,23 @@ function CustomTemplatesLoadError() {
   );
 }
 
-function CustomTemplateDetailSidebar({
-  detail,
+/**
+ * An open deck, which replaces the catalog until it is closed. Its pages are
+ * images this panel can stack and scroll, so nothing is gained by lifting them
+ * into a dialog of their own.
+ */
+function CustomTemplateDetail({
+  onSelect,
 }: {
-  readonly detail: UserTemplateDetail;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const updateTemplate = useSet(updateCustomTemplate$);
-  const deleteTemplate = useSet(deleteCustomTemplate$);
-  const rename = (nextTitle: string) => {
-    const normalized = nextTitle.replace(/\s+/gu, " ").trim();
-    if (normalized.length === 0 || normalized === detail.title) {
-      return;
-    }
-    detach(
-      updateTemplate(
-        { templateId: detail.id, body: { title: normalized } },
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
-  };
-  return (
-    <aside className="w-full shrink-0 lg:w-[300px]">
-      <div className="rounded-xl border border-border bg-background p-4">
-        {detail.canManage ? (
-          <Input
-            key={detail.title}
-            defaultValue={detail.title}
-            aria-label={t(($) => {
-              return $.templates.actions.rename;
-            })}
-            className="h-9 text-base font-semibold"
-            onBlur={(event) => {
-              rename(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                event.currentTarget.blur();
-              }
-            }}
-          />
-        ) : (
-          <h3 className="text-lg font-semibold text-foreground">
-            {detail.title}
-          </h3>
-        )}
-        {/*
-         * The source line drops the page count for a kind that has none, so a
-         * document is described by the file it came from rather than by an
-         * emptiness it does not have.
-         */}
-        <p className="mt-2 text-xs text-muted-foreground">
-          {detail.pageCount === null
-            ? t(
-                ($) => {
-                  return $.templates.detail.sourceFile;
-                },
-                { filename: detail.sourceFilename },
-              )
-            : t(
-                ($) => {
-                  return $.templates.detail.source;
-                },
-                { count: detail.pageCount, filename: detail.sourceFilename },
-              )}
-        </p>
-        <div className="my-4 border-t border-t-gray-400" />
-        {detail.canManage ? (
-          <Popover>
-            <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-              <VisibilityLabel visibility={detail.visibility} />
-              <span aria-hidden>·</span>
-              <PopoverTrigger className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground">
-                {t(($) => {
-                  return $.templates.visibility.change;
-                })}
-              </PopoverTrigger>
-            </p>
-            <PopoverContent align="start" className="w-72 p-1.5">
-              <VisibilityOptionList
-                visibility={detail.visibility}
-                onChange={(visibility) => {
-                  detach(
-                    updateTemplate(
-                      { templateId: detail.id, body: { visibility } },
-                      pageSignal,
-                    ),
-                    Reason.DomCallback,
-                  );
-                }}
-              />
-            </PopoverContent>
-          </Popover>
-        ) : (
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <User size={13} aria-hidden />
-            {t(
-              ($) => {
-                return $.templates.sharedBy;
-              },
-              { owner: detail.ownerUserId },
-            )}
-          </p>
-        )}
-        {detail.canManage ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="sm"
-            className="mt-2 w-full text-destructive hover:text-destructive"
-            onClick={() => {
-              detach(deleteTemplate(detail.id, pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.templates.actions.delete;
-            })}
-          </Button>
-        ) : null}
-      </div>
-    </aside>
-  );
-}
-
-function CustomTemplateDetail() {
-  const { t } = useTranslation();
-  const detailLoadable = useLoadable(openCustomTemplateDetail$);
+  // The detail shares the catalog's version, so every save invalidates it. Read
+  // through the last settled answer: dropping to the skeleton on a refresh
+  // would take the editor away mid-save, and with it the field the member is
+  // waiting to get back. The first load still has no previous answer to show,
+  // and a failed refresh still settles as an error.
+  const detailLoadable = useLastLoadable(openCustomTemplateDetail$);
   const close = useSet(closeCustomTemplate$);
   const detail =
     detailLoadable.state === "hasData" ? detailLoadable.data : null;
@@ -679,7 +510,14 @@ function CustomTemplateDetail() {
               );
             })}
           </div>
-          <CustomTemplateDetailSidebar detail={detail} />
+          {/* Keyed by the template, not by anything that changes while one is
+              open: a save re-renders this subtree, and only arriving at a
+              different template may hand the editor a fresh field. */}
+          <CustomTemplateDetailSidebar
+            key={detail.id}
+            detail={detail}
+            onSelect={onSelect}
+          />
         </div>
       )}
     </div>
@@ -693,17 +531,27 @@ function CustomTemplateDetail() {
  */
 export function CustomTemplatePickerPane({
   signals,
+  onSelect,
 }: {
   readonly signals: ComposerSignals;
+  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
   const setQuery = useSet(setCustomTemplateSearchQuery$);
   const openTemplateId = useGet(openCustomTemplateId$);
+  const openTemplateKind = useGet(openCustomTemplateKind$);
   const templatesLoadable = useLoadable(visibleCustomTemplates$);
 
-  if (openTemplateId !== null) {
-    return <CustomTemplateDetail />;
+  // A deck takes the panel over, because its pages are a column this panel can
+  // scroll. Every other kind stays on the catalog and opens a dialog instead:
+  // it is one file, read at a size of its own.
+  if (
+    openTemplateId !== null &&
+    openTemplateKind !== null &&
+    customTemplateSurface(openTemplateKind) === "panel"
+  ) {
+    return <CustomTemplateDetail onSelect={onSelect} />;
   }
 
   const hasQuery = query.trim().length > 0;
@@ -732,7 +580,13 @@ export function CustomTemplatePickerPane({
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
         <CustomTemplateUploadCard signals={signals} />
         {templates.map((template) => {
-          return <CustomTemplateCard key={template.id} template={template} />;
+          return (
+            <CustomTemplateCard
+              key={template.id}
+              template={template}
+              onSelect={onSelect}
+            />
+          );
         })}
       </div>
     );
@@ -758,6 +612,7 @@ export function CustomTemplatePickerPane({
         </div>
       ) : null}
       {body}
+      <CustomTemplateSourcePreviewDialog onSelect={onSelect} />
     </div>
   );
 }

@@ -63,6 +63,7 @@ use tokio::io::AsyncReadExt as _;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
@@ -70,7 +71,7 @@ use crate::lock;
 use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
 use crate::paths::{HomePaths, short_digest, touch_mtime};
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
-use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
+use crate::telemetry::{ArchiveSizeMismatch, JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 
 pub(crate) mod decoded;
 
@@ -402,6 +403,8 @@ struct BackgroundFillCoordinatorInner {
     active_limit: usize,
     queue_capacity: usize,
     shutdown: CancellationToken,
+    classifiers: TaskTracker,
+    classification_slot: Arc<Semaphore>,
 }
 
 struct BackgroundFillCoordinatorLifecycle {
@@ -461,6 +464,8 @@ impl StorageCacheBackgroundFillCoordinator {
             active_limit,
             queue_capacity,
             shutdown: CancellationToken::new(),
+            classifiers: TaskTracker::new(),
+            classification_slot: Arc::new(Semaphore::new(1)),
         });
         let lifecycle = Arc::new(BackgroundFillCoordinatorLifecycle {
             inner: Arc::clone(&inner),
@@ -481,11 +486,20 @@ impl StorageCacheBackgroundFillCoordinator {
         reporter: SandboxOpReporter,
         action: BackgroundFillAction,
     ) -> BackgroundFillAdmission {
+        Self::submit_inner(&self.lifecycle.inner, group, home, reporter, action)
+    }
+
+    fn submit_inner(
+        inner: &BackgroundFillCoordinatorInner,
+        group: CacheTargetGroup,
+        home: HomePaths,
+        reporter: SandboxOpReporter,
+        action: BackgroundFillAction,
+    ) -> BackgroundFillAdmission {
         let Some(key) = group_key(&group) else {
             warn!("storage_cache: refusing empty background fill group");
             return BackgroundFillAdmission::Closed;
         };
-        let inner = &self.lifecycle.inner;
         let mut state = inner
             .state
             .lock()
@@ -578,6 +592,79 @@ impl StorageCacheBackgroundFillCoordinator {
         BackgroundFillAdmission::Accepted
     }
 
+    /// At most one bounded batch runs classification; it consumes an
+    /// existing decoded worker rather than creating another classifier queue.
+    fn try_classify_warming(
+        &self,
+        groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
+        home: HomePaths,
+        reporter: SandboxOpReporter,
+    ) -> Result<(), Vec<(CacheTargetGroup, BackgroundFillAction)>> {
+        let Some((_, BackgroundFillAction::WarmDecoded(cache))) = groups.first() else {
+            return Err(groups);
+        };
+        let Some(keys) = groups.iter().map(|(group, _)| group_key(group)).collect() else {
+            return Err(groups);
+        };
+        let inner = &self.lifecycle.inner;
+        let state = inner
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if state.closed {
+            return Err(groups);
+        }
+        let Ok(slot) = Arc::clone(&inner.classification_slot).try_acquire_owned() else {
+            return Err(groups);
+        };
+        let check = match cache.try_rejected_archives(keys) {
+            Ok(Some(check)) => check,
+            Ok(None) => return Err(groups),
+            Err(error) => {
+                warn!(%error, "storage_cache: rejection classification unavailable");
+                return Err(groups);
+            }
+        };
+        // Register completion and reporting under the same lock as shutdown.
+        let task = inner.classifiers.token();
+        let inner = Arc::clone(inner);
+        drop(state);
+        tokio::spawn(async move {
+            let (_task, _slot) = (task, slot);
+            // The blocking task releases decoded memory/workers before these
+            // results can admit useful warming that needs those same permits.
+            let rejected = match check.await {
+                Ok(Ok(rejected)) => rejected,
+                result => {
+                    warn!(?result, "storage_cache: rejection classification failed");
+                    vec![false; groups.len()]
+                }
+            };
+            let mut accepted = 0;
+            let mut records = Vec::new();
+            for ((group, action), rejected) in groups.into_iter().zip(rejected) {
+                if rejected {
+                    continue;
+                }
+                let admission =
+                    Self::submit_inner(&inner, group, home.clone(), reporter.clone(), action);
+                record_background_admission(admission, &mut accepted, &mut records);
+            }
+            if accepted > 0 {
+                records.push(SandboxOpRecord::new(
+                    background_fill_scheduled_count_action(accepted),
+                    Duration::ZERO,
+                    true,
+                    None,
+                ));
+            }
+            if !records.is_empty() {
+                reporter.report(records).await;
+            }
+        });
+        Ok(())
+    }
+
     /// Close admissions, cancel queued work, drain active atomic operations,
     /// and join all terminal telemetry reports before returning.
     pub(crate) async fn shutdown(&self) {
@@ -592,6 +679,7 @@ impl StorageCacheBackgroundFillCoordinator {
                 return;
             }
             state.closed = true;
+            self.lifecycle.inner.classifiers.close();
         }
         let supervisor = self
             .lifecycle
@@ -619,6 +707,7 @@ impl StorageCacheBackgroundFillCoordinator {
         if let Err(error) = supervisor.await {
             warn!(%error, "storage_cache: background fill supervisor failed during shutdown");
         }
+        self.lifecycle.inner.classifiers.wait().await;
     }
 
     #[cfg(test)]
@@ -653,6 +742,14 @@ impl StorageCacheBackgroundFillCoordinator {
 
 impl Drop for BackgroundFillCoordinatorLifecycle {
     fn drop(&mut self) {
+        // Classification may finish after the last executor owner disappears.
+        // Close admission before aborting the only supervisor that can drain it.
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .closed = true;
+        self.inner.classifiers.close();
         self.inner.shutdown.cancel();
         if let Some(supervisor) = self
             .supervisor
@@ -736,7 +833,7 @@ async fn run_background_fill_supervisor(
                     #[cfg(test)]
                     Some(BackgroundFillCommand::Checkpoint(complete)) => {
                         let state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
-                        let _ = complete.send((workers.len(), state.pending.len()));
+                        let _ = complete.send((workers.len() + inner.classifiers.len(), state.pending.len()));
                     }
                     Some(BackgroundFillCommand::Shutdown(complete)) => {
                         let mut state = inner
@@ -946,6 +1043,7 @@ fn spawn_background_fill_reports(
 struct FreshArchivePhaseRecord {
     operation: SandboxOpRecord,
     completed_at: DateTime<Utc>,
+    archive_size_mismatch: Option<ArchiveSizeMismatch>,
 }
 
 /// At most four phases for each of the four archives admitted to one delivery.
@@ -966,13 +1064,10 @@ impl FreshArchivePhaseRecords {
                 .unwrap_or_else(|poisoned| poisoned.into_inner()),
         );
         for record in records {
-            let operation = record.operation;
-            telemetry.record_at(
-                operation.action_type,
-                operation.duration,
-                operation.success,
-                operation.error,
+            telemetry.record_archive_phase_at(
+                record.operation,
                 record.completed_at,
+                record.archive_size_mismatch,
             );
         }
     }
@@ -982,6 +1077,7 @@ struct FreshArchivePhaseGuard {
     records: FreshArchivePhaseRecords,
     action_type: Option<&'static str>,
     started_at: Instant,
+    archive_size_mismatch: Option<ArchiveSizeMismatch>,
 }
 
 impl FreshArchivePhaseGuard {
@@ -990,10 +1086,20 @@ impl FreshArchivePhaseGuard {
             records: records.clone(),
             action_type: Some(action_type),
             started_at: Instant::now(),
+            archive_size_mismatch: None,
         }
     }
 
     fn finish(mut self, result: Result<(), &'static str>) {
+        self.record(result);
+    }
+
+    fn finish_with_archive_size_mismatch(
+        mut self,
+        result: Result<(), &'static str>,
+        mismatch: Option<ArchiveSizeMismatch>,
+    ) {
+        self.archive_size_mismatch = mismatch;
         self.record(result);
     }
 
@@ -1009,6 +1115,7 @@ impl FreshArchivePhaseGuard {
                 result.err(),
             ),
             completed_at: Utc::now(),
+            archive_size_mismatch: self.archive_size_mismatch,
         };
         self.records
             .records
@@ -1350,28 +1457,40 @@ impl DeferredBackgroundFill {
         );
         let reporter = telemetry.reporter();
         let mut accepted = 0;
-        for (group, action) in self.groups {
-            match coordinator.submit(group, self.home.clone(), reporter.clone(), action) {
-                BackgroundFillAdmission::Accepted => accepted += 1,
-                BackgroundFillAdmission::Deduplicated => telemetry.record(
-                    STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED,
-                    Duration::ZERO,
-                    true,
-                    None,
-                ),
-                BackgroundFillAdmission::QueueSaturated => telemetry.record(
-                    STORAGE_CACHE_BACKGROUND_FILL_QUEUE_SATURATED,
-                    Duration::ZERO,
-                    true,
-                    Some("queue-capacity"),
-                ),
-                BackgroundFillAdmission::Closed => telemetry.record(
-                    STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_CANCELLED,
-                    Duration::ZERO,
-                    false,
-                    Some(STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_ERROR),
-                ),
+        let mut records = Vec::new();
+        let mut groups = self.groups.into_iter().peekable();
+        while let Some((group, action)) = groups.next() {
+            let batch = if matches!(action, BackgroundFillAction::WarmDecoded(_)) {
+                let mut batch = vec![(group, action)];
+                while batch.len() < decoded::REJECTION_BATCH_SIZE
+                    && groups.peek().is_some_and(|(_, action)| {
+                        matches!(action, BackgroundFillAction::WarmDecoded(_))
+                    })
+                {
+                    if let Some(next) = groups.next() {
+                        batch.push(next);
+                    }
+                }
+                match coordinator.try_classify_warming(batch, self.home.clone(), reporter.clone()) {
+                    Ok(()) => continue,
+                    Err(batch) => batch,
+                }
+            } else {
+                vec![(group, action)]
+            };
+            for (group, action) in batch {
+                let admission =
+                    coordinator.submit(group, self.home.clone(), reporter.clone(), action);
+                record_background_admission(admission, &mut accepted, &mut records);
             }
+        }
+        for record in records {
+            telemetry.record(
+                record.action_type,
+                record.duration,
+                record.success,
+                record.error,
+            );
         }
         if accepted > 0 {
             telemetry.record(
@@ -1382,6 +1501,33 @@ impl DeferredBackgroundFill {
             );
         }
     }
+}
+
+fn record_background_admission(
+    admission: BackgroundFillAdmission,
+    accepted: &mut usize,
+    records: &mut Vec<SandboxOpRecord>,
+) {
+    let (action, success, error) = match admission {
+        BackgroundFillAdmission::Accepted => {
+            *accepted += 1;
+            return;
+        }
+        BackgroundFillAdmission::Deduplicated => {
+            (STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED, true, None)
+        }
+        BackgroundFillAdmission::QueueSaturated => (
+            STORAGE_CACHE_BACKGROUND_FILL_QUEUE_SATURATED,
+            true,
+            Some("queue-capacity"),
+        ),
+        BackgroundFillAdmission::Closed => (
+            STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_CANCELLED,
+            false,
+            Some(STORAGE_CACHE_BACKGROUND_FILL_SHUTDOWN_ERROR),
+        ),
+    };
+    records.push(SandboxOpRecord::new(action, Duration::ZERO, success, error));
 }
 
 struct ProcessedGroup {
@@ -2721,6 +2867,7 @@ impl FreshArchiveRequests {
         })?;
         let http = admission.client_for_archive(&target.archive_url)?;
         let archive_url = target.archive_url.clone();
+        let representative = target.handle;
         let group = group.clone();
         let cancel = cancel.clone();
         let phase_records = self.phase_records.clone();
@@ -2730,7 +2877,7 @@ impl FreshArchiveRequests {
             let fetch = tokio::select! {
                 biased;
                 () = cancel.cancelled() => Err("cancelled"),
-                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, &phase_records) => result,
+                result = fetch_fresh_archive(&http, &archive_url, group.archive_size, representative, &phase_records) => result,
             };
             let (bytes, size_source) = match fetch {
                 Ok(download) => download,
@@ -2775,9 +2922,11 @@ async fn fetch_fresh_archive(
     http: &Client,
     archive_url: &str,
     expected_size: Option<u64>,
+    representative: ArchiveHandle,
     phase_records: &FreshArchivePhaseRecords,
 ) -> Result<(Bytes, FreshArchiveSizeSource), &'static str> {
     let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_HEADERS);
+    let mut mismatch = None;
     let headers = async {
         let response = http
             .get(archive_url)
@@ -2798,7 +2947,13 @@ async fn fetch_fresh_archive(
         let response_size = response.content_length();
         let (exact_size, size_source) = match expected_size {
             Some(expected) => {
-                if response_size.is_some_and(|size| size != expected) {
+                if let Some(size) = response_size.filter(|size| *size != expected) {
+                    mismatch = Some(ArchiveSizeMismatch::new(
+                        expected,
+                        size,
+                        representative,
+                        response.headers(),
+                    ));
                     return Err("response-size-mismatch");
                 }
                 (expected, FreshArchiveSizeSource::Manifest)
@@ -2819,7 +2974,10 @@ async fn fetch_fresh_archive(
         Ok((response, response_size, exact_size, size_source))
     }
     .await;
-    phase.finish(headers.as_ref().map(|_| ()).map_err(|reason| *reason));
+    phase.finish_with_archive_size_mismatch(
+        headers.as_ref().map(|_| ()).map_err(|reason| *reason),
+        mismatch,
+    );
     let (mut response, response_size, exact_size, size_source) = headers?;
 
     let phase = FreshArchivePhaseGuard::new(phase_records, STORAGE_CACHE_FRESH_DELIVERY_BODY);
@@ -3948,6 +4106,7 @@ mod tests {
     mod decoded_observation;
     mod http_reuse;
     mod phase_diagnostics;
+    mod rejected_observation;
 
     use async_trait::async_trait;
     use httpmock::Method::{GET, HEAD};
@@ -7031,7 +7190,10 @@ mod tests {
             .await
             .unwrap();
             drop(plan);
-            deferred.unwrap().start(&coordinator, &mut telemetry);
+            let Some(deferred) = deferred else {
+                break;
+            };
+            deferred.start(&coordinator, &mut telemetry);
             coordinator.wait_idle_for_test().await;
         }
         coordinator.shutdown().await;

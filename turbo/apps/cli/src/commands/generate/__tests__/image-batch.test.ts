@@ -253,6 +253,7 @@ describe("okou generate image-batch command", () => {
     "bundles private images locally and retains the selected %s chat references",
     async (visibility) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
       const root = await makeTemporaryDirectory();
       const manifestPath = join(root, "images.tsv");
       const stateDirectory = join(root, "state");
@@ -278,6 +279,7 @@ describe("okou generate image-batch command", () => {
               contentType: "image/png",
               size: 33,
               url: reference,
+              privateArtifacts: true,
               creditsCharged: 1,
               model: "seedream4",
               provider: "fal",
@@ -348,6 +350,7 @@ describe("okou generate image-batch command", () => {
               : {}),
             inlineMarkdownLink: `[hero](<${artifact.url}>)`,
             previewMarkdownBlock: `![hero](<${artifact.url}>)`,
+            privateArtifacts: true,
           },
         ],
       });
@@ -364,7 +367,13 @@ describe("okou generate image-batch command", () => {
       expect(stdout).toContain("hero\tassets/image-hero.webp");
       expect(stdout).toContain(join(stateDirectory, "artifacts.json"));
       expect(stdout).toContain("only available inside the agent runtime");
+      if (visibility === "public") {
+        expect(stdout).not.toContain("upload-file");
+      } else {
+        expect(stdout).toContain("okou slack upload-file");
+      }
       mockConsoleLog.mockClear();
+      vi.stubEnv("OKOU_CURRENT_INTEGRATION", "lark");
       await generateCommand.parseAsync([
         "node",
         "cli",
@@ -377,9 +386,19 @@ describe("okou generate image-batch command", () => {
         JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
       ).toMatchObject({
         artifacts: [
-          { url: artifact.url, ...(visibility ? { visibility } : {}) },
+          {
+            url: artifact.url,
+            ...(visibility ? { visibility } : {}),
+            artifactPresentationContext:
+              visibility === "public"
+                ? expect.not.stringContaining("upload-file")
+                : expect.stringContaining("okou lark upload-file"),
+          },
         ],
       });
+      expect(
+        await readFile(join(stateDirectory, "artifacts.json"), "utf8"),
+      ).not.toContain("upload-file");
     },
   );
 
@@ -474,6 +493,73 @@ describe("okou generate image-batch command", () => {
       "--visibility requires privateArtifacts to be enabled",
     );
   });
+
+  it.each(["https://app.okou.ai", "https://pr-123-app.omby.ai"])(
+    "qualifies stored batch references with %s",
+    async (appOrigin) => {
+      vi.stubEnv("OKOU_APP_URL", appOrigin);
+      const stateDirectory = await makeTemporaryDirectory();
+      const resultsPath = join(stateDirectory, "results.tsv");
+      const metadataPath = join(stateDirectory, "artifacts.json");
+      const metadata = {
+        resultsPath,
+        artifacts: [
+          {
+            assetId: "hero",
+            asset: "assets/image-hero.webp",
+            url: "/artifacts/abcxyz1234.png#page=2",
+            inlineMarkdownLink: "[hero](</artifacts/abcxyz1234.png#page=2>)",
+            previewMarkdownBlock: "![hero](</artifacts/abcxyz1234.png#page=2>)",
+          },
+          {
+            assetId: "shared",
+            asset: "assets/image-shared.webp",
+            url: "https://cdn.example/shared.png?download=1#preview",
+            ownerUrl: "/artifacts/00000000000040008000000000000001.png",
+            visibility: "public",
+            inlineMarkdownLink:
+              "[Shared image](<https://cdn.example/shared.png?download=1#preview>)",
+            previewMarkdownBlock:
+              "![Shared image](<https://cdn.example/shared.png?download=1#preview>)",
+          },
+        ],
+        artifactPresentationContext: "Stored presentation guidance",
+      };
+      await writeFile(join(stateDirectory, "pid"), String(process.pid));
+      await writeFile(join(stateDirectory, "done"), "0\n");
+      await writeFile(resultsPath, "hero\tassets/image-hero.webp\n");
+      await writeFile(metadataPath, JSON.stringify(metadata));
+
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "wait",
+        stateDirectory,
+        "--json",
+      ]);
+
+      expect(mockConsoleLog.mock.calls).toHaveLength(1);
+      expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
+        ...metadata,
+        artifacts: [
+          {
+            ...metadata.artifacts[0],
+            url: `${appOrigin}/artifacts/abcxyz1234.png#page=2`,
+            inlineMarkdownLink: `[hero](<${appOrigin}/artifacts/abcxyz1234.png#page=2>)`,
+            previewMarkdownBlock: `![hero](<${appOrigin}/artifacts/abcxyz1234.png#page=2>)`,
+          },
+          {
+            ...metadata.artifacts[1],
+            ownerUrl: `${appOrigin}/artifacts/00000000000040008000000000000001.png`,
+          },
+        ],
+      });
+      expect(JSON.parse(await readFile(metadataPath, "utf8"))).toEqual(
+        metadata,
+      );
+    },
+  );
 
   it.each([false, true])(
     "reads a stored TSV-only batch with upload guidance (JSON: %s)",

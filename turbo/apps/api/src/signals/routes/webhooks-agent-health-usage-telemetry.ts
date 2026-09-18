@@ -3,6 +3,7 @@ import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
+  type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
   type RunnerResourceBudgetLeaseCountBucket,
   type RunnerResourceBudgetUtilizationBucket,
@@ -13,13 +14,15 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { z } from "zod";
 
-import { badRequestMessage, notFound } from "../../lib/error";
+import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { authorization$ } from "../context/hono";
+import { authorization$, request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -27,6 +30,7 @@ import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
+import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { settle } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -34,6 +38,15 @@ import {
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 import { usageUnderbillingFields } from "../usage-underbilling";
+import { readUsageEventBody } from "./webhooks-usage-body";
+import {
+  ingestXResourceUsage,
+  XResourceUsageError,
+} from "../services/x-resource-usage.service";
+import {
+  lockXResourceAdmission,
+  setXResourceTransactionTimeouts,
+} from "../services/x-resource-usage-lifecycle";
 
 const SANDBOX_TELEMETRY_SYSTEM_DATASET = "sandbox-telemetry-system";
 const SANDBOX_TELEMETRY_METRICS_DATASET = "sandbox-telemetry-metrics";
@@ -47,6 +60,7 @@ interface SandboxOperationDimensionInput {
   readonly error?: string;
   readonly outcome?: string;
   readonly reason?: string;
+  readonly archive_size_mismatch?: ArchiveSizeMismatch;
   readonly dns_readiness_attempt?: number;
   readonly dns_readiness_final_attempt?: boolean;
   readonly dns_readiness_guest_duration_ms?: number;
@@ -77,6 +91,7 @@ interface SandboxOperationDimensionInput {
   readonly session_history_restore_reason?: string;
   readonly session_history_transfer_source?: string;
   readonly session_history_wire_codec?: string;
+  readonly session_history_codec_decision?: string;
   readonly session_history_codec_reason?: string;
   readonly session_history_transfer_bytes?: number;
   readonly session_history_wire_bytes?: number;
@@ -153,6 +168,20 @@ function sandboxOperationDimensions(
     ...(op.error ? { error: op.error } : {}),
     ...(op.outcome ? { outcome: op.outcome } : {}),
     ...(op.reason ? { reason: op.reason } : {}),
+    ...(op.archive_size_mismatch
+      ? {
+          archive_size_mismatch_expected_bytes:
+            op.archive_size_mismatch.expected_bytes,
+          archive_size_mismatch_response_bytes:
+            op.archive_size_mismatch.response_bytes,
+          archive_size_mismatch_source_kind:
+            op.archive_size_mismatch.source_kind,
+          archive_size_mismatch_source_index:
+            op.archive_size_mismatch.source_index,
+          archive_size_mismatch_content_encoding:
+            op.archive_size_mismatch.content_encoding,
+        }
+      : {}),
     ...dnsReadinessDimensions(op),
     ...(op.runner_startup_path
       ? { runner_startup_path: op.runner_startup_path }
@@ -230,6 +259,7 @@ function historyTransferDimensions(
   for (const key of [
     "session_history_transfer_source",
     "session_history_wire_codec",
+    "session_history_codec_decision",
     "session_history_codec_reason",
     "session_history_transfer_bytes",
     "session_history_wire_bytes",
@@ -322,9 +352,8 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 
-const usageEventBody$ = bodyResultOf(webhookUsageEventContract.send);
 const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const bodyResult = await get(usageEventBody$);
+  const bodyResult = await readUsageEventBody(get(request$).raw, signal);
   signal.throwIfAborted();
   if (!bodyResult.ok) {
     return bodyResult.response;
@@ -336,15 +365,38 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
     return unauthorizedRunMismatch;
   }
 
-  // Prepared reader only: #34713 must replace this guard with the complete
-  // source-ledger/resource transaction and two-date lifecycle admission.
-  // Never pass resource observations (including mixed batches) to count billing.
   if (
     body.events.some((event) => {
       return "protocol" in event;
     })
   ) {
-    return badRequestMessage("X resource observations are not enabled");
+    const db = set(writeDb$);
+    const deduplicationEnabled = isFeatureEnabled(
+      FeatureSwitchKey.XResourceDeduplication,
+      await loadUserFeatureSwitchContext(db, auth.orgId, auth.userId),
+    );
+    signal.throwIfAborted();
+    const result = await settle(
+      ingestXResourceUsage(db, body, auth, deduplicationEnabled, signal),
+    );
+    signal.throwIfAborted();
+    if (!result.ok) {
+      if (result.error instanceof XResourceUsageError) {
+        switch (result.error.status) {
+          case 400: {
+            return badRequestMessage(result.error.message);
+          }
+          case 404: {
+            return notFound(result.error.message);
+          }
+          case 409: {
+            return conflict(result.error.message);
+          }
+        }
+      }
+      throw result.error;
+    }
+    return { status: 200 as const, body: { success: true } };
   }
 
   const db = set(writeDb$);
@@ -368,9 +420,10 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const usageEventValues = body.events
     .filter((event) => {
       return (
-        event.kind !== MODEL_USAGE_KIND ||
-        modelProviderType === null ||
-        isBuiltInModelProviderType(modelProviderType)
+        event.quantity > 0 &&
+        (event.kind !== MODEL_USAGE_KIND ||
+          modelProviderType === null ||
+          isBuiltInModelProviderType(modelProviderType))
       );
     })
     .map((event) => {
@@ -384,14 +437,26 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
         quantity: event.quantity,
         idempotencyKey: event.idempotencyKey,
       };
+    })
+    .sort((left, right) => {
+      // Match resource/mixed batches when a retry is regrouped by a producer.
+      return left.idempotencyKey
+        .toLowerCase()
+        .localeCompare(right.idempotencyKey.toLowerCase());
     });
   const insertResult = await settle(
     (async () => {
       if (usageEventValues.length > 0) {
-        await db
-          .insert(usageEvent)
-          .values(usageEventValues)
-          .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+        await db.transaction(async (tx) => {
+          await setXResourceTransactionTimeouts(tx);
+          // Legacy retries share the account-cleanup fence with v1 batches.
+          await lockXResourceAdmission(tx, "shared");
+          await tx
+            .insert(usageEvent)
+            .values(usageEventValues)
+            .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+          signal.throwIfAborted();
+        });
       }
     })(),
   );

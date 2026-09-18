@@ -1,4 +1,6 @@
-import type { UserResource } from "@clerk/shared/types";
+import type { BrowserClerk, UserResource } from "@clerk/shared/types";
+import { buildAccountsBaseUrl } from "@clerk/shared/buildAccountsBaseUrl";
+import { parsePublishableKey } from "@clerk/shared/keys";
 import { command, computed, state } from "ccstate";
 import { normalizeGoogleAdsAttributionParams } from "@okouai/core/google-ads-attribution";
 import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
@@ -15,7 +17,10 @@ import {
   setPostHogUser,
 } from "../lib/posthog.ts";
 import { appendCapturedPreviewBypassToUrl } from "../lib/preview-bypass-cookie.ts";
-import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
+import {
+  resolvePlatformEnvironment,
+  resolvePlatformRuntimeConfig,
+} from "../lib/platform-host.ts";
 import { BRAND_NAME, type BrandName } from "./branding.ts";
 import {
   bestEffort,
@@ -30,6 +35,20 @@ import { sessionStorageSignals } from "./external/session-storage.ts";
 
 const reload$ = state(0);
 const clerkVersion$ = state(0);
+const internalAuthenticatedSessionKey$ = state<string | null>(null);
+
+/** Stable ownership across token and profile refreshes for the same session. */
+export const authenticatedSessionKey$ = computed((get) => {
+  return get(internalAuthenticatedSessionKey$);
+});
+
+function authenticatedSessionKey(
+  clerk: Pick<BrowserClerk, "user" | "organization" | "session">,
+): string | null {
+  return clerk.user && clerk.organization && clerk.session
+    ? JSON.stringify([clerk.organization.id, clerk.user.id, clerk.session.id])
+    : null;
+}
 
 const ATTRIBUTION_SOURCE_PARAM = "vm0_source";
 const HOMEPAGE_ATTRIBUTION_VALUE = "homepage";
@@ -145,9 +164,25 @@ export function resolveAppAuthUrl(
   return url.toString();
 }
 
-// Clerk allowedRedirectOrigins for the current host: this app plus its www
-// and api siblings. Production also includes the okou.ai family so Clerk can
-// safely return between those services.
+function getClerkAccountPortalOrigin(): string | null {
+  const key = parsePublishableKey(
+    resolvePlatformRuntimeConfig().clerkPublishableKey,
+  );
+  return key ? buildAccountsBaseUrl(key.frontendApi) : null;
+}
+
+function isClerkOAuthConsentUrl(url: URL): boolean {
+  return (
+    url.origin === getClerkAccountPortalOrigin() &&
+    url.pathname === "/oauth-consent" &&
+    !url.username &&
+    !url.password &&
+    !url.hash
+  );
+}
+
+// Keep App validation and Clerk's own redirect validation on the same current
+// instance. The OAuth exception below limits Account Portal returns to consent.
 function getAllowedAuthRedirectOrigins(): AllowedAuthRedirectOrigin[] {
   const self = resolveAppOrigin();
   if (!self) {
@@ -157,11 +192,13 @@ function getAllowedAuthRedirectOrigins(): AllowedAuthRedirectOrigin[] {
     resolvePlatformEnvironment() === "production"
       ? [PRODUCTION_AUTH_REDIRECT_ORIGIN_PATTERN]
       : [];
+  const accountPortal = getClerkAccountPortalOrigin();
   return [
     ...new Set([
       self,
       deriveServiceOrigin(self, "www"),
       deriveServiceOrigin(self, "api"),
+      ...(accountPortal ? [accountPortal] : []),
       ...productionOrigins,
     ]),
   ];
@@ -239,7 +276,13 @@ function readAllowedRedirectUrl(
   }
 
   const redirectUrl = parseUrl(rawRedirectUrl);
-  if (!redirectUrl) {
+  if (!redirectUrl || redirectUrl.username || redirectUrl.password) {
+    return null;
+  }
+  if (
+    redirectUrl.origin === getClerkAccountPortalOrigin() &&
+    !isClerkOAuthConsentUrl(redirectUrl)
+  ) {
     return null;
   }
   return isAllowedRedirectOrigin(redirectUrl, allowedRedirectOrigins)
@@ -267,6 +310,51 @@ function readAuthRedirectParams(
     searchParams.set("redirect_url", hashRedirectUrl);
   }
   return searchParams;
+}
+
+/** A completed session may continue only a plain OAuth login handoff. */
+export function readClerkOAuthConsentContinuation(
+  authSearch: string,
+  authHash: string,
+): URL | null {
+  const hashQueryIndex = authHash.indexOf("?");
+  const hashPath = authHash.slice(
+    0,
+    hashQueryIndex === -1 ? undefined : hashQueryIndex,
+  );
+  if (hashPath && hashPath !== "#" && hashPath !== "#/") {
+    return null;
+  }
+  const params = readAuthRedirectParams(authSearch, authHash);
+  const hashParams = new URLSearchParams(
+    hashQueryIndex === -1 ? "" : authHash.slice(hashQueryIndex + 1),
+  );
+  // Auth tickets, account selection, factor steps and other explicit intents
+  // belong to Clerk's form, even when a session already exists.
+  if (
+    [...params.keys(), ...hashParams.keys()].some((key) => {
+      return key !== "redirect_url" && key !== "__clerk_db_jwt";
+    })
+  ) {
+    return null;
+  }
+  const url = parseUrl(params.get("redirect_url") ?? "");
+  if (!url || !isClerkOAuthConsentUrl(url)) {
+    return null;
+  }
+  if (
+    ["max_age", "login_hint", "id_token_hint"].some((key) => {
+      return url.searchParams.has(key);
+    }) ||
+    url.searchParams.getAll("prompt").some((prompt) => {
+      return prompt.split(/\s+/).some((value) => {
+        return value !== "consent";
+      });
+    })
+  ) {
+    return null;
+  }
+  return url;
 }
 
 export function resolveAuthBrandContext(): AuthBrandContext {
@@ -461,6 +549,8 @@ export const setupClerk$ = command(
     const clerk = await get(clerk$);
     signal.throwIfAborted();
 
+    set(internalAuthenticatedSessionKey$, authenticatedSessionKey(clerk));
+
     // Set initial Sentry user context
     if (clerk.user) {
       setSentryUser(clerk.user.id);
@@ -477,6 +567,18 @@ export const setupClerk$ = command(
     // Clerk listener but don't change the user.
     let prevUserId = clerk.user?.id ?? null;
     const unsubscribe = clerk.addListener(() => {
+      // Transitive undefined resources do not replace a still-owned session.
+      // Request guards read Clerk directly and reject during that transition.
+      if (
+        clerk.user === null ||
+        clerk.organization === null ||
+        clerk.session === null ||
+        (clerk.user !== undefined &&
+          clerk.organization !== undefined &&
+          clerk.session !== undefined)
+      ) {
+        set(internalAuthenticatedSessionKey$, authenticatedSessionKey(clerk));
+      }
       if (clerk.user === undefined) {
         // Clerk's transitive state while `setActive()` navigates: the identity
         // is unknown, not signed out, and the next emit carries the real value.

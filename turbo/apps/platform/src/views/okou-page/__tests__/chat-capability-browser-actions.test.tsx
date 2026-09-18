@@ -256,6 +256,37 @@ test("Render a managed browser card from loading to live", async () => {
   );
 });
 
+test("A browser card uses a private screenshot thumbnail while its panel keeps the original", async () => {
+  const screenshotUrl =
+    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private-artifacts/browser-screenshot.webp` +
+    "?X-Amz-Signature=browser-screenshot-signature";
+  const browser = managedBrowserSession({
+    status: "suspended",
+    screenshotUrl,
+    liveUrl: null,
+  });
+  installCapabilityChat({
+    events: completedConversation(
+      `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
+    ),
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, { browser });
+  });
+
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  const card = await findButton("Open Research browser");
+  expect(within(card).getByTestId("browser-session-thumbnail")).toHaveAttribute(
+    "src",
+    `https://a.okou.io/cdn-cgi/image/width=800,fit=scale-down,format=auto,quality=85,metadata=none/${screenshotUrl}`,
+  );
+
+  click(card);
+  await expect(
+    screen.findByTestId("browser-session-panel-screenshot"),
+  ).resolves.toHaveAttribute("src", screenshotUrl);
+});
+
 test("Follow suspension and resumption in the live browser panel", async () => {
   const { sessionReady, updateBrowser } = await openManagedBrowserChat();
   sessionReady.resolve();

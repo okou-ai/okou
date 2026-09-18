@@ -13,6 +13,8 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
+import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
+import { checkPaidToolForCreation$, templatePaidTool } from "./paid-tools.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
@@ -28,14 +30,16 @@ import { createComposerFeedbackModel } from "./chat-feedback.ts";
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
 import {
   deriveRunIndicatorStateFromChatEvents,
-  groupSemanticChatEvents,
-  isUsageEvent,
   lastAssistantCancelledFromGroups,
   queuedEventsFromSemanticEvents,
   runningModelSelectionFromChatEvents,
-  semanticChatEventsFromChatEvents,
   type ChatRunModelSelection,
 } from "../chat-page/chat-event-state.ts";
+import {
+  groupSemanticChatEvents,
+  isUsageEvent,
+  semanticChatEventsFromChatEvents,
+} from "@okouai/api-contracts/contracts/chat-event-semantics";
 import {
   createEditorDocumentSnapshot,
   messageDocumentToDisplayText,
@@ -100,6 +104,7 @@ type ComposerSuggestionSignals = Pick<
   | "previewSuggestionIndex$"
   | "previewSuggestion$"
   | "closeSuggestionMenu$"
+  | "clearSlashRange$"
   | "insertAgent$"
   | "insertChatThread$"
 >;
@@ -130,21 +135,6 @@ export interface ComposerSubmission {
    * send that creates one hands it to the thread it opens.
    */
   readonly taskSelection: ComposerTaskSelection;
-  /**
-   * Leave the member where they are rather than opening the thread this
-   * submission creates.
-   *
-   * A submission the member typed is the thing they want to watch, so the
-   * default is to follow it. One made on their behalf by a surface they are
-   * still using — a template upload started from the picker — is not, and
-   * pulling them out of that surface takes away the work they were doing.
-   */
-  readonly stayOnPage: boolean;
-}
-
-/** How a submission is delivered, as distinct from what it contains. */
-interface ComposerSubmissionOptions {
-  readonly stayOnPage: boolean;
 }
 
 export type ComposerSubmissionAction = "send" | "queue";
@@ -252,7 +242,7 @@ interface ComposerSubmissionSignals {
   readonly hasCurrentInvocation$: Computed<boolean>;
   readonly submitCurrentInput$: Command<
     Promise<boolean>,
-    [ComposerPrimaryAction, ComposerSubmissionOptions, AbortSignal]
+    [ComposerPrimaryAction, AbortSignal]
   >;
   readonly activatePrimaryAction$: Command<
     Promise<boolean>,
@@ -280,6 +270,7 @@ interface ComposerTemplateSignals
 }
 
 export interface ComposerSignals {
+  readonly paidToolHints$: Computed<readonly PaidToolId[]>;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
@@ -400,6 +391,7 @@ function composerSuggestionSignals(
     previewSuggestionIndex$: composer.previewSuggestionIndex$,
     previewSuggestion$: composer.previewSuggestion$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
+    clearSlashRange$: composer.clearSlashRange$,
     insertAgent$: composer.insertAgent$,
     insertChatThread$: composer.insertChatThread$,
   };
@@ -438,6 +430,7 @@ function createComputerUseUiSignals(): Pick<
 function createComposerWorkflowPromptSignals(
   options: CreateComposerSignalsOptions,
   workflowComposer: WorkflowComposerSignals,
+  taskChips: ComposerTaskChipsSignals,
 ): Pick<
   ComposerWorkflowSignals,
   | "createWorkflowPrompt$"
@@ -456,6 +449,11 @@ function createComposerWorkflowPromptSignals(
         set(draft.clear$);
       }
       set(draft.setInput$, CREATE_WORKFLOW_WITH_CHAT_PROMPT);
+      // The prompt and the Workflow chip start the same job, so the row leaves
+      // the composer where that chip would: the task selected and its ideas
+      // open. Where the chips are switched off there is nothing to select, and
+      // `openTask$` is a no-op.
+      set(taskChips.openTask$, "workflow");
       await set(options.draft.save$, signal);
       if (options.threadId !== undefined) {
         set(workflowComposer.focus$);
@@ -557,6 +555,31 @@ function createComposerVoiceInput(
   );
 }
 
+function createPaidToolHints(
+  create: ComposerCreateSignals,
+  draft: DraftSignals,
+  composer: WorkflowComposerSignals,
+) {
+  return computed((get) => {
+    const mode = get(create.mode$);
+    const tools = new Set<PaidToolId>();
+    if (mode === "image" || mode === "video") {
+      tools.add(mode === "image" ? "image-generation" : "video-generation");
+    }
+    const selectedTemplate = get(draft.generationTemplate$);
+    const templates = get(composer.templateRequests$);
+    for (const template of selectedTemplate
+      ? [...templates, selectedTemplate]
+      : templates) {
+      const tool = templatePaidTool(template);
+      if (tool) {
+        tools.add(tool);
+      }
+    }
+    return [...tools];
+  });
+}
+
 export function createComposerSignals(
   options: CreateComposerSignalsOptions,
 ): ComposerSignals {
@@ -608,6 +631,7 @@ export function createComposerSignals(
   const workflowPrompt = createComposerWorkflowPromptSignals(
     options,
     workflowComposer,
+    taskChips,
   );
   const imageAnnotation = createImageAnnotationSignals();
   /**
@@ -640,6 +664,7 @@ export function createComposerSignals(
 
   return {
     agentId: options.agentId,
+    paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
     editor: composerEditorSignals(workflowComposer, options.singleLineOnMobile),
@@ -877,7 +902,6 @@ function createSubmitCurrentInput({
     async (
       { get, set },
       action: ComposerPrimaryAction,
-      submissionOptions: ComposerSubmissionOptions,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
@@ -948,21 +972,25 @@ function createSubmitCurrentInput({
             additionalInfo,
           )
         : submission.editorDocument;
+      const nextSubmission: ComposerSubmission = {
+        prompt: visiblePrompt,
+        generationTemplate: get(draft.generationTemplate$),
+        editorDocument,
+        videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+        taskSelection: {
+          task: get(taskChips.task$) ?? mode,
+          presentationSlideCount: get(create.presentationSlideCount$),
+          visualization: get(taskChips.visualization.preferences$),
+        },
+      };
+      if (!(await set(checkPaidToolForCreation$, mode, signal))) {
+        return false;
+      }
+      signal.throwIfAborted();
       const submitted = await set(
         options.submitMessage$,
         action,
-        {
-          prompt: visiblePrompt,
-          generationTemplate: get(draft.generationTemplate$),
-          editorDocument,
-          videoRunOptions: additionalInfo ? undefined : videoRunOptions,
-          taskSelection: {
-            task: get(taskChips.task$) ?? mode,
-            presentationSlideCount: get(create.presentationSlideCount$),
-            visualization: get(taskChips.visualization.preferences$),
-          },
-          stayOnPage: submissionOptions.stayOnPage,
-        },
+        nextSubmission,
         signal,
       );
       if (submitted) {
@@ -1027,14 +1055,7 @@ function createComposerSubmissionSignals(
         await set(options.cancelRun$, signal);
         return true;
       }
-      // The member pressed the button, so the thread this opens is the thing
-      // they are waiting for.
-      return await set(
-        submitCurrentInput$,
-        action,
-        { stayOnPage: false },
-        signal,
-      );
+      return await set(submitCurrentInput$, action, signal);
     },
   );
 

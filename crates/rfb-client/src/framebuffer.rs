@@ -8,7 +8,7 @@ use tokio::{
 use tokio_rustls::client::TlsStream;
 
 use crate::{
-    Authenticated, Error,
+    Authenticated, Error, SharingMode,
     memory::{Budget, Buffer, Reservation},
     pixels::{Frame, Rect},
     wire::{Wire, validate_format},
@@ -44,17 +44,29 @@ impl Cursor {
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
     }
+
+    pub(crate) fn snapshot(&self, budget: &Budget) -> Result<Self, Error> {
+        let mut pixels = budget.buffer(self.pixels.len())?;
+        pixels.copy_from_slice(&self.pixels);
+        Ok(Self {
+            width: self.width,
+            height: self.height,
+            hotspot_x: self.hotspot_x,
+            hotspot_y: self.hotspot_y,
+            pixels,
+        })
+    }
 }
 
 /// An owned, authenticated framebuffer decoder. It never spawns a task or
 /// reconnects. Updates consume ownership so failure or cancellation cannot leave
 /// a partially decoded connection available to a caller.
 pub struct FramebufferConnection<S> {
-    stream: TlsStream<S>,
+    pub(crate) stream: TlsStream<S>,
     frame: Frame,
     cursor: Option<Cursor>,
     inflater: Decompress,
-    budget: Budget,
+    pub(crate) budget: Budget,
     _decoder_memory: Reservation,
     sequence: u64,
     needs_full: bool,
@@ -98,12 +110,18 @@ impl<S> FramebufferConnection<S> {
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin + 'static> Authenticated<S> {
-    /// Initialize shared-mode RFB and negotiate the supported true-color encoding
-    /// profile. No framebuffer request is sent until update(). The earlier of the
+    /// Send the caller's sharing request and negotiate the supported true-color
+    /// encoding profile. The server may disconnect other clients, refuse the
+    /// connection, or override the request. No retry or mode fallback is performed.
+    /// No framebuffer request is sent until update(). The earlier of the
     /// caller deadline and 30 seconds bounds initialization. Error/cancellation
     /// drops the owned stream; no unauthenticated constructor exists.
-    pub async fn initialize(self, deadline: Instant) -> Result<FramebufferConnection<S>, Error> {
-        bounded(deadline, initialize(self.into_stream())).await
+    pub async fn initialize(
+        self,
+        sharing_mode: SharingMode,
+        deadline: Instant,
+    ) -> Result<FramebufferConnection<S>, Error> {
+        bounded(deadline, initialize(self.into_stream(), sharing_mode)).await
     }
 }
 
@@ -296,8 +314,13 @@ impl<S: AsyncRead + AsyncWrite + Unpin + 'static> FramebufferConnection<S> {
 
 async fn initialize<S: AsyncRead + AsyncWrite + Unpin>(
     mut stream: TlsStream<S>,
+    sharing_mode: SharingMode,
 ) -> Result<FramebufferConnection<S>, Error> {
-    stream.write_u8(1).await?;
+    let shared_flag = match sharing_mode {
+        SharingMode::Shared => 1,
+        SharingMode::Exclusive => 0,
+    };
+    stream.write_u8(shared_flag).await?;
     stream.flush().await?;
     let mut wire = Wire::new();
     let width = wire.short(&mut stream).await?;
@@ -337,7 +360,7 @@ async fn initialize<S: AsyncRead + AsyncWrite + Unpin>(
     })
 }
 
-async fn bounded<T>(
+pub(crate) async fn bounded<T>(
     deadline: Instant,
     future: impl Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {

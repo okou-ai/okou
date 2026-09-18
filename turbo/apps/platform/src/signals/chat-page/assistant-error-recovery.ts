@@ -250,6 +250,7 @@ function classifyAssistantErrorFromText(
 
 const STRUCTURED_RECOVERY_KIND = Object.freeze({
   session_history_limit: null,
+  guest_root_filesystem_full: null,
   execution_timeout: "execution-timeout",
   insufficient_credits: null,
   provider_insufficient_credits: null,
@@ -465,7 +466,7 @@ function providerSubscriptionReset(
 }
 
 function runSourceFramework(
-  source: GetRunResponse["source"],
+  source: GetRunResponse["source"] | undefined,
 ): ModelProviderFramework | null {
   const provider = source?.runtimeProviderType ?? source?.providerType;
   if (!provider) {
@@ -482,7 +483,7 @@ function runSourceFramework(
 function historicalSubscriptionError(
   event: EnrichedChatEvent,
   error: string,
-  source: GetRunResponse["source"],
+  source: GetRunResponse["source"] | undefined,
 ): ClassifiedAssistantError | null {
   const subscriptionFailureReasons = [
     "reconnect_required",
@@ -713,10 +714,7 @@ export function createAssistantErrorRecoverySignals(deps: {
           }
         : null;
       const features = get(featureSwitch$);
-      const runOptions = runOptionsFromModelProviderSelection(
-        modelSelection,
-        features[FeatureSwitchKey.CodexFastMode] ?? false,
-      );
+      const runOptions = runOptionsFromModelProviderSelection(modelSelection);
       await set(
         deps.chatEvents.sendEvent$,
         {

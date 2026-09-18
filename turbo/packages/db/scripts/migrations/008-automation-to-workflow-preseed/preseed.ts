@@ -153,7 +153,7 @@ function mergeInstruction(
 }
 
 // ---------------------------------------------------------------------------
-// Content hashing (mirrors apps/api storage-content-hash.service.ts)
+// Content hashing (mirrors api-contracts storage-content-hash.ts)
 // ---------------------------------------------------------------------------
 
 interface FileEntry {

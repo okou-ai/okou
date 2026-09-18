@@ -70,6 +70,7 @@ const chatFilesApi = createChatFilesBddApi(context);
 const computerUseApi = createComputerUseBddApi(context);
 
 const WORKFLOW_NAME = "scheduler-workflow";
+const WORKFLOW_DISPLAY_NAME = "Scheduler Workflow";
 
 interface Scenario {
   readonly actor: ApiTestUser;
@@ -122,6 +123,7 @@ async function setup(
   options: {
     readonly timezone?: string;
     readonly tier?: "pro" | "team";
+    readonly workflowDisplayName?: string;
   } = {},
 ): Promise<Scenario> {
   const runnerGroup = runsApi.configureRunnerGroup();
@@ -138,6 +140,9 @@ async function setup(
   const workflowId = await wf.createWorkflow(actor, {
     agentId: agent.agentId,
     name: WORKFLOW_NAME,
+    ...(options.workflowDisplayName === undefined
+      ? {}
+      : { displayName: options.workflowDisplayName }),
   });
   mocks.clerk.session(actor.userId, actor.orgId);
   context.mocks.s3.send.mockResolvedValue({});
@@ -359,6 +364,33 @@ describe("okou workflow automation scheduler", () => {
     expect(untouched.nextRunAt).toBe(unselected.nextRunAt);
     await disableAutomation(selected.automationId);
     await disableAutomation(unselected.automationId);
+  });
+
+  it("uses the workflow display name in automation messages", async () => {
+    const scenario = await setup({
+      workflowDisplayName: WORKFLOW_DISPLAY_NAME,
+    });
+    const automation = await createDueLoopAutomation(scenario, 3600);
+
+    const threadId = await executeDueWorkflowAutomations(
+      automation.automationId,
+    );
+    const messages = await wf.readThreadEvents(threadId);
+    const runMessage = messages.find((message) => {
+      return (
+        message.eventType === "input.prompt" &&
+        chatEventAutomationPart(message)?.workflowId === scenario.workflowId
+      );
+    });
+
+    expect(runMessage).toBeDefined();
+    if (!runMessage) {
+      throw new Error("Expected an automation run message");
+    }
+    expect(chatEventAutomationPart(runMessage)?.workflowName).toBe(
+      WORKFLOW_DISPLAY_NAME,
+    );
+    await disableAutomation(automation.automationId);
   });
 
   it("inherits the chat thread computer-use grant for automation runs", async () => {

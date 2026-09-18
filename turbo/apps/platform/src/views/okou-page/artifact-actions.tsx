@@ -40,6 +40,7 @@ import {
   connectorCatalogStatusBySlug$,
   connectors$,
 } from "../../signals/external/connectors.ts";
+import { convertsToGoogleSlides } from "@okouai/core/google-slides-conversion";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { connectorConnectionPending$ } from "../../signals/connector-connection-progress.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -266,26 +267,57 @@ function useGoogleDriveAvailability(
   };
 }
 
+/**
+ * Whether syncing this artifact produces a Slides deck. The service applies
+ * the same predicate, so the label never promises a conversion it will skip.
+ */
+function useGoogleSlidesTarget(filename: string): boolean {
+  const features = useLastResolved(featureSwitch$);
+  return (
+    (features?.[FeatureSwitchKey.GoogleSlidesConversion] ?? false) &&
+    convertsToGoogleSlides(filename)
+  );
+}
+
+function useGoogleDriveMenuLabels(slides: boolean) {
+  const { t } = useTranslation();
+  return {
+    synced: slides
+      ? t(($) => {
+          return $.artifacts.googleDrive.syncedSlides;
+        })
+      : t(($) => {
+          return $.artifacts.googleDrive.synced;
+        }),
+    upload: slides
+      ? t(($) => {
+          return $.artifacts.googleDrive.uploadSlides;
+        })
+      : t(($) => {
+          return $.artifacts.googleDrive.upload;
+        }),
+  };
+}
+
 function GoogleDriveDisabledMenuItem({
   kind,
   muted = false,
+  slides = false,
 }: {
   kind: "connect" | "synced" | "upload";
   muted?: boolean;
+  slides?: boolean;
 }) {
   const { t } = useTranslation();
+  const labels = useGoogleDriveMenuLabels(slides);
   const text =
     kind === "connect"
       ? t(($) => {
           return $.artifacts.googleDrive.connect;
         })
       : kind === "synced"
-        ? t(($) => {
-            return $.artifacts.googleDrive.synced;
-          })
-        : t(($) => {
-            return $.artifacts.googleDrive.upload;
-          });
+        ? labels.synced
+        : labels.upload;
   return (
     <DropdownMenuItem className={muted ? "text-muted-foreground" : ""} disabled>
       <BrandGoogleDrive size={14} />
@@ -359,7 +391,7 @@ function useGoogleDriveMenuAction(
     if (!syncTarget) {
       return;
     }
-    const run = async () => {
+    const run = async (signal: AbortSignal) => {
       const success = await syncArtifactFileToGoogleDrive(
         {
           createClient,
@@ -368,14 +400,15 @@ function useGoogleDriveMenuAction(
           fileId: syncTarget.fileId,
           filename: syncTarget.filename,
         },
-        pageSignal,
+        signal,
       );
+      signal.throwIfAborted();
       if (success) {
         syncTarget.onSyncSuccess();
       }
     };
     if (availability.googleDriveReady) {
-      detach(run(), Reason.DomCallback, "artifact google drive sync");
+      detach(run(pageSignal), Reason.DomCallback, "artifact google drive sync");
       return;
     }
     const action = resolveGoogleDrivePendingAction({
@@ -404,7 +437,7 @@ function useGoogleDriveMenuAction(
             { agentId, createClient },
             pageSignal,
           );
-          await run();
+          await run(pageSignal);
         })(),
         Reason.DomCallback,
         "artifact google drive authorize sync",
@@ -422,7 +455,9 @@ function useGoogleDriveMenuAction(
         {
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
-          onSuccess: run,
+          onSuccess: (_connectionId, signal) => {
+            return run(signal);
+          },
           options: {
             account: action.account,
             agentId,
@@ -442,14 +477,18 @@ function useGoogleDriveMenuAction(
 }
 
 function GoogleDriveMenuItem({
+  filename,
   syncTarget,
 }: {
+  filename: string;
   syncTarget?: ArtifactDownloadSyncTarget;
 }) {
   const { t } = useTranslation();
   const availability = useGoogleDriveAvailability(syncTarget);
   const connectionPending = useGet(connectorConnectionPending$);
   const syncOrConnect = useGoogleDriveMenuAction(syncTarget, availability);
+  const slides = useGoogleSlidesTarget(filename);
+  const labels = useGoogleDriveMenuLabels(slides);
   const {
     connectorListLoaded,
     googleDriveAuthMethod,
@@ -459,11 +498,11 @@ function GoogleDriveMenuItem({
   } = availability;
 
   if (!syncTarget) {
-    return <GoogleDriveDisabledMenuItem kind="upload" />;
+    return <GoogleDriveDisabledMenuItem kind="upload" slides={slides} />;
   }
 
   if (syncTarget.synced) {
-    return <GoogleDriveDisabledMenuItem kind="synced" />;
+    return <GoogleDriveDisabledMenuItem kind="synced" slides={slides} />;
   }
 
   if (!connectorListLoaded || connectionPending) {
@@ -471,6 +510,7 @@ function GoogleDriveMenuItem({
       <GoogleDriveDisabledMenuItem
         kind={syncTarget.disconnected ? "connect" : "upload"}
         muted={syncTarget.disconnected}
+        slides={slides}
       />
     );
   }
@@ -479,9 +519,7 @@ function GoogleDriveMenuItem({
     return (
       <DropdownMenuItem onClick={syncOrConnect}>
         <BrandGoogleDrive size={14} />
-        {t(($) => {
-          return $.artifacts.googleDrive.upload;
-        })}
+        {labels.upload}
       </DropdownMenuItem>
     );
   }
@@ -596,7 +634,7 @@ export function ArtifactDownloadMenu({
           })}
         </DropdownMenuItem>
         {showGoogleDriveAction && (
-          <GoogleDriveMenuItem syncTarget={syncTarget} />
+          <GoogleDriveMenuItem filename={filename} syncTarget={syncTarget} />
         )}
       </DropdownMenuContent>
     </DropdownMenu>

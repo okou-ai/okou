@@ -1065,7 +1065,6 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId: actor.orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
-        [FeatureSwitchKey.CodexFastMode]: true,
       },
     );
     mockPiResourceArchiveDownloads();

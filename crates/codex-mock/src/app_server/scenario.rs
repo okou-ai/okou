@@ -32,6 +32,8 @@ pub(super) enum Scenario {
     RuntimeTurnComplete,
     RuntimeTurnCompleteBeforeHeartbeat,
     RuntimeTurnFailed,
+    RuntimeTurnFailedOutputTokenLimit,
+    RuntimeOutputTokenLimitError,
     RuntimeTurnFailedContextWindowExceeded,
     RuntimeTurnFailedInternalServerError,
     RuntimeTurnFailedResponseStreamConnectionFailed,
@@ -40,6 +42,8 @@ pub(super) enum Scenario {
     RuntimeTurnFailedUnauthorized,
     RuntimeTurnFailedUnknown,
     RuntimeTurnFailedContentPolicyRejection,
+    RuntimeTurnFailedBiologicalRiskRejection,
+    RuntimeTurnFailedBiologicalRiskInternalServerError,
     RuntimeTurnFailedInvalidRequestFormat,
     RuntimeTurnCompleteAfterSteer,
     RuntimeTurnCompleteBeforeSteerResponse,
@@ -138,6 +142,10 @@ impl Scenario {
                     Ok(Self::RuntimeTurnCompleteBeforeHeartbeat)
                 }
                 "runtime-turn-failed" => Ok(Self::RuntimeTurnFailed),
+                "runtime-turn-failed-output-token-limit" => {
+                    Ok(Self::RuntimeTurnFailedOutputTokenLimit)
+                }
+                "runtime-output-token-limit-error" => Ok(Self::RuntimeOutputTokenLimitError),
                 "runtime-turn-failed-context-window-exceeded" => {
                     Ok(Self::RuntimeTurnFailedContextWindowExceeded)
                 }
@@ -157,6 +165,12 @@ impl Scenario {
                 "runtime-turn-failed-unknown" => Ok(Self::RuntimeTurnFailedUnknown),
                 "runtime-turn-failed-content-policy-rejection" => {
                     Ok(Self::RuntimeTurnFailedContentPolicyRejection)
+                }
+                "runtime-turn-failed-biological-risk-rejection" => {
+                    Ok(Self::RuntimeTurnFailedBiologicalRiskRejection)
+                }
+                "runtime-turn-failed-biological-risk-internal-server-error" => {
+                    Ok(Self::RuntimeTurnFailedBiologicalRiskInternalServerError)
                 }
                 "runtime-turn-failed-invalid-request-format" => {
                     Ok(Self::RuntimeTurnFailedInvalidRequestFormat)
@@ -242,6 +256,9 @@ impl Scenario {
     pub(super) const fn turn_failure(self) -> Option<TurnFailure> {
         match self {
             Self::RuntimeTurnFailed => Some(TurnFailure::Generic),
+            Self::RuntimeTurnFailedOutputTokenLimit | Self::RuntimeOutputTokenLimitError => {
+                Some(TurnFailure::OutputTokenLimit)
+            }
             Self::RuntimeTurnFailedContextWindowExceeded => {
                 Some(TurnFailure::ContextWindowExceeded)
             }
@@ -259,6 +276,12 @@ impl Scenario {
             Self::RuntimeTurnFailedUnknown => Some(TurnFailure::Unknown),
             Self::RuntimeTurnFailedContentPolicyRejection => {
                 Some(TurnFailure::ContentPolicyRejection)
+            }
+            Self::RuntimeTurnFailedBiologicalRiskRejection => {
+                Some(TurnFailure::BiologicalRiskRejection)
+            }
+            Self::RuntimeTurnFailedBiologicalRiskInternalServerError => {
+                Some(TurnFailure::BiologicalRiskInternalServerError)
             }
             Self::RuntimeTurnFailedInvalidRequestFormat => Some(TurnFailure::InvalidRequestFormat),
             _ => None,
@@ -284,6 +307,7 @@ pub(super) enum TurnStartRpcError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TurnFailure {
     Generic,
+    OutputTokenLimit,
     ContextWindowExceeded,
     InternalServerError,
     ResponseStreamConnectionFailed,
@@ -297,4 +321,8 @@ pub(super) enum TurnFailure {
     /// Same error type and code as the rejection above, but a genuine
     /// request-shape complaint that must stay unclassified.
     InvalidRequestFormat,
+    /// Provider refusal text with the generic `other` error discriminator.
+    BiologicalRiskRejection,
+    /// The same refusal text must not override a structured server error.
+    BiologicalRiskInternalServerError,
 }

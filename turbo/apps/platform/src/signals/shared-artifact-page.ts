@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { createArtifactViewerFullscreenSignals } from "./artifact-viewer-fullscreen.ts";
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
 import { clerk$ } from "./auth.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
@@ -14,6 +15,7 @@ export interface SharedArtifactPreview {
   readonly filename: string;
   readonly preview: AttachmentLightboxState;
   readonly publicUrl: string | null;
+  readonly sharedThreadSnapshot: boolean;
 }
 
 export interface SharedArtifactContent {
@@ -21,6 +23,7 @@ export interface SharedArtifactContent {
   readonly contentType: string;
   readonly url: string;
   readonly expiresAt?: string;
+  readonly sharedThreadSnapshot?: true;
 }
 
 export const signInToSharedArtifact$ = command(
@@ -73,12 +76,14 @@ export function createSharedArtifactPreview(
     filename: artifact.filename,
     preview,
     publicUrl: artifact.expiresAt === undefined ? contentUrl.href : null,
+    sharedThreadSnapshot: artifact.sharedThreadSnapshot === true,
   };
 }
 
 export function createSharedArtifactViewerSignals() {
   return {
     imageCanvas: createZoomableImageCanvasSignals(),
+    fullscreen: createArtifactViewerFullscreenSignals(),
   };
 }
 

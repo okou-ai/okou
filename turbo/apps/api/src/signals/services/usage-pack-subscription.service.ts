@@ -45,7 +45,6 @@ import {
 } from "../external/stripe-client";
 import { settle } from "../utils";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
-import { persistOrgAcquisitionAttribution$ } from "./acquisition-attribution.service";
 import { upsertOrgPlanEntitlement } from "./org-plan-entitlements.service";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import {
@@ -144,7 +143,6 @@ interface CreateUsagePackCheckoutSessionArgs {
   readonly allocations: readonly UsagePackCheckoutAllocation[];
   readonly successUrl: string;
   readonly cancelUrl: string;
-  readonly adAttribution?: Readonly<Record<string, string | undefined>>;
 }
 
 interface StartUsagePackPurchaseArgs extends CreateUsagePackCheckoutSessionArgs {
@@ -181,7 +179,6 @@ const usagePackPurchasePreviewTokenSchema = z.object({
   currency: z.string().length(3),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
-  adAttribution: z.record(z.string(), z.string()).optional(),
   expiresAt: z.iso.datetime(),
 });
 
@@ -564,24 +561,6 @@ export function usagePackSubscriptionMetadata(args: {
   };
 }
 
-function usagePackCheckoutMetadata(args: {
-  readonly orgId: string;
-  readonly tier: SubscriptionCheckoutTier;
-  readonly planPriceId: string;
-  readonly usagePackSubscriptionId: string;
-  readonly adAttribution:
-    | Readonly<Record<string, string | undefined>>
-    | undefined;
-}): StripeMetadataParam {
-  const metadata = usagePackSubscriptionMetadata(args);
-  for (const [key, value] of Object.entries(args.adAttribution ?? {})) {
-    if (value) {
-      metadata[key] = value;
-    }
-  }
-  return metadata;
-}
-
 function usagePackLineItems(
   allocations: readonly UsagePackCheckoutAllocation[],
 ): readonly { readonly price: string; readonly quantity: number }[] {
@@ -832,17 +811,6 @@ async function resolvePendingUsagePackCheckout(
   });
 }
 
-function definedAttribution(
-  attribution: Readonly<Record<string, string | undefined>> | undefined,
-): Record<string, string> | undefined {
-  const entries = Object.entries(attribution ?? {}).filter(
-    (entry): entry is [string, string] => {
-      return entry[1] !== undefined;
-    },
-  );
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-}
-
 async function insertUsagePackPurchaseSnapshot(
   tx: Pick<WriteTx, "insert">,
   args: CreateUsagePackCheckoutSessionArgs,
@@ -920,12 +888,11 @@ async function createUsagePackCheckoutForSnapshot(args: {
   readonly customerId: string;
   readonly usagePackSubscriptionId: string;
 }): Promise<string> {
-  const metadata = usagePackCheckoutMetadata({
+  const metadata = usagePackSubscriptionMetadata({
     orgId: args.purchase.orgId,
     tier: args.purchase.tier,
     planPriceId: args.purchase.planPriceId,
     usagePackSubscriptionId: args.usagePackSubscriptionId,
-    adAttribution: args.purchase.adAttribution,
   });
   const session = await args.stripe.checkout.sessions.create(
     {
@@ -1037,14 +1004,9 @@ const createUsagePackCheckoutSession$ = command(
     args: CreateUsagePackCheckoutSessionArgs,
     signal: AbortSignal,
   ): Promise<StartUsagePackPurchaseResult> => {
-    await set(
-      persistOrgAcquisitionAttribution$,
-      { orgId: args.orgId, attribution: args.adAttribution },
-      signal,
-    );
     const customerId = await set(
       getOrCreateStripeCustomer$,
-      { orgId: args.orgId, metadata: args.adAttribution },
+      { orgId: args.orgId },
       signal,
     );
     signal.throwIfAborted();
@@ -1171,7 +1133,6 @@ async function createSerializedUsagePackPurchasePreviewAttempt(
       if (refreshed.length !== 1) {
         return { kind: "retry" };
       }
-      const attribution = definedAttribution(purchase.adAttribution);
       const payload: UsagePackPurchasePreviewToken = {
         version: 1,
         usagePackSubscriptionId: resolution.usagePackSubscriptionId,
@@ -1186,7 +1147,6 @@ async function createSerializedUsagePackPurchasePreviewAttempt(
         currency: immediateInvoice.currency,
         successUrl: purchase.successUrl,
         cancelUrl: purchase.cancelUrl,
-        ...(attribution ? { adAttribution: attribution } : {}),
         expiresAt,
       };
       return {
@@ -1244,14 +1204,9 @@ export const startUsagePackPurchase$ = command(
     if (!args.supportsInAppPreview) {
       return await set(createUsagePackCheckoutSession$, args, signal);
     }
-    await set(
-      persistOrgAcquisitionAttribution$,
-      { orgId: args.orgId, attribution: args.adAttribution },
-      signal,
-    );
     const customerId = await set(
       getOrCreateStripeCustomer$,
-      { orgId: args.orgId, metadata: args.adAttribution },
+      { orgId: args.orgId },
       signal,
     );
     signal.throwIfAborted();
@@ -1572,7 +1527,6 @@ async function confirmUsagePackPurchaseSnapshot(
     allocations,
     successUrl: preview.successUrl,
     cancelUrl: preview.cancelUrl,
-    adAttribution: preview.adAttribution,
   };
   const route = await resolveBillingPurchaseRoute(
     {
@@ -1619,12 +1573,11 @@ async function confirmUsagePackPurchaseSnapshot(
   ) {
     return { status: "invalid_preview" };
   }
-  const metadata = usagePackCheckoutMetadata({
+  const metadata = usagePackSubscriptionMetadata({
     orgId,
     tier: preview.tier,
     planPriceId: preview.planPriceId,
     usagePackSubscriptionId: preview.usagePackSubscriptionId,
-    adAttribution: preview.adAttribution,
   });
   const created = await stripe.subscriptions.create(
     {

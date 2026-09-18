@@ -2,7 +2,8 @@ import {
   morningBriefEnrollments,
   morningBriefRollout,
 } from "@okouai/db/schema/morning-brief-enrollment";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 
@@ -37,6 +38,8 @@ export async function recordMorningBriefMembership(
   args: MorningBriefMemberIdentity & {
     readonly membershipId: string;
     readonly createdAt: Date;
+    /** A live qualification must retain the automatic attempt's retry lease. */
+    readonly preserveRetrySchedule?: boolean;
   },
 ): Promise<void> {
   const [rollout] = await db
@@ -67,18 +70,26 @@ export async function recordMorningBriefMembership(
         membershipId: args.membershipId,
         sourceCreatedAt: args.createdAt,
         state: eligible ? "pending" : "ineligible",
-        availableAt: currentTime,
+        ...(args.preserveRetrySchedule
+          ? {}
+          : { availableAt: currentTime, attemptCount: 0, lastError: null }),
         updatedAt: currentTime,
       },
-      setWhere: inArray(morningBriefEnrollments.state, [
-        "checking",
-        "departed",
-      ]),
+      setWhere: or(
+        eq(morningBriefEnrollments.state, "checking"),
+        and(
+          eq(morningBriefEnrollments.state, "departed"),
+          or(
+            isNull(morningBriefEnrollments.membershipId),
+            ne(morningBriefEnrollments.membershipId, args.membershipId),
+          ),
+        ),
+      ),
     });
 }
 
 export async function recordMorningBriefChoice(
-  db: Db,
+  db: Db | Tx,
   identity: MorningBriefMemberIdentity,
   enabled: boolean,
 ): Promise<void> {

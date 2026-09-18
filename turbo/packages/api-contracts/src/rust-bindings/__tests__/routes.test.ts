@@ -2,6 +2,14 @@ import { normalizeRouteBindings, renderRustRoutes } from "../generate";
 import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
+  ...(["resolve", "check"] as const).map((action) => {
+    return {
+      method: "POST",
+      path: `/api/runners/runs/:runId/vnc/${action}`,
+      rustModulePath: ["runners", "runs", "by_run_id", "vnc", action],
+      rustConstName: action.toUpperCase(),
+    };
+  }),
   {
     method: "GET",
     path: "/api/runners/runs/:runId/cancellation",

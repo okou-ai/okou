@@ -31,7 +31,8 @@ export type PublishUserTemplateArgs =
       readonly kind: "presentation";
       readonly pagesDir: string;
     })
-  | (PublishUserTemplateCommon & { readonly kind: "document" });
+  | (PublishUserTemplateCommon & { readonly kind: "document" })
+  | (PublishUserTemplateCommon & { readonly kind: "illustration" });
 
 interface UploadedFileIds {
   readonly sourceFileId: string;
@@ -47,7 +48,8 @@ async function pagePaths(
     case "presentation": {
       return await orderedPagePaths(args.pagesDir);
     }
-    case "document": {
+    case "document":
+    case "illustration": {
       return [];
     }
   }
@@ -78,6 +80,14 @@ function publishRequestBody(
       return {
         title: args.title,
         kind: "document",
+        sourceFileId: uploaded.sourceFileId,
+        packageFileId: uploaded.packageFileId,
+      };
+    }
+    case "illustration": {
+      return {
+        title: args.title,
+        kind: "illustration",
         sourceFileId: uploaded.sourceFileId,
         packageFileId: uploaded.packageFileId,
       };
@@ -130,4 +140,37 @@ export async function publishUserTemplate(
     return result.body;
   }
   handleError(result, "Failed to publish the custom template");
+}
+
+/**
+ * Replace a published template's package.
+ *
+ * Only the guidance moves. The source this template was compiled from has not
+ * changed, so its rendered pages and everything the catalog shows still
+ * describe it, and every message already carrying this template keeps working.
+ */
+export async function replaceUserTemplatePackage(args: {
+  readonly templateId: string;
+  readonly packageDir: string;
+}): Promise<UserTemplateSummary> {
+  const packageFileId = await packageArchive(
+    args.packageDir,
+    async (archive) => {
+      const uploaded = await uploadWebFile(archive, {
+        contentType: USER_TEMPLATE_PACKAGE_CONTENT_TYPE,
+      });
+      return uploaded.id;
+    },
+  );
+
+  const config = await getClientConfig();
+  const client = initClient(userTemplatesContract, config);
+  const result = await client.replacePackage({
+    params: { templateId: args.templateId },
+    body: { packageFileId },
+  });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handleError(result, "Failed to replace the custom template package");
 }

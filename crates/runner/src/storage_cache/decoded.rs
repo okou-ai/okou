@@ -18,6 +18,7 @@ const FILL_RESERVATION: u32 = 3 * 1024 * 1024;
 pub(super) const LOOKUP_BATCH_SIZE: usize = 128;
 // Retain the former 16-key worst-case string budget while batching typical keys.
 const LOOKUP_KEY_BYTES: usize = 16 * 2 * 4096;
+pub(super) const REJECTION_BATCH_SIZE: usize = 16;
 
 #[derive(Debug)]
 pub(crate) struct CachedFiles {
@@ -68,6 +69,17 @@ impl DecodedCache {
         F: FnOnce(Arc<Inner>, OwnedSemaphorePermit) -> io::Result<T> + Send + 'static,
     {
         tokio::task::consume_budget().await;
+        match self.try_work(work)? {
+            Some(task) => task.await.map_err(io::Error::other)?.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    fn try_work<T, F>(&self, work: F) -> io::Result<Option<tokio::task::JoinHandle<io::Result<T>>>>
+    where
+        T: Send + 'static,
+        F: FnOnce(Arc<Inner>, OwnedSemaphorePermit) -> io::Result<T> + Send + 'static,
+    {
         let (task, worker, memory) = {
             let closed = self
                 .0
@@ -90,12 +102,35 @@ impl DecodedCache {
             (self.0.tasks.token(), worker, memory)
         };
         let inner = Arc::clone(&self.0);
-        tokio::task::spawn_blocking(move || {
+        Ok(Some(tokio::task::spawn_blocking(move || {
             let (_task, _worker) = (task, worker);
-            work(inner, memory).map(Some)
+            work(inner, memory)
+        })))
+    }
+
+    /// Optional post-spawn classification, sharing the existing decoded budget.
+    /// The caller owns the returned task through completion, including errors.
+    pub(super) fn try_rejected_archives(
+        &self,
+        keys: Vec<(String, String)>,
+    ) -> io::Result<Option<tokio::task::JoinHandle<io::Result<Vec<bool>>>>> {
+        if keys.len() > REJECTION_BATCH_SIZE
+            || keys
+                .iter()
+                .any(|(name, version)| name.len() > 4096 || version.len() > 4096)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "rejection batch too large",
+            ));
+        }
+        self.try_work(move |inner, _memory| {
+            keys.into_iter()
+                .map(|(name, version)| {
+                    disk::rejected_archive(&inner.home, &name, &version, &inner.cancel)
+                })
+                .collect()
         })
-        .await
-        .map_err(io::Error::other)?
     }
 
     /// Read already extracted files, without opening or decoding their archive.

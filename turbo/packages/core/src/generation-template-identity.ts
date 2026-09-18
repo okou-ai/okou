@@ -23,6 +23,7 @@ import { findWorkflowTemplateItem } from "./workflow-template-items";
  */
 export type GenerationTemplateCategory =
   | "avatar"
+  | "custom"
   | "illustration"
   | "intro-video"
   | "presentation"
@@ -190,6 +191,17 @@ export function generationTemplateIdentity(
     }
     case "website": {
       return builtinIdentity("website", request.selection.websiteTemplateId);
+    }
+    case "custom": {
+      // Its own bucket, and never the row id. What this selection can say
+      // without reading the database is its provenance, and reporting a row id
+      // would put one workspace's private template into a shared metric.
+      return {
+        category: "custom",
+        templateId: USER_IMPORTED_TEMPLATE_ID,
+        templateSlug: USER_IMPORTED_TEMPLATE_ID,
+        source: "user-imported",
+      };
     }
     default: {
       return unreachableGenerationTemplateType(request);

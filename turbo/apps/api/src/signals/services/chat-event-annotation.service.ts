@@ -19,12 +19,16 @@ type ChatEventSourceContext =
       readonly tenantId: string | null;
       readonly channelId: string | null;
       readonly activityId: string | null;
+      readonly conversationId: string | null;
+      readonly conversationType: string | null;
+      readonly botId: string | null;
     }
   | {
       readonly kind: "telegram";
       readonly chatId: string | null;
       readonly messageId: string | null;
       readonly isDm: boolean | null;
+      readonly botUsername: string | null;
     }
   | {
       readonly kind: "github";
@@ -35,29 +39,47 @@ type ChatEventSourceContext =
     }
   | {
       readonly kind: "agentphone";
+      readonly toNumber: string;
+      readonly isGroup: boolean;
     };
 
 function storedHref(value: string | null): string | undefined {
   return value ?? undefined;
 }
 
-function teamsMessageUrl(
+function teamsSourceUrl(
   context: Extract<ChatEventSourceContext, { readonly kind: "teams" }>,
 ): string | undefined {
-  if (!context.channelId || !context.activityId || !context.tenantId) {
+  if (!context.tenantId || !context.activityId) {
     return undefined;
   }
-  return (
-    `https://teams.microsoft.com/l/message/${encodeURIComponent(
-      context.channelId,
-    )}/${encodeURIComponent(context.activityId)}` +
-    `?tenantId=${encodeURIComponent(context.tenantId)}`
-  );
+  const tenantQuery = `tenantId=${encodeURIComponent(context.tenantId)}`;
+  if (context.channelId) {
+    return `https://teams.microsoft.com/l/message/${encodeURIComponent(context.channelId)}/${encodeURIComponent(context.activityId)}?${tenantQuery}`;
+  }
+  if (context.conversationId?.startsWith("19:")) {
+    const chatId = encodeURIComponent(context.conversationId);
+    return `https://teams.microsoft.com/l/message/${chatId}/${encodeURIComponent(context.activityId)}?${tenantQuery}&context=${encodeURIComponent(JSON.stringify({ contextType: "chat" }))}`;
+  }
+  // Bot Framework personal conversation IDs (a:...) are not Graph chat IDs.
+  if (
+    context.conversationType === "personal" &&
+    context.botId?.startsWith("28:")
+  ) {
+    return `https://teams.microsoft.com/l/chat/0/0?${tenantQuery}&users=${encodeURIComponent(context.botId)}`;
+  }
+  return undefined;
 }
 
-function telegramMessageUrl(
+function telegramSourceUrl(
   context: Extract<ChatEventSourceContext, { readonly kind: "telegram" }>,
 ): string | undefined {
+  if (context.isDm === true) {
+    const username = context.botUsername?.trim().replace(/^@/u, "");
+    return username && /^[a-z\d_]+$/iu.test(username)
+      ? `https://t.me/${username}`
+      : undefined;
+  }
   if (
     context.isDm !== false ||
     context.chatId === null ||
@@ -74,6 +96,15 @@ function telegramMessageUrl(
     return undefined;
   }
   return `https://t.me/c/${internalChatId}/${context.messageId}`;
+}
+
+function agentphoneChatUrl(
+  context: Extract<ChatEventSourceContext, { readonly kind: "agentphone" }>,
+): string | undefined {
+  // The inbound destination is the assistant's number; the sender is the user.
+  return !context.isGroup && /^\+[1-9]\d{7,14}$/u.test(context.toNumber)
+    ? `sms:${context.toNumber}`
+    : undefined;
 }
 
 function githubSubjectUrl(
@@ -119,11 +150,13 @@ export function createChatEventSourcePart(
   } else if (context.kind === "feishu") {
     href = storedHref(context.chatOpenUrl);
   } else if (context.kind === "teams") {
-    href = teamsMessageUrl(context);
+    href = teamsSourceUrl(context);
   } else if (context.kind === "telegram") {
-    href = telegramMessageUrl(context);
+    href = telegramSourceUrl(context);
   } else if (context.kind === "github") {
     href = githubSubjectUrl(context);
+  } else if (context.kind === "agentphone") {
+    href = agentphoneChatUrl(context);
   }
   return {
     type: "source",

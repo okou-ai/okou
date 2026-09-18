@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { initContract } from "./base";
+import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
@@ -70,6 +71,29 @@ export const testWorkflowAutomationExecutionContract = c.router({
       404: z.string(),
     },
     summary: "Run Morning Brief enrollment for one test-owned member",
+  },
+  retainMorningBriefGenerations: {
+    method: "POST",
+    path: "/api/test/workflow-automation-execution/retain-morning-brief-generations",
+    // The maintenance tick purges every expired row. A test runs the same
+    // consumer against a moved clock, so it names the identities its own case
+    // created and never removes a concurrently running suite's rows.
+    body: z
+      .object({
+        owners: z
+          .array(
+            z.object({ orgId: z.string().min(1), userId: z.string().min(1) }),
+          )
+          .min(1),
+      })
+      .strict(),
+    responses: {
+      200: z.object({ purged: z.number().int().nonnegative() }),
+      400: apiErrorSchema,
+      404: z.string(),
+    },
+    summary:
+      "Run the Morning Brief generation retention batch the maintenance tick runs",
   },
   execute: {
     method: "POST",

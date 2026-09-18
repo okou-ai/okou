@@ -121,6 +121,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       turbo-ts-checks-needed: ${{ steps.detect.outputs.turbo-ts-checks-needed }}
+      ios-only: ${{ steps.detect.outputs.ios-only }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -134,24 +135,8 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          BASE_REF=$(.github/scripts/changed-base-ref.sh)
-          echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
-
-          CHANGED_FILES=$(git diff --name-only "$BASE_REF" HEAD)
-
-          TURBO_TS_CHECKS_NEEDED=true
-          if [ "${{ github.event_name }}" = "pull_request" ] || [ "${{ github.event_name }}" = "merge_group" ]; then
-            if [ -n "$CHANGED_FILES" ] && ! printf '%s\n' "$CHANGED_FILES" | grep -qv "^crates/"; then
-              echo "Turbo TypeScript checks not needed: crates-only ${{ github.event_name }} change set"
-              TURBO_TS_CHECKS_NEEDED=false
-            else
-              echo "Turbo TypeScript checks needed"
-            fi
-          else
-            echo "Turbo TypeScript checks needed"
-          fi
-
-          echo "turbo-ts-checks-needed=$TURBO_TS_CHECKS_NEEDED" >> "$GITHUB_OUTPUT"
+          selection=$(bash .github/scripts/detect-native-only.sh)
+          printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
 
   # Prepare: detect changes and set job-ref identifier
   prepare:
@@ -921,40 +906,6 @@ jobs:
           files: turbo/junit.xml
           report_type: test_results
 
-  test-pi-memory-boundary:
-    needs: [detect-turbo-ts-checks]
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
-    services:
-      postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 5
-          --health-start-period 3s
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/toolchain-init
-      - name: Build real Guest and maintenance runtime
-        run: |
-          cargo build --manifest-path crates/Cargo.toml --profile local -p guest-agent -j 2
-          pnpm --dir turbo --filter @okouai/pi-agent-runtime build
-          mkdir -p /home/user/workspace
-      - name: Exercise private maintenance boundaries
-        working-directory: turbo
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: |
-          pnpm --filter @okouai/db db:migrate
-          pnpm --filter api exec vitest run --config vitest.maintenance.config.ts
-
   test-other:
     needs: [detect-turbo-ts-checks]
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
@@ -1328,6 +1279,7 @@ jobs:
   # immutable resources to R2, and upload the small application shell with a
   # standalone Cloudflare Worker version.
   deploy-app:
+    needs: [detect-release, detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -1339,6 +1291,11 @@ jobs:
       image: ghcr.io/vm0-ai/vm0-toolchain:20260825
     if: >-
       ${{
+        !cancelled() &&
+        (
+          needs.detect-release.outputs.skip == 'true' ||
+          (needs.detect-turbo-ts-checks.result == 'success' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false')
+        ) &&
         github.actor != 'dependabot[bot]' &&
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
       }}
@@ -2109,6 +2066,7 @@ jobs:
   # it to the same canonical R2 bucket used by deploy-app. The ready marker is
   # written last so PR, merge-group, main, and release runs can safely reuse it.
   deploy-cli:
+    needs: [detect-release, detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
@@ -2118,6 +2076,11 @@ jobs:
       image: ghcr.io/vm0-ai/vm0-toolchain:20260825
     if: >-
       ${{
+        !cancelled() &&
+        (
+          needs.detect-release.outputs.skip == 'true' ||
+          (needs.detect-turbo-ts-checks.result == 'success' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false')
+        ) &&
         github.actor != 'dependabot[bot]' &&
         (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
       }}
@@ -3123,8 +3086,8 @@ jobs:
   lint-runtime-api-compat:
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    needs: [detect-release]
-    if: needs.detect-release.outputs.skip != 'true'
+    needs: [detect-release, detect-turbo-ts-checks]
+    if: needs.detect-release.outputs.skip != 'true' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false'
     # Report-only: this surfaces schema generation/compat issues without blocking CI.
     continue-on-error: true
     container:
@@ -3213,7 +3176,6 @@ jobs:
       - test-cli
       - test-app
       - test-api
-      - test-pi-memory-boundary
       - test-other
       - deploy-api
       - deploy-app
@@ -3273,6 +3235,9 @@ jobs:
             RUNNER_E2E_SKIP_ALLOWED=""
           fi
           CF_APP_SKIP_ALLOWED=""
+          if [ "${{ needs.detect-turbo-ts-checks.outputs.ios-only }}" = "true" ]; then
+            CF_APP_SKIP_ALLOWED="true"
+          fi
           if [ "${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}" = "true" ]; then
             # External fork PRs cannot access runner infra secrets, so their
             # runner deployment and runner E2E jobs are expected to skip.
@@ -3306,7 +3271,7 @@ jobs:
           check_result "prepare" "${{ needs.prepare.result }}" ""
           check_result "file-size-check" "${{ needs.file-size-check.result }}" ""
           # Turbo checks: only 'success' is acceptable unless
-          # detect-turbo-ts-checks classified this as a crates-only change set.
+          # detection confirmed a pure crates-only or iOS-only change set.
           check_result "lint-eslint" "${{ needs.lint-eslint.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "lint-style" "${{ needs.lint-style.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "lint-types" "${{ needs.lint-types.result }}" "$TS_CHECK_SKIP_ALLOWED"
@@ -3317,7 +3282,6 @@ jobs:
           check_result "test-cli" "${{ needs.test-cli.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-app" "${{ needs.test-app.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
-          check_result "test-pi-memory-boundary" "${{ needs.test-pi-memory-boundary.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable

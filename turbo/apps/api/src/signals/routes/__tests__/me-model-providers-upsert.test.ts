@@ -310,7 +310,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
         body: {
           type: "openai-api-key",
           secret: "sk-proj-test",
-          selectedModel: "gpt-5.5",
+          selectedModel: "gpt-5.6-luna",
         },
         headers: { authorization: "Bearer clerk-session" },
       }),

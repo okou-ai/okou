@@ -14,7 +14,6 @@ mod parking_gate;
 
 pub(crate) use entry::{
     DestroyOutcome, FinalizingHandoffCandidate, IdleDestroyPayload, IdleDestroyResult,
-    ImmediateHandoffCandidate,
 };
 pub use entry::{
     IdleDestroyJob, IdleEntry, IdleSandboxIdentity, IdleSandboxKind, IdleUnparkResult,
@@ -172,8 +171,7 @@ impl IdlePool {
     }
 
     pub(crate) fn take_reserved(&mut self, reuse_key: &str) -> Option<ReservedIdleSandbox> {
-        self.take(reuse_key)
-            .map(|entry| ReservedIdleSandbox { entry })
+        self.take(reuse_key).map(ReservedIdleSandbox::parked)
     }
 
     pub fn has_reusable(
@@ -198,7 +196,7 @@ impl IdlePool {
         }
         let entry = self.exact_entries.remove(reuse_key)?;
         self.bump_revision();
-        Some(ReservedIdleSandbox { entry })
+        Some(ReservedIdleSandbox::parked(entry))
     }
 
     pub fn reserve_reusable_generation(
@@ -241,7 +239,7 @@ impl IdlePool {
             }
         };
         self.bump_revision();
-        Ok(ReservedIdleSandbox { entry })
+        Ok(ReservedIdleSandbox::parked(entry))
     }
 
     /// Reserve a matching idle entry before pressure eviction begins.
@@ -298,7 +296,7 @@ impl IdlePool {
             .map(|(key, _)| *key)?;
         let entry = self.blank_entries.remove(&key)?;
         self.bump_revision();
-        Some(ReservedIdleSandbox { entry })
+        Some(ReservedIdleSandbox::parked(entry))
     }
 
     pub(crate) fn blank_len(&self) -> usize {
@@ -344,7 +342,10 @@ impl IdlePool {
         &mut self,
         reservation: ReservedIdleSandbox,
     ) -> RestoreReservedIdleResult {
-        let entry = reservation.entry;
+        let entry = match reservation.into_restore_entry() {
+            Ok(entry) => entry,
+            Err(destroy_job) => return RestoreReservedIdleResult::Rejected(destroy_job),
+        };
         let identity = &entry.metadata.identity;
         if !self.parking_gate.is_open() || self.contains_identity(identity) {
             return RestoreReservedIdleResult::Rejected(Box::new(entry.into_destroy_job()));
