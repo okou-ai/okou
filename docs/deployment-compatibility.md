@@ -147,8 +147,8 @@ requests; an exhausted bounded retry returns an actionable `409 CONFLICT`.
 New rows store the allocated name in `slug`, `publicSlug` and `requestedSlug`,
 while the manifest retains the caller's preferred name. This preserves the
 existing database constraints and keeps each publication addressable by older
-readers. The catalog displays the allocated name; `host versions` and `host clone`
-use the returned site slug to inspect that publication. Historical rows and their
+readers. The catalog displays the allocated name; `host clone` uses the returned
+site slug or immutable URL to inspect that publication. Historical rows and their
 requested-name reservations stay intact. No database migration or historical data
 rewrite runs here.
 
@@ -165,6 +165,13 @@ instances must leave serving and supported rollback targets before no-redeploy
 behavior is universal. Issue
 [#35240](https://github.com/vm0-ai/okou/issues/35240) owns later removal of the
 site-version model after preserving existing links and metadata.
+
+The [version-retirement preparation](database/hosted-publication-retirement.md)
+removes version operations from the current CLI and version comparison from App
+sharing. It replaces new-publication counter allocation with fixed compatibility
+values and binds immutable public content by deployment ID. Legacy API history,
+selectors, old upload completion and schema fields remain until the documented
+consumer, data and rollback gates; no physical schema cleanup runs in that step.
 
 New prepares bind each upload URL to its declared SHA-256 through the signed
 `x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
