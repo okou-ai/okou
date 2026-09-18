@@ -151,10 +151,11 @@ against that row field by field:
   previous binding's work. Settling a lapsed reservation is exempt: it records
   an operational fact and releases nothing.
 - **At the moment of release, after every wait.** The read-back's last step is a
-  local fence under the owner lock: the slot is read again and taken `FOR
-UPDATE`, its attempt must still be the one that was validated, the local
-  binding must still match, and only then is the retention deadline compared
-  against a freshly sampled clock. It runs after the receipt lookup, so a
+  local fence under the owner lock: authority parents are held first, the slot
+  is read again and taken `FOR UPDATE`, its attempt must still be the one that
+  was validated, the canonical local binding is re-read, and only then is the
+  retention deadline compared against a freshly sampled clock. It runs after
+  the receipt lookup, so a
   deletion, a disable, a rebinding or the deadline landing during that final
   read cannot hand back the copy the request started with. Holding the row is
   what makes the copy it returns the one it checked: the maintenance purge
@@ -179,24 +180,24 @@ order is what keeps it safe:
 | Step | Row                                                | Mode         | Serializes                                           |
 | ---- | -------------------------------------------------- | ------------ | ---------------------------------------------------- |
 | 1    | `org_members_metadata`                             | `KEY SHARE`  | membership, user and organization cleanup            |
-| 2    | the pinned `workflows` installation                | `SHARE`      | uninstall and installation mutation                  |
-| 3    | the pinned `workflow_automations` schedule         | `SHARE`      | Settings disable and generic automation mutation     |
-| 4    | `slack_org_installations`, `slack_org_connections` | `SHARE`      | Slack install, disconnect and rebinding              |
-| 5    | the occurrence's `morning_brief_generations`       | `FOR UPDATE` | the retention purge, the owner sweep, other attempts |
+| 2    | the pinned `agents` row                            | `SHARE`      | visibility update and Agent deletion                 |
+| 3    | the pinned `workflows` installation                | `SHARE`      | uninstall and installation mutation                  |
+| 4    | the pinned `workflow_automations` schedule         | `SHARE`      | Settings disable and generic automation mutation     |
+| 5    | `slack_org_installations`, `slack_org_connections` | `SHARE`      | Slack install, disconnect and rebinding              |
+| 6    | the occurrence's `morning_brief_generations`       | `FOR UPDATE` | the retention purge, the owner sweep, other attempts |
 
 `SHARE` is the weakest mode that conflicts with the `FOR NO KEY UPDATE` an
-ordinary `UPDATE` takes, so a disable or a rebinding either commits before step 3
-or 4 and is read, or waits for this transaction and loses.
+ordinary `UPDATE` takes, so a visibility change, disable or rebinding either
+commits before its step and is read, or waits for this transaction and loses.
 
-`agents` is deliberately **not** taken. Agent deletion takes the Agent row
-first and cascades through `workflows` and `morning_brief_collection_occurrences`
-into the generation row this path already holds at step 5, so taking the Agent
-row afterwards would close that cycle. It does not need to be taken: that same
-cascade has to acquire the step 5 row, so Agent deletion already serializes
-through the foreign key and simply queues behind an in-flight admission. What
-that leaves unserialized is an Agent _ownership transfer_, which no production
-endpoint performs — the Agent request schemas expose visibility but never an
-owner.
+Agent comes before both foreign-key branches it owns. The real visibility routes
+and deletion service also take Agent first; deletion then cascades independently
+through `workflows` and through `morning_brief_collection_occurrences` into
+`morning_brief_generations`. Taking generation before workflow or Agent would
+permit the inverse generation→workflow edge and a cascade cycle. The order above
+instead makes a deletion that arrives second return its existing bounded
+`409 … retry shortly` conflict, while a deletion or visibility update that wins
+first is visible to canonical re-resolution.
 
 Each of the earlier checks describes an instant that has already passed by the
 time anything is written: the canonical resolution waits on Clerk, and the write

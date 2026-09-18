@@ -658,17 +658,10 @@ type OwnerWriteResult =
  * already-observed invocation produced nothing, so it neither needs nor should
  * take another owner's authority rows.
  */
-async function admittedOutcome(
-  tx: Tx,
+function admittedOutcome(
   args: PersistenceArgs,
-): Promise<InterpretedOutcome> {
-  if (args.interpreted.kind !== "accept") {
-    return args.interpreted;
-  }
-  const authority = await admitMorningBriefLocalAuthority(
-    tx,
-    args.occurrenceRow,
-  );
+  authority: MorningBriefLocalAuthority,
+): InterpretedOutcome {
   return authority.kind === "current"
     ? args.interpreted
     : lapsedAuthorityOutcome(authority);
@@ -700,10 +693,25 @@ async function commitOwnerOutcome(
   args: PersistenceArgs,
   signal: AbortSignal,
 ): Promise<OwnerWriteResult> {
-  if (!(await holdMorningBriefGenerationSlot(tx, args.fence))) {
+  let interpreted = args.interpreted;
+  if (interpreted.kind === "accept") {
+    if (!(await lockCollectionOwner(tx, args.fence.key.owner))) {
+      return { kind: "owner-revoked" };
+    }
+    const admission = await admitMorningBriefLocalAuthority(
+      tx,
+      args.occurrenceRow,
+      async () => {
+        return await lockMorningBriefGeneration(tx, args.fence.key);
+      },
+    );
+    if (!admission.guarded) {
+      return { kind: "owner-revoked" };
+    }
+    interpreted = admittedOutcome(args, admission.authority);
+  } else if (!(await holdMorningBriefGenerationSlot(tx, args.fence))) {
     return { kind: "owner-revoked" };
   }
-  const interpreted = await admittedOutcome(tx, args);
   // Admitted after every wait this transaction performs and before any mutation
   // is issued. Throwing here unwinds the whole transaction, so a cancelled
   // caller leaves the slot exactly as its reservation left it.
@@ -934,18 +942,18 @@ type GenerationRelease =
  * Every earlier check describes an instant that has already passed: the Clerk
  * membership resolution waits on the network, and the receipt lookup waits on
  * the database. A deletion, a Settings disable, a rebinding or the retention
- * deadline can all land during those waits, so this fence re-reads the row
- * rather than serving the copy the request started with — and it takes that row
- * `FOR UPDATE`, so the copy it returns cannot be deleted out from under it
- * while the rest of the fence runs. The maintenance purge selects `SKIP LOCKED`
- * and simply leaves a held row for its next pass; the owner sweep, the member
- * cleanup cascade and the Agent deletion cascade all have to wait for this
- * transaction. Reading the row a second time afterwards would reopen exactly the
- * interval that lock closes, so the pinned copy is what is returned.
+ * deadline can all land during those waits, so this fence takes every authority
+ * parent before it re-reads the row `FOR UPDATE`. The copy it returns therefore
+ * cannot be deleted out from under it while canonical authority is re-resolved.
+ * The maintenance purge selects `SKIP LOCKED` and simply leaves a held row for
+ * its next pass; the owner sweep, the member cleanup cascade and the Agent
+ * deletion cascade all have to wait for this transaction. Reading the row a
+ * second time afterwards would reopen exactly the interval that lock closes, so
+ * the pinned copy is what is returned.
  *
- * The local authority is then admitted through the shared admission point,
- * which holds the rows a Settings disable or a Slack rebinding writes, and the
- * clock is sampled last — after every wait this fence performs. Equality with
+ * The shared admission point holds Agent, Settings and Slack rows, then the
+ * caller's generation row, then reuses the canonical reader. The clock is
+ * sampled last — after every wait this fence performs. Equality with
  * the retention deadline is already expired: a result becomes unreadable at its
  * deadline, whether or not the maintenance purge has physically removed it yet.
  *
@@ -963,7 +971,14 @@ async function releaseStoredGeneration(
   if (!(await lockCollectionOwner(tx, args.key.owner))) {
     return { kind: "owner-revoked" };
   }
-  const row = await lockMorningBriefGeneration(tx, args.key);
+  const admission = await admitMorningBriefLocalAuthority(
+    tx,
+    args.occurrenceRow,
+    async () => {
+      return await lockMorningBriefGeneration(tx, args.key);
+    },
+  );
+  const row = admission.guarded;
   if (
     !row ||
     row.attemptId !== args.attemptId ||
@@ -971,19 +986,15 @@ async function releaseStoredGeneration(
   ) {
     return { kind: "gone" };
   }
-  const authority = await admitMorningBriefLocalAuthority(
-    tx,
-    args.occurrenceRow,
-  );
   // Sampled after every lock and every read this fence performs, so the deadline
   // comparison describes the instant this release is really decided.
   if (row.expiresAt.getTime() <= nowDate().getTime()) {
     return { kind: "gone" };
   }
-  if (authority.kind === "not-executed") {
-    return { kind: "not-executed", reason: authority.reason };
+  if (admission.authority.kind === "not-executed") {
+    return { kind: "not-executed", reason: admission.authority.reason };
   }
-  if (authority.kind === "binding-changed") {
+  if (admission.authority.kind === "binding-changed") {
     return { kind: "binding-changed" };
   }
   return { kind: "released", row };

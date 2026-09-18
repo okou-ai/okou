@@ -413,22 +413,19 @@ const admitMorningBriefCollection$ = command(
  * the caller commits at rather than the instant it read at.
  *
  * The rows taken are exactly the ones the occurrence itself pinned, by primary
- * key, in **parent-before-child order** — the installation, then its schedule,
- * then the organization's Slack installation and this member's connection in
- * it. `FOR SHARE` is the weakest mode that conflicts with the `FOR NO KEY
- * UPDATE` an ordinary `UPDATE` takes, so a disable or a rebinding either
- * commits before this statement and is read, or waits for this transaction and
- * loses.
+ * key, in **parent-before-child order** — Agent, installation, schedule, then
+ * the organization's Slack installation and this member's connection in it.
+ * `FOR SHARE` is the weakest mode that conflicts with the `FOR NO KEY UPDATE`
+ * an ordinary `UPDATE` takes, so a visibility change, disable or rebinding
+ * either commits before these statements and is read, or waits for this
+ * transaction and loses.
  *
- * `agents` is deliberately **not** taken here, and that is the whole reason
- * this order is safe. Agent deletion takes the Agent row first and then
- * cascades through `workflows` and `morning_brief_collection_occurrences` into
- * the generation row a caller already holds `FOR UPDATE`; taking the Agent row
- * afterwards would close that cycle. It does not need to be taken: the cascade
- * has to acquire that same generation row, so Agent deletion already serializes
- * against the caller through the foreign key. What is left unserialized is an
- * Agent ownership transfer, which no production endpoint performs — the Agent
- * request schemas expose visibility but never an owner.
+ * Agent must come first. Visibility is live authority even when the installation
+ * belongs to another member's public Agent, and Agent deletion cascades through
+ * both the workflow and occurrence/generation branches. Taking generation
+ * before Agent or workflow can deadlock that cascade; taking Agent first agrees
+ * with the real update and delete services and leaves generation to the
+ * caller-provided final lock below.
  *
  * The caller must already hold the owner fence (`lockCollectionOwner`), which
  * is what serializes membership, user and organization cleanup.
@@ -437,6 +434,17 @@ async function lockMorningBriefLocalAuthorityRows(
   tx: Tx,
   occurrence: MorningBriefCollectionOccurrenceRow,
 ): Promise<void> {
+  await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, occurrence.agentId),
+        eq(agents.orgId, occurrence.orgId),
+      ),
+    )
+    .limit(1)
+    .for("share");
   await tx
     .select({ id: workflows.id })
     .from(workflows)
@@ -464,16 +472,31 @@ async function lockMorningBriefLocalAuthorityRows(
  * Clerk half outside any transaction and then admits here, so no transaction is
  * ever open across a network round trip.
  *
- * The authority answer stays true until the caller commits. What the caller
- * still owes is the rest of its admission — cancellation and the decision clock
- * — sampled after this returns and immediately before its mutation.
+ * The guarded row lock is supplied by the caller because generation acceptance
+ * and readback guard different copies of the same slot. It runs after all
+ * authority parents and before canonical resolution. This exact interface keeps
+ * generation last in the lock order without creating a second authority reader.
+ *
+ * The authority answer and guarded copy stay stable until the caller commits.
+ * What the caller still owes is the rest of its admission — cancellation and
+ * the decision clock — sampled after this returns and immediately before its
+ * mutation or release.
  */
-export async function admitMorningBriefLocalAuthority(
+export async function admitMorningBriefLocalAuthority<T>(
   tx: Tx,
   occurrence: MorningBriefCollectionOccurrenceRow,
-): Promise<MorningBriefLocalAuthority> {
+  lockGuardedRow: () => Promise<T>,
+): Promise<{
+  readonly authority: MorningBriefLocalAuthority;
+  readonly guarded: T;
+}> {
   await lockMorningBriefLocalAuthorityRows(tx, occurrence);
-  return await morningBriefLocalAuthorityStillCurrent(tx, occurrence);
+  const guarded = await lockGuardedRow();
+  const authority = await morningBriefLocalAuthorityStillCurrent(
+    tx,
+    occurrence,
+  );
+  return { authority, guarded };
 }
 
 /**
