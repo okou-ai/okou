@@ -64,7 +64,7 @@ import {
   type McpAutomaticOAuthTokenResult,
 } from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
-import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
+import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 
 const httpsUrl = z.url({ protocol: /^https$/u });
@@ -397,16 +397,16 @@ async function persistConnection(
   return connection.id;
 }
 
-async function wakeup(
+function builtinAutomaticWakeup(
   db: Db,
-  args: { readonly orgId: string; readonly userId: string },
+  owner: { readonly orgId: string; readonly userId: string },
   connectorSlug: string,
-): Promise<void> {
-  await publishConnectorRuntimeSyncWakeups({
+) {
+  return {
     db,
-    scope: args,
-    targets: [{ kind: "builtin", connectorSlug }],
-  });
+    scope: { orgId: owner.orgId, userId: owner.userId },
+    targets: [{ kind: "builtin" as const, connectorSlug }],
+  };
 }
 
 export const startBuiltinConnectorAutomatic$ = command(
@@ -441,91 +441,96 @@ export const startBuiltinConnectorAutomatic$ = command(
     if (!contract) {
       return { kind: "error", reason: "stale-contract" };
     }
+    // Treat the commit and its runtime wakeup as one cancellation boundary.
     const operation = await settle(
-      (async () => {
-        await assertCurrentContract(db, contract);
-        const preflight = await db.transaction(async (tx) => {
-          return await resolveMutation(tx, args, contract);
-        });
-        if (preflight.kind !== "ready") {
-          return { kind: "error", reason: "invalid-account" } as const;
-        }
-        const reconnectRevision = revision(preflight.mutation);
-        const state = generateConnectorOAuthState();
-        const prepared = await prepareMcpAutomaticOAuthAuthorization(
-          {
-            dcrStore: dcrStore(db, args.orgId, contract),
-            endpoint: contract.endpoint,
-            redirectUri: args.redirectUri,
-            state,
-            cimdClientId: args.cimdClientId,
-            dcrClientMetadata: args.dcrClientMetadata,
-          },
-          signal,
-        );
-        return await db.transaction(async (tx) => {
-          await lockBuiltinConnectorAutomaticLifecycle(
-            tx,
-            contractOwner(args.orgId, contract),
-          );
-          await assertCurrentContract(tx, contract);
-          const resolution = await resolveMutation(tx, args, contract);
-          if (
-            resolution.kind !== "ready" ||
-            revision(resolution.mutation) !== reconnectRevision
-          ) {
+      commitConnectorRuntimeMutation(
+        (async () => {
+          await assertCurrentContract(db, contract);
+          const preflight = await db.transaction(async (tx) => {
+            return await resolveMutation(tx, args, contract);
+          });
+          if (preflight.kind !== "ready") {
             return { kind: "error", reason: "invalid-account" } as const;
           }
-          if (prepared.kind === "none") {
-            const connectionId = await persistConnection(
+          const reconnectRevision = revision(preflight.mutation);
+          const state = generateConnectorOAuthState();
+          const prepared = await prepareMcpAutomaticOAuthAuthorization(
+            {
+              dcrStore: dcrStore(db, args.orgId, contract),
+              endpoint: contract.endpoint,
+              redirectUri: args.redirectUri,
+              state,
+              cimdClientId: args.cimdClientId,
+              dcrClientMetadata: args.dcrClientMetadata,
+            },
+            signal,
+          );
+          return await db.transaction(async (tx) => {
+            await lockBuiltinConnectorAutomaticLifecycle(
               tx,
-              { ...args, contract, resolution: resolution.mutation },
-              signal,
+              contractOwner(args.orgId, contract),
             );
-            return { kind: "connected", connectionId } as const;
-          }
-          const context = builtinAutomaticContextSchema.parse({
-            ...prepared.context,
-            version: 1,
-            kind: "connector-mcp-automatic",
-            connectorSlug: contract.connectorSlug,
-            authMethodId: contract.authMethodId,
-            endpoint: contract.endpoint,
-            storageVersion: contract.storageVersion,
-            contractHash: contract.contractHash,
-            reconnectRevision,
+            await assertCurrentContract(tx, contract);
+            const resolution = await resolveMutation(tx, args, contract);
+            if (
+              resolution.kind !== "ready" ||
+              revision(resolution.mutation) !== reconnectRevision
+            ) {
+              return { kind: "error", reason: "invalid-account" } as const;
+            }
+            if (prepared.kind === "none") {
+              const connectionId = await persistConnection(
+                tx,
+                { ...args, contract, resolution: resolution.mutation },
+                signal,
+              );
+              return { kind: "connected", connectionId } as const;
+            }
+            const context = builtinAutomaticContextSchema.parse({
+              ...prepared.context,
+              version: 1,
+              kind: "connector-mcp-automatic",
+              connectorSlug: contract.connectorSlug,
+              authMethodId: contract.authMethodId,
+              endpoint: contract.endpoint,
+              storageVersion: contract.storageVersion,
+              contractHash: contract.contractHash,
+              reconnectRevision,
+            });
+            const oauthAttemptId = await insertConnectorOAuthState(tx, {
+              state,
+              connectorSlug: contract.connectorSlug,
+              authMethod: contract.authMethodId,
+              storageVersion: null,
+              userId: args.userId,
+              orgId: args.orgId,
+              agentId: args.agentId,
+              authorizeAgent: args.authorizeAgent,
+              redirectUri: args.redirectUri,
+              authorizationUrl: prepared.authorizationUrl,
+              codeVerifier: prepared.codeVerifier,
+              oauthRequestedScopes: prepared.requestedScope,
+              oauthContext: JSON.stringify(context),
+              accountMutation: args.account,
+              expiresAt: connectorOAuthStateExpiresAt(),
+            });
+            return {
+              kind: "authorization",
+              authorizationUrl: prepared.authorizationUrl,
+              oauthAttemptId,
+            } as const;
           });
-          const oauthAttemptId = await insertConnectorOAuthState(tx, {
-            state,
-            connectorSlug: contract.connectorSlug,
-            authMethod: contract.authMethodId,
-            storageVersion: null,
-            userId: args.userId,
-            orgId: args.orgId,
-            agentId: args.agentId,
-            authorizeAgent: args.authorizeAgent,
-            redirectUri: args.redirectUri,
-            authorizationUrl: prepared.authorizationUrl,
-            codeVerifier: prepared.codeVerifier,
-            oauthRequestedScopes: prepared.requestedScope,
-            oauthContext: JSON.stringify(context),
-            accountMutation: args.account,
-            expiresAt: connectorOAuthStateExpiresAt(),
-          });
-          return {
-            kind: "authorization",
-            authorizationUrl: prepared.authorizationUrl,
-            oauthAttemptId,
-          } as const;
-        });
-      })(),
+        })(),
+        (result) => {
+          return result.kind === "connected"
+            ? builtinAutomaticWakeup(db, args, contract.connectorSlug)
+            : undefined;
+        },
+      ),
       signal,
     );
     if (!operation.ok) {
       return failure(operation.error);
-    }
-    if (operation.value.kind === "connected") {
-      await wakeup(db, args, contract.connectorSlug);
     }
     return operation.value;
   },
@@ -728,13 +733,22 @@ export const completeBuiltinConnectorAutomatic$ = command(
         connectorSlug: stored.connectorSlug,
       };
     }
+    // COMMIT may finish after cancellation; publish its wakeup before the
+    // route observes the cancelled request.
     const operation = await settle(
-      finishAutomaticOAuth(
-        db,
-        stored,
-        context,
-        { code, codeVerifier, issuer: args.issuer },
-        signal,
+      commitConnectorRuntimeMutation(
+        finishAutomaticOAuth(
+          db,
+          stored,
+          context,
+          { code, codeVerifier, issuer: args.issuer },
+          signal,
+        ),
+        (result) => {
+          return result.kind === "connected"
+            ? builtinAutomaticWakeup(db, stored, stored.connectorSlug)
+            : undefined;
+        },
       ),
       signal,
     );
@@ -743,9 +757,6 @@ export const completeBuiltinConnectorAutomatic$ = command(
         ...failure(operation.error),
         connectorSlug: stored.connectorSlug,
       };
-    }
-    if (operation.value.kind === "connected") {
-      await wakeup(db, stored, stored.connectorSlug);
     }
     return operation.value;
   },
