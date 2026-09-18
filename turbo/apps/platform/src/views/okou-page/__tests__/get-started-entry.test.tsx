@@ -879,5 +879,4 @@ test("Checking in confirms the reward instead of closing silently", async () => 
       "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
     ),
   ).toBeInTheDocument();
-  expect(within(dialog).getByText(/of 6 steps done/u)).toBeInTheDocument();
 });

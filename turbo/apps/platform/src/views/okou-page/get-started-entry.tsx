@@ -768,11 +768,7 @@ export function GetStartedEntry() {
           handoffs[key]();
         }}
       />
-      <GetStartedCheckinDialog
-        reward={checkinReward}
-        completed={summary.completed}
-        total={summary.total}
-      />
+      <GetStartedCheckinDialog reward={checkinReward} />
     </>
   );
 }

@@ -2,7 +2,7 @@ import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-sta
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check, Clock, Play, User } from "lucide-react";
+import { Clock, Play, User } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -331,26 +331,24 @@ function PromptFigure() {
 }
 
 /**
- * The check-in mark: the assistant's own face with the day's tick on it. The
- * dialog it opens is the one moment in the checklist that is purely a reward,
- * so it is drawn once, centred, rather than as a row of tiles.
+ * The check-in illustration: the brand drawing of a day signed off. The dialog
+ * it opens is the one moment in the checklist that is purely a reward, so it
+ * carries a full picture rather than a row of tiles.
  */
+const CHECKIN_ILLUSTRATION_IMG = platformStaticAssetUrl(
+  "views/okou-page/assets/get-started-checkin-e874ac69afb0.webp",
+);
+
 function CheckinFigure() {
-  const accent = ILLUSTRATION_ACCENTS.illustration;
   return (
-    <TileRow>
-      <span className="relative">
-        <Tile accent={accent}>
-          <OkouAvatar size={72} />
-        </Tile>
-        <span
-          className="absolute -bottom-1 -right-1 grid size-[34px] place-items-center rounded-full border-4 border-card"
-          style={{ backgroundColor: accent, color: "#FFFFFF" }}
-        >
-          <Check size={17} strokeWidth={3} />
-        </span>
-      </span>
-    </TileRow>
+    <div className="flex w-full items-center justify-center rounded-2xl bg-state-hover px-6 py-6">
+      <img
+        src={CHECKIN_ILLUSTRATION_IMG}
+        alt=""
+        aria-hidden
+        className="block h-auto w-[300px] max-w-full"
+      />
+    </div>
   );
 }
 
@@ -890,15 +888,7 @@ function QuestConnectModal() {
 }
 
 /** Confirms the daily check-in that already succeeded. */
-export function GetStartedCheckinDialog({
-  reward,
-  completed,
-  total,
-}: {
-  reward: number;
-  completed: number;
-  total: number;
-}) {
+export function GetStartedCheckinDialog({ reward }: { reward: number }) {
   const { t } = useTranslation();
   const open = useGet(checkinClaimedOpen$);
   const setOpen = useSet(setCheckinClaimedOpen$);
@@ -930,16 +920,6 @@ export function GetStartedCheckinDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        <p className="text-center text-xs text-muted-foreground">
-          <span className="rounded-full bg-state-hover px-3 py-1.5">
-            {t(
-              ($) => {
-                return $.chat.agentPage.getStarted.intro.checkin.progress;
-              },
-              { completed, total },
-            )}
-          </span>
-        </p>
         <DialogFooter className="sm:justify-center">
           <Button
             type="button"

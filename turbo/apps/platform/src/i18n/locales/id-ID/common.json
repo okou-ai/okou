@@ -1444,7 +1444,6 @@
             "amount": "+{{amount}} kredit",
             "confirm": "Kembali bekerja",
             "description": "Kredit membayar pekerjaannya sendiri: setiap jalannya, setiap hasil, setiap alur kerja yang berjalan sesuai jadwal.",
-            "progress": "{{completed}} dari {{total}} langkah selesai",
             "title": "Bagian hari ini selesai"
           },
           "connector": {

@@ -1469,7 +1469,6 @@
             "amount": "+{{amount}} créditos",
             "confirm": "Voltar ao trabalho",
             "description": "Os créditos pagam o trabalho em si: cada execução, cada artefato, cada fluxo que roda no horário.",
-            "progress": "{{completed}} de {{total}} passos concluídos",
             "title": "O de hoje está feito"
           },
           "connector": {

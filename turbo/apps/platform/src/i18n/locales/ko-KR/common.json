@@ -1444,7 +1444,6 @@
             "amount": "+{{amount}} 크레딧",
             "confirm": "일하러 가기",
             "description": "크레딧은 일 자체에 쓰입니다. 실행 한 번, 결과물 하나, 일정에 따라 도는 워크플로 모두에요.",
-            "progress": "{{total}}개 중 {{completed}}개 완료",
             "title": "오늘 몫은 끝났습니다"
           },
           "connector": {

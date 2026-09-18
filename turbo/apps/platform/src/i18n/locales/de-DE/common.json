@@ -1445,7 +1445,6 @@
             "amount": "+{{amount}} Credits",
             "confirm": "Zurück an die Arbeit",
             "description": "Credits bezahlen die Arbeit selbst: jeden Durchlauf, jedes Artefakt, jeden Workflow, der nach Zeitplan läuft.",
-            "progress": "{{completed}} von {{total}} Schritten erledigt",
             "title": "Für heute erledigt"
           },
           "connector": {

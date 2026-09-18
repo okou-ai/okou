@@ -1469,7 +1469,6 @@
             "amount": "+{{amount}} crediti",
             "confirm": "Torna al lavoro",
             "description": "I crediti pagano il lavoro vero e proprio: ogni esecuzione, ogni artefatto, ogni workflow che parte da solo.",
-            "progress": "{{completed}} passaggi su {{total}}",
             "title": "Per oggi è fatta"
           },
           "connector": {

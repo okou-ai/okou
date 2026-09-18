@@ -1444,7 +1444,6 @@
             "amount": "+{{amount}} クレジット",
             "confirm": "仕事に戻る",
             "description": "クレジットは仕事そのものに使われます。1 回の実行、1 つの成果物、スケジュールで動くワークフローのすべてに。",
-            "progress": "{{total}} 個中 {{completed}} 個が完了",
             "title": "今日のぶんは完了です"
           },
           "connector": {

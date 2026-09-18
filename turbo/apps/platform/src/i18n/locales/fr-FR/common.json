@@ -1469,7 +1469,6 @@
             "amount": "+{{amount}} crédits",
             "confirm": "Retour au travail",
             "description": "Les crédits paient le travail lui-même : chaque exécution, chaque artefact, chaque workflow qui tourne à l'heure dite.",
-            "progress": "{{completed}} étapes sur {{total}}",
             "title": "C'est fait pour aujourd'hui"
           },
           "connector": {

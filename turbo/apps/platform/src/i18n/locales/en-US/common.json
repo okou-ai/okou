@@ -1445,7 +1445,6 @@
             "amount": "+{{amount}} credits",
             "confirm": "Back to work",
             "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
-            "progress": "{{completed}} of {{total}} steps done",
             "title": "That is today done"
           },
           "connector": {
