@@ -92,7 +92,6 @@ import {
   resetMockOnboardingStatus,
 } from "./api-onboarding.ts";
 import { apiBillingHandlers, resetMockBilling } from "./api-billing.ts";
-import { apiAttributionHandlers } from "./api-attribution.ts";
 import { resetMockWorkflowAutomations } from "./workflow-automations-store.ts";
 import { apiQueuePositionHandlers } from "./api-queue-position.ts";
 import {
@@ -138,7 +137,6 @@ export const handlers = [
   ...apiUserModelPreferenceHandlers,
   ...apiOnboardingHandlers,
   ...apiBillingHandlers,
-  ...apiAttributionHandlers,
   ...apiIntegrationsSlackConnectHandlers,
   ...apiFeatureSwitchesHandlers,
   ...apiGetStartedHandlers,
