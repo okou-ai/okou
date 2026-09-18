@@ -237,11 +237,13 @@ function CustomTemplateCard({
             // A template with no rendered cover is named by its file instead.
             // The icon says which format it was compiled from, which is the
             // one thing about it that a rendering would also have shown.
-            <FilePreviewIcon
-              filename={template.sourceFilename}
-              size="lg"
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-            />
+            //
+            // Centred by a wrapper rather than by positioning the icon: the
+            // icon carries `relative` of its own, which wins over an
+            // `absolute` passed in from here and drops it half a tile low.
+            <span className="absolute inset-0 flex items-center justify-center">
+              <FilePreviewIcon filename={template.sourceFilename} size="lg" />
+            </span>
           )}
           <span className="pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100" />
         </button>
