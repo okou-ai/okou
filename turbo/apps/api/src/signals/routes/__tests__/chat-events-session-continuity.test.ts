@@ -15,6 +15,7 @@ import {
 } from "../../../test-fixtures/chat-events";
 import type { UsagePricingFixture } from "../../../test-fixtures/usage-pricing";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -68,6 +69,35 @@ const {
   piS3Object,
   publishPendingPiInstructions,
 } = createChatEventsFixture(context);
+
+function observePendingSend<T>(send: Promise<T>) {
+  const result = settleIncludingAbort(send);
+  const phases: Promise<unknown>[] = [];
+
+  async function beforeSettlement(phase: PromiseLike<unknown>) {
+    // Vitest polls are lazy thenables. Normalize once and retain each started
+    // poll so an early request failure cannot leave it running after cleanup.
+    const work = Promise.resolve(phase);
+    phases.push(work);
+    await Promise.race([
+      work,
+      result.then((settled) => {
+        if (!settled.ok) {
+          throw settled.error;
+        }
+        throw new Error(
+          "Chat send completed before its held preparation phase",
+        );
+      }),
+    ]);
+  }
+
+  async function joinPhases() {
+    await Promise.allSettled(phases);
+  }
+
+  return { result, beforeSettlement, joinPhases };
+}
 
 describe("CHAT-02: run-level model overrides", () => {
   it("reuses Codex sessions across account switches with the newly captured account", async () => {
@@ -873,6 +903,7 @@ describe("CHAT-02: run-level model overrides", () => {
         throw new Error("Expected the first run to establish a session");
       }
 
+      const sdkOwner = new AbortController();
       const providerRequests: string[] = [];
       const checkpointObjects =
         framework === "pi" ? mockPiCheckpointObjectStore() : undefined;
@@ -891,7 +922,7 @@ describe("CHAT-02: run-level model overrides", () => {
         const instructions = await publishPendingPiInstructions(actor, agentId);
         sdk = await context.mocks.piSdk.controlInitialization(
           { sessionId: first.threadId, instructions, holdInitialization: true },
-          context.signal,
+          AbortSignal.any([context.signal, sdkOwner.signal]),
         );
         server.use(
           http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
@@ -920,6 +951,7 @@ describe("CHAT-02: run-level model overrides", () => {
         orgId: actor.orgId,
         signal: context.signal,
       });
+      const admissionLockDone = settleIncludingAbort(admissionLock.done);
       onTestFinished(async () => {
         admissionLock.release();
         await admissionLock.done;
@@ -936,85 +968,137 @@ describe("CHAT-02: run-level model overrides", () => {
         },
         usagePricingResolution,
       );
-      // The queue-first insert must complete before a fixture owns the parent
-      // thread row; otherwise its FK check would block before session resolution.
-      await expect
-        .poll(async () => {
-          const messages = await chat.listThreadEvents(actor, first.threadId);
-          return messages.events.some((message) => {
-            return message.id === messageId;
-          });
-        })
-        .toBe(true);
-      if (sdk) {
-        await sdk.entered;
-      }
+      const observed = observePendingSend(secondPromise);
+      let bindingClear:
+        | Awaited<ReturnType<typeof holdThreadSessionBindingClearFixture>>
+        | undefined;
+      let bindingDone:
+        | ReturnType<typeof settleIncludingAbort<void>>
+        | undefined;
+      const result = await settleIncludingAbort(async () => {
+        // The queue-first insert must complete before a fixture owns the parent
+        // thread row; otherwise its FK check would block before session resolution.
+        await observed.beforeSettlement(
+          expect
+            .poll(async () => {
+              const messages = await chat.listThreadEvents(
+                actor,
+                first.threadId,
+              );
+              return messages.events.some((message) => {
+                return message.id === messageId;
+              });
+            })
+            .toBe(true),
+        );
+        if (sdk) {
+          await observed.beforeSettlement(sdk.entered);
+        }
 
-      const bindingClear = await holdThreadSessionBindingClearFixture({
-        threadId: first.threadId,
-        signal: context.signal,
-      });
-      onTestFinished(async () => {
+        bindingClear = await holdThreadSessionBindingClearFixture({
+          threadId: first.threadId,
+          signal: context.signal,
+        });
+        bindingDone = settleIncludingAbort(bindingClear.done);
+        const retainedBinding = bindingClear;
+        onTestFinished(async () => {
+          retainedBinding.release();
+          await retainedBinding.done;
+        });
+        admissionLock.release();
+        await admissionLock.done;
+        // Unlike the shared org advisory key, this row lock can only be reached
+        // after the target preparation has captured its binding snapshot.
+        await observed.beforeSettlement(
+          expect
+            .poll(bindingClear.blockedWaiterCount)
+            .toBeGreaterThanOrEqual(1),
+        );
         bindingClear.release();
         await bindingClear.done;
-      });
-      admissionLock.release();
-      await admissionLock.done;
-      // Unlike the shared org advisory key, this row lock can only be reached
-      // after the target preparation has captured its binding snapshot.
-      await expect
-        .poll(bindingClear.blockedWaiterCount)
-        .toBeGreaterThanOrEqual(1);
-      bindingClear.release();
-      await bindingClear.done;
-      const second = await secondPromise;
-      if (sdk) {
-        await expect.poll(sdk.initializationCount).toBe(2);
-      }
+        const second = await secondPromise;
+        if (sdk) {
+          await expect.poll(sdk.initializationCount).toBe(2);
+        }
 
-      const secondBinding = await readThreadSessionBinding(
-        context,
-        first.threadId,
-      );
-      expect(secondBinding).toMatchObject({
-        agent_session_id: expect.any(String),
-        agent_session_run_id: second.runId,
-        run_session_id: secondBinding.agent_session_id,
-      });
-      expect(secondBinding.agent_session_id).not.toBe(
-        firstBinding.agent_session_id,
-      );
-      const secondClaim = await claimChatRun(runnerGroup, second.runId);
-      await expect(
-        readRunLaunchSnapshotFixture(context, second.runId),
-      ).resolves.toStrictEqual({
-        exists: true,
-        launch_snapshot: {
-          schemaVersion: 3,
-          framework: secondClaim.claim.cliAgentType,
-          runnerProfile: DEFAULT_PROFILE,
-        },
-      });
-      expect(secondClaim.claim.resumeSession).toBeNull();
-      if (sdk && checkpointObjects) {
-        expect(providerRequests).toHaveLength(0);
-        expectNoPiApiFirstTurnArtifacts(second.runId, checkpointObjects);
-        sdk.release();
-        await waitForRunStatus(actor, second.runId, "completed", 10_000);
-        await flushWaitUntilForTest();
-        expect(providerRequests).toHaveLength(1);
-        expect(sdk.initializationCount()).toBe(2);
-        expect(sdk.disposeCount()).toBe(2);
-        const completed = await chat.listThreadEvents(actor, first.threadId);
-        expect(
-          eventBackedContents(completed.events, second.runId),
-        ).toStrictEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ content: "retried binding answer" }),
-          ]),
+        const secondBinding = await readThreadSessionBinding(
+          context,
+          first.threadId,
         );
-      } else {
-        await cancelChatRun(actor, second.runId);
+        expect(secondBinding).toMatchObject({
+          agent_session_id: expect.any(String),
+          agent_session_run_id: second.runId,
+          run_session_id: secondBinding.agent_session_id,
+        });
+        expect(secondBinding.agent_session_id).not.toBe(
+          firstBinding.agent_session_id,
+        );
+        const secondClaim = await claimChatRun(runnerGroup, second.runId);
+        await expect(
+          readRunLaunchSnapshotFixture(context, second.runId),
+        ).resolves.toStrictEqual({
+          exists: true,
+          launch_snapshot: {
+            schemaVersion: 3,
+            framework: secondClaim.claim.cliAgentType,
+            runnerProfile: DEFAULT_PROFILE,
+          },
+        });
+        expect(secondClaim.claim.resumeSession).toBeNull();
+        if (sdk && checkpointObjects) {
+          expect(providerRequests).toHaveLength(0);
+          expectNoPiApiFirstTurnArtifacts(second.runId, checkpointObjects);
+          sdk.release();
+          await waitForRunStatus(actor, second.runId, "completed", 10_000);
+          await flushWaitUntilForTest();
+          expect(providerRequests).toHaveLength(1);
+          expect(sdk.initializationCount()).toBe(2);
+          expect(sdk.disposeCount()).toBe(2);
+          const completed = await chat.listThreadEvents(actor, first.threadId);
+          expect(
+            eventBackedContents(completed.events, second.runId),
+          ).toStrictEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ content: "retried binding answer" }),
+            ]),
+          );
+        } else {
+          await cancelChatRun(actor, second.runId);
+        }
+      });
+      sdk?.release();
+      admissionLock.release();
+      bindingClear?.release();
+      sdkOwner.abort(
+        new DOMException("SDK preparation scope finished", "AbortError"),
+      );
+      const cleanup = await settleIncludingAbort(async () => {
+        await observed.joinPhases();
+        const [sent, admissionDone, retainedBindingDone] = await Promise.all([
+          observed.result,
+          admissionLockDone,
+          bindingDone,
+        ]);
+        await flushWaitUntilForTest();
+        if (!admissionDone.ok) {
+          throw admissionDone.error;
+        }
+        if (retainedBindingDone && !retainedBindingDone.ok) {
+          throw retainedBindingDone.error;
+        }
+        if (!result.ok && sent.ok) {
+          await api.requestCancelRun(actor, sent.value.runId, [200, 400]);
+          await flushWaitUntilForTest();
+        }
+        if (!sent.ok) {
+          throw sent.error;
+        }
+      });
+      if (!result.ok) {
+        throw result.error;
+      }
+      if (!cleanup.ok) {
+        throw cleanup.error;
       }
     },
     90_000,

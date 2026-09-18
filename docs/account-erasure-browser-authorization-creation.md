@@ -207,8 +207,8 @@ includes:
   route and separately account for its legitimate tombstone publication;
 - non-key thread-user and Agent rebinds that commit under the shared helper's
   `FOR KEY SHARE`, are caught by the local `FOR SHARE` re-read and force a whole
-  attempt retry; a newly discovered closed owner is denied while a distinct open
-  same-org owner is freshly admitted and succeeds;
+  attempt retry; a newly discovered closed owner is denied, and a separate
+  distinct open same-org owner rebind demonstrates a successful retry;
 - retained run non-key update and delete blockers, retained canonical thread
   update and delete blockers, and simultaneous unrelated-run progress;
 - TTL sampled after a proved run-pin wait, with a second proved blocker edge
@@ -217,12 +217,27 @@ includes:
   unrelated request rows never acquire, operation-signal rollback after an
   observed insert, and the post-final-check committed-row/lost-response boundary;
   and
-- unchanged request count, thread fields/timestamp, events, sidebar sequence and
-  exact realtime channel/topic absence for every denial or rollback.
+- unchanged request count, thread fields/timestamp and observable events, plus
+  exact realtime channel/topic absence for every denial or rollback; and
+- for each thread-user, distinct Agent-owner and organization closure denial,
+  reopening and creating a request is followed by a production apply whose
+  durable event takes exactly the next sidebar sequence. This follow-up writer,
+  rather than the prior highest emitted sequence alone, proves those denials and
+  creations reserved no hidden sequence.
 
 Ordering assertions use no sleep. Barrier pauses either hold the result of an
 executed statement or stop before a named dispatch boundary; PostgreSQL blocker
 edges establish actual waiting relationships.
+
+The successful open-owner rebind case establishes that a whole-attempt retry can
+succeed; the closed-owner case separately observes the newly discovered closure
+projection. The fresh subject admission and three-attempt bound remain enforced
+by the shared helper's source. The suite does not dynamically exhaust all three
+attempts, so the 42/45 statement ceilings above are source-derived ceilings, not
+claims of a measured three-attempt run. Denial and rollback cases outside the
+three closure controls assert the observable event set and exact realtime
+channel/topic absence; they do not treat the highest emitted sequence alone as
+proof about an unobserved reservation.
 
 Local measurements are reported only as test-run measurements, not endpoint or
 production latency. On the implementation worktree's local PostgreSQL 18.6

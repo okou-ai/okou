@@ -431,6 +431,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Allow OAuth-authorized external clients to use Okou MCP tools.",
     enabled: false,
   },
+  [FeatureSwitchKey.VncAccess]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable owner-scoped VNC host and credential configuration",
+    enabled: false,
+  },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:

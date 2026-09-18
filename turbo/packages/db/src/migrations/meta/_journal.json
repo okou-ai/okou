@@ -561,6 +561,13 @@
       "when": 1789669312159,
       "tag": "1157_morning_brief_deliveries",
       "breakpoints": true
+    },
+    {
+      "idx": 1158,
+      "version": "7",
+      "when": 1789688950614,
+      "tag": "1158_vnc_configuration",
+      "breakpoints": true
     }
   ]
 }

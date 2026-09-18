@@ -16,6 +16,7 @@ import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import { eraseVncOwner } from "./vnc-owner-lifecycle.service";
 
 import type { Db } from "../external/db";
 
@@ -132,6 +133,12 @@ async function revokeOrgMemberRunAuthority(
   // best-effort runner notification or the remaining member resource cleanup.
   const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
+    // Cleanup scope ownership precedes Run and all other business-row locks.
+    await eraseVncOwner(tx, {
+      kind: "owner",
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: "cancelled",

@@ -458,6 +458,24 @@ async function expectApplied(
   });
 }
 
+/**
+ * A highest emitted sequence alone cannot expose a hidden reservation. Follow
+ * creation with the production apply writer and require its durable event to
+ * consume the immediately next sequence.
+ */
+async function expectNextSidebarSequenceAfterCreation(
+  fixture: AuthorizationFixture,
+  previousSeqId: number,
+): Promise<void> {
+  const beforeApply = await readApplyState(fixture);
+  expect(beforeApply.lastSeqId).toBe(previousSeqId);
+  clearPublications();
+  await applyAuthorization(fixture, [200]);
+  await expectApplied(fixture, beforeApply);
+  await flushWaitUntilForTest();
+  expectOneInvalidation(fixture);
+}
+
 interface CreationState {
   readonly requestCount: number;
   readonly selection: Awaited<ReturnType<typeof readSelection>>;
@@ -1428,6 +1446,7 @@ describe("account erasure fences cloud browser authorization request creation", 
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       expect(restored.requestToken).not.toBe(control.requestToken);
+      await expectNextSidebarSequenceAfterCreation(restored, before.lastSeqId);
     },
   );
 
@@ -1448,7 +1467,8 @@ describe("account erasure fences cloud browser authorization request creation", 
 
       await expectCreationDenied(fixture, before);
       await removeErasureSubjectsFixture([closed.jobId]);
-      await createAndInspectOpenRequest(fixture);
+      const restored = await createAndInspectOpenRequest(fixture);
+      await expectNextSidebarSequenceAfterCreation(restored, before.lastSeqId);
     },
   );
 
@@ -1471,6 +1491,7 @@ describe("account erasure fences cloud browser authorization request creation", 
       await removeErasureSubjectsFixture([closed.jobId]);
       const restored = await createAndInspectOpenRequest(fixture);
       expect(restored.requestToken).not.toBe(control.requestToken);
+      await expectNextSidebarSequenceAfterCreation(restored, before.lastSeqId);
     },
   );
 
