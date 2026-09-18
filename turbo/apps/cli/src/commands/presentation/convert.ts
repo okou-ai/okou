@@ -244,15 +244,22 @@ function sourceUrl(input: string): string {
 function transfer(page: ReturnType<typeof browser>, length: number): Buffer {
   const parts: string[] = [];
   for (let offset = 0; offset < length; offset += TRANSFER_CHUNK) {
+    // evaluate() unwraps two layers of JSON, so the slice is encoded twice.
+    // A bare string would come back still quoted, and only Node's tolerance of
+    // stray characters in base64 would keep the deck readable.
     const slice = page.evaluate(
-      `window.__okouPptx.slice(${offset.toString()},${(offset + TRANSFER_CHUNK).toString()})`,
+      `JSON.stringify(window.__okouPptx.slice(${offset.toString()},${(offset + TRANSFER_CHUNK).toString()}))`,
     );
     if (typeof slice !== "string") {
       throw new Error(`Transfer failed at offset ${offset.toString()}`);
     }
     parts.push(slice);
   }
-  return Buffer.from(parts.join(""), "base64");
+  const deck = Buffer.from(parts.join(""), "base64");
+  if (deck.length === 0) {
+    throw new Error("Transferred deck is empty");
+  }
+  return deck;
 }
 
 interface Rendered {
