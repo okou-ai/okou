@@ -173,6 +173,22 @@ function rateLimitedSnapshot(retryAfterSeconds?: string): SnapshotFixture {
   };
 }
 
+/**
+ * The action-stage timeout: HTTP 422 with `6002` and a `detail` that, unlike
+ * the navigation and selector timers, names no stage at all.
+ */
+function actionTimedOutSnapshot(): SnapshotFixture {
+  return {
+    error: {
+      code: 6002,
+      message:
+        "A timeout was reached. Check gotoOptions/waitForSelector/waitForTimeout/actionTimeout options.",
+      detail: "Request timed out",
+      status: 422,
+    },
+  };
+}
+
 function mockCloudflareVideoFrame(
   userId: string,
   status = 200,
@@ -1164,6 +1180,70 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(1);
+    const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(unpreviewedArtifact?.thumbnail).toBeNull();
+    expect(
+      owner.objectStore.puts.some((put) => {
+        return put.key.endsWith(`/preview-v3-${artifact.deploymentId}.webp`);
+      }),
+    ).toBeFalsy();
+  }, 120_000);
+
+  it("retries an action timeout once under a shortened budget", async () => {
+    const owner = await artifactActor("Artifacts API action retry agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      actionTimedOutSnapshot(),
+      {},
+    ]);
+    const site = `action-retry-${randomUUID().slice(0, 8)}`;
+
+    await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    expect(snapshotRequests).toHaveLength(2);
+    // Navigation already succeeded to reach the action stage, so the retry
+    // repeats the primary profile and only shortens the action budget: a
+    // second full budget cannot fit in the function.
+    expect(snapshotRequests[1]?.body).toMatchObject({
+      gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
+      actionTimeout: 20_000,
+    });
+    const previewedArtifact = await findCatalogArtifact(owner.actor, site);
+    expect(previewedArtifact?.thumbnail?.url).toMatch(
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+    );
+  }, 120_000);
+
+  it("stops after one action-timeout retry even with budget left", async () => {
+    const owner = await artifactActor("Artifacts API action retry once agent");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const snapshotRequests = mockCloudflareSnapshot([
+      actionTimedOutSnapshot(),
+      actionTimedOutSnapshot(),
+    ]);
+    const site = `action-retry-once-${randomUUID().slice(0, 8)}`;
+
+    const artifact = await createHostedArtifact({
+      actor: owner.actor,
+      agentId: owner.agentId,
+      runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
+      site,
+    });
+    await flushWaitUntilForTest();
+
+    // The shared budget allows a third request; the action retry's own
+    // allowance does not, so a repeat that times out again stops here.
+    expect(snapshotRequests).toHaveLength(2);
     const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(unpreviewedArtifact?.thumbnail).toBeNull();
     expect(
