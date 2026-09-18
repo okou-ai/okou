@@ -89,7 +89,9 @@ async function choose(dialog: HTMLElement, label: string, name: string) {
 
 async function addCredential() {
   click(getAction("radio", "Credentials"));
-  const add = await waitFor(() => {return getAction("button", "Add credential")});
+  const add = await waitFor(() => {
+    return getAction("button", "Add credential");
+  });
   click(add);
   return screen.findByRole("dialog", { name: "Add credential" });
 }
@@ -116,7 +118,9 @@ test("An owner reuses a VNC credential without exposing its password", async () 
   await choose(dialog, "Credential", "Desktop login");
   expect(within(dialog).queryByLabelText("VNC password")).toBeNull();
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
   expect(requests).toStrictEqual([
     {
       id: expect.any(String),
@@ -152,7 +156,9 @@ test("Inline password creation preserves spaces and sends the selected custom ce
   );
   await fill(within(dialog).getByLabelText("CA certificates (PEM)"), caBundle);
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
   expect(requests).toStrictEqual([
     {
       id: expect.any(String),
@@ -207,7 +213,9 @@ test("Host edits send the reviewed generation and explicit certificate trust cha
   );
   expect(within(dialog).queryByLabelText("CA certificates (PEM)")).toBeNull();
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
   expect(requests).toStrictEqual([
     {
       id: host.id,
@@ -237,8 +245,12 @@ test("Deleting a host requires confirmation and uses its displayed generation", 
   expect(within(dialog).getByText(host.displayName)).toBeInTheDocument();
   expect(requests).toStrictEqual([]);
   click(getAction("button", "Delete host", dialog));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
-  await waitFor(() => {return expect(screen.queryByText(host.displayName)).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  await waitFor(() => {
+    return expect(screen.queryByText(host.displayName)).toBeNull();
+  });
   expect(requests).toStrictEqual([
     { id: host.id, body: { expectedGeneration: 4 } },
   ]);
@@ -284,7 +296,9 @@ test("A reusable credential explains bound-host impact and only replaces its pas
   expect(secret).toHaveValue("");
   await fill(secret, "new pwd");
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
   expect(requests).toStrictEqual([
     {
       id: credential.id,
@@ -311,7 +325,9 @@ test("Renaming a credential keeps its stored password without sending authentica
   const dialog = await screen.findByRole("dialog", { name: "Edit credential" });
   await fill(within(dialog).getByLabelText("Credential name"), "Renamed login");
   click(getAction("button", "Save", dialog));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
   expect(requests).toStrictEqual([
     { expectedRevision: 3, name: "Renamed login" },
   ]);
@@ -340,8 +356,12 @@ test("Deleting an unused credential sends the reviewed revision after confirmati
   });
   expect(within(dialog).getByText(credential.name)).toBeInTheDocument();
   click(getAction("button", "Delete credential", dialog));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
-  await waitFor(() => {return expect(screen.queryByText(credential.name)).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  await waitFor(() => {
+    return expect(screen.queryByText(credential.name)).toBeNull();
+  });
   expect(requests).toStrictEqual([
     { id: credential.id, body: { expectedRevision: 3 } },
   ]);
@@ -395,7 +415,9 @@ test("A host conflict requires closing and reviewing the refreshed host before a
   );
   await fill(within(reopened).getByLabelText("Display name"), "Reviewed edit");
   click(getAction("button", "Save", reopened));
-  await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
   await screen.findByText("Reviewed edit");
   expect(requests).toStrictEqual([
     expect.objectContaining({ expectedGeneration: 4, displayName: "My edit" }),
@@ -503,7 +525,9 @@ test.each(["host", "credential"] as const)(
     expect(getAction("button", "Retry", dialog)).toBeEnabled();
     acknowledge = true;
     click(getAction("button", "Retry", dialog));
-    await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
     const newCredential = {
       name: "Retry login",
       authentication: { method: "vnc_password", password: " retry " },
@@ -645,7 +669,9 @@ test.each(["owner", "navigation"] as const)(
       token.resolve("old-owner-token");
       await token.promise;
     });
-    await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
     expect(secret).toHaveValue("");
     expect(requests).toStrictEqual([]);
   },
