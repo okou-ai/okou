@@ -94,6 +94,9 @@ function providerTextFailureReason(
   if (
     semanticMessage.startsWith(
       "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
+    ) ||
+    semanticMessage.startsWith(
+      "this content was flagged for possible biological risk. if this seems wrong, try rephrasing your request. we are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: ",
     )
   )
     return "safety_policy_refusal";

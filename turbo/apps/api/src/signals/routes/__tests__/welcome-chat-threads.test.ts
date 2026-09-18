@@ -37,6 +37,10 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const MODEL = "claude-sonnet-5";
+const WELCOME_STEP_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
+const WELCOME_SCENE_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
 
 function headers(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -278,20 +282,18 @@ describe("POST /api/welcome-chat-threads", () => {
       contextId: null,
       runEventId: null,
     });
-    expect(rows[0]?.payload?.content).toContain("# Hi, I'm Okou");
+    expect(rows[0]?.payload?.content).toContain("# 👋 Hi, I'm Okou");
     const content = rows[0]?.payload?.content ?? "";
     const sections = [
-      "## Here is what I can deliver",
-      "### Images",
-      "### Presentations",
-      "### Videos",
-      "### Automation recommendations",
-      "## Why teams get more from Okou",
-      "## How to work with me as a team",
-      "## Talk to me in Slack",
-      "[Set up Slack]",
-      "[Invite your teammates]",
-      "[Read the docs]",
+      "## 🎨 Making things is the easy end of my work",
+      "## 🔍 Data most assistants cannot reach",
+      "## ⚙️ Workflows other teams have already built here",
+      "## 🛠️ Make it yours",
+      "## 💬 I can work where your team already talks",
+      "## 💸 Mind which model I run on",
+      "## 📸 A walkthrough in real screenshots",
+      "[invite your teammates]",
+      "[read the docs]",
     ];
     let previous = -1;
     for (const section of sections) {
@@ -300,15 +302,17 @@ describe("POST /api/welcome-chat-threads", () => {
       previous = index;
     }
     for (const expected of [
-      "Qualify inbound leads",
-      "Turn meetings into follow-ups",
-      "Weekly growth review",
-      "**Run the task with me once.**",
-      "**Save it as a workflow.**",
-      "**Change its visibility to Public.**",
-      "**Run it by name.**",
-      "Only workspace admins can install",
-      "you can attach a file to a direct message",
+      "**strongest employee**",
+      "**the job keeps running in the cloud**",
+      "**[Social research]",
+      "- [Weekly growth report]",
+      "Open **Template** in the chat composer",
+      "**Give a job its own agent.**",
+      "**Start cheap**",
+      // Prompts are copyable blocks rather than links, because an inline link
+      // collapses into a chip.
+      "```\nFind the creators talking about",
+      "```\nCreate an agent for customer support",
     ]) {
       expect(content).toContain(expected);
     }
@@ -396,20 +400,40 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).not.toContain("{{");
       expect(content).not.toContain("okou://welcome-diagram");
       expect(content).not.toContain("Editable agent name");
-      expect(content).toContain("`campaign-visual.jpg`");
-      expect(content).toContain("`sproutpop-launch-deck.html`");
-      expect(content).toContain("`product-launch-film.mp4`");
+      // Artifacts use image syntax so the app frames them as previews.
       expect(content).toContain(
-        "https://static.vm0.io/vm0/artifact-templates/illustration/assets/bb2f13d1-f849-4a5c-a493-524bc0eda5c2/ref-bookshop-interior.jpg",
+        "![campaign-visual.jpg](<https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99/campaign-visual.jpg>)",
       );
       expect(content).toContain(
-        "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html",
+        "![sproutpop-launch-deck](<https://sproutpop-launch-deck-p9jk.okou.app>)",
       );
       expect(content).toContain(
-        "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4",
+        "![coastal-hotel-example](<https://coastal-hotel-example.okou.app>)",
       );
-      expect(content?.match(/```mermaid\nflowchart/gu)).toHaveLength(3);
-      expect(content).toContain("`/okou`");
+      expect(content).not.toContain("```mermaid");
+      for (const filename of [
+        "slack-scene.png",
+        "telegram-scene.png",
+        "model-tiers.png",
+      ]) {
+        expect(content).toContain(`${WELCOME_SCENE_BASE}/${filename}`);
+      }
+      for (const filename of [
+        "workflow-template-picker.png",
+        "new-agent.png",
+      ]) {
+        expect(content).toContain(`${WELCOME_STEP_BASE}/${filename}`);
+      }
+      // The deck and the quick start render their own previews, so the copy
+      // carries no hand-made screenshots of them.
+      // The alt text is localized, so assert the artifact reference itself.
+      expect(content).toContain("](<https://okou-quick-start-deck.okou.app>)");
+      expect(content).not.toContain("quick-start/cover.png");
+      expect(content).not.toContain("?prompt=");
+      expect(content).toContain(
+        "https://pr-33252-www.omby.ai/en/workflow-automation-examples",
+      );
+      expect(content).toContain("https://pr-33252-www.omby.ai/en/web-services");
       expect(content).toContain("https://pr-33252-app.omby.ai/works");
       expect(content).toContain(
         "https://pr-33252-app.omby.ai/?settings=people",

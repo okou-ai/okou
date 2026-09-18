@@ -74,6 +74,8 @@ impl Job {
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionContext {
     pub run_id: RunId,
+    #[serde(default, deserialize_with = "deserialize_x_resource_billing")]
+    pub x_resource_billing: Option<XResourceBilling>,
     #[serde(default)]
     pub reuse_key: Option<String>,
     pub prompt: String,
@@ -152,6 +154,46 @@ pub struct ExecutionContext {
     /// Chat Thread id used as Pi's official JSONL session id.
     #[serde(default)]
     pub pi_session_id: Option<String>,
+}
+
+/// API-advertised X producer protocol. A future date is retained until response completion.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct XResourceBilling {
+    pub protocol: XResourceBillingProtocol,
+    #[serde(deserialize_with = "deserialize_x_resource_start_date")]
+    pub start_date: chrono::NaiveDate,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum XResourceBillingProtocol {
+    #[serde(rename = "x-resource-v1")]
+    V1,
+}
+
+fn deserialize_x_resource_start_date<'de, D>(deserializer: D) -> Result<chrono::NaiveDate, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    let date =
+        chrono::NaiveDate::parse_from_str(&value, "%Y-%m-%d").map_err(serde::de::Error::custom)?;
+    if value.len() != 10 || date.format("%Y-%m-%d").to_string() != value {
+        return Err(serde::de::Error::custom(
+            "X resource start date must be YYYY-MM-DD",
+        ));
+    }
+    Ok(date)
+}
+
+pub(crate) fn deserialize_x_resource_billing<'de, D>(
+    deserializer: D,
+) -> Result<Option<XResourceBilling>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // Absence is legacy; an explicitly malformed or null capability must not downgrade billing.
+    XResourceBilling::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -2328,6 +2370,30 @@ mod tests {
         });
         let ctx: ExecutionContext = serde_json::from_value(json).unwrap();
         assert!(ctx.cli_agent_session_id().is_none());
+        assert!(ctx.x_resource_billing.is_none());
+    }
+
+    #[test]
+    fn execution_context_rejects_invalid_advertised_x_resource_capability() {
+        for capability in [
+            serde_json::Value::Null,
+            json!({"protocol": "x-resource-v2", "startDate": "2099-01-01"}),
+            json!({"protocol": "x-resource-v1", "startDate": "2099-02-30"}),
+            json!({"protocol": "x-resource-v1", "startDate": "2099-1-1"}),
+            json!({"protocol": "x-resource-v1"}),
+            json!({"protocol": "x-resource-v1", "startDate": "2099-01-01", "bindingId": "x"}),
+        ] {
+            let context = json!({
+                "runId": "550e8400-e29b-41d4-a716-446655440000",
+                "prompt": "hello",
+                "sandboxToken": "tok",
+                "cliAgentType": "claude-code",
+                "platformEnvironment": {},
+                "connectorRuntimeTargets": [],
+                "xResourceBilling": capability,
+            });
+            assert!(serde_json::from_value::<ExecutionContext>(context).is_err());
+        }
     }
 
     #[test]

@@ -100,7 +100,8 @@ test.each(["host", "credential"])(
     const hints = {
       "Credential name": "e.g. Deployment login",
       "SSH username": "e.g. ubuntu",
-      "Private key": "Paste the complete private key",
+      "Private key":
+        "Paste the complete private key or import it using ‘Choose file’",
       "Passphrase (optional)": "Leave blank if not encrypted",
     };
     for (const [label, hint] of Object.entries(hints)) {

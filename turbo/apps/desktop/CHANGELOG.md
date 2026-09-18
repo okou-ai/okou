@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.48.91](https://github.com/vm0-ai/okou/compare/desktop-v0.48.90...desktop-v0.48.91) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.465.0
+
+## [0.48.90](https://github.com/vm0-ai/okou/compare/desktop-v0.48.89...desktop-v0.48.90) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.464.0
+
+## [0.48.89](https://github.com/vm0-ai/okou/compare/desktop-v0.48.88...desktop-v0.48.89) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.463.0
+
+## [0.48.88](https://github.com/vm0-ai/okou/compare/desktop-v0.48.87...desktop-v0.48.88) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.462.0
+
+## [0.48.87](https://github.com/vm0-ai/okou/compare/desktop-v0.48.86...desktop-v0.48.87) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.1
+
+## [0.48.86](https://github.com/vm0-ai/okou/compare/desktop-v0.48.85...desktop-v0.48.86) (2026-09-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.461.0
+
 ## [0.48.85](https://github.com/vm0-ai/okou/compare/desktop-v0.48.84...desktop-v0.48.85) (2026-09-17)
 
 

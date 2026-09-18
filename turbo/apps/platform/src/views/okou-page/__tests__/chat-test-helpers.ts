@@ -916,6 +916,13 @@ export function mockChatLifecycle(
       status: runStatus,
       prompt: runPrompt ?? "Hello",
       appendSystemPrompt: null,
+      source: {
+        providerType: null,
+        runtimeProviderType: null,
+        model: null,
+        credentialScope: null,
+        account: { status: "unknown" },
+      },
       result: { agentSessionId: "session-1", output: resultContent },
       createdAt: "2026-03-10T00:00:00Z",
     });

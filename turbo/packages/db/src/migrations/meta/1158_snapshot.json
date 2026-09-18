@@ -1,5 +1,5 @@
 {
-  "id": "1db23fb2-fc8b-4f62-a90d-504846d68972",
+  "id": "af8de52e-4eba-491b-a175-34224c0af369",
   "prevId": "186a8b37-6ae5-4530-9a9d-622d79fa9815",
   "version": "7",
   "dialect": "postgresql",
@@ -18579,13 +18579,13 @@
           "name": "slack_workspace_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "slack_user_id": {
           "name": "slack_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "status": {
           "name": "status",
@@ -18772,10 +18772,6 @@
         "chk_morning_brief_collection_occurrence_outcome": {
           "name": "chk_morning_brief_collection_occurrence_outcome",
           "value": "(\"morning_brief_collection_occurrences\".\"status\" = 'running') = (\"morning_brief_collection_occurrences\".\"outcome\" IS NULL)"
-        },
-        "chk_morning_brief_collection_occurrence_slack_binding": {
-          "name": "chk_morning_brief_collection_occurrence_slack_binding",
-          "value": "(\"morning_brief_collection_occurrences\".\"collection_kind\" = 'slack') =\n          (\"morning_brief_collection_occurrences\".\"slack_workspace_id\" IS NOT NULL AND \"morning_brief_collection_occurrences\".\"slack_user_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -19312,36 +19308,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "instructions_version_id": {
-          "name": "instructions_version_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "instructions_digest": {
-          "name": "instructions_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reported_language": {
-          "name": "reported_language",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retained_sources": {
-          "name": "retained_sources",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retained_until": {
-          "name": "retained_until",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "reserved_at": {
           "name": "reserved_at",
           "type": "timestamp",
@@ -19459,40 +19425,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_morning_brief_generations_invoked_anchor": {
-          "name": "uq_morning_brief_generations_invoked_anchor",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scheduled_for",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "execution_purpose",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"morning_brief_generations\".\"state\" NOT IN ('not_invoked', 'skipped_empty', 'skipped_incomplete')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -19543,7 +19475,7 @@
         },
         "chk_morning_brief_generation_language_source": {
           "name": "chk_morning_brief_generation_language_source",
-          "value": "\"morning_brief_generations\".\"language_source\" IN ('agent-instructions', 'member-locale', 'default')"
+          "value": "\"morning_brief_generations\".\"language_source\" IN ('member-locale', 'default')"
         },
         "chk_morning_brief_generation_coverage": {
           "name": "chk_morning_brief_generation_coverage",
@@ -19572,14 +19504,6 @@
         "chk_morning_brief_generation_reservation": {
           "name": "chk_morning_brief_generation_reservation",
           "value": "\"morning_brief_generations\".\"reservation_expires_at\" > \"morning_brief_generations\".\"reserved_at\"\n          AND \"morning_brief_generations\".\"expires_at\" > \"morning_brief_generations\".\"reserved_at\""
-        },
-        "chk_morning_brief_generation_retained_until": {
-          "name": "chk_morning_brief_generation_retained_until",
-          "value": "\"morning_brief_generations\".\"retained_until\" IS NULL\n          OR \"morning_brief_generations\".\"retained_until\" >= \"morning_brief_generations\".\"expires_at\""
-        },
-        "chk_morning_brief_generation_instructions": {
-          "name": "chk_morning_brief_generation_instructions",
-          "value": "(\"morning_brief_generations\".\"instructions_version_id\" IS NULL) =\n          (\"morning_brief_generations\".\"instructions_digest\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -34525,6 +34449,374 @@
         "chk_variables_connector_owner_type": {
           "name": "chk_variables_connector_owner_type",
           "value": "(\"variables\".\"type\" = 'connector') = (\"variables\".\"connector_id\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.vnc_connections": {
+      "name": "vnc_connections",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "host": {
+          "name": "host",
+          "type": "varchar(253)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "port": {
+          "name": "port",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5900
+        },
+        "credential_id": {
+          "name": "credential_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "security_type": {
+          "name": "security_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trust_mode": {
+          "name": "trust_mode",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ca_bundle": {
+          "name": "ca_bundle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_vnc_connections_credential": {
+          "name": "idx_vnc_connections_credential",
+          "columns": [
+            {
+              "expression": "credential_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_connections_owner_created": {
+          "name": "idx_vnc_connections_owner_created",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_connections_user": {
+          "name": "idx_vnc_connections_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vnc_connections_credential_owner_fk": {
+          "name": "vnc_connections_credential_owner_fk",
+          "tableFrom": "vnc_connections",
+          "tableTo": "vnc_credentials",
+          "columnsFrom": [
+            "credential_id",
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "id",
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_vnc_connections_display_name": {
+          "name": "chk_vnc_connections_display_name",
+          "value": "char_length(\"vnc_connections\".\"display_name\") BETWEEN 1 AND 128"
+        },
+        "chk_vnc_connections_host": {
+          "name": "chk_vnc_connections_host",
+          "value": "char_length(\"vnc_connections\".\"host\") BETWEEN 1 AND 253 AND \"vnc_connections\".\"host\" = lower(\"vnc_connections\".\"host\") AND \"vnc_connections\".\"host\" !~ '[[:space:]/@?#]'"
+        },
+        "chk_vnc_connections_port": {
+          "name": "chk_vnc_connections_port",
+          "value": "\"vnc_connections\".\"port\" BETWEEN 1 AND 65535"
+        },
+        "chk_vnc_connections_generation": {
+          "name": "chk_vnc_connections_generation",
+          "value": "\"vnc_connections\".\"generation\" > 0"
+        },
+        "chk_vnc_connections_security_type": {
+          "name": "chk_vnc_connections_security_type",
+          "value": "\"vnc_connections\".\"security_type\" = 'x509_vnc'"
+        },
+        "chk_vnc_connections_trust": {
+          "name": "chk_vnc_connections_trust",
+          "value": "(\"vnc_connections\".\"trust_mode\" = 'system' AND \"vnc_connections\".\"ca_bundle\" IS NULL) OR (\"vnc_connections\".\"trust_mode\" = 'custom_ca' AND \"vnc_connections\".\"ca_bundle\" IS NOT NULL AND octet_length(\"vnc_connections\".\"ca_bundle\") BETWEEN 1 AND 65536)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.vnc_credentials": {
+      "name": "vnc_credentials",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "auth_method": {
+          "name": "auth_method",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_password": {
+          "name": "encrypted_password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_vnc_credentials_owner_created": {
+          "name": "idx_vnc_credentials_owner_created",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vnc_credentials_user": {
+          "name": "idx_vnc_credentials_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "uq_vnc_credentials_owner_id": {
+          "name": "uq_vnc_credentials_owner_id",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "org_id",
+            "user_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "chk_vnc_credentials_name": {
+          "name": "chk_vnc_credentials_name",
+          "value": "char_length(\"vnc_credentials\".\"name\") BETWEEN 1 AND 128"
+        },
+        "chk_vnc_credentials_auth_method": {
+          "name": "chk_vnc_credentials_auth_method",
+          "value": "\"vnc_credentials\".\"auth_method\" = 'vnc_password'"
+        },
+        "chk_vnc_credentials_password": {
+          "name": "chk_vnc_credentials_password",
+          "value": "char_length(\"vnc_credentials\".\"encrypted_password\") > 0"
+        },
+        "chk_vnc_credentials_revision": {
+          "name": "chk_vnc_credentials_revision",
+          "value": "\"vnc_credentials\".\"revision\" > 0"
         }
       },
       "isRLSEnabled": false

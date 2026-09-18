@@ -292,6 +292,290 @@ async fn delayed_collection_preserves_the_measured_header_phase() {
     );
     assert_eq!(header["success"], true);
     assert!(header.get("error").is_none());
+    assert!(payloads.iter().all(|payload| {
+        payload["sandboxOperations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|operation| operation.get("archive_size_mismatch").is_none())
+    }));
+}
+
+async fn mismatch_telemetry_receiver() -> (JobTelemetry, RawHttpTestServer) {
+    let receiver = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+        "200 OK",
+        r#"{"success":true}"#,
+    ))])
+    .await;
+    (new_telemetry_for_api_url(&receiver.url()), receiver)
+}
+
+async fn flush_telemetry_payload(
+    telemetry: JobTelemetry,
+    receiver: RawHttpTestServer,
+) -> serde_json::Value {
+    tokio::time::timeout(Duration::from_secs(5), telemetry.flush())
+        .await
+        .expect("telemetry should flush to the local receiver");
+    let requests = receiver.assert_finished_with_requests().await;
+    assert_eq!(requests.len(), 1);
+    let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+    serde_json::from_str(body).unwrap()
+}
+
+fn mismatch_header(payload: &serde_json::Value) -> &serde_json::Value {
+    let operations = payload["sandboxOperations"].as_array().unwrap();
+    let diagnostics = operations
+        .iter()
+        .filter(|operation| operation.get("archive_size_mismatch").is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 1);
+    let header = diagnostics[0];
+    assert_eq!(header["action_type"], PHASES[0]);
+    assert_eq!(header["success"], false);
+    assert_eq!(header["error"], "response-size-mismatch");
+    assert!(operations.iter().all(|operation| {
+        !PHASES[1..]
+            .iter()
+            .any(|phase| operation["action_type"] == *phase)
+    }));
+    header
+}
+
+#[tokio::test]
+async fn rejected_header_payload_preserves_exact_lengths_and_bounded_encodings() {
+    for (length, encoding_headers, expected_encoding) in [
+        (0, b"".as_slice(), "absent"),
+        (
+            3,
+            b"Content-Encoding: \tIdEnTiTy \t\r\n".as_slice(),
+            "identity",
+        ),
+        (7, b"Content-Encoding: GzIp\r\n".as_slice(), "gzip"),
+        (
+            // Hyper reserves the two largest u64 values for body framing.
+            u64::MAX - 2,
+            b"Content-Encoding: private-encoding-secret\r\n".as_slice(),
+            "other",
+        ),
+        (
+            7,
+            b"Content-Encoding: gzip\r\nContent-Encoding: identity\r\n".as_slice(),
+            "other",
+        ),
+        (7, b"Content-Encoding: gzip, br\r\n".as_slice(), "other"),
+        (7, b"Content-Encoding: \xff\r\n".as_slice(), "other"),
+        (7, b"Content-Encoding: \t\r\n".as_slice(), "other"),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let mut response = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\n").into_bytes();
+        response.extend_from_slice(encoding_headers);
+        response.extend_from_slice(b"Connection: close\r\n\r\n");
+        // No response body is supplied, even when a nonzero length is declared.
+        let (origin, server) = raw_http_url(response).await;
+        let url = format!("{origin}/private-object-secret?signature=private-query-secret");
+        let mut plan = fresh_storage_plan_with_archive_size(
+            url.clone(),
+            "private-storage-secret",
+            "private-version-secret",
+            5,
+        );
+        let (mut telemetry, receiver) = mismatch_telemetry_receiver().await;
+        let sandbox = MockSandbox::new("header-mismatch");
+        let error =
+            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+                .await
+                .err()
+                .expect("the mismatched response must fail storage delivery");
+        assert!(error.to_string().contains("response-size-mismatch"));
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].starts_with("GET "));
+        assert_eq!(storage_archive_url(&plan, 0), Some(url.as_str()));
+        assert!(sandbox.write_files_calls().is_empty());
+        assert!(
+            !home
+                .storage_cache_dir("private-storage-secret", "private-version-secret")
+                .exists()
+        );
+        let operations = telemetry.pending_ops_snapshot();
+        assert_op_count(&operations, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
+        assert_no_op(&operations, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED);
+        let payload = flush_telemetry_payload(telemetry, receiver).await;
+        assert_eq!(
+            mismatch_header(&payload)["archive_size_mismatch"],
+            serde_json::json!({
+                "expected_bytes": "5",
+                "response_bytes": length.to_string(),
+                "source_kind": "storage",
+                "source_index": 0,
+                "content_encoding": expected_encoding,
+            }),
+        );
+        let serialized = payload.to_string();
+        for private in [
+            "private-object-secret",
+            "private-query-secret",
+            "private-storage-secret",
+            "private-version-secret",
+            "private-encoding-secret",
+        ] {
+            assert!(!serialized.contains(private));
+        }
+    }
+}
+
+#[tokio::test]
+async fn grouped_mismatch_reports_the_first_normalized_source_not_admission_order() {
+    for source_kind in ["storage", "artifact"] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let (url, server) = raw_http_url(http_response("200 OK", b"abc")).await;
+        let mut previous = StorageFingerprints::default();
+        let mut storages = Vec::new();
+        let mut artifacts = Vec::new();
+        for index in 0..5 {
+            let name = format!("unchanged-{index}");
+            let mount = format!("/mnt/{name}");
+            if source_kind == "storage" {
+                previous
+                    .storages
+                    .insert(mount.clone(), StorageFingerprint::new(&name, "v1"));
+                storages.push(storage_entry(mount, url.clone(), &name, "v1"));
+            } else {
+                let mut entry = artifact_entry(mount, url.clone(), &name, "v1");
+                entry.empty = Some(true);
+                entry.archive_url = None;
+                artifacts.push(entry);
+            }
+        }
+        // The representative has no size. Another member supplies the group's
+        // reconciled expected size, and only the representative URL is fetched.
+        if source_kind == "storage" {
+            storages.push(storage_entry(
+                "/mnt/representative".into(),
+                url.clone(),
+                "shared",
+                "v1",
+            ));
+            let mut duplicate = artifact_entry(
+                "/mnt/duplicate".into(),
+                "http://localhost:0/never".into(),
+                "shared",
+                "v1",
+            );
+            duplicate.archive_size = Some(5);
+            artifacts.push(duplicate);
+        } else {
+            artifacts.push(artifact_entry(
+                "/mnt/representative".into(),
+                url.clone(),
+                "shared",
+                "v1",
+            ));
+            let mut duplicate = artifact_entry(
+                "/mnt/duplicate".into(),
+                "http://localhost:0/never".into(),
+                "shared",
+                "v1",
+            );
+            duplicate.archive_size = Some(5);
+            artifacts.push(duplicate);
+        }
+        let mut plan = plan_from_entries(storages, artifacts, Some(&previous));
+        let (mut telemetry, receiver) = mismatch_telemetry_receiver().await;
+        let sandbox = MockSandbox::new("grouped-header-mismatch");
+        let error =
+            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
+                .await
+                .err()
+                .expect("the grouped mismatched response must fail storage delivery");
+        assert!(error.to_string().contains("response-size-mismatch"));
+        assert_eq!(server.assert_finished_with_requests().await.len(), 1);
+        assert!(sandbox.write_files_calls().is_empty());
+        assert!(!home.storage_cache_dir("shared", "v1").exists());
+        let payload = flush_telemetry_payload(telemetry, receiver).await;
+        assert_eq!(
+            mismatch_header(&payload)["archive_size_mismatch"],
+            serde_json::json!({
+                "expected_bytes": "5", "response_bytes": "3",
+                "source_kind": source_kind, "source_index": 5, "content_encoding": "absent",
+            }),
+        );
+    }
+}
+
+#[tokio::test]
+async fn completed_mismatch_survives_cancellation_and_repeated_drain() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let (url, server) = raw_http_url(http_response("200 OK", b"abc")).await;
+    let mut plan = fresh_storage_plan_with_archive_size(url, "cancel-mismatch", "v1", 5);
+    let (mut telemetry, receiver) = mismatch_telemetry_receiver().await;
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        None,
+    )
+    .await
+    .unwrap();
+    let (duration, completed_at) = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let recorded = delivery
+                .phase_records
+                .records
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|record| record.operation.action_type == PHASES[0])
+                .map(|record| (record.operation.duration, record.completed_at));
+            if let Some(recorded) = recorded {
+                return recorded;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the mismatch must complete before cancelling the delivery");
+    delivery.cancel_and_drain(&mut telemetry).await;
+    delivery.cancel_and_drain(&mut telemetry).await;
+    assert_eq!(server.assert_finished_with_requests().await.len(), 1);
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+    assert!(!home.storage_cache_dir("cancel-mismatch", "v1").exists());
+    assert!(matches!(
+        lock::try_acquire_or_busy(home.storage_lock("cancel-mismatch", "v1"))
+            .await
+            .unwrap(),
+        lock::TryLock::Acquired(_),
+    ));
+    let payload = flush_telemetry_payload(telemetry, receiver).await;
+    let header = mismatch_header(&payload);
+    assert_eq!(
+        header["duration_ms"],
+        u64::try_from(duration.as_millis()).unwrap()
+    );
+    assert_eq!(
+        header["ts"],
+        completed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    );
+    assert_eq!(header["archive_size_mismatch"]["response_bytes"], "3");
+    assert_eq!(
+        payload["sandboxOperations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|operation| operation["action_type"] == PHASES[0])
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -364,13 +648,16 @@ async fn cancellation_preserves_completed_phases_and_marks_only_active_phase() {
 async fn rejected_headers_and_body_report_the_failed_phase_without_later_phases() {
     for (response, expected_phase, reason) in [
         (http_response("503 Service Unavailable", b"bad"), 0, "http-status"),
+        // Hyper rejects this declared length before exposing response headers.
+        // It must keep the original HTTP error rather than fabricate a mismatch.
+        (format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", u64::MAX).into_bytes(), 0, "http"),
         (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n0\r\n\r\n".to_vec(), 1, "body-size-mismatch"),
     ] {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let (url, server) = raw_http_url(response).await;
         let mut plan = fresh_storage_plan_with_archive_size(url, "phase-error", "v1", 5);
-        let mut telemetry = new_telemetry();
+        let (mut telemetry, receiver) = mismatch_telemetry_receiver().await;
         let sandbox = MockSandbox::new("phase-error");
         assert!(populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry).await.is_err());
         server.assert_finished().await;
@@ -379,6 +666,9 @@ async fn rejected_headers_and_body_report_the_failed_phase_without_later_phases(
         assert_eq!(ops[expected_phase], (PHASES[expected_phase].into(), false, Some(reason.into())));
         assert!(ops[..expected_phase].iter().all(|(_, success, error)| *success && error.is_none()));
         assert!(sandbox.write_files_calls().is_empty());
+        let payload = flush_telemetry_payload(telemetry, receiver).await;
+        assert!(payload["sandboxOperations"].as_array().unwrap().iter()
+            .all(|operation| operation.get("archive_size_mismatch").is_none()));
     }
 }
 

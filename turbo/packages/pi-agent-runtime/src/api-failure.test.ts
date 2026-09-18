@@ -51,6 +51,7 @@ describe("Pi API model failure diagnostics", () => {
     for (const stopReason of ["stop", "aborted"] as const) {
       for (const errorMessage of [
         "Our servers are currently overloaded. Please try again later.",
+        "This content was flagged for possible biological risk. If this seems wrong, try rephrasing your request. We are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: https://example.invalid/policy",
         "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
       ]) {
         expect(

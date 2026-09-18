@@ -1,0 +1,1001 @@
+{
+  "artifactSchemaVersion": 4,
+  "catalogVersion": "2026-09-17.4559",
+  "categoryMetadata": {
+    "categories": [
+      {
+        "groupId": "ai",
+        "id": "ai-general-models",
+        "label": "General Models and Reasoning",
+        "menuLabel": "General Models"
+      },
+      {
+        "groupId": "ai",
+        "id": "ai-image-video",
+        "label": "Image / Video Generation",
+        "menuLabel": "Image and Video"
+      },
+      {
+        "groupId": "ai",
+        "id": "ai-voice-audio",
+        "label": "Voice / Audio",
+        "menuLabel": "Voice and Audio"
+      },
+      {
+        "groupId": "ai",
+        "id": "ai-agent-apps",
+        "label": "Agent Platforms and AI Apps",
+        "menuLabel": "Agent Platforms"
+      },
+      {
+        "groupId": "ai",
+        "id": "ai-memory-tracing-eval",
+        "label": "Memory / Tracing / Evaluation",
+        "menuLabel": "Memory and Evaluation"
+      },
+      {
+        "groupId": null,
+        "id": "communication-collaboration",
+        "label": "Communication and Collaboration",
+        "menuLabel": "Communication"
+      },
+      {
+        "groupId": null,
+        "id": "meetings-scheduling",
+        "label": "Meetings and Scheduling",
+        "menuLabel": "Meetings"
+      },
+      {
+        "groupId": null,
+        "id": "docs-files-knowledge",
+        "label": "Docs, Files, and Knowledge",
+        "menuLabel": "Documents"
+      },
+      {
+        "groupId": null,
+        "id": "engineering-team-execution",
+        "label": "Engineering and Team Execution",
+        "menuLabel": "Engineering"
+      },
+      {
+        "groupId": null,
+        "id": "sales-crm-business-operations",
+        "label": "Sales, CRM, and Business Operations",
+        "menuLabel": "Sales and Business"
+      },
+      {
+        "groupId": null,
+        "id": "marketing-content-growth",
+        "label": "Marketing, Content, and Growth",
+        "menuLabel": "Marketing"
+      },
+      {
+        "groupId": null,
+        "id": "data-automation-infrastructure",
+        "label": "Data, Automation, and Infrastructure",
+        "menuLabel": "Data and Automation"
+      }
+    ],
+    "groups": [
+      {
+        "id": "ai",
+        "label": "AI",
+        "menuLabel": "AI"
+      }
+    ]
+  },
+  "connectors": [
+    {
+      "authMethods": [
+        {
+          "access": {
+            "envBindings": {
+              "SMS019_API_TOKEN": "$secrets.SMS019_API_TOKEN",
+              "SMS019_USERNAME": "$vars.SMS019_USERNAME"
+            },
+            "kind": "static"
+          },
+          "description": "1. Sign in to the [019sms account](https://019sms.co.il/)\n2. Open **Settings / הגדרות > API Token Management / ניהול Token API** and create your first API token\n3. Copy the account username from the registration email or account settings\n4. Paste the account username and the token here; the token is shown only once, so store it securely\n\n019sms sends the token as an `Authorization: Bearer` header and requires\nthe account username inside each API request. The token inherits the\naccount's 019sms permissions. Regenerate it in 019sms if it is exposed or\nno longer trusted. Provider messaging charges and account limits remain\nyour responsibility.\n\nSee the [official API token guide](https://docs.019sms.co.il/guide/)\nand [SMS API documentation](https://docs.019sms.co.il/sms/) for current\nsetup and request details.",
+          "grant": {
+            "fields": [
+              {
+                "label": "API Token",
+                "placeholder": "paste-your-019sms-api-token",
+                "privateName": "SMS019_API_TOKEN",
+                "publicId": "apiToken",
+                "required": true,
+                "storage": "secret"
+              },
+              {
+                "label": "Account Username",
+                "placeholder": "your-019sms-account-username",
+                "privateName": "SMS019_USERNAME",
+                "publicId": "accountUsername",
+                "required": true,
+                "storage": "variable"
+              }
+            ],
+            "kind": "manual"
+          },
+          "id": "api-token",
+          "label": "API Token and Account Username",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": ["SMS019_API_TOKEN"],
+            "variables": ["SMS019_USERNAME"],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "communication-collaboration",
+      "description": "Connect 019sms to send SMS messages, inspect account balance, review delivery and incoming reports, inspect blacklists and contact lists, and review verified sender phones",
+      "firewall": {
+        "billable": false,
+        "categories": {
+          "byPermission": {
+            "api.request": "SMS API"
+          },
+          "displayOrder": ["SMS API"]
+        },
+        "config": {
+          "apis": [
+            {
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.SMS019_API_TOKEN }}"
+                }
+              },
+              "base": "https://019sms.co.il",
+              "hostPolicy": {
+                "exactHosts": ["019sms.co.il"],
+                "kind": "providerOwned"
+              },
+              "permissions": [
+                {
+                  "description": "Send a documented 019sms API request. The shared POST /api transport carries read operations, paid messaging, provider state changes, and credential-returning token actions, so this permission requires explicit approval.",
+                  "name": "api.request",
+                  "rules": ["POST /api"]
+                }
+              ]
+            }
+          ],
+          "description": "019sms HTTP API",
+          "placeholders": {
+            "SMS019_API_TOKEN": "019sms_vm0_synthetic_api_token_CoffeeSafeLocal"
+          }
+        },
+        "defaultAllowed": [],
+        "defaultUnknownPolicy": "deny",
+        "kind": "generated"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": false,
+        "key": "platform/views/zero-page/components/settings/icons/019sms-8f00178c8488.png"
+      },
+      "label": "019sms",
+      "skill": {
+        "archiveSize": 4528,
+        "fileCount": 1,
+        "kind": "bundled",
+        "size": 15892,
+        "storageName": "connector-skill@019sms",
+        "storageVersionPrefix": "__system__/volume/connector-skill@019sms/8a4b16358576e79605485937b68623bf85e12ff932ef36a983a032d7ebb2245c",
+        "versionId": "8a4b16358576e79605485937b68623bf85e12ff932ef36a983a032d7ebb2245c"
+      },
+      "slug": "019sms",
+      "tags": [
+        "sms",
+        "messaging",
+        "text-messaging",
+        "bulk-sms",
+        "delivery-reports",
+        "019sms"
+      ]
+    },
+    {
+      "authMethods": [
+        {
+          "access": {
+            "envBindings": {
+              "AHREFS_TOKEN": "$secrets.AHREFS_ACCESS_TOKEN"
+            },
+            "inputs": {
+              "refreshToken": "$secrets.AHREFS_REFRESH_TOKEN"
+            },
+            "kind": "refresh-token",
+            "outputs": {
+              "accessToken": "$secrets.AHREFS_ACCESS_TOKEN",
+              "refreshToken": "$secrets.AHREFS_REFRESH_TOKEN"
+            },
+            "refreshableSecrets": ["AHREFS_ACCESS_TOKEN"]
+          },
+          "client": {
+            "clientIdEnv": "AHREFS_OAUTH_CLIENT_ID",
+            "clientRegistration": "static",
+            "clientSecretEnv": "AHREFS_OAUTH_CLIENT_SECRET",
+            "clientType": "confidential"
+          },
+          "description": "Sign in with Ahrefs to grant access.",
+          "grant": {
+            "callbackOrigin": "web",
+            "kind": "auth-code",
+            "outputs": {
+              "accessToken": "$secrets.AHREFS_ACCESS_TOKEN",
+              "refreshToken": "$secrets.AHREFS_REFRESH_TOKEN"
+            },
+            "scopes": ["api"]
+          },
+          "id": "oauth",
+          "label": "OAuth",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": ["AHREFS_ACCESS_TOKEN", "AHREFS_REFRESH_TOKEN"],
+            "variables": [],
+            "version": 1
+          },
+          "visible": true
+        },
+        {
+          "access": {
+            "envBindings": {
+              "AHREFS_TOKEN": "$secrets.AHREFS_TOKEN"
+            },
+            "kind": "static"
+          },
+          "description": "1. Log in to [Ahrefs](https://ahrefs.com) as a workspace owner or admin\n2. Go to **Account settings > API keys**\n3. Create a new API key\n4. Copy the API key and use it in the `Authorization: Bearer <YOUR_API_KEY>` header",
+          "grant": {
+            "fields": [
+              {
+                "label": "API Token",
+                "placeholder": "your-ahrefs-api-token",
+                "privateName": "AHREFS_TOKEN",
+                "publicId": "apiToken",
+                "required": true,
+                "storage": "secret"
+              }
+            ],
+            "kind": "manual"
+          },
+          "id": "api-token",
+          "label": "API Token",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": ["AHREFS_TOKEN"],
+            "variables": [],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "marketing-content-growth",
+      "description": "Connect your Ahrefs account to access SEO data, backlink analysis, and keyword research",
+      "firewall": {
+        "billable": false,
+        "categories": null,
+        "config": {
+          "apis": [
+            {
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.AHREFS_TOKEN }}"
+                }
+              },
+              "base": "https://api.ahrefs.com",
+              "permissions": []
+            }
+          ],
+          "description": "Ahrefs API",
+          "placeholders": {
+            "AHREFS_TOKEN": "CoffeeSafeLocalCoffeeSafeLocalCoffeeSafe00"
+          }
+        },
+        "defaultAllowed": null,
+        "defaultUnknownPolicy": "allow",
+        "kind": "generated"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": false,
+        "key": "platform/views/zero-page/components/settings/icons/ahrefs-f0a1878981ae.svg"
+      },
+      "label": "Ahrefs",
+      "skill": {
+        "archiveSize": 1573,
+        "fileCount": 1,
+        "kind": "bundled",
+        "size": 4973,
+        "storageName": "connector-skill@ahrefs",
+        "storageVersionPrefix": "__system__/volume/connector-skill@ahrefs/eb130bdb49356b6f70da02e0be8a637b06704ca38bb8eb03bbfbce9234118644",
+        "versionId": "eb130bdb49356b6f70da02e0be8a637b06704ca38bb8eb03bbfbce9234118644"
+      },
+      "slug": "ahrefs",
+      "tags": []
+    },
+    {
+      "authMethods": [
+        {
+          "access": {
+            "envBindings": {
+              "ARCHER_API_KEY": "$secrets.ARCHER_API_KEY"
+            },
+            "kind": "static"
+          },
+          "description": "1. Sign in to your Archer account\n2. Follow the [Archer API docs](https://docs.archermoney.com) to create or copy an API key\n3. Paste the key here.",
+          "grant": {
+            "fields": [
+              {
+                "label": "API Key",
+                "placeholder": null,
+                "privateName": "ARCHER_API_KEY",
+                "publicId": "apiKey",
+                "required": true,
+                "storage": "secret"
+              }
+            ],
+            "kind": "manual"
+          },
+          "id": "api-token",
+          "label": "API Key",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": ["ARCHER_API_KEY"],
+            "variables": [],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "sales-crm-business-operations",
+      "description": "Connect your Archer account to access gifting, rewards, and payout APIs",
+      "firewall": {
+        "kind": "none"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": false,
+        "key": "platform/views/zero-page/components/settings/icons/archer-1f01e618583e.svg"
+      },
+      "label": "Archer",
+      "skill": {
+        "archiveSize": 561,
+        "fileCount": 1,
+        "kind": "bundled",
+        "size": 806,
+        "storageName": "connector-skill@archer",
+        "storageVersionPrefix": "__system__/volume/connector-skill@archer/21def81d9edb7b04608358e6f4c361f9d75485607bd0b18e2316fe2248c78b63",
+        "versionId": "21def81d9edb7b04608358e6f4c361f9d75485607bd0b18e2316fe2248c78b63"
+      },
+      "slug": "archer",
+      "tags": []
+    },
+    {
+      "authMethods": [
+        {
+          "access": {
+            "envBindings": {
+              "BASE44_TOKEN": "$secrets.BASE44_ACCESS_TOKEN"
+            },
+            "inputs": {
+              "refreshToken": "$secrets.BASE44_REFRESH_TOKEN"
+            },
+            "kind": "refresh-token",
+            "outputs": {
+              "accessToken": "$secrets.BASE44_ACCESS_TOKEN",
+              "refreshToken": "$secrets.BASE44_REFRESH_TOKEN"
+            },
+            "refreshableSecrets": ["BASE44_ACCESS_TOKEN"]
+          },
+          "client": {
+            "clientId": "base44_cli",
+            "clientRegistration": "static",
+            "clientType": "public"
+          },
+          "description": "Sign in with Base44 to grant access.",
+          "grant": {
+            "kind": "device-auth",
+            "outputs": {
+              "accessToken": "$secrets.BASE44_ACCESS_TOKEN",
+              "refreshToken": "$secrets.BASE44_REFRESH_TOKEN"
+            },
+            "scopes": ["apps:read", "apps:write", "offline"],
+            "startOptions": []
+          },
+          "id": "oauth",
+          "label": "OAuth",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": ["BASE44_ACCESS_TOKEN", "BASE44_REFRESH_TOKEN"],
+            "variables": [],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "ai-agent-apps",
+      "description": "Connect your Base44 account to let agents access and manage your Base44 apps",
+      "firewall": {
+        "billable": false,
+        "categories": null,
+        "config": {
+          "apis": [
+            {
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.BASE44_TOKEN }}"
+                }
+              },
+              "base": "https://app.base44.com/api/apps",
+              "permissions": []
+            }
+          ],
+          "description": "Base44 app API",
+          "placeholders": {
+            "BASE44_TOKEN": "base44_placeholder_token"
+          }
+        },
+        "defaultAllowed": null,
+        "defaultUnknownPolicy": "allow",
+        "kind": "generated"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": false,
+        "key": "platform/views/zero-page/components/settings/icons/base44-c8c6c2410609.png"
+      },
+      "label": "Base44",
+      "skill": {
+        "archiveSize": 1586,
+        "fileCount": 1,
+        "kind": "bundled",
+        "size": 5169,
+        "storageName": "connector-skill@base44",
+        "storageVersionPrefix": "__system__/volume/connector-skill@base44/41fb0d464b82e1f25fabf6436dd041863d74592b172173e45b3b75d068b72c94",
+        "versionId": "41fb0d464b82e1f25fabf6436dd041863d74592b172173e45b3b75d068b72c94"
+      },
+      "slug": "base44",
+      "tags": []
+    },
+    {
+      "authMethods": [
+        {
+          "access": {
+            "envBindings": {
+              "NINTENDO_STORE_LOCALE": "$vars.NINTENDO_STORE_LOCALE",
+              "NINTENDO_STORE_TOKEN": "$secrets.NINTENDO_STORE_ACCESS_TOKEN"
+            },
+            "inputs": {
+              "sessionToken": "$secrets.NINTENDO_STORE_SESSION_TOKEN"
+            },
+            "kind": "refresh-token",
+            "outputs": {
+              "accessToken": "$secrets.NINTENDO_STORE_ACCESS_TOKEN",
+              "idToken": "$secrets.NINTENDO_STORE_ID_TOKEN",
+              "locale": "$vars.NINTENDO_STORE_LOCALE"
+            },
+            "refreshableSecrets": ["NINTENDO_STORE_ACCESS_TOKEN"]
+          },
+          "client": {
+            "clientId": "5c38e31cd085304b",
+            "clientRegistration": "static",
+            "clientType": "public"
+          },
+          "description": "Sign in with Nintendo. After signing in, right-click the redirect button and copy its link address, then paste the full `npf...://auth` redirect URL or the `session_token_code` value.",
+          "grant": {
+            "kind": "external-code",
+            "outputs": {
+              "accessToken": "$secrets.NINTENDO_STORE_ACCESS_TOKEN",
+              "accountId": "$vars.NINTENDO_STORE_ACCOUNT_ID",
+              "idToken": "$secrets.NINTENDO_STORE_ID_TOKEN",
+              "locale": "$vars.NINTENDO_STORE_LOCALE",
+              "sessionToken": "$secrets.NINTENDO_STORE_SESSION_TOKEN"
+            },
+            "scopes": [
+              "openid",
+              "user",
+              "user.mii",
+              "user.email",
+              "user.links[].id"
+            ]
+          },
+          "id": "api",
+          "label": "Nintendo sign-in",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": [
+              "NINTENDO_STORE_SESSION_TOKEN",
+              "NINTENDO_STORE_ACCESS_TOKEN",
+              "NINTENDO_STORE_ID_TOKEN"
+            ],
+            "variables": ["NINTENDO_STORE_ACCOUNT_ID", "NINTENDO_STORE_LOCALE"],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "data-automation-infrastructure",
+      "description": "Connect your Nintendo Account to access Nintendo Store catalog, wishlist, points, and play activity data.",
+      "firewall": {
+        "billable": false,
+        "categories": null,
+        "config": {
+          "apis": [
+            {
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.NINTENDO_STORE_TOKEN }}",
+                  "User-Agent": "com.nintendo.znej/1.13.0 (Android/7.1.2)"
+                }
+              },
+              "base": "https://api.accounts.nintendo.com",
+              "permissions": [
+                {
+                  "description": "Read Nintendo Account profile for the connected account",
+                  "name": "nintendo-account-profile-read",
+                  "rules": ["GET /2.0.0/users/me"]
+                }
+              ]
+            },
+            {
+              "auth": {
+                "headers": {
+                  "Authorization": "Bearer ${{ secrets.NINTENDO_STORE_TOKEN }}",
+                  "User-Agent": "com.nintendo.znej/1.13.0 (Android/7.1.2)",
+                  "gentry-locale": "${{ vars.NINTENDO_STORE_LOCALE }}"
+                }
+              },
+              "base": "https://app-api.znej.nintendo.com",
+              "permissions": [
+                {
+                  "description": "Read Nintendo Store app public catalog, search, shelves, news, and product metadata",
+                  "name": "nintendo-store-catalog-read",
+                  "rules": [
+                    "GET /api/v2.0/check_in_events",
+                    "GET /api/v2.0/check_in_events/{eventId}/check_in_points",
+                    "GET /api/v2.0/maintenance_check",
+                    "GET /api/v2.0/news",
+                    "GET /api/v2.0/news/app_news/{appNewsId}",
+                    "GET /api/v2.0/news_tab_config",
+                    "GET /api/v2.0/notifications",
+                    "GET /api/v2.0/now",
+                    "GET /api/v2.0/point_goods_shelves",
+                    "GET /api/v2.0/search_shelves",
+                    "GET /api/v2.0/search_shelves/{shelfId}",
+                    "GET /api/v2.0/shelves/summary",
+                    "POST /api/v2.0/product_details",
+                    "POST /api/v2.0/products/-/images:batch_get",
+                    "POST /api/v2.0/products/-/meta:batch_get",
+                    "GET /api/v2.0/products:search"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app account age, family, points, rights, and notification settings",
+                  "name": "nintendo-store-account-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/age",
+                    "GET /api/v2.0/users/me/family/children",
+                    "GET /api/v2.0/users/me/points",
+                    "GET /api/v2.0/users/me/push_notification_config",
+                    "GET /api/v2.0/users/me/rights",
+                    "GET /api/v2.0/users/{naid}/qrcode_param"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app play activity history",
+                  "name": "nintendo-store-play-activity-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/play_histories",
+                    "GET /api/v2.0/users/me/play_histories/game_titles/{titleId}"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app wishlist",
+                  "name": "nintendo-store-wishlist-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/wishlist",
+                    "GET /api/v2.0/users/me/wishlist/{productId}"
+                  ]
+                },
+                {
+                  "description": "Read Nintendo Store app check-in and prize receipt history",
+                  "name": "nintendo-store-check-in-history-read",
+                  "rules": [
+                    "GET /api/v2.0/users/me/check_in_histories",
+                    "GET /api/v2.0/users/me/received_prize_histories"
+                  ]
+                }
+              ]
+            }
+          ],
+          "description": "Nintendo Store API",
+          "placeholders": {
+            "NINTENDO_STORE_TOKEN": "nintendo_store_access_token_placeholder"
+          }
+        },
+        "defaultAllowed": null,
+        "defaultUnknownPolicy": "deny",
+        "kind": "generated"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": false,
+        "key": "platform/views/zero-page/components/settings/icons/nintendo-store-d945a3ab02b4.svg"
+      },
+      "label": "Nintendo Store",
+      "skill": {
+        "archiveSize": 4831,
+        "fileCount": 1,
+        "kind": "bundled",
+        "size": 16075,
+        "storageName": "connector-skill@nintendo-store",
+        "storageVersionPrefix": "__system__/volume/connector-skill@nintendo-store/b6f08ed4d96f0b79e55a1d6a934b59c96336e439062e4f9f0c3270eac6e064e5",
+        "versionId": "b6f08ed4d96f0b79e55a1d6a934b59c96336e439062e4f9f0c3270eac6e064e5"
+      },
+      "slug": "nintendo-store",
+      "tags": ["gaming", "player", "nintendo", "store", "catalog", "playtime"]
+    },
+    {
+      "authMethods": [
+        {
+          "access": {
+            "inputs": {
+              "accessToken": "$secrets.PLAUD_MCP_ACCESS_TOKEN",
+              "refreshToken": "$secrets.PLAUD_MCP_REFRESH_TOKEN"
+            },
+            "kind": "automatic",
+            "outputs": {
+              "accessToken": "$secrets.PLAUD_MCP_ACCESS_TOKEN",
+              "refreshToken": "$secrets.PLAUD_MCP_REFRESH_TOKEN"
+            }
+          },
+          "description": "Sign in with Plaud and authorize access to your recordings.",
+          "grant": {
+            "callbackOrigin": "api",
+            "kind": "automatic",
+            "outputs": {
+              "accessToken": "$secrets.PLAUD_MCP_ACCESS_TOKEN",
+              "refreshToken": "$secrets.PLAUD_MCP_REFRESH_TOKEN"
+            }
+          },
+          "id": "automatic",
+          "label": "Connect",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": ["PLAUD_MCP_ACCESS_TOKEN", "PLAUD_MCP_REFRESH_TOKEN"],
+            "variables": [],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "meetings-scheduling",
+      "description": "Access your Plaud recordings, transcripts, notes, and meeting action items",
+      "firewall": {
+        "billable": false,
+        "categories": null,
+        "config": {
+          "apis": [
+            {
+              "auth": {},
+              "base": "https://mcp.plaud.ai/mcp",
+              "permissions": []
+            }
+          ],
+          "description": "Plaud"
+        },
+        "defaultAllowed": null,
+        "defaultUnknownPolicy": "allow",
+        "kind": "generated"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": true,
+        "key": "platform/views/zero-page/components/settings/icons/plaud-mcp-ba1cb1756f6d.png"
+      },
+      "label": "Plaud",
+      "mcp": {
+        "endpoint": "https://mcp.plaud.ai/mcp",
+        "transport": "streamable-http"
+      },
+      "skill": {
+        "kind": "none"
+      },
+      "slug": "plaud-mcp",
+      "tags": ["plaud", "recordings", "transcripts", "meeting-notes"]
+    },
+    {
+      "authMethods": [
+        {
+          "access": {
+            "envBindings": {
+              "STEAM_ID": "$vars.STEAM_ID",
+              "STEAM_WEB_API_KEY": "$secrets.STEAM_WEB_API_KEY"
+            },
+            "kind": "static",
+            "platformSecrets": ["STEAM_WEB_API_KEY"]
+          },
+          "description": "Sign in with Steam to connect your player account.",
+          "grant": {
+            "callbackOrigin": "api",
+            "kind": "openid-auth",
+            "outputs": {
+              "steamId": "$vars.STEAM_ID"
+            }
+          },
+          "id": "openid",
+          "label": "Steam sign-in",
+          "revoke": {
+            "kind": "none"
+          },
+          "storage": {
+            "secrets": [],
+            "variables": ["STEAM_ID"],
+            "version": 1
+          },
+          "visible": true
+        }
+      ],
+      "category": "data-automation-infrastructure",
+      "description": "Connect your Steam account to access player profile, library, playtime, social, wishlist, and game stats data.",
+      "firewall": {
+        "billable": false,
+        "categories": null,
+        "config": {
+          "apis": [
+            {
+              "auth": {
+                "query": {
+                  "key": "${{ secrets.STEAM_WEB_API_KEY }}"
+                }
+              },
+              "base": "https://api.steampowered.com",
+              "permissions": [
+                {
+                  "description": "Read Steam profile summaries and vanity URL mappings",
+                  "name": "player-profile-read",
+                  "rules": [
+                    "GET /ISteamUser/GetPlayerSummaries/v0002",
+                    "GET /ISteamUser/GetPlayerSummaries/v0002/",
+                    "GET /ISteamUser/GetPlayerSummaries/v2",
+                    "GET /ISteamUser/GetPlayerSummaries/v2/",
+                    "GET /ISteamUser/ResolveVanityURL/v0001",
+                    "GET /ISteamUser/ResolveVanityURL/v0001/",
+                    "GET /ISteamUser/ResolveVanityURL/v1",
+                    "GET /ISteamUser/ResolveVanityURL/v1/"
+                  ]
+                },
+                {
+                  "description": "Read the connected player owned games library",
+                  "name": "player-library-read",
+                  "rules": [
+                    "GET /IPlayerService/GetOwnedGames/v0001",
+                    "GET /IPlayerService/GetOwnedGames/v0001/",
+                    "GET /IPlayerService/GetOwnedGames/v1",
+                    "GET /IPlayerService/GetOwnedGames/v1/"
+                  ]
+                },
+                {
+                  "description": "Read connected player recent and per-game playtime",
+                  "name": "player-activity-read",
+                  "rules": [
+                    "GET /IPlayerService/GetRecentlyPlayedGames/v0001",
+                    "GET /IPlayerService/GetRecentlyPlayedGames/v0001/",
+                    "GET /IPlayerService/GetRecentlyPlayedGames/v1",
+                    "GET /IPlayerService/GetRecentlyPlayedGames/v1/",
+                    "GET /IPlayerService/GetSingleGamePlaytime/v0001",
+                    "GET /IPlayerService/GetSingleGamePlaytime/v0001/",
+                    "GET /IPlayerService/GetSingleGamePlaytime/v1",
+                    "GET /IPlayerService/GetSingleGamePlaytime/v1/"
+                  ]
+                },
+                {
+                  "description": "Read the connected player Steam level, badges, and badge progress",
+                  "name": "player-badges-read",
+                  "rules": [
+                    "GET /IPlayerService/GetBadges/v0001",
+                    "GET /IPlayerService/GetBadges/v0001/",
+                    "GET /IPlayerService/GetBadges/v1",
+                    "GET /IPlayerService/GetBadges/v1/",
+                    "GET /IPlayerService/GetCommunityBadgeProgress/v0001",
+                    "GET /IPlayerService/GetCommunityBadgeProgress/v0001/",
+                    "GET /IPlayerService/GetCommunityBadgeProgress/v1",
+                    "GET /IPlayerService/GetCommunityBadgeProgress/v1/",
+                    "GET /IPlayerService/GetSteamLevel/v0001",
+                    "GET /IPlayerService/GetSteamLevel/v0001/",
+                    "GET /IPlayerService/GetSteamLevel/v1",
+                    "GET /IPlayerService/GetSteamLevel/v1/"
+                  ]
+                },
+                {
+                  "description": "Read the connected player wishlist",
+                  "name": "player-wishlist-read",
+                  "rules": [
+                    "GET /IWishlistService/GetWishlist/v0001",
+                    "GET /IWishlistService/GetWishlist/v0001/",
+                    "GET /IWishlistService/GetWishlist/v1",
+                    "GET /IWishlistService/GetWishlist/v1/",
+                    "GET /IWishlistService/GetWishlistItemCount/v0001",
+                    "GET /IWishlistService/GetWishlistItemCount/v0001/",
+                    "GET /IWishlistService/GetWishlistItemCount/v1",
+                    "GET /IWishlistService/GetWishlistItemCount/v1/",
+                    "GET /IWishlistService/GetWishlistSortedFiltered/v0001",
+                    "GET /IWishlistService/GetWishlistSortedFiltered/v0001/",
+                    "GET /IWishlistService/GetWishlistSortedFiltered/v1",
+                    "GET /IWishlistService/GetWishlistSortedFiltered/v1/"
+                  ]
+                },
+                {
+                  "description": "Read the connected player followed games",
+                  "name": "player-followed-games-read",
+                  "rules": [
+                    "GET /IStoreService/GetGamesFollowed/v0001",
+                    "GET /IStoreService/GetGamesFollowed/v0001/",
+                    "GET /IStoreService/GetGamesFollowed/v1",
+                    "GET /IStoreService/GetGamesFollowed/v1/",
+                    "GET /IStoreService/GetGamesFollowedCount/v0001",
+                    "GET /IStoreService/GetGamesFollowedCount/v0001/",
+                    "GET /IStoreService/GetGamesFollowedCount/v1",
+                    "GET /IStoreService/GetGamesFollowedCount/v1/"
+                  ]
+                },
+                {
+                  "description": "Read the connected player friend list",
+                  "name": "player-friends-read",
+                  "rules": [
+                    "GET /ISteamUser/GetFriendList/v0001",
+                    "GET /ISteamUser/GetFriendList/v0001/",
+                    "GET /ISteamUser/GetFriendList/v1",
+                    "GET /ISteamUser/GetFriendList/v1/"
+                  ]
+                },
+                {
+                  "description": "Read the connected player group list",
+                  "name": "player-groups-read",
+                  "rules": [
+                    "GET /ISteamUser/GetUserGroupList/v0001",
+                    "GET /ISteamUser/GetUserGroupList/v0001/",
+                    "GET /ISteamUser/GetUserGroupList/v1",
+                    "GET /ISteamUser/GetUserGroupList/v1/"
+                  ]
+                },
+                {
+                  "description": "Read the connected player ban status",
+                  "name": "player-ban-status-read",
+                  "rules": [
+                    "GET /ISteamUser/GetPlayerBans/v0001",
+                    "GET /ISteamUser/GetPlayerBans/v0001/",
+                    "GET /ISteamUser/GetPlayerBans/v1",
+                    "GET /ISteamUser/GetPlayerBans/v1/"
+                  ]
+                },
+                {
+                  "description": "Read player and global achievements for a specific game",
+                  "name": "player-game-achievements-read",
+                  "rules": [
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0001",
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0001/",
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002",
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v0002/",
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v1",
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v1/",
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2",
+                    "GET /ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/",
+                    "GET /ISteamUserStats/GetPlayerAchievements/v0001",
+                    "GET /ISteamUserStats/GetPlayerAchievements/v0001/",
+                    "GET /ISteamUserStats/GetPlayerAchievements/v1",
+                    "GET /ISteamUserStats/GetPlayerAchievements/v1/"
+                  ]
+                },
+                {
+                  "description": "Read player, global, and schema stats for a specific game",
+                  "name": "player-game-stats-read",
+                  "rules": [
+                    "GET /ISteamUserStats/GetGlobalStatsForGame/v0001",
+                    "GET /ISteamUserStats/GetGlobalStatsForGame/v0001/",
+                    "GET /ISteamUserStats/GetGlobalStatsForGame/v1",
+                    "GET /ISteamUserStats/GetGlobalStatsForGame/v1/",
+                    "GET /ISteamUserStats/GetNumberOfCurrentPlayers/v0001",
+                    "GET /ISteamUserStats/GetNumberOfCurrentPlayers/v0001/",
+                    "GET /ISteamUserStats/GetNumberOfCurrentPlayers/v1",
+                    "GET /ISteamUserStats/GetNumberOfCurrentPlayers/v1/",
+                    "GET /ISteamUserStats/GetSchemaForGame/v0002",
+                    "GET /ISteamUserStats/GetSchemaForGame/v0002/",
+                    "GET /ISteamUserStats/GetSchemaForGame/v2",
+                    "GET /ISteamUserStats/GetSchemaForGame/v2/",
+                    "GET /ISteamUserStats/GetUserStatsForGame/v0002",
+                    "GET /ISteamUserStats/GetUserStatsForGame/v0002/",
+                    "GET /ISteamUserStats/GetUserStatsForGame/v2",
+                    "GET /ISteamUserStats/GetUserStatsForGame/v2/"
+                  ]
+                },
+                {
+                  "description": "Read public Steam app metadata and version status",
+                  "name": "steam-apps-read",
+                  "rules": [
+                    "GET /ISteamApps/GetAppList/v0002",
+                    "GET /ISteamApps/GetAppList/v0002/",
+                    "GET /ISteamApps/GetAppList/v2",
+                    "GET /ISteamApps/GetAppList/v2/",
+                    "GET /ISteamApps/GetSDRConfig/v0001",
+                    "GET /ISteamApps/GetSDRConfig/v0001/",
+                    "GET /ISteamApps/GetSDRConfig/v1",
+                    "GET /ISteamApps/GetSDRConfig/v1/",
+                    "GET /ISteamApps/GetServersAtAddress/v0001",
+                    "GET /ISteamApps/GetServersAtAddress/v0001/",
+                    "GET /ISteamApps/GetServersAtAddress/v1",
+                    "GET /ISteamApps/GetServersAtAddress/v1/",
+                    "GET /ISteamApps/UpToDateCheck/v0001",
+                    "GET /ISteamApps/UpToDateCheck/v0001/",
+                    "GET /ISteamApps/UpToDateCheck/v1",
+                    "GET /ISteamApps/UpToDateCheck/v1/",
+                    "GET /ISteamWebAPIUtil/GetSupportedAPIList/v0001",
+                    "GET /ISteamWebAPIUtil/GetSupportedAPIList/v0001/",
+                    "GET /ISteamWebAPIUtil/GetSupportedAPIList/v1",
+                    "GET /ISteamWebAPIUtil/GetSupportedAPIList/v1/",
+                    "GET /IStoreService/GetAppList/v0001",
+                    "GET /IStoreService/GetAppList/v0001/",
+                    "GET /IStoreService/GetAppList/v1",
+                    "GET /IStoreService/GetAppList/v1/"
+                  ]
+                },
+                {
+                  "description": "Read public Steam news for an app",
+                  "name": "steam-news-read",
+                  "rules": [
+                    "GET /ISteamNews/GetNewsForApp/v0001",
+                    "GET /ISteamNews/GetNewsForApp/v0001/",
+                    "GET /ISteamNews/GetNewsForApp/v0002",
+                    "GET /ISteamNews/GetNewsForApp/v0002/",
+                    "GET /ISteamNews/GetNewsForApp/v1",
+                    "GET /ISteamNews/GetNewsForApp/v1/",
+                    "GET /ISteamNews/GetNewsForApp/v2",
+                    "GET /ISteamNews/GetNewsForApp/v2/"
+                  ]
+                }
+              ]
+            }
+          ],
+          "description": "Steam Web API",
+          "placeholders": {
+            "STEAM_WEB_API_KEY": "C0FFEESAFELOCALC0FFEESAFELOCAL"
+          }
+        },
+        "defaultAllowed": null,
+        "defaultUnknownPolicy": "deny",
+        "kind": "generated"
+      },
+      "generation": [],
+      "icon": {
+        "invertInDarkMode": true,
+        "key": "platform/views/zero-page/components/settings/icons/steam-4e2ba2137237.svg"
+      },
+      "label": "Steam",
+      "skill": {
+        "archiveSize": 3670,
+        "fileCount": 1,
+        "kind": "bundled",
+        "size": 13108,
+        "storageName": "connector-skill@steam",
+        "storageVersionPrefix": "__system__/volume/connector-skill@steam/1c7c66588402b676ae7c821ccdd4267fa24ca17f5a713cbddffda183cbafe384",
+        "versionId": "1c7c66588402b676ae7c821ccdd4267fa24ca17f5a713cbddffda183cbafe384"
+      },
+      "slug": "steam",
+      "tags": []
+    }
+  ]
+}

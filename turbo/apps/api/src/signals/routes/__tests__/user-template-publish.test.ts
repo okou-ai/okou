@@ -243,6 +243,26 @@ describe("POST /api/user-templates", () => {
     const listed = await accept(client.list({ headers: webHeaders() }), [200]);
     expect(listed.body).toHaveLength(1);
     expect(listed.body[0]?.previewAssets).toStrictEqual([]);
+
+    // Nothing was rendered, so the detail answers with the file itself: it is
+    // the only thing there is to show, and the reader opening the template is
+    // the moment its URL is worth minting.
+    const detail = await accept(
+      client.get({
+        headers: webHeaders(),
+        params: { templateId: response.body.id },
+      }),
+      [200],
+    );
+    expect(detail.body.pageUrls).toStrictEqual([]);
+    // The object that URL signs is the document itself, not the package
+    // archive uploaded beside it. Stored names are generated, so the extension
+    // is what identifies it.
+    expect(fixture.signedKey(detail.body.sourceUrl)).toBe(
+      fixture.keys().find((key) => {
+        return key.endsWith(".docx");
+      }),
+    );
   });
 
   it("takes a document package that carries its skill and nothing else", async () => {

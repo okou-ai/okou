@@ -896,6 +896,11 @@ async function listOrgModelPolicies(
     }),
   );
   const member = await loadMemberModelRouteContext(db, orgId, userId);
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    db,
+    orgId,
+    userId,
+  );
   const capabilities = member.priorityEnabled
     ? await loadOrgPlanCapabilities(db, orgId)
     : null;
@@ -917,7 +922,11 @@ async function listOrgModelPolicies(
       const runtimeRoute = isBuiltInModelProviderType(
         policy.defaultProviderType,
       )
-        ? await resolveBuiltInModelRuntimeRoute(db, policy.model)
+        ? await resolveBuiltInModelRuntimeRoute(
+            db,
+            policy.model,
+            featureSwitchContext,
+          )
         : null;
       const administrative: OrgModelPolicy = isBuiltInModelProviderType(
         policy.defaultProviderType,

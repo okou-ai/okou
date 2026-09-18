@@ -995,8 +995,10 @@ vi.mock("node:http", async (importOriginal) => {
   );
 });
 
-vi.mock("@clerk/backend", () => {
+vi.mock("@clerk/backend", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@clerk/backend")>();
   return {
+    verifyToken: original.verifyToken,
     createClerkClient: () => {
       return apiTestMocks.clerk;
     },

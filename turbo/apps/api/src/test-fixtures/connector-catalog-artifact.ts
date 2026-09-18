@@ -17,7 +17,10 @@ type DeviceStartOption = Extract<
   ConnectorCatalogAuthMethod["grant"],
   { readonly kind: "device-auth" }
 >["startOptions"][number];
-type EnvironmentBindings = ConnectorCatalogAuthMethod["access"]["envBindings"];
+type EnvironmentBindings = Extract<
+  ConnectorCatalogAuthMethod["access"],
+  { readonly kind: "static" }
+>["envBindings"];
 type GeneratedFirewall = Extract<
   ConnectorCatalogArtifactConnector["firewall"],
   { readonly kind: "generated" }
@@ -2304,8 +2307,8 @@ const connectors = [
 ] satisfies readonly ConnectorCatalogArtifactConnector[];
 
 export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
-  artifactSchemaVersion: 3,
-  catalogVersion: "api-test-v3",
+  artifactSchemaVersion: 4,
+  catalogVersion: "api-test-v4",
   categoryMetadata: {
     categories: [
       {

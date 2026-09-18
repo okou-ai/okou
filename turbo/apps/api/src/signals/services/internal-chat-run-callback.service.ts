@@ -2764,7 +2764,11 @@ async function resolveQueuedMessageModelRoute(args: {
   const selectedModel = modelContext.pin.selectedModel;
   const builtInModelRuntimeRoute =
     isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
-      ? await resolveBuiltInModelRuntimeRoute(args.db, selectedModel)
+      ? await resolveBuiltInModelRuntimeRoute(
+          args.db,
+          selectedModel,
+          modelContext.featureSwitchContext,
+        )
       : undefined;
   if (
     isBuiltInModelProviderType(effectiveModelProvider) &&

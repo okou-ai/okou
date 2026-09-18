@@ -25,6 +25,7 @@ export type ConnectorCatalogValidationFailureCode = z.infer<
 >;
 
 export const connectorCatalogCompatibilityReasonSchema = z.enum([
+  "unsupported-protocol",
   "missing-grant-provider",
   "missing-access-provider",
   "missing-revoke-provider",

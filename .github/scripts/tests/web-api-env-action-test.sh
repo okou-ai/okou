@@ -488,13 +488,40 @@ assert_api_backend_url_canonical "$api_backend_url_explicit_env_file" "https://e
 assert_env_value "$api_backend_url_explicit_env_file" FEISHU_CALLBACK_BASE_URL "https://explicit-api.example.test"
 assert_env_value "$api_backend_url_explicit_env_file" FINICITY_WEBHOOK_BASE_URL "https://explicit-api.example.test"
 
-api_backend_url_absent_dir="$(mktemp -d)"
-TEMP_DIRS+=("$api_backend_url_absent_dir")
-api_backend_url_absent_output="$(
+for api_backend_url_environment in preview production; do
+  api_backend_url_absent_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$api_backend_url_absent_dir")
+  status=0
+  api_backend_url_absent_output="$(
+    run_action \
+      "$(build_doppler_secrets_json)" \
+      "$api_backend_url_absent_dir" \
+      api \
+      "$api_backend_url_environment" \
+      "https://static.okou.io/okou-cli/test-sha/package.tgz" \
+      canonical \
+      "" \
+      "" \
+      pr-123 \
+      "" \
+      2>&1
+  )" || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    fail "expected missing API backend URL to fail for ${api_backend_url_environment}"
+  fi
+  assert_contains "$api_backend_url_absent_output" "::error::api-backend-url is required for API deployments"
+  if [[ -e "${api_backend_url_absent_dir}/web-api-api-${api_backend_url_environment}.env" ]]; then
+    fail "missing API backend URL must fail before creating an environment file"
+  fi
+done
+
+web_backend_url_absent_dir="$(mktemp -d)"
+TEMP_DIRS+=("$web_backend_url_absent_dir")
+web_backend_url_absent_output="$(
   run_action \
     "$(build_doppler_secrets_json)" \
-    "$api_backend_url_absent_dir" \
-    api \
+    "$web_backend_url_absent_dir" \
+    web \
     production \
     "https://static.okou.io/okou-cli/test-sha/package.tgz" \
     canonical \
@@ -504,12 +531,35 @@ api_backend_url_absent_output="$(
     "" \
     2>&1
 )"
-api_backend_url_absent_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${api_backend_url_absent_dir}/github-output")"
-assert_contains "$api_backend_url_absent_output" "Rendered"
-assert_api_backend_url_absent "$api_backend_url_absent_env_file"
-assert_env_value "$api_backend_url_absent_env_file" PUBLIC_ARTIFACT_SHARES_BASE_URL "https://a.okou.io"
-assert_env_value "$api_backend_url_absent_env_file" FEISHU_CALLBACK_BASE_URL ""
-assert_env_value "$api_backend_url_absent_env_file" FINICITY_WEBHOOK_BASE_URL ""
+web_backend_url_absent_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${web_backend_url_absent_dir}/github-output")"
+assert_contains "$web_backend_url_absent_output" "Rendered"
+assert_api_backend_url_absent "$web_backend_url_absent_env_file"
+assert_env_key_absent "$web_backend_url_absent_env_file" MCP_RESOURCE_URL
+
+# Exercise environment-specific audiences and issuers through the real renderer.
+# A shared resource variable must never override a deployment's own API URL.
+for mcp_case in \
+  'api|preview|https://pr-123-api.okou.test|https://clerk-dev.example.test|https://pr-123-api.okou.test/mcp' \
+  'api|production|https://api.okou.test/|https://clerk.example.test|https://api.okou.test/mcp' \
+  'web|production|https://api.okou.test|https://clerk.example.test|'; do
+  IFS='|' read -r mcp_app mcp_environment mcp_api_url mcp_issuer mcp_resource <<< "$mcp_case"
+  mcp_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$mcp_dir")
+  mcp_vars="$(jq -nc --arg issuer "$mcp_issuer" \
+    '{MCP_OAUTH_ISSUER: $issuer, MCP_RESOURCE_URL: "https://wrong-resource.example.test/mcp"}')"
+  mcp_output="$(run_action "$(build_doppler_secrets_json)" "$mcp_dir" \
+    "$mcp_app" "$mcp_environment" "https://static.okou.io/okou-cli/test-sha/package.tgz" \
+    canonical "" "" pr-123 "$mcp_api_url" "" "$mcp_vars" 2>&1)"
+  mcp_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${mcp_dir}/github-output")"
+  assert_contains "$mcp_output" "Rendered"
+  if [[ "$mcp_app" == "api" ]]; then
+    assert_env_value "$mcp_env_file" MCP_RESOURCE_URL "$mcp_resource"
+    assert_env_value "$mcp_env_file" MCP_OAUTH_ISSUER "$mcp_issuer"
+  else
+    assert_env_key_absent "$mcp_env_file" MCP_RESOURCE_URL
+    assert_env_key_absent "$mcp_env_file" MCP_OAUTH_ISSUER
+  fi
+done
 
 success_dir="$(mktemp -d)"
 TEMP_DIRS+=("$success_dir")
@@ -565,6 +615,8 @@ assert_env_value "$success_env_file" VERCEL_AUTOMATION_BYPASS_SECRET "github-ver
 assert_env_key_count "$success_env_file" OKOU_PREVIEW_JOB_REF 1
 assert_env_value "$success_env_file" OKOU_PREVIEW_JOB_REF "pr-123"
 assert_api_backend_url_canonical "$success_env_file" "https://pr-123-api-backend.okou.test"
+assert_env_value "$success_env_file" MCP_RESOURCE_URL "https://pr-123-api-backend.okou.test/mcp"
+assert_env_value "$success_env_file" MCP_OAUTH_ISSUER ""
 assert_google_llm_config "$success_env_file" "llm-dev@vm0-ai-488909.iam.gserviceaccount.com"
 assert_env_value "$success_env_file" LANGFUSE_PUBLIC_KEY "github-langfuse-public-key"
 assert_env_value "$success_env_file" LANGFUSE_SECRET_KEY "github-langfuse-secret-key"

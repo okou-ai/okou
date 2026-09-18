@@ -24,6 +24,7 @@ import {
   parseUserTemplatePreviewAssetId,
   userTemplatePageKeys,
   userTemplatePreviewAssetId,
+  userTemplateStorageVersionId,
   userTemplateSummary,
   type UserTemplateRow,
 } from "../services/user-template-data.service";
@@ -134,6 +135,29 @@ function userTemplatePreviewAssetsForRow(args: {
   return userTemplatePageKeys(args.row).map((objectKey) => {
     return userTemplatePreviewAsset({ ...args, objectKey });
   });
+}
+
+/**
+ * The file the template was compiled from, signed the same way its pages are.
+ *
+ * Deliberately not a preview asset: an asset id is a handle a client hands
+ * back to have one page's URL reissued, and that endpoint resolves ids against
+ * the row's rendered pages. The source is reached only through the detail the
+ * reader already loaded, so it needs no handle of its own — and minting one
+ * that the resolve endpoint would refuse is worse than minting none.
+ */
+function userTemplateSourceRequest(args: {
+  readonly row: UserTemplateRow;
+  readonly orgId: string;
+}): PresentationTemplatePreviewPresignedUrlRequest {
+  const objectKey = args.row.sourceStorageKey;
+  return {
+    bucket: templateArtifactBucket(objectKey),
+    objectKey,
+    storageVersionId: userTemplateStorageVersionId(objectKey),
+    resolvedOrgId: args.orgId,
+    publicEndpoint: true,
+  };
 }
 
 function resolvedUserTemplatePreviewAssets(
@@ -307,12 +331,16 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     row,
     orgId: auth.orgId,
   });
+  const sourceRequest = userTemplateSourceRequest({ row, orgId: auth.orgId });
   const urlsByCacheKey = await get(
     resolvePresentationTemplatePreviewPresignedUrls({
       db: set(writeDb$),
-      requests: previewAssets.map((asset) => {
-        return asset.request;
-      }),
+      requests: [
+        ...previewAssets.map((asset) => {
+          return asset.request;
+        }),
+        sourceRequest,
+      ],
     }),
   );
   signal.throwIfAborted();
@@ -323,11 +351,18 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const pageUrls = resolvedPreviewAssets.map((asset) => {
     return asset.url;
   });
+  const source = urlsByCacheKey.get(
+    presentationTemplatePreviewPresignedUrlCacheKey(sourceRequest),
+  );
+  if (source === undefined) {
+    throw new Error(`Source URL not resolved: ${row.id}`);
+  }
   return {
     status: 200 as const,
     body: {
       ...userTemplateSummary(row, pageUrls[0] ?? null, auth.userId),
       pageUrls,
+      sourceUrl: source.url,
       previewAssets: resolvedPreviewAssets,
     },
   };

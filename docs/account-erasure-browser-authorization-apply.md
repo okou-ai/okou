@@ -102,9 +102,11 @@ The lock order has no inverse. Every statement that touches
 `browser-authorization.service.ts`: the creation `INSERT`, the token lookup both
 read paths share, and this completion `UPDATE`. Nothing deletes the row — no
 endpoint revokes one, the table declares no foreign key that could cascade it
-away, and no cleanup job sweeps it — and none of those statements takes a
-canonical Agent or thread lock, so no other writer can acquire this row before
-`agents` or `chat_threads`.
+away, and no cleanup job sweeps it. Request
+[creation](account-erasure-browser-authorization-creation.md) now takes
+subjects -> Agent -> thread -> run before inserting a fresh request; apply takes
+subjects -> Agent -> thread -> this existing request; the token lookups take no
+row lock. No path therefore locks a request before `agents` or `chat_threads`.
 
 `chat_threads` keeps taking its own `FOR NO KEY UPDATE` through the selection
 `UPDATE`, which does not conflict with the retained `FOR KEY SHARE`, so no new
@@ -313,11 +315,12 @@ publications, two channel entries — still passed, and the writer-first case
 failed on `threadListInvalidations(fixture)`, receiving `0` where `1` is
 required. That is the concrete demonstration that a topic-only count could not
 have caught a misroute and that the per-channel binding does. The mutation was
-reverted before any commit; the service blob in this tree is
-`4f59282b0b129c8a186dc6dfdc8625f2acad113e`, unchanged. It is a test-validation
-control, not a reported production defect: no misrouting has been observed in
-the real publisher, which derives its channel from the admitted session's own
-user and organization.
+reverted before any commit. At the time this apply-only experiment was recorded,
+the service blob was `4f59282b0b129c8a186dc6dfdc8625f2acad113e`; later creation-fence work under
+[#35096](https://github.com/vm0-ai/okou/issues/35096) changed the same service.
+This remains a historical test-validation control, not a reported production
+defect: no misrouting has been observed in the real publisher, which derives its
+channel from the admitted session's own user and organization.
 
 ### Baseline failure and candidate pass
 
@@ -467,9 +470,10 @@ cloud-browser flag, sidebar event, authorization request or snapshot, and it
 does not complete B2, A2 or account erasure. Explicitly still unfenced, and not
 covered by this slice:
 
-- Authorization **request creation** (`POST /api/browser/authorization-requests`)
-  and the **read** endpoint. Creation still inserts a row for any subject, and
-  the read is unfenced. Both are deliberately left to a later slice.
+- The authorization-request **read** endpoint. Request creation was deliberately
+  outside this apply-only slice and is now fenced separately by
+  [#35096](https://github.com/vm0-ai/okou/issues/35096); the read remains
+  unfenced.
 - `stopComputerUseHost$` and its `clearComputerUseHostThreadBindings`, the
   direct settings route's own retained host-revocation race, thread creation and
   the chat ingress services, and every other writer of thread content: the
