@@ -25,6 +25,11 @@ import {
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
+import {
+  lockMorningBriefNativeAgentAuthorities,
+  revokeMorningBriefNativeAuthority,
+} from "./morning-brief-native-schedule.service";
+import { nowDate } from "../../lib/time";
 
 export function agentExistsInOrg(args: {
   readonly orgId: string;
@@ -152,6 +157,41 @@ async function lockAgentLifecycleForDeletion(tx: Tx, args: DeleteAgentArgs) {
   };
 }
 
+async function preflightAgentDeletion(tx: Tx, args: DeleteAgentArgs) {
+  const [agent] = await tx
+    .select({
+      id: agents.id,
+      owner: agents.owner,
+      visibility: agents.visibility,
+    })
+    .from(agents)
+    .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)))
+    .limit(1);
+  if (!agent) {
+    return { kind: "missing" as const };
+  }
+  const permissionError = requireAgentPermission(
+    agent.owner,
+    args.member,
+    "delete agent",
+    { visibility: agent.visibility },
+  );
+  if (permissionError) {
+    return { kind: "forbidden" as const, response: permissionError };
+  }
+  const [org] = await tx
+    .select({ defaultAgentId: orgMetadata.defaultAgentId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, args.orgId));
+  const identityError = agentDeletionError(agent.id === org?.defaultAgentId);
+  return identityError
+    ? {
+        kind: "forbidden" as const,
+        response: { status: 400 as const, body: { error: identityError } },
+      }
+    : { kind: "ready" as const };
+}
+
 async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
@@ -160,9 +200,29 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   // before parent locks so our Run-delete FK cannot reverse that order.
   await lockUsageEventCompaction(tx, "shared");
 
+  // Read authorization without a row lock, then fence every native owner before
+  // taking the Agent lifecycle lock. The lifecycle reader below revalidates the
+  // same permission and identity under lock before any deletion commits.
+  const preflight = await preflightAgentDeletion(tx, args);
+  if (preflight.kind !== "ready") {
+    return preflight;
+  }
+  const nativeOwners = await lockMorningBriefNativeAgentAuthorities(tx, {
+    orgId: args.orgId,
+    agentId: args.agentId,
+  });
+
   const lifecycle = await lockAgentLifecycleForDeletion(tx, args);
   if (lifecycle.kind !== "ready") {
     return lifecycle;
+  }
+  const revokedAt = nowDate();
+  for (const owner of nativeOwners) {
+    await revokeMorningBriefNativeAuthority(
+      tx,
+      { orgId: owner.orgId, userId: owner.userId },
+      revokedAt,
+    );
   }
 
   const automations = await tx

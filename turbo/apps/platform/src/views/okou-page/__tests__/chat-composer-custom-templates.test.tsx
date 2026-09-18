@@ -212,6 +212,37 @@ test("The Custom category stays hidden while the switch is off", async () => {
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
+test("The picker opens on Custom once the switch is on", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+
+  // Custom leads the nav for this member, so the picker lands there without a
+  // click rather than on the first format below it.
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "true");
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("The picker keeps opening on Presentation while the switch is off", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  await openCustomPanel(false);
+
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+});
+
+test("A named category still wins over the one the nav leads with", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { user } = await openCustomPanel();
+  await user.click(tabByText("Presentation"));
+
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "false");
+});
+
 test("The switch decides whether the catalog is requested at all", async () => {
   let listed = 0;
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
@@ -247,6 +278,24 @@ test("The Custom category lists every reachable template", async () => {
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Partner QBR")).toBeInTheDocument();
+});
+
+test("A card carries who can see the template and nothing else about it", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await expect(
+    within(dialog).findByText("Private"),
+  ).resolves.toBeInTheDocument();
+  // A grid is read by what tells its tiles apart, and the file a template was
+  // compiled from says nothing about the one beside it. Both facts are still
+  // on the detail column, which is where they are asked for.
+  expect(within(dialog).queryByText("18 pages")).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText("q3-board-final-v4.pptx"),
+  ).not.toBeInTheDocument();
 });
 
 test("A colleague's template names its owner and offers no management", async () => {
@@ -361,6 +410,9 @@ test("Opening a deck shows its pages and management controls", async () => {
   const page = await screen.findByAltText("Page 1");
   expect(page).toHaveAttribute("src", "https://example.test/page-1.png");
   const preview = previewDialogAround(page);
+  expect(
+    within(preview).getByText("18 pages · from q3-board-final-v4.pptx"),
+  ).toBeVisible();
   expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   expect(
@@ -417,22 +469,16 @@ function previewDialogAround(inside: HTMLElement): HTMLElement {
   return preview;
 }
 
-test("A document template is described by its file, not by a page count", async () => {
+test("A document template with no cover is tiled by its format", async () => {
   const template = documentTemplate();
   mockCustomTemplates([template]);
-  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
-    return respond(200, template);
-  });
 
   const { dialog } = await openCustomPanel();
   click(tabByText("Custom"));
 
-  // A document is its styles. The card still names the file it was compiled
-  // from, and claims no pages rather than reporting zero of them.
   await expect(
-    within(dialog).findByText("brand-report.docx"),
+    within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("0 pages")).not.toBeInTheDocument();
   // Nothing was rendered for it, so the tile carries the format it was
   // compiled from rather than an empty frame.
   expect(within(dialog).getByText("DOCX")).toBeInTheDocument();
@@ -458,11 +504,12 @@ test("Opening a Word template hands the source file to the Office viewer", async
   // The dialog carries the management column a deck shows, so what a member
   // can do to a template does not depend on its kind.
   const preview = previewDialogAround(frame);
+  expect(within(preview).getByText("From brand-report.docx")).toBeVisible();
   expect(within(preview).getByLabelText("Rename template")).toBeVisible();
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by
   // it, which is what separates opening a document from opening a deck.
-  expect(within(dialog).getByText("brand-report.docx")).toBeInTheDocument();
+  expect(within(dialog).getByText("Brand report")).toBeInTheDocument();
 });
 
 test("A PDF template opens in the browser's own viewer", async () => {
@@ -482,6 +529,64 @@ test("A PDF template opens in the browser's own viewer", async () => {
   // from the source URL, handed over unchanged.
   const frame = await screen.findByTitle("annual-report.pdf preview");
   expect(frame).toHaveAttribute("src", `${DOCUMENT_SOURCE_URL}#navpanes=0`);
+});
+
+const ILLUSTRATION_SOURCE_URL =
+  "https://storage.example.test/private-artifacts/market-day.png?signature=abc";
+
+function illustrationTemplate(
+  overrides: Partial<UserTemplateDetail> = {},
+): UserTemplateDetail {
+  return customTemplate({
+    id: "44444444-4444-4444-8444-444444444444",
+    title: "Market day",
+    sourceFilename: "market-day.png",
+    kind: "illustration",
+    // The source is the cover, so unlike a document this kind has one without
+    // anything having been rendered for it.
+    coverUrl: ILLUSTRATION_SOURCE_URL,
+    pageCount: null,
+    pageUrls: [],
+    sourceUrl: ILLUSTRATION_SOURCE_URL,
+    ...overrides,
+  });
+}
+
+test("An illustration template is tiled by the picture it was reversed from", async () => {
+  mockCustomTemplates([illustrationTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await within(dialog).findByText("Market day");
+  // A document with no cover falls back to a format badge. An illustration
+  // never reaches that branch: its source is already a picture.
+  expect(within(dialog).queryByText("PNG")).not.toBeInTheDocument();
+  const cover = buttonByName("Preview Market day", dialog)?.querySelector(
+    "img",
+  );
+  expect(cover).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
+});
+
+test("Opening an illustration template shows the source picture itself", async () => {
+  mockCustomTemplateStore([illustrationTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Market day");
+  click(buttonByName("Preview Market day", dialog)!);
+
+  // No viewer and no iframe: the browser draws this source, so it is drawn.
+  const picture = await screen.findByTestId("custom-template-source-preview");
+  expect(picture.tagName).toBe("IMG");
+  expect(picture).toHaveAttribute("src", ILLUSTRATION_SOURCE_URL);
+
+  // The same management column a document's dialog carries, and the catalog
+  // still mounted behind it.
+  const preview = previewDialogAround(picture);
+  expect(within(preview).getByText("From market-day.png")).toBeVisible();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+  expect(within(dialog).getByText("Market day")).toBeInTheDocument();
 });
 
 async function openDetail(
@@ -767,9 +872,11 @@ test("One entry takes every kind of source a template can be made from", async (
 
   click(tabByText("Custom"));
   const entry = await within(dialog).findByLabelText("Import your own file");
-  // Both kinds go through this one input. A separate tile per kind would ask
+  // Every kind goes through this one input. A separate tile per kind would ask
   // the user to classify their own file before the analysis has read it.
-  expect(entry.getAttribute("accept")).toBe(".pptx,.ppt,.pdf,.docx,.doc");
+  expect(entry.getAttribute("accept")).toBe(
+    ".pptx,.ppt,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.bmp",
+  );
 });
 
 test("Every source is sent with one message that lets the guide sort it", async () => {
@@ -851,7 +958,7 @@ test("A source no kind is made from is refused before it is uploaded", async () 
 
   await expect(
     screen.findByText(
-      "Choose a .pptx, .ppt, .pdf, .docx, .doc file to make a template.",
+      "Choose a .pptx, .ppt, .pdf, .docx, .doc, .png, .jpg, .jpeg, .webp, .bmp file to make a template.",
     ),
   ).resolves.toBeVisible();
   // Refused before the bytes are spent, not after a run has already started on

@@ -4999,6 +4999,102 @@ describe("CHAT-02: failed chat callbacks", () => {
 });
 
 describe("CHAT-02: auto-send after failures", () => {
+  it.each(["completed", "failed"] as const)(
+    "preserves the context boundary after a dense %s round",
+    async (status) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+      const anchor = await startChatRun(actor, {
+        agentId,
+        prompt: "successful history before the dense round",
+      });
+      const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(anchor.runId, anchorHeaders);
+      await flushWaitUntilForTest();
+
+      const densePrompt = "request producing a dense assistant output tail";
+      const dense = await startChatRun(actor, {
+        agentId,
+        threadId: anchor.threadId,
+        prompt: densePrompt,
+      });
+      const denseHeaders = await claimChatRun(runnerGroup, dense.runId);
+      const outputs = Array.from({ length: 205 }, (_, index) => {
+        return `dense output ${String(index).padStart(3, "0")}`;
+      });
+      await webhooks.requestAgentEvents(
+        {
+          runId: dense.runId,
+          events: outputs.map((text, sequenceNumber) => {
+            return {
+              type: "assistant",
+              sequenceNumber,
+              message: {
+                id: randomUUID(),
+                content: [{ type: "text", text }],
+              },
+            };
+          }),
+        },
+        denseHeaders,
+        [200],
+      );
+      if (status === "completed") {
+        await completeChatRunOk(dense.runId, denseHeaders, {
+          lastEventSequence: outputs.length - 1,
+        });
+      } else {
+        await failChatRun(dense.runId, denseHeaders, "dense output failure");
+      }
+      const history = await waitForThreadMessages(
+        actor,
+        anchor.threadId,
+        (messages) => {
+          return lifecycleMarkers(messages, dense.runId, status).length === 1;
+        },
+      );
+      expect(eventBackedContents(history.events, dense.runId)).toHaveLength(
+        outputs.length,
+      );
+
+      const probePrompt = "inspect context after the dense round";
+      const probe = await startChatRun(actor, {
+        agentId,
+        threadId: anchor.threadId,
+        prompt: probePrompt,
+      });
+      const probeContext = await waitForRunContext(actor, probe.runId);
+      const appended = probeContext.body.appendSystemPrompt ?? "";
+      expect(appended).not.toContain(
+        "successful history before the dense round",
+      );
+      expect(appended).not.toContain(probePrompt);
+      if (status === "failed") {
+        expect(appended).toContain("# Incomplete Rounds Context");
+        expect(appended).toContain(densePrompt);
+        expect(appended.match(/^- RUN_STATUS: failed$/gm) ?? []).toHaveLength(
+          1,
+        );
+        expect(
+          appended.match(/^Assistant \(partial\): dense output \d+$/gm),
+        ).toStrictEqual(
+          outputs.map((output) => {
+            return `Assistant (partial): ${output}`;
+          }),
+        );
+      } else {
+        expect(appended).not.toContain("# Incomplete Rounds Context");
+        expect(appended).not.toContain(densePrompt);
+        expect(appended).not.toContain("dense output");
+      }
+      await api.requestCancelRun(actor, probe.runId, [200]);
+      await waitForRunStatus(actor, probe.runId, "cancelled");
+    },
+    90_000,
+  );
+
   it("uses structured failed messages for normal and queued incomplete-round context", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

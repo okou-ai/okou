@@ -2,6 +2,9 @@ import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
+import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
+import { waitUntil } from "../context/wait-until";
 
 import {
   MCP_DEFAULT_SCOPES,
@@ -21,7 +24,30 @@ import {
   listMcpChatThreads,
 } from "../services/mcp-chat-threads.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
-import { awaitWithSignal, settle } from "../utils";
+import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
+import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
+import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
+import {
+  cancelMcpRun$,
+  revokeQueuedMcpMessage$,
+} from "../services/mcp-chat-cancellation.service";
+import { awaitWithSignal, settle, onRejection } from "../utils";
+
+const L = logger("McpServer");
+
+async function admitMutation<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  requestSignal: AbortSignal,
+): Promise<T> {
+  requestSignal.throwIfAborted();
+  // After admission, waitUntil owns this finite operation and its dispatch
+  // effects. Disconnecting stops only the HTTP response wait.
+  const work = onRejection(operation(new AbortController().signal), (error) => {
+    L.error("MCP mutation failed", { error });
+  });
+  waitUntil(work);
+  return await awaitWithSignal(work, requestSignal);
+}
 
 function unavailable() {
   return Response.json(
@@ -30,6 +56,16 @@ function unavailable() {
       error_description: "MCP is temporarily unavailable",
     },
     { status: 503, headers: { "Cache-Control": "no-store" } },
+  );
+}
+
+function featureDenied() {
+  return Response.json(
+    {
+      error: "access_denied",
+      error_description: "MCP is not enabled for this account",
+    },
+    { status: 403, headers: { "Cache-Control": "no-store" } },
   );
 }
 
@@ -123,6 +159,7 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
   if (membership.value.kind !== "member") {
     return challenge(config.metadataUrl, "invalid_token");
   }
+  const orgRole = membership.value.role;
   const features = await loadUserFeatureSwitchContext(
     get(db$),
     principal.orgId,
@@ -130,19 +167,52 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!isFeatureEnabled(FeatureSwitchKey.McpServer, features)) {
-    return Response.json(
-      {
-        error: "access_denied",
-        error_description: "MCP is not enabled for this account",
-      },
-      { status: 403, headers: { "Cache-Control": "no-store" } },
-    );
+    return featureDenied();
   }
   return serveMcpRequest(
     new Request(original, { signal }),
     {
       readScope: MCP_READ_SCOPE,
       scopes: principal.scopes,
+      sendMessage: async (input, operationSignal) => {
+        return await admitMutation((signal) => {
+          return set(
+            sendMcpChatMessage$,
+            { principal: { ...principal, orgRole }, input },
+            signal,
+          );
+        }, operationSignal);
+      },
+      revokeQueuedMessage: async (input, operationSignal) => {
+        return await admitMutation((signal) => {
+          return set(revokeQueuedMcpMessage$, { principal, input }, signal);
+        }, operationSignal);
+      },
+      cancelRun: async (input, operationSignal) => {
+        return await admitMutation((signal) => {
+          return set(cancelMcpRun$, { principal, input }, signal);
+        }, operationSignal);
+      },
+      searchMessages: async (input, readSignal) => {
+        return await get(
+          searchMcpChatMessages(
+            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
+            principal,
+            input,
+            readSignal,
+          ),
+        );
+      },
+      getMessages: async (input, readSignal) => {
+        return await get(
+          getMcpChatMessages(
+            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
+            principal,
+            input,
+            readSignal,
+          ),
+        );
+      },
       listThreads: async (input, readSignal) => {
         return await awaitWithSignal(
           listMcpChatThreads(set(writeDb$), principal, input),

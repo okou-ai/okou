@@ -541,12 +541,14 @@
       "synced": "Google Drive से समन्वयित",
       "syncedFiles_one": "Google Drive से समन्वयित",
       "syncedFiles_other": "{{count}} फ़ाइलों को Google Drive में समन्वयित किया गया",
+      "syncedSlides": "Google Slides से समन्वयित",
       "syncFailed": "Google Drive से सिंक करने में विफल",
       "syncingArtifact": "आर्टिफ़ैक्ट सिंक हो रहा है...",
       "syncingFiles_one": "{{count}} फ़ाइल सिंक हो रही है...",
       "syncingFiles_other": "{{count}} फ़ाइलें सिंक हो रही हैं...",
       "syncingNamed": "{{filename}} सिंक हो रहा है...",
-      "upload": "Google Drive पर अपलोड करें"
+      "upload": "Google Drive पर अपलोड करें",
+      "uploadSlides": "Google Slides पर अपलोड करें"
     },
     "kinds": {
       "audio": "ऑडियो",
@@ -5816,6 +5818,73 @@
         "resetTimePassedTitle": "रीसेट का समय बीत गया"
       }
     },
+    "paidTools": {
+      "description": "चुनें कि आप कौन से सशुल्क बिल्ट-इन टूल इस्तेमाल कर सकते हैं।",
+      "disabledForCreation": "आपकी सशुल्क टूल सेटिंग में {{tool}} बंद है।",
+      "loadError": "आपकी टूल सेटिंग लोड नहीं हो सकीं।",
+      "loading": "आपकी टूल सेटिंग लोड हो रही हैं…",
+      "openSettings": "सशुल्क टूल सेटिंग खोलें",
+      "retry": "फिर कोशिश करें",
+      "saveError": "आपका बदलाव सेव नहीं हुआ।",
+      "saving": "सेव हो रहा है…",
+      "scope": "ये सेटिंग {{workspace}} में केवल आप पर लागू होती हैं।",
+      "timing": "बदलाव आगे के रन पर लागू होंगे। चल रहे या पहले से तैयार कार्यों में पिछली सेटिंग बनी रह सकती हैं।",
+      "title": "सशुल्क टूल",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "बोलने वाले अवतार के वीडियो बनाएँ।",
+          "name": "अवतार वीडियो जनरेशन"
+        },
+        "finance": {
+          "description": "कंपनियों, कीमतों और बाज़ार के डेटा की जानकारी लें।",
+          "name": "वित्तीय डेटा"
+        },
+        "image-generation": {
+          "description": "अंतर्निहित मॉडल से इमेज बनाएँ।",
+          "name": "इमेज जनरेशन"
+        },
+        "image-recognition": {
+          "description": "इमेज पढ़ें और उनका विश्लेषण करें।",
+          "name": "इमेज पहचान"
+        },
+        "maps": {
+          "description": "स्थान, पते और रास्ते खोजें।",
+          "name": "मैप और स्थान"
+        },
+        "people-search": {
+          "description": "सार्वजनिक पेशेवर प्रोफ़ाइल खोजें।",
+          "name": "लोगों की खोज"
+        },
+        "scrape": {
+          "description": "वेब पेजों की सामग्री पढ़ें और निकालें।",
+          "name": "पेज निष्कर्षण"
+        },
+        "seo": {
+          "description": "खोज रैंकिंग, कीवर्ड और बैकलिंक पर शोध करें।",
+          "name": "SEO शोध"
+        },
+        "social": {
+          "description": "सार्वजनिक सोशल पोस्ट पर शोध करें और मीडिया इकट्ठा करें।",
+          "name": "सोशल शोध"
+        },
+        "video-generation": {
+          "description": "अंतर्निहित मॉडल से वीडियो बनाएँ।",
+          "name": "वीडियो जनरेशन"
+        },
+        "video-rendering": {
+          "description": "क्लाउड में वीडियो कंपोज़िशन रेंडर करें।",
+          "name": "वीडियो रेंडरिंग"
+        },
+        "voice-generation": {
+          "description": "अंतर्निहित आवाज़ों से भाषण बनाएँ।",
+          "name": "वॉइस जनरेशन"
+        },
+        "web-search": {
+          "description": "वेब पर ताज़ा जानकारी खोजें।",
+          "name": "वेब खोज"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "प्रबंधित करें",
@@ -6362,14 +6431,15 @@
     "custom": "कस्टम",
     "detail": {
       "back": "कस्टम टेम्पलेट",
-      "page": "पृष्ठ {{number}}"
+      "page": "पृष्ठ {{number}}",
+      "source_one": "{{count}} पृष्ठ · {{filename}} से",
+      "source_other": "{{count}} पृष्ठ · {{filename}} से",
+      "sourceFile": "{{filename}} से"
     },
     "empty": {
       "description": "Okou आपकी फ़ाइल के डिज़ाइन को ऐसे टेम्पलेट में बदल देता है जिसे आप दोबारा इस्तेमाल कर सकते हैं।"
     },
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
-    "pageCount_one": "{{count}} पृष्ठ",
-    "pageCount_other": "{{count}} पृष्ठ",
     "renameFailed": "टेम्पलेट का नाम नहीं बदला जा सका।",
     "retry": "फिर से कोशिश करें",
     "sharedBy": "{{owner}} द्वारा साझा किया गया",

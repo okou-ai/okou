@@ -188,20 +188,17 @@ async function insufficientScopeError(
   }
   try {
     const authorization = await reauthorizeRunMcpConnectorOAuth(
-      connector.id,
+      connector.target,
       scopes,
       deadlineSignal,
     );
-    if (!authorization) {
-      return new Error(
-        "MCP scope reauthorization is unavailable on the current API. The failed MCP request was not retried; start a new run after the API is updated.",
-      );
-    }
     return new Error(
       [
         "This MCP connector needs additional authorization for future runs:",
         `[Authorize MCP connector](${authorization.authorizationUrl})`,
-        `This link expires at ${authorization.expiresAt}.`,
+        ...(authorization.kind === "oauth"
+          ? [`This link expires at ${authorization.expiresAt}.`]
+          : []),
         "The failed MCP request was not retried. Start a new run after authorization.",
       ].join("\n"),
     );
@@ -264,7 +261,12 @@ async function runMcpOperation<T>(
   const deadlineController = new AbortController();
   const deadlineAt = Date.now() + timeoutSeconds * 1_000;
   const transport = new StreamableHTTPClientTransport(endpoint, {
-    fetch: createMcpFetch(connector.id, deadlineController.signal),
+    fetch: createMcpFetch(
+      connector.target.kind === "builtin"
+        ? connector.target.connectorSlug
+        : connector.target.customConnectorId,
+      deadlineController.signal,
+    ),
     requestInit: { redirect: "error" },
     reconnectionOptions: {
       initialReconnectionDelay: 1_000,

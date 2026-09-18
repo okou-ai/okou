@@ -1,12 +1,10 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import {
   chatEventsContract,
   chatThreadDraftContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
-
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -24,37 +22,18 @@ import {
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 
-/**
- * These cases read the model through the legacy select's controls, which the
- * switch's off lever still serves.
- */
-async function setupLegacyPickerPage(
-  options: Parameters<typeof setupPage>[0],
-): Promise<void> {
-  await setupPage({
-    ...options,
-    featureSwitches: {
-      [FeatureSwitchKey.ModelPickerFlyout]: false,
-      ...options.featureSwitches,
-    },
-  });
-}
-
 async function selectClaudeSonnet(): Promise<void> {
-  click(await screen.findByRole("combobox"));
-  let option: HTMLElement | undefined;
-  await waitFor(() => {
-    option = Array.from(
-      document.querySelectorAll<HTMLElement>('[role="option"]'),
-    ).find((candidate) => {
-      return candidate.textContent?.includes("Claude Sonnet 4.6");
-    });
-    expect(option).toBeDefined();
+  click(await composerModelTrigger("GPT 5.6 Luna"));
+  const chatModels = await screen.findByRole("listbox", {
+    name: "Chat models",
   });
-  click(option!);
+  click(
+    within(chatModels).getByRole("option", { name: /Claude Sonnet 4\.6/u }),
+  );
 }
 
 async function sendComposerMessage(message: string): Promise<void> {
@@ -118,7 +97,7 @@ async function openUnconfirmedConversation() {
     });
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -129,10 +108,7 @@ async function openUnconfirmedConversation() {
 
 test("A new conversation appears before server confirmation", async () => {
   const { confirmation, requests } = await openUnconfirmedConversation();
-  const defaultModel = await screen.findByRole("combobox", {
-    name: "GPT 5.6 Luna",
-  });
-  expect(defaultModel).toBeVisible();
+  await expect(composerModelTrigger("GPT 5.6 Luna")).resolves.toBeVisible();
   await sendComposerMessage("Start the local conversation");
 
   await waitFor(() => {
@@ -150,19 +126,15 @@ test("A new conversation appears before server confirmation", async () => {
 
 test("The changed model survives the first send before server confirmation", async () => {
   const { confirmation, requests } = await openUnconfirmedConversation();
-  const defaultModel = await screen.findByRole("combobox", {
-    name: "GPT 5.6 Luna",
-  });
-  expect(defaultModel).toBeVisible();
+  await expect(composerModelTrigger("GPT 5.6 Luna")).resolves.toBeVisible();
   await selectClaudeSonnet();
   await sendComposerMessage("Start the local conversation");
   await waitFor(() => {
     expect(requests.model).toBe("claude-sonnet-4-6");
   });
-  const selectedModel = await screen.findByRole("combobox", {
-    name: "Claude Sonnet 4.6",
-  });
-  expect(selectedModel).toBeVisible();
+  await expect(
+    composerModelTrigger("Claude Sonnet 4.6"),
+  ).resolves.toBeVisible();
   expect(requests.draftRequested).toBeFalsy();
   expect(confirmation.settled()).toBeFalsy();
 });
@@ -253,7 +225,7 @@ test("Server confirmation settles a new conversation without duplication", async
     });
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,

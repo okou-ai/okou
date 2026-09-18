@@ -12,6 +12,7 @@ import { getOkouToken } from "./lib/okou-env.js";
 import { introVideoCatalogCommand } from "./commands/__intro-video-catalog.js";
 import { introVideoAgentCommand } from "./commands/__intro-video-agent.js";
 import { artifactCommand } from "./commands/artifact/index.js";
+import { installPaidToolPolicy } from "./lib/command/paid-tools.js";
 
 interface CommandDefinition {
   name: string;
@@ -36,6 +37,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   connector: ["connector:read", "connector:write"],
   mcp: "connector:read",
   ssh: ["ssh:read", "ssh:write"],
+  vnc: ["vnc:read", "vnc:write"],
   mail: "connector:read",
   doctor: null,
   credit: ["billing:read", "billing:write"],
@@ -80,7 +82,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   banking: "banking:read",
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "image-recognition"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "image-recognition"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -96,6 +98,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "List authorized SSH hosts and execute remote commands",
     load: async () => {
       return (await import("./commands/ssh")).sshCommand;
+    },
+  },
+  {
+    name: "vnc",
+    description: "Access authorized VNC hosts, capture desktops and send input",
+    load: async () => {
+      return (await import("./commands/vnc")).vncCommand;
     },
   },
   {
@@ -165,7 +174,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "mcp",
-    description: "Use MCP Custom Connectors authorized for this Agent",
+    description: "Use MCP connectors authorized for this Agent",
     load: async () => {
       return (await import("./commands/mcp")).mcpCommand;
     },
@@ -680,6 +689,7 @@ export function buildHelpText(
  */
 export function registerCommands(prog: Command, commands?: Command[]): void {
   instrumentCommand(prog);
+  installPaidToolPolicy(prog);
   const token = getOkouToken();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
 

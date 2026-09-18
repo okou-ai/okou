@@ -27,6 +27,12 @@ export const morningBriefGenerationSkipReasonSchema = z.union([
   morningBriefCollectionSkipReasonSchema,
   /** The platform generation credential is not configured for this deployment. */
   z.literal("generation-not-configured"),
+  /**
+   * The native claim this invocation was admitted under stopped being the
+   * member's current authority before the reservation committed, so the
+   * reservation rolled back and no provider request was made.
+   */
+  z.literal("native-authority-lost"),
 ]);
 
 export const morningBriefGenerationStateSchema = z.enum([
@@ -121,14 +127,27 @@ const morningBriefGenerationResultSchema = z.discriminatedUnion("decision", [
 ]);
 
 export const morningBriefGenerationViewSchema = z.object({
-  purpose: z.literal("preview"),
+  /**
+   * Who may consume this result.
+   *
+   * The preview endpoint only ever returns `preview`; `production` exists so
+   * the one generation view can also describe a natively scheduled occurrence
+   * internally, and a consumer can never mistake one for the other.
+   */
+  purpose: z.enum(["preview", "production"]),
   state: morningBriefGenerationStateSchema,
   attemptId: z.string().uuid(),
   model: z.string(),
   promptVersion: z.number().int().positive(),
   resultSchemaVersion: z.number().int().positive(),
   language: z.string(),
-  languageSource: z.enum(["member-locale", "default"]),
+  /**
+   * Where the request's language instruction came from.
+   *
+   * `agent-instructions` means the Agent's complete instruction text travelled
+   * in the one request and was allowed to steer the output language.
+   */
+  languageSource: z.enum(["agent-instructions", "member-locale", "default"]),
   /** What the bundle offered, what travelled, and whether anything was dropped. */
   inputItems: z.number().int().nonnegative(),
   includedItems: z.number().int().nonnegative(),

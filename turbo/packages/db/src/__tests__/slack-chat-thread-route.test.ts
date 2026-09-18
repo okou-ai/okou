@@ -75,6 +75,9 @@ describe("slackChatIngress schema", () => {
     expect(columns.get("payload")?.notNull).toBeTruthy();
     expect(columns.get("status")?.notNull).toBeTruthy();
     expect(columns.get("retry_count")?.notNull).toBeTruthy();
+    expect(columns.get("processing_attempt_count")?.notNull).toBeTruthy();
+    expect(columns.get("retry_at")?.notNull).toBeFalsy();
+    expect(columns.get("last_error_class")?.notNull).toBeFalsy();
     expect(
       config.foreignKeys.map((foreignKey) => {
         return foreignKey.reference().foreignTable;
@@ -88,6 +91,7 @@ describe("slackChatIngress schema", () => {
       expect.arrayContaining([
         "chk_slack_chat_ingress_status",
         "chk_slack_chat_ingress_retry_count",
+        "chk_slack_chat_ingress_processing_attempt_count",
       ]),
     );
   });

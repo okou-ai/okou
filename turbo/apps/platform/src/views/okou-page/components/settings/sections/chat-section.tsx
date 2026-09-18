@@ -6,7 +6,6 @@ import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
 
-import { codexFastModeEnabled$ } from "../../../../../signals/external/feature-switch.ts";
 import { orgModelPolicies$ } from "../../../../../signals/external/org-model-policies.ts";
 import { userModelPreference$ } from "../../../../../signals/external/user-model-preference.ts";
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
@@ -26,7 +25,6 @@ function DefaultModelPreference() {
   const { t } = useTranslation();
   const userPreference = useLastResolved(userModelPreference$);
   const policies = useLastResolved(orgModelPolicies$);
-  const codexFastModeEnabled = useGet(codexFastModeEnabled$);
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateDefaultModelPreference$,
   );
@@ -34,7 +32,6 @@ function DefaultModelPreference() {
   const current = resolveModelFirstStoredUserSelection({
     userPreference,
     policies,
-    codexFastModeEnabled,
   });
   const mutating = updateLoadable.state === "loading";
 
@@ -59,7 +56,6 @@ function DefaultModelPreference() {
         disabled={
           userPreference === undefined || policies === undefined || mutating
         }
-        codexFastModeEnabled={codexFastModeEnabled}
         showInheritOption
       />
     </PreferenceCardRow>

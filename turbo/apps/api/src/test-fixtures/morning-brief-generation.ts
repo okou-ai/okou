@@ -3,6 +3,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import {
+  MORNING_BRIEF_COLLECTION_KIND_SLACK,
+  MORNING_BRIEF_COLLECTION_VERSION,
+  morningBriefCollectionOccurrences,
+} from "@okouai/db/schema/morning-brief-collection-occurrence";
+import {
   morningBriefGenerations,
   morningBriefPlatformGenerationReceipts,
 } from "@okouai/db/schema/morning-brief-generation";
@@ -16,6 +21,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 
 import { db } from "../lib/db";
+import { sweepExpiredMorningBriefGenerations } from "../signals/services/morning-brief-generation-store.service";
 import { holdDeferredRow } from "./pi-deferred-lock";
 
 /**
@@ -199,6 +205,15 @@ export async function expireMorningBriefGenerationRetention(
     .where(ownerRows(owner));
 }
 
+/** Exercise the production owner-scoped content sweep after expiry. */
+export async function expireAndSweepMorningBriefGeneration(
+  owner: MorningBriefGenerationOwner,
+  args: { readonly expiresAt: Date; readonly sweptAt: Date },
+): Promise<number> {
+  await expireMorningBriefGenerationRetention(owner, args.expiresAt);
+  return await sweepExpiredMorningBriefGenerations(db(), owner, args.sweptAt);
+}
+
 /**
  * Make every owner-state update for this owner fail, as a real fault would.
  *
@@ -278,6 +293,90 @@ export async function holdMorningBriefOwnerRow(
       sql`SELECT 1 FROM org_members_metadata
           WHERE org_id = ${owner.orgId} AND user_id = ${owner.userId}
           FOR UPDATE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Hold the workflow row inside final local admission, exclusively.
+ *
+ * Acceptance and release take the Agent parent first, then this occurrence's
+ * pinned workflow `FOR SHARE`, followed by schedule, Slack, generation and the
+ * canonical reads. A request observed here has therefore committed to the safe
+ * Agent→workflow order while every later authority row remains free. This is
+ * useful for proving a real Agent update or deletion cannot acquire Agent after
+ * admission and then reverse into workflow or generation.
+ */
+export async function holdMorningBriefAdmissionInstallation(
+  workflowId: string,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`SELECT 1 FROM workflows WHERE id = ${workflowId}::uuid FOR UPDATE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * Hold a relation that canonical local authority still has to read.
+ *
+ * The route is staged after collection/provider work before this is acquired,
+ * so an observed waiter is the persistence or readback authority pass itself.
+ * A relation lock is the narrow PostgreSQL rendezvous for a plain SELECT; no
+ * production dependency is mocked and no application behavior is replaced.
+ */
+export async function holdMorningBriefAuthorityRead(
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`LOCK TABLE workflow_automations IN ACCESS EXCLUSIVE MODE`,
+    );
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/** Hold the generation row so final admission can acquire every parent first. */
+export async function holdMorningBriefGenerationRow(
+  owner: MorningBriefGenerationOwner,
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx
+      .select({ attemptId: morningBriefGenerations.attemptId })
+      .from(morningBriefGenerations)
+      .where(ownerRows(owner))
+      .for("update");
+  });
+  onTestFinished(held.release);
+  return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/** Hold the first canonical read after authority and generation rows are held. */
+export async function holdMorningBriefFeatureSwitchRead(
+  signal: AbortSignal,
+): Promise<{
+  readonly waitForArrival: (minimum?: number) => Promise<number>;
+  readonly release: () => Promise<void>;
+}> {
+  const held = await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(
+      sql`LOCK TABLE user_feature_switches IN ACCESS EXCLUSIVE MODE`,
     );
   });
   onTestFinished(held.release);
@@ -506,4 +605,77 @@ export async function holdMorningBriefGenerationReservation(
     await dropTrigger();
   });
   return { waitForArrival: held.waitForBlocked, release: held.release };
+}
+
+/**
+ * A historical Slack-only attempt that may already have reached the provider.
+ *
+ * `reserved` is exactly the ambiguous state: the reservation commits before the
+ * request, so nothing can say whether the provider saw it. It exists so a test
+ * can prove that widening the source set never turns that ambiguity into a
+ * second request for the same morning.
+ */
+export async function seedPossiblyInvokedSlackGeneration(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly workflowId: string;
+  readonly automationId: string;
+  readonly scheduledFor: Date;
+  readonly timezone?: string;
+}): Promise<{ readonly attemptId: string }> {
+  const { scheduledFor } = args;
+  const attemptId = randomUUID();
+  const membershipId = `orgmem_${randomUUID()}`;
+  await db()
+    .insert(morningBriefCollectionOccurrences)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      scheduledFor,
+      collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
+      collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
+      windowStart: new Date(scheduledFor.getTime() - 24 * 60 * 60 * 1000),
+      windowEnd: scheduledFor,
+      timezone: args.timezone ?? "Asia/Shanghai",
+      membershipId,
+      workflowId: args.workflowId,
+      automationId: args.automationId,
+      agentId: args.agentId,
+      slackWorkspaceId: "T_HISTORICAL",
+      slackUserId: "U_HISTORICAL",
+      status: "completed",
+      attempt: 1,
+      outcome: "complete",
+      claimedAt: scheduledFor,
+      finishedAt: scheduledFor,
+    });
+  await db()
+    .insert(morningBriefGenerations)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      scheduledFor,
+      collectionKind: MORNING_BRIEF_COLLECTION_KIND_SLACK,
+      collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
+      executionPurpose: "preview",
+      attemptId,
+      state: "reserved",
+      membershipId,
+      agentId: args.agentId,
+      model: "google/gemini-3.8-flash",
+      promptVersion: 1,
+      resultSchemaVersion: 1,
+      language: "en-US",
+      languageSource: "default",
+      inputDigest: createHash("sha256").update("historical").digest("hex"),
+      inputItems: 1,
+      includedItems: 1,
+      inputReduced: false,
+      sourceCoverage: "complete",
+      reservedAt: scheduledFor,
+      reservationExpiresAt: new Date(scheduledFor.getTime() + 60_000),
+      expiresAt: new Date(scheduledFor.getTime() + 24 * 60 * 60 * 1000),
+    });
+  return { attemptId };
 }

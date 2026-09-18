@@ -64,6 +64,7 @@ export const avatarVideoGenerateResponseSchema = z.object({
   contentType: z.string(),
   size: z.number(),
   url: z.string(),
+  privateArtifacts: z.boolean().optional(),
   durationSeconds: z.number(),
   creditsCharged: z.number(),
   provider: z.literal("joggai"),

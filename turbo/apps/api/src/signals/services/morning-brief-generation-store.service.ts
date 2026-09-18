@@ -2,13 +2,26 @@ import type {
   MorningBriefGenerationFailureReason,
   MorningBriefGenerationState,
 } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
+import type { MorningBriefRetainedSources } from "@okouai/db/jsonb-contracts/morning-brief-generation";
 import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
+  MORNING_BRIEF_GENERATION_UNINVOKED_STATES,
   morningBriefGenerations,
   morningBriefPlatformGenerationReceipts,
 } from "@okouai/db/schema/morning-brief-generation";
-import { and, eq, gt, lte, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { executeRawRows } from "../../lib/db-raw-rows";
@@ -91,9 +104,22 @@ function generationKey(key: MorningBriefGenerationKey) {
 
 export interface MorningBriefGenerationAdmission {
   readonly key: MorningBriefGenerationKey;
+  /**
+   * Who may consume the result this admission reserves.
+   *
+   * It is carried on the admission rather than fixed per module so the native
+   * scheduler's production occurrences and the operator preview share one
+   * reservation, accounting and validation engine while remaining unable to
+   * read each other's results.
+   */
+  readonly executionPurpose: (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
   readonly attemptId: string;
   readonly membershipId: string;
   readonly agentId: string;
+  /** Complete canonical binding; null only for historical Slack-only writers. */
+  readonly installationId: string | null;
+  readonly automationId: string | null;
+  readonly chatThreadId: string | null;
   readonly model: string;
   readonly language: string;
   readonly languageSource: (typeof morningBriefGenerations.$inferInsert)["languageSource"];
@@ -102,6 +128,18 @@ export interface MorningBriefGenerationAdmission {
   readonly includedItems: number;
   readonly inputReduced: boolean;
   readonly sourceCoverage: (typeof morningBriefGenerations.$inferInsert)["sourceCoverage"];
+  /** Frozen at reservation. Both present or both absent. */
+  readonly instructionsVersionId: string | null;
+  readonly instructionsDigest: string | null;
+  /**
+   * The bounded proof that every supplied input was authorized, cited or not.
+   *
+   * Frozen with the reservation because it describes the request that is about
+   * to be sent; a later phase revalidates it rather than recollecting it.
+   */
+  readonly retainedSources: MorningBriefRetainedSources | null;
+  /** Never earlier than `expiresAt`, and never extended by a retry. */
+  readonly retainedUntil: Date | null;
   readonly reservedAt: Date;
   readonly reservationExpiresAt: Date;
   readonly expiresAt: Date;
@@ -114,10 +152,13 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
     scheduledFor: admission.key.scheduledFor,
     collectionKind: admission.key.collectionKind,
     collectionVersion: admission.key.collectionVersion,
-    executionPurpose: "preview" as const,
+    executionPurpose: admission.executionPurpose,
     attemptId: admission.attemptId,
     membershipId: admission.membershipId,
     agentId: admission.agentId,
+    installationId: admission.installationId,
+    automationId: admission.automationId,
+    chatThreadId: admission.chatThreadId,
     model: admission.model,
     promptVersion: MORNING_BRIEF_GENERATION_PROMPT_VERSION,
     resultSchemaVersion: MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
@@ -128,6 +169,10 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
     includedItems: admission.includedItems,
     inputReduced: admission.inputReduced,
     sourceCoverage: admission.sourceCoverage,
+    instructionsVersionId: admission.instructionsVersionId,
+    instructionsDigest: admission.instructionsDigest,
+    retainedSources: admission.retainedSources,
+    retainedUntil: admission.retainedUntil,
     reservedAt: admission.reservedAt,
     reservationExpiresAt: admission.reservationExpiresAt,
     expiresAt: admission.expiresAt,
@@ -145,6 +190,13 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
  * never obtain a second admission — and because the row exists before any
  * request is sent, a crash between this commit and the request leaves an
  * ambiguity the caller has to acknowledge rather than resolve by re-sending.
+ *
+ * `onConflictDoNothing` covers every unique constraint on the table, so this
+ * also refuses when the owner's anchor is already occupied by a possibly
+ * invoked generation admitted under a *different* collection kind or contract
+ * version. That is the case a per-occurrence key cannot see, and it is
+ * precisely the one that would otherwise turn a widened source set into a
+ * second provider request for the same morning.
  */
 export async function reserveMorningBriefGeneration(
   tx: Tx,
@@ -156,6 +208,40 @@ export async function reserveMorningBriefGeneration(
     .onConflictDoNothing()
     .returning({ attemptId: morningBriefGenerations.attemptId });
   return created !== undefined;
+}
+
+/**
+ * The generation already occupying this owner's anchor, if any.
+ *
+ * It reads the same predicate the anchor's unique index enforces, so a refused
+ * reservation can be reported as the conflict it is rather than as a broken
+ * invariant. It is purpose-scoped like every other read here: a preview
+ * generation never occupies a production anchor.
+ */
+export async function readInvokedAnchorGeneration(
+  tx: Tx,
+  args: {
+    readonly owner: MorningBriefCollectionOwner;
+    readonly scheduledFor: Date;
+    readonly executionPurpose: MorningBriefGenerationAdmission["executionPurpose"];
+  },
+): Promise<MorningBriefGenerationRow | undefined> {
+  const [row] = await tx
+    .select()
+    .from(morningBriefGenerations)
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, args.owner.orgId),
+        eq(morningBriefGenerations.userId, args.owner.userId),
+        eq(morningBriefGenerations.scheduledFor, args.scheduledFor),
+        eq(morningBriefGenerations.executionPurpose, args.executionPurpose),
+        notInArray(morningBriefGenerations.state, [
+          ...MORNING_BRIEF_GENERATION_UNINVOKED_STATES,
+        ]),
+      ),
+    )
+    .limit(1);
+  return row;
 }
 
 /**
@@ -185,15 +271,32 @@ export async function recordMorningBriefGenerationSkip(
   return created !== undefined;
 }
 
-/**
- * Read the generation for one occurrence, for one execution purpose.
- *
- * The purpose is a filter rather than a comment: a consumer only ever sees
- * results produced for the purpose it asked for, so a preview result cannot be
- * picked up by a production delivery that happens to share an owner and an
- * anchor. The slot itself stays one-per-occurrence, so a differing purpose
- * cannot open a second invocation either.
- */
+/** Extend metadata only to the original outbox deadline; never a retry clock. */
+export async function retainMorningBriefGenerationProofUntil(
+  tx: Tx,
+  args: {
+    readonly owner: MorningBriefCollectionOwner;
+    readonly attemptId: string;
+    readonly retainedUntil: Date;
+  },
+): Promise<boolean> {
+  const [updated] = await tx
+    .update(morningBriefGenerations)
+    .set({
+      retainedUntil: sql`GREATEST(${morningBriefGenerations.retainedUntil}, ${args.retainedUntil})`,
+    })
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, args.owner.orgId),
+        eq(morningBriefGenerations.userId, args.owner.userId),
+        eq(morningBriefGenerations.attemptId, args.attemptId),
+      ),
+    )
+    .returning({ attemptId: morningBriefGenerations.attemptId });
+  return updated !== undefined;
+}
+
+/** Read one occurrence for one purpose; purposes never consume each other. */
 export async function readMorningBriefGeneration(
   db: Pick<ReadonlyDb, "select">,
   key: MorningBriefGenerationKey,
@@ -228,66 +331,79 @@ type MorningBriefGenerationWriteResult =
 interface AcceptedResultValues {
   readonly decision: "deliver" | "skip";
   readonly skipReason: string | null;
+  /**
+   * The output language the invocation reported, when it is one this pipeline
+   * recognizes. Null records that nothing usable was reported; it is never the
+   * requested language standing in for an unobserved one.
+   */
+  readonly reportedLanguage?: string | null;
   readonly title: string | null;
   readonly markdown: string | null;
   readonly bytes: number | null;
 }
 
 /**
- * The admission this attempt actually holds, and the instant it holds it at.
+ * Take this occurrence's generation row for the rest of the transaction.
  *
- * It is a value rather than an implicit step so the caller can do the two
- * things only it can do — honour cancellation, and re-prove the owner's live
- * authority — at the one instant that matters: after every real wait, and
- * before any mutation has been issued.
+ * It is the row every guarded write updates and the row the retention purge
+ * deletes, so holding it is what makes an attempt's own slot stable: the
+ * maintenance purge selects `FOR UPDATE ... SKIP LOCKED` and simply skips a held
+ * row, and the owner-scoped sweep, the member cleanup cascade and the Agent
+ * deletion cascade all have to acquire it before they can remove it.
+ *
+ * It returns the row rather than an existence flag because the readback fence
+ * needs the same copy it just pinned; reading it again afterwards would reopen
+ * the interval the lock exists to close. It deliberately samples no clock: the
+ * instant that decides a deadline belongs at the caller's own admission point,
+ * after every wait the caller still has ahead of it.
  */
-interface MorningBriefGenerationHold {
-  readonly at: Date;
+export async function lockMorningBriefGeneration(
+  tx: Tx,
+  key: MorningBriefGenerationKey,
+): Promise<MorningBriefGenerationRow | undefined> {
+  const [locked] = await tx
+    .select()
+    .from(morningBriefGenerations)
+    .where(generationKey(key))
+    .for("update")
+    .limit(1);
+  return locked;
 }
 
 /**
- * Take this attempt's slot and read the clock only once it is really held.
+ * The owner fence plus this attempt's slot, in the one order that is safe.
  *
- * Both guarded writes below wait twice: once for the owner lock, and once for
- * the slot row itself. A clock sampled before those waits can be arbitrarily
- * stale by the time the write lands, which would let a reservation that expired
- * *during* the wait still accept content. Sampling here — after every relevant
- * wait and on every attempt — makes the deadline comparison describe the
- * instant the mutation is actually admitted.
+ * The member row comes first because membership, user and organization cleanup
+ * take it before deleting the occurrences this row hangs from; the slot row
+ * comes second because every cascade that can remove it walks a parent first.
+ * Callers that also hold local authority rows take those between the two, so
+ * the whole path stays parent-before-child and cannot close a cycle with a
+ * deletion walking the same foreign keys.
  */
 export async function holdMorningBriefGenerationSlot(
   tx: Tx,
   fence: MorningBriefGenerationFence,
-): Promise<MorningBriefGenerationHold | null> {
+): Promise<boolean> {
   if (!(await lockCollectionOwner(tx, fence.key.owner))) {
-    return null;
+    return false;
   }
-  const [locked] = await tx
-    .select({ attemptId: morningBriefGenerations.attemptId })
-    .from(morningBriefGenerations)
-    .where(generationKey(fence.key))
-    .for("update")
-    .limit(1);
-  if (!locked) {
-    return null;
-  }
-  return { at: nowDate() };
+  return (await lockMorningBriefGeneration(tx, fence.key)) !== undefined;
 }
 
 /**
  * Accept one validated result into the occurrence's single result slot.
  *
  * Content is accepted only while this attempt still holds an unexpired
- * reservation under an unchanged membership generation, measured against the
- * clock the caller sampled when it actually took the slot. Equality with the
- * reservation deadline is already expired, so a result that became late while
- * persistence waited is not stored — the caller records the honest
- * non-accepting outcome instead.
+ * reservation under an unchanged membership generation, measured against `at` —
+ * the instant the caller admitted this write at, after every lock, every local
+ * read and its own cancellation check. Equality with the reservation deadline is
+ * already expired, so a result that became late while persistence waited is not
+ * stored — the caller records the honest non-accepting outcome instead.
  */
 export async function acceptMorningBriefGenerationResult(
   tx: Tx,
   fence: MorningBriefGenerationFence,
-  held: MorningBriefGenerationHold,
+  at: Date,
   result: AcceptedResultValues,
 ): Promise<MorningBriefGenerationWriteResult> {
   const [written] = await tx
@@ -296,17 +412,18 @@ export async function acceptMorningBriefGenerationResult(
       state: "succeeded",
       decision: result.decision,
       skipReason: result.skipReason,
+      reportedLanguage: result.reportedLanguage ?? null,
       resultTitle: result.title,
       resultMarkdown: result.markdown,
       resultBytes: result.bytes,
       failureReason: null,
-      finishedAt: held.at,
-      updatedAt: held.at,
+      finishedAt: at,
+      updatedAt: at,
     })
     .where(
       and(
         fenceCondition(fence),
-        gt(morningBriefGenerations.reservationExpiresAt, held.at),
+        gt(morningBriefGenerations.reservationExpiresAt, at),
       ),
     )
     .returning();
@@ -325,7 +442,7 @@ export async function acceptMorningBriefGenerationResult(
 export async function recordMorningBriefGenerationOutcome(
   tx: Tx,
   fence: MorningBriefGenerationFence,
-  held: MorningBriefGenerationHold,
+  at: Date,
   outcome: {
     readonly state: Extract<
       MorningBriefGenerationState,
@@ -343,8 +460,8 @@ export async function recordMorningBriefGenerationOutcome(
     .set({
       state: outcome.state,
       failureReason: outcome.failureReason,
-      finishedAt: held.at,
-      updatedAt: held.at,
+      finishedAt: at,
+      updatedAt: at,
     })
     .where(fenceCondition(fence))
     .returning();
@@ -431,22 +548,64 @@ export async function readPlatformGenerationReceipt(
 }
 
 /**
- * Drop this owner's expired preview results.
+ * Drop this owner's expired content while retaining its invocation fence.
  *
  * Preview results are derived from source content, so they get a real, bounded
  * lifetime rather than a promise that they are ephemeral. This is the
  * opportunistic half of that bound: the preview entrypoint consumes it for the
- * invoking owner, so an owner who comes back never reads their own stale
- * content. It is scoped to that owner and can never touch another's rows. The
- * bound itself does not depend on it — see the maintenance purge below. The
- * anonymous platform receipt is untouched: an incurred cost is not erased by
- * retention.
+ * invoking owner, so an owner who comes back never reads stale content.
+ * Retained-source proof has its own deadline and is cleared only then; the
+ * content-free row survives through the seven-day anchor admission window so a
+ * different kind or contract version cannot POST again. The anonymous platform
+ * receipt is untouched.
  */
 export async function sweepExpiredMorningBriefGenerations(
-  db: Pick<Db, "delete">,
+  db: Pick<Db, "update" | "delete">,
   owner: MorningBriefCollectionOwner,
   at: Date,
 ): Promise<number> {
+  const sanitized = await db
+    .update(morningBriefGenerations)
+    .set({
+      resultTitle: null,
+      resultMarkdown: null,
+      resultBytes: null,
+      contentPurgedAt: sql`CASE
+        WHEN ${morningBriefGenerations.decision} = 'deliver'
+          THEN COALESCE(${morningBriefGenerations.contentPurgedAt}, ${at})
+        ELSE ${morningBriefGenerations.contentPurgedAt}
+      END`,
+      retainedSources: sql`CASE
+        WHEN ${morningBriefGenerations.retainedUntil} <= ${at}
+          THEN NULL
+        ELSE ${morningBriefGenerations.retainedSources}
+      END`,
+      retainedUntil: sql`CASE
+        WHEN ${morningBriefGenerations.retainedUntil} <= ${at}
+          THEN NULL
+        ELSE ${morningBriefGenerations.retainedUntil}
+      END`,
+    })
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, owner.orgId),
+        eq(morningBriefGenerations.userId, owner.userId),
+        lte(morningBriefGenerations.expiresAt, at),
+        or(
+          and(
+            eq(morningBriefGenerations.decision, "deliver"),
+            isNull(morningBriefGenerations.contentPurgedAt),
+          ),
+          and(
+            lte(morningBriefGenerations.retainedUntil, at),
+            isNotNull(morningBriefGenerations.retainedSources),
+          ),
+        ),
+      ),
+    )
+    .returning({ attemptId: morningBriefGenerations.attemptId });
+
+  const replayCutoff = new Date(at.getTime() - 7 * 24 * 60 * 60 * 1000);
   const deleted = await db
     .delete(morningBriefGenerations)
     .where(
@@ -454,43 +613,59 @@ export async function sweepExpiredMorningBriefGenerations(
         eq(morningBriefGenerations.orgId, owner.orgId),
         eq(morningBriefGenerations.userId, owner.userId),
         lte(morningBriefGenerations.expiresAt, at),
+        lt(morningBriefGenerations.scheduledFor, replayCutoff),
       ),
     )
     .returning({ attemptId: morningBriefGenerations.attemptId });
-  return deleted.length;
+  return sanitized.length + deleted.length;
 }
 
 const purgedRowSchema = z.object({ purged: z.int().nonnegative() });
 
 /**
- * Physically purge expired preview results, for owners who never came back.
+ * Purge expired source content for owners who never came back.
  *
  * An owner-scoped sweep bounds nothing on its own: an owner who invokes once
  * and never again would otherwise keep source-derived title and Markdown
- * forever. This is the batch a bounded maintenance consumer runs instead, and
- * it is deliberately small and interruptible — one ordered, limited selection
- * under `SKIP LOCKED`, so it never queues behind an attempt that is mid-write
- * and never takes a table-wide lock. `idx_morning_brief_generations_expiry`
- * serves the ordered scan, so the plan stays an index range over already
- * expired rows rather than a sequential scan of the table.
+ * forever. This bounded maintenance batch first clears accepted body bytes,
+ * then clears retained authorization proof only at its own original deadline.
+ * The content-free row remains while the anchor is still invocable, because its
+ * owner/purpose anchor index is the cross-kind/version proof that the provider
+ * may already have been contacted. Only after the seven-day anchor admission
+ * window closes can that metadata row be physically removed.
  *
- * Removing the row removes the content *and* the attempt's link to its cost
- * record; the anonymous receipt itself is never touched, exactly as the
- * owner-scoped sweep leaves it. What survives instead is the completed
- * collection occurrence, which is content-free and is what actually refuses a
- * second invocation — a purged slot is reported as a completed collection that
- * holds no generation, never as an occurrence free to call the provider again.
+ * The ordered, limited selection uses `SKIP LOCKED`, so it never queues behind
+ * an attempt that is mid-write and never takes a table-wide lock.
+ * `idx_morning_brief_generations_expiry` serves the ordered scan. The anonymous
+ * platform receipt is never touched. `owners` narrows the same statement to an
+ * explicit set of members for isolated route coverage; production passes none.
  */
 export async function purgeExpiredMorningBriefGenerations(
   db: Pick<Db, "execute">,
   at: Date,
   limit: number,
+  owners?: readonly MorningBriefCollectionOwner[],
 ): Promise<number> {
+  if (owners?.length === 0) {
+    return 0;
+  }
   const cutoff = timestampWithoutTimeZone(at);
+  const replayCutoff = timestampWithoutTimeZone(
+    new Date(at.getTime() - 7 * 24 * 60 * 60 * 1000),
+  );
+  const ownerScope =
+    owners === undefined
+      ? sql.empty()
+      : sql` AND (generation.org_id, generation.user_id) IN (${sql.join(
+          owners.map((owner) => {
+            return sql`(${owner.orgId}, ${owner.userId})`;
+          }),
+          sql`, `,
+        )})`;
   const rows = await executeRawRows(
     db,
     sql`
-      WITH expired AS (
+      WITH candidates AS (
         SELECT
           generation.org_id,
           generation.user_id,
@@ -498,22 +673,62 @@ export async function purgeExpiredMorningBriefGenerations(
           generation.collection_kind,
           generation.collection_version
         FROM ${morningBriefGenerations} generation
-        WHERE generation.expires_at <= ${cutoff}::timestamp
+        WHERE generation.expires_at <= ${cutoff}::timestamp${ownerScope}
+          AND (
+            generation.scheduled_for < ${replayCutoff}::timestamp
+            OR (generation.decision = 'deliver'
+              AND generation.content_purged_at IS NULL)
+            OR (generation.retained_until <= ${cutoff}::timestamp
+              AND generation.retained_sources IS NOT NULL)
+          )
         ORDER BY generation.expires_at ASC
         LIMIT ${limit}
         FOR UPDATE OF generation SKIP LOCKED
       ),
+      sanitized AS (
+        UPDATE ${morningBriefGenerations} generation
+        SET result_title = NULL,
+            result_markdown = NULL,
+            result_bytes = NULL,
+            content_purged_at = CASE
+              WHEN generation.decision = 'deliver'
+                THEN COALESCE(generation.content_purged_at, ${cutoff}::timestamp)
+              ELSE generation.content_purged_at
+            END,
+            retained_sources = CASE
+              WHEN generation.retained_until <= ${cutoff}::timestamp THEN NULL
+              ELSE generation.retained_sources
+            END,
+            retained_until = CASE
+              WHEN generation.retained_until <= ${cutoff}::timestamp THEN NULL
+              ELSE generation.retained_until
+            END
+        FROM candidates
+        WHERE generation.org_id = candidates.org_id
+          AND generation.user_id = candidates.user_id
+          AND generation.scheduled_for = candidates.scheduled_for
+          AND generation.collection_kind = candidates.collection_kind
+          AND generation.collection_version = candidates.collection_version
+          AND generation.scheduled_for >= ${replayCutoff}::timestamp
+        RETURNING generation.attempt_id
+      ),
       purged AS (
         DELETE FROM ${morningBriefGenerations} generation
-        USING expired
-        WHERE generation.org_id = expired.org_id
-          AND generation.user_id = expired.user_id
-          AND generation.scheduled_for = expired.scheduled_for
-          AND generation.collection_kind = expired.collection_kind
-          AND generation.collection_version = expired.collection_version
+        USING candidates
+        WHERE generation.org_id = candidates.org_id
+          AND generation.user_id = candidates.user_id
+          AND generation.scheduled_for = candidates.scheduled_for
+          AND generation.collection_kind = candidates.collection_kind
+          AND generation.collection_version = candidates.collection_version
+          AND generation.scheduled_for < ${replayCutoff}::timestamp
         RETURNING generation.attempt_id
+      ),
+      affected AS (
+        SELECT attempt_id FROM sanitized
+        UNION ALL
+        SELECT attempt_id FROM purged
       )
-      SELECT count(*)::int AS purged FROM purged
+      SELECT count(*)::int AS purged FROM affected
     `,
     purgedRowSchema,
   );

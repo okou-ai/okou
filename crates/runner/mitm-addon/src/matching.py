@@ -1490,7 +1490,7 @@ def _selected_owner_name(
     owners = _winning_owner_names(collection)
     if len(owners) == 0:
         return None
-    if len(owners) == 1:
+    if len(owners) == 1 and intent.status == "absent":
         return owners[0]
     if intent.status == "present" and intent.value is not None:
         selected_name = _owner_name_for_intent(collection, intent.value)
@@ -1782,8 +1782,18 @@ def _match_compiled_firewall_request_with_api_candidates(
     custom_connector_matches = any(
         match.firewall.connector_runtime_kind == "custom" for match in base_matches
     )
+    explicit_builtin_owner_matches = intent.status == "present" and any(
+        match.firewall.connector_runtime_kind == "builtin"
+        and not match.firewall.name_malformed
+        and match.firewall.intent_identity == intent.value
+        for match in base_matches
+    )
     for api_match in base_matches:
-        if custom_connector_matches and api_match.firewall.connector_runtime_kind == "builtin":
+        if (
+            not explicit_builtin_owner_matches
+            and custom_connector_matches
+            and api_match.firewall.connector_runtime_kind == "builtin"
+        ):
             continue
         if not collection.accept_api(api_match):
             continue

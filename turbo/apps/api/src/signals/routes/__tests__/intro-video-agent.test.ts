@@ -1104,6 +1104,7 @@ describe("Managed Intro Video Agent", () => {
         sessionId: SESSION_ID,
         videoId: VIDEO_ID,
         filename: expect.stringMatching(/^intro-video-.*\.mp4$/u),
+        privateArtifacts,
         contentType: "video/mp4",
         size: VIDEO_BYTES.byteLength,
         durationSeconds: 61,
@@ -1197,6 +1198,7 @@ describe("Managed Intro Video Agent", () => {
       await expect(status(f, body.requestId)).resolves.toMatchObject({
         generationId: body.requestId,
         status: "completed",
+        privateArtifacts,
         contentType: "video/mp4",
         creditsCharged: 610,
       });

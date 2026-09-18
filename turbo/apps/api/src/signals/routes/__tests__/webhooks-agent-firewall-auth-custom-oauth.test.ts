@@ -5,7 +5,6 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse } from "msw";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -48,11 +47,6 @@ async function setupCustomOAuthFirewall(
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
   const actor = bdd.user({ orgRole: "org:admin" });
-  if (mode === "automatic") {
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
-  }
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();

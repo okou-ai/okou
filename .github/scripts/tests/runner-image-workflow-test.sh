@@ -42,6 +42,41 @@ image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c 
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "download-only changes must be recognized as runner image inputs"
 
+# An installer-only edit must still select its image and native test consumers.
+base_ref=$(fixture_git rev-parse HEAD)
+mkdir -p "${test_root}/.github/actions/setup-aws-cli"
+cp "${REPO_ROOT}/.github/actions/setup-aws-cli/action.yml" \
+  "${test_root}/.github/actions/setup-aws-cli/action.yml"
+fixture_git add .github/actions/setup-aws-cli/action.yml
+fixture_git commit --quiet -m installer
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "installer-only changes must be recognized as runner image inputs"
+
+ruby -ryaml -ropen3 - "$REPO_ROOT" "$test_root" "$base_ref" <<'RUBY'
+root, fixture, base = ARGV
+[["crates", "detect", "detect"], ["runner-image", "prepare", "turbo"],
+ ["runner-image", "prepare", "crates"]].each do |workflow, job, step_id|
+  steps = YAML.load_file("#{root}/.github/workflows/#{workflow}.yml").fetch("jobs").fetch(job).fetch("steps")
+  lines = steps.find { |step| step["id"] == step_id }.fetch("run").lines
+  first = lines.index { |line| line.start_with?("if git diff ") && line.include?(".github/actions/") }
+  raise "missing CI detector: #{workflow}/#{step_id}" unless first
+  last = (first...lines.length).find { |index| lines[index].strip == "fi" }
+  # Execute the workflow's actual selection boundary against a real Git diff.
+  script = lines[first..last].join + "\necho \"ci-changed=${ci_changed:-}\"\n"
+  output_file = "#{fixture}/detected"
+  [base, "HEAD"].each do |comparison|
+    File.write(output_file, "")
+    output, error, status = Open3.capture3({"BASE_REF" => comparison, "GITHUB_OUTPUT" => output_file},
+                                         "bash", "-e", "-o", "pipefail", "-c", script, chdir: fixture)
+    raise error unless status.success?
+    expected = comparison == base ? "true" : "false"
+    result = output + File.read(output_file)
+    raise "wrong installer selection: #{workflow}/#{step_id}" unless result.lines.include?("ci-changed=#{expected}\n")
+  end
+end
+RUBY
+
 jq -e '
   .jobs.prepare.outputs["turbo-runner-consumer-needed"] ==
     "${{ steps.needed.outputs.turbo-runner-consumer-needed }}" and
@@ -128,6 +163,58 @@ jq -e '
     (. | has("continue-on-error") | not)
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
+
+# Execute the configured startup boundary without contacting storage. The
+# server must receive R2 configuration, while later build steps receive only
+# compiler settings through GITHUB_ENV.
+cache_step=$(jq -c '.jobs.compile.steps[] | select(.name == "Configure sccache")' <<<"$workflow_json")
+cache_script=$(jq -r '.run' <<<"$cache_step")
+cache_env_entries=$(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' <<<"$cache_step")
+mapfile -t cache_env <<<"$cache_env_entries"
+for index in "${!cache_env[@]}"; do
+  value=${cache_env[$index]}
+  value=${value//"\${{ secrets.R2_ACCESS_KEY_ID }}"/fixture-access}
+  value=${value//"\${{ secrets.R2_SECRET_ACCESS_KEY }}"/fixture-secret}
+  value=${value//"\${{ vars.R2_ACCOUNT_ID }}"/fixture-account}
+  value=${value//"\${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"/fixture-bucket}
+  value=${value//"\${{ matrix.id }}"/arm64}
+  cache_env[index]=$value
+done
+cache_dir="${test_root}/cache-startup"
+mkdir -p "$cache_dir"
+cat > "${cache_dir}/sccache" <<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" = 1 ] && [ "$1" = --start-server ]
+[ "$AWS_ACCESS_KEY_ID" = fixture-access ]
+[ "$AWS_SECRET_ACCESS_KEY" = fixture-secret ]
+[ "$SCCACHE_BUCKET" = fixture-bucket ]
+[ "$SCCACHE_ENDPOINT" = https://fixture-account.r2.cloudflarestorage.com ]
+[ "$SCCACHE_REGION" = auto ]
+[ "$SCCACHE_S3_KEY_PREFIX" = runner-sccache/arm64/ ]
+[ "$SCCACHE_GHA_ENABLED" = false ]
+[ "$SCCACHE_IDLE_TIMEOUT" = 0 ]
+[ -f "$SCCACHE_CONF" ]
+touch "$SERVER_STARTED"
+BASH
+chmod +x "${cache_dir}/sccache"
+cache_start_env=(env -i "PATH=$PATH" "RUNNER_TEMP=$cache_dir"
+  "GITHUB_ENV=${cache_dir}/github-env" "SCCACHE_PATH=${cache_dir}/sccache"
+  "SERVER_STARTED=${cache_dir}/started" "${cache_env[@]}")
+"${cache_start_env[@]}" bash -eo pipefail -c "$cache_script"
+[ -f "${cache_dir}/started" ] || fail "R2 cache server did not start"
+if grep -Eq 'AWS_|R2_|SCCACHE_(BUCKET|ENDPOINT)|fixture-(access|secret)' "${cache_dir}/github-env"; then
+  fail "cache startup must not export storage configuration or credentials to build steps"
+fi
+grep -qx 'RUSTC_WRAPPER=sccache' "${cache_dir}/github-env" || fail "builds must use the configured cache server"
+for missing in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID SCCACHE_BUCKET; do
+  rm -f "${cache_dir}/started"
+  if "${cache_start_env[@]}" "$missing=" bash -eo pipefail -c "$cache_script" \
+    >"${cache_dir}/out" 2>"${cache_dir}/err"; then
+    fail "cache startup must reject missing $missing"
+  fi
+  [ ! -e "${cache_dir}/started" ] || fail "missing R2 configuration must not start a local cache"
+done
 
 jq -e '
   ([.jobs | to_entries[] |

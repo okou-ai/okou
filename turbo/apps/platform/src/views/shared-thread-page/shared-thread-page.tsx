@@ -1,5 +1,6 @@
 import type {
   SharedMessage,
+  SharedMessageAttachment,
   SharedThreadResponse,
 } from "@okouai/api-contracts/contracts/shared-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
@@ -15,7 +16,11 @@ import {
   type BrandName,
 } from "../../signals/branding.ts";
 import { currentUserInfo$ } from "../../signals/auth.ts";
-import type { SharedThreadRichContentSignals } from "../../signals/shared-thread-page/shared-thread-rich-content.ts";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
+import type {
+  SharedThreadRichContentSignals,
+  SharedThreadArtifactSignals,
+} from "../../signals/shared-thread-page/shared-thread-rich-content.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -41,17 +46,28 @@ import {
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
+import { SharedThreadArtifactLightbox } from "./shared-thread-artifact-lightbox.tsx";
+import type { SharedThreadArtifactPreviewSignals } from "../../signals/shared-thread-page/shared-thread-artifact-preview.ts";
 
 /**
  * A shared message with an optional prepared plain tree. Rich bodies leave the
  * tree undefined and are derived by the thread's rich-content signals when the
  * view consumes them.
  */
-export type SharedDisplayMessage = SharedMessage & { readonly tree?: Root };
+export type SharedDisplayAttachment = SharedMessageAttachment & {
+  readonly preview: AttachmentPreviewSignals;
+  readonly artifact?: SharedThreadArtifactSignals;
+};
+
+export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
+  readonly tree?: Root;
+  readonly attachments?: readonly SharedDisplayAttachment[];
+};
 
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];
   readonly richContent?: SharedThreadRichContentSignals;
+  readonly artifactPreview?: SharedThreadArtifactPreviewSignals;
 };
 
 interface SharedMessageGroup {
@@ -596,6 +612,9 @@ export function SharedThreadPage({
           <SharedThreadNotFound />
         )}
       </WorkspaceInset>
+      {sharedThread?.artifactPreview ? (
+        <SharedThreadArtifactLightbox signals={sharedThread.artifactPreview} />
+      ) : null}
     </div>
   );
 }

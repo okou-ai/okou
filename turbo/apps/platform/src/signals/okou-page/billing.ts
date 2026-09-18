@@ -25,7 +25,6 @@ import {
   type UsagePackCheckoutRequest,
   type UsagePackPurchasePreviewResponse,
   type UsagePackMigrationStateResponse,
-  type GoogleAdsPaidConversion,
 } from "@okouai/api-contracts/contracts/billing";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { apiClient$ } from "../api-client.ts";
@@ -33,20 +32,13 @@ import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { isOrgAdmin$ } from "../org.ts";
-import { bestEffort, settle, tapError, withCleanup } from "../utils.ts";
+import { settle, tapError, withCleanup } from "../utils.ts";
 import { accept } from "../../lib/accept.ts";
-import {
-  applyStoredAdAttribution$,
-  readStoredAdAttributionMetadata$,
-} from "../bootstrap/ad-attribution.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
-import {
-  completeGoogleAdsPaidCheckout$,
-  fireGoogleAdsPaidConversion$,
-} from "../bootstrap/google-ads-paid-conversion.ts";
+import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
 import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
@@ -645,14 +637,7 @@ export const handleBillingRedirect$ = command(
     }
 
     if ((billing === "pro" || billing === "team") && billingSessionId) {
-      await set(
-        completeGoogleAdsPaidCheckout$,
-        {
-          sessionId: billingSessionId,
-          kind: "paid_after_onboarding",
-        },
-        signal,
-      );
+      await set(completePaidCheckout$, billingSessionId, signal);
       signal.throwIfAborted();
     }
 
@@ -757,7 +742,6 @@ export const startCheckout$ = command(
     const successUrl = checkoutReturnUrl();
     successUrl.searchParams.set("billing", tier);
     successUrl.searchParams.set("billing_session_id", "{CHECKOUT_SESSION_ID}");
-    set(applyStoredAdAttribution$, successUrl);
     const stripeSuccessUrl = successUrl
       .toString()
       .replace(
@@ -766,8 +750,6 @@ export const startCheckout$ = command(
       );
     const cancelUrl = checkoutReturnUrl();
     cancelUrl.searchParams.set("billing", "canceled");
-    set(applyStoredAdAttribution$, cancelUrl);
-    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingCheckoutContract);
     const request: CheckoutRequest = {
@@ -778,7 +760,6 @@ export const startCheckout$ = command(
       ...(options?.trialDays === undefined
         ? {}
         : { trialDays: options.trialDays }),
-      ...(adAttribution === undefined ? {} : { adAttribution }),
     };
     const result = await accept(
       client.create({
@@ -801,10 +782,7 @@ export const startCheckout$ = command(
     if (!("url" in result.body)) {
       throw new Error("Plan checkout returned an unexpected confirmation");
     }
-    await bestEffort(
-      set(capturePaidOnboardingRedirectToStripe$, "paywall", signal),
-      signal,
-    );
+    set(capturePaidOnboardingRedirectToStripe$, "paywall");
     if (newTab) {
       window.open(result.body.url, "_blank");
     } else {
@@ -828,7 +806,6 @@ export const startUsagePackCheckout$ = command(
     const successUrl = new URL(currentUrl);
     successUrl.searchParams.set("billing", args.tier);
     successUrl.searchParams.set("billing_session_id", "{CHECKOUT_SESSION_ID}");
-    set(applyStoredAdAttribution$, successUrl);
     const stripeSuccessUrl = successUrl
       .toString()
       .replace(
@@ -837,8 +814,6 @@ export const startUsagePackCheckout$ = command(
       );
     const cancelUrl = new URL(currentUrl);
     cancelUrl.searchParams.set("billing", "canceled");
-    set(applyStoredAdAttribution$, cancelUrl);
-    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingUsagePackCheckoutContract);
     const request: UsagePackCheckoutRequest = {
@@ -847,7 +822,6 @@ export const startUsagePackCheckout$ = command(
       memberUsagePacks: [...args.memberUsagePacks],
       successUrl: stripeSuccessUrl,
       cancelUrl: cancelUrl.toString(),
-      ...(adAttribution === undefined ? {} : { adAttribution }),
     };
     const result = await accept(
       client.create({
@@ -876,15 +850,6 @@ export const startUsagePackCheckout$ = command(
     } else {
       window.location.href = result.body.url;
     }
-  },
-);
-
-const fireConfirmedGoogleAdsConversion$ = command(
-  ({ set }, conversion: GoogleAdsPaidConversion | undefined): void => {
-    if (!conversion) {
-      return;
-    }
-    set(fireGoogleAdsPaidConversion$, "paid_after_onboarding", conversion);
   },
 );
 
@@ -931,10 +896,7 @@ export const confirmSubscriptionPurchase$ = command(
       );
       signal.throwIfAborted();
       if ("url" in refreshed.body) {
-        await bestEffort(
-          set(capturePaidOnboardingRedirectToStripe$, "paywall", signal),
-          signal,
-        );
+        set(capturePaidOnboardingRedirectToStripe$, "paywall");
         if (state.newTab) {
           window.open(refreshed.body.url, "_blank");
         } else {
@@ -998,7 +960,6 @@ export const confirmSubscriptionPurchase$ = command(
       }
       return;
     }
-    set(fireConfirmedGoogleAdsConversion$, response.body.googleAdsConversion);
     set(internalSubscriptionPurchasePreview$, null);
     set(reloadBillingStatus$);
     toast.success(

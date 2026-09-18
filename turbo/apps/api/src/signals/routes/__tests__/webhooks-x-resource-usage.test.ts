@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import type { z } from "zod";
 
@@ -31,6 +32,8 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {
   generatedStripeCustomerId,
   postUsageAllowanceInvoicePaid,
@@ -57,17 +60,27 @@ const DAY_MS = 86_400_000;
 beforeEach(() => {
   mockEnv("ENV", "development");
   mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
-  mockEnv(
-    "X_RESOURCE_BILLING_START_DATE",
-    new Date(now() - DAY_MS).toISOString().slice(0, 10),
-  );
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
 });
 
-async function createRun(actor = bdd.user()): Promise<RunFixture> {
+async function createRun(
+  actor = bdd.user(),
+  deduplicationEnabled = true,
+  modelProvider: "anthropic-api-key" | "built-in" = "anthropic-api-key",
+): Promise<RunFixture> {
+  if (!actor.orgId) {
+    throw new Error("X resource test requires an organization");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    {
+      [FeatureSwitchKey.XResourceDeduplication]: deduplicationEnabled,
+    },
+  );
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
@@ -77,7 +90,7 @@ async function createRun(actor = bdd.user()): Promise<RunFixture> {
   const run = await runs.createRun(actor, {
     agentId: agent.agentId,
     prompt: "Read X resources",
-    modelProvider: "anthropic-api-key",
+    modelProvider,
   });
   return {
     actor,
@@ -145,6 +158,13 @@ async function pricing(): Promise<UsagePricingFixture> {
         unitPrice: 1,
         unitSize: 1,
       },
+      {
+        kind: "image",
+        provider: "x-resource-test-image",
+        category: "output_tokens",
+        unitPrice: 1,
+        unitSize: 1,
+      },
     ],
   });
   onTestFinished(fixture.cleanup);
@@ -165,6 +185,51 @@ async function chargedUnits(
 }
 
 describe("X daily resource usage webhook", () => {
+  it.each([false, true])(
+    "discards zero quantities for every usage kind (mixed=%s)",
+    async (mixed) => {
+      const configuredPricing = await pricing();
+      // Built-in credentials are operator configuration with no product write
+      // endpoint. The fixture owns its key and scopes selection to this test.
+      await seedBuiltInDefaultModelKey(context);
+      const fixture = await createRun(bdd.user(), false, "built-in");
+      const zeroEvents = (
+        [
+          { kind: "connector", provider: "x", category: "posts.read" },
+          {
+            kind: "model",
+            provider: "x-resource-test-model",
+            category: "tokens.input",
+          },
+          {
+            kind: "image",
+            provider: "x-resource-test-image",
+            category: "output_tokens",
+          },
+        ] satisfies Pick<UsageEvent, "kind" | "provider" | "category">[]
+      ).map((event) => {
+        return { ...event, idempotencyKey: randomUUID(), quantity: 0 };
+      });
+      const events = mixed ? [...zeroEvents, observation([])] : zeroEvents;
+      await accept(submit(fixture, events), [200]);
+      await accept(submit(fixture, events), [200]);
+      await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(0);
+      expect(
+        (await billing.readUsageRecord(fixture.actor)).body.rows,
+      ).toStrictEqual([]);
+
+      // Empty events reserve no source identity for any usage kind. Later
+      // positive observations with those UUIDs are accepted exactly once.
+      const positive = zeroEvents.map((event) => {
+        return { ...event, quantity: 2 };
+      });
+      const positiveBatch = mixed ? [...positive, observation([])] : positive;
+      await accept(submit(fixture, positiveBatch), [200]);
+      await accept(submit(fixture, positiveBatch), [200]);
+      await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(6);
+    },
+  );
+
   it("shares an allowance-funded first read with another organization", async () => {
     const configuredPricing = await pricing();
     const first = await createRun();
@@ -196,6 +261,9 @@ describe("X daily resource usage webhook", () => {
     );
     await accept(submit(second, [observation([id])]), [200]);
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
+    expect(
+      (await billing.readUsageRecord(second.actor)).body.rows,
+    ).toStrictEqual([]);
   });
 
   it("charges distinct identities and remainder across organizations and namespaces", async () => {
@@ -314,7 +382,7 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(2);
   });
 
-  it("persists zero-charge ownership and retries unknown-only events once", async () => {
+  it("discards zero usage while charging unknown-only retries once", async () => {
     const configuredPricing = await pricing();
     const first = await createRun();
     const second = await createRun();
@@ -326,10 +394,20 @@ describe("X daily resource usage webhook", () => {
     });
     await accept(submit(first, [observation([id])]), [200]);
     const duplicate = observation([id]);
-    await accept(submit(second, [duplicate, zero, unknown]), [200]);
-    await accept(submit(second, [duplicate, zero, unknown]), [200]);
-    await accept(submit(first, [zero]), [409]);
-    await accept(submit(first, [duplicate]), [409]);
+    await accept(submit(second, [duplicate, zero]), [200]);
+    await Promise.all([
+      accept(submit(second, [duplicate, zero]), [200]),
+      accept(submit(second, [duplicate, zero]), [200]),
+    ]);
+    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
+    expect(
+      (await billing.readUsageRecord(second.actor)).body.rows,
+    ).toStrictEqual([]);
+    await accept(submit(first, [zero, duplicate]), [200]);
+
+    await accept(submit(second, [unknown]), [200]);
+    await accept(submit(second, [unknown]), [200]);
+    await accept(submit(first, [unknown]), [409]);
 
     await expect(chargedUnits(first, configuredPricing)).resolves.toBe(1);
     await expect(chargedUnits(second, configuredPricing)).resolves.toBe(3);
@@ -628,23 +706,15 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
   });
 
-  it("rejects observations before the configured start date", async () => {
-    const fixture = await createRun();
-    mockEnv(
-      "X_RESOURCE_BILLING_START_DATE",
-      new Date(now() + DAY_MS).toISOString().slice(0, 10),
-    );
-    const response = await accept(
-      submit(fixture, [observation([resourceId()])]),
-      [400],
-    );
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("leaves the resource protocol dormant while preserving legacy-only ingestion", async () => {
+  it("records resources with deduplication off and charges full quantities in mixed batches", async () => {
     const configuredPricing = await pricing();
-    const fixture = await createRun();
-    mockEnv("X_RESOURCE_BILLING_START_DATE", undefined);
+    const fixture = await createRun(bdd.user(), false);
+    const id = resourceId();
+    const resource = observation([], {
+      quantity: 5,
+      resources: [{ id, occurrences: 3 }],
+      remainder: [{ reason: "missing_id", quantity: 2 }],
+    });
     const legacy: UsageEvent = {
       idempotencyKey: randomUUID(),
       kind: "connector",
@@ -652,9 +722,70 @@ describe("X daily resource usage webhook", () => {
       category: "posts.read",
       quantity: 1,
     };
-    await accept(submit(fixture, [legacy, observation([resourceId()])]), [400]);
+    await accept(submit(fixture, [legacy, resource]), [200]);
+    await accept(submit(fixture, [resource]), [200]);
+    await accept(submit(fixture, [observation([id])]), [200]);
+    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(7);
+
+    // An enabled owner sees the global history recorded by a disabled owner.
+    const enabled = await createRun();
+    await accept(submit(enabled, [observation([id])]), [200]);
+    await expect(chargedUnits(enabled, configuredPricing)).resolves.toBe(0);
+  });
+
+  it("re-evaluates discarded zero usage after switch changes and preserves charged retries", async () => {
+    const configuredPricing = await pricing();
+    const fixture = await createRun(bdd.user(), false);
+    if (!fixture.actor.orgId) {
+      throw new Error("X resource test requires an organization");
+    }
+    const actor = { ...fixture.actor, orgId: fixture.actor.orgId };
+    const id = resourceId();
+    const whileOff = observation([], {
+      quantity: 4,
+      resources: [{ id, occurrences: 3 }],
+      remainder: [{ reason: "missing_id", quantity: 1 }],
+    });
+    await accept(submit(fixture, [whileOff]), [200]);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.XResourceDeduplication]: true,
+    });
+    const whileOn = observation([id]);
+    await accept(submit(fixture, [whileOff, whileOn]), [200]);
+    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(4);
+
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.XResourceDeduplication]: false,
+    });
+    const disabledAgain = observation([], {
+      quantity: 3,
+      resources: [{ id, occurrences: 2 }],
+      remainder: [{ reason: "missing_id", quantity: 1 }],
+    });
+    await accept(submit(fixture, [whileOff, whileOn, disabledAgain]), [200]);
+    await accept(submit(fixture, [whileOff, whileOn, disabledAgain]), [200]);
+    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(8);
+  });
+
+  it("keeps time admission and atomic validation while deduplication is off", async () => {
+    const configuredPricing = await pricing();
+    const fixture = await createRun(bdd.user(), false);
+    const id = resourceId();
+    const event = observation([id]);
+    await accept(
+      submit(fixture, [
+        event,
+        observation([resourceId()], {
+          observedAt: new Date(now() - 2 * DAY_MS).toISOString(),
+        }),
+      ]),
+      [400],
+    );
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(0);
-    await accept(submit(fixture, [legacy]), [200]);
+    const enabled = await createRun();
+    await accept(submit(enabled, [observation([id])]), [200]);
+    await expect(chargedUnits(enabled, configuredPricing)).resolves.toBe(1);
+    await accept(submit(fixture, [event]), [200]);
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
   });
 

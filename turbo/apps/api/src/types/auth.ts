@@ -48,6 +48,7 @@ export type AgentAuthContext =
       readonly capabilities: readonly Capability[];
       readonly computerUseHostId?: string;
       readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
+      readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
     }
   | {
       readonly tokenType: "agent";
@@ -59,6 +60,12 @@ export type AgentAuthContext =
     };
 
 export type AuthContext =
+  | {
+      readonly tokenType: "oauth";
+      readonly userId: string;
+      readonly orgId: string;
+      readonly orgRole: ApiOrgRole;
+    }
   | SessionAuthContext
   | PatAuthContext
   | SandboxAuthContext
@@ -89,6 +96,7 @@ export interface AgentAuth {
   readonly computerUseHostId?: string;
   readonly cloudBrowserEnabled?: true;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
+  readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
 }
 
 export interface CliAuth {

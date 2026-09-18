@@ -1,9 +1,22 @@
 import { createHash } from "node:crypto";
 import { command, computed } from "ccstate";
-import { and, eq, isNull } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactShareReferencePath,
+  artifactReferencePath,
+  parseArtifactReference,
+} from "@okouai/api-contracts/contracts/artifact-references";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import {
   sharedThreadArtifactPolicySchema,
@@ -14,7 +27,9 @@ import {
   hostedSites,
   privateHostedDeployments,
 } from "@okouai/db/schema/hosted-site";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { apiBackendUrl } from "../../lib/api-backend-url";
+import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import { env } from "../../lib/env";
 import { artifactHash } from "../../lib/file-url";
 import { db$ } from "../external/db";
@@ -45,12 +60,16 @@ import {
 import {
   artifactFileReference,
   privateArtifactRecord,
+  privateArtifactUrl,
 } from "./private-artifact-storage.service";
 import {
   ArtifactDeliveryAliasConflict,
   registerArtifactDelivery$,
 } from "./artifact-delivery.service";
-import { artifactReferenceRecord } from "./artifact-reference.service";
+import {
+  allocateSharedThreadArtifactReference$,
+  artifactReferenceRecord,
+} from "./artifact-reference.service";
 
 const MAX_RESOURCES = 100;
 
@@ -74,9 +93,12 @@ interface SnapshotCopy {
 
 interface SnapshotResource {
   readonly token: string;
+  readonly reference: string;
   readonly url: string;
+  readonly deliveryUrl: string;
   readonly target: SnapshotTarget;
   readonly sourceKey?: string;
+  readonly previewImageUrl?: string | null;
 }
 
 export interface SharedThreadArtifactPlan {
@@ -127,14 +149,34 @@ interface ResourceReference {
   readonly key?: string;
 }
 
+type SnapshotSource =
+  | ResourceReference
+  | { readonly kind: "snapshot"; readonly url: string };
+
+function signedFileReference(url: URL): ResourceReference {
+  const [bucket, ...segments] = decodeURIComponent(url.pathname.slice(1)).split(
+    "/",
+  );
+  const key = segments.join("/");
+  const id = /^private-artifacts\/([^/]+)\//u.exec(key)?.[1];
+  if (bucket !== env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") || !id) {
+    throw new SharedThreadArtifactUnavailable();
+  }
+  return { id, key, suffix: url.hash };
+}
+
 function resourceReference(value: string, signal: AbortSignal) {
-  return computed(async (get): Promise<ResourceReference | null> => {
+  return computed(async (get): Promise<SnapshotSource | null> => {
     const reference = parseArtifactReference(value, env("APP_URL"));
     if (reference) {
       if (reference.id) {
         return { id: reference.id, suffix: reference.fragment };
       }
       const record = await get(artifactReferenceRecord(reference.hash, signal));
+      if (record?.version === 3) {
+        // Existing public snapshot links retain their original parent grant.
+        return { kind: "snapshot", url: new URL(value, env("APP_URL")).href };
+      }
       // Legacy share aliases grant viewing only. Source references still have
       // their ownership checked before any independent snapshot is published.
       if (record?.version !== 2) {
@@ -167,15 +209,7 @@ function resourceReference(value: string, signal: AbortSignal) {
     // Resolve managed signed dependencies by their owned storage identity;
     // possession of a signature itself never authorizes publication.
     if (url.hostname.endsWith(".r2.cloudflarestorage.com")) {
-      const [bucket, ...segments] = decodeURIComponent(
-        url.pathname.slice(1),
-      ).split("/");
-      const key = segments.join("/");
-      const id = /^private-artifacts\/([^/]+)\//u.exec(key)?.[1];
-      if (bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") && id) {
-        return { id, key, suffix: url.hash };
-      }
-      throw new SharedThreadArtifactUnavailable();
+      return signedFileReference(url);
     }
     const preview = await get(hostedPreviewReference(url, signal));
     if (preview) {
@@ -205,6 +239,9 @@ function hostedPreviewReference(url: URL, signal: AbortSignal) {
       const alias = url.hostname.slice(0, -domain.length - 1);
       if (!/^pv-[a-f0-9]{48}$/u.test(alias)) {
         return null;
+      }
+      if (url.pathname.startsWith("//")) {
+        throw new SharedThreadArtifactUnavailable();
       }
       const stored = await settle(
         get(
@@ -291,13 +328,30 @@ const allocateSnapshotReference$ = command(
         signal,
       );
       if (registered.ok) {
+        const reference = await set(
+          allocateSharedThreadArtifactReference$,
+          {
+            threadId: args.threadId,
+            publicBrand: args.publicBrand,
+            publicToken: token,
+            target: { kind: args.kind, id: args.id },
+          },
+          signal,
+        );
         recordSharedThreadPhase({
           shareId: args.threadId,
           phase: "alias",
           durationMs: Math.round(performance.now() - startedAt),
           attempts: attempt + 1,
         });
-        return token;
+        return {
+          token,
+          reference,
+          url: new URL(
+            artifactShareReferencePath(reference, args.filename),
+            env("APP_URL"),
+          ).href,
+        };
       }
       if (!(registered.error instanceof ArtifactDeliveryAliasConflict)) {
         throw registered.error;
@@ -330,7 +384,11 @@ const privateFileSnapshot$ = command(
       ) {
         throw new SharedThreadArtifactUnavailable();
       }
-      const token = await set(
+      const {
+        token,
+        reference: snapshotReference,
+        url,
+      } = await set(
         allocateSnapshotReference$,
         { ...args, id: file.id, kind: "file", filename: file.filename },
         signal,
@@ -344,10 +402,16 @@ const privateFileSnapshot$ = command(
       };
       const resource = {
         token,
+        reference: snapshotReference,
         target,
+        url,
         sourceKey: file.key,
-        url: resourceUrl(args.publicBrand, token, target),
+        previewImageUrl: await get(
+          privateFileSnapshotPreviewImage(file, signal),
+        ),
+        deliveryUrl: resourceUrl(args.publicBrand, token, target),
       };
+      signal.throwIfAborted();
       const copy: SnapshotCopy = {
         bucket: file.bucket,
         sourceKey: file.key,
@@ -359,6 +423,53 @@ const privateFileSnapshot$ = command(
     return null;
   },
 );
+
+function privateFileSnapshotPreviewImage(
+  file: Pick<
+    typeof runUploadedFiles.$inferSelect,
+    "id" | "userId" | "metadata" | "previewImageUrl"
+  > & {
+    readonly orgId: string;
+    readonly filename: string;
+    readonly contentType: string;
+  },
+  signal: AbortSignal,
+) {
+  return computed(async (get) => {
+    if (file.previewImageUrl || !file.contentType.startsWith("video/")) {
+      return file.previewImageUrl;
+    }
+    const paths = [
+      privateArtifactUrl(file.id, file.filename, file.metadata),
+      artifactReferencePath(file.id, file.filename),
+    ];
+    // Run associations can be separate from the private storage identity.
+    // Match that exact file, never another artifact with the same filename.
+    const [row] = await get(db$)
+      .select({ previewImageUrl: runUploadedFiles.previewImageUrl })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.userId, file.userId),
+          eq(runUploadedFiles.orgId, file.orgId),
+          isNotNull(runUploadedFiles.previewImageUrl),
+          or(
+            eq(runUploadedFiles.externalId, file.id),
+            inArray(
+              runUploadedFiles.url,
+              paths.flatMap((path) => {
+                return [path, new URL(path, env("APP_URL")).href];
+              }),
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(runUploadedFiles.updatedAt), desc(runUploadedFiles.id))
+      .limit(1);
+    signal.throwIfAborted();
+    return row?.previewImageUrl ?? null;
+  });
+}
 
 function ownedHostedDeployment(
   args: SnapshotOwner,
@@ -395,6 +506,31 @@ function ownedHostedDeployment(
       throw new SharedThreadArtifactUnavailable();
     }
     return row.deployment;
+  });
+}
+
+function hostedSnapshotPreviewImage(
+  deployment: typeof privateHostedDeployments.$inferSelect,
+  signal: AbortSignal,
+) {
+  return computed(async (get) => {
+    if (!deployment.runId) {
+      return null;
+    }
+    const [file] = await get(db$)
+      .select({ previewImageUrl: runUploadedFiles.previewImageUrl })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.runId, deployment.runId),
+          eq(runUploadedFiles.userId, deployment.userId),
+          eq(runUploadedFiles.orgId, deployment.orgId),
+          eq(sql`${runUploadedFiles.metadata}->>'deploymentId'`, deployment.id),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return file?.previewImageUrl ?? null;
   });
 }
 
@@ -542,6 +678,7 @@ async function rewriteSnapshotMessages(
 function snapshotPolicy(
   args: SnapshotOwner,
   resources: ReadonlyMap<string, SnapshotResource>,
+  previews: NonNullable<SharedThreadArtifactPolicy["previews"]>,
 ): SharedThreadArtifactPolicy {
   return sharedThreadArtifactPolicySchema.parse({
     version: 1,
@@ -555,6 +692,7 @@ function snapshotPolicy(
         return [resource.token, resource.target];
       }),
     ),
+    ...(Object.keys(previews).length ? { previews } : {}),
   });
 }
 
@@ -568,13 +706,153 @@ function replaceSnapshotReferences(
   });
 }
 
+const rewriteSnapshotContent$ = command(
+  async (
+    { get, set },
+    args: SnapshotOwner & {
+      readonly content: string;
+      readonly delivery: "reference" | "bytes";
+      readonly resolve: (
+        reference: ResourceReference,
+      ) => Promise<SnapshotResource>;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const { content, delivery, resolve } = args;
+    const replacements = new Map(
+      await mapConcurrent(
+        artifactTextReferences(content),
+        10,
+        async (value) => {
+          const source = value.replaceAll("&amp;", "&");
+          const reference = await get(resourceReference(source, signal));
+          signal.throwIfAborted();
+          if (!reference) {
+            return [value, value] as const;
+          }
+          if (reference.kind === "snapshot") {
+            return [value, reference.url] as const;
+          }
+          const resource = await resolve(reference);
+          signal.throwIfAborted();
+          if (delivery === "bytes") {
+            return [
+              value,
+              `${resource.deliveryUrl}${reference.suffix}`,
+            ] as const;
+          }
+          const fragmentIndex = reference.suffix.indexOf("#");
+          const path =
+            fragmentIndex === -1
+              ? reference.suffix
+              : reference.suffix.slice(0, fragmentIndex);
+          const fragment =
+            fragmentIndex === -1 ? "" : reference.suffix.slice(fragmentIndex);
+          if (!path) {
+            return [value, `${resource.url}${fragment}`] as const;
+          }
+          if (resource.target.kind !== "html") {
+            throw new SharedThreadArtifactUnavailable();
+          }
+          const previewPath = `/${path}`;
+          const file = sharedThreadHostedSnapshotFile(
+            resource.target,
+            previewPath,
+          );
+          if (!file) {
+            throw new SharedThreadArtifactUnavailable();
+          }
+          const childReference = await set(
+            allocateSharedThreadArtifactReference$,
+            {
+              threadId: args.threadId,
+              publicBrand: args.publicBrand,
+              publicToken: resource.token,
+              target: { kind: "html", id: resource.target.id },
+              previewPath,
+            },
+            signal,
+          );
+          const filename = file.path.slice(file.path.lastIndexOf("/") + 1);
+          const childUrl = new URL(
+            artifactShareReferencePath(childReference, filename),
+            env("APP_URL"),
+          );
+          childUrl.hash = fragment;
+          return [value, childUrl.href] as const;
+        },
+      ),
+    );
+    signal.throwIfAborted();
+    return replaceSnapshotReferences(content, replacements);
+  },
+);
+
+const privateHostedSnapshot$ = command(
+  async (
+    { get, set },
+    args: SnapshotOwner & { readonly reservedTokens: Set<string> },
+    reference: ResourceReference,
+    signal: AbortSignal,
+  ) => {
+    const deployment = await get(
+      ownedHostedDeployment(args, reference, signal),
+    );
+    signal.throwIfAborted();
+    const {
+      token,
+      reference: snapshotReference,
+      url,
+    } = await set(
+      allocateSnapshotReference$,
+      {
+        ...args,
+        id: deployment.id,
+        kind: "html",
+        filename: "index.html",
+        reservedTokens: args.reservedTokens,
+      },
+      signal,
+    );
+    const sourceManifest = hostedSiteDeliveryManifest(deployment.manifest);
+    const target: Extract<SnapshotTarget, { kind: "html" }> = {
+      kind: "html",
+      id: deployment.id,
+      siteId: deployment.siteId,
+      snapshotId: args.threadId,
+      deploymentVersion: deployment.deploymentVersion,
+      manifest: {
+        ...sourceManifest,
+        access: "owner-private-v1",
+        publicBrand: args.publicBrand,
+        files: { ...deployment.manifest.files },
+      },
+    };
+    const resource = {
+      token,
+      reference: snapshotReference,
+      target,
+      url,
+      deliveryUrl: resourceUrl(args.publicBrand, token, target),
+      previewImageUrl: await get(
+        hostedSnapshotPreviewImage(deployment, signal),
+      ),
+    };
+    signal.throwIfAborted();
+    return { deployment, target, resource };
+  },
+);
+
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
     { get, set },
     args: SnapshotOwner & { readonly messages: readonly SharedMessage[] },
     signal: AbortSignal,
-  ): Promise<SharedThreadArtifactPlan | null> => {
+  ): Promise<{
+    messages: SharedMessage[];
+    plan: SharedThreadArtifactPlan | null;
+  }> => {
     const resources = new Map<string, SnapshotResource>();
     const pendingResources = new Map<string, Promise<SnapshotResource>>();
     const hostedQueue: {
@@ -600,40 +878,13 @@ export const prepareSharedThreadArtifacts$ = command(
         copies.push(file.copy);
         return file.resource;
       }
-      const deployment = await get(
-        ownedHostedDeployment(args, reference, signal),
-      );
-      signal.throwIfAborted();
-      const token = await set(
-        allocateSnapshotReference$,
-        {
-          ...args,
-          id: deployment.id,
-          kind: "html",
-          filename: "index.html",
-          reservedTokens,
-        },
+      const { deployment, target, resource } = await set(
+        privateHostedSnapshot$,
+        { ...args, reservedTokens },
+        reference,
         signal,
       );
-      const sourceManifest = hostedSiteDeliveryManifest(deployment.manifest);
-      const target: Extract<SnapshotTarget, { kind: "html" }> = {
-        kind: "html",
-        id: deployment.id,
-        siteId: deployment.siteId,
-        snapshotId: args.threadId,
-        deploymentVersion: deployment.deploymentVersion,
-        manifest: {
-          ...sourceManifest,
-          access: "owner-private-v1",
-          publicBrand: args.publicBrand,
-          files: { ...deployment.manifest.files },
-        },
-      };
-      const resource = {
-        token,
-        target,
-        url: resourceUrl(args.publicBrand, token, target),
-      };
+      signal.throwIfAborted();
       // Walk dependency bodies after allocation. Cycles need only each other's
       // reserved URL, never a promise for a recursively completed snapshot.
       resources.set(reference.id, resource);
@@ -660,49 +911,73 @@ export const prepareSharedThreadArtifacts$ = command(
       return resource;
     }
 
-    async function rewrite(content: string): Promise<string> {
-      const replacements = new Map(
-        await mapConcurrent(
-          artifactTextReferences(content),
-          10,
-          async (value) => {
-            const source = value.replaceAll("&amp;", "&");
-            const reference = await get(resourceReference(source, signal));
-            signal.throwIfAborted();
-            if (!reference) {
-              return [value, value] as const;
-            }
-            const resource = await resolve(reference);
-            signal.throwIfAborted();
-            return [value, `${resource.url}${reference.suffix}`] as const;
-          },
-        ),
+    function rewrite(
+      content: string,
+      delivery: "reference" | "bytes",
+    ): Promise<string> {
+      return set(
+        rewriteSnapshotContent$,
+        { ...args, content, delivery, resolve },
+        signal,
       );
-      signal.throwIfAborted();
-      return replaceSnapshotReferences(content, replacements);
     }
 
     const messages = await rewriteSnapshotMessages(
       args.messages,
-      rewrite,
+      (content) => {
+        return rewrite(content, "reference");
+      },
       signal,
     );
     if (resources.size === 0) {
-      return null;
+      return { messages, plan: null };
     }
     // Processing a site may enqueue more sites. Each deployment is allocated
     // once, so nested, repeated, and cyclic references terminate naturally.
     for (const site of hostedQueue) {
       const bundle = await set(
         hostedSnapshotCopies$,
-        { ...args, ...site, budget, rewrite },
+        {
+          ...args,
+          ...site,
+          budget,
+          // HTML and its static dependencies need byte URLs, not App viewers.
+          rewrite: (content) => {
+            return rewrite(content, "bytes");
+          },
+        },
         signal,
       );
       signal.throwIfAborted();
       copies.push(...bundle);
     }
-    const policy = snapshotPolicy(args, resources);
-    return { messages, policy, copies };
+    const previews: NonNullable<SharedThreadArtifactPolicy["previews"]> = {};
+    for (const resource of resources.values()) {
+      if (!resource.previewImageUrl) {
+        continue;
+      }
+      const reference = await get(
+        resourceReference(resource.previewImageUrl, signal),
+      );
+      signal.throwIfAborted();
+      if (!reference || reference.kind === "snapshot") {
+        throw new SharedThreadArtifactUnavailable();
+      }
+      const preview = await resolve(reference);
+      signal.throwIfAborted();
+      if (
+        preview.target.kind !== "file" ||
+        !preview.target.contentType.startsWith("image/")
+      ) {
+        throw new SharedThreadArtifactUnavailable();
+      }
+      previews[resource.token] = {
+        token: preview.token,
+        reference: preview.reference,
+      };
+    }
+    const policy = snapshotPolicy(args, resources, previews);
+    return { messages, plan: { messages, policy, copies } };
   },
 );
 

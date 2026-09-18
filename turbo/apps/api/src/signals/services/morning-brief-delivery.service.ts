@@ -12,6 +12,7 @@ import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-bri
 import {
   morningBriefDeliveries,
   type MorningBriefDeliveryEmailResolution,
+  type MorningBriefDeliveryPurpose,
 } from "@okouai/db/schema/morning-brief-delivery";
 import { morningBriefGenerations } from "@okouai/db/schema/morning-brief-generation";
 import { userCache } from "@okouai/db/schema/user-cache";
@@ -36,18 +37,35 @@ import {
   EMAIL_PUBLIC_BRAND,
 } from "./email-common.service";
 import { currentMorningBriefCollectionAuthority$ } from "./morning-brief-collection-executor.service";
+import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
+import { retainMorningBriefGenerationProofUntil } from "./morning-brief-generation-store.service";
 import {
   lockCollectionOwner,
   type MorningBriefCollectionAdmission,
 } from "./morning-brief-collection-occurrence.service";
 import { MORNING_BRIEF_RESULT_EMAIL_TEMPLATE } from "./morning-brief-native-email-admission.service";
 import {
+  bindMorningBriefNativeThread,
+  lockMorningBriefNativeSchedule,
+  type MorningBriefNativeScheduleRow,
+} from "./morning-brief-native-schedule.service";
+import {
+  appendChatThreadEvent,
+  chatThreadServiceTierFromCodex,
+} from "./chat-thread-event.service";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  excludeMorningBriefChatThread,
+  ORDINARY_CHAT_THREAD_PROVENANCE,
+} from "./morning-brief-thread-provenance.service";
+import {
   MORNING_BRIEF_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS,
   MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
   MorningBriefResultEmailRenderError,
   renderMorningBriefResultEmail,
 } from "./morning-brief-result-email-renderer";
-import { excludeMorningBriefChatThread } from "./morning-brief-thread-provenance.service";
+import { morningBriefDescriptorRetainUntil } from "./morning-brief-source-authority";
 import {
   ensureWorkflowUserAutomationThread,
   loadWorkflowUserAutomationThreadId,
@@ -123,12 +141,36 @@ function rejectionOf(reason: string): MorningBriefDeliveryRejection {
     : "morning-brief-unavailable";
 }
 
-interface MorningBriefDeliveryRequest {
+/**
+ * The validated native execution authority a production delivery must present.
+ *
+ * It is the epoch and membership generation the occurrence was *claimed* under,
+ * not whatever the row holds now: a disable and re-enable, a destination
+ * replacement or a transfer all bump the epoch, and an occurrence admitted
+ * before that must not deliver.
+ */
+interface MorningBriefNativeDeliveryAuthority {
+  readonly ownerEpoch: number;
+  readonly membershipId: string;
+}
+
+type MorningBriefDeliveryRequest = {
   readonly orgId: string;
   readonly userId: string;
-  /** The opaque attempt the generation preview returned. Never an owner. */
+  /** The opaque attempt the generation returned. Never an owner. */
   readonly resultAttemptId: string;
-}
+} & (
+  | {
+      /** Preview is the compatibility default for the operator-only route. */
+      readonly purpose?: "preview";
+      readonly nativeAuthority?: never;
+    }
+  | {
+      /** Production effects always carry the occurrence authority that paid. */
+      readonly purpose: "production";
+      readonly nativeAuthority: MorningBriefNativeDeliveryAuthority;
+    }
+);
 
 function resultDigest(markdown: string): string {
   return createHash("sha256").update(markdown, "utf8").digest("hex");
@@ -169,6 +211,7 @@ async function resolveCachedRecipient(
 interface EmailIntent {
   readonly resolution: MorningBriefDeliveryEmailResolution;
   readonly outboxId: string | null;
+  readonly outboxCreatedAt: Date | null;
 }
 
 /**
@@ -196,12 +239,16 @@ async function resolveEmailIntent(
   },
 ): Promise<EmailIntent> {
   if (args.unsubscribed) {
-    return { resolution: "unsubscribed", outboxId: null };
+    return {
+      resolution: "unsubscribed",
+      outboxId: null,
+      outboxCreatedAt: null,
+    };
   }
 
   const recipient = await resolveCachedRecipient(tx, args.userId);
   if (!recipient) {
-    return { resolution: "no_email", outboxId: null };
+    return { resolution: "no_email", outboxId: null, outboxCreatedAt: null };
   }
 
   const [suppressed] = await tx
@@ -215,7 +262,7 @@ async function resolveEmailIntent(
     )
     .limit(1);
   if (suppressed) {
-    return { resolution: "suppressed", outboxId: null };
+    return { resolution: "suppressed", outboxId: null, outboxCreatedAt: null };
   }
 
   const unsubscribeUrl = buildOneClickUnsubscribeUrl(args.userId);
@@ -238,7 +285,11 @@ async function resolveEmailIntent(
     log.warn("Morning Brief result cannot be carried by email", {
       reason: rendered.error.message,
     });
-    return { resolution: "render_rejected", outboxId: null };
+    return {
+      resolution: "render_rejected",
+      outboxId: null,
+      outboxCreatedAt: null,
+    };
   }
 
   const [row] = await tx
@@ -253,11 +304,15 @@ async function resolveEmailIntent(
       status: "pending",
       attempts: 0,
     })
-    .returning({ id: emailOutbox.id });
+    .returning({ id: emailOutbox.id, createdAt: emailOutbox.createdAt });
   if (!row) {
     throw new Error("Morning Brief email intent was not created");
   }
-  return { resolution: "enqueued", outboxId: row.id };
+  return {
+    resolution: "enqueued",
+    outboxId: row.id,
+    outboxCreatedAt: row.createdAt,
+  };
 }
 
 /** The occurrence one accepted result belongs to. */
@@ -269,6 +324,7 @@ interface ResultAnchor {
 
 interface DeliverableResult {
   readonly membershipId: string;
+  readonly reservedAt: Date;
   readonly title: string;
   readonly markdown: string;
 }
@@ -293,12 +349,13 @@ function generationReferenceCondition(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly resultAttemptId: string;
+  readonly purpose: MorningBriefDeliveryPurpose;
 }) {
   return and(
     eq(morningBriefGenerations.orgId, args.orgId),
     eq(morningBriefGenerations.userId, args.userId),
     eq(morningBriefGenerations.attemptId, args.resultAttemptId),
-    eq(morningBriefGenerations.executionPurpose, "preview"),
+    eq(morningBriefGenerations.executionPurpose, args.purpose),
   );
 }
 
@@ -316,6 +373,7 @@ async function loadResultAnchor(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
   },
 ): Promise<ResultAnchor | undefined> {
   const [row] = await db
@@ -345,12 +403,14 @@ async function loadDeliverableResult(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly at: Date;
   },
 ): Promise<DeliverableResult> {
   const [row] = await tx
     .select({
       membershipId: morningBriefGenerations.membershipId,
+      reservedAt: morningBriefGenerations.reservedAt,
       state: morningBriefGenerations.state,
       decision: morningBriefGenerations.decision,
       title: morningBriefGenerations.resultTitle,
@@ -376,6 +436,7 @@ async function loadDeliverableResult(
   }
   return {
     membershipId: row.membershipId,
+    reservedAt: row.reservedAt,
     title: row.title,
     markdown: row.markdown,
   };
@@ -394,6 +455,7 @@ async function loadDeliveryByAttempt(
     readonly orgId: string;
     readonly userId: string;
     readonly resultAttemptId: string;
+    readonly purpose: MorningBriefDeliveryPurpose;
   },
 ) {
   const [row] = await db
@@ -408,7 +470,7 @@ async function loadDeliveryByAttempt(
       and(
         eq(morningBriefDeliveries.orgId, args.orgId),
         eq(morningBriefDeliveries.userId, args.userId),
-        eq(morningBriefDeliveries.executionPurpose, "preview"),
+        eq(morningBriefDeliveries.executionPurpose, args.purpose),
         eq(morningBriefDeliveries.resultAttemptId, args.resultAttemptId),
       ),
     )
@@ -673,15 +735,23 @@ async function lockSubscription(
  * Returns the committed delivery when this occurrence already has one, so the
  * caller can answer a repeat request without preparing a destination.
  */
+type DeliveryAdmission =
+  | CommittedDelivery
+  | {
+      readonly kind: "admitted";
+      readonly native: MorningBriefNativeScheduleRow | null;
+    };
+
 async function admitDelivery(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
   },
   signal: AbortSignal,
-): Promise<CommittedDelivery | null> {
+): Promise<DeliveryAdmission> {
   const { request, anchor, current } = args;
   const owner = { orgId: request.orgId, userId: request.userId };
 
@@ -689,6 +759,24 @@ async function admitDelivery(
   // collection and generation take them.
   if (!(await lockCollectionOwner(tx, owner))) {
     throw new DeliveryRejected("owner-revoked");
+  }
+
+  let native: MorningBriefNativeScheduleRow | null = null;
+  if (args.purpose === "production") {
+    const presented = request.nativeAuthority;
+    const locked = await lockMorningBriefNativeSchedule(tx, owner);
+    if (
+      presented === undefined ||
+      locked === undefined ||
+      (locked.phase !== "native" && locked.phase !== "rollback-draining") ||
+      !locked.enabled ||
+      locked.ownerEpoch !== presented.ownerEpoch ||
+      locked.membershipId !== presented.membershipId ||
+      locked.agentId !== current.agentId
+    ) {
+      throw new DeliveryRejected("owner-revoked");
+    }
+    native = locked;
   }
 
   // The occurrence row is this delivery's serialization point. Two callers for
@@ -725,12 +813,13 @@ async function admitDelivery(
   await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: nowDate(),
   });
 
   await lockUsableAgent(tx, owner, current.agentId);
   throwIfCancelled(signal);
-  return null;
+  return { kind: "admitted", native };
 }
 
 /** The installation name the canonical thread binding is created under. */
@@ -779,10 +868,135 @@ async function lockEnabledAutomation(
   }
 }
 
+async function createNativeDestinationThread(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  schedule: MorningBriefNativeScheduleRow,
+): Promise<string> {
+  const modelSettings = await loadNewChatThreadModelSettings(tx, owner);
+  const [thread] = await tx
+    .insert(chatThreads)
+    .values({
+      userId: owner.userId,
+      agentId: schedule.agentId,
+      title: "Morning Brief",
+      provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
+      lastReadAt: sql`NOW()`,
+      modelProviderId: null,
+      modelProviderType: null,
+      modelProviderCredentialScope: null,
+      selectedModel: null,
+      modelSettings,
+      codexServiceTier: null,
+      selectedVideoModel: null,
+      selectedImageModel: null,
+    })
+    .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
+  if (thread === undefined) {
+    throw new DeliveryRejected("destination-unavailable");
+  }
+  await appendChatThreadEvent(tx, {
+    kind: "created",
+    userId: owner.userId,
+    orgId: owner.orgId,
+    chatThreadId: thread.id,
+    agentId: schedule.agentId,
+    eventId: undefined,
+    title: "Morning Brief",
+    selectedModel: null,
+    modelSettings,
+    serviceTier: chatThreadServiceTierFromCodex(null),
+    computerUseHostId: null,
+    cloudBrowserEnabled: false,
+    selectedVideoModel: null,
+    selectedImageModel: null,
+    createdAt: thread.createdAt,
+  });
+  if (
+    !(await bindMorningBriefNativeThread(tx, owner, {
+      expectedEpoch: schedule.ownerEpoch,
+      agentId: schedule.agentId,
+      chatThreadId: thread.id,
+      at: nowDate(),
+    }))
+  ) {
+    throw new DeliveryRejected("owner-revoked");
+  }
+  return thread.id;
+}
+
+async function resolveNativeDestinationThread(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+  schedule: MorningBriefNativeScheduleRow,
+): Promise<string> {
+  if (schedule.chatThreadId === null) {
+    return await createNativeDestinationThread(tx, owner, schedule);
+  }
+  const [thread] = await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, schedule.chatThreadId),
+        eq(chatThreads.userId, owner.userId),
+        eq(chatThreads.agentId, schedule.agentId),
+        chatThreadOrganizationCondition(tx, owner.orgId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (thread === undefined) {
+    throw new DeliveryRejected("destination-unavailable");
+  }
+  return thread.id;
+}
+
+/** Persist the immutable S6 receipt after every authority wait has completed. */
+async function insertDeliveryReceipt(
+  tx: Tx,
+  args: {
+    readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
+    readonly anchor: ResultAnchor;
+    readonly current: MorningBriefCollectionAdmission;
+    readonly chatThreadId: string;
+    readonly chatEventId: string;
+    readonly deliveredAt: Date;
+    readonly resultMarkdown: string;
+    readonly emailResolution: Awaited<
+      ReturnType<typeof resolveEmailIntent>
+    >["resolution"];
+    readonly emailOutboxId: string | null;
+  },
+): Promise<void> {
+  await tx.insert(morningBriefDeliveries).values({
+    orgId: args.request.orgId,
+    userId: args.request.userId,
+    scheduledFor: args.anchor.scheduledFor,
+    collectionKind: args.anchor.collectionKind,
+    collectionVersion: args.anchor.collectionVersion,
+    executionPurpose: args.purpose,
+    resultAttemptId: args.request.resultAttemptId,
+    membershipId: args.current.membershipId,
+    nativeOwnerEpoch: args.request.nativeAuthority?.ownerEpoch ?? null,
+    workflowId: args.current.workflowId,
+    automationId: args.current.automationId,
+    agentId: args.current.agentId,
+    chatThreadId: args.chatThreadId,
+    chatEventId: args.chatEventId,
+    resultDigest: resultDigest(args.resultMarkdown),
+    emailResolution: args.emailResolution,
+    emailOutboxId: args.emailOutboxId,
+    deliveredAt: args.deliveredAt,
+  });
+}
+
 async function deliverInTransaction(
   tx: Tx,
   args: {
     readonly request: MorningBriefDeliveryRequest;
+    readonly purpose: MorningBriefDeliveryPurpose;
     readonly anchor: ResultAnchor;
     readonly current: MorningBriefCollectionAdmission;
   },
@@ -790,36 +1004,44 @@ async function deliverInTransaction(
 ): Promise<CommittedDelivery> {
   const { request, anchor, current } = args;
   const owner = { orgId: request.orgId, userId: request.userId };
-
   const admitted = await admitDelivery(tx, args, signal);
-  if (admitted) {
+  if (admitted.kind !== "admitted") {
     return admitted;
   }
 
-  const workflowName = await loadInstallationName(tx, {
-    orgId: request.orgId,
-    workflowId: current.workflowId,
-  });
+  let chatThreadId: string;
+  if (admitted.native !== null) {
+    chatThreadId = await resolveNativeDestinationThread(
+      tx,
+      owner,
+      admitted.native,
+    );
+  } else {
+    const workflowName = await loadInstallationName(tx, {
+      orgId: request.orgId,
+      workflowId: current.workflowId,
+    });
 
-  // Thread, then binding, then automation: the exact order thread deletion
-  // takes across the same rows. Delivery must never hold the automation while
-  // waiting for a thread that a deletion holds.
-  const chatThreadId = await resolveDestinationThread(tx, {
-    orgId: request.orgId,
-    userId: request.userId,
-    workflowId: current.workflowId,
-    agentId: current.agentId,
-    workflowName,
-    at: nowDate(),
-  });
+    // Thread, then binding, then automation: the exact order thread deletion
+    // takes across the same rows. Delivery must never hold the automation while
+    // waiting for a thread that a deletion holds.
+    chatThreadId = await resolveDestinationThread(tx, {
+      orgId: request.orgId,
+      userId: request.userId,
+      workflowId: current.workflowId,
+      agentId: current.agentId,
+      workflowName,
+      at: nowDate(),
+    });
 
-  await lockEnabledAutomation(tx, {
-    orgId: request.orgId,
-    userId: request.userId,
-    workflowId: current.workflowId,
-    automationId: current.automationId,
-  });
-  throwIfCancelled(signal);
+    await lockEnabledAutomation(tx, {
+      orgId: request.orgId,
+      userId: request.userId,
+      workflowId: current.workflowId,
+      automationId: current.automationId,
+    });
+    throwIfCancelled(signal);
+  }
 
   // The last admission wait. Everything after it is local work only.
   const subscription = await lockSubscription(tx, request.userId);
@@ -834,6 +1056,7 @@ async function deliverInTransaction(
   const result = await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: acceptedAt,
   });
   if (result.membershipId !== current.membershipId) {
@@ -871,6 +1094,7 @@ async function deliverInTransaction(
   await loadDeliverableResult(tx, {
     ...owner,
     resultAttemptId: request.resultAttemptId,
+    purpose: args.purpose,
     at: nowDate(),
   });
 
@@ -883,25 +1107,31 @@ async function deliverInTransaction(
     title: result.title,
     markdown: result.markdown,
   });
+  if (intent.outboxCreatedAt !== null) {
+    const retained = await retainMorningBriefGenerationProofUntil(tx, {
+      owner,
+      attemptId: request.resultAttemptId,
+      retainedUntil: morningBriefDescriptorRetainUntil(
+        result.reservedAt,
+        intent.outboxCreatedAt,
+      ),
+    });
+    if (!retained) {
+      throw new DeliveryRejected("result-not-found");
+    }
+  }
 
-  await tx.insert(morningBriefDeliveries).values({
-    orgId: request.orgId,
-    userId: request.userId,
-    scheduledFor: anchor.scheduledFor,
-    collectionKind: anchor.collectionKind,
-    collectionVersion: anchor.collectionVersion,
-    executionPurpose: "preview",
-    resultAttemptId: request.resultAttemptId,
-    membershipId: current.membershipId,
-    workflowId: current.workflowId,
-    automationId: current.automationId,
-    agentId: current.agentId,
+  await insertDeliveryReceipt(tx, {
+    request,
+    purpose: args.purpose,
+    anchor,
+    current,
     chatThreadId,
     chatEventId: appended.id,
-    resultDigest: resultDigest(result.markdown),
+    deliveredAt: appended.createdAt,
+    resultMarkdown: result.markdown,
     emailResolution: intent.resolution,
     emailOutboxId: intent.outboxId,
-    deliveredAt: appended.createdAt,
   });
 
   return {
@@ -922,6 +1152,7 @@ export const deliverMorningBriefResult$ = command(
   ): Promise<MorningBriefDeliveryResult> => {
     const db = set(writeDb$);
     const owner = { orgId: request.orgId, userId: request.userId };
+    const purpose: MorningBriefDeliveryPurpose = request.purpose ?? "preview";
 
     // A delivery that already committed is recoverable from the reference the
     // caller still holds, even after the generation row has been swept. This
@@ -931,6 +1162,7 @@ export const deliverMorningBriefResult$ = command(
     const recovered = await loadDeliveryByAttempt(db, {
       ...owner,
       resultAttemptId: request.resultAttemptId,
+      purpose,
     });
     signal.throwIfAborted();
     if (recovered) {
@@ -948,10 +1180,33 @@ export const deliverMorningBriefResult$ = command(
     const anchor = await loadResultAnchor(db, {
       ...owner,
       resultAttemptId: request.resultAttemptId,
+      purpose,
     });
     signal.throwIfAborted();
     if (!anchor) {
       return { kind: "rejected", reason: "result-not-found" };
+    }
+
+    // Re-run the same source-specific proof S5 used. This is outside the Chat
+    // transaction because connector and Slack checks can reach the network.
+    const sourceRefusal = await set(
+      revalidateMorningBriefStoredGenerationSources$,
+      {
+        owner,
+        resultAttemptId: request.resultAttemptId,
+        purpose,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (sourceRefusal !== null) {
+      return {
+        kind: "rejected",
+        reason:
+          sourceRefusal === "result-not-found"
+            ? "result-not-found"
+            : "owner-revoked",
+      };
     }
 
     // The live canonical authority, resolved through the collection executor's
@@ -959,7 +1214,11 @@ export const deliverMorningBriefResult$ = command(
     // it runs before the transaction opens and never inside one.
     const authority = await set(
       currentMorningBriefCollectionAuthority$,
-      { owner, scheduledFor: anchor.scheduledFor },
+      {
+        owner,
+        scheduledFor: anchor.scheduledFor,
+        collectionKind: anchor.collectionKind,
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -974,7 +1233,7 @@ export const deliverMorningBriefResult$ = command(
       db.transaction(async (tx) => {
         return await deliverInTransaction(
           tx,
-          { request, anchor, current: authority.admission },
+          { request, purpose, anchor, current: authority.admission },
           signal,
         );
       }),

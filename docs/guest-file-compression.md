@@ -15,16 +15,16 @@ store a connection-wide compression mode. Concurrent callers choose independentl
 Ordinary `write_file`, private-file and batch APIs keep their existing raw paths.
 The first compression consumer is Runner's shared session-history restore writer.
 It keeps native-zstd histories and raw histories below 16 MiB uncompressed on the
-wire. For larger raw histories it samples eight evenly distributed 64 KiB windows;
-each must compress to at most half its original size before it opts into zstd.
-Sampling copies at most 512 KiB into an owned worker, checks cancellation between
-windows and joins that worker on completion or drop.
+wire. Raw histories of at least 16 MiB use zstd fast directly, including mixed or
+poorly compressible content. Selection reads only the representation and byte
+length; it does not sample, copy history bytes or start a selection worker.
 
-The threshold and sample are conservative initial business policy, not a universal
-compression-benefit guarantee. Heterogeneous content can pass the sample and still
-compress poorly. Encoding can then increase CPU without materially reducing bytes.
-Small files and known already-compressed representations do not pay that sampling
-or encoding cost. Selection errors propagate instead of fabricating a raw result.
+The threshold is business policy, not a universal compression-benefit guarantee.
+Encoding low-benefit content can increase CPU and wire bytes. Small files and
+known already-compressed representations do not pay that encoding cost. The
+existing bounded encoder, cancellation, cleanup and failure behavior still apply;
+a compressed write failure propagates without a raw retry. Production latency,
+CPU, memory and failure outcomes require measurement after deployment.
 
 ## Protocol and resources
 
@@ -65,7 +65,7 @@ operations have been fenced. Compression does not create a separate bypass lane.
 
 Runner, guest-init/control server and file helper ship as one artifact. Mixed
 versions of those binaries are not supported; no codec negotiation or compatibility
-fallback is added. API contracts and persisted representations are unchanged.
+fallback is added. The Guest protocol and persisted representations are unchanged.
 Existing raw and native-zstd histories remain readable by old and new Runners.
 Restored-byte telemetry continues to count logical file bytes, not wire bytes.
 
@@ -73,7 +73,10 @@ The file client also returns successful per-file payload and Host timing
 measurements through the Sandbox compression API. History restores expose these
 separately from representation metadata; see
 [history transfer measurements](workspace-history-restore-telemetry.md#history-transfer-measurements).
-They do not change codec selection or file semantics. Encoder pipeline wall
+New Runners report the optional `session_history_codec_decision` field. Old APIs
+strip that unknown field and accept the remaining measurements; new APIs retain
+the optional legacy `session_history_codec_reason` field for draining Runners.
+No new value is emitted into the old strict enum. Encoder pipeline wall
 time includes backpressure and overlaps request time, rather than measuring
 isolated encoding CPU.
 
@@ -82,6 +85,7 @@ concurrent caller choices, preserved raw/private/batch writes and actual history
 restore selection. Isolated synthetic measurements are implementation evidence,
 not a claim about production startup p90 or zero CPU regression. Selective
 compression was delivered under the closed
-[#32931](https://github.com/vm0-ai/okou/issues/32931); follow-up attribution and
-the optimization/no-change decision belong to
+[#32931](https://github.com/vm0-ai/okou/issues/32931); default compression for large
+raw histories is tracked by [#35270](https://github.com/vm0-ai/okou/issues/35270).
+Production attribution and the optimization outcome remain on
 [#34728](https://github.com/vm0-ai/okou/issues/34728).

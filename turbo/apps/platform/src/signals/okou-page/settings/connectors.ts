@@ -51,7 +51,6 @@ import {
   resetSignal,
   waitLoopUntil,
   waitForOperation,
-  settle,
   tapError,
   withCleanup,
 } from "../../utils.ts";
@@ -79,7 +78,6 @@ import {
   readConnectorAccountCount,
   readConnectorOAuthCompletion,
 } from "./connector-accounts.ts";
-import { syncGoogleAdsConversionMilestones$ } from "../../bootstrap/google-ads-conversion-milestones.ts";
 
 type PostConnectOptions = {
   readonly authorizeVisibleAgents?: boolean;
@@ -1012,7 +1010,6 @@ const finishConnectorConnection$ = command(
     if (options.clearSelectedConnector) {
       set(internalSelectedConnectorSlug$, null);
     }
-    await settle(set(syncGoogleAdsConversionMilestones$, signal), signal);
     return true;
   },
 );

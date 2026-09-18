@@ -1,5 +1,73 @@
 # Changelog
 
+## [1.5.0](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.82...host-worker-v1.5.0) (2026-09-18)
+
+
+### Features
+
+* publish immutable sites and reuse private previews ([#35244](https://github.com/vm0-ai/okou/issues/35244)) ([899075c](https://github.com/vm0-ai/okou/commit/899075caeca519ac9202fa17bc9177e18258a58c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.472.0
+
+## [1.4.82](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.81...host-worker-v1.4.82) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.471.0
+
+## [1.4.81](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.80...host-worker-v1.4.81) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.470.0
+
+## [1.4.80](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.79...host-worker-v1.4.80) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.1
+
+## [1.4.79](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.78...host-worker-v1.4.79) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.0
+
+## [1.4.78](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.77...host-worker-v1.4.78) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.468.0
+
+## [1.4.77](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.76...host-worker-v1.4.77) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.467.0
+
 ## [1.4.76](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.75...host-worker-v1.4.76) (2026-09-18)
 
 

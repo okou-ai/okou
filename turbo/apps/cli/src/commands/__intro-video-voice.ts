@@ -3,6 +3,7 @@ import chalk from "chalk";
 
 import { generateWebIntroVideoVoice } from "../lib/api/domains/web";
 import { withErrorHandler } from "../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../lib/command/paid-tools";
 import { createArtifactPresentation } from "./shared/artifact-return";
 
 interface IntroVideoVoiceCommandOptions {
@@ -35,6 +36,7 @@ function parseNarration(value: string): string {
 async function runIntroVideoVoiceCommand(
   options: IntroVideoVoiceCommandOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("voice-generation");
   const result = await generateWebIntroVideoVoice({
     voiceId: options.voiceId,
     text: options.text,
@@ -43,6 +45,7 @@ async function runIntroVideoVoiceCommand(
     result.filename,
     result.url,
     "This result is narration audio that can be used in subsequent video composition.",
+    result,
   );
   if (options.json) {
     console.log(JSON.stringify({ ...result, ...presentation.json }));

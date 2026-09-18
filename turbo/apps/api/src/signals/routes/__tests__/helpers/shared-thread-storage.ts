@@ -131,6 +131,14 @@ export function installSharedThreadStorage(context: TestContext) {
   const otherStorage = context.mocks.s3.send.getMockImplementation();
   let rejectCopies = false;
   context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+    if (
+      command instanceof GetObjectCommand &&
+      command.input.Key?.includes("/thread-shares/")
+    ) {
+      return Promise.resolve(
+        `https://attachment-storage.example/${command.input.Bucket}/${command.input.Key}?X-Amz-Signature=fixture`,
+      );
+    }
     if (!(command instanceof PutObjectCommand)) {
       return Promise.resolve("https://attachment-storage.example/download");
     }
@@ -198,6 +206,15 @@ export function installSharedThreadStorage(context: TestContext) {
         metadata: upload.input.Metadata ?? {},
       });
       return new HttpResponse(null, { status: 200 });
+    }),
+    http.get("https://attachment-storage.example/*", ({ request }) => {
+      const key = decodeURIComponent(new URL(request.url).pathname.slice(1));
+      const object = objects.get(key);
+      return object
+        ? new HttpResponse(new Uint8Array(object.bytes), {
+            headers: { "Content-Type": object.contentType },
+          })
+        : new HttpResponse(null, { status: 404 });
     }),
     http.get("https://a.okou.io/*", ({ request }) => {
       const alias = new URL(request.url).pathname.slice(1);

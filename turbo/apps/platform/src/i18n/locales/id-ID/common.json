@@ -540,12 +540,14 @@
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",
+      "syncedSlides": "Tersinkron ke Google Slides",
       "syncFailed": "Gagal menyinkronkan ke Google Drive",
       "syncingArtifact": "Menyinkronkan artefak...",
       "syncingFiles_one": "Menyinkronkan {{count}} file...",
       "syncingFiles_other": "Menyinkronkan {{count}} file...",
       "syncingNamed": "Menyinkronkan {{filename}}...",
-      "upload": "Unggah ke Google Drive"
+      "upload": "Unggah ke Google Drive",
+      "uploadSlides": "Unggah ke Google Slides"
     },
     "kinds": {
       "audio": "Audio",
@@ -5801,6 +5803,73 @@
         "resetTimePassedTitle": "Waktu reset telah lewat"
       }
     },
+    "paidTools": {
+      "description": "Pilih alat bawaan berbayar yang dapat Anda gunakan.",
+      "disabledForCreation": "{{tool}} dinonaktifkan di pengaturan alat berbayar Anda.",
+      "loadError": "Pengaturan alat tidak dapat dimuat.",
+      "loading": "Memuat pengaturan alat…",
+      "openSettings": "Buka pengaturan alat berbayar",
+      "retry": "Coba lagi",
+      "saveError": "Perubahan Anda tidak tersimpan.",
+      "saving": "Menyimpan…",
+      "scope": "Pengaturan ini hanya berlaku untuk Anda di {{workspace}}.",
+      "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
+      "title": "Alat berbayar",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "Buat video avatar berbicara.",
+          "name": "Pembuatan video avatar"
+        },
+        "finance": {
+          "description": "Cari perusahaan, harga, dan data pasar.",
+          "name": "Data keuangan"
+        },
+        "image-generation": {
+          "description": "Buat gambar dengan model bawaan.",
+          "name": "Pembuatan gambar"
+        },
+        "image-recognition": {
+          "description": "Baca dan analisis gambar.",
+          "name": "Pengenalan gambar"
+        },
+        "maps": {
+          "description": "Temukan tempat, alamat, dan rute.",
+          "name": "Peta dan tempat"
+        },
+        "people-search": {
+          "description": "Temukan profil profesional publik.",
+          "name": "Pencarian orang"
+        },
+        "scrape": {
+          "description": "Baca dan ekstrak konten halaman web.",
+          "name": "Ekstraksi halaman"
+        },
+        "seo": {
+          "description": "Teliti peringkat pencarian, kata kunci, dan backlink.",
+          "name": "Riset SEO"
+        },
+        "social": {
+          "description": "Teliti postingan sosial publik dan kumpulkan media.",
+          "name": "Riset sosial"
+        },
+        "video-generation": {
+          "description": "Buat video dengan model bawaan.",
+          "name": "Pembuatan video"
+        },
+        "video-rendering": {
+          "description": "Render komposisi video di cloud.",
+          "name": "Rendering video"
+        },
+        "voice-generation": {
+          "description": "Buat ucapan dengan suara bawaan.",
+          "name": "Pembuatan suara"
+        },
+        "web-search": {
+          "description": "Temukan informasi terkini di web.",
+          "name": "Pencarian web"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Kelola",
@@ -6342,13 +6411,14 @@
     "custom": "Kustom",
     "detail": {
       "back": "Templat kustom",
-      "page": "Halaman {{number}}"
+      "page": "Halaman {{number}}",
+      "source_other": "{{count}} halaman · dari {{filename}}",
+      "sourceFile": "Dari {{filename}}"
     },
     "empty": {
       "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."
     },
     "loadFailed": "Tidak dapat memuat templat.",
-    "pageCount_other": "{{count}} halaman",
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",

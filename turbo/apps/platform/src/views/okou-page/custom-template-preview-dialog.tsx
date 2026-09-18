@@ -141,10 +141,48 @@ function CustomTemplateSourcePreview({
 }
 
 /**
+ * An illustration, as the picture it was reversed from.
+ *
+ * Its source is already something a browser can draw, so nothing renders it
+ * but an `img`. The branch is chosen by the row's kind rather than by the
+ * filename: the kind is what decided at publish that this source had to be an
+ * image, so reading it back is reading the same decision, while sniffing the
+ * extension here would be a second rule that can disagree with it.
+ */
+function CustomTemplateIllustration({
+  detail,
+}: {
+  readonly detail: UserTemplateDetail;
+}) {
+  const { t } = useTranslation();
+  const title = t(
+    ($) => {
+      return $.artifacts.preview.dialogLabel;
+    },
+    { filename: detail.sourceFilename },
+  );
+  return (
+    // `contain` rather than `cover`: a reference is judged by its whole frame —
+    // how much of the sheet the art covers, where it sits, how wide the margin
+    // is — and cropping to fill the dialog would take exactly those away. The
+    // muted ground behind it is what gives a picture on white paper, or one
+    // with a transparent corner, an edge to be seen against.
+    <div className="flex min-h-80 flex-1 items-center justify-center overflow-auto rounded-lg border border-border bg-muted p-6">
+      <img
+        src={detail.sourceUrl}
+        alt={title}
+        className="max-h-full max-w-full object-contain"
+        data-testid="custom-template-source-preview"
+      />
+    </div>
+  );
+}
+
+/**
  * What an open template shows, which follows what it has.
  *
- * A deck ships rendered pages and a document ships none, so each is drawn from
- * what it actually carries. Every kind answers for itself rather than one
+ * A deck ships rendered pages and the other kinds ship none, so each is drawn
+ * from what it actually carries. Every kind answers for itself rather than one
  * being what the others fall through to, so a kind added to the catalog fails
  * this switch until someone says what looking at it means.
  */
@@ -159,6 +197,9 @@ function CustomTemplatePreviewBody({
     }
     case "document": {
       return <CustomTemplateSourcePreview detail={detail} />;
+    }
+    case "illustration": {
+      return <CustomTemplateIllustration detail={detail} />;
     }
   }
 }

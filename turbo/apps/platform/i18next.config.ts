@@ -38,6 +38,8 @@ export default defineConfig({
       "onboarding.make.options.*",
       "onboarding.templates.*.*",
       "onboarding.workflows.*",
+      // Paid tool rows select copy by the shared tool catalog at runtime.
+      "settings.paidTools.tools.*",
     ],
     primaryLanguage: "en-US",
     useTranslationNames: ["useTranslation"],

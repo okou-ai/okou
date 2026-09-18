@@ -10,21 +10,32 @@ import {
 } from "@aws-sdk/client-s3";
 import { beforeEach, expect, onTestFinished, test } from "vitest";
 import { http, HttpResponse } from "msw";
+import { z } from "zod";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
 import { completeHostedSiteWithoutDependencyIndex } from "../../../test-fixtures/hosted-site-dependencies-previous-api";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
+import {
+  artifactReferencePath,
+  artifactReferencesContract,
+} from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { signSandboxJwtForTests } from "../../auth/tokens";
 import { artifactShareRoutes } from "../artifact-shares";
+import { artifactReferenceRoutes } from "../artifact-references";
+import { artifactDownloadRoutes } from "../artifact-downloads";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { hostRoutes } from "../host";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -46,6 +57,8 @@ beforeEach(() => {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
+  mockEnv("R2_HOSTED_SITES_ACCESS_KEY_ID", "snapshot-hosted-key");
+  mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", "snapshot-private-key");
 });
 
 function api(rethrowErrors = false) {
@@ -56,6 +69,8 @@ function api(rethrowErrors = false) {
       ...sharedThreadRoutes,
       ...featureSwitchesRoutes,
       ...artifactShareRoutes,
+      ...artifactReferenceRoutes,
+      ...artifactDownloadRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
     ],
@@ -109,7 +124,7 @@ async function fixture() {
   const copies: { source: string; destination: string }[] = [];
 
   context.mocks.s3.getSignedUrl.mockImplementation(
-    (_client: unknown, command: unknown) => {
+    (client: unknown, command: unknown) => {
       if (
         !(
           command instanceof PutObjectCommand ||
@@ -118,9 +133,30 @@ async function fixture() {
       ) {
         throw new Error("Unexpected presign operation");
       }
-      return Promise.resolve(
+      const url = new URL(
         `https://test.r2.cloudflarestorage.com/${command.input.Bucket}/${command.input.Key}?X-Amz-Signature=fixture`,
       );
+      const configured = z
+        .object({
+          config: z.object({
+            credentials: z.object({ accessKeyId: z.string() }),
+          }),
+        })
+        .parse(client);
+      url.searchParams.set(
+        "X-Amz-Credential",
+        configured.config.credentials.accessKeyId,
+      );
+      if (
+        command instanceof GetObjectCommand &&
+        command.input.ResponseContentDisposition
+      ) {
+        url.searchParams.set(
+          "response-content-disposition",
+          command.input.ResponseContentDisposition,
+        );
+      }
+      return Promise.resolve(url.href);
     },
   );
   function putSnapshotObject(command: PutObjectCommand) {
@@ -229,15 +265,42 @@ async function fixture() {
     }
     return originalSend(command);
   });
+  server.use(
+    http.get("https://test.r2.cloudflarestorage.com/*", ({ request }) => {
+      const url = new URL(request.url);
+      const key = decodeURIComponent(url.pathname.slice(1));
+      const credential = key.startsWith("test-hosted-sites/")
+        ? "snapshot-hosted-key"
+        : "snapshot-private-key";
+      if (url.searchParams.get("X-Amz-Credential") !== credential) {
+        return new HttpResponse("AccessDenied", { status: 403 });
+      }
+      const body = objects.get(key);
+      const disposition = url.searchParams.get("response-content-disposition");
+      return body
+        ? new HttpResponse(new Uint8Array(body), {
+            headers: disposition ? { "Content-Disposition": disposition } : {},
+          })
+        : new HttpResponse(null, { status: 404 });
+    }),
+  );
   await flag(actor, true);
 
-  async function upload(owner = actor, content = "Original generated PDF") {
+  async function upload(
+    owner = actor,
+    content = "Original generated PDF",
+    options: {
+      filename?: string;
+      contentType?: string;
+      bearerToken?: string;
+    } = {},
+  ) {
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers: headers(owner),
         body: {
-          filename: "report.pdf",
-          contentType: "application/pdf",
+          filename: options.filename ?? "report.pdf",
+          contentType: options.contentType ?? "application/pdf",
           size: Buffer.byteLength(content),
           purpose: "artifact",
         },
@@ -253,7 +316,9 @@ async function fixture() {
     objects.set(key, Buffer.from(content));
     await accept(
       api()(uploadsContract).complete({
-        headers: headers(owner),
+        headers: options.bearerToken
+          ? { authorization: `Bearer ${options.bearerToken}` }
+          : headers(owner),
         body: { id: prepared.body.id },
       }),
       [200],
@@ -288,16 +353,21 @@ async function fixture() {
     if (!event) {
       throw new Error("Expected selected message");
     }
-    return { threadId, eventId: event.id, content };
+    if (!runId) {
+      throw new Error("Expected a run for the selected message");
+    }
+    return { threadId, runId, eventId: event.id, content };
   }
 
   async function site(
     files: { path: string; content: string; contentType?: string }[],
     name = `snapshot-${randomUUID().slice(0, 8)}`,
     legacy = false,
+    bearerToken?: string,
   ) {
     const host = createHostMapsBddApi(context);
-    const prepared = await host.prepareHostedSite(actor, {
+    const hostActor = bearerToken ? { bearerToken } : actor;
+    const prepared = await host.prepareHostedSite(hostActor, {
       site: name,
       artifactKind: "hosted-site",
       spaFallback: true,
@@ -329,7 +399,7 @@ async function fixture() {
         orgId: actor.orgId,
       });
     } else {
-      await host.completeHostedSite(actor, prepared.deploymentId);
+      await host.completeHostedSite(hostActor, prepared.deploymentId);
     }
     return {
       ...prepared,
@@ -352,6 +422,12 @@ function share(
   });
 }
 
+function referenceName(url: string): string {
+  return new URL(url, "https://app.okou.ai").pathname.slice(
+    "/artifacts/".length,
+  );
+}
+
 test("copies only selected artifacts, rewrites the snapshot, and preserves source messages and permissions", async () => {
   const f = await fixture();
   const file = await f.upload();
@@ -366,10 +442,12 @@ test("copies only selected artifacts, rewrites the snapshot, and preserves sourc
     [200],
   );
   const content = shared.body.messages[0]!.content;
-  const urls = content.match(/https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf/gu);
+  const urls = content.match(
+    /https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf/gu,
+  );
   expect(urls).toHaveLength(2);
   expect(new Set(urls).size).toBe(1);
-  expect(content).not.toContain("/artifacts/");
+  expect(urls![0]).not.toBe(new URL(file.url, "https://app.okou.ai").href);
   expect(content).not.toContain("Signature");
   expect(
     f.copies.filter((copy) => {
@@ -385,7 +463,14 @@ test("copies only selected artifacts, rewrites the snapshot, and preserves sourc
     return entry.source === file.key;
   })!;
   f.objects.set(file.key, Buffer.from("Changed original"));
-  expect(f.objects.get(copy.destination)?.toString()).toBe(
+  const resolved = await accept(
+    api()(artifactReferencesContract).resolve({
+      params: { reference: referenceName(urls![0]!) },
+    }),
+    [200],
+  );
+  expect(resolved.body.url).toContain(copy.destination);
+  await expect((await fetch(resolved.body.url)).text()).resolves.toBe(
     "Original generated PDF",
   );
   const source = await chat.listThreadEvents(f.actor, selection.threadId);
@@ -429,6 +514,419 @@ test("leaves ordinary relative API paths unchanged", async () => {
   expect(f.copies).toStrictEqual([]);
 });
 
+test("preserves existing snapshot links and qualifies hostless ones when sharing them again", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const originalSelection = await f.selection(file.url);
+  const first = await accept(share(f.actor, originalSelection), [201]);
+  const firstView = await accept(
+    api()(sharedThreadsContract).get({ params: { id: first.body.id } }),
+    [200],
+  );
+  const snapshotUrl = firstView.body.messages[0]!.content;
+  const source = `${snapshotUrl} ${new URL(snapshotUrl).pathname}`;
+  const secondSelection = await f.selection(source);
+  const second = await accept(share(f.actor, secondSelection), [201]);
+  const secondView = await accept(
+    api()(sharedThreadsContract).get({ params: { id: second.body.id } }),
+    [200],
+  );
+  expect(secondView.body.messages[0]!.content).toBe(
+    `${snapshotUrl} ${snapshotUrl}`,
+  );
+  expect(f.copies).toHaveLength(1);
+  const original = await chat.listThreadEvents(
+    f.actor,
+    secondSelection.threadId,
+  );
+  expect(JSON.stringify(original.events)).toContain(source);
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: first.body.id },
+    }),
+    [204],
+  );
+  await accept(
+    api()(sharedThreadsContract).get({ params: { id: second.body.id } }),
+    [200],
+  );
+  await accept(
+    api()(artifactReferencesContract).resolve({
+      params: { reference: referenceName(snapshotUrl) },
+    }),
+    [404],
+  );
+});
+
+test("resolves a public snapshot to copied bytes without exposing its private source or management APIs", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const selection = await f.selection(file.url);
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const reference = referenceName(shared.body.messages[0]!.content);
+  const resolved = await accept(
+    api()(artifactReferencesContract).resolve({ params: { reference } }),
+    [200],
+  );
+  expect(resolved.body).toMatchObject({
+    filename: "report.pdf",
+    contentType: "application/pdf",
+  });
+  expect(resolved.body).not.toHaveProperty("previewImageUrl");
+  expect(resolved.body.url).toContain(`/thread-shares/${created.body.id}/`);
+  expect(resolved.body.url).toContain("X-Amz-Signature=");
+  expect(resolved.headers.get("cache-control")).toBe("private, no-store");
+  const outsider = bdd.user({ orgId: null });
+  const downloads = api()(artifactDownloadsContract);
+  const download = () => {
+    return downloads.download({
+      headers: headers(outsider),
+      params: { reference },
+    });
+  };
+  const downloaded = await accept(download(), [200]);
+  expect(downloaded.body).toStrictEqual({
+    kind: "file",
+    filename: "report.pdf",
+    contentType: "application/pdf",
+    url: resolved.body.url,
+  });
+  const cloneFile = await accept(
+    downloads.files({
+      headers: headers(outsider),
+      params: { reference },
+    }),
+    [404],
+  );
+  expect(cloneFile.body).not.toHaveProperty("files");
+  expect(cloneFile.body).not.toHaveProperty("url");
+  const published = await accept(
+    api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+    [200],
+  );
+  expect(published.body).toMatchObject({
+    url: resolved.body.url,
+    preview: { filename: "report.pdf", contentType: "application/pdf" },
+  });
+  expect(published.body.preview).not.toHaveProperty("previewImageUrl");
+  await accept(
+    api()(artifactReferencesContract).resolve({
+      params: { reference: referenceName(file.url) },
+    }),
+    [401],
+  );
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: referenceName(file.url) },
+    }),
+    [404],
+  );
+  for (const kind of ["file", "html", "artifact"] as const) {
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers: headers(f.actor),
+        params: { reference },
+        query: { kind },
+      }),
+      [404],
+    );
+  }
+  f.objects.delete(file.key);
+  const retained = await accept(
+    api()(artifactReferencesContract).resolve({ params: { reference } }),
+    [200],
+  );
+  await expect((await fetch(retained.body.url)).text()).resolves.toBe(
+    "Original generated PDF",
+  );
+  const retainedDownload = await accept(download(), [200]);
+  expect(retainedDownload.body).toStrictEqual(downloaded.body);
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: created.body.id },
+    }),
+    [204],
+  );
+  const revokedDownload = await accept(download(), [404]);
+  expect(revokedDownload.body).not.toHaveProperty("url");
+});
+
+test.each(["video", "site"] as const)(
+  "copies the generated %s cover with a stable reference, independent bytes, and the parent revocation",
+  async (kind) => {
+    const f = await fixture();
+    const generatedImage = Buffer.from("Generated preview image");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv(
+      "ARTIFACT_PREVIEW_WAF_SECRET",
+      "test-artifact-preview-waf-secret-value",
+    );
+    server.use(
+      http.post("https://files.okou.app/__artifact-video-poster", () => {
+        return new HttpResponse(new Uint8Array(generatedImage), {
+          headers: { "Content-Type": "image/jpeg" },
+        });
+      }),
+      http.post(
+        "https://api.cloudflare.com/client/v4/accounts/test-account/browser-rendering/snapshot",
+        () => {
+          return HttpResponse.json({
+            success: true,
+            errors: [],
+            meta: { status: 200, title: "Snapshot preview" },
+            result: {
+              content: "<main>Snapshot preview</main>",
+              screenshot: generatedImage.toString("base64"),
+            },
+          });
+        },
+      ),
+    );
+    const sourceRun = await f.selection("Generate an artifact with a cover");
+    if (!f.actor.orgId) {
+      throw new Error("Expected artifact owner organization");
+    }
+    const seconds = Math.floor(now() / 1000);
+    const bearerToken = signSandboxJwtForTests({
+      scope: "okou",
+      userId: f.actor.userId,
+      orgId: f.actor.orgId,
+      runId: sourceRun.runId,
+      capabilities: ["file:write", "host:write"],
+      iat: seconds,
+      exp: seconds + 60,
+    });
+    const source =
+      kind === "video"
+        ? await f.upload(f.actor, "Private video bytes", {
+            filename: "video.mp4",
+            contentType: "video/mp4",
+            bearerToken,
+          })
+        : await f.site(
+            [{ path: "/index.html", content: "<main>Private site</main>" }],
+            undefined,
+            false,
+            bearerToken,
+          );
+    await flushWaitUntilForTest();
+    const sourceArtifacts = await chat.listThreadArtifacts(
+      f.actor,
+      sourceRun.threadId,
+    );
+    const sourcePreviewUrl = sourceArtifacts.runs
+      .flatMap((run) => {
+        return run.files;
+      })
+      .find((file) => {
+        return file.url === source.url;
+      })?.previewImageUrl;
+    expect(sourcePreviewUrl).toBeDefined();
+    const originalPreview = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers: headers(f.actor),
+        params: { reference: referenceName(sourcePreviewUrl!) },
+      }),
+      [200],
+    );
+    const selection = await f.selection(source.url);
+    const created = await accept(share(f.actor, selection), [201]);
+    const shared = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    const reference = referenceName(shared.body.messages[0]!.content);
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({ params: { reference } }),
+      [200],
+    );
+    const previewImageUrl = resolved.body.previewImageUrl;
+    expect(resolved.body.downloadUrl).toBeDefined();
+    const download = new URL(resolved.body.downloadUrl!);
+    expect(download.searchParams.get("X-Amz-Credential")).toBe(
+      kind === "site" ? "snapshot-hosted-key" : "snapshot-private-key",
+    );
+    expect(download.searchParams.get("response-content-disposition")).toBe(
+      `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
+    );
+    expect(download.pathname).toContain(created.body.id);
+    const downloaded = await fetch(download);
+    expect(downloaded.status).toBe(200);
+    expect(downloaded.headers.get("content-disposition")).toBe(
+      `attachment; filename="${kind === "video" ? "video.mp4" : "index.html"}"`,
+    );
+    await expect(downloaded.text()).resolves.toBe(
+      kind === "video" ? "Private video bytes" : "<main>Private site</main>",
+    );
+    expect(previewImageUrl).toMatch(
+      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(jpg|webp)$/u,
+    );
+    expect(previewImageUrl).not.toBe(
+      new URL(sourcePreviewUrl!, "https://app.okou.ai").href,
+    );
+    const published = await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [200],
+    );
+    expect(published.body.preview.previewImageUrl).toBe(previewImageUrl);
+    expect(published.body.downloadUrl).toBe(resolved.body.downloadUrl);
+    const previewReference = referenceName(previewImageUrl!);
+    const sourceKey = decodeURIComponent(
+      new URL(originalPreview.body.url).pathname.slice(1),
+    );
+    f.objects.set(sourceKey, Buffer.from("Changed source preview"));
+    const copiedPreview = await accept(
+      api()(artifactReferencesContract).resolve({
+        params: { reference: previewReference },
+      }),
+      [200],
+    );
+    await expect((await fetch(copiedPreview.body.url)).text()).resolves.toBe(
+      generatedImage.toString(),
+    );
+    f.objects.delete(sourceKey);
+    const retainedPreview = await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: previewReference },
+      }),
+      [200],
+    );
+    await expect((await fetch(retainedPreview.body.url)).text()).resolves.toBe(
+      generatedImage.toString(),
+    );
+    await accept(
+      api()(artifactReferencesContract).publicUrl({
+        params: { reference: referenceName(sourcePreviewUrl!) },
+      }),
+      [404],
+    );
+    await accept(
+      api()(sharedThreadsContract).delete({
+        headers: headers(f.actor),
+        params: { id: created.body.id },
+      }),
+      [204],
+    );
+    for (const revoked of [reference, previewReference]) {
+      await accept(
+        api()(artifactReferencesContract).resolve({
+          params: { reference: revoked },
+        }),
+        [404],
+      );
+      await accept(
+        api()(artifactReferencesContract).publicUrl({
+          params: { reference: revoked },
+        }),
+        [404],
+      );
+    }
+  },
+);
+
+test.each(["missing", "unavailable"] as const)(
+  "does not resolve a snapshot when its parent policy is %s",
+  async (failure) => {
+    const f = await fixture();
+    const file = await f.upload();
+    const selection = await f.selection(file.url);
+    const created = await accept(share(f.actor, selection), [201]);
+    const shared = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    const reference = referenceName(shared.body.messages[0]!.content);
+    const key = `shared-thread-artifacts/okou/${created.body.id}.json`;
+    if (failure === "missing") {
+      f.objects.delete(`test-hosted-sites/${key}`);
+    } else {
+      const storage = context.mocks.s3.send.getMockImplementation()!;
+      context.mocks.s3.send.mockImplementation((command) => {
+        if (command instanceof GetObjectCommand && command.input.Key === key) {
+          return Promise.reject(
+            new Error("Snapshot policy storage unavailable"),
+          );
+        }
+        return storage(command);
+      });
+    }
+    const expected = failure === "missing" ? 404 : 500;
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({ params: { reference } }),
+      [expected],
+    );
+    expect(resolved.body).not.toHaveProperty("url");
+    const published = await accept(
+      api()(artifactReferencesContract).publicUrl({ params: { reference } }),
+      [expected],
+    );
+    expect(published.body).not.toHaveProperty("preview");
+    const downloaded = await accept(
+      api()(artifactDownloadsContract).download({
+        headers: headers(f.actor),
+        params: { reference },
+      }),
+      [expected],
+    );
+    expect(downloaded.body).not.toHaveProperty("url");
+  },
+);
+
+test("snapshot reference collisions preserve the existing owner reference", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const selection = await f.selection(file.url);
+  const storage = context.mocks.s3.send.getMockImplementation()!;
+  let occupiedReference: string | undefined;
+  context.mocks.s3.send.mockImplementation((command) => {
+    if (
+      !occupiedReference &&
+      command instanceof PutObjectCommand &&
+      command.input.Key?.startsWith("artifact-references/")
+    ) {
+      occupiedReference = command.input.Key.slice(
+        "artifact-references/".length,
+      ).replace(/\.json$/u, "");
+      f.objects.set(
+        `${command.input.Bucket}/${command.input.Key}`,
+        Buffer.from(
+          JSON.stringify({ version: 2, target: { kind: "file", id: file.id } }),
+        ),
+      );
+    }
+    return storage(command);
+  });
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const snapshotReference = referenceName(shared.body.messages[0]!.content);
+  expect(occupiedReference).toBeDefined();
+  expect(snapshotReference).not.toBe(`${occupiedReference}.pdf`);
+  const owner = await accept(
+    api()(artifactReferencesContract).resolve({
+      headers: headers(f.actor),
+      params: { reference: occupiedReference! },
+    }),
+    [200],
+  );
+  expect(owner.body.url).toContain(file.key);
+  const snapshot = await accept(
+    api()(artifactReferencesContract).resolve({
+      params: { reference: snapshotReference },
+    }),
+    [200],
+  );
+  expect(snapshot.body.url).toContain(`/thread-shares/${created.body.id}/`);
+});
+
 test("copies a complete fixed site and rewrites its managed private dependencies", async () => {
   const f = await fixture();
   const asset = await f.upload();
@@ -456,7 +954,7 @@ test("copies a complete fixed site and rewrites its managed private dependencies
     [200],
   );
   expect(shared.body.messages[0]!.content).toMatch(
-    /https:\/\/[a-z0-9]{10}\.okou\.app\/#page-2/u,
+    /https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.html#page-2/u,
   );
   const prefix = `test-hosted-sites/shared-artifacts/okou/${created.body.id}/${site.deploymentId}`;
   expect(f.objects.get(`${prefix}/index.html`)?.toString()).toMatch(
@@ -483,6 +981,350 @@ test("copies a complete fixed site and rewrites its managed private dependencies
   expect(f.objects.get(`${prefix}/index.html`)?.toString()).not.toContain(
     "/artifacts/",
   );
+});
+
+test("downloads and clones a complete conversation site snapshot independently of the original artifact visibility", async () => {
+  const f = await fixture();
+  const asset = await f.upload();
+  const site = await f.site([
+    {
+      path: "/index.html",
+      content: `<a href="${asset.url}">Download</a><a href="pages/report.html">Report</a>`,
+    },
+    { path: "/pages/report.html", content: "<h1>Shared version one</h1>" },
+    {
+      path: "/assets/style.css",
+      content: "body{color:green}",
+      contentType: "text/css",
+    },
+  ]);
+  const created = await accept(
+    share(f.actor, await f.selection(site.url)),
+    [201],
+  );
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const reference = referenceName(shared.body.messages[0]!.content);
+  const outsider = bdd.user({ orgId: null });
+  const downloads = api()(artifactDownloadsContract);
+  const cloneReference = () => {
+    return downloads.files({
+      headers: headers(outsider),
+      params: { reference },
+    });
+  };
+  const download = () => {
+    return downloads.download({
+      headers: headers(outsider),
+      params: { reference },
+    });
+  };
+  const first = await accept(cloneReference(), [200]);
+  const downloaded = await accept(download(), [200]);
+  expect(downloaded.body).toStrictEqual({ kind: "html", site: first.body });
+  const url = new URL(first.body.aliasUrl!);
+  expect(url.href).toMatch(/^https:\/\/[a-z0-9]{10}\.okou\.app\/$/u);
+  const publicSlug = url.hostname.split(".")[0]!;
+  const host = setupApp({ context, routes: hostRoutes })(hostContract);
+  const clone = (version?: number) => {
+    return host.files({
+      headers: headers(outsider),
+      params: { publicSlug },
+      query: {
+        hostname: url.hostname,
+        ...(version === undefined ? {} : { version }),
+      },
+    });
+  };
+  const byUrl = await accept(clone(), [200]);
+  expect(byUrl.body).toStrictEqual(first.body);
+  expect(first.body).toMatchObject({
+    deploymentId: site.deploymentId,
+    deploymentVersion: site.deploymentVersion,
+    fileCount: 3,
+    url: url.href,
+    artifactUrl: url.href,
+    aliasUrl: url.href,
+  });
+  expect(
+    first.body.files
+      .map((file) => {
+        return file.path;
+      })
+      .sort(),
+  ).toStrictEqual(["/assets/style.css", "/index.html", "/pages/report.html"]);
+  const prefix = `test-hosted-sites/shared-artifacts/okou/${created.body.id}/${site.deploymentId}`;
+  for (const file of first.body.files) {
+    const key = decodeURIComponent(new URL(file.downloadUrl).pathname.slice(1));
+    expect(key).toBe(`${prefix}${file.path}`);
+    const response = await fetch(file.downloadUrl);
+    expect(response.status).toBe(200);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    expect(file.size).toBe(bytes.length);
+    expect(file.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+  }
+  expect(first.body.size).toBe(
+    first.body.files.reduce((total, file) => {
+      return total + file.size;
+    }, 0),
+  );
+  const index = first.body.files.find((file) => {
+    return file.path === "/index.html";
+  })!;
+  const indexResponse = await fetch(index.downloadUrl);
+  const indexHtml = await indexResponse.text();
+  expect(indexHtml).toMatch(/https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf/u);
+  expect(indexHtml).not.toContain(asset.url);
+
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [
+        {
+          publicUserData: { userId: f.actor.userId },
+          organization: { id: f.actor.orgId, name: "Owner organization" },
+        },
+      ],
+    },
+  );
+  const originalStatus = await accept(
+    api()(artifactSharesContract).status({
+      headers: headers(f.actor),
+      body: { kind: "html", id: site.deploymentId },
+    }),
+    [200],
+  );
+  expect(originalStatus.body.audience).toBe("private");
+  const second = await f.site(
+    [{ path: "/index.html", content: "<h1>Another private site</h1>" }],
+    site.name,
+  );
+  for (const audience of ["public", "private"] as const) {
+    await accept(
+      api()(artifactSharesContract).update({
+        headers: headers(f.actor),
+        body: { target: { kind: "html", id: second.deploymentId }, audience },
+      }),
+      [200],
+    );
+    const retained = await accept(clone(), [200]);
+    expect(retained.body).toStrictEqual(first.body);
+    const retainedReference = await accept(cloneReference(), [200]);
+    expect(retainedReference.body).toStrictEqual(first.body);
+    const retainedDownload = await accept(download(), [200]);
+    expect(retainedDownload.body).toStrictEqual(downloaded.body);
+  }
+  expect(second.deploymentVersion).toBe(1);
+  expect(second.siteId).not.toBe(site.siteId);
+  expect(second.publicSlug).not.toBe(site.publicSlug);
+  const wrongVersion = await accept(clone(2), [404]);
+  expect(wrongVersion.body).not.toHaveProperty("files");
+
+  for (const key of f.objects.keys()) {
+    if (
+      key.startsWith(
+        `test-hosted-sites/private-sites/okou/${site.deploymentId}/`,
+      )
+    ) {
+      f.objects.delete(key);
+    }
+  }
+  const retainedAfterSourceRemoval = await accept(download(), [200]);
+  expect(retainedAfterSourceRemoval.body).toStrictEqual(downloaded.body);
+
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: created.body.id },
+    }),
+    [204],
+  );
+  const revoked = await accept(clone(), [404]);
+  expect(revoked.body).not.toHaveProperty("files");
+  const revokedReference = await accept(cloneReference(), [404]);
+  expect(revokedReference.body).not.toHaveProperty("files");
+  const revokedDownload = await accept(download(), [404]);
+  expect(revokedDownload.body).not.toHaveProperty("site");
+  const original = await createHostMapsBddApi(context).readHostedSiteFiles(
+    f.actor,
+    `dpl-${second.deploymentId}`,
+  );
+  expect(original).toMatchObject({
+    deploymentId: second.deploymentId,
+    fileCount: 1,
+  });
+});
+
+test.each([
+  {
+    path: "/reports/overview.html",
+    filename: "overview.html",
+    contentType: "text/html; charset=utf-8",
+    extension: ".html",
+    downloadKind: "html",
+    downloadedText: null,
+  },
+  {
+    path: "/dashboard",
+    filename: "index.html",
+    contentType: "text/html; charset=utf-8",
+    extension: ".html",
+    downloadKind: "html",
+    downloadedText: null,
+  },
+  {
+    path: "/reports/results.csv",
+    filename: "results.csv",
+    contentType: "text/csv",
+    extension: ".csv",
+    downloadKind: "file",
+    downloadedText: "name,value\nresult,42",
+  },
+  {
+    path: "/reports/source.html",
+    filename: "source.html",
+    contentType: "text/plain",
+    extension: ".html",
+    downloadKind: "file",
+    downloadedText: "Source text",
+  },
+])(
+  "preserves the hosted preview path and file type for $path",
+  async ({
+    path,
+    filename,
+    contentType,
+    extension,
+    downloadKind,
+    downloadedText,
+  }) => {
+    const f = await fixture();
+    const site = await f.site([
+      { path: "/index.html", content: "<h1>Home</h1>" },
+      { path: "/reports/overview.html", content: "<h1>Overview</h1>" },
+      {
+        path: "/reports/results.csv",
+        content: "name,value\nresult,42",
+        contentType: "text/csv",
+      },
+      {
+        path: "/reports/source.html",
+        content: "Source text",
+        contentType: "text/plain",
+      },
+    ]);
+    const ownerPreview = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers: headers(f.actor),
+        params: { reference: referenceName(site.url) },
+      }),
+      [200],
+    );
+    const child = new URL(`${path}?mode=print#totals`, ownerPreview.body.url);
+    const selection = await f.selection(
+      `${site.url} ${child.href} ${child.href}`,
+    );
+    const created = await accept(share(f.actor, selection), [201]);
+    const shared = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    const [rootUrl, childUrl, repeatedChildUrl] =
+      shared.body.messages[0]!.content.split(" ");
+    expect(childUrl).toMatch(
+      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(?:html|csv)#totals$/u,
+    );
+    expect(new URL(childUrl!).pathname.endsWith(extension)).toBeTruthy();
+    expect(childUrl).not.toBe(rootUrl);
+    expect(repeatedChildUrl).toBe(childUrl);
+    const preview = await accept(
+      api()(artifactReferencesContract).resolve({
+        params: { reference: referenceName(childUrl!) },
+      }),
+      [200],
+    );
+    expect(new URL(preview.body.url).origin).not.toBe(
+      new URL(ownerPreview.body.url).origin,
+    );
+    expect(new URL(preview.body.url).pathname).toBe(path);
+    expect(new URL(preview.body.url).search).toBe("?mode=print");
+    expect(preview.body).toMatchObject({
+      filename,
+      contentType,
+    });
+    const outsider = bdd.user({ orgId: null });
+    const downloads = api()(artifactDownloadsContract);
+    const downloaded = await accept(
+      downloads.download({
+        headers: headers(outsider),
+        params: { reference: referenceName(childUrl!) },
+      }),
+      [200],
+    );
+    expect(downloaded.body.kind).toBe(downloadKind);
+    if (downloaded.body.kind === "html") {
+      expect(downloaded.body.site).toMatchObject({
+        deploymentId: site.deploymentId,
+        fileCount: 4,
+      });
+      expect(
+        downloaded.body.site.files.map((file) => {
+          return file.path;
+        }),
+      ).toStrictEqual([
+        "/index.html",
+        "/reports/overview.html",
+        "/reports/results.csv",
+        "/reports/source.html",
+      ]);
+      const cloned = await accept(
+        downloads.files({
+          headers: headers(outsider),
+          params: { reference: referenceName(childUrl!) },
+        }),
+        [200],
+      );
+      expect(cloned.body).toStrictEqual(downloaded.body.site);
+    } else {
+      expect(downloaded.body).toMatchObject({
+        filename,
+        contentType,
+      });
+      expect(downloaded.body).not.toHaveProperty("site");
+      const response = await fetch(downloaded.body.url);
+      expect(response.status).toBe(200);
+      await expect(response.text()).resolves.toBe(downloadedText);
+      const rejectedClone = await accept(
+        downloads.files({
+          headers: headers(outsider),
+          params: { reference: referenceName(childUrl!) },
+        }),
+        [404],
+      );
+      expect(rejectedClone.body).not.toHaveProperty("files");
+      expect(rejectedClone.body).not.toHaveProperty("url");
+    }
+  },
+);
+
+test("rejects hosted preview paths that would change the snapshot preview origin", async () => {
+  const f = await fixture();
+  const site = await f.site([
+    { path: "/index.html", content: "<h1>Home</h1>" },
+  ]);
+  const ownerPreview = await accept(
+    api()(artifactReferencesContract).resolve({
+      headers: headers(f.actor),
+      params: { reference: referenceName(site.url) },
+    }),
+    [200],
+  );
+  const source = new URL(ownerPreview.body.url);
+  source.pathname = "//unrelated.example/escape.html";
+  const selection = await f.selection(source.href);
+  await accept(share(f.actor, selection), [400]);
+  expect(f.copies).toStrictEqual([]);
 });
 
 test("rejects hosted text that exceeds the per-file limit after rewriting", async () => {
@@ -655,9 +1497,10 @@ test("snapshot short-reference collisions preserve the occupied alias and retry"
     [200],
   );
   const url = shared.body.messages[0]!.content;
-  expect(url).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
+  expect(url).toMatch(
+    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+  );
   expect(occupiedKey).toBeDefined();
-  expect(occupiedKey).not.toContain(new URL(url).pathname.slice(1));
   expect(f.objects.get(occupiedKey!)).toStrictEqual(occupiedBody);
 });
 
@@ -677,8 +1520,12 @@ test("independent thread snapshots use different short references and revoke sep
   );
   const firstUrl = firstView.body.messages[0]!.content;
   const secondUrl = secondView.body.messages[0]!.content;
-  expect(firstUrl).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
-  expect(secondUrl).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
+  expect(firstUrl).toMatch(
+    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+  );
+  expect(secondUrl).toMatch(
+    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+  );
   expect(secondUrl).not.toBe(firstUrl);
   await accept(
     api()(sharedThreadsContract).delete({
@@ -696,6 +1543,25 @@ test("independent thread snapshots use different short references and revoke sep
     [200],
   );
   expect(retained.body.messages[0]!.content).toBe(secondUrl);
+  await accept(
+    api()(artifactReferencesContract).resolve({
+      params: { reference: referenceName(firstUrl) },
+    }),
+    [404],
+  );
+  await accept(
+    api()(artifactReferencesContract).publicUrl({
+      params: { reference: referenceName(firstUrl) },
+    }),
+    [404],
+  );
+  const retainedArtifact = await accept(
+    api()(artifactReferencesContract).resolve({
+      params: { reference: referenceName(secondUrl) },
+    }),
+    [200],
+  );
+  expect(retainedArtifact.body.url).toContain(second.body.id);
 });
 
 test("owner deletion revokes a snapshot after switch rollback and preserves the private original", async () => {
@@ -1210,12 +2076,20 @@ test("snapshots nested and cyclic historical dependencies once per deployment", 
   expect(repeatedUrl).toBe(firstUrl);
   expect(firstUrl).not.toBe(secondUrl);
   const prefix = `test-hosted-sites/shared-artifacts/okou/${created.body.id}`;
-  expect(
-    f.objects.get(`${prefix}/${first.deploymentId}/index.html`)?.toString(),
-  ).toBe(`<a href="${secondUrl}">Second</a><a href="${firstUrl}">Self</a>`);
+  const firstBody = f.objects
+    .get(`${prefix}/${first.deploymentId}/index.html`)!
+    .toString();
+  const [secondDelivery, firstDelivery] = firstBody.match(
+    /https:\/\/[a-z0-9]{10}\.okou\.app\//gu,
+  )!;
+  expect(firstBody).toBe(
+    `<a href="${secondDelivery}">Second</a><a href="${firstDelivery}">Self</a>`,
+  );
+  expect(firstBody).not.toContain("/artifacts/");
+  expect(firstDelivery).not.toBe(secondDelivery);
   expect(
     f.objects.get(`${prefix}/${second.deploymentId}/index.html`)?.toString(),
-  ).toBe(`<a href="${firstUrl}">First</a>`);
+  ).toBe(`<a href="${firstDelivery}">First</a>`);
   expect(hostedSourceReads(first.deploymentId)).toHaveLength(2);
   expect(hostedSourceReads(second.deploymentId)).toHaveLength(2);
 });

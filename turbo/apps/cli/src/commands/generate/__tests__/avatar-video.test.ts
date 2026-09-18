@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,10 +79,12 @@ describe("okou generate avatar-video command", () => {
   afterEach(() => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
+    vi.unstubAllEnvs();
   });
 
   it("publishes the generated avatar video with the requested visibility", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    vi.stubEnv("OKOU_CURRENT_INTEGRATION", "slack");
     const artifact = serveGenerationVisibility("avatar.mp4", "public");
     server.use(
       http.post(`${GENERATE_URL}/private`, async ({ request }) => {
@@ -91,6 +94,7 @@ describe("okou generate avatar-video command", () => {
         });
         return HttpResponse.json({
           ...AVATAR_VIDEO_RESULT,
+          privateArtifacts: true,
           id: GENERATION_ARTIFACT_ID,
           url: artifact.reference,
         });
@@ -117,6 +121,7 @@ describe("okou generate avatar-video command", () => {
       ownerUrl: artifact.ownerUrl,
       visibility: "public",
       previewMarkdownBlock: `![${AVATAR_VIDEO_RESULT.filename}](<${artifact.url}>)`,
+      artifactPresentationContext: expect.not.stringContaining("upload-file"),
     });
   });
 
@@ -170,6 +175,7 @@ describe("okou generate avatar-video command", () => {
   });
 
   it("lists filtered public avatars as JSON", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["avatar-video-generation"]');
     server.use(
       http.get(AVATARS_URL, ({ request }) => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
@@ -224,6 +230,7 @@ describe("okou generate avatar-video command", () => {
   });
 
   it("lists voices in a human-readable form", async () => {
+    vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["avatar-video-generation"]');
     server.use(
       http.get(VOICES_URL, ({ request }) => {
         const url = new URL(request.url);

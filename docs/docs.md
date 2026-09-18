@@ -36,11 +36,17 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Personal paid-tool controls](./paid-tool-controls.md): workspace-member
+  preferences, run snapshots, CLI enforcement and the disabled rollout boundary.
 - [External MCP server](./mcp-server.md): OAuth resource setup, organization
   authority, Streamable HTTP behavior and hosted-client acceptance gates.
 
-- [VNC owner configuration](./vnc-access.md): encrypted credentials, saved
+- [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
+- [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
+  private typed handoff, current authorization and native sharing modes.
+- [Runner VNC execution](./runner-vnc-execution.md): Run-owned sessions, guest
+  RPC, streamed captures, input outcomes and resource cleanup.
 - [Social download discovery](./social-download-discovery.md): bounded task
   listing, scoped recovery hints, pagination, and CLI/API compatibility.
 - [Social errors and download recovery](./social-errors.md): stable error
@@ -59,6 +65,12 @@ surface; the index does not replace their detailed rules.
 - [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
   account-erasure admission, retained thread/run identity, SQL cost inventory
   and failure boundaries for minting cloud-browser authorization links.
+- [Computer Use authorization request creation](./account-erasure-computer-use-authorization-creation.md):
+  account-erasure admission, retained canonical identity, compatibility source
+  semantics and failure boundaries for Computer Use authorization links.
+- [Computer Use authorization Apply](./account-erasure-computer-use-authorization-apply.md):
+  canonical chat admission, retained request and thread identity, atomic sidebar
+  completion, bounded SQL inventory and explicit host/legacy residuals.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
@@ -83,6 +95,13 @@ surface; the index does not replace their detailed rules.
   shared Morning Brief OAuth authorization boundary, Gmail's two bounded
   branches and caps, source outcome classification, and the preview-only
   deployment boundary.
+  boundary, and the coverage limits this first collector declares.
+- [Morning Brief platform-funded generation](./morning-brief-generation.md): the
+  single-invocation reservation contract, the validated result shape, and the
+  anonymous platform cost receipt kept outside every user ledger.
+- [Morning Brief thread provenance](./morning-brief-chat-provenance.md): the
+  sticky whole-thread exclusion, its producers and coverage limits, the bounded
+  unread Chat collection that consumes it, and the old-writer activation gate.
 - [Morning Brief platform-funded generation](./morning-brief-generation.md): the
   single-invocation reservation contract, the validated result shape, and the
   anonymous platform cost receipt kept outside every user ledger.

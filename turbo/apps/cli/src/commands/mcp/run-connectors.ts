@@ -15,12 +15,18 @@ export async function resolveRunMcpConnector(
     connectors,
     connectorSlug,
     (candidate) => {
-      return {
-        kind: "custom",
-        id: candidate.id,
-        slug: candidate.slug,
-        label: candidate.displayName,
-      };
+      return candidate.target.kind === "builtin"
+        ? {
+            kind: "builtin",
+            slug: candidate.target.connectorSlug,
+            label: candidate.displayName,
+          }
+        : {
+            kind: "custom",
+            id: candidate.target.customConnectorId,
+            slug: candidate.slug,
+            label: candidate.displayName,
+          };
     },
   );
   if (!connector) {

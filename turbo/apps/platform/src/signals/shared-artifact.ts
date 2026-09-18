@@ -62,7 +62,12 @@ const resolveSharedArtifact$ = command(
     if (result.status !== 200) {
       return null;
     }
-    return { ...result.body.preview, url: result.body.url };
+    return {
+      ...result.body.preview,
+      url: result.body.url,
+      expiresAt: result.body.expiresAt,
+      sharedThreadSnapshot: result.body.sharedThreadSnapshot,
+    };
   },
 );
 
@@ -86,7 +91,10 @@ export const setupSharedArtifact$ = command(
       Boolean(clerk.user),
       signal,
     );
-    if (content?.expiresAt !== undefined) {
+    if (
+      content?.expiresAt !== undefined &&
+      content.sharedThreadSnapshot !== true
+    ) {
       const switches = await get(featureSwitches$);
       signal.throwIfAborted();
       if (!switches[FeatureSwitchKey.PrivateArtifacts]) {

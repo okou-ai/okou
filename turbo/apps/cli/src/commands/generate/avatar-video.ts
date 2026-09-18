@@ -9,6 +9,7 @@ import {
 } from "../../lib/api/domains/web";
 import { getBillingStatus } from "../../lib/api/domains/billing";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { createArtifactPresentation } from "../shared/artifact-return";
 import {
   applyArtifactVisibility,
@@ -370,10 +371,17 @@ async function handleResourceListing(
 }
 
 function printAvatarVideoResult(
-  result: Awaited<ReturnType<typeof generateWebAvatarVideo>>,
+  result: Awaited<ReturnType<typeof generateWebAvatarVideo>> & {
+    readonly visibility?: ArtifactVisibility;
+  },
   json: boolean,
 ): void {
-  const presentation = createArtifactPresentation(result.filename, result.url);
+  const presentation = createArtifactPresentation(
+    result.filename,
+    result.url,
+    undefined,
+    result,
+  );
   if (json) {
     console.log(JSON.stringify({ ...result, ...presentation.json }));
     return;
@@ -407,6 +415,7 @@ async function generateAvatarVideo(
     );
   }
 
+  await assertPaidToolEnabled("avatar-video-generation");
   await ensureVideoPlan();
   const requirePrivateArtifact = await prepareArtifactVisibility(
     options.visibility,

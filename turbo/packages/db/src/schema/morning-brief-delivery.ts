@@ -22,7 +22,10 @@ import { orgMembersMetadata } from "./org-members-metadata";
  * never be delivered by a later production occurrence that happens to share an
  * owner and an anchor.
  */
-export const MORNING_BRIEF_DELIVERY_PURPOSES = ["preview"] as const;
+export const MORNING_BRIEF_DELIVERY_PURPOSES = [
+  "preview",
+  "production",
+] as const;
 export type MorningBriefDeliveryPurpose =
   (typeof MORNING_BRIEF_DELIVERY_PURPOSES)[number];
 
@@ -107,6 +110,8 @@ export const morningBriefDeliveries = pgTable(
     resultAttemptId: uuid("result_attempt_id").notNull(),
     /** The membership generation this delivery was committed under. */
     membershipId: text("membership_id").notNull(),
+    /** Native owner epoch presented at commit; null only for preview lineage. */
+    nativeOwnerEpoch: integer("native_owner_epoch"),
     /**
      * The exact installation and schedule this delivery acted under.
      *

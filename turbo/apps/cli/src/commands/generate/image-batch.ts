@@ -18,6 +18,7 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { generateWebImage } from "../../lib/api/domains/web";
 import { absoluteArtifactUrl } from "../../lib/artifact-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { assertPaidToolEnabled } from "../../lib/command/paid-tools";
 import { generatedImageAsset } from "../shared/generated-image-asset";
 import {
   ARTIFACT_PRESENTATION_CONTEXT,
@@ -47,6 +48,7 @@ const imageBatchArtifactsSchema = z.object({
       url: artifactUrlSchema,
       ownerUrl: artifactUrlSchema.optional(),
       visibility: z.enum(["only-me", "org", "public"]).optional(),
+      privateArtifacts: z.boolean().optional(),
       inlineMarkdownLink: z.string(),
       previewMarkdownBlock: z.string(),
     }),
@@ -241,6 +243,9 @@ async function runBatch(
           url: result.url,
           ...(result.ownerUrl ? { ownerUrl: result.ownerUrl } : {}),
           ...(result.visibility ? { visibility: result.visibility } : {}),
+          ...(result.privateArtifacts === undefined
+            ? {}
+            : { privateArtifacts: result.privateArtifacts }),
           inlineMarkdownLink: presentation.json.inlineMarkdownLink,
           previewMarkdownBlock: presentation.json.previewMarkdownBlock,
         };
@@ -294,6 +299,7 @@ async function runInternal(
   stateDirectoryValue: string,
   options: ImageBatchGenerationOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("image-generation");
   const manifestPath = resolve(manifestPathValue);
   const stateDirectory = resolve(stateDirectoryValue);
   let exitCode = 0;
@@ -343,6 +349,7 @@ async function startBatch(
   stateDirectoryValue: string,
   options: ImageBatchGenerationOptions,
 ): Promise<void> {
+  await assertPaidToolEnabled("image-generation");
   const manifestPath = resolve(manifestPathValue);
   const stateDirectory = resolve(stateDirectoryValue);
   await readManifest(manifestPath);
@@ -400,18 +407,32 @@ async function readBatchArtifacts(stateDirectory: string) {
     const artifacts = await Promise.all(
       metadata.artifacts.map(async (artifact) => {
         const url = await absoluteArtifactUrl(artifact.url);
-        const presentation =
-          url === artifact.url
-            ? artifact
-            : createArtifactPresentation(artifact.assetId, url).json;
+        const presentation = createArtifactPresentation(
+          artifact.assetId,
+          url,
+          undefined,
+          artifact,
+        ).json;
         return {
           ...artifact,
           url,
           ...(artifact.ownerUrl === undefined
             ? {}
             : { ownerUrl: await absoluteArtifactUrl(artifact.ownerUrl) }),
-          inlineMarkdownLink: presentation.inlineMarkdownLink,
-          previewMarkdownBlock: presentation.previewMarkdownBlock,
+          inlineMarkdownLink:
+            url === artifact.url
+              ? artifact.inlineMarkdownLink
+              : presentation.inlineMarkdownLink,
+          previewMarkdownBlock:
+            url === artifact.url
+              ? artifact.previewMarkdownBlock
+              : presentation.previewMarkdownBlock,
+          ...(artifact.privateArtifacts === undefined
+            ? {}
+            : {
+                artifactPresentationContext:
+                  presentation.artifactPresentationContext,
+              }),
         };
       }),
     );
@@ -509,6 +530,13 @@ async function waitForBatch(
           `results.tsv lists assets for authored HTML. Resolve local paths against ${stateDirectory} and copy those files into the authored bundle.`,
           `For chat presentation, read ${join(stateDirectory, "artifacts.json")}. Each image includes its stable artifact reference, inlineMarkdownLink, and previewMarkdownBlock.`,
           metadata.artifactPresentationContext,
+          ...new Set(
+            metadata.artifacts.flatMap((artifact) => {
+              return artifact.artifactPresentationContext
+                ? [artifact.artifactPresentationContext]
+                : [];
+            }),
+          ),
         ].join("\n")
       : `\n${missingBatchArtifactsContext(stateDirectory)}`,
   );
@@ -532,7 +560,7 @@ const runCommand = new Command("__run")
   .argument("<manifest.tsv>")
   .argument("<state-dir>")
   .addOption(createArtifactVisibilityOption())
-  .action(runInternal);
+  .action(withErrorHandler(runInternal));
 
 export const imageBatchCommand = new Command("image-batch")
   .description(

@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { artifactSharePolicySchema } from "./artifact-shares";
 
+const resourceTokenSchema = z
+  .string()
+  .regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u);
+
 /** One mutable authority owns every immutable resource in a conversation share. */
 export const sharedThreadArtifactPolicySchema = z
   .object({
@@ -11,9 +15,18 @@ export const sharedThreadArtifactPolicySchema = z
     publicBrand: z.enum(["vm0", "okou"]),
     status: z.enum(["preparing", "active", "revoked"]),
     resources: z.record(
-      z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
+      resourceTokenSchema,
       artifactSharePolicySchema.shape.target,
     ),
+    previews: z
+      .record(
+        resourceTokenSchema,
+        z.object({
+          token: resourceTokenSchema,
+          reference: z.string().regex(/^[a-z0-9]{10}$/u),
+        }),
+      )
+      .optional(),
   })
   .superRefine((policy, context) => {
     for (const [token, target] of Object.entries(policy.resources)) {
@@ -30,6 +43,19 @@ export const sharedThreadArtifactPolicySchema = z
         context.addIssue({
           code: "custom",
           message: "Invalid thread snapshot target",
+        });
+      }
+    }
+    for (const [token, preview] of Object.entries(policy.previews ?? {})) {
+      const target = policy.resources[preview.token];
+      if (
+        !policy.resources[token] ||
+        target?.kind !== "file" ||
+        !target.contentType.startsWith("image/")
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Invalid thread snapshot preview",
         });
       }
     }

@@ -526,7 +526,10 @@ describe("managed Intro Video cloud rendering", () => {
       const response = await getRender(f, input.requestId);
       expect(JSON.stringify(response)).not.toContain(projectUrl.toString());
       cloud.status = "completed";
-      expect((await getRender(f, input.requestId)).status).toBe("completed");
+      await expect(getRender(f, input.requestId)).resolves.toMatchObject({
+        status: "completed",
+        result: { privateArtifacts: false },
+      });
     });
   });
 

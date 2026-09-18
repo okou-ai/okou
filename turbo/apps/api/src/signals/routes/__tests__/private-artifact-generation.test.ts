@@ -350,6 +350,7 @@ describe("managed artifact privacy", () => {
         [FeatureSwitchKey.PrivateArtifacts]: !enabled,
       });
       const result = await completeImage(fixture, generationId);
+      expect(result.privateArtifacts).toBe(enabled);
       const stored = [...objects.values()].find((object) => {
         return (
           object.Body === imageBytes || object.ContentType === "image/jpeg"
@@ -689,6 +690,7 @@ describe("managed artifact privacy", () => {
     );
     expect(job.body.status).toBe("completed");
     const result = imageIoGenerateResponseSchema.parse(job.body.result);
+    expect(result.privateArtifacts).toBeTruthy();
     expect(result.url).toContain("/artifacts/");
     expect(result.sourceUrl).toBeUndefined();
     expect(result.embedUrl).toBeUndefined();
@@ -737,6 +739,7 @@ describe("managed artifact privacy", () => {
       [200],
     );
     expect(speech.body.url).toContain("/artifacts/");
+    expect(speech.body.privateArtifacts).toBeTruthy();
     expect(
       [...objects.values()].find((object) => {
         return object.ContentType === "audio/wav";

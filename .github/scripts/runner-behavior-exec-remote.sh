@@ -2020,6 +2020,7 @@ declare -A EXPECTED_ENV=(
   [SSL_CERT_FILE]="/etc/ssl/certs/ca-certificates.crt"
   [REQUESTS_CA_BUNDLE]="/etc/ssl/certs/ca-certificates.crt"
   [CARGO_HTTP_CAINFO]="/etc/ssl/certs/ca-certificates.crt"
+  [RUSTUP_HOME]="/usr/local/rustup"
 )
 check_env() {
   local label=$1 sudo_flag=$2

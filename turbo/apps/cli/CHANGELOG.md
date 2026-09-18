@@ -1,5 +1,109 @@
 # Changelog
 
+## [9.343.0](https://github.com/vm0-ai/okou/compare/cli-v9.342.1...cli-v9.343.0) (2026-09-18)
+
+
+### Features
+
+* extend personal paid-tool controls to media generation ([#35264](https://github.com/vm0-ai/okou/issues/35264)) ([a686e46](https://github.com/vm0-ai/okou/commit/a686e46b0f2a149b0519582e066ec2d752f798de))
+* publish immutable sites and reuse private previews ([#35244](https://github.com/vm0-ai/okou/issues/35244)) ([899075c](https://github.com/vm0-ai/okou/commit/899075caeca519ac9202fa17bc9177e18258a58c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.472.0
+    * @okouai/core bumped to 8.681.2
+    * @okouai/pi-agent-runtime bumped to 1.33.19
+
+## [9.342.1](https://github.com/vm0-ai/okou/compare/cli-v9.342.0...cli-v9.342.1) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.471.0
+    * @okouai/core bumped to 8.681.1
+    * @okouai/pi-agent-runtime bumped to 1.33.18
+
+## [9.342.0](https://github.com/vm0-ai/okou/compare/cli-v9.341.2...cli-v9.342.0) (2026-09-18)
+
+
+### Features
+
+* **templates:** add the illustration kind to custom templates ([#35248](https://github.com/vm0-ai/okou/issues/35248)) ([ebd7039](https://github.com/vm0-ai/okou/commit/ebd70395f808ff7bd21ddc453789c76d712d7fe6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.470.0
+    * @okouai/core bumped to 8.681.0
+    * @okouai/pi-agent-runtime bumped to 1.33.17
+
+## [9.341.2](https://github.com/vm0-ai/okou/compare/cli-v9.341.1...cli-v9.341.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* download complete sites with visibility-aware cloning ([#35220](https://github.com/vm0-ai/okou/issues/35220)) ([1707f8b](https://github.com/vm0-ai/okou/commit/1707f8b786945a00deb1da9597ba2ab4a3488b71))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.469.1
+    * @okouai/core bumped to 8.680.6
+    * @okouai/pi-agent-runtime bumped to 1.33.16
+
+## [9.341.1](https://github.com/vm0-ai/okou/compare/cli-v9.341.0...cli-v9.341.1) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.469.0
+    * @okouai/core bumped to 8.680.5
+    * @okouai/pi-agent-runtime bumped to 1.33.15
+
+## [9.341.0](https://github.com/vm0-ai/okou/compare/cli-v9.340.10...cli-v9.341.0) (2026-09-18)
+
+
+### Features
+
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.468.0
+    * @okouai/connectors bumped to 3.13.0
+    * @okouai/core bumped to 8.680.4
+    * @okouai/pi-agent-runtime bumped to 1.33.14
+
+## [9.340.10](https://github.com/vm0-ai/okou/compare/cli-v9.340.9...cli-v9.340.10) (2026-09-18)
+
+
+### Bug Fixes
+
+* honor artifact sharing permissions in cli downloads ([#35162](https://github.com/vm0-ai/okou/issues/35162)) ([5bbdb8a](https://github.com/vm0-ai/okou/commit/5bbdb8a2220c110497afe59ff25d8a18e45896e0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.467.0
+    * @okouai/core bumped to 8.680.3
+    * @okouai/pi-agent-runtime bumped to 1.33.13
+
 ## [9.340.9](https://github.com/vm0-ai/okou/compare/cli-v9.340.8...cli-v9.340.9) (2026-09-18)
 
 

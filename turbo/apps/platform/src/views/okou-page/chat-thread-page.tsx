@@ -136,10 +136,7 @@ import {
 } from "./chat-body-cards.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatConversationLocator } from "./chat-conversation-locator.tsx";
-import {
-  customConnectorMcpEnabled$,
-  featureSwitch$,
-} from "../../signals/external/feature-switch.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isStandalonePwa } from "../../lib/keyboard-dismiss-gesture.ts";
 import {
   captureChatWorkHistoryExpanded,
@@ -4649,7 +4646,6 @@ function ChatConnectorActionConnectModal() {
 
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const runCallback = useSet(runChatActionCallback$);
   const pageSignal = useGet(pageSignal$);
@@ -4674,10 +4670,7 @@ function ActiveChatConnectorActionConnectModal() {
 
   if (active.kind === "custom") {
     const connector = customConnectors?.find((candidate) => {
-      return (
-        candidate.slug === active.connectorSlug &&
-        (candidate.kind === "http" || mcpEnabled)
-      );
+      return candidate.slug === active.connectorSlug;
     });
     const accountOptions = connector
       ? defaultCustomConnectorAccountOptions(connector)
@@ -5939,6 +5932,7 @@ function MessageAttachment({
       <ChatVideoPreviewButton
         resourceUrl$={a.signals.resourceUrl$}
         posterLoad={a.signals.previewImageLoad}
+        previewImageUrl$={a.signals.previewImageUrl$}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;
@@ -5973,6 +5967,7 @@ function MessageAttachment({
         filename={a.filename}
         url={a.url}
         kind={a.kind}
+        preview={a.kind === "html" ? a.signals : undefined}
         text$={a.signals.text$}
       />
     );
@@ -6460,6 +6455,7 @@ function UserMessageFileReference({
       <ChatVideoPreviewButton
         resourceUrl$={signals.resourceUrl$}
         posterLoad={signals.previewImageLoad}
+        previewImageUrl$={signals.previewImageUrl$}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;
@@ -6493,6 +6489,7 @@ function UserMessageFileReference({
         filename={part.filenameSnapshot}
         url={signals.url}
         kind={signals.kind}
+        preview={signals.kind === "html" ? signals : undefined}
       />
     );
   } else if (signals.kind === "audio") {

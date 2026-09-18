@@ -136,6 +136,7 @@ interface RecordedAvatarVideo {
   readonly contentType: string;
   readonly size: number;
   readonly url: string;
+  readonly privateArtifacts: boolean;
   readonly durationSeconds: number;
   readonly creditsCharged: number;
   readonly provider: "joggai";
@@ -831,6 +832,7 @@ export const recordGeneratedAvatarVideo$ = command(
       contentType: params.generation.contentType,
       size: params.generation.videoBytes.byteLength,
       url: artifact.url,
+      privateArtifacts: artifact.isPrivate,
       durationSeconds: params.generation.durationSeconds,
       creditsCharged: estimateCredits(
         params.generation.billingQuantity,

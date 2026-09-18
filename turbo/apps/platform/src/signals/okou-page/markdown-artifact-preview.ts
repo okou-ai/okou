@@ -46,6 +46,7 @@ export const openMarkdownArtifact$ = command(
             filename,
             url,
             kind,
+            ...(kind === "html" ? { preview: signals } : {}),
             text$: signals.text$,
           },
           target,

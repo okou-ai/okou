@@ -5,6 +5,7 @@ import chalk from "chalk";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IntroVideoAgentResponse } from "@okouai/api-contracts/contracts/intro-video-agent";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 
 import { server } from "../../mocks/server";
 import { introVideoAgentCommand } from "../__intro-video-agent";
@@ -106,6 +107,10 @@ describe("internal Intro Video Agent command", () => {
   ])(
     "submits the concrete $selection style and exact choices once",
     async ({ styleId }) => {
+      vi.stubEnv(
+        DISABLED_PAID_TOOLS_ENV_VAR,
+        '["voice-generation", "avatar-video-generation", "video-rendering"]',
+      );
       let submissions = 0;
       server.use(
         http.post(GENERATE_URL, async ({ request }) => {
@@ -219,6 +224,7 @@ describe("internal Intro Video Agent command", () => {
   ])(
     "reads a $status job without submission options or another POST",
     async (result) => {
+      vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["video-generation"]');
       let statusRequests = 0;
       server.use(
         http.get(STATUS_URL, ({ request }) => {

@@ -13,14 +13,7 @@ import { setPageSignal$ } from "./page-signal.ts";
 import { clearPage$ } from "./react-router.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
-import {
-  bestEffort,
-  detach,
-  onDomEventFn,
-  Reason,
-  resetSignal,
-  settle,
-} from "./utils.ts";
+import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
 import { logger } from "./log.ts";
 import {
   capturePageView,
@@ -28,8 +21,6 @@ import {
   markNavigationPushState$,
 } from "../lib/posthog.ts";
 import { recordAdAttribution$ } from "./bootstrap/ad-attribution.ts";
-import { recordSignupAttribution$ } from "./bootstrap/signup-attribution.ts";
-import { bootstrapGoogleAdsConversionMilestones$ } from "./bootstrap/google-ads-conversion-milestones.ts";
 
 const L = logger("Route");
 
@@ -188,20 +179,6 @@ const loadRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (currentRoute.analytics !== false) {
     capturePageView();
-  }
-  // Record first-touch signup attribution as part of the route-load lifecycle.
-  // Bind to the parent `signal`, not the per-route `routeSignal`: a superseding
-  // route load aborts the previous `routeSignal` via resetRouteSignal$, and
-  // binding here would reject the superseded load with AbortError. The parent
-  // signal mirrors the `signal.throwIfAborted()` gate above, so supersession
-  // completes cleanly. The command early-returns when there is nothing to
-  // record. Equivalent successful checks, including server no-ops, are reused
-  // within the current root and user/session/org/attribution scope. Attribution
-  // is best-effort so a final API failure cannot reject the route load; failed
-  // checks remain eligible on a later route.
-  if (currentRoute.analytics !== false) {
-    await bestEffort(set(recordSignupAttribution$, signal), signal);
-    await settle(set(bootstrapGoogleAdsConversionMilestones$, signal), signal);
   }
 });
 

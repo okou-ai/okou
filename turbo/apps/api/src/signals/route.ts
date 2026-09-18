@@ -16,6 +16,7 @@ import { cronConnectorCatalogRoutes } from "./routes/cron-connector-catalog";
 import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workflow-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
+import { cronExecuteMorningBriefsRoutes } from "./routes/cron-execute-morning-briefs";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
 import { cronRenewGmailWatchesRoutes } from "./routes/cron-renew-gmail-watches";
@@ -67,7 +68,6 @@ import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
-import { acquisitionAttributionRoutes } from "./routes/acquisition-attribution";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
 import { billingConcurrencyCheckoutRoutes } from "./routes/billing-concurrency-checkout";
@@ -103,6 +103,7 @@ import { financeRoutes } from "./routes/finance";
 import { seoRoutes } from "./routes/seo";
 import { artifactShareRoutes } from "./routes/artifact-shares";
 import { artifactReferenceRoutes } from "./routes/artifact-references";
+import { artifactDownloadRoutes } from "./routes/artifact-downloads";
 import { hostRoutes } from "./routes/host";
 import { builtInGenerationRoutes } from "./routes/built-in-generation";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
@@ -143,6 +144,8 @@ import { webSearchRoutes } from "./routes/web-search";
 import { socialRoutes } from "./routes/social";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
+import { vncAccessRoutes } from "./routes/vnc-access";
+import { runnerVncRoutes } from "./routes/runner-vnc";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
@@ -207,6 +210,7 @@ import { userTemplatesRoutes } from "./routes/user-templates";
 import { usageMembersRoutes } from "./routes/usage-members";
 import { usageRecordRoutes } from "./routes/usage-record";
 import { userPreferencesRoutes } from "./routes/user-preferences";
+import { paidToolsRoutes } from "./routes/paid-tools";
 import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { avatarVideoRoutes } from "./routes/avatar-video";
@@ -262,6 +266,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
   ...cronDrainEmailOutboxRoutes,
+  ...cronExecuteMorningBriefsRoutes,
   ...cronExecuteWorkflowAutomationsRoutes,
   ...cronMonitorChatEventQueueRoutes,
   ...cronRenewGmailWatchesRoutes,
@@ -286,7 +291,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...artifactCatalogRoutes,
-  ...acquisitionAttributionRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
   ...billingConcurrencyCheckoutRoutes,
@@ -323,6 +327,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...hostRoutes,
   ...artifactShareRoutes,
   ...artifactReferenceRoutes,
+  ...artifactDownloadRoutes,
   ...builtInGenerationRoutes,
   ...imageIoGenerateRoutes,
   ...avatarVideoRoutes,
@@ -346,6 +351,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...socialRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
+  ...vncAccessRoutes,
+  ...runnerVncRoutes,
   ...cloudflareAccessRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,
@@ -383,6 +390,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...pushSubscriptionsRoutes,
   ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,
+  ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...morningBriefCalendarCollectionPreviewRoutes,

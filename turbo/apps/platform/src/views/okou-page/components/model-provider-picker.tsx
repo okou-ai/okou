@@ -9,15 +9,7 @@ import {
   useLastResolved,
   useSet,
 } from "ccstate-react";
-import {
-  Check,
-  ChevronDown,
-  Cpu,
-  Image as ImageIcon,
-  MessageCircle,
-  Video,
-  Zap,
-} from "lucide-react";
+import { Check, ChevronDown, Cpu, Zap } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -31,8 +23,6 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-  SegmentControl,
-  SegmentControlItem,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -73,7 +63,6 @@ import { pageSignal$ } from "../../../signals/page-signal";
 import { resolveExplicitModelSelection$ } from "../../../signals/okou-page/model-default-selection";
 import { detach, Reason } from "../../../signals/utils";
 import {
-  getMediaModelPriceTierLabel,
   getModelBrandIconType,
   getBuiltInModelPriceTier,
   getBuiltInModelPriceTierLabel,
@@ -113,15 +102,15 @@ export type MediaModelCategoryId = "image" | "video";
 export interface MediaModelPanelCategory {
   readonly id: MediaModelCategoryId;
   readonly label: string;
-  /** Short form for the desktop category strip, where three tabs share a row. */
+  /** Short form for the flyout's type rail, where three types share a column. */
   readonly tabLabel: string;
   readonly options: readonly MediaModelPanelOption[];
 }
 
 /**
- * Media-model categories share the run-model popover without joining its
- * Select value space. Both layouts drive the same active category: desktop
- * switches it from the tab strip, mobile from a nested drill-in.
+ * Media-model categories share the run-model popover. The compact menu updates
+ * the composer's active category; the desktop flyout owns its navigation in
+ * the menu signals.
  */
 export interface MediaModelPanelState {
   readonly activeCategory: MediaModelCategoryId | null;
@@ -162,13 +151,14 @@ interface ModelProviderPickerProps {
   modal?: boolean;
   // When true, picker is read-only for the current caller state.
   disabled?: boolean;
-  /** Enables the inline Codex Fast choices in the model list. */
-  codexFastModeEnabled?: boolean;
   /** Lets settings callers clear a personal choice and inherit workspace default. */
   showInheritOption?: boolean;
   /** Media-model category panel state for composer callers. */
   mediaModelPanel?: MediaModelPanelState;
-  /** Composer-owned navigation for the compact model menu rollout. */
+  /**
+   * Composer-owned navigation for the model menu. Callers that leave it unset
+   * get the plain select instead.
+   */
   menuSignals?: ModelPickerMenuSignals;
   /** Replaces the menu's pages with the detached type/model flyout. */
   flyoutLayout?: boolean;
@@ -321,13 +311,11 @@ function selectionAllowedValue(
 function selectionLabel({
   selection,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   /** See `ModelProviderPickerProps.fastShownByCaller`. */
   fastShownByCaller?: boolean;
@@ -336,9 +324,7 @@ function selectionLabel({
     return placeholder;
   }
   const modelLabel = getCanonicalModelDisplayName(selection.selectedModel);
-  return codexFastModeEnabled &&
-    !fastShownByCaller &&
-    selection.codexServiceTier === "fast"
+  return !fastShownByCaller && selection.codexServiceTier === "fast"
     ? `${modelLabel} ${fastLabel}`
     : modelLabel;
 }
@@ -347,14 +333,12 @@ function ModelFirstTriggerLabel({
   selection,
   placeholder,
   mobileIcon,
-  codexFastModeEnabled,
   fastLabel,
   fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
   mobileIcon: boolean;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   fastShownByCaller?: boolean;
 }) {
@@ -377,7 +361,6 @@ function ModelFirstTriggerLabel({
           {selectionLabel({
             selection,
             placeholder,
-            codexFastModeEnabled,
             fastLabel,
             fastShownByCaller,
           })}
@@ -392,7 +375,6 @@ function ModelFirstDisabledPickerLabel({
   placeholder,
   mobileIconTrigger,
   triggerClassName,
-  codexFastModeEnabled,
   fastLabel,
 }: Pick<
   ModelProviderPickerProps,
@@ -400,13 +382,11 @@ function ModelFirstDisabledPickerLabel({
 > & {
   placeholder: string;
   mobileIconTrigger: boolean;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
 }) {
   const label = selectionLabel({
     selection: value,
     placeholder,
-    codexFastModeEnabled,
     fastLabel,
   });
   return (
@@ -421,7 +401,6 @@ function ModelFirstDisabledPickerLabel({
         selection={value}
         placeholder={placeholder}
         mobileIcon={mobileIconTrigger}
-        codexFastModeEnabled={codexFastModeEnabled}
         fastLabel={fastLabel}
       />
     </span>
@@ -430,7 +409,6 @@ function ModelFirstDisabledPickerLabel({
 
 function modelFirstSelectionFromRaw(
   raw: string,
-  codexFastModeEnabled: boolean,
 ): ModelProviderSelection | null {
   if (raw === INHERIT_SENTINEL) {
     return null;
@@ -438,7 +416,6 @@ function modelFirstSelectionFromRaw(
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_FAST_OPTION_PREFIX.length);
     if (
-      codexFastModeEnabled &&
       isSupportedRunModel(selectedModel) &&
       isCodexFastModeModel(selectedModel)
     ) {
@@ -472,9 +449,8 @@ function codexFastOptionValue(model: string): string {
 function modelFirstSelectionFromInteraction(
   raw: string,
   currentSelection: ModelProviderSelection | null,
-  codexFastModeEnabled: boolean,
 ): ModelProviderSelection | null | undefined {
-  if (codexFastModeEnabled && currentSelection?.codexServiceTier === "fast") {
+  if (currentSelection?.codexServiceTier === "fast") {
     if (raw === currentSelection.selectedModel) {
       return undefined;
     }
@@ -482,7 +458,7 @@ function modelFirstSelectionFromInteraction(
       return { selectedModel: currentSelection.selectedModel };
     }
   }
-  return modelFirstSelectionFromRaw(raw, codexFastModeEnabled);
+  return modelFirstSelectionFromRaw(raw);
 }
 
 function isHiddenModelFirstSelectValue(value: string): boolean {
@@ -543,16 +519,13 @@ function ModelFirstPolicyRow({
   policy,
   modelCapabilities,
   selection,
-  codexFastModeEnabled,
 }: {
   policy: OrgModelPolicy;
   modelCapabilities: ModelPlanCapabilities;
   selection: ModelProviderSelection | null;
-  codexFastModeEnabled: boolean;
 }) {
   const { t } = useTranslation();
   const fastAvailable =
-    codexFastModeEnabled &&
     isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);
   if (fastAvailable) {
@@ -641,21 +614,16 @@ function ModelFirstPolicyItems({
   policies,
   selection,
   modelCapabilities,
-  codexFastModeEnabled,
   placeholder,
   showInheritOption,
   showSeparator = true,
-  showModelsLabel = true,
 }: {
   policies: OrgModelPolicy[];
   selection: ModelProviderSelection | null;
   modelCapabilities: ModelPlanCapabilities;
-  codexFastModeEnabled: boolean;
   placeholder: string;
   showInheritOption: boolean;
   showSeparator?: boolean;
-  /** When false, the media-model header already carries the category title. */
-  showModelsLabel?: boolean;
 }) {
   const { t } = useTranslation();
   const explicitSelectedModel = selection?.selectedModel ?? null;
@@ -690,13 +658,11 @@ function ModelFirstPolicyItems({
         </div>
       ) : (
         <SelectGroup>
-          {showModelsLabel && (
-            <SelectLabel className="pl-2 pr-8 py-1.5 text-xs font-medium text-muted-foreground">
-              {t(($) => {
-                return $.settings.models.picker.models;
-              })}
-            </SelectLabel>
-          )}
+          <SelectLabel className="pl-2 pr-8 py-1.5 text-xs font-medium text-muted-foreground">
+            {t(($) => {
+              return $.settings.models.picker.models;
+            })}
+          </SelectLabel>
           {policies.map((policy) => {
             return (
               <ModelFirstPolicyRow
@@ -704,7 +670,6 @@ function ModelFirstPolicyItems({
                 policy={policy}
                 modelCapabilities={modelCapabilities}
                 selection={selection}
-                codexFastModeEnabled={codexFastModeEnabled}
               />
             );
           })}
@@ -713,12 +678,6 @@ function ModelFirstPolicyItems({
     </>
   );
 }
-
-// Rows in media-model panels are plain buttons rather than SelectItems: the
-// Select's value space belongs to the run model, and a SelectItem here would
-// both join it and close the popover on click.
-const MEDIA_MODEL_PANEL_ROW_CLASS =
-  "relative flex w-full cursor-pointer select-none items-center gap-2 rounded-lg py-1.5 pl-2 pr-8 text-left text-sm outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground";
 
 const BYTEDANCE_ICON_PATH =
   "M19.8772 1.4685 24 2.5326v18.9426l-4.1228 1.0563V1.4685zm-13.3481 9.428 4.115 1.0641v8.9786l-4.115 1.0642v-11.107zM0 2.572l4.115 1.0642v16.7354L0 21.428V2.572zm17.4553 5.6205v11.107l-4.1228-1.0642V9.2568l4.1228-1.0642z";
@@ -1015,145 +974,13 @@ export function VideoModelBrandIcon({ model }: { model: VideoModel }) {
   );
 }
 
-function MediaModelPanelRow({ option }: { option: MediaModelPanelOption }) {
-  return (
-    <button
-      type="button"
-      aria-label={option.label}
-      aria-pressed={option.selected}
-      aria-current={option.selected ? "true" : undefined}
-      className={MEDIA_MODEL_PANEL_ROW_CLASS}
-      onClick={option.onSelect}
-    >
-      {option.icon}
-      <span className="min-w-0 flex-1 truncate">{option.label}</span>
-      <PriceTierBadge
-        tier={option.priceTier}
-        description={getMediaModelPriceTierLabel(option.priceTier)}
-      />
-      {option.selected && (
-        <Check size={15} className="absolute right-2 text-foreground" />
-      )}
-    </button>
-  );
-}
-
-function MediaModelPanel({ category }: { category: MediaModelPanelCategory }) {
-  return (
-    <SelectGroup>
-      {category.options.map((option) => {
-        return <MediaModelPanelRow key={option.key} option={option} />;
-      })}
-    </SelectGroup>
-  );
-}
-
-/**
- * The list header carries the category title beside the category switch on one
- * row, so the switch stays quiet: it borrows the label's height instead of
- * adding a band of its own above it. It is rendered once for the whole popover
- * (rather than once per panel) so switching category keeps the same switch.
- */
-function ModelPickerListHeader({
-  label,
-  categorySwitch,
-}: {
-  label: string;
-  categorySwitch: ReactNode;
-}) {
-  return (
-    // Pinned so switching category never means scrolling back up for the
-    // switch. The negative side and top margins bleed the row over the list's
-    // own `p-1` inset so rows scroll under an opaque surface rather than
-    // beside it.
-    //
-    // The 28px switch is what sets this row's height, so its padding is what
-    // sets the label's distance from the first option: `py-2` left the label
-    // floating in a band nearly four times its own ink. `py-1` seats the
-    // switch on the same 4px inset the rows sit on, and `-mb-1` takes back the
-    // list's `gap-1` so the header's own padding is the whole distance.
-    <div className="sticky top-0 z-10 -mx-1 -mt-1 -mb-1 flex items-center gap-2 bg-card py-1 pl-3 pr-2">
-      <span className="min-w-0 flex-1 truncate text-xs font-medium text-muted-foreground">
-        {label}
-      </span>
-      {categorySwitch}
-    </div>
-  );
-}
-
-const MEDIA_MODEL_CATEGORY_ICONS = {
-  image: <ImageIcon size={16} aria-hidden="true" />,
-  video: <Video size={16} aria-hidden="true" />,
-} satisfies Record<MediaModelCategoryId, ReactNode>;
-
-const CHAT_CATEGORY_VALUE = "chat";
-
-// Icon-only: three glyphs sitting straight on the popover surface. A filled
-// track was the darkest thing in a popover otherwise made of quiet rows, and
-// the labels it carried repeated the group label beside it. The `plain`
-// variant is what drops the track and, with it, the raised fill and shadow the
-// selected glyph used to carry; only the square footprint is set here.
-const MEDIA_MODEL_CATEGORY_SEGMENT_CLASS = "w-7 px-0";
-
-/**
- * Category switch for the popover. It used to live in the composer as a filled
- * track holding three controls, which read as heavy for a row of quiet
- * controls; the composer keeps one trigger and the split happens here instead.
- * Every viewport gets the same switch -- mobile previously drilled into a
- * nested category from a root menu, which was a second way to express one
- * choice.
- */
-function MediaModelCategorySwitch({ panel }: { panel: MediaModelPanelState }) {
-  const { t } = useTranslation();
-  return (
-    <SegmentControl
-      size="xs"
-      variant="plain"
-      className="shrink-0"
-      aria-label={t(($) => {
-        return $.settings.models.picker.models;
-      })}
-      value={panel.activeCategory ?? CHAT_CATEGORY_VALUE}
-      onValueChange={(next: string) => {
-        panel.onActiveCategoryChange(
-          next === CHAT_CATEGORY_VALUE ? null : (next as MediaModelCategoryId),
-        );
-      }}
-    >
-      <SegmentControlItem
-        value={CHAT_CATEGORY_VALUE}
-        aria-label={t(($) => {
-          return $.settings.models.picker.categoryChat;
-        })}
-        className={MEDIA_MODEL_CATEGORY_SEGMENT_CLASS}
-      >
-        <MessageCircle size={16} aria-hidden="true" />
-      </SegmentControlItem>
-      {panel.categories.map((category) => {
-        return (
-          <SegmentControlItem
-            key={category.id}
-            value={category.id}
-            aria-label={category.tabLabel}
-            className={MEDIA_MODEL_CATEGORY_SEGMENT_CLASS}
-          >
-            {MEDIA_MODEL_CATEGORY_ICONS[category.id]}
-          </SegmentControlItem>
-        );
-      })}
-    </SegmentControl>
-  );
-}
-
 interface ModelFirstModelPickerContentBaseProps {
   selectValue: string;
   placeholder: string;
   policies: OrgModelPolicy[];
   selection: ModelProviderSelection | null;
   modelCapabilities: ModelPlanCapabilities;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
-  mediaModelPanel: MediaModelPanelState | undefined;
   showInheritOption: boolean;
 }
 
@@ -1163,65 +990,34 @@ function ModelFirstModelPickerContentLayout({
   policies,
   selection,
   modelCapabilities,
-  codexFastModeEnabled,
   fastLabel,
-  mediaModelPanel,
   showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
-  const { t } = useTranslation();
-  const activeMediaModelCategoryId = mediaModelPanel?.activeCategory;
-  const activeMediaModelCategory = mediaModelPanel?.categories.find(
-    (category) => {
-      return category.id === activeMediaModelCategoryId;
-    },
-  );
-  const mediaModelPanelOpen = activeMediaModelCategory !== undefined;
   return (
     <SelectContent className="min-w-[260px] max-h-[var(--available-height)]">
-      {/* A media-model panel replaces the model rows, so keep the selected run
-          model measurable the same way a hidden select value is. */}
-      {(mediaModelPanelOpen ||
-        (isHiddenModelFirstSelectValue(selectValue) &&
-          !(showInheritOption && selectValue === INHERIT_SENTINEL))) && (
-        <SelectItem
-          value={selectValue}
-          className={MEASURABLE_HIDDEN_SELECT_ITEM_CLASS}
-          disabled
-          aria-hidden="true"
-        >
-          {selectionLabel({
-            selection,
-            placeholder,
-            codexFastModeEnabled,
-            fastLabel,
-          })}
-        </SelectItem>
-      )}
-      {mediaModelPanel && (
-        <ModelPickerListHeader
-          label={
-            activeMediaModelCategory?.label ??
-            t(($) => {
-              return $.settings.models.picker.chatModels;
-            })
-          }
-          categorySwitch={<MediaModelCategorySwitch panel={mediaModelPanel} />}
-        />
-      )}
-      {mediaModelPanel && activeMediaModelCategory ? (
-        <MediaModelPanel category={activeMediaModelCategory} />
-      ) : (
-        <ModelFirstPolicyItems
-          policies={policies}
-          selection={selection}
-          modelCapabilities={modelCapabilities}
-          codexFastModeEnabled={codexFastModeEnabled}
-          placeholder={placeholder}
-          showInheritOption={showInheritOption}
-          showSeparator={showInheritOption}
-          showModelsLabel={!mediaModelPanel}
-        />
-      )}
+      {isHiddenModelFirstSelectValue(selectValue) &&
+        !(showInheritOption && selectValue === INHERIT_SENTINEL) && (
+          <SelectItem
+            value={selectValue}
+            className={MEASURABLE_HIDDEN_SELECT_ITEM_CLASS}
+            disabled
+            aria-hidden="true"
+          >
+            {selectionLabel({
+              selection,
+              placeholder,
+              fastLabel,
+            })}
+          </SelectItem>
+        )}
+      <ModelFirstPolicyItems
+        policies={policies}
+        selection={selection}
+        modelCapabilities={modelCapabilities}
+        placeholder={placeholder}
+        showInheritOption={showInheritOption}
+        showSeparator={showInheritOption}
+      />
     </SelectContent>
   );
 }
@@ -1238,7 +1034,6 @@ function resolveModelFirstModelPickerState({
   policyResponse,
   modelCapabilities,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   excludedModel,
 }: {
@@ -1246,7 +1041,6 @@ function resolveModelFirstModelPickerState({
   policyResponse: { policies: OrgModelPolicy[] } | null | undefined;
   modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   excludedModel: SupportedRunModel | undefined;
 }): ModelFirstModelPickerState {
@@ -1261,7 +1055,6 @@ function resolveModelFirstModelPickerState({
     triggerAriaLabel: selectionLabel({
       selection,
       placeholder,
-      codexFastModeEnabled,
       fastLabel,
     }),
   };
@@ -1273,7 +1066,6 @@ function ModelFirstSelectPicker({
   placeholder,
   triggerClassName,
   mobileIconTrigger,
-  codexFastModeEnabled,
   fastLabel,
   fastShownByCaller,
   open,
@@ -1286,7 +1078,6 @@ function ModelFirstSelectPicker({
   placeholder: string;
   triggerClassName: string | undefined;
   mobileIconTrigger: boolean;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   fastShownByCaller: boolean;
   open: boolean | undefined;
@@ -1316,7 +1107,6 @@ function ModelFirstSelectPicker({
             selection={state.selection}
             placeholder={placeholder}
             mobileIcon={mobileIconTrigger}
-            codexFastModeEnabled={codexFastModeEnabled}
             fastLabel={fastLabel}
             fastShownByCaller={fastShownByCaller}
           />
@@ -1330,12 +1120,10 @@ function ModelFirstSelectPicker({
 function resolveExplicitModelFirstModelPickerState({
   value,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
 }): ModelFirstModelPickerState {
   return {
@@ -1345,7 +1133,6 @@ function resolveExplicitModelFirstModelPickerState({
     triggerAriaLabel: selectionLabel({
       selection: value,
       placeholder,
-      codexFastModeEnabled,
       fastLabel,
     }),
   };
@@ -1354,13 +1141,11 @@ function resolveExplicitModelFirstModelPickerState({
 function ModelFirstModelPickerMessageContent({
   value,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   message,
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   message: string;
 }) {
@@ -1375,7 +1160,6 @@ function ModelFirstModelPickerMessageContent({
         {selectionLabel({
           selection: value,
           placeholder,
-          codexFastModeEnabled,
           fastLabel,
         })}
       </SelectItem>
@@ -1387,7 +1171,6 @@ function ModelFirstModelPickerMessageContent({
 function SubscribedExplicitModelFirstModelPickerContent({
   value,
   placeholder,
-  codexFastModeEnabled,
   fastLabel,
   mediaModelPanel,
   excludedModel,
@@ -1399,7 +1182,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
-  codexFastModeEnabled: boolean;
   fastLabel: string;
   mediaModelPanel: MediaModelPanelState | undefined;
   excludedModel: SupportedRunModel | undefined;
@@ -1432,7 +1214,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
       <ModelFirstModelPickerMessageContent
         value={value}
         placeholder={placeholder}
-        codexFastModeEnabled={codexFastModeEnabled}
         fastLabel={fastLabel}
         message={
           policiesLoadable.state === "loading"
@@ -1451,7 +1232,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
     policyResponse,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
-    codexFastModeEnabled,
     fastLabel,
     excludedModel,
   });
@@ -1480,7 +1260,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
             ),
             disabled: !isMemberModelPolicyConfigurable(policy),
             fastAvailable:
-              codexFastModeEnabled &&
               isMemberModelPolicyConfigurable(policy) &&
               isCodexFastModeModel(policy.model),
             fastImpact: <ModelFastImpact policy={policy} />,
@@ -1496,9 +1275,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
       policies={state.policies}
       selection={state.selection}
       modelCapabilities={modelCapabilities}
-      codexFastModeEnabled={codexFastModeEnabled}
       fastLabel={fastLabel}
-      mediaModelPanel={mediaModelPanel}
       showInheritOption={showInheritOption}
     />
   );
@@ -1544,15 +1321,10 @@ function EnabledExplicitModelFirstModelPicker(
   const state = resolveExplicitModelFirstModelPickerState({
     value: props.value,
     placeholder: props.placeholder,
-    codexFastModeEnabled: props.codexFastModeEnabled ?? false,
     fastLabel: props.fastLabel,
   });
   const handleRawValueChange = (raw: string) => {
-    const selection = modelFirstSelectionFromInteraction(
-      raw,
-      state.selection,
-      props.codexFastModeEnabled ?? false,
-    );
+    const selection = modelFirstSelectionFromInteraction(raw, state.selection);
     if (selection !== undefined) {
       handleSelectionChange(selection);
     }
@@ -1561,7 +1333,6 @@ function EnabledExplicitModelFirstModelPicker(
     <SubscribedExplicitModelFirstModelPickerContent
       value={props.value}
       placeholder={props.placeholder}
-      codexFastModeEnabled={props.codexFastModeEnabled ?? false}
       fastLabel={props.fastLabel}
       mediaModelPanel={props.mediaModelPanel}
       excludedModel={props.excludedModel}
@@ -1593,7 +1364,6 @@ function EnabledExplicitModelFirstModelPicker(
                 selection={state.selection}
                 placeholder={props.placeholder}
                 mobileIcon={props.mobileIconTrigger}
-                codexFastModeEnabled={props.codexFastModeEnabled ?? false}
                 fastLabel={props.fastLabel}
                 fastShownByCaller={props.fastShownByCaller ?? false}
               />
@@ -1632,7 +1402,6 @@ function EnabledExplicitModelFirstModelPicker(
       placeholder={props.placeholder}
       triggerClassName={props.triggerClassName}
       mobileIconTrigger={props.mobileIconTrigger}
-      codexFastModeEnabled={props.codexFastModeEnabled ?? false}
       fastShownByCaller={props.fastShownByCaller ?? false}
       fastLabel={props.fastLabel}
       open={props.open}
@@ -1653,7 +1422,6 @@ export function ModelProviderPicker({
   onOpenChange,
   modal,
   disabled = false,
-  codexFastModeEnabled = false,
   showInheritOption = false,
   mediaModelPanel,
   menuSignals,
@@ -1678,7 +1446,6 @@ export function ModelProviderPicker({
         placeholder={resolvedPlaceholder}
         mobileIconTrigger={mobileIconTrigger}
         triggerClassName={triggerClassName}
-        codexFastModeEnabled={codexFastModeEnabled}
         fastLabel={fastLabel}
       />
     );
@@ -1693,7 +1460,6 @@ export function ModelProviderPicker({
       open={open}
       onOpenChange={onOpenChange}
       modal={modal}
-      codexFastModeEnabled={codexFastModeEnabled}
       showInheritOption={showInheritOption}
       fastLabel={fastLabel}
       excludedModel={excludedModel}

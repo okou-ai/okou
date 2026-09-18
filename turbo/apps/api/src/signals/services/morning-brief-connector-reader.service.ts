@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorRuntimeTargetKey } from "@okouai/api-contracts/contracts/runners";
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
@@ -11,14 +13,16 @@ import { assertErasureSubjectWritable } from "@okouai/db/operations/account-eras
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
 import { and, eq, or, sql } from "drizzle-orm";
+import type { PgTransactionConfig } from "drizzle-orm/pg-core";
 import type { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { now } from "../../lib/time";
+import { monotonicNow, now } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
 import type { Db, ReadonlyDb } from "../external/db";
 import {
+  onRejection,
   readBoundedResponseText,
   safeJsonParse,
   settle,
@@ -43,6 +47,11 @@ import {
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+import {
+  morningBriefNativeCollectionAuthorityIsCurrent,
+  type MorningBriefNativeCollectionAuthority,
+} from "./morning-brief-native-generation-admission.service";
+import { readMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
@@ -75,6 +84,7 @@ export interface MorningBriefCollectionScope {
   readonly orgId: string;
   readonly userId: string;
   readonly installationId: string;
+  readonly automationId: string;
   readonly agentId: string;
   readonly chatThreadId: string | null;
   readonly anchor: Date;
@@ -85,6 +95,8 @@ export interface MorningBriefCollectionScope {
    * previous one collected.
    */
   readonly membershipId: string;
+  /** Present only when the native scheduler, not the legacy automation, owns this attempt. */
+  readonly nativeAuthority?: MorningBriefNativeCollectionAuthority;
 }
 
 interface MorningBriefReaderBudget {
@@ -104,16 +116,49 @@ interface MorningBriefReaderBudget {
  * whole budget leaves no allowance behind, rather than earning a fresh one.
  */
 export interface MorningBriefSourceDeadline {
-  /** Absolute `now()` milliseconds at which the source read expires. */
+  /** Absolute application `now()` at which no later work may start or release. */
   readonly at: number;
-  /** Aborts in-flight provider I/O once the wall clock is spent. */
+  /**
+   * The same allowance on the monotonic clock used for in-flight I/O.
+   *
+   * Production application and monotonic clocks advance together. Keeping the
+   * second representation in the same immutable object also lets controlled-
+   * clock tests move application admission to an exact boundary without
+   * pretending PostgreSQL transaction startup consumed that simulated time.
+   */
+  readonly ioAt: number;
+  /** Aborts in-flight provider I/O once the real allowance is spent. */
   readonly signal: AbortSignal;
 }
 
 export function startMorningBriefSourceDeadline(
   budgetMs: number,
 ): MorningBriefSourceDeadline {
-  return { at: now() + budgetMs, signal: AbortSignal.timeout(budgetMs) };
+  return {
+    at: now() + budgetMs,
+    ioAt: monotonicNow() + budgetMs,
+    signal: AbortSignal.timeout(budgetMs),
+  };
+}
+
+/** A shorter phase bound that still spends the parent attempt's clock. */
+export function narrowMorningBriefSourceDeadline(
+  parent: Pick<MorningBriefSourceDeadline, "at" | "ioAt">,
+  at: number,
+  parentSignal: AbortSignal,
+): MorningBriefSourceDeadline {
+  const narrowedAt = Math.min(parent.at, at);
+  // Shorten both representations by exactly the same amount. Deriving ioAt
+  // from the current application clock would turn a controlled Date.now jump
+  // into elapsed PostgreSQL time and make sub-millisecond startup accidental
+  // authority at exact-boundary tests.
+  const ioAt = parent.ioAt - Math.max(0, parent.at - narrowedAt);
+  const ioRemainingMs = Math.max(0, Math.floor(ioAt - monotonicNow()));
+  return {
+    at: narrowedAt,
+    ioAt,
+    signal: AbortSignal.any([parentSignal, AbortSignal.timeout(ioRemainingMs)]),
+  };
 }
 
 /**
@@ -128,6 +173,130 @@ export function startMorningBriefSourceDeadline(
  */
 function deadlineHasPassed(at: number, timer: AbortSignal): boolean {
   return timer.aborted || now() >= at;
+}
+
+interface MorningBriefDatabaseDeadlineCaps {
+  readonly lockTimeoutMs: number;
+  readonly statementTimeoutMs: number;
+}
+
+class MorningBriefDatabaseDeadlineExceededError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("Morning Brief database deadline exceeded", options);
+    this.name = "MorningBriefDatabaseDeadlineExceededError";
+  }
+}
+
+export function isMorningBriefDatabaseDeadlineExceeded(
+  error: unknown,
+): boolean {
+  if (error instanceof MorningBriefDatabaseDeadlineExceededError) {
+    return true;
+  }
+  const postgresError =
+    error instanceof Error && error.cause !== undefined ? error.cause : error;
+  return (
+    postgresError !== null &&
+    typeof postgresError === "object" &&
+    "code" in postgresError &&
+    postgresError.code === "25P04"
+  );
+}
+
+/**
+ * Run one local authority/read transaction under the source's absolute clock.
+ *
+ * `statement_timeout` and `lock_timeout` still cap one statement. The separate
+ * `transaction_timeout`, installed once when the transaction starts, is what
+ * prevents several individually-short waits from cumulatively outliving the
+ * source. `beforeStatement` re-reads the application clock after every await so
+ * no later query is dispatched at equality, while retaining the transaction
+ * timeout as the server-side bound for work already in flight.
+ */
+export async function withMorningBriefDatabaseDeadline<T>(
+  args: {
+    readonly db: Db;
+    readonly deadline: MorningBriefSourceDeadline;
+    readonly caps: MorningBriefDatabaseDeadlineCaps;
+    readonly transactionConfig?: PgTransactionConfig;
+  },
+  signal: AbortSignal,
+  work: (tx: Tx, beforeStatement: () => Promise<void>) => Promise<T>,
+): Promise<T> {
+  signal.throwIfAborted();
+  const applicationRemaining = (): number => {
+    return Math.max(0, args.deadline.at - now());
+  };
+  const ioRemaining = (): number => {
+    return Math.max(0, Math.floor(args.deadline.ioAt - monotonicNow()));
+  };
+  if (applicationRemaining() === 0 || ioRemaining() === 0) {
+    throw new MorningBriefDatabaseDeadlineExceededError();
+  }
+  const callbackFailure: { failed: boolean; error: unknown } = {
+    failed: false,
+    error: undefined,
+  };
+  const transaction = await settle(
+    args.db.transaction((tx: Tx) => {
+      const run = async (): Promise<T> => {
+        signal.throwIfAborted();
+        if (applicationRemaining() === 0) {
+          throw new MorningBriefDatabaseDeadlineExceededError();
+        }
+        const transactionRemaining = ioRemaining();
+        if (transactionRemaining === 0) {
+          throw new MorningBriefDatabaseDeadlineExceededError();
+        }
+        const transactionTimeout = `${transactionRemaining.toString()}ms`;
+        await tx.execute(sql`SELECT
+            set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
+            set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
+            set_config('transaction_timeout', ${transactionTimeout}, true)`);
+
+        const beforeStatement = async (): Promise<void> => {
+          signal.throwIfAborted();
+          if (applicationRemaining() === 0) {
+            throw new MorningBriefDatabaseDeadlineExceededError();
+          }
+          const statementRemaining = ioRemaining();
+          if (statementRemaining === 0) {
+            throw new MorningBriefDatabaseDeadlineExceededError();
+          }
+          await tx.execute(sql`SELECT
+              set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
+              set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
+          signal.throwIfAborted();
+          if (applicationRemaining() === 0 || ioRemaining() === 0) {
+            throw new MorningBriefDatabaseDeadlineExceededError();
+          }
+        };
+
+        await beforeStatement();
+        return await work(tx, beforeStatement);
+      };
+      return onRejection(run(), (error) => {
+        // transaction_timeout terminates the session. Drizzle still issues its
+        // owned ROLLBACK, and that cleanup can fail after the server closes the
+        // connection. Retain the callback's PostgreSQL error so cleanup cannot
+        // mask 25P04, while still awaiting the transaction through settlement.
+        callbackFailure.failed = true;
+        callbackFailure.error = error;
+      });
+    }, args.transactionConfig),
+  );
+  if (transaction.ok) {
+    return transaction.value;
+  }
+  const transactionError = callbackFailure.failed
+    ? callbackFailure.error
+    : transaction.error;
+  if (isMorningBriefDatabaseDeadlineExceeded(transactionError)) {
+    throw new MorningBriefDatabaseDeadlineExceededError({
+      cause: transactionError,
+    });
+  }
+  throw transactionError;
 }
 
 /**
@@ -283,13 +452,13 @@ interface MorningBriefAuthorizationRequest {
   readonly selection: MorningBriefFrozenSelection;
   readonly db: Db;
   readonly clerk: ClerkClient;
+  readonly deadline: MorningBriefSourceDeadline;
 }
 
 interface MorningBriefReaderRequest extends MorningBriefAuthorizationRequest {
   readonly apiBase: string;
   readonly environmentName: string;
   readonly budget: MorningBriefReaderBudget;
-  readonly deadline: MorningBriefSourceDeadline;
 }
 
 /** The exact account this source is pinned to for its whole lifetime. */
@@ -365,8 +534,10 @@ async function agentIsVisible(
   return agent !== undefined;
 }
 
-const ADMISSION_LOCK_TIMEOUT = "1s";
-const ADMISSION_STATEMENT_TIMEOUT = "5s";
+const ADMISSION_DATABASE_CAPS = {
+  lockTimeoutMs: 1000,
+  statementTimeoutMs: 5000,
+} as const;
 
 /**
  * Erasure admission in one short, finitely bounded transaction.
@@ -380,34 +551,54 @@ const ADMISSION_STATEMENT_TIMEOUT = "5s";
 async function subjectIsWritable(
   db: Db,
   owner: { readonly orgId: string; readonly userId: string },
+  deadline: MorningBriefSourceDeadline,
+  signal: AbortSignal,
 ): Promise<boolean> {
   const settled = await settle(
-    db.transaction(async (tx: Tx) => {
-      await tx.execute(
-        sql`SELECT set_config('lock_timeout', ${ADMISSION_LOCK_TIMEOUT}, true)`,
-      );
-      await tx.execute(
-        sql`SELECT set_config('statement_timeout', ${ADMISSION_STATEMENT_TIMEOUT}, true)`,
-      );
-      await assertErasureSubjectWritable(tx, [
-        { subjectKind: "organization", subjectId: owner.orgId },
-        { subjectKind: "user", subjectId: owner.userId },
-      ]);
-      return true;
-    }),
+    withMorningBriefDatabaseDeadline(
+      { db, deadline, caps: ADMISSION_DATABASE_CAPS },
+      signal,
+      async (tx) => {
+        await assertErasureSubjectWritable(tx, [
+          { subjectKind: "organization", subjectId: owner.orgId },
+          { subjectKind: "user", subjectId: owner.userId },
+        ]);
+        return true;
+      },
+    ),
   );
+  if (
+    !settled.ok &&
+    (deadlineHasPassed(deadline.at, signal) ||
+      isMorningBriefDatabaseDeadlineExceeded(settled.error))
+  ) {
+    throw settled.error;
+  }
   // A closed subject aborts the transaction; that is a refusal, not an outage.
   return settled.ok;
 }
 
 /**
- * The canonical brief must still be installed, enabled and the same
- * installation on the same Agent that this collection was scoped to.
+ * The canonical brief must still be the complete binding this collection was
+ * admitted under. A replacement automation or destination is a new authority,
+ * even when the installation stays enabled on the same Agent.
  */
 async function ownershipIsUnchanged(
-  db: ReadonlyDb,
+  db: Db,
   scope: MorningBriefCollectionScope,
 ): Promise<boolean> {
+  if (scope.nativeAuthority !== undefined) {
+    return await morningBriefNativeCollectionAuthorityIsCurrent(db, {
+      orgId: scope.orgId,
+      userId: scope.userId,
+      scheduledFor: scope.anchor,
+      installationId: scope.installationId,
+      automationId: scope.automationId,
+      agentId: scope.agentId,
+      chatThreadId: scope.chatThreadId,
+      authority: scope.nativeAuthority,
+    });
+  }
   const state = await loadMorningBriefMigrationState(db, {
     orgId: scope.orgId,
     userId: scope.userId,
@@ -416,8 +607,53 @@ async function ownershipIsUnchanged(
     state.kind === "installed" &&
     state.automation.enabled &&
     state.installation.id === scope.installationId &&
-    state.installation.agentId === scope.agentId
+    state.automation.id === scope.automationId &&
+    state.installation.agentId === scope.agentId &&
+    state.chatThreadId === scope.chatThreadId
   );
+}
+
+/**
+ * The final local decision after the external membership observation.
+ *
+ * Erasure admission is taken first and held through the canonical binding and
+ * Brief-Agent reads. A closure that committed while Clerk was answering is
+ * therefore visible before either local authority check, while a closure that
+ * arrives after admission waits for this short transaction to finish. No
+ * network operation runs while these local locks are held.
+ */
+async function localScopeIsCurrent(
+  db: Db,
+  scope: MorningBriefCollectionScope,
+  deadline: MorningBriefSourceDeadline,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const settled = await settle(
+    withMorningBriefDatabaseDeadline(
+      { db, deadline, caps: ADMISSION_DATABASE_CAPS },
+      signal,
+      async (tx, beforeStatement) => {
+        await assertErasureSubjectWritable(tx, [
+          { subjectKind: "organization", subjectId: scope.orgId },
+          { subjectKind: "user", subjectId: scope.userId },
+        ]);
+        await beforeStatement();
+        if (!(await ownershipIsUnchanged(tx, scope))) {
+          return false;
+        }
+        await beforeStatement();
+        return await agentIsVisible(tx, scope);
+      },
+    ),
+  );
+  if (
+    !settled.ok &&
+    (deadlineHasPassed(deadline.at, signal) ||
+      isMorningBriefDatabaseDeadlineExceeded(settled.error))
+  ) {
+    throw settled.error;
+  }
+  return settled.ok && settled.value;
 }
 
 /**
@@ -482,7 +718,11 @@ async function pinnedAccountIsLive(
   connectorSlug: ConnectorSlug,
 ): Promise<boolean> {
   const [account] = await db
-    .select({ needsReconnect: connectors.needsReconnect })
+    .select({
+      externalEmail: connectors.externalEmail,
+      externalId: connectors.externalId,
+      needsReconnect: connectors.needsReconnect,
+    })
     .from(connectors)
     .where(
       and(
@@ -493,7 +733,14 @@ async function pinnedAccountIsLive(
       ),
     )
     .limit(1);
-  return account !== undefined && !account.needsReconnect;
+  if (account === undefined || account.needsReconnect) {
+    return false;
+  }
+  const expectedRef = pinned.externalEmail ?? pinned.externalId;
+  return (
+    expectedRef === null ||
+    (account.externalEmail ?? account.externalId) === expectedRef
+  );
 }
 
 /** Accepted catalog visibility for this member. Availability is not policy. */
@@ -611,12 +858,13 @@ async function urlPermission(args: {
 /**
  * Is this frozen scope still the authority it was admitted as?
  *
- * Four facts, none of which a cached request identity answers: the subjects are
- * still open, the member still holds the *same* immutable Clerk membership
- * generation, the canonical brief is still the same installed and enabled
- * installation on the same Agent, and that Agent is still visible to them. A
- * removal and rejoin issues a new membership id, and an unrelated enabled
- * installation is not a substitute for the one this scope names.
+ * Four facts, none of which a cached request identity answers: the member still
+ * holds the *same* immutable Clerk membership generation; after that external
+ * answer, the subjects are still open; the complete canonical binding is still
+ * the same installed and enabled installation, automation, Agent and nullable
+ * destination; and that Agent is still visible to them. A removal and rejoin
+ * issues a new membership id, and an unrelated enabled binding is not a
+ * substitute for the one this scope names.
  *
  * Connector-free on purpose: the unread Chat collection has no credential and
  * no endpoint, but it decides exactly the same question, so both it and this
@@ -628,29 +876,23 @@ export async function morningBriefScopeIsCurrent(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
-  const { db, scope } = args;
-  if (!(await subjectIsWritable(db, scope))) {
-    return false;
-  }
-  signal.throwIfAborted();
+  const { db, scope, deadline } = args;
 
   // The member's current Clerk membership generation, not a cache row's
   // presence. A removal, and a removal followed by a rejoin under a new id,
-  // both fail here.
+  // both fail here. This network read deliberately precedes the final local
+  // transaction: no database lock is held while Clerk answers.
   const membershipId = await loadCurrentMembershipId(args.clerk, scope, signal);
   signal.throwIfAborted();
   if (membershipId === null || membershipId !== scope.membershipId) {
     return false;
   }
 
-  if (!(await ownershipIsUnchanged(db, scope))) {
-    return false;
-  }
-  signal.throwIfAborted();
-  return await agentIsVisible(db, scope);
+  return await localScopeIsCurrent(db, scope, deadline, signal);
 }
 
 /**
@@ -669,7 +911,7 @@ async function authorizeIdentity(
   const { db, scope, connectorSlug } = request;
   if (
     !(await morningBriefScopeIsCurrent(
-      { db, clerk: request.clerk, scope },
+      { db, clerk: request.clerk, scope, deadline: request.deadline },
       signal,
     ))
   ) {
@@ -1328,7 +1570,10 @@ export async function withMorningBriefConnectorReader<T>(
   );
   if (!admission.ok) {
     return unavailable(
-      deadline.aborted ? "deadline-exceeded" : "provider-failed",
+      deadlineHasPassed(deadlineAt, deadline) ||
+        isMorningBriefDatabaseDeadlineExceeded(admission.error)
+        ? "deadline-exceeded"
+        : "provider-failed",
     );
   }
   if (admission.value.kind !== "allow") {
@@ -1341,7 +1586,10 @@ export async function withMorningBriefConnectorReader<T>(
   );
   if (!collected.ok) {
     return unavailable(
-      deadline.aborted ? "deadline-exceeded" : "provider-failed",
+      deadlineHasPassed(deadlineAt, deadline) ||
+        isMorningBriefDatabaseDeadlineExceeded(collected.error)
+        ? "deadline-exceeded"
+        : "provider-failed",
     );
   }
   if (state.revoked !== null) {
@@ -1357,7 +1605,10 @@ export async function withMorningBriefConnectorReader<T>(
   );
   if (!release.ok) {
     return unavailable(
-      deadline.aborted ? "deadline-exceeded" : "provider-failed",
+      deadlineHasPassed(deadlineAt, deadline) ||
+        isMorningBriefDatabaseDeadlineExceeded(release.error)
+        ? "deadline-exceeded"
+        : "provider-failed",
     );
   }
   if (release.value !== null) {
@@ -1413,8 +1664,14 @@ export async function revalidateMorningBriefRetainedRead(
     readonly connectorSlug: ConnectorSlug;
     /** The connection the retained material was read through. */
     readonly connectionId: string;
+    /** The provider identity the retained material was read from. */
+    readonly accountRef: string;
+    /** Digest of the effective permissions the original read exercised. */
+    readonly scopeDigest: string;
     /** Every endpoint whose result is still held. */
     readonly endpoints: readonly string[];
+    /** The composing attempt's absolute bound, never a fresh phase budget. */
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefSourceUnavailable | null> {
@@ -1424,16 +1681,18 @@ export async function revalidateMorningBriefRetainedRead(
     scope: args.scope,
     connectorSlug: args.connectorSlug,
     selection: { kind: "selected", connectorId: args.connectionId },
+    deadline: args.deadline,
   };
   const pinned: PinnedAccount = {
     connectorId: args.connectionId,
-    externalEmail: null,
+    externalEmail: args.accountRef,
     externalId: null,
   };
   const identity = await authorizeIdentity(request, pinned, "release", signal);
   if (identity.kind !== "allow") {
     return identity.reason;
   }
+  const permissions = new Set<string>();
   for (const url of args.endpoints) {
     const decision = await authorizeUrl(
       request,
@@ -1449,8 +1708,14 @@ export async function revalidateMorningBriefRetainedRead(
       // A permission that produced retained material is no longer effective.
       return "source-revoked";
     }
+    if (decision.permission !== null) {
+      permissions.add(decision.permission);
+    }
   }
-  return null;
+  const currentScopeDigest = createHash("sha256")
+    .update([...permissions].sort().join("\n"), "utf8")
+    .digest("hex");
+  return currentScopeDigest === args.scopeDigest ? null : "source-revoked";
 }
 
 /**
@@ -1489,6 +1754,26 @@ interface MorningBriefAdmissionArgs {
   readonly deadline: MorningBriefSourceDeadline;
 }
 
+export async function admitMorningBriefNativeCollection(
+  args: MorningBriefAdmissionArgs & {
+    readonly authority: MorningBriefNativeCollectionAuthority;
+  },
+  signal: AbortSignal,
+): Promise<MorningBriefCollectionAdmission> {
+  const bounded = AbortSignal.any([signal, args.deadline.signal]);
+  const admitted = await settle(
+    admitNativeWithinDeadline(args, bounded),
+    signal,
+  );
+  if (admitted.ok) {
+    return admitted.value;
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
+  }
+  throw admitted.error;
+}
+
 export async function admitMorningBriefCollection(
   args: MorningBriefAdmissionArgs,
   signal: AbortSignal,
@@ -1502,7 +1787,10 @@ export async function admitMorningBriefCollection(
   if (admitted.ok) {
     return admitted.value;
   }
-  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+  if (
+    deadlineHasPassed(args.deadline.at, args.deadline.signal) ||
+    isMorningBriefDatabaseDeadlineExceeded(admitted.error)
+  ) {
     return { kind: "unavailable", reason: "deadline-exceeded" };
   }
   // A genuine preflight failure stays a failure; it is not relabelled as a
@@ -1510,8 +1798,10 @@ export async function admitMorningBriefCollection(
   throw admitted.error;
 }
 
-async function admitWithinDeadline(
-  args: MorningBriefAdmissionArgs,
+async function admitNativeWithinDeadline(
+  args: MorningBriefAdmissionArgs & {
+    readonly authority: MorningBriefNativeCollectionAuthority;
+  },
   signal: AbortSignal,
 ): Promise<MorningBriefCollectionAdmission> {
   const featureSwitchContext = await loadUserFeatureSwitchContext(
@@ -1525,11 +1815,90 @@ async function admitWithinDeadline(
   ) {
     return { kind: "denied", reason: "feature-disabled" };
   }
-  const state = await loadMorningBriefMigrationState(args.db, {
+  const schedule = await readMorningBriefNativeSchedule(args.db, args);
+  signal.throwIfAborted();
+  if (
+    schedule === undefined ||
+    (schedule.phase !== "native" && schedule.phase !== "rollback-draining") ||
+    !schedule.enabled ||
+    schedule.ownerEpoch !== args.authority.ownerEpoch ||
+    schedule.membershipId !== args.authority.membershipId ||
+    schedule.legacyWorkflowId === null ||
+    schedule.legacyAutomationId === null
+  ) {
+    return { kind: "denied", reason: "not-installed" };
+  }
+  const membershipId = await loadCurrentMembershipId(args.clerk, args, signal);
+  signal.throwIfAborted();
+  if (
+    membershipId === null ||
+    membershipId !== args.authority.membershipId ||
+    !(await subjectIsWritable(args.db, args, args.deadline, signal))
+  ) {
+    return { kind: "denied", reason: "no-membership" };
+  }
+  const scope: MorningBriefCollectionScope = {
     orgId: args.orgId,
     userId: args.userId,
-  });
+    installationId: schedule.legacyWorkflowId,
+    automationId: schedule.legacyAutomationId,
+    agentId: schedule.agentId,
+    chatThreadId: schedule.chatThreadId,
+    anchor: args.anchor,
+    timezone: schedule.timezone,
+    membershipId,
+    nativeAuthority: args.authority,
+  };
+  if (
+    !(await ownershipIsUnchanged(args.db, scope)) ||
+    !(await agentIsVisible(args.db, scope))
+  ) {
+    return { kind: "denied", reason: "not-installed" };
+  }
+  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
+    return { kind: "unavailable", reason: "deadline-exceeded" };
+  }
+  return { kind: "ok", scope };
+}
+
+async function admitWithinDeadline(
+  args: MorningBriefAdmissionArgs,
+  signal: AbortSignal,
+): Promise<MorningBriefCollectionAdmission> {
+  const local = await withMorningBriefDatabaseDeadline(
+    {
+      db: args.db,
+      deadline: args.deadline,
+      caps: ADMISSION_DATABASE_CAPS,
+    },
+    signal,
+    async (tx, beforeStatement) => {
+      const featureSwitchContext = await loadUserFeatureSwitchContext(
+        tx,
+        args.orgId,
+        args.userId,
+      );
+      if (
+        !isFeatureEnabled(
+          FeatureSwitchKey.SimpleMorningBrief,
+          featureSwitchContext,
+        )
+      ) {
+        return { kind: "feature-disabled" } as const;
+      }
+      await beforeStatement();
+      const state = await loadMorningBriefMigrationState(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+      });
+      return { kind: "state", state } as const;
+    },
+  );
   signal.throwIfAborted();
+  if (local.kind === "feature-disabled") {
+    return { kind: "denied", reason: "feature-disabled" };
+  }
+  const { state } = local;
   if (state.kind !== "installed") {
     return { kind: "denied", reason: "not-installed" };
   }
@@ -1545,7 +1914,7 @@ async function admitWithinDeadline(
   if (membershipId === null) {
     return { kind: "denied", reason: "no-membership" };
   }
-  if (!(await subjectIsWritable(args.db, args))) {
+  if (!(await subjectIsWritable(args.db, args, args.deadline, signal))) {
     return { kind: "denied", reason: "no-membership" };
   }
   if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
@@ -1557,6 +1926,7 @@ async function admitWithinDeadline(
       orgId: args.orgId,
       userId: args.userId,
       installationId: state.installation.id,
+      automationId: state.automation.id,
       agentId: state.installation.agentId,
       chatThreadId: state.chatThreadId,
       anchor: args.anchor,

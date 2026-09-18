@@ -156,6 +156,48 @@ test("A short Okou artifact link opens as a rich preview", async () => {
   });
 });
 
+test("An ordinary first-party Markdown image uses a thumbnail and opens its original", async () => {
+  const url = "https://static.okou.io/reports/thread-photo.png";
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`![Report photo](${url})`)],
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  const image = await screen.findByAltText("Report photo");
+  expect(image).toHaveAttribute(
+    "src",
+    "https://static.okou.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/reports/thread-photo.png",
+  );
+  click(await findPreviewActionForImage("Report photo"));
+  await expect(
+    screen.findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", url);
+});
+
+test("An embedded video's poster uses a thumbnail while playback keeps its original", async () => {
+  const url = publicArtifactUrl("embedded-video.mp4");
+  const poster = publicArtifactUrl("embedded-poster.jpg");
+  mockAttachmentChat(context, {
+    chatEvents: [
+      assistantMessage(
+        `<video src="${url}" poster="${poster}" controls></video>`,
+      ),
+    ],
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  await waitFor(() => {
+    const video = document.querySelector("video[poster]");
+    expect(video).toHaveAttribute("src", url);
+    expect(video).toHaveAttribute(
+      "poster",
+      "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/artifacts/tests/chat-attachments/embedded-poster.jpg",
+    );
+  });
+});
+
 test("Image navigation stays within the current message", async () => {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,

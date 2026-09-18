@@ -12,10 +12,37 @@ import {
 } from "../external/s3";
 import { settle } from "../utils";
 
+const sharedThreadReferenceSchema = z.object({
+  version: z.literal(3),
+  threadId: z.uuid(),
+  publicBrand: z.enum(["vm0", "okou"]),
+  publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
+  target: artifactShareTargetSchema,
+  previewPath: z
+    .string()
+    .refine((value) => {
+      return (
+        value.startsWith("/") &&
+        !value.startsWith("//") &&
+        !value.includes("\\") &&
+        !value.includes("#") &&
+        URL.canParse(value, "https://preview.invalid") &&
+        new URL(value, "https://preview.invalid").origin ===
+          "https://preview.invalid"
+      );
+    }, "Expected an isolated preview path")
+    .optional(),
+});
+
+export type SharedThreadArtifactReference = z.infer<
+  typeof sharedThreadReferenceSchema
+>;
+
 const referenceRecordSchema = z.discriminatedUnion("version", [
   // Previously copied organization links keep following their share policy.
   z.object({ version: z.literal(1), shareId: z.uuid() }),
   z.object({ version: z.literal(2), target: artifactShareTargetSchema }),
+  sharedThreadReferenceSchema,
 ]);
 
 function referenceBucket(): string {
@@ -95,5 +122,60 @@ export const allocateArtifactReference$ = command(
       }
     }
     throw new Error("Unable to allocate a unique artifact reference");
+  },
+);
+
+/** A snapshot reference is independent of the original artifact's grant. */
+export const allocateSharedThreadArtifactReference$ = command(
+  async (
+    { get },
+    snapshot: Omit<SharedThreadArtifactReference, "version">,
+    signal: AbortSignal,
+  ) => {
+    const record = sharedThreadReferenceSchema.parse({
+      version: 3,
+      ...snapshot,
+    });
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const reference = artifactHash(
+        snapshot.threadId,
+        `snapshot:${snapshot.publicBrand}:${snapshot.publicToken}:${snapshot.target.kind}:${snapshot.target.id}:${snapshot.previewPath ?? ""}:${attempt}`,
+      );
+      const written = await settle(
+        get(
+          writeArtifactSharePolicyObject(
+            referenceBucket(),
+            referenceKey(reference),
+            JSON.stringify(record),
+            null,
+            signal,
+          ),
+        ),
+        signal,
+      );
+      if (written.ok) {
+        return reference;
+      }
+      if (
+        !(written.error instanceof Error) ||
+        written.error.name !== "PreconditionFailed"
+      ) {
+        throw written.error;
+      }
+      const existing = await get(artifactReferenceRecord(reference, signal));
+      signal.throwIfAborted();
+      if (
+        existing?.version === 3 &&
+        existing.threadId === snapshot.threadId &&
+        existing.publicBrand === snapshot.publicBrand &&
+        existing.publicToken === snapshot.publicToken &&
+        existing.target.kind === snapshot.target.kind &&
+        existing.target.id === snapshot.target.id &&
+        existing.previewPath === snapshot.previewPath
+      ) {
+        return reference;
+      }
+    }
+    throw new Error("Unable to allocate a unique snapshot artifact reference");
   },
 );

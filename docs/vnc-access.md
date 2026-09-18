@@ -1,10 +1,10 @@
-# VNC owner configuration
+# VNC configuration and authority
 
 VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
-staff. This configuration slice provides no Agent grants, Runner credential
-delivery, control lease, UI, or CLI. Those runtime authority paths are tracked
-in [#34980](https://github.com/vm0-ai/okou/issues/34980).
+staff. Explicit owner/Agent grants, metadata inventory and private Runner
+authority are described in [Runner VNC authority](runner-vnc-authority.md).
+Runner sockets and operations remain #34780; UI and CLI remain #34782/#34781.
 
 ## Owner API
 
@@ -62,7 +62,8 @@ credential.
 The only VNC encrypted field is
 `vnc_credentials.encrypted_password`. It uses the existing stored-secret KMS
 envelope. Passwords and ciphertext never appear in owner responses; current API
-paths do not decrypt them. Public CA certificates are stored as public trust
+configuration paths do not decrypt them. The private Runner resolve endpoint
+decrypts only after current authorization and profile validation. Public CA certificates are stored as public trust
 configuration. The active KMS recovery verifier includes this field and accepts
 retained snapshots that predate the VNC table. If the table exists, its exact
 primary key and password column are required and every ciphertext is checked
@@ -71,8 +72,10 @@ unchanged; a future rotation must include VNC in its current inventory.
 
 ## Membership and deletion lifecycle
 
-The only VNC tables are `vnc_credentials` and `vnc_connections`. Both use the
-organization/user pair as their owner, matching SSH configuration. Current
+The configuration tables are `vnc_credentials` and `vnc_connections`. Both use the
+organization/user pair as their owner, matching SSH configuration. The
+`agent_vnc_access` table stores explicit grants with the same composite
+organization/user/Agent key as SSH. Current
 membership authorizes access to that owner's configuration. If the user leaves
 and rejoins before cleanup removes the configuration, it remains the same
 owner's data and is accessible again. Each saved connection retains its own
@@ -85,7 +88,8 @@ without retaining a VNC authority ledger or creation receipts. They do not cance
 a request that passed membership admission before cleanup and only enters its
 write transaction afterward; such an in-flight request can still finish.
 
-Current user, organization and member cleanup removes hosts before credentials.
+Current user, organization and member cleanup removes hosts before credentials,
+and removes owner grants, including grants with no hosts.
 Member cleanup removes the organization's configuration for that user. It follows
 the existing organization/user cleanup path, including when a deletion event
 arrives after the user has rejoined. Membership checks and KMS calls run outside
@@ -118,26 +122,28 @@ identity verification and full-session encryption.
 The present Rust engine independently supports only RFB 3.8 / VeNCrypt 0.2 /
 X509Vnc. Its TLS-owned authenticated stream must be generalized as part of any
 future non-TLS or RSA-AES implementation. SSH authentication belongs to an outer
-transport and does not become a VNC password method. Separate saved connection IDs
-can address the same physical desktop; per-connection control leases do not
-provide global exclusion against aliases, other viewers or a local user.
+transport and does not become a VNC password method. Shared/exclusive mode is a
+per-session Agent choice, independent of authentication. The VNC server decides
+how to admit clients; shared sessions can interact with the same desktop.
 
 ## Deployment and rollback
 
 The generated migration is additive: deploy it before the API code. Old API
 binaries continue to work with the expanded schema and ignore the new tables.
-There is no backfill or destructive reset. Existing SSH data and behavior are
+The Runner authority slice adds only the Agent grant table; connection identity
+continues to use the saved ID and generation, matching SSH. Public metadata stays unchanged.
+There is no credential rewrite or destructive reset. Existing SSH data and behavior are
 unchanged. The configuration API stays unavailable until the feature is
 explicitly enabled; merging this change does not enable it.
 
 Before enabling the feature, every serving API version must include VNC-aware
-deletion cleanup. Once any VNC configuration exists, that cleanup support is an
+configuration and grant deletion cleanup. Once any VNC configuration or grant exists, that cleanup support is an
 API rollback floor: disabling the feature does not erase saved credentials.
 Rollback may disable `vncAccess`, but must retain VNC-aware cleanup and the additive
 schema. Rolling back below this floor requires a separately verified drain and
 erasure of all VNC configuration first.
-Do not drop the tables as an application rollback. Runtime/Runner compatibility and activation belong
-to #34980 and the remaining VNC delivery work.
+Do not drop the tables as an application rollback. Runtime activation requires
+the verified Runner enforcement in #34780.
 
 ## Verification
 

@@ -392,6 +392,7 @@ function validateMcpFirewall(
     connector.firewall.config.apis.length !== 1 ||
     api === undefined ||
     api.base !== connector.mcp.endpoint ||
+    api.auth.base !== undefined ||
     api.hostPolicy !== undefined
   ) {
     throw new ConnectorCatalogRelationshipError(

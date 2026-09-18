@@ -2007,6 +2007,60 @@ describe("Morning Brief GitHub collection preview", () => {
     expect(bundle.coverage).toBe("partial");
   });
 
+  it("rejects terminal conclusions on in-flight check runs", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(93),
+      checkRuns: () => {
+        return checkRunsPage([
+          { name: "unit", status: "in_progress", conclusion: "mystery" },
+          { name: "lint", status: "queued", conclusion: "success" },
+          { name: "e2e", status: "pending", conclusion: "failure" },
+        ]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "unknown",
+      failing: 0,
+      pending: 0,
+      succeeded: 0,
+      incomplete: true,
+    });
+    expect(bundle.items[0]?.checks?.failingNames).toStrictEqual([]);
+    expect(bundle.branches.checks.limits).toContain("malformed-response");
+    expect(bundle.coverage).toBe("partial");
+  });
+
+  it("keeps every documented unfinished status pending without a conclusion", async () => {
+    const f = await fixture();
+    scriptGithub({
+      search: reviewRequestedPull(93),
+      checkRuns: () => {
+        return checkRunsPage([
+          { name: "queued", status: "queued" },
+          { name: "in-progress", status: "in_progress", conclusion: null },
+          { name: "waiting", status: "waiting" },
+          { name: "requested", status: "requested", conclusion: null },
+          { name: "pending", status: "pending" },
+        ]);
+      },
+    });
+
+    const bundle = collectedBundle((await collect(f)).body);
+
+    expect(bundle.items[0]?.checks).toMatchObject({
+      state: "pending",
+      failing: 0,
+      pending: 5,
+      succeeded: 0,
+      incomplete: false,
+    });
+    expect(bundle.branches.checks.limits).not.toContain("malformed-response");
+  });
+
   it("never turns an unrecognized combined-status context state into a failure", async () => {
     const f = await fixture();
     scriptGithub({
@@ -2029,25 +2083,29 @@ describe("Morning Brief GitHub collection preview", () => {
     expect(bundle.branches.checks.limits).toContain("malformed-response");
   });
 
-  it("keeps a known failing check next to an uninterpretable sibling", async () => {
+  it("keeps valid failing, pending and successful siblings next to a malformed run", async () => {
     const f = await fixture();
     scriptGithub({
       search: reviewRequestedPull(94),
       checkRuns: () => {
         return checkRunsPage([
           { name: "unit", status: "completed", conclusion: "failure" },
-          { name: "types", status: "completed", conclusion: null },
+          { name: "types", status: "queued", conclusion: null },
+          { name: "lint", status: "completed", conclusion: "success" },
+          { name: "e2e", status: "in_progress", conclusion: "mystery" },
         ]);
       },
     });
 
     const bundle = collectedBundle((await collect(f)).body);
 
-    // One unreadable sibling may not swallow an actually observed failure, and
-    // the failure may not hide that the surface was read only in part.
+    // One unreadable sibling may not swallow facts from readable siblings, and
+    // those facts may not hide that the surface was read only in part.
     expect(bundle.items[0]?.checks).toMatchObject({
       state: "failing",
       failing: 1,
+      pending: 1,
+      succeeded: 1,
       incomplete: true,
     });
     expect(bundle.items[0]?.checks?.failingNames).toStrictEqual(["unit"]);
@@ -2077,7 +2135,7 @@ describe("Morning Brief GitHub collection preview", () => {
     expect(bundle.branches.checks.limits).toContain("malformed-response");
   });
 
-  it("reports every documented non-passing outcome as a failing check", async () => {
+  it("rejects a check-suite-only conclusion while preserving check-run failures", async () => {
     const f = await fixture();
     scriptGithub({
       search: reviewRequestedPull(96),
@@ -2102,12 +2160,20 @@ describe("Morning Brief GitHub collection preview", () => {
 
     const bundle = collectedBundle((await collect(f)).body);
 
+    // `startup_failure` belongs to GitHub's check-suite conclusion vocabulary,
+    // not check runs. `stale` remains a documented check-run exception.
     expect(bundle.items[0]?.checks).toMatchObject({
       state: "failing",
-      failing: 7,
-      incomplete: false,
+      failing: 6,
+      pending: 0,
+      succeeded: 0,
+      incomplete: true,
     });
-    expect(bundle.branches.checks.limits).not.toContain("malformed-response");
+    expect(bundle.items[0]?.checks?.failingNames).toContain("stale");
+    expect(bundle.items[0]?.checks?.failingNames).not.toContain(
+      "startup_failure",
+    );
+    expect(bundle.branches.checks.limits).toContain("malformed-response");
   });
 
   it("reports a fully read healthy head as green", async () => {

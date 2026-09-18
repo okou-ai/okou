@@ -11,6 +11,141 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.920.0](https://github.com/vm0-ai/okou/compare/app-v0.919.0...app-v0.920.0) (2026-09-18)
+
+
+### Features
+
+* extend personal paid-tool controls to media generation ([#35264](https://github.com/vm0-ai/okou/issues/35264)) ([a686e46](https://github.com/vm0-ai/okou/commit/a686e46b0f2a149b0519582e066ec2d752f798de))
+* **platform:** add fullscreen controls to the artifact viewer ([#35255](https://github.com/vm0-ai/okou/issues/35255)) ([2656106](https://github.com/vm0-ai/okou/commit/26561066a1ff0ae90cc69ea4e3c13ac2c2c673f8))
+* publish immutable sites and reuse private previews ([#35244](https://github.com/vm0-ai/okou/issues/35244)) ([899075c](https://github.com/vm0-ai/okou/commit/899075caeca519ac9202fa17bc9177e18258a58c))
+
+
+### Refactoring
+
+* remove _fastModel feature switch ([#35221](https://github.com/vm0-ai/okou/issues/35221)) ([132088c](https://github.com/vm0-ai/okou/commit/132088c059db14747a82313b1f7a842ca63dd55e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.472.0
+    * @okouai/core bumped to 8.681.2
+
+## [0.919.0](https://github.com/vm0-ai/okou/compare/app-v0.918.0...app-v0.919.0) (2026-09-18)
+
+
+### Features
+
+* **templates:** offer image sources in the custom template picker ([#35258](https://github.com/vm0-ai/okou/issues/35258)) ([83dbdf0](https://github.com/vm0-ai/okou/commit/83dbdf0e9850e6c3a8d4e56a09e42ab67dded603))
+
+
+### Refactoring
+
+* remove the model picker flyout feature switch ([#35191](https://github.com/vm0-ai/okou/issues/35191)) ([4ef1c13](https://github.com/vm0-ai/okou/commit/4ef1c138fd7a337026383435491707e0392adeed))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.471.0
+    * @okouai/core bumped to 8.681.1
+
+## [0.918.0](https://github.com/vm0-ai/okou/compare/app-v0.917.1...app-v0.918.0) (2026-09-18)
+
+
+### Features
+
+* **app:** retire legacy advertising and attribution storage ([#35246](https://github.com/vm0-ai/okou/issues/35246)) ([4a9ca58](https://github.com/vm0-ai/okou/commit/4a9ca58c930903cb1fbf5cccf6c67d95610bc9c6))
+* **templates:** add the illustration kind to custom templates ([#35248](https://github.com/vm0-ai/okou/issues/35248)) ([ebd7039](https://github.com/vm0-ai/okou/commit/ebd70395f808ff7bd21ddc453789c76d712d7fe6))
+
+
+### Refactoring
+
+* remove effort feature switch ([#35189](https://github.com/vm0-ai/okou/issues/35189)) ([9b0dff2](https://github.com/vm0-ai/okou/commit/9b0dff2c1cc1c4f8a2a10d4cbfb7fea263585bfe))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.470.0
+    * @okouai/core bumped to 8.681.0
+
+## [0.917.1](https://github.com/vm0-ai/okou/compare/app-v0.917.0...app-v0.917.1) (2026-09-18)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.1
+    * @okouai/core bumped to 8.680.6
+
+## [0.917.0](https://github.com/vm0-ai/okou/compare/app-v0.916.0...app-v0.917.0) (2026-09-18)
+
+
+### Features
+
+* **platform:** drop video from the slash panel and the task chips ([#35192](https://github.com/vm0-ai/okou/issues/35192)) ([5db7365](https://github.com/vm0-ai/okou/commit/5db7365a036798df6f7d7b9ea0ee7ee2e0cd5921))
+
+
+### Bug Fixes
+
+* resolve shared thread artifacts through full app references ([#35206](https://github.com/vm0-ai/okou/issues/35206)) ([afe3553](https://github.com/vm0-ai/okou/commit/afe355360b5c12e71446f3358fdf61f21f776de7))
+
+
+### Refactoring
+
+* remove custom connector mcp feature switch ([#35202](https://github.com/vm0-ai/okou/issues/35202)) ([2a24579](https://github.com/vm0-ai/okou/commit/2a24579fecd98b9933a2c75589d4502e7af0a298))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.469.0
+    * @okouai/core bumped to 8.680.5
+
+## [0.916.0](https://github.com/vm0-ai/okou/compare/app-v0.915.2...app-v0.916.0) (2026-09-18)
+
+
+### Features
+
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+
+### Bug Fixes
+
+* **platform:** refresh native delivery read state ([#35179](https://github.com/vm0-ai/okou/issues/35179)) ([09999f9](https://github.com/vm0-ai/okou/commit/09999f93b4aab05b3f247a37b0602ee05ecb6dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.468.0
+    * @okouai/connectors bumped to 3.13.0
+    * @okouai/core bumped to 8.680.4
+
+## [0.915.2](https://github.com/vm0-ai/okou/compare/app-v0.915.1...app-v0.915.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **app:** copy thread share link and show toast on creation ([#35175](https://github.com/vm0-ai/okou/issues/35175)) ([4ed16f2](https://github.com/vm0-ai/okou/commit/4ed16f2043dd6948ad86531e4f88a499a49f22ef))
+* use the refreshed quick start deck in welcome threads ([#35181](https://github.com/vm0-ai/okou/issues/35181)) ([9065172](https://github.com/vm0-ai/okou/commit/9065172e555179e161d907cd9af4a6cc5e4feff0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.467.0
+    * @okouai/core bumped to 8.680.3
+
 ## [0.915.1](https://github.com/vm0-ai/okou/compare/app-v0.915.0...app-v0.915.1) (2026-09-18)
 
 

@@ -541,12 +541,14 @@
       "synced": "Synced to Google Drive",
       "syncedFiles_one": "Synced to Google Drive",
       "syncedFiles_other": "Synced {{count}} files to Google Drive",
+      "syncedSlides": "Synced to Google Slides",
       "syncFailed": "Failed to sync to Google Drive",
       "syncingArtifact": "Syncing artifact...",
       "syncingFiles_one": "Syncing {{count}} file...",
       "syncingFiles_other": "Syncing {{count}} files...",
       "syncingNamed": "Syncing {{filename}}...",
-      "upload": "Upload to Google Drive"
+      "upload": "Upload to Google Drive",
+      "uploadSlides": "Upload to Google Slides"
     },
     "kinds": {
       "audio": "Audio",
@@ -5808,6 +5810,73 @@
         "resetTimePassedTitle": "Reset time passed"
       }
     },
+    "paidTools": {
+      "description": "Choose which paid built-in tools you can use.",
+      "disabledForCreation": "{{tool}} is disabled in your paid tool settings.",
+      "loadError": "Your tool settings could not be loaded.",
+      "loading": "Loading your tool settings…",
+      "openSettings": "Open paid tool settings",
+      "retry": "Retry",
+      "saveError": "Your change was not saved.",
+      "saving": "Saving…",
+      "scope": "These settings apply only to you in {{workspace}}.",
+      "timing": "Changes apply to future runs. Running tasks and tasks already prepared may keep their previous settings.",
+      "title": "Paid tools",
+      "tools": {
+        "avatar-video-generation": {
+          "description": "Create talking-avatar videos.",
+          "name": "Avatar video generation"
+        },
+        "finance": {
+          "description": "Look up companies, quotes, and market data.",
+          "name": "Financial data"
+        },
+        "image-generation": {
+          "description": "Create images with built-in models.",
+          "name": "Image generation"
+        },
+        "image-recognition": {
+          "description": "Read and analyze images.",
+          "name": "Image recognition"
+        },
+        "maps": {
+          "description": "Find places, addresses, and directions.",
+          "name": "Maps and places"
+        },
+        "people-search": {
+          "description": "Find public professional profiles.",
+          "name": "People search"
+        },
+        "scrape": {
+          "description": "Read and extract content from web pages.",
+          "name": "Page extraction"
+        },
+        "seo": {
+          "description": "Research search rankings, keywords, and backlinks.",
+          "name": "SEO research"
+        },
+        "social": {
+          "description": "Research public social posts and collect media.",
+          "name": "Social research"
+        },
+        "video-generation": {
+          "description": "Create videos with built-in models.",
+          "name": "Video generation"
+        },
+        "video-rendering": {
+          "description": "Render video compositions in the cloud.",
+          "name": "Video rendering"
+        },
+        "voice-generation": {
+          "description": "Create speech with built-in voices.",
+          "name": "Voice generation"
+        },
+        "web-search": {
+          "description": "Find current information on the web.",
+          "name": "Web search"
+        }
+      }
+    },
     "preferences": {
       "account": {
         "manage": "Manage",
@@ -6354,14 +6423,15 @@
     "custom": "Custom",
     "detail": {
       "back": "Custom templates",
-      "page": "Page {{number}}"
+      "page": "Page {{number}}",
+      "source_one": "{{count}} page · from {{filename}}",
+      "source_other": "{{count}} pages · from {{filename}}",
+      "sourceFile": "From {{filename}}"
     },
     "empty": {
       "description": "Okou turns your file's design into a template you can reuse."
     },
     "loadFailed": "Couldn't load templates.",
-    "pageCount_one": "{{count}} page",
-    "pageCount_other": "{{count}} pages",
     "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",
     "sharedBy": "Shared by {{owner}}",

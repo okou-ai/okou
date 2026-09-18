@@ -251,8 +251,10 @@ function buildWorkflowGenerationTemplatePrompt(
  * The package's own `SKILL.md` is the authority for how to use it, because
  * each reverse skill writes the one for what it produced: a deck's describes a
  * visual language, a document's names `reference.docx` and the pandoc
- * invocation that consumes it. So this prompt does not restate either — it
- * says where the package is and what the run is expected to come back with.
+ * invocation that consumes it, an illustration's carries the locked frame and
+ * the prompt template its dials fill in. So this prompt restates none of them
+ * — it says where the package is and what the run is expected to come back
+ * with.
  *
  * What the run is expected to come back with is the one thing SKILL.md cannot
  * settle, because it differs by kind and the framing sentence is built before
@@ -266,6 +268,9 @@ function customTemplateArtifactNoun(kind: MountedUserTemplate["kind"]): string {
     }
     case "document": {
       return "a document";
+    }
+    case "illustration": {
+      return "an illustration";
     }
   }
 }

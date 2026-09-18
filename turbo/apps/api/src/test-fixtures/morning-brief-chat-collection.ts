@@ -128,6 +128,52 @@ export async function replaceMorningBriefInstallationFixture(member: {
 }
 
 /**
+ * Replace only the canonical schedule while retaining its installation and
+ * Agent.
+ *
+ * The route suite starts from the canonical legacy-state fixture shared by all
+ * Morning Brief collectors. No public endpoint can replace exactly that seeded
+ * schedule without also driving the Official Workflow catalog lifecycle, so
+ * this fixture commits the same delete/insert transition directly. The real
+ * canonical reader and PostgreSQL rows remain the authority under test.
+ */
+export async function replaceMorningBriefAutomationFixture(member: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+  readonly automationId: string;
+}): Promise<{ readonly automationId: string }> {
+  return await db().transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.id, member.automationId),
+          eq(workflowAutomations.orgId, member.orgId),
+          eq(workflowAutomations.ownerUserId, member.userId),
+          eq(workflowAutomations.workflowId, member.workflowId),
+        ),
+      )
+      .limit(1);
+    if (!current) {
+      throw new Error("Expected the seeded Morning Brief automation");
+    }
+    const automationId = randomUUID();
+    await tx
+      .delete(workflowAutomations)
+      .where(eq(workflowAutomations.id, current.id));
+    await tx.insert(workflowAutomations).values({
+      ...current,
+      id: automationId,
+      createdAt: nowDate(),
+      updatedAt: nowDate(),
+    });
+    return { automationId };
+  });
+}
+
+/**
  * Suspend one numbered live membership lookup after it has answered.
  *
  * A single attempt resolves the member's Clerk generation more than once — when
@@ -267,7 +313,16 @@ export async function countMorningBriefChatWritesFixture(owner: {
   };
 }
 
-/** Point the member's Morning Brief binding at a destination thread. */
+/**
+ * Point the member's Morning Brief binding at a destination thread.
+ *
+ * No external endpoint sets or clears this internal delivery binding by itself:
+ * production creates it only while executing an S6 delivery, which would also
+ * create the Run, Chat and e-mail side effects this read-only route must not
+ * produce. The destination-identity regression therefore writes its uniquely
+ * owned binding row directly while keeping the real canonical reader and
+ * PostgreSQL constraint behavior under test.
+ */
 export async function bindMorningBriefThreadFixture(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -639,6 +694,42 @@ export async function holdAgentRowFixture(
       .from(agents)
       .where(eq(agents.id, agentId))
       .for("update");
+  });
+}
+
+/**
+ * Block the real candidate SELECT without changing any candidate row.
+ *
+ * Infrastructure exception: candidate discovery is an MVCC plain SELECT, so no
+ * row writer can make it wait. A short table lock is the only way to exercise
+ * its actual PostgreSQL wait/timeout path; the fixture releases as soon as
+ * `pg_blocking_pids` proves arrival and never fabricates a query result.
+ */
+export async function holdChatCandidateDiscoveryFixture(signal: AbortSignal) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${chatThreads} IN ACCESS EXCLUSIVE MODE`);
+  });
+}
+
+/**
+ * Block the last per-thread authority SELECT immediately before content.
+ * This is the same narrow infrastructure exception as candidate discovery.
+ */
+export async function holdActiveRunReadFixture(signal: AbortSignal) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${agentRuns} IN ACCESS EXCLUSIVE MODE`);
+  });
+}
+
+/**
+ * Block the canonical ownership SELECT used by the final local authority gate.
+ * This is the same narrow infrastructure exception as candidate discovery.
+ */
+export async function holdMorningBriefOwnershipReadFixture(
+  signal: AbortSignal,
+) {
+  return await holdDeferredRow(signal, async (tx) => {
+    await tx.execute(sql`LOCK TABLE ${workflows} IN ACCESS EXCLUSIVE MODE`);
   });
 }
 

@@ -269,9 +269,8 @@ export function CustomTemplateDetailSidebar({
   const deleteTemplate = useSet(deleteCustomTemplate$);
   return (
     // The imported deck panel's column, which this now shares: the name, what
-    // it means to share it, then the action, then the way to be rid of it. The
-    // file it was compiled from is not repeated here — the catalog tile names
-    // it, and for a document the preview beside this column is that file.
+    // it was compiled from, what it means to share it, then the action, then
+    // the way to be rid of it.
     <aside className="flex w-full shrink-0 flex-col lg:sticky lg:top-0 lg:w-[320px]">
       <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
         {detail.canManage ? (
@@ -281,6 +280,27 @@ export function CustomTemplateDetailSidebar({
             {detail.title}
           </h3>
         )}
+        {/*
+         * The source line drops the page count for a kind that has none, so a
+         * document is described by the file it came from rather than by an
+         * emptiness it does not have. It is asked for here because the tile
+         * that used to answer it carries only visibility now.
+         */}
+        <p className="mt-2 text-xs text-muted-foreground">
+          {detail.pageCount === null
+            ? t(
+                ($) => {
+                  return $.templates.detail.sourceFile;
+                },
+                { filename: detail.sourceFilename },
+              )
+            : t(
+                ($) => {
+                  return $.templates.detail.source;
+                },
+                { count: detail.pageCount, filename: detail.sourceFilename },
+              )}
+        </p>
         <div className="my-5 border-t border-border" />
         {detail.canManage ? (
           <CustomTemplateVisibilityControl detail={detail} />

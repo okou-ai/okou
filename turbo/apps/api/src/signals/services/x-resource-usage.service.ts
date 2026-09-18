@@ -36,7 +36,6 @@ async function checkObservationTimes(
   events: readonly UsageObservation[],
   runCreatedAt: Date,
   runCompletedAt: Date | null,
-  startDate: string,
 ): Promise<void> {
   const clock = await readXResourceClock(tx);
   const today = clock.toISOString().slice(0, 10);
@@ -51,7 +50,6 @@ async function checkObservationTimes(
     const observedAt = Date.parse(event.observedAt);
     if (
       (day !== today && day !== yesterday) ||
-      day < startDate ||
       observedAt > clock.getTime() + CLOCK_TOLERANCE_MS ||
       observedAt < runCreatedAt.getTime() - CLOCK_TOLERANCE_MS ||
       (runCompletedAt !== null &&
@@ -75,6 +73,9 @@ async function reserveUsageSources(
   runId: string,
   auth: SandboxAuth,
 ): Promise<Set<string>> {
+  if (events.length === 0) {
+    return new Set();
+  }
   // Reserve the whole sorted source set before any resource key. Zero
   // placeholders stay invisible to settlement until final quantities commit.
   const inserted = await tx
@@ -154,6 +155,7 @@ async function claimResources(
   tx: Tx,
   events: readonly UsageObservation[],
   owned: ReadonlySet<string>,
+  deduplicationEnabled: boolean,
 ): Promise<Map<string, number>> {
   const quantities = new Map<string, number>();
   const claims = new Map<
@@ -170,9 +172,11 @@ async function claimResources(
     }
     quantities.set(
       event.idempotencyKey,
-      event.remainder.reduce((sum, item) => {
-        return sum + item.quantity;
-      }, 0),
+      deduplicationEnabled
+        ? event.remainder.reduce((sum, item) => {
+            return sum + item.quantity;
+          }, 0)
+        : event.quantity,
     );
     for (const resource of event.resources) {
       const read = {
@@ -201,6 +205,10 @@ async function claimResources(
     )
     .onConflictDoNothing()
     .returning();
+  // Keep the daily history warm even while every observation is count-priced.
+  if (!deduplicationEnabled) {
+    return quantities;
+  }
   for (const read of newReads) {
     const claim = claims.get(resourceKey(read));
     if (!claim) {
@@ -220,7 +228,7 @@ export async function ingestXResourceUsage(
   db: Db,
   body: UsageBody,
   auth: SandboxAuth,
-  startDate: string,
+  deduplicationEnabled: boolean,
   signal: AbortSignal,
 ): Promise<void> {
   // UUID spelling is case-insensitive in PostgreSQL; order/deduplicate that identity.
@@ -283,43 +291,49 @@ export async function ingestXResourceUsage(
       if (!run) {
         throw new XResourceUsageError(404, "Run not found");
       }
-      await checkObservationTimes(
-        tx,
-        events,
-        run.createdAt,
-        run.completedAt,
-        startDate,
-      );
+      await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
       signal.throwIfAborted();
 
       const billable = events.filter((event) => {
         return (
-          event.kind !== "model" ||
-          run.triggerSource === null ||
-          run.modelProvider === null ||
-          isBuiltInModelProviderType(run.modelProvider)
+          event.quantity > 0 &&
+          (event.kind !== "model" ||
+            run.triggerSource === null ||
+            run.modelProvider === null ||
+            isBuiltInModelProviderType(run.modelProvider))
         );
       });
       const owned = await reserveUsageSources(tx, billable, body.runId, auth);
-      await checkObservationTimes(
+      await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
+      const quantities = await claimResources(
         tx,
-        events,
-        run.createdAt,
-        run.completedAt,
-        startDate,
+        billable,
+        owned,
+        deduplicationEnabled,
       );
-      const quantities = await claimResources(tx, billable, owned);
       // Locks acquired by INSERT may have crossed midnight. Cleanup is still
       // excluded; an expired batch rolls all sources and claims back together.
-      await checkObservationTimes(
-        tx,
-        events,
-        run.createdAt,
-        run.completedAt,
-        startDate,
-      );
-      if (quantities.size > 0) {
-        const cases = [...quantities].map(([source, quantity]) => {
+      await checkObservationTimes(tx, events, run.createdAt, run.completedAt);
+      const positive = [...quantities].filter(([, quantity]) => {
+        return quantity > 0;
+      });
+      const zeroSources = [...quantities]
+        .filter(([, quantity]) => {
+          return quantity === 0;
+        })
+        .map(([source]) => {
+          return source;
+        });
+      // Discard zero results before commit, retaining the shared resource
+      // claims but no source receipt. A retry is evaluated with its current
+      // switch setting; only persisted positive usage is idempotent.
+      if (zeroSources.length > 0) {
+        await tx
+          .delete(usageEvent)
+          .where(inArray(usageEvent.idempotencyKey, zeroSources));
+      }
+      if (positive.length > 0) {
+        const cases = positive.map(([source, quantity]) => {
           return sql`WHEN ${source}::uuid THEN ${quantity}::bigint`;
         });
         await tx
@@ -327,7 +341,14 @@ export async function ingestXResourceUsage(
           .set({
             quantity: sql`CASE ${usageEvent.idempotencyKey} ${sql.join(cases, sql` `)} END`,
           })
-          .where(inArray(usageEvent.idempotencyKey, [...quantities.keys()]));
+          .where(
+            inArray(
+              usageEvent.idempotencyKey,
+              positive.map(([source]) => {
+                return source;
+              }),
+            ),
+          );
       }
       signal.throwIfAborted();
     },

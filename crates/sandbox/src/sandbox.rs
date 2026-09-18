@@ -67,15 +67,20 @@ pub enum SandboxFinalExecParkHandoffPoint {
     BeforeBalloon,
     /// The request interrupted the bounded balloon-settle wait.
     DuringBalloonSettle,
+    /// The request interrupted pre-pause deflation or arrived before vCPU pause.
+    DuringDeflation,
 }
 
-/// Completed final guest exec and physical park, optionally shortened for an
-/// already-claimed exact successor.
+/// Completed final guest exec and either physical park or fenced running
+/// ownership for an already-claimed exact successor.
 pub enum SandboxFinalExecParkHandoffOutcome {
     /// No handoff request interrupted provider compaction.
     Parked(SandboxFinalExecParkOutcome),
-    /// The sandbox reached the paused boundary without completing idle memory
-    /// compaction and must be delivered only to the accepted exact successor.
+    /// The sandbox is still running with Guest operations quiesced and fenced.
+    /// The old lifecycle writer has retired and balloon deflation has started.
+    /// It must be delivered only to the accepted exact successor or destroyed.
+    /// The successor must bind run control and call `unpark` to finish memory
+    /// readiness and reopen Guest operations without a vCPU resume.
     Handoff {
         /// Terminal result of the lifecycle-owned final guest exec.
         exec_result: ExecResult,
@@ -458,7 +463,7 @@ pub enum SandboxFinalExecParkStage {
     /// Fences normal operations, runs the final guest preparation, and reaches
     /// the provider's safe pre-park boundary.
     ReusePreparation,
-    /// Commits the provider-specific physical park after preparation succeeds.
+    /// Completes provider-specific park or running handoff after preparation.
     PhysicalPark,
 }
 
@@ -469,6 +474,8 @@ pub enum SandboxFinalExecParkSubstage {
     BalloonSetup,
     /// Waits for the guest balloon to reach the existing settle policy.
     BalloonSettle,
+    /// Returns the guest balloon target to zero before vCPU pause.
+    BalloonDeflate,
     /// Pauses guest vCPUs after balloon handling completes.
     VcpuPause,
 }
@@ -752,9 +759,8 @@ pub trait Sandbox: Send + Sync + Any {
         self.final_exec_and_park(request, diagnostic_label).await
     }
 
-    /// Run the final guest preparation and reach the paused park boundary while
-    /// allowing one already-claimed exact successor to shorten idle-only
-    /// provider compaction.
+    /// Run final guest preparation and either physically park or transfer a
+    /// still-running, fenced sandbox to one already-claimed exact successor.
     ///
     /// The default implementation preserves provider compatibility by fully
     /// parking and never accepting the handoff signal.
@@ -771,6 +777,9 @@ pub trait Sandbox: Send + Sync + Any {
     }
 
     /// Transition the sandbox back to the active state.
+    ///
+    /// A successful running handoff also requires this call: finish deflation
+    /// and resume Guest operations while leaving already-running vCPUs alone.
     ///
     /// Must be called before any further work is dispatched via `exec` /
     /// `start_process` on a previously parked sandbox. Implementations

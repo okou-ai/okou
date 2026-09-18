@@ -23,7 +23,6 @@ describe("DeepSeek Pi admission", () => {
             runtimeProviderType,
             piEnabled,
             codexServiceTier: undefined,
-            codexFastModeEnabled: false,
           }),
         ).toBe(piEnabled && supported);
       }
@@ -46,7 +45,6 @@ describe("DeepSeek Pi admission", () => {
             runtimeProviderType: "deepseek",
             piEnabled: true,
             codexServiceTier: undefined,
-            codexFastModeEnabled: false,
           }),
         ).toBe(true);
       }
@@ -63,7 +61,6 @@ describe("DeepSeek Pi admission", () => {
           runtimeProviderType: "deepseek",
           piEnabled: true,
           codexServiceTier: undefined,
-          codexFastModeEnabled: false,
         }),
       ).toBe(false);
     },

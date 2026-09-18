@@ -1,5 +1,3 @@
-import { retireImpactMetadata } from "../../lib/impact-marketing";
-import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -29,7 +27,6 @@ import {
   type StripeSubscription,
 } from "../external/stripe-client";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
-import { persistOrgAcquisitionAttribution$ } from "./acquisition-attribution.service";
 import {
   addStripeConcurrencySubscriptionItem$,
   previewStripeConcurrencySubscriptionChange$,
@@ -57,7 +54,6 @@ interface CreateCheckoutSessionArgs {
   readonly trialDays?: 7;
   readonly successUrl: string;
   readonly cancelUrl: string;
-  readonly adAttribution?: Readonly<Record<string, string | undefined>>;
   readonly checkoutIdempotencyKey?: string;
   readonly purchaseCreatedAt?: string;
 }
@@ -221,7 +217,6 @@ const planPurchasePreviewTokenSchema = z.object({
   currency: z.string().length(3),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
-  adAttribution: z.record(z.string(), z.string()).optional(),
   expiresAt: z.iso.datetime(),
 });
 
@@ -808,9 +803,6 @@ function checkoutSessionMetadata(args: {
   readonly purchaseCreatedAt?: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly priceId: string;
-  readonly adAttribution:
-    | Readonly<Record<string, string | undefined>>
-    | undefined;
 }): Record<string, string> {
   const metadata: Record<string, string> = {
     orgId: args.orgId,
@@ -818,15 +810,6 @@ function checkoutSessionMetadata(args: {
     priceId: args.priceId,
     purchaseCreatedAt: args.purchaseCreatedAt ?? nowDate().toISOString(),
   };
-  for (const [key, value] of Object.entries(
-    compatibleGoogleAdsAttribution(
-      retireImpactMetadata(args.adAttribution ?? {}),
-    ),
-  )) {
-    if (value) {
-      metadata[key] = value;
-    }
-  }
   Object.assign(metadata, stripePreviewMetadata());
   return metadata;
 }
@@ -842,17 +825,6 @@ function stripeObjectId(
 
 function subscriptionWillCancel(subscription: StripeSubscription): boolean {
   return subscription.cancel_at_period_end || subscription.cancel_at !== null;
-}
-
-function definedAttribution(
-  attribution: Readonly<Record<string, string | undefined>> | undefined,
-): Record<string, string> | undefined {
-  const entries = Object.entries(
-    compatibleGoogleAdsAttribution(retireImpactMetadata(attribution ?? {})),
-  ).filter((entry): entry is [string, string] => {
-    return entry[1] !== undefined;
-  });
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function expandedLatestInvoice(
@@ -954,14 +926,9 @@ export const startPlanPurchase$ = command(
       };
     }
 
-    await set(
-      persistOrgAcquisitionAttribution$,
-      { orgId: args.orgId, attribution: args.adAttribution },
-      signal,
-    );
     const customerId = await set(
       getOrCreateStripeCustomer$,
-      { orgId: args.orgId, metadata: args.adAttribution },
+      { orgId: args.orgId },
       signal,
     );
     signal.throwIfAborted();
@@ -1014,9 +981,6 @@ export const startPlanPurchase$ = command(
       currency: invoice.currency,
       successUrl: args.successUrl,
       cancelUrl: args.cancelUrl,
-      ...(definedAttribution(args.adAttribution) === undefined
-        ? {}
-        : { adAttribution: definedAttribution(args.adAttribution) }),
       expiresAt,
     };
     return {
@@ -1069,7 +1033,6 @@ async function createConfirmedPlanSubscription(
       orgId,
       tier: preview.tier,
       priceId: preview.priceId,
-      adAttribution: preview.adAttribution,
       purchaseCreatedAt: purchasePreviewCreatedAt(preview),
     }),
     billingPurchaseId: preview.purchaseId,
@@ -1220,7 +1183,6 @@ async function confirmPlanPurchaseTransaction(
         trialDays: preview.trialDays,
         successUrl: preview.successUrl,
         cancelUrl: preview.cancelUrl,
-        adAttribution: preview.adAttribution,
         checkoutIdempotencyKey: `plan-purchase:${preview.purchaseId}:checkout`,
         purchaseCreatedAt: purchasePreviewCreatedAt(preview),
       },
@@ -1295,7 +1257,6 @@ async function createPlanCheckoutSession(
     orgId: args.orgId,
     tier: args.tier,
     priceId: args.priceId,
-    adAttribution: args.adAttribution,
     purchaseCreatedAt: args.purchaseCreatedAt,
   });
   const params: StripeCheckoutSessionCreateParams = {
@@ -1331,16 +1292,11 @@ const createCheckoutSession$ = command(
     args: CreateCheckoutSessionArgs,
     signal: AbortSignal,
   ): Promise<string> => {
-    await set(
-      persistOrgAcquisitionAttribution$,
-      { orgId: args.orgId, attribution: args.adAttribution },
-      signal,
-    );
     signal.throwIfAborted();
 
     const customerId = await set(
       getOrCreateStripeCustomer$,
-      { orgId: args.orgId, metadata: args.adAttribution },
+      { orgId: args.orgId },
       signal,
     );
     signal.throwIfAborted();

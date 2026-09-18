@@ -172,6 +172,8 @@ describe("workspace history restore telemetry", () => {
       { session_history_restore_representation: "json" },
       { session_history_restore_reason: "arbitrary" },
       { session_history_wire_codec: "gzip" },
+      { session_history_codec_decision: "arbitrary" },
+      { session_history_codec_decision: "sample_accepted" },
       { session_history_codec_reason: "arbitrary" },
       { session_history_transfer_source: "arbitrary-path" },
       { session_history_wire_bytes: Number.MAX_SAFE_INTEGER + 1 },
@@ -194,14 +196,13 @@ describe("workspace history restore telemetry", () => {
   });
 
   it("preserves measured wire costs separately from logical history representation", () => {
-    const transfer = {
+    const transferMeasurements = {
       ...operation,
       action_type: "session_history_transfer",
       session_history_framework: "codex",
       session_history_restore_representation: "raw",
       session_history_transfer_source: "workspace_cache",
       session_history_wire_codec: "zstd",
-      session_history_codec_reason: "sample_accepted",
       session_history_transfer_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
       session_history_wire_bytes: 144 * 1024 * 1024,
       session_history_write_requests: 9,
@@ -210,6 +211,14 @@ describe("workspace history restore telemetry", () => {
       session_history_requests_ms: 20,
       session_history_encoder_pipeline_ms: 15,
       session_history_publication_ms: 0,
+    };
+    const transfer = {
+      ...transferMeasurements,
+      session_history_codec_decision: "above_threshold",
+    };
+    const legacyTransfer = {
+      ...transferMeasurements,
+      session_history_codec_reason: "sample_accepted",
     };
     const failed = {
       ...operation,
@@ -224,7 +233,15 @@ describe("workspace history restore telemetry", () => {
       session_history_wire_bytes: 0,
       session_history_write_requests: 1,
       session_history_wire_codec: "none",
-      session_history_codec_reason: "below_threshold",
+      session_history_codec_decision: "below_threshold",
+    };
+    const nativeZstd = {
+      ...transfer,
+      session_history_restore_representation: "codex_zstd",
+      session_history_wire_codec: "none",
+      session_history_codec_decision: "native_zstd",
+      session_history_wire_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_encoder_pipeline_ms: 0,
     };
     const largeInline = {
       ...transfer,
@@ -236,9 +253,25 @@ describe("workspace history restore telemetry", () => {
     expect(
       webhookTelemetryContract.send.body.parse({
         runId: "run",
-        sandboxOperations: [transfer, failed, empty, largeInline, operation],
+        sandboxOperations: [
+          transfer,
+          legacyTransfer,
+          failed,
+          empty,
+          nativeZstd,
+          largeInline,
+          operation,
+        ],
       }).sandboxOperations,
-    ).toStrictEqual([transfer, failed, empty, largeInline, operation]);
+    ).toStrictEqual([
+      transfer,
+      legacyTransfer,
+      failed,
+      empty,
+      nativeZstd,
+      largeInline,
+      operation,
+    ]);
   });
 });
 

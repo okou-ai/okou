@@ -1,16 +1,21 @@
 import { morningBriefCalendarCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
+import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
+import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 
+import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
+
 import { ROUTES } from "../signals/route";
+import { cronExecuteMorningBriefsRoutes } from "../signals/routes/cron-execute-morning-briefs";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { morningBriefCalendarCollectionPreviewRoutes } from "../signals/routes/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
-import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
+import { morningBriefCompositionPreviewRoutes } from "../signals/routes/morning-brief-composition-preview";
 import { morningBriefDeliveryPreviewRoutes } from "../signals/routes/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
@@ -75,6 +80,28 @@ describe("API route registrations", () => {
     ).toStrictEqual([entry]);
   });
 
+  // Composition and generation deliberately share one route module, so assert
+  // both exact entries rather than applying the single-entry invariant used by
+  // the source-specific collection modules above.
+  it("registers both Morning Brief composition routes an operator invokes", () => {
+    expect(morningBriefCompositionPreviewRoutes).toHaveLength(2);
+    const [composeEntry, generateEntry] = morningBriefCompositionPreviewRoutes;
+    expect(composeEntry?.route).toBe(
+      morningBriefCompositionPreviewContract.compose,
+    );
+    expect(generateEntry?.route).toBe(
+      morningBriefCompositionPreviewContract.generate,
+    );
+    for (const entry of morningBriefCompositionPreviewRoutes) {
+      expect(ROUTES).toContain(entry);
+      expect(
+        ROUTES.filter((registered) => {
+          return registered.route.path === entry?.route.path;
+        }),
+      ).toStrictEqual([entry]);
+    }
+  });
+
   // The platform-funded generation preview has the same requirement: its own
   // suite may not compose an app from this production-global table, so the
   // exact entry object is asserted here. Registration is what makes that
@@ -130,6 +157,25 @@ describe("API route registrations", () => {
         return (
           registered.route.path ===
           morningBriefDeliveryPreviewContract.preview.path
+        );
+      }),
+    ).toStrictEqual([entry]);
+  });
+
+  // The native cron is not a preview: it is the deployed scheduling entry point
+  // the platform invokes every minute, and its own suite composes an app from
+  // this route slice. Asserting the exact entry object keeps that suite's
+  // results statements about the endpoint the deployed table actually holds.
+  it("registers the native Morning Brief cron the platform invokes", () => {
+    const [entry, ...extra] = cronExecuteMorningBriefsRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(cronExecuteMorningBriefsContract.execute);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          cronExecuteMorningBriefsContract.execute.path
         );
       }),
     ).toStrictEqual([entry]);
