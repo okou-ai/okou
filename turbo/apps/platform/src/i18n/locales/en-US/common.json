@@ -1449,38 +1449,31 @@
           },
           "connector": {
             "confirm": "Browse all connectors",
-            "description": "Connect one and it reads your mail, your docs and your dashboards itself, so what comes back is finished work rather than an answer to paste somewhere.",
+            "description": "Connect one of your tools so {{assistantName}} can work in it.",
             "pickerFailed": "Connectors could not be loaded. Open the connectors page to try again.",
             "pickerLoading": "Loading connectors…",
-            "scopeAction": "Access is granted one action at a time: it can draft the mail without being able to send it.",
-            "scopeCredentials": "You sign in with the provider. {{assistantName}} never sees your password, and there is no API key to paste.",
-            "scopeRevoke": "Disconnect whenever you want. Permissions follow you, not the automation.",
             "title": "{{assistantName}} works inside the tools you already use"
           },
           "invite": {
             "confirm": "Invite teammates",
-            "description": "A workflow belongs to the workspace, not to whoever built it, so a teammate runs it on their first day without rebuilding any of the setup.",
-            "scopeShared": "Each teammate runs it with their own permissions and their own connected accounts.",
+            "description": "Invite your teammates to this workspace.",
             "title": "What one person knows, everyone can run"
           },
           "later": "Later",
           "slack": {
             "appBadge": "APP",
             "confirm": "Add to Slack",
-            "description": "Mention it in a channel and the answer lands in that thread, so the team can follow the work without anyone leaving Slack.",
+            "description": "Add {{assistantName}} to your team's Slack workspace.",
             "sampleChannel": "# growth",
-            "scopeChannels": "It only sees the channels you invite it into.",
-            "scopeOrganization": "Installing it makes your workspace the team's: agents, workflows and credits are shared from then on.",
-            "scopeReward": "The credits go to the team balance.",
             "title": "Work with {{assistantName}} where your team already talks"
           },
           "workflow": {
             "browse": "Browse templates",
             "confirm": "Give me one to try",
-            "description": "Nothing to configure first. Do the job once, then keep it.",
+            "description": "Turn a job you repeat into a workflow the team can run.",
             "prompt": "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
             "promptConfirm": "Send it to {{assistantName}}",
-            "promptDescription": "You do not spell out the steps. {{assistantName}} works out the angle, picks the tools and brings back the finished thing.",
+            "promptDescription": "Send this to {{assistantName}} as it is, or change the wording first.",
             "promptOutcome": "It reads the sources, groups what it finds and replies with the table. If the result is right, it offers to keep the run as a workflow.",
             "promptTitle": "Ask the way you would ask a colleague",
             "stepRun": "Run it once",

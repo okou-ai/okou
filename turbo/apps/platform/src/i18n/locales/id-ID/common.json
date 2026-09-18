@@ -1448,38 +1448,31 @@
           },
           "connector": {
             "confirm": "Lihat semua konektor",
-            "description": "Hubungkan satu saja dan ia membaca sendiri email, dokumen, dan dasbor Anda, sehingga yang kembali adalah pekerjaan jadi, bukan jawaban untuk ditempel di tempat lain.",
+            "description": "Hubungkan salah satu alat Anda supaya {{assistantName}} bisa bekerja di dalamnya.",
             "pickerFailed": "Konektor gagal dimuat. Buka halaman konektor untuk mencoba lagi.",
             "pickerLoading": "Memuat konektor…",
-            "scopeAction": "Akses diberikan satu tindakan sekali: ia bisa menyusun draf email tanpa bisa mengirimnya.",
-            "scopeCredentials": "Anda masuk lewat penyedianya sendiri. {{assistantName}} tidak pernah melihat kata sandi Anda, dan tidak ada API key yang perlu ditempel.",
-            "scopeRevoke": "Putuskan kapan pun Anda mau. Izin mengikuti orangnya, bukan otomasinya.",
             "title": "{{assistantName}} bekerja di dalam alat yang sudah Anda pakai"
           },
           "invite": {
             "confirm": "Undang tim",
-            "description": "Alur kerja milik ruang kerja, bukan milik pembuatnya, jadi rekan baru bisa menjalankannya di hari pertama tanpa menyiapkan ulang apa pun.",
-            "scopeShared": "Setiap orang menjalankannya dengan izin dan akun terhubung miliknya sendiri.",
+            "description": "Undang rekan-rekan Anda ke ruang kerja ini.",
             "title": "Yang diketahui satu orang bisa dijalankan semua orang"
           },
           "later": "Nanti saja",
           "slack": {
             "appBadge": "APP",
             "confirm": "Tambahkan ke Slack",
-            "description": "Sebut namanya di sebuah kanal dan jawabannya masuk ke thread itu, jadi tim bisa mengikuti pekerjaannya tanpa keluar dari Slack.",
+            "description": "Tambahkan {{assistantName}} ke ruang kerja Slack tim Anda.",
             "sampleChannel": "# growth",
-            "scopeChannels": "Ia hanya melihat kanal tempat Anda mengundangnya.",
-            "scopeOrganization": "Memasangnya membuat ruang kerja Anda menjadi milik tim: agen, alur kerja, dan kredit jadi dipakai bersama.",
-            "scopeReward": "Kreditnya masuk ke saldo tim.",
             "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
           },
           "workflow": {
             "browse": "Lihat templat",
             "confirm": "Tunjukkan satu",
-            "description": "Tidak ada yang perlu disiapkan dulu. Kerjakan sekali, lalu simpan.",
+            "description": "Ubah pekerjaan yang Anda ulang menjadi alur kerja yang bisa dijalankan tim.",
             "prompt": "Setiap Senin pagi, periksa apa yang dipublikasikan kompetitor saya minggu lalu, kelompokkan menurut tema, dan buatkan tabel perbandingan.",
             "promptConfirm": "Kirim ke {{assistantName}}",
-            "promptDescription": "Anda tidak perlu merinci langkahnya. {{assistantName}} yang menentukan caranya, memilih alatnya, dan membawa hasil jadinya.",
+            "promptDescription": "Kirim begini saja ke {{assistantName}}, atau ubah dulu kalimatnya.",
             "promptOutcome": "Ia membaca sumbernya, mengelompokkan yang ditemukan, lalu menjawab dengan tabelnya. Kalau hasilnya pas, ia menawarkan menyimpan jalannya itu sebagai alur kerja.",
             "promptTitle": "Minta seperti Anda meminta kepada rekan kerja",
             "stepRun": "Jalankan sekali",

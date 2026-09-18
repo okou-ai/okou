@@ -1449,38 +1449,31 @@
           },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
-            "description": "Verbinden Sie eines, und es liest Ihre Mails, Dokumente und Dashboards selbst. Zurück kommt fertige Arbeit statt einer Antwort, die Sie irgendwo einfügen müssen.",
+            "description": "Verbinden Sie eines Ihrer Tools, damit {{assistantName}} darin arbeiten kann.",
             "pickerFailed": "Konnektoren konnten nicht geladen werden. Bitte auf der Konnektoren-Seite erneut versuchen.",
             "pickerLoading": "Konnektoren werden geladen …",
-            "scopeAction": "Zugriff wird einzeln je Aktion erteilt: Die Mail darf entworfen, aber nicht gesendet werden.",
-            "scopeCredentials": "Sie melden sich beim Anbieter an. {{assistantName}} sieht Ihr Passwort nie, und es gibt keinen API-Schlüssel einzufügen.",
-            "scopeRevoke": "Trennen Sie die Verbindung jederzeit. Rechte hängen an Ihnen, nicht an der Automatisierung.",
             "title": "{{assistantName}} arbeitet in den Tools, die Sie ohnehin nutzen"
           },
           "invite": {
             "confirm": "Team einladen",
-            "description": "Ein Workflow gehört dem Workspace, nicht der Person, die ihn gebaut hat. Neue Kolleginnen führen ihn am ersten Tag aus, ohne etwas neu einzurichten.",
-            "scopeShared": "Jede Person führt ihn mit den eigenen Rechten und den eigenen verbundenen Konten aus.",
+            "description": "Laden Sie Ihre Kolleginnen und Kollegen in diesen Workspace ein.",
             "title": "Was einer weiß, können alle ausführen"
           },
           "later": "Später",
           "slack": {
             "appBadge": "APP",
             "confirm": "Zu Slack hinzufügen",
-            "description": "Erwähnen Sie es in einem Channel, und die Antwort landet in genau diesem Thread – das Team verfolgt die Arbeit, ohne Slack zu verlassen.",
+            "description": "Fügen Sie {{assistantName}} zum Slack-Workspace Ihres Teams hinzu.",
             "sampleChannel": "# growth",
-            "scopeChannels": "Es sieht nur die Channels, in die Sie es einladen.",
-            "scopeOrganization": "Mit der Installation wird Ihr Workspace der des Teams: Agenten, Workflows und Guthaben sind ab dann geteilt.",
-            "scopeReward": "Die Credits gehen auf das Team-Guthaben.",
             "title": "Arbeiten Sie mit {{assistantName}} dort, wo Ihr Team schon spricht"
           },
           "workflow": {
             "browse": "Vorlagen ansehen",
             "confirm": "Zeig mir eines",
-            "description": "Vorher ist nichts einzurichten. Machen Sie die Arbeit einmal und behalten Sie sie.",
+            "description": "Machen Sie aus einer wiederkehrenden Aufgabe einen Workflow, den das Team ausführen kann.",
             "prompt": "Sieh jeden Montagmorgen nach, was meine Wettbewerber letzte Woche veröffentlicht haben, gruppiere es nach Thema und gib mir eine Vergleichstabelle.",
             "promptConfirm": "An {{assistantName}} senden",
-            "promptDescription": "Sie buchstabieren die Schritte nicht aus. {{assistantName}} findet den Weg, wählt die Tools und bringt das fertige Ergebnis.",
+            "promptDescription": "Schicken Sie das so an {{assistantName}} oder ändern Sie vorher den Wortlaut.",
             "promptOutcome": "Es liest die Quellen, gruppiert, was es findet, und antwortet mit der Tabelle. Stimmt das Ergebnis, bietet es an, den Durchlauf als Workflow zu behalten.",
             "promptTitle": "Fragen Sie so, wie Sie eine Kollegin fragen würden",
             "stepRun": "Einmal laufen lassen",

@@ -1473,38 +1473,31 @@
           },
           "connector": {
             "confirm": "Voir tous les connecteurs",
-            "description": "Connectez-en un et il lira lui-même vos mails, vos documents et vos tableaux de bord : ce qui revient est un travail terminé, pas une réponse à recopier ailleurs.",
+            "description": "Connectez un de vos outils pour que {{assistantName}} puisse y travailler.",
             "pickerFailed": "Impossible de charger les connecteurs. Ouvrez la page des connecteurs pour réessayer.",
             "pickerLoading": "Chargement des connecteurs…",
-            "scopeAction": "L'accès est accordé action par action : il peut rédiger le mail sans pouvoir l'envoyer.",
-            "scopeCredentials": "Vous vous connectez chez le fournisseur. {{assistantName}} ne voit jamais votre mot de passe, et il n'y a aucune clé d'API à coller.",
-            "scopeRevoke": "Déconnectez quand vous voulez. Les droits suivent la personne, pas l'automatisation.",
             "title": "{{assistantName}} travaille dans les outils que vous utilisez déjà"
           },
           "invite": {
             "confirm": "Inviter l'équipe",
-            "description": "Un workflow appartient à l'espace de travail, pas à celui qui l'a créé : un collègue l'exécute dès son premier jour sans refaire la configuration.",
-            "scopeShared": "Chacun l'exécute avec ses propres droits et ses propres comptes connectés.",
+            "description": "Invitez vos collègues dans cet espace de travail.",
             "title": "Ce qu'une personne sait, toute l'équipe peut l'exécuter"
           },
           "later": "Plus tard",
           "slack": {
             "appBadge": "APP",
             "confirm": "Ajouter à Slack",
-            "description": "Mentionnez-le dans un canal et la réponse arrive dans ce fil : l'équipe suit le travail sans quitter Slack.",
+            "description": "Ajoutez {{assistantName}} à l'espace Slack de votre équipe.",
             "sampleChannel": "# growth",
-            "scopeChannels": "Il ne voit que les canaux où vous l'invitez.",
-            "scopeOrganization": "L'installation fait de votre espace celui de l'équipe : agents, workflows et crédits deviennent partagés.",
-            "scopeReward": "Les crédits vont sur le solde de l'équipe.",
             "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
           },
           "workflow": {
             "browse": "Voir les modèles",
             "confirm": "Montrez-m'en un",
-            "description": "Rien à configurer d'abord. Faites le travail une fois, puis gardez-le.",
+            "description": "Transformez une tâche récurrente en workflow que l'équipe peut lancer.",
             "prompt": "Chaque lundi matin, regarde ce que mes concurrents ont publié la semaine dernière, regroupe-le par thème et donne-moi un tableau comparatif.",
             "promptConfirm": "L'envoyer à {{assistantName}}",
-            "promptDescription": "Vous ne détaillez pas les étapes. {{assistantName}} trouve l'angle, choisit les outils et rapporte le résultat fini.",
+            "promptDescription": "Envoyez-le tel quel à {{assistantName}}, ou modifiez d'abord la formulation.",
             "promptOutcome": "Il lit les sources, regroupe ce qu'il trouve et répond avec le tableau. Si le résultat convient, il propose de garder l'exécution comme workflow.",
             "promptTitle": "Demandez comme vous le demanderiez à un collègue",
             "stepRun": "Lancez-le une fois",

@@ -432,20 +432,6 @@ function WorkflowStep({
   );
 }
 
-function ScopeNote({ items }: { items: readonly string[] }) {
-  return (
-    <ul className="px-0.5 text-xs text-muted-foreground">
-      {items.map((item) => {
-        return (
-          <li key={item} className="py-[3px]">
-            {item}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 /**
  * The shape every quest intro takes: what it is worth, a drawing of it, the
  * detail the row could not hold, and one way forward that is not a dead end.
@@ -467,7 +453,8 @@ function IntroLayout({
   onSecondary: () => void;
   confirmLabel: string;
   onConfirm: () => void;
-  children: ReactNode;
+  /** Only the quests that hand something over draw a body under the figure. */
+  children?: ReactNode;
 }) {
   return (
     <>
@@ -528,9 +515,12 @@ function ConnectorIntro({
         },
         { assistantName },
       )}
-      description={t(($) => {
-        return $.chat.agentPage.getStarted.intro.connector.description;
-      })}
+      description={t(
+        ($) => {
+          return $.chat.agentPage.getStarted.intro.connector.description;
+        },
+        { assistantName },
+      )}
       // The connectors themselves are the illustration: every one of them
       // connects in one press, which is the claim the abstract figure was
       // making and these marks make better.
@@ -541,27 +531,7 @@ function ConnectorIntro({
         return $.chat.agentPage.getStarted.intro.connector.confirm;
       })}
       onConfirm={onConfirm}
-    >
-      {/* Refusals here are about custody, not value: what it may read, how
-          little it asks for, and how to take it back. */}
-      <ScopeNote
-        items={[
-          t(
-            ($) => {
-              return $.chat.agentPage.getStarted.intro.connector
-                .scopeCredentials;
-            },
-            { assistantName },
-          ),
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.connector.scopeAction;
-          }),
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.connector.scopeRevoke;
-          }),
-        ]}
-      />
-    </IntroLayout>
+    />
   );
 }
 
@@ -586,23 +556,7 @@ function SlackIntro({ onConfirm, onClose }: IntroProps) {
         return $.chat.agentPage.getStarted.intro.slack.confirm;
       })}
       onConfirm={onConfirm}
-    >
-      {/* The row's footnote says the Slack reward goes to the organization.
-          That is the point of this quest, not a disclaimer, so it leads here. */}
-      <ScopeNote
-        items={[
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.slack.scopeOrganization;
-          }),
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.slack.scopeReward;
-          }),
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.slack.scopeChannels;
-          }),
-        ]}
-      />
-    </IntroLayout>
+    />
   );
 }
 
@@ -623,15 +577,7 @@ function InviteIntro({ onConfirm, onClose }: IntroProps) {
         return $.chat.agentPage.getStarted.intro.invite.confirm;
       })}
       onConfirm={onConfirm}
-    >
-      <ScopeNote
-        items={[
-          t(($) => {
-            return $.chat.agentPage.getStarted.intro.invite.scopeShared;
-          }),
-        ]}
-      />
-    </IntroLayout>
+    />
   );
 }
 

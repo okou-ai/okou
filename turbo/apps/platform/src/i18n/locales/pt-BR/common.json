@@ -1473,38 +1473,31 @@
           },
           "connector": {
             "confirm": "Ver todos os conectores",
-            "description": "Conecte uma e ele lê seu e-mail, seus documentos e seus painéis sozinho, então o que volta é trabalho pronto e não uma resposta para colar em outro lugar.",
+            "description": "Conecte uma das suas ferramentas para o {{assistantName}} trabalhar dentro dela.",
             "pickerFailed": "Não foi possível carregar os conectores. Abra a página de conectores para tentar de novo.",
             "pickerLoading": "Carregando conectores…",
-            "scopeAction": "O acesso é concedido uma ação por vez: ele escreve o rascunho do e-mail sem poder enviá-lo.",
-            "scopeCredentials": "Você entra no próprio provedor. O {{assistantName}} nunca vê sua senha e não há chave de API para colar.",
-            "scopeRevoke": "Desconecte quando quiser. As permissões acompanham você, não a automação.",
             "title": "O {{assistantName}} trabalha dentro das ferramentas que você já usa"
           },
           "invite": {
             "confirm": "Convidar o time",
-            "description": "Um fluxo pertence ao espaço de trabalho, não a quem o criou, então um colega executa no primeiro dia sem refazer a configuração.",
-            "scopeShared": "Cada pessoa executa com as próprias permissões e as próprias contas conectadas.",
+            "description": "Convide seus colegas para este espaço de trabalho.",
             "title": "O que uma pessoa aprende, o time inteiro executa"
           },
           "later": "Depois",
           "slack": {
             "appBadge": "APP",
             "confirm": "Adicionar ao Slack",
-            "description": "Mencione ele num canal e a resposta chega naquela thread, então o time acompanha o trabalho sem sair do Slack.",
+            "description": "Adicione o {{assistantName}} ao espaço do Slack do seu time.",
             "sampleChannel": "# growth",
-            "scopeChannels": "Ele só enxerga os canais para os quais você o convida.",
-            "scopeOrganization": "Ao instalar, seu espaço passa a ser o do time: agentes, fluxos e créditos ficam compartilhados.",
-            "scopeReward": "Os créditos vão para o saldo do time.",
             "title": "Trabalhe com o {{assistantName}} onde seu time já conversa"
           },
           "workflow": {
             "browse": "Ver modelos",
             "confirm": "Me mostra um",
-            "description": "Não há nada para configurar antes. Faça o trabalho uma vez e guarde.",
+            "description": "Transforme um trabalho que você repete num fluxo que o time pode rodar.",
             "prompt": "Toda segunda de manhã, veja o que meus concorrentes publicaram na semana passada, agrupe por tema e me dê uma tabela comparativa.",
             "promptConfirm": "Enviar para o {{assistantName}}",
-            "promptDescription": "Você não descreve os passos. O {{assistantName}} descobre o caminho, escolhe as ferramentas e traz o resultado pronto.",
+            "promptDescription": "Envie assim mesmo para o {{assistantName}} ou mude o texto antes.",
             "promptOutcome": "Ele lê as fontes, agrupa o que encontra e responde com a tabela. Se o resultado ficar bom, ele oferece guardar essa execução como fluxo.",
             "promptTitle": "Peça como pediria a um colega",
             "stepRun": "Rode uma vez",

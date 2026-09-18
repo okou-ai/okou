@@ -723,15 +723,10 @@ test("The connector step says what it costs the user before it hands them off", 
   const dialog = await screen.findByRole("dialog", {
     name: "Okou works inside the tools you already use",
   });
-  // The refusal this answers is about custody, not value.
+  // The dialog says what the step is, and the list does the rest.
   expect(
     within(dialog).getByText(
-      "You sign in with the provider. Okou never sees your password, and there is no API key to paste.",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).getByText(
-      "Disconnect whenever you want. Permissions follow you, not the automation.",
+      "Connect one of your tools so Okou can work in it.",
     ),
   ).toBeInTheDocument();
   // Explaining is all it does: the destination is still the connector list.
@@ -798,12 +793,8 @@ test("Declining an introduced step costs the user nothing", async () => {
   const dialog = await screen.findByRole("dialog", {
     name: "What one person knows, everyone can run",
   });
-  // The reason to invite is what a teammate inherits, not the per-member
-  // reward the row already states.
   expect(
-    within(dialog).getByText(
-      "Each teammate runs it with their own permissions and their own connected accounts.",
-    ),
+    within(dialog).getByText("Invite your teammates to this workspace."),
   ).toBeInTheDocument();
 
   click(buttonNamed("Later", dialog));
