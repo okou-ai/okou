@@ -1177,8 +1177,6 @@ async function readGithubSource(
   return {
     normalized,
     descriptor: morningBriefGithubDescriptor({
-      // The exact login of the selected token, resolved by the collector.
-      login: execution.bundle.login,
       proof: args.authority.proof,
       membershipId: args.scope.membershipId,
       agentId: args.scope.agentId,
