@@ -42,6 +42,7 @@ import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-mode
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
+import { validateGpt55Retirement } from "./test-gpt-55-retirement";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -3349,6 +3350,7 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelKeyState(dbUrl1);
     await validatePermanentSlackPublicBrandState(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
+    await validateGpt55Retirement(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);

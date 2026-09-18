@@ -15,6 +15,7 @@ import { isLockNotAvailable } from "../../lib/pg-errors";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
+import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
@@ -23,6 +24,7 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 
 export function agentExistsInOrg(args: {
   readonly orgId: string;
@@ -154,6 +156,9 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
   );
+  // Maintenance can retain ledger rows before locking Runs. Join admission
+  // before parent locks so our Run-delete FK cannot reverse that order.
+  await lockUsageEventCompaction(tx, "shared");
 
   const lifecycle = await lockAgentLifecycleForDeletion(tx, args);
   if (lifecycle.kind !== "ready") {
@@ -175,6 +180,13 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     );
 
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
+
+  // A native Morning Brief delivery cascades away with this Agent, taking the
+  // only association to its still-unsent mail with it. Remove both first.
+  await revokeMorningBriefDeliveryOwnership(tx, {
+    kind: "agent",
+    agentId: args.agentId,
+  });
 
   await tx
     .delete(agents)

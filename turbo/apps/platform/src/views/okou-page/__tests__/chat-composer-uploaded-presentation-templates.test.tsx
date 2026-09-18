@@ -11,6 +11,7 @@ import {
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -819,5 +820,94 @@ test("Keep workspace templates current through withdrawal after preview", async 
     expect(
       screen.queryByLabelText(`Select template ${published.title}`),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The label belongs to both the field and its confirm control, so the field is
+ * the one that is a textarea.
+ */
+function renameField(): HTMLTextAreaElement {
+  const field = screen
+    .getAllByLabelText("Rename template")
+    .find((candidate): candidate is HTMLTextAreaElement => {
+      return candidate instanceof HTMLTextAreaElement;
+    });
+  if (!field) {
+    throw new Error("Expected a rename field");
+  }
+  return field;
+}
+
+test("A second rename cannot overtake the one already sent", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Quarterly Board Review",
+    pageCount: 3,
+    canManage: true,
+  });
+  mockPresentationTemplateLibrary([uploaded]);
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+  await openTemplatePicker(user, "Presentation");
+  await waitFor(() => {
+    expect(screen.getByText(uploaded.title)).toBeVisible();
+  });
+  click(buttonNamed(`Preview ${uploaded.title} at current slide`));
+  await screen.findByRole("group", { name: `${uploaded.title} slide preview` });
+
+  // Hold the first rename open so the second has something to overtake.
+  const stored = context.mocks.deferred<void>();
+  const submitted: string[] = [];
+  context.mocks.api(
+    presentationTemplatesContract.update,
+    async ({ body, params, respond, withSignal }) => {
+      submitted.push(body.title ?? "");
+      if (submitted.length === 1) {
+        await withSignal(stored.promise);
+      }
+      return respond(200, {
+        ...uploaded,
+        ...body,
+        id: params.templateId,
+        updatedAt: "2026-08-01T00:01:00.000Z",
+      });
+    },
+  );
+
+  await fill(renameField(), "Board Review FY26");
+  fireEvent.keyDown(renameField(), { key: "Enter" });
+  await waitFor(() => {
+    expect(submitted).toStrictEqual(["Board Review FY26"]);
+  });
+
+  // Closed while its own rename is open. Enter reaches the form through
+  // requestSubmit(), which ignores the disabled confirm control, so the field
+  // being closed is what keeps a second rename from leaving at all.
+  expect(renameField()).toBeDisabled();
+  fireEvent.keyDown(renameField(), { key: "Enter" });
+  expect(submitted).toStrictEqual(["Board Review FY26"]);
+
+  stored.resolve();
+  await waitFor(() => {
+    expect(renameField()).toBeEnabled();
+  });
+
+  // Editing is allowed again once the stored name is the one on screen, and
+  // the later edit is the one that survives.
+  await fill(renameField(), "Board Review FY27");
+  fireEvent.keyDown(renameField(), { key: "Enter" });
+  await waitFor(() => {
+    expect(submitted).toStrictEqual(["Board Review FY26", "Board Review FY27"]);
+  });
+  // The field reopens on what the server stored, which is the later edit.
+  await waitFor(() => {
+    expect(renameField()).toHaveValue("Board Review FY27");
   });
 });

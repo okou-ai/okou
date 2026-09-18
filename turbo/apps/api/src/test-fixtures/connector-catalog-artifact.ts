@@ -17,7 +17,10 @@ type DeviceStartOption = Extract<
   ConnectorCatalogAuthMethod["grant"],
   { readonly kind: "device-auth" }
 >["startOptions"][number];
-type EnvironmentBindings = ConnectorCatalogAuthMethod["access"]["envBindings"];
+type EnvironmentBindings = Extract<
+  ConnectorCatalogAuthMethod["access"],
+  { readonly kind: "static" }
+>["envBindings"];
 type GeneratedFirewall = Extract<
   ConnectorCatalogArtifactConnector["firewall"],
   { readonly kind: "generated" }
@@ -574,6 +577,61 @@ const slackPermissions = [
 ] satisfies NonNullable<FirewallApi["permissions"]>;
 
 const connectors = [
+  {
+    ...connector({
+      connectorSlug: "public-mcp",
+      label: "Public Tools",
+      authMethods: [
+        {
+          id: "none",
+          label: "Connect",
+          description: null,
+          visible: true,
+          storage: { version: 1, secrets: [], variables: [] },
+          grant: { kind: "none" },
+          access: { kind: "none" },
+          revoke: { kind: "none" },
+        },
+      ],
+      firewall: generatedFirewall([
+        {
+          base: "https://public-mcp.example.test/server",
+          auth: {},
+          permissions: [],
+        },
+      ]),
+    }),
+    mcp: {
+      transport: "streamable-http",
+      endpoint: "https://public-mcp.example.test/server",
+    },
+  },
+  {
+    ...connector({
+      connectorSlug: "manual-mcp",
+      label: "Manual Tools",
+      authMethods: [
+        manualMethod({
+          fields: [
+            manualField({
+              privateName: "MCP_API_KEY",
+              publicId: "apiKey",
+              label: "API Key",
+              storage: "secret",
+            }),
+          ],
+          envBindings: { MCP_API_KEY: secret("MCP_API_KEY") },
+        }),
+      ],
+      firewall: generatedFirewall([
+        bearerApi("https://manual-mcp.example.test/server", "MCP_API_KEY"),
+      ]),
+    }),
+    mcp: {
+      transport: "streamable-http",
+      endpoint: "https://manual-mcp.example.test/server",
+    },
+  },
   connector({
     connectorSlug: "ahrefs",
     label: "Ahrefs",
@@ -1000,9 +1058,38 @@ const connectors = [
         scopes: ["repo", "project", "workflow"],
       }),
     ],
-    firewall: generatedFirewall([
-      bearerApi("https://api.github.com", "GITHUB_TOKEN"),
-    ]),
+    firewall: generatedFirewall(
+      [
+        // The read routes Morning Brief's GitHub priorities collector needs,
+        // each behind its own permission so a test can allow one branch and
+        // deny another.
+        bearerApi("https://api.github.com", "GITHUB_TOKEN", [
+          { name: "user:read", rules: ["GET /user"] },
+          { name: "notifications:read", rules: ["GET /notifications"] },
+          { name: "search:read", rules: ["GET /search/issues"] },
+          {
+            name: "pull_requests:read",
+            rules: ["GET /repos/{owner}/{repo}/pulls/{pull_number}"],
+          },
+          {
+            name: "checks:read",
+            rules: [
+              "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+              "GET /repos/{owner}/{repo}/commits/{ref}/status",
+            ],
+          },
+        ]),
+      ],
+      {
+        defaultAllowed: [
+          "user:read",
+          "notifications:read",
+          "search:read",
+          "pull_requests:read",
+          "checks:read",
+        ],
+      },
+    ),
   }),
   connector({
     connectorSlug: "gitlab",
@@ -1063,6 +1150,12 @@ const connectors = [
       [
         bearerApi("https://gmail.googleapis.com/gmail", "GMAIL_TOKEN", [
           { name: "messages.read", rules: ["GET /v1/users/{userId}/messages"] },
+          // A distinct permission for message bodies, so a fixture can deny or
+          // expire the detail read while the list read stays authorized.
+          {
+            name: "messages.detail",
+            rules: ["GET /v1/users/{userId}/messages/{messageId}"],
+          },
           {
             name: "messages.write",
             rules: ["POST /v1/users/{userId}/messages/send"],
@@ -1123,7 +1216,19 @@ const connectors = [
       }),
     ],
     firewall: generatedFirewall([
-      bearerApi("https://www.googleapis.com/calendar", "GOOGLE_CALENDAR_TOKEN"),
+      bearerApi(
+        "https://www.googleapis.com/calendar",
+        "GOOGLE_CALENDAR_TOKEN",
+        [
+          {
+            name: "events.read",
+            rules: [
+              "GET /v3/users/me/calendarList",
+              "GET /v3/calendars/{calendarId}/events",
+            ],
+          },
+        ],
+      ),
     ]),
   }),
   connector({
@@ -2257,8 +2362,8 @@ const connectors = [
 ] satisfies readonly ConnectorCatalogArtifactConnector[];
 
 export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
-  artifactSchemaVersion: 3,
-  catalogVersion: "api-test-v3",
+  artifactSchemaVersion: 4,
+  catalogVersion: "api-test-v4",
   categoryMetadata: {
     categories: [
       {

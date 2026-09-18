@@ -56,7 +56,17 @@ describe("okou github upload-file command", () => {
     expect(helpOutput).toContain("vm0-ai/vm0");
   });
 
-  it("uploads a file to R2 and posts a GitHub file comment", async () => {
+  it.each([
+    {
+      url: "/artifacts/abcxyz1234.pdf",
+      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.pdf",
+    },
+    {
+      url: "https://files.example/report.pdf?download=1",
+      expectedUrl: "https://files.example/report.pdf?download=1",
+    },
+  ])("prints upload URL $url", async ({ url, expectedUrl }) => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     let putReceivedContentType: string | null = null;
     let completeBody: Record<string, unknown> | undefined;
 
@@ -72,8 +82,7 @@ describe("okou github upload-file command", () => {
         return HttpResponse.json({
           uploadId: "00000000-0000-4000-8000-000000000101",
           uploadUrl: R2_UPLOAD_URL,
-          fileUrl:
-            "https://app.example/f/user/00000000-0000-4000-8000-000000000101/report.pdf",
+          fileUrl: url,
           filename: "report.pdf",
           contentType: "application/pdf",
           size: 18,
@@ -100,7 +109,7 @@ describe("okou github upload-file command", () => {
           filename: "report.pdf",
           mimetype: "application/pdf",
           size: 18,
-          url: "https://app.example/f/user/00000000-0000-4000-8000-000000000101/report.pdf",
+          url,
         });
       }),
     );
@@ -136,6 +145,7 @@ describe("okou github upload-file command", () => {
       filename: "report.pdf",
       mimetype: "application/pdf",
       size: 18,
+      url: expectedUrl,
     });
   });
 

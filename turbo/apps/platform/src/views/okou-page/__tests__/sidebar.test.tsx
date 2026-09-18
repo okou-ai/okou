@@ -55,6 +55,7 @@ import { mockChatEventRows } from "./chat-event-test-helpers.ts";
 import {
   changeChatThreadList,
   changeChatThreadReadCursor,
+  createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
 
 // The composer editor is mounted on first paint and mounted again once page
@@ -1061,6 +1062,218 @@ test("Filter the chat list to unread conversations", async () => {
   });
 });
 
+test("Keep check-mark chats and archive controls unchanged when archiving is disabled", async () => {
+  prepareDefaultAgent();
+  const completedThread = createThread(
+    EXISTING_THREAD_ID,
+    "✅ Completed release",
+  );
+  mockSidebarThreadStory([completedThread]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: false },
+  });
+
+  await waitFor(() => {
+    expect(
+      within(sidebar()).getByText("✅ Completed release"),
+    ).toBeInTheDocument();
+  });
+
+  openChatListMenu();
+  expect(menuItemByText("All chats")).toBeInTheDocument();
+  expect(queryMenuItemByText("Show archived")).not.toBeInTheDocument();
+  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+
+  openThreadMenu("✅ Completed release");
+  expect(menuItemByText("Rename chat")).toBeInTheDocument();
+  expect(queryMenuItemByText("Archive chat")).not.toBeInTheDocument();
+  expect(queryMenuItemByText("Unarchive chat")).not.toBeInTheDocument();
+});
+
+test("Hide archived chats until they are explicitly shown", async () => {
+  prepareDefaultAgent();
+  const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
+  const archivedReadThread = createThread(
+    ARCHIVED_THREAD_ID,
+    "✅ Archived context",
+  );
+  const archivedUnreadThread = createThread(
+    INCIDENT_THREAD_ID,
+    "✅ Waiting for review",
+  );
+  mockSidebarThreadStory([
+    currentThread,
+    archivedReadThread,
+    archivedUnreadThread,
+  ]);
+  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+    return respond(200, {
+      unreads: [
+        {
+          threadId: INCIDENT_THREAD_ID,
+          unreadAt: "2026-03-10T00:05:00Z",
+        },
+      ],
+    });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+
+  await waitFor(() => {
+    expect(
+      visibleThreadTitles([
+        "Release plan",
+        "✅ Archived context",
+        "✅ Waiting for review",
+      ]),
+    ).toStrictEqual(["Release plan"]);
+  });
+
+  openChatListMenu();
+  expect(menuItemByText("Show archived")).toBeInTheDocument();
+  click(menuItemByText("Unread only"));
+
+  await expect(
+    within(sidebar()).findByText("No unread chats"),
+  ).resolves.toBeInTheDocument();
+
+  openChatListMenu();
+  click(menuItemByText("Show archived"));
+
+  await waitFor(() => {
+    expect(
+      visibleThreadTitles(["✅ Archived context", "✅ Waiting for review"]),
+    ).toStrictEqual(["✅ Waiting for review"]);
+  });
+
+  openChatListMenu();
+  click(menuItemByText("All chats"));
+
+  await waitFor(() => {
+    expect(
+      visibleThreadTitles([
+        "Release plan",
+        "✅ Archived context",
+        "✅ Waiting for review",
+      ]),
+    ).toStrictEqual([
+      "Release plan",
+      "✅ Archived context",
+      "✅ Waiting for review",
+    ]);
+  });
+});
+
+test("Keep the current archived chat until navigating away", async () => {
+  prepareDefaultAgent();
+  const untitledThread: SidebarThread = {
+    ...createThread(EXISTING_THREAD_ID, "Unused title"),
+    title: null,
+  };
+  const otherThread = createThread(INCIDENT_THREAD_ID, "Incident notes");
+  mockSidebarThreadStory([untitledThread, otherThread]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("New chat")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
+  });
+  openThreadMenu("New chat");
+  click(menuItemByText("Archive chat"));
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("✅")).toBeInTheDocument();
+    expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
+    expect(
+      within(sidebar()).queryByTestId("sidebar-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
+  click(threadLinkByTitle("Incident notes"));
+
+  await waitFor(() => {
+    expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
+  });
+
+  openChatListMenu();
+  click(menuItemByText("Show archived"));
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("✅")).toBeInTheDocument();
+  });
+  openThreadMenu("✅");
+  click(menuItemByText("Unarchive chat"));
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("New Thread")).toBeInTheDocument();
+    expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
+  });
+});
+
+test("Find archived chats in All and Chats workspace search results", async () => {
+  prepareDefaultAgent();
+  const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
+  const archivedThread = createThread(
+    ARCHIVED_THREAD_ID,
+    "✅ Archived context",
+  );
+  mockSidebarThreadStory([currentThread, archivedThread]);
+  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+    return respond(200, { unreads: [] });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
+    expect(
+      within(sidebar()).queryByText("✅ Archived context"),
+    ).not.toBeInTheDocument();
+  });
+
+  click(within(sidebar()).getByLabelText("Search workspace"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Search workspace...",
+  });
+  await fill(
+    within(dialog).getByPlaceholderText("Search workspace..."),
+    "archived context",
+  );
+
+  await waitFor(() => {
+    expect(buttonByText("All", dialog)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
+  });
+
+  click(buttonByText("Chats", dialog));
+  await waitFor(() => {
+    expect(buttonByText("Chats", dialog)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
+  });
+});
+
 test("Find conversations by title in workspace search", async () => {
   prepareAgents();
   const defaultThread = createThread(EXISTING_THREAD_ID, "Incident notes");
@@ -1550,7 +1763,14 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
     ({ body, respond }) => {
       markedAgentIds.push(body.agentId);
       hasUnread = false;
-      changeChatThreadReadCursor();
+      // More cursors moved than one payload carries, so the server publishes an
+      // agent-scoped invalidation with no ids. Authoritative indicators still
+      // have to reload from it: this list never depends on the id array.
+      changeChatThreadReadCursor({
+        agentId: AGENT_ID,
+        threadIds: [],
+        scope: "agent",
+      });
       return respond(204);
     },
   );
@@ -1848,6 +2068,158 @@ test("Mark conversations read and unread from the sidebar", async () => {
     expect(
       within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
     ).toBeInTheDocument();
+  });
+});
+
+test("An open native-only thread reads each newer delivery without a terminal Run", async () => {
+  const firstAt = "2026-03-10T00:04:00Z";
+  const secondAt = "2026-03-10T00:05:00Z";
+  const thirdAt = "2026-03-10T00:06:00Z";
+  mockNow(Date.parse("2026-03-10T00:04:30Z"), context.signal);
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Native brief"),
+    createThread(INCIDENT_THREAD_ID, "Other conversation"),
+  ]);
+
+  const rows = mockChatEventRows([
+    {
+      id: "native-brief-1",
+      threadId: EXISTING_THREAD_ID,
+      eventType: "output.message" as const,
+      content: "First native brief",
+      seqId: 1,
+      createdAt: firstAt,
+    },
+  ]);
+  let unreadAt: string | null = firstAt;
+  let historyRequests = 0;
+  let unreadRequests = 0;
+  const markedThrough: string[] = [];
+  const secondMarkStarted = context.mocks.deferred<void>();
+  const releaseSecondMark = context.mocks.deferred<void>();
+
+  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+    unreadRequests += 1;
+    return respond(200, {
+      unreads:
+        unreadAt === null ? [] : [{ threadId: EXISTING_THREAD_ID, unreadAt }],
+    });
+  });
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    ({ params, query, respond }) => {
+      historyRequests += 1;
+      return respond(
+        200,
+        chatEventRowsResponse(
+          rows.filter((row) => {
+            return (
+              row.chatThreadId === params.threadId &&
+              row.seqId > query.sinceSeqId
+            );
+          }),
+          query,
+        ),
+      );
+    },
+  );
+  context.mocks.api(
+    chatThreadMarkReadContract.markRead,
+    async ({ params, respond }) => {
+      expect(params.id).toBe(EXISTING_THREAD_ID);
+      expect(historyRequests).toBeGreaterThan(0);
+      const target = unreadAt;
+      if (target === null) {
+        throw new Error("mark-read started without a server unread");
+      }
+      markedThrough.push(target);
+      unreadAt = null;
+      if (target === secondAt) {
+        secondMarkStarted.resolve();
+        await releaseSecondMark.promise;
+      }
+      // This response snapshot is intentionally stale when the third delivery
+      // arrives while the second request is in flight.
+      return respond(200, { lastReadAt: target, unreads: [] });
+    },
+  );
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+  });
+  await expect(screen.findByText("First native brief")).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(markedThrough).toStrictEqual([firstAt]);
+  });
+
+  mockNow(Date.parse("2026-03-10T00:05:30Z"), context.signal);
+  unreadAt = secondAt;
+  rows.push(
+    ...mockChatEventRows([
+      {
+        id: "native-brief-2",
+        threadId: EXISTING_THREAD_ID,
+        eventType: "output.message" as const,
+        content: "Second native brief",
+        seqId: 2,
+        createdAt: secondAt,
+      },
+    ]),
+  );
+  createChatEvent(EXISTING_THREAD_ID);
+  await expect
+    .poll(() => {
+      return {
+        historyRequests,
+        unreadRequests,
+        markedThrough: [...markedThrough],
+        secondMarkStarted: secondMarkStarted.settled(),
+      };
+    })
+    .toMatchObject({
+      markedThrough: [firstAt, secondAt],
+      secondMarkStarted: true,
+    });
+  await expect(screen.findByText("Second native brief")).resolves.toBeVisible();
+
+  unreadAt = thirdAt;
+  rows.push(
+    ...mockChatEventRows([
+      {
+        id: "native-brief-3",
+        threadId: EXISTING_THREAD_ID,
+        eventType: "output.message" as const,
+        content: "Third native brief",
+        seqId: 3,
+        createdAt: thirdAt,
+      },
+    ]),
+  );
+  createChatEvent(EXISTING_THREAD_ID);
+  releaseSecondMark.resolve();
+
+  await expect(screen.findByText("Third native brief")).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(markedThrough).toStrictEqual([firstAt, secondAt, thirdAt]);
+    expect(unreadRequests).toBeGreaterThanOrEqual(3);
+  });
+  expect(
+    rows.map((row) => {
+      return [row.eventType, row.runId];
+    }),
+  ).toStrictEqual([
+    ["output.message", null],
+    ["output.message", null],
+    ["output.message", null],
+  ]);
+
+  click(threadLinkByTitle("Other conversation"));
+  await waitFor(() => {
+    expect(
+      within(threadRowByTitle("Native brief")).queryByLabelText("Unread"),
+    ).not.toBeInTheDocument();
   });
 });
 

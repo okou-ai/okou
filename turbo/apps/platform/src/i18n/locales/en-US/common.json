@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import your own file",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analysing {{filename}}. It will appear under Custom when it is ready.",
       "importUnsupported": "Choose a {{formats}} file to make a template.",
       "introVideo": "Intro video",
       "introVideoUnavailable": "This video template is no longer available. Remove it to send your message.",
@@ -667,6 +666,7 @@
       "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
+      "selected": "Selected",
       "selectStyle": "Select style {{style}}",
       "selectTemplate": "Select template {{title}}",
       "selectVideo": "Select video template {{title}}",
@@ -1934,6 +1934,7 @@
         "heading": "Choose an avatar",
         "label": "Avatar",
         "none": "No avatar",
+        "noneDetail": "Style only",
         "previewLook": "Preview look {{name}}"
       },
       "catalog": {
@@ -1946,16 +1947,29 @@
         "cancel": "Cancel"
       },
       "picker": {
-        "autoVoiceDescription": "Find a voice that fits your content.",
+        "allPresenters": "All presenters",
+        "allPresentersCount": "All presenters ({{total}})",
+        "allVoices": "All voices",
+        "allVoicesCount": "All voices ({{total}})",
+        "autoVoiceDescription": "A voice that fits your style",
         "avatarVoice": "Avatar’s voice",
-        "changeAvatar": "Change avatar",
-        "chooseStyle": "Choose a style",
-        "chooseStyleAndVoice": "Choose a style and a voice.",
+        "back": "Back",
+        "closeOptions": "Close options",
+        "done": "Done",
+        "moreOptions": "More options",
         "noMatches": "No matches found.",
-        "ready": "Ready to use. Add your content in the chat.",
+        "optionsNote": "Change these any time from the chip in the chat.",
+        "pickStyle": "Pick a style",
+        "reset": "Reset",
+        "searchPresenters": "Search presenters",
+        "searchStyles": "Search styles",
+        "searchVoices": "Search voices",
+        "selectedStyle": "Selected: {{name}}",
         "settings": "Intro video settings",
-        "style": "Style",
-        "useSelection": "Use selection"
+        "styleCount_one": "{{count}} style",
+        "styleCount_other": "{{count}} styles",
+        "styleCountOf": "{{shown}} of {{total}}",
+        "useStyle": "Use {{name}}"
       },
       "style": {
         "auto": "Let Okou choose",
@@ -1974,10 +1988,9 @@
       "voice": {
         "auto": "Let Okou choose",
         "defaultDescription": "Use the chosen avatar's default voice",
-        "heading": "Choose a voice",
         "label": "Voice",
         "none": "No voiceover",
-        "noneDescription": "Do not add narration; keep source audio unless you ask to mute it."
+        "noneShortDescription": "Keep the source audio"
       }
     },
     "mail": {
@@ -2023,10 +2036,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Open chat",
+      "openChatIn": "Open chat in {{integration}}",
       "openFeishuChat": "Open original chat in Feishu",
       "openGithubMessage": "Open original issue or pull request in GitHub",
       "openLarkChat": "Open original chat in Lark",
       "openMessage": "Open message",
+      "openMessages": "Open Messages",
       "openSlackMessage": "Open original message in Slack",
       "openTeamsMessage": "Open original message in Microsoft Teams",
       "openTelegramMessage": "Open original message in Telegram",
@@ -2158,7 +2173,10 @@
       "number": "number"
     },
     "sidebar": {
+      "allArchived": "All your chats are archived",
+      "allCaughtUp": "All caught up",
       "allChats": "All chats",
+      "archive": "Archive chat",
       "chatsWith": "Chats with {{agentName}}",
       "chatThreads": "Chat threads",
       "delete": "Delete chat",
@@ -2177,7 +2195,10 @@
       "pinned": "Pinned",
       "rename": "Rename chat",
       "renameDescription": "Enter a new name for this chat thread.",
+      "showArchived": "Show archived",
+      "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
+      "unarchive": "Unarchive chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
       "unreadOnly": "Unread only"
@@ -2889,6 +2910,7 @@
       "ariaLabel": "Chat thread",
       "changeIcon": "Change icon",
       "emoji": {
+        "archive": "Archive",
         "done": "Done",
         "idea": "Idea",
         "no": "No",
@@ -3600,6 +3622,7 @@
           "sourceUnavailable": "Source unavailable",
           "stale": "Stale",
           "unchanged": "Unchanged",
+          "unsupportedProtocol": "Unsupported protocol",
           "unsupportedSchema": "Unsupported schema"
         }
       },
@@ -4257,6 +4280,8 @@
         "tiny-wanderer": "Tiny Wanderer"
       },
       "presentation": {
+        "bloom-pitch": "Petal pitch",
+        "blueprint-academy": "Drafting campus",
         "botane-organic-deck": "Mauve garden",
         "business-data-presentation": "Berry dashboard",
         "crayon-learning-deck": "Crayon doodle",
@@ -4265,9 +4290,19 @@
         "editorial-magazine-deck": "Paper magazine",
         "landing-consulting-deck": "Neon browser",
         "lumina-creative-studio": "Brush stickers",
+        "meridian": "Cobalt blocks",
         "mosaic-geometric-pitch": "Bauhaus tiles",
+        "neo-brutalism": "Shadow shop",
+        "nocturne": "Midnight stage",
+        "pixel-glitch": "Arcade pixels",
         "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy"
+        "playful-pop-deck": "Neon candy",
+        "prospectus": "Homepage pitch",
+        "schoolhouse": "Kraft poster",
+        "sticker-scrapbook": "Sticker notebook",
+        "strata": "Red staircase",
+        "taped-consulting": "Polaroid wall",
+        "vantage": "Numbered boardroom"
       },
       "video": {
         "chinese-ink-art": "Chinese Ink Painting",
@@ -5364,7 +5399,8 @@
     "status": {
       "availableNow": "Available now",
       "inUse_one": "{{active}} of {{limit}} slot in use",
-      "inUse_other": "{{active}} of {{limit}} slots in use"
+      "inUse_other": "{{active}} of {{limit}} slots in use",
+      "waitingForSandbox": "Waiting for Sandbox"
     },
     "tiers": {
       "custom": "Custom",
@@ -5503,7 +5539,7 @@
         "usage": {
           "balanceDescription": "What your team has left to spend.",
           "balanceTitle": "Credit balance",
-          "usageDescription": "Your credit usage across chats, automations, and channels.",
+          "usageDescription": "Your credit usage, grouped by thread.",
           "usageTitle": "Credit usage"
         }
       },
@@ -5667,9 +5703,12 @@
         "codexDescription": "Connect with Codex device login for Codex-backed model routes.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Used only in your runs, with your own credentials.",
+        "disconnectAccount": "Disconnect account",
+        "disconnectDescription": "This removes the account from Okou. It won’t cancel your subscription with the provider.",
+        "disconnecting": "Disconnecting…",
+        "disconnectTitle": "Disconnect {{account}}?",
         "noAccounts": "No accounts connected.",
         "reconnectAccount": "Reconnect",
-        "removeAccount": "Remove",
         "sectionTitle": "Personal",
         "status": {
           "connected": "Connected",
@@ -5796,7 +5835,7 @@
         "codexTitle": "ChatGPT session needs reconnection"
       },
       "toasts": {
-        "accountRemoved": "Account removed",
+        "accountDisconnected": "Account disconnected",
         "accountSwitched": "Active account switched",
         "disconnected": "{{provider}} disconnected",
         "policiesUpdated": "Model provider settings updated",
@@ -5816,6 +5855,51 @@
         "resetsRelative": "Resets {{relative}}",
         "resetTimePassed": "reset time passed",
         "resetTimePassedTitle": "Reset time passed"
+      }
+    },
+    "paidTools": {
+      "description": "Choose which paid built-in tools you can use.",
+      "loadError": "Your tool settings could not be loaded.",
+      "loading": "Loading your tool settings…",
+      "retry": "Retry",
+      "saveError": "Your change was not saved.",
+      "saving": "Saving…",
+      "scope": "These settings apply only to you in {{workspace}}.",
+      "timing": "Changes apply to future runs. Running tasks and tasks already prepared may keep their previous settings.",
+      "title": "Paid tools",
+      "tools": {
+        "finance": {
+          "description": "Look up companies, quotes, and market data.",
+          "name": "Financial data"
+        },
+        "image-recognition": {
+          "description": "Read and analyze images.",
+          "name": "Image recognition"
+        },
+        "maps": {
+          "description": "Find places, addresses, and directions.",
+          "name": "Maps and places"
+        },
+        "people-search": {
+          "description": "Find public professional profiles.",
+          "name": "People search"
+        },
+        "scrape": {
+          "description": "Read and extract content from web pages.",
+          "name": "Page extraction"
+        },
+        "seo": {
+          "description": "Research search rankings, keywords, and backlinks.",
+          "name": "SEO research"
+        },
+        "social": {
+          "description": "Research public social posts and collect media.",
+          "name": "Social research"
+        },
+        "web-search": {
+          "description": "Find current information on the web.",
+          "name": "Web search"
+        }
       }
     },
     "preferences": {
@@ -6326,6 +6410,18 @@
     "manage": "Manage SSH hosts",
     "notLearned": "Host key not learned yet",
     "passphrase": "Passphrase (optional)",
+    "placeholders": {
+      "accessName": "e.g. Production access",
+      "clientId": "Paste the Service Token Client ID",
+      "clientSecret": "Paste the Service Token Client Secret",
+      "credentialName": "e.g. Deployment login",
+      "displayName": "e.g. Production server",
+      "host": "e.g. ssh.example.com",
+      "passphrase": "Leave blank if not encrypted",
+      "password": "Enter the SSH user's password",
+      "privateKey": "Paste the complete private key or import it using ‘Choose file’",
+      "username": "e.g. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Private key",
     "reset": "Reset host key",
@@ -6358,12 +6454,10 @@
       "sourceFile": "From {{filename}}"
     },
     "empty": {
-      "description": "Templates built from a file you upload will appear here.",
-      "title": "No templates yet"
+      "description": "Okou turns your file's design into a template you can reuse."
     },
     "loadFailed": "Couldn't load templates.",
-    "pageCount_one": "{{count}} page",
-    "pageCount_other": "{{count}} pages",
+    "renameFailed": "Couldn't rename the template.",
     "retry": "Retry",
     "sharedBy": "Shared by {{owner}}",
     "visibility": {
@@ -6405,36 +6499,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "No usage in this billing period",
-        "description": "Credits you spend on chats, automations, and channels show up here.",
+        "description": "Credits you spend in threads show up here.",
         "noBillingPeriodDescription": "Team usage appears once a billing period starts.",
         "noBillingPeriodTitle": "No active billing period",
         "rangeTitle": "No usage in this time range",
-        "teamDescription": "Credits your team spends on chats, automations, and channels show up here."
+        "teamDescription": "Credits your team spends in threads show up here."
       },
       "loadError": "Could not load your usage.",
       "loadMore": "Load more",
       "myUsage": "My usage",
       "teamLoadError": "Could not load team usage.",
       "teamUsage": "Team usage",
+      "thread": "Thread",
+      "unavailableThread": "Unavailable thread",
       "untitled": "(untitled)"
     },
-    "sources": {
-      "agent": "Agent",
-      "automation": "Automation",
-      "chat": "Chat",
-      "email": "Email",
-      "github": "GitHub",
-      "other": "Other",
-      "phone": "Phone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} chat",
-      "chat_other": "{{value}} chats",
       "credit_one": "{{value}} credit",
-      "credit_other": "{{value}} credits"
+      "credit_other": "{{value}} credits",
+      "thread_one": "{{value}} thread",
+      "thread_other": "{{value}} threads"
     }
   },
   "workflows": {

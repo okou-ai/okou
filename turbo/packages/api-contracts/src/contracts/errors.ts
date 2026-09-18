@@ -57,6 +57,11 @@ export const ApiError = {
     status: 503 as const,
     code: "EVENT_DELIVERY_UNAVAILABLE",
   },
+  /** A bounded attempt ran out of its own budget and released nothing. */
+  REQUEST_DEADLINE_EXCEEDED: {
+    status: 503 as const,
+    code: "REQUEST_DEADLINE_EXCEEDED",
+  },
   PROVIDER_DELETED: {
     status: 422 as const,
     code: "PROVIDER_DELETED",
@@ -238,6 +243,12 @@ export const CHAT_RUN_TRANSIENT_ERROR_MESSAGE =
 
 export const CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE =
   "This run reached its execution time limit.";
+
+export const CHAT_RUN_USAGE_LIMIT_MESSAGE =
+  "Your model provider's usage allowance has been reached. Check your provider's usage limits or choose a different model or account.";
+
+export const CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE =
+  "The selected model is not available with the configured provider account. Choose a supported model or update the provider configuration.";
 
 /**
  * A provider content-safety rejection is deterministic for the same input, so
@@ -699,9 +710,11 @@ type StructuredRunErrorBehavior =
   | "execution-timeout"
   | "generic"
   | "insufficient-credits"
+  | "output-token-limit"
   | "provider-balance"
   | "overloaded"
-  | "passthrough"
+  | "usage-limit"
+  | "unsupported-model"
   | "reconnect"
   | "terms";
 
@@ -710,6 +723,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   StructuredRunErrorBehavior
 > = {
   session_history_limit: "generic",
+  guest_root_filesystem_full: "generic",
   execution_timeout: "execution-timeout",
   insufficient_credits: "insufficient-credits",
   provider_insufficient_credits: "provider-balance",
@@ -718,7 +732,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   terms_acceptance_required: "terms",
   context_window_exceeded: "generic",
   input_too_large: "generic",
-  output_token_limit: "generic",
+  output_token_limit: "output-token-limit",
   provider_rate_limited: "generic",
   provider_overloaded: "overloaded",
   provider_stream_timeout: "generic",
@@ -727,8 +741,8 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",
   reconnect_required: "reconnect",
-  unsupported_model: "passthrough",
-  usage_limit: "passthrough",
+  unsupported_model: "unsupported-model",
+  usage_limit: "usage-limit",
 };
 
 function formatReconnectRunError(
@@ -742,6 +756,19 @@ function formatReconnectRunError(
       formatClaudeCodeCredentialRecoveryMessage(recovery) ??
       CHAT_RUN_TRANSIENT_ERROR_MESSAGE
     );
+  }
+  return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
+}
+
+function formatOverloadedRunError(
+  framework: ModelProviderFramework | null | undefined,
+  selectedModel: string | null | undefined,
+): string {
+  if (framework === "claude-code") {
+    return formatClaudeProviderOverloadedMessage(selectedModel);
+  }
+  if (framework === "codex") {
+    return CODEX_PROVIDER_OVERLOADED_MESSAGE;
   }
   return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
 }
@@ -771,6 +798,9 @@ function formatStructuredRunError(params: {
     case "insufficient-credits": {
       return "insufficient_credits";
     }
+    case "output-token-limit": {
+      return "The model reached its output limit before finishing. Ask it to continue from where it stopped.";
+    }
     case "provider-balance": {
       return formatRunBalanceError({
         failureReason: params.failureReason,
@@ -797,16 +827,17 @@ function formatStructuredRunError(params: {
       );
     }
     case "overloaded": {
-      if (params.framework === "claude-code") {
-        return formatClaudeProviderOverloadedMessage(params.selectedModel);
-      }
-      if (params.framework === "codex") {
-        return CODEX_PROVIDER_OVERLOADED_MESSAGE;
-      }
-      return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
+      return formatOverloadedRunError(params.framework, params.selectedModel);
     }
-    case "passthrough": {
-      return params.errorMessage;
+    case "usage-limit": {
+      return isActionableRunError(params.errorMessage)
+        ? params.errorMessage
+        : CHAT_RUN_USAGE_LIMIT_MESSAGE;
+    }
+    case "unsupported-model": {
+      return isActionableRunError(params.errorMessage)
+        ? params.errorMessage
+        : CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE;
     }
     case "generic": {
       return CHAT_RUN_TRANSIENT_ERROR_MESSAGE;

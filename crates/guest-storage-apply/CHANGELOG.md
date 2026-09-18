@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.24.3](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.24.2...guest-storage-apply-v0.24.3) (2026-09-18)
+
+## [0.24.2](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.24.1...guest-storage-apply-v0.24.2) (2026-09-18)
+
+## [0.24.1](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.24.0...guest-storage-apply-v0.24.1) (2026-09-18)
+
+## [0.24.0](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.95...guest-storage-apply-v0.24.0) (2026-09-17)
+
+
+### Features
+
+* **guest-storage-apply:** observe remote connection setup ([#34952](https://github.com/vm0-ai/okou/issues/34952)) ([631a100](https://github.com/vm0-ai/okou/commit/631a10026d86ad240c854b904c697463f1bb7df1))
+
 ## [0.23.95](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.94...guest-storage-apply-v0.23.95) (2026-09-17)
 
 ## [0.23.94](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.93...guest-storage-apply-v0.23.94) (2026-09-17)

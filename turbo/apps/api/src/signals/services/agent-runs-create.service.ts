@@ -30,6 +30,8 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { command } from "ccstate";
+
+import type { Tx } from "../../lib/db-types";
 import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 
@@ -207,6 +209,8 @@ interface CreateQueueFirstAgentRunCommandArgs extends Omit<
 > {
   readonly chatThreadId: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
+  /** Binds a caller-journaled occurrence inside the launch transaction. */
+  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin: AgentRunModelPin;
 }
 
@@ -340,6 +344,7 @@ function buildIntegrationToolsPrompt(
   feishuPlatform: FeishuPlatform | undefined,
   larkEnabled: boolean,
   deliveryFormatGuidanceEnabled: boolean,
+  privateArtifactsEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
@@ -364,12 +369,22 @@ function buildIntegrationToolsPrompt(
   const localFileContextLines = localFileContext.map((line) => {
     return `- ${line}`;
   });
+  const privateArtifactDeliveryPrompt = (
+    platform: string,
+  ): readonly string[] => {
+    return privateArtifactsEnabled
+      ? [
+          `- Private artifact delivery: A \`/artifacts/xxx\` reference or full artifact URL may require owner authentication. Choose delivery based on the resource type and the current integration's best supported presentation. For sites, HTML pages, HTML presentations, and other interactive web resources, return the original URL. When delivering standalone files (such as images, video, audio, and documents), run \`okou ${platform} upload-file -h\` and follow the integration's supported file types, size limits, and destination options. When supported, use the existing local file or \`okou artifact download -h\` to retrieve it, then upload it to the current conversation or thread. Follow the upload command's returned presentation instructions and delivery result. If upload is unsupported, return the original URL. Keep the original artifact's visibility unchanged. Do not re-upload a file already delivered to this conversation.`,
+        ]
+      : [];
+  };
 
   switch (triggerSource) {
     case "web":
     case "agent": {
       return [
         "- Web chat files: use `okou web download-file -h` when a web chat message includes a `[Web file]` block. `okou web upload-file -h` can share a local file back to the web chat user when file delivery is needed.",
+        ...privateArtifactDeliveryPrompt("web"),
         `- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: \`okou feishu message send --help\` for chats, DMs, and replies.${larkEnabled ? " Lark: `okou lark message send --help` for chats, DMs, and replies." : ""} Microsoft Teams: \`okou teams message send --help\` for conversations and thread replies. Telegram: \`okou telegram bot list\` to choose the bot, then \`okou telegram message send --help\` for chats, replies, and forum topics. AgentPhone/SMS: \`okou phone message --help\`. GitHub does not currently have a dedicated Okou message-send command, so do not invent \`okou github message\` commands.`,
         "- Email from web chat: use the Gmail skill and `GMAIL_TOKEN` to create the draft directly in Gmail. Before composing, list `GET /gmail/v1/users/me/settings/sendAs`; select the entry matching the message's From address, or the `isDefault` entry when no From address is specified. Include a `multipart/alternative` body with plain-text and HTML versions. Keep each plain-text paragraph on one logical line, never hard-wrap prose to a fixed column width, and use HTML paragraph elements so Gmail wraps the message naturally. If the selected entry has a non-empty HTML `signature`, append that signature exactly once to the HTML body and include a readable text equivalent in the plain-text body. For attachments, upload a valid RFC822 multipart message through Gmail's draft media-upload endpoint. Never call `messages.send` or `drafts.send`. After Gmail returns the draft ID, run `okou mail link <gmail-draft-id>` and return the link from the command to the user.",
         "- Email draft revisions: a linked draft stays editable until the user sends it. When the user asks to change the sender, add or remove attachments, or rewrite the content, update that same Gmail draft in place with `PUT /gmail/v1/users/me/drafts/<gmail-draft-id>` and reuse the existing link instead of creating a second draft. When you hand a draft over, tell the user they can ask you for those changes.",
@@ -384,6 +399,7 @@ function buildIntegrationToolsPrompt(
     case "slack": {
       return [
         "- Slack messaging and files: normal replies are automatically sent to the originating thread, so do not duplicate them. Use Slack commands for different channels/threads or explicit extra messages. Use `okou slack download-file -h` for `[Slack file]` blocks and `okou web download-file -h` for canonical `[Web file]` blocks. `okou slack upload-file -h` can attach a local file to Slack when file delivery is needed. Never use SLACK_TOKEN directly — it's a user OAuth token.",
+        ...privateArtifactDeliveryPrompt("slack"),
         ...localFileContextLines,
       ];
     }
@@ -392,30 +408,35 @@ function buildIntegrationToolsPrompt(
       const providerName = FEISHU_PLATFORMS[platform].name;
       return [
         `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Normal replies are automatically sent to the originating conversation, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify \`--installation\` when the organization has multiple ${providerName} bots.`,
+        ...privateArtifactDeliveryPrompt(platform),
         ...localFileContextLines,
       ];
     }
     case "teams": {
       return [
         "- Microsoft Teams messaging and files: use `okou teams --help`. Normal replies are automatically sent to the originating conversation, so Teams commands are for different conversations, thread replies, or explicit extra messages/files. Use `okou teams message send -h` for extra messages, `okou teams download-file -h` for `[Teams file]` blocks, and `okou teams upload-file -h` when file delivery is needed. Do not use Slack or Telegram commands for Microsoft Teams delivery.",
+        ...privateArtifactDeliveryPrompt("teams"),
         ...localFileContextLines,
       ];
     }
     case "github": {
       return [
         "- GitHub issue/PR files: use `okou github --help`. Normal replies are automatically sent to the originating issue or pull request, so GitHub commands are for explicit extra file delivery. Use `okou github download-file -h` for `[GitHub file]` blocks. `okou github upload-file -h` can share a local file back to the issue or pull request when file delivery is needed.",
+        ...privateArtifactDeliveryPrompt("github"),
         ...localFileContextLines,
       ];
     }
     case "telegram": {
       return [
         "- Telegram messaging and files: use `okou telegram --help`. Normal replies are automatically sent to the originating chat, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram bot list` to inspect available bots, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. When sending or uploading, explicitly choose the bot with `--bot-id`; if you do not know which bot to use, ask the user before sending.",
+        ...privateArtifactDeliveryPrompt("telegram"),
         ...localFileContextLines,
       ];
     }
     case "agentphone": {
       return [
         "- AgentPhone messaging and files: use `okou phone --help`. Normal replies are automatically sent to the originating conversation, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[AgentPhone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
+        ...privateArtifactDeliveryPrompt("phone"),
         ...localFileContextLines,
       ];
     }
@@ -431,7 +452,6 @@ function buildIntegrationToolsPrompt(
 function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly feishuPlatform: FeishuPlatform | undefined;
-  readonly sshEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
@@ -447,14 +467,10 @@ function buildAgentToolsPrompt(args: {
     ...(args.privateArtifactsEnabled
       ? [
           "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
-          "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
+          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
         ]
       : []),
-    ...(args.sshEnabled
-      ? [
-          "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
-        ]
-      : []),
+    "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",
     "- Capability questions: when the user asks what Okou can do, whether Okou can do a category of work, or compares Okou to another assistant, run `okou intro` first. Use its output to synthesize a concise answer in the user's language. Do not paste the intro verbatim.",
     "- Locate local agent-session files, search web chat messages, or inspect external services via connectors: `okou search --help`.",
@@ -507,6 +523,7 @@ function buildAgentToolsPrompt(args: {
       args.feishuPlatform,
       args.larkEnabled,
       args.deliveryFormatGuidanceEnabled,
+      args.privateArtifactsEnabled,
     ),
     "- Maps, geocoding, directions, and places: use `okou maps --help`.",
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
@@ -591,7 +608,6 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
 
 function buildAppendSystemPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly sshEnabled: boolean;
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
   readonly triggerSource: TriggerSource;
@@ -608,7 +624,6 @@ function buildAppendSystemPrompt(args: {
     buildAgentToolsPrompt({
       privateArtifactsEnabled: args.privateArtifactsEnabled,
       feishuPlatform: args.userInfo.feishuPlatform,
-      sshEnabled: args.sshEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
@@ -780,7 +795,6 @@ function agentRunOrigin(args: {
 
 function createRunBody(args: {
   readonly privateArtifactsEnabled: boolean;
-  readonly sshEnabled: boolean;
   readonly body: AgentRunCreateBody;
   readonly agent: AgentRunRecord;
   readonly userInfo: UserInfo;
@@ -796,7 +810,6 @@ function createRunBody(args: {
   const triggerSource = args.triggerSource ?? "web";
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
     privateArtifactsEnabled: args.privateArtifactsEnabled,
-    sshEnabled: args.sshEnabled,
     agent: args.agent,
     userInfo: args.userInfo,
     triggerSource,
@@ -1000,10 +1013,6 @@ function buildCreateAgentRunArgs(args: {
         FeatureSwitchKey.PrivateArtifacts,
         args.featureSwitchContext,
       ),
-      sshEnabled: isFeatureEnabled(
-        FeatureSwitchKey.SshAccess,
-        args.featureSwitchContext,
-      ),
       body: command.body,
       agent: args.agent,
       userInfo: { ...args.userInfo, ...command.userInfoExtras },
@@ -1078,6 +1087,10 @@ function buildCreateAgentRunArgs(args: {
     piExecution: command.piExecution,
     ...("queueFirstAssociation" in command
       ? { queueFirstAssociation: command.queueFirstAssociation }
+      : {}),
+    ...("bindClaimedQueueFirstRun" in command &&
+    command.bindClaimedQueueFirstRun
+      ? { bindClaimedQueueFirstRun: command.bindClaimedQueueFirstRun }
       : {}),
     timing: args.timing,
     timingDimensions: agentRunTimingDimensions({
@@ -1210,7 +1223,13 @@ const THREAD_SESSION_PREPARATION_ATTEMPTS = 3;
 const createAgentRunAfterPreCreate$ = command(
   async ({ set }, input: AgentRunAfterPreCreate, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const capturedInput = await captureSubscriptionAccount(db, input, signal);
+    const capturedInput = await measureAgentRunPreCreate(
+      input.timing,
+      "api_dispatch_pre_create_agent_capture_subscription_account",
+      () => {
+        return captureSubscriptionAccount(db, input, signal);
+      },
+    );
     signal.throwIfAborted();
     if ("status" in capturedInput) {
       return capturedInput;

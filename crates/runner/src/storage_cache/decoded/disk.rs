@@ -212,6 +212,48 @@ pub(super) fn is_rejected(
     read_entry(home, name, version, true, cancel).map(|entry| entry.is_some())
 }
 
+/// A fresh rejection can omit only optional warming of a still-present source.
+/// Missing or busy source locks retain normal admission, which owns any refill.
+pub(super) fn rejected_archive(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    cancel: &CancellationToken,
+) -> io::Result<bool> {
+    check_cancel(cancel)?;
+    let _source_lock = match lock::try_acquire_existing_shared_or_missing_blocking(
+        &home.storage_lock(name, version),
+    )
+    .map_err(io::Error::other)?
+    {
+        ExistingTryLock::Acquired(lock) => lock,
+        ExistingTryLock::Busy | ExistingTryLock::Missing => return Ok(false),
+    };
+    let source = match open_version(home, name, &short_digest(version)).and_then(|root| {
+        openat(
+            &root,
+            "archive.tar.gz",
+            OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )
+        .map(File::from)
+        .map_err(io::Error::from)
+    }) {
+        Ok(source) => source,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let metadata = source.metadata()?;
+    if !metadata.is_file()
+        || metadata.nlink() != 1
+        || metadata.len() == 0
+        || metadata.len() > crate::storage_cache::CACHE_MAX_SIZE
+    {
+        return Ok(false);
+    }
+    is_rejected(home, name, version, cancel)
+}
+
 fn read_entry(
     home: &HomePaths,
     name: &str,

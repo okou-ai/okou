@@ -13,16 +13,17 @@ const remainderReasonSchema = z.enum([
   "parse_fallback",
 ]);
 
-/** Prepared reader only. The webhook rejects v1 until #34713 supplies the
- * complete accounting, two-date admission and cleanup transaction. */
+/** Resource-aware billing input. Validation, resource recording and atomic
+ * accounting always apply; the feature switch controls billing deduplication.
+ * Observations are admitted for the current and previous UTC dates. */
 export const xResourceUsageEventSchema = z
   .object({
     protocol: z.literal("x-resource-v1"),
     idempotencyKey: z.uuid(),
     kind: z.literal("connector"),
     provider: z.literal("x"),
-    // The initial namespaces are derived: tweet.read -> post, user.read -> user.
-    category: z.enum(["tweet.read", "user.read"]),
+    // The billing categories derive namespaces: posts.read -> post, user.read -> user.
+    category: z.enum(["posts.read", "user.read"]),
     quantity: quantitySchema,
     observedAt: z.iso.datetime({ precision: 3 }),
     resources: z

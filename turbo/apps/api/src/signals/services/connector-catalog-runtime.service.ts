@@ -244,6 +244,12 @@ function platformSecretName(value: string): ConnectorPlatformSecretName {
 function runtimeAccess(
   access: ConnectorCatalogAuthMethod["access"],
 ): ConnectorAccessConfig {
+  if (access.kind === "none") {
+    return { kind: "none" };
+  }
+  if (access.kind === "automatic") {
+    throw new Error("Unsupported accepted connector access capability");
+  }
   const envBindings: Record<string, ConnectorEnvBindingValue> = {};
   for (const [name, binding] of Object.entries(access.envBindings)) {
     envBindings[name] = envBindingValue(binding);
@@ -375,6 +381,15 @@ function runtimeMethod(
   };
 
   switch (method.grant.kind) {
+    case "none": {
+      if (access.kind !== "none" || revoke.kind !== "none") {
+        throw new Error("Accepted no-auth connector has incompatible access");
+      }
+      return { storage, grant: { kind: "none" }, access, revoke };
+    }
+    case "automatic": {
+      throw new Error("Unsupported accepted connector grant capability");
+    }
     case "manual": {
       return {
         storage,
@@ -484,6 +499,20 @@ function runtimeConnector(
   for (const method of connector.authMethods) {
     if (method.visible) {
       authoredVisibleMethodIds.add(method.id);
+    }
+    // Automatic and provider-backed MCP authentication require their own
+    // installed handlers. Catalog presence alone does not enable them.
+    if (
+      method.grant.kind === "automatic" ||
+      method.access.kind === "automatic" ||
+      (connector.mcp !== undefined &&
+        !(
+          method.revoke.kind === "none" &&
+          ((method.grant.kind === "none" && method.access.kind === "none") ||
+            (method.grant.kind === "manual" && method.access.kind === "static"))
+        ))
+    ) {
+      continue;
     }
     if (filteredMethodKeys.has(methodKey(connectorSlug, method.id))) {
       continue;

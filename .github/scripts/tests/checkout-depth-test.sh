@@ -33,6 +33,7 @@ expected=$(
   printf '%s\n' \
     $'crates\tdetect\t2' \
     $'runner-image\tprepare\t2' \
+    $'security\tdetect-native-only\t2' \
     $'security\tgitleaks\t${{ github.event_name != '\''pull_request'\'' && 2 || 0 }}' \
     $'security\tsemgrep\t${{ github.event_name == '\''push'\'' && 1 || 2 }}' \
     $'turbo\tdetect-turbo-ts-checks\t2' \

@@ -14,6 +14,7 @@ export interface SharedArtifactPreview {
   readonly filename: string;
   readonly preview: AttachmentLightboxState;
   readonly publicUrl: string | null;
+  readonly sharedThreadSnapshot: boolean;
 }
 
 export interface SharedArtifactContent {
@@ -21,6 +22,7 @@ export interface SharedArtifactContent {
   readonly contentType: string;
   readonly url: string;
   readonly expiresAt?: string;
+  readonly sharedThreadSnapshot?: true;
 }
 
 export const signInToSharedArtifact$ = command(
@@ -73,6 +75,7 @@ export function createSharedArtifactPreview(
     filename: artifact.filename,
     preview,
     publicUrl: artifact.expiresAt === undefined ? contentUrl.href : null,
+    sharedThreadSnapshot: artifact.sharedThreadSnapshot === true,
   };
 }
 

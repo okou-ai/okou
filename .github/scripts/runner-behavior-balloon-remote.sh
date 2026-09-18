@@ -181,10 +181,19 @@ while ! sudo jq -e --arg id "$SANDBOX_ID" \
 done
 sudo curl -fsS --max-time 3 --unix-socket "$API_SOCK" http://localhost/ \
   | jq -e '.state == "Paused"' || fail "parked Guest vCPUs are not paused"
-IFS=$'\t' read -r target actual <<< "$(snapshot)"
-[[ "$target" -eq $((3072 * 256)) && "$actual" -gt 0 ]] \
-  || fail "default-profile park did not reclaim: target=$target actual=$actual"
-echo "PASS: used sandbox park still requests bounded reclamation and pauses vCPUs"
+sample=$(snapshot) || fail "parked balloon statistics unavailable"
+IFS=$'\t' read -r target actual <<< "$sample"
+[[ "$target" -eq 0 && "$actual" -eq 0 ]] \
+  || fail "park paused before deflation completed: target=$target actual=$actual"
+# Deflation restores Guest capacity without repopulating reclaimed host pages.
+# Allow 128 MiB for finalization/kernel activity, but retain the earlier proof
+# that at least 256 MiB of the touched allocation has returned to the host.
+parked_rss=$(rss_kib) || fail "parked Guest RSS unavailable"
+[ "$parked_rss" -le "$((reported_rss + 128 * 1024))" ] \
+  || fail "park deflation repopulated backing: before=${reported_rss}KiB parked=${parked_rss}KiB"
+[ "$((allocated_rss - parked_rss))" -ge "$((256 * 1024))" ] \
+  || fail "park did not retain reclaimed backing: allocated=${allocated_rss}KiB parked=${parked_rss}KiB"
+echo "PASS: parked Guest is deflated and paused with reclaimed backing (${reported_rss}KiB -> ${parked_rss}KiB)"
 
 start_turn "$FIRST_MEMORY; test -f /tmp/balloon-test-marker || exit 1; rm /tmp/balloon-test-finish || exit 1; $KEEPALIVE"
 [ "$SANDBOX_ID" = "$FIRST_SANDBOX_ID" ] || fail "second turn did not reuse sandbox"

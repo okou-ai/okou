@@ -117,11 +117,11 @@ duplicate IDs. Final billable `quantity` is the globally new unique resource
 count plus that remainder. Unidentified units retain the original count-based
 charge.
 
-Keep the remainder transient. Do not add `nonDeduplicatedQuantity` to usage
-events, hourly rollups or historical usage API responses, or duplicate it in
-observation receipts. Show **Cannot deduplicate** in the current operation's
-result; historical bills do not promise a retained breakdown of that remainder.
-This expected condition is not `billingError`.
+Keep the remainder transient within the internal ingestion protocol. Do not add
+`nonDeduplicatedQuantity` to ledger events, hourly rollups or historical usage
+API responses, or duplicate it in observation receipts. User-facing usage and
+bills show the ordinary net quantity, with no separate deduplication status or
+operation-result annotation. This expected condition is not `billingError`.
 
 Shared daily resource claims and observation idempotency still require durable
 state. Their atomic write with the net usage obligation, replay/erasure fences

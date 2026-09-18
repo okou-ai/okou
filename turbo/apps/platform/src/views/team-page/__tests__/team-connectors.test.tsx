@@ -1,6 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
@@ -24,7 +23,6 @@ import {
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  DEEPWIKI_CONNECTOR_ID,
   RESEARCH_AGENT_ID,
   SUPPORT_AGENT_ID,
   acmeConnectorFixture,
@@ -421,7 +419,6 @@ test("A user can authorize a connected MCP custom connector for an agent", async
   await setupTeamPage({
     context,
     path: `/agents/${RESEARCH_AGENT_ID}`,
-    featureSwitches: { [FeatureSwitchKey.CustomConnectorMcp]: true },
   });
 
   await screen.findByRole("heading", { name: "Research Agent" });
@@ -502,42 +499,6 @@ test("Connector permission management appears only when permissions exist", asyn
       return button.textContent?.includes("Manage permissions") ?? false;
     }),
   ).toHaveLength(0);
-});
-
-test("Previously authorized MCP access remains revocable after the feature is disabled", async () => {
-  const savedAgents: string[] = [];
-  mockConnectorSurface(context, {
-    customConnectors: [deepWikiConnectorFixture()],
-    initialCustomByAgent: {
-      [RESEARCH_AGENT_ID]: [
-        {
-          customConnectorId: DEEPWIKI_CONNECTOR_ID,
-          permissionNames: [],
-        },
-      ],
-    },
-    onCustomSave: ({ agentId }) => {
-      savedAgents.push(agentId);
-    },
-  });
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}`,
-    featureSwitches: { [FeatureSwitchKey.CustomConnectorMcp]: false },
-  });
-
-  await screen.findByRole("heading", { name: "Research Agent" });
-  await screen.findByText("DeepWiki");
-  expect(connectorAccessSwitch("Revoke DeepWiki access")).toBeVisible();
-  expect(
-    screen.queryByLabelText("Grant DeepWiki access"),
-  ).not.toBeInTheDocument();
-
-  click(connectorAccessSwitch("Revoke DeepWiki access"));
-  await waitFor(() => {
-    expect(screen.queryByText("DeepWiki")).not.toBeInTheDocument();
-  });
-  expect(savedAgents).toStrictEqual([RESEARCH_AGENT_ID]);
 });
 
 test("An unconfigured custom connector is not offered to an agent", async () => {

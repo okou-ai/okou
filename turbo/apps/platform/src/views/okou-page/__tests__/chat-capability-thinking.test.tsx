@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -33,7 +34,13 @@ test("Keep current thinking progress aligned with the active run", async () => {
   const events = activeRunEvents();
   installRunChat({ chatEvents: events, activeRunIds: [ACTIVE_RUN_ID] });
 
-  await setupPage({ context, path: RUN_PATH });
+  // Progress comes from the run's own thinking events only while thread
+  // activity summaries are off, which is the producer this test tracks.
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
+  });
 
   await readyChat();
   events.push(

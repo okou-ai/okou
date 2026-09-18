@@ -104,8 +104,8 @@ function usageRows(): UsageRecordRow[] {
     },
     {
       source: "slack",
-      threadId: null,
-      runId: "run-slack-follow-up",
+      threadId: "thread-slack-follow-up",
+      runId: null,
       title: "Slack customer follow-up",
       credits: 2400,
       tokens: 5100,
@@ -129,8 +129,8 @@ function usageRows(): UsageRecordRow[] {
     }),
     {
       source: "agent",
-      threadId: null,
-      runId: "run-agent-audit",
+      threadId: "thread-agent-audit",
+      runId: null,
       title: "Extended agent audit",
       credits: 3100,
       tokens: 7300,
@@ -148,8 +148,8 @@ function usageRow(args: {
 }): UsageRecordRow {
   return {
     source: "chat",
-    threadId: null,
-    runId: args.runId,
+    threadId: args.runId,
+    runId: null,
     title: args.title,
     credits: args.credits,
     tokens: 1000,
@@ -760,9 +760,12 @@ test("Review personal credit-usage records by date range", async () => {
     expect(screen.getByText("Slack customer follow-up")).toBeInTheDocument();
   });
   expect(screen.getByText("1.1K")).toBeInTheDocument();
+  expect(screen.getByText("21 threads")).toBeInTheDocument();
   expect(screen.getByText("Mar 21")).toBeInTheDocument();
   expect(screen.queryByText("Extended agent audit")).not.toBeInTheDocument();
   expect(screen.queryByText("All sources")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Slack")).not.toBeInTheDocument();
+  expect(screen.getAllByLabelText("Thread").length).toBeGreaterThan(0);
   expect(requests.ranges).toContain("today");
 
   await user.hover(screen.getByTestId("usage-kind-segment-other"));

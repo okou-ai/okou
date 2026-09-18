@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "अपनी फ़ाइल इंपोर्ट करें",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} का विश्लेषण हो रहा है। तैयार होने पर यह Custom में दिखाई देगा।",
       "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
       "introVideo": "इंट्रो वीडियो",
       "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",
@@ -667,6 +666,7 @@
       "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
+      "selected": "चयनित",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
       "selectVideo": "वीडियो टेम्पलेट {{title}} चुनें",
@@ -1934,6 +1934,7 @@
         "heading": "अवतार चुनें",
         "label": "अवतार",
         "none": "कोई अवतार नहीं",
+        "noneDetail": "केवल शैली",
         "previewLook": "{{name}} रूप का पूर्वावलोकन"
       },
       "catalog": {
@@ -1946,16 +1947,29 @@
         "cancel": "रद्द करें"
       },
       "picker": {
-        "autoVoiceDescription": "अपने कंटेंट के अनुकूल आवाज़ खोजें।",
+        "allPresenters": "सभी प्रेज़ेंटर",
+        "allPresentersCount": "सभी प्रेज़ेंटर ({{total}})",
+        "allVoices": "सभी आवाज़ें",
+        "allVoicesCount": "सभी आवाज़ें ({{total}})",
+        "autoVoiceDescription": "आपकी शैली से मेल खाती आवाज़",
         "avatarVoice": "अवतार की आवाज़",
-        "changeAvatar": "अवतार बदलें",
-        "chooseStyle": "शैली चुनें",
-        "chooseStyleAndVoice": "एक शैली और आवाज़ चुनें।",
+        "back": "वापस",
+        "closeOptions": "विकल्प बंद करें",
+        "done": "हो गया",
+        "moreOptions": "अधिक विकल्प",
         "noMatches": "कोई परिणाम नहीं मिला।",
-        "ready": "इस्तेमाल के लिए तैयार। चैट में अपना कंटेंट जोड़ें।",
+        "optionsNote": "इन्हें चैट के चिप से कभी भी बदला जा सकता है।",
+        "pickStyle": "शैली चुनें",
+        "reset": "रीसेट करें",
+        "searchPresenters": "प्रेज़ेंटर खोजें",
+        "searchStyles": "शैलियाँ खोजें",
+        "searchVoices": "आवाज़ें खोजें",
+        "selectedStyle": "चयनित: {{name}}",
         "settings": "इंट्रो वीडियो की सेटिंग",
-        "style": "शैली",
-        "useSelection": "चयन इस्तेमाल करें"
+        "styleCount_one": "{{count}} शैली",
+        "styleCount_other": "{{count}} शैलियाँ",
+        "styleCountOf": "{{total}} में से {{shown}}",
+        "useStyle": "{{name}} इस्तेमाल करें"
       },
       "style": {
         "auto": "Okou को चुनने दें",
@@ -1974,10 +1988,9 @@
       "voice": {
         "auto": "Okou को चुनने दें",
         "defaultDescription": "चुने गए अवतार की डिफ़ॉल्ट आवाज़ इस्तेमाल करें",
-        "heading": "आवाज़ चुनें",
         "label": "आवाज़",
         "none": "बिना वॉइसओवर",
-        "noneDescription": "नरेशन न जोड़ें; म्यूट करने को न कहने पर मूल ऑडियो बनाए रखें।"
+        "noneShortDescription": "मूल ऑडियो रखें"
       }
     },
     "mail": {
@@ -2023,10 +2036,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "चैट खोलें",
+      "openChatIn": "{{integration}} में चैट खोलें",
       "openFeishuChat": "Feishu में मूल चैट खोलें",
       "openGithubMessage": "GitHub में मूल इश्यू या पुल अनुरोध खोलें",
       "openLarkChat": "Lark में मूल चैट खोलें",
       "openMessage": "संदेश खोलें",
+      "openMessages": "Messages खोलें",
       "openSlackMessage": "मूल संदेश को Slack में खोलें",
       "openTeamsMessage": "Microsoft Teams में मूल संदेश खोलें",
       "openTelegramMessage": "Telegram में मूल संदेश खोलें",
@@ -2158,7 +2173,10 @@
       "number": "संख्या"
     },
     "sidebar": {
+      "allArchived": "आपकी सभी चैट आर्काइव हो गई हैं",
+      "allCaughtUp": "सब पूरा हो गया",
       "allChats": "सभी चैट",
+      "archive": "चैट आर्काइव करें",
       "chatsWith": "{{agentName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
       "delete": "चैट हटाएं",
@@ -2177,7 +2195,10 @@
       "pinned": "पिन की गई",
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
+      "showArchived": "आर्काइव की गई चैट दिखाएं",
+      "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
+      "unarchive": "आर्काइव से निकालें",
       "unpin": "चैट अनपिन करें",
       "unread": "अपठित",
       "unreadOnly": "केवल अपठित"
@@ -2889,6 +2910,7 @@
       "ariaLabel": "चैट थ्रेड",
       "changeIcon": "आइकन बदलें",
       "emoji": {
+        "archive": "आर्काइव करें",
         "done": "हो गया",
         "idea": "विचार",
         "no": "नहीं",
@@ -3608,6 +3630,7 @@
           "sourceUnavailable": "स्रोत अनुपलब्ध",
           "stale": "बासी",
           "unchanged": "स्थिर",
+          "unsupportedProtocol": "असमर्थित प्रोटोकॉल",
           "unsupportedSchema": "असमर्थित स्कीमा"
         }
       },
@@ -4265,6 +4288,8 @@
         "tiny-wanderer": "छोटा पथिक"
       },
       "presentation": {
+        "bloom-pitch": "पंखुड़ी पिच",
+        "blueprint-academy": "ड्राफ्टिंग कैंपस",
         "botane-organic-deck": "मौवे उद्यान",
         "business-data-presentation": "बेरी डैशबोर्ड",
         "crayon-learning-deck": "क्रेयॉन डूडल",
@@ -4273,9 +4298,19 @@
         "editorial-magazine-deck": "कागज पत्रिका",
         "landing-consulting-deck": "नियॉन ब्राउज़र",
         "lumina-creative-studio": "ब्रश स्टिकर",
+        "meridian": "कोबाल्ट ब्लॉक्स",
         "mosaic-geometric-pitch": "बॉहॉस टाइल्स",
+        "neo-brutalism": "शैडो शॉप",
+        "nocturne": "मिडनाइट स्टेज",
+        "pixel-glitch": "आर्केड पिक्सल",
         "playful-launch-presentation": "सनबर्स्ट प्लेरूम",
-        "playful-pop-deck": "नियॉन कैंडी"
+        "playful-pop-deck": "नियॉन कैंडी",
+        "prospectus": "होमपेज पिच",
+        "schoolhouse": "क्राफ्ट पोस्टर",
+        "sticker-scrapbook": "स्टिकर नोटबुक",
+        "strata": "लाल सीढ़ी",
+        "taped-consulting": "पोलेरॉइड दीवार",
+        "vantage": "नंबर वाला बोर्डरूम"
       },
       "video": {
         "chinese-ink-art": "चीनी स्याही चित्रकारी",
@@ -5372,7 +5407,8 @@
     "status": {
       "availableNow": "अभी उपलब्ध",
       "inUse_one": "{{limit}} स्लॉट का {{active}} उपयोग में है",
-      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
+      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है",
+      "waitingForSandbox": "Sandbox की प्रतीक्षा"
     },
     "tiers": {
       "custom": "कस्टम",
@@ -5511,7 +5547,7 @@
         "usage": {
           "balanceDescription": "आपकी टीम के पास खर्च करने के लिए कितना बचा है।",
           "balanceTitle": "क्रेडिट शेष",
-          "usageDescription": "चैट, ऑटोमेशन और चैनलों पर आपका क्रेडिट उपयोग।",
+          "usageDescription": "आपका क्रेडिट उपयोग, थ्रेड के अनुसार समूहीकृत।",
           "usageTitle": "क्रेडिट उपयोग"
         }
       },
@@ -5675,9 +5711,12 @@
         "codexDescription": "Codex-समर्थित मॉडल मार्गों के लिए Codex डिवाइस लॉगिन से कनेक्ट करें।",
         "codexTitle": "ChatGPT (Codex)",
         "description": "केवल आपके रनों में, आपकी अपनी साख के साथ उपयोग किया जाता है।",
+        "disconnectAccount": "खाता डिस्कनेक्ट करें",
+        "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
+        "disconnecting": "डिस्कनेक्ट हो रहा है…",
+        "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
         "reconnectAccount": "फिर से कनेक्ट करें",
-        "removeAccount": "हटाएँ",
         "sectionTitle": "निजी",
         "status": {
           "connected": "जुड़े हुए",
@@ -5804,7 +5843,7 @@
         "codexTitle": "ChatGPT सत्र को पुनः कनेक्ट करने की आवश्यकता है"
       },
       "toasts": {
-        "accountRemoved": "खाता हटा दिया गया",
+        "accountDisconnected": "खाता डिस्कनेक्ट हो गया",
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
         "disconnected": "{{provider}} डिस्कनेक्ट हो गया",
         "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",
@@ -5824,6 +5863,51 @@
         "resetsRelative": "{{relative}} रीसेट करता है",
         "resetTimePassed": "रीसेट का समय बीत गया",
         "resetTimePassedTitle": "रीसेट का समय बीत गया"
+      }
+    },
+    "paidTools": {
+      "description": "चुनें कि आप कौन से सशुल्क बिल्ट-इन टूल इस्तेमाल कर सकते हैं।",
+      "loadError": "आपकी टूल सेटिंग लोड नहीं हो सकीं।",
+      "loading": "आपकी टूल सेटिंग लोड हो रही हैं…",
+      "retry": "फिर कोशिश करें",
+      "saveError": "आपका बदलाव सेव नहीं हुआ।",
+      "saving": "सेव हो रहा है…",
+      "scope": "ये सेटिंग {{workspace}} में केवल आप पर लागू होती हैं।",
+      "timing": "बदलाव आगे के रन पर लागू होंगे। चल रहे या पहले से तैयार कार्यों में पिछली सेटिंग बनी रह सकती हैं।",
+      "title": "सशुल्क टूल",
+      "tools": {
+        "finance": {
+          "description": "कंपनियों, कीमतों और बाज़ार के डेटा की जानकारी लें।",
+          "name": "वित्तीय डेटा"
+        },
+        "image-recognition": {
+          "description": "इमेज पढ़ें और उनका विश्लेषण करें।",
+          "name": "इमेज पहचान"
+        },
+        "maps": {
+          "description": "स्थान, पते और रास्ते खोजें।",
+          "name": "मैप और स्थान"
+        },
+        "people-search": {
+          "description": "सार्वजनिक पेशेवर प्रोफ़ाइल खोजें।",
+          "name": "लोगों की खोज"
+        },
+        "scrape": {
+          "description": "वेब पेजों की सामग्री पढ़ें और निकालें।",
+          "name": "पेज निष्कर्षण"
+        },
+        "seo": {
+          "description": "खोज रैंकिंग, कीवर्ड और बैकलिंक पर शोध करें।",
+          "name": "SEO शोध"
+        },
+        "social": {
+          "description": "सार्वजनिक सोशल पोस्ट पर शोध करें और मीडिया इकट्ठा करें।",
+          "name": "सोशल शोध"
+        },
+        "web-search": {
+          "description": "वेब पर ताज़ा जानकारी खोजें।",
+          "name": "वेब खोज"
+        }
       }
     },
     "preferences": {
@@ -6334,6 +6418,18 @@
     "manage": "SSH होस्ट प्रबंधित करें",
     "notLearned": "होस्ट कुंजी अभी सहेजी नहीं गई है",
     "passphrase": "पासफ़्रेज़ (वैकल्पिक)",
+    "placeholders": {
+      "accessName": "जैसे, प्रोडक्शन एक्सेस",
+      "clientId": "Service Token का Client ID पेस्ट करें",
+      "clientSecret": "Service Token का Client Secret पेस्ट करें",
+      "credentialName": "जैसे, डिप्लॉयमेंट लॉगिन",
+      "displayName": "जैसे, प्रोडक्शन सर्वर",
+      "host": "जैसे, ssh.example.com",
+      "passphrase": "कुंजी एन्क्रिप्टेड न हो तो खाली छोड़ें",
+      "password": "SSH उपयोगकर्ता का पासवर्ड दर्ज करें",
+      "privateKey": "पूरी निजी कुंजी पेस्ट करें या ‘फ़ाइल चुनें’ से इम्पोर्ट करें",
+      "username": "जैसे, ubuntu"
+    },
     "port": "पोर्ट",
     "privateKey": "निजी कुंजी",
     "reset": "होस्ट कुंजी रीसेट करें",
@@ -6366,12 +6462,10 @@
       "sourceFile": "{{filename}} से"
     },
     "empty": {
-      "description": "आपके द्वारा अपलोड की गई फ़ाइल से बने टेम्पलेट यहाँ दिखाई देंगे।",
-      "title": "अभी तक कोई टेम्पलेट नहीं"
+      "description": "Okou आपकी फ़ाइल के डिज़ाइन को ऐसे टेम्पलेट में बदल देता है जिसे आप दोबारा इस्तेमाल कर सकते हैं।"
     },
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
-    "pageCount_one": "{{count}} पृष्ठ",
-    "pageCount_other": "{{count}} पृष्ठ",
+    "renameFailed": "टेम्पलेट का नाम नहीं बदला जा सका।",
     "retry": "फिर से कोशिश करें",
     "sharedBy": "{{owner}} द्वारा साझा किया गया",
     "visibility": {
@@ -6413,36 +6507,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "इस बिलिंग अवधि में कोई उपयोग नहीं",
-        "description": "चैट, ऑटोमेशन और चैनल पर खर्च किए गए क्रेडिट यहाँ दिखते हैं.",
+        "description": "थ्रेड में खर्च किए गए क्रेडिट यहाँ दिखते हैं.",
         "noBillingPeriodDescription": "बिलिंग अवधि शुरू होने पर टीम का उपयोग यहाँ दिखेगा.",
         "noBillingPeriodTitle": "कोई सक्रिय बिलिंग अवधि नहीं",
         "rangeTitle": "इस समय सीमा में कोई उपयोग नहीं",
-        "teamDescription": "आपकी टीम द्वारा चैट, ऑटोमेशन और चैनल पर खर्च किए गए क्रेडिट यहाँ दिखते हैं."
+        "teamDescription": "आपकी टीम द्वारा थ्रेड में खर्च किए गए क्रेडिट यहाँ दिखते हैं."
       },
       "loadError": "आपका उपयोग लोड नहीं किया जा सका.",
       "loadMore": "और लोड करें",
       "myUsage": "मेरा उपयोग",
       "teamLoadError": "टीम उपयोग लोड नहीं किया जा सका.",
       "teamUsage": "टीम का उपयोग",
+      "thread": "थ्रेड",
+      "unavailableThread": "अनुपलब्ध थ्रेड",
       "untitled": "(शीर्षक रहित)"
     },
-    "sources": {
-      "agent": "एजेंट",
-      "automation": "ऑटोमेशन",
-      "chat": "चैट",
-      "email": "ईमेल",
-      "github": "GitHub",
-      "other": "अन्य",
-      "phone": "फ़ोन",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} चैट",
-      "chat_other": "{{value}} चैट",
       "credit_one": "{{value}} क्रेडिट",
-      "credit_other": "{{value}} क्रेडिट"
+      "credit_other": "{{value}} क्रेडिट",
+      "thread_one": "{{value}} थ्रेड",
+      "thread_other": "{{value}} थ्रेड"
     }
   },
   "workflows": {

@@ -16,6 +16,7 @@ import { z } from "zod";
 import { artifactUrlSchema } from "@okouai/api-contracts/contracts/artifact-references";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { generateWebImage } from "../../lib/api/domains/web";
+import { absoluteArtifactUrl } from "../../lib/artifact-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { generatedImageAsset } from "../shared/generated-image-asset";
 import {
@@ -391,11 +392,30 @@ async function startBatch(
 
 async function readBatchArtifacts(stateDirectory: string) {
   try {
-    return imageBatchArtifactsSchema.parse(
+    const metadata = imageBatchArtifactsSchema.parse(
       JSON.parse(
         await readFile(join(stateDirectory, "artifacts.json"), "utf8"),
       ),
     );
+    const artifacts = await Promise.all(
+      metadata.artifacts.map(async (artifact) => {
+        const url = await absoluteArtifactUrl(artifact.url);
+        const presentation =
+          url === artifact.url
+            ? artifact
+            : createArtifactPresentation(artifact.assetId, url).json;
+        return {
+          ...artifact,
+          url,
+          ...(artifact.ownerUrl === undefined
+            ? {}
+            : { ownerUrl: await absoluteArtifactUrl(artifact.ownerUrl) }),
+          inlineMarkdownLink: presentation.inlineMarkdownLink,
+          previewMarkdownBlock: presentation.previewMarkdownBlock,
+        };
+      }),
+    );
+    return { ...metadata, artifacts };
   } catch (error) {
     // Persisted batches created before presentation metadata still contain usable
     // TSV assets. Retain until support for those stored batch directories is retired.

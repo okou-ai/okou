@@ -20,6 +20,7 @@ import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import { activePendingRunPredicate } from "./agent-run-activity.service";
 import { nowDate } from "../../lib/time";
+import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 
 /** No producer consumes this switch until both #34243 and #34244 are ready. */
 export function isPiInferenceRun(
@@ -525,6 +526,9 @@ export async function assertPiInferenceScopeErasureReady(
   scope: InferenceErasureScope,
 ) {
   await db.transaction(async (tx) => {
+    // A terminal Run can still have an admitted usage upload. Drain it
+    // before starting the existing short erasure-preflight lock timeout.
+    await lockXResourceAdmission(tx, "exclusive");
     // Bound this preflight independently of any later external cleanup.
     await tx.execute(sql`SET LOCAL lock_timeout = '100ms'`);
     const rows = await tx

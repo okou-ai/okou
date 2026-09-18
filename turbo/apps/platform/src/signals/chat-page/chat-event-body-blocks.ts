@@ -10,7 +10,7 @@ import {
   isInterruptControlEvent,
   isQueueMarkerEvent,
   isRecallControlEvent,
-} from "./chat-event-state.ts";
+} from "@okouai/api-contracts/contracts/chat-event-semantics";
 import {
   eventBodyPlan,
   type CardDescriptorBlock,

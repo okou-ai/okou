@@ -26,11 +26,19 @@ import { settle } from "../utils";
  * **Live scope.** Enumerating the intersection once authorizes nothing later:
  * the bot keeps its own access after the member loses theirs. Every protected
  * history or reply page is therefore preceded by a fresh bounded proof that the
- * connected member still shares that conversation, and one final proof covers
- * the window in which a response is held across a removal. Those proofs spend
- * the same finite request and time budgets as the reads, which lowers effective
- * throughput and is reported as partial; an attempt that has already spent
- * those budgets cannot buy the final proof and says so through its own limit.
+ * connected member still shares that conversation, and one final proof is the
+ * release boundary for everything the bundle would name. Those proofs spend the
+ * same finite request and time budgets as the reads, which lowers effective
+ * throughput and is reported as partial.
+ *
+ * **Release authority.** Coverage and authorization are separate facts. A
+ * bounded attempt may omit work and say so, but it may never release a
+ * conversation's content, name, id or link without a fresh proof that the
+ * connected member still shares it. What the final pass could not prove is
+ * withheld — unproven is not proven revoked, and it is not a healthy empty
+ * channel either. The wall clock bounds that authority as a whole rather than
+ * one conversation at a time: an attempt that expires releases nothing, even
+ * what an earlier page of the same final pass had already confirmed.
  *
  * **Coverage limit.** Threads are discovered from the roots that windowed
  * history returns, so a new reply on a root older than the window is not found.
@@ -53,6 +61,16 @@ const MAX_HISTORY_PAGES_PER_CHANNEL = 2;
 const MAX_THREADS = 10;
 /** Total Slack HTTP requests for one attempt. */
 const MAX_PROVIDER_REQUESTS = 40;
+/**
+ * Requests held back from the reads so the final release proof can run.
+ *
+ * The proof spends the same total budget as the reads it authorizes, so a read
+ * phase allowed to spend every request would leave nothing to prove the scope
+ * of what it collected — and content without a current proof cannot be
+ * released. Holding one enumeration's worth of pages back keeps the documented
+ * 40-request ceiling exactly where it is and lowers the read allowance instead.
+ */
+const MAX_READ_REQUESTS = MAX_PROVIDER_REQUESTS - MAX_CHANNEL_PAGES;
 /** Normalized messages kept in the bundle. */
 const MAX_MESSAGES = 500;
 /** Projected text carried by the bundle. */
@@ -168,6 +186,7 @@ class SlackCollectionBudget {
   private readonly seen = new Set<string>();
   private readonly roots: DiscoveredThread[] = [];
   private readonly revoked = new Set<string>();
+  private readonly withheld = new Set<string>();
   readonly entries: MorningBriefSlackEntry[] = [];
   readonly limits = new Set<MorningBriefCollectionLimit>();
 
@@ -192,18 +211,72 @@ class SlackCollectionBudget {
     this.limits.add(limit);
   }
 
-  spendRequest(): boolean {
-    if (this.exhausted) {
-      return false;
-    }
+  private spendWithin(ceiling: number): boolean {
     if (this.clock() >= this.deadline) {
       return this.stop("deadline");
     }
-    if (this.requests >= MAX_PROVIDER_REQUESTS) {
+    if (this.requests >= ceiling) {
       return this.stop("requests");
     }
     this.requests += 1;
     return true;
+  }
+
+  /** Spend one request on discovery, a pre-read proof or a protected read. */
+  spendRequest(): boolean {
+    if (this.exhausted) {
+      return false;
+    }
+    return this.spendWithin(MAX_READ_REQUESTS);
+  }
+
+  /**
+   * Spend one request on the final release proof, from the reserved allowance.
+   *
+   * A content cap stopped this attempt from reading further, but it never
+   * waives authorization, so the reserve stays available to the proof even
+   * then. Only the total request ceiling and the wall clock can refuse it.
+   */
+  spendProofRequest(): boolean {
+    return this.spendWithin(MAX_PROVIDER_REQUESTS);
+  }
+
+  /**
+   * Stop this attempt when its wall clock has already passed.
+   *
+   * A proof's own answer can be held across the deadline, so the boundary is
+   * checked again when that answer lands rather than only before it is sent.
+   */
+  stopIfExpired(): boolean {
+    if (this.clock() < this.deadline) {
+      return false;
+    }
+    this.stop("deadline");
+    return true;
+  }
+
+  /**
+   * Withhold everything still held once this attempt's wall clock has passed.
+   *
+   * The deadline bounds the whole attempt, not one conversation's proof. A
+   * channel named by an earlier page of the final enumeration is already
+   * settled and no longer pending, so an expiry that stops a later page of the
+   * same pass would otherwise leave that earlier channel releasable — and its
+   * messages, name, id and link would be published under a proof the attempt
+   * has outlived. The release decision therefore re-reads the clock after every
+   * awaited answer, and an expired attempt keeps each conversation it can still
+   * speak about inside the collector instead. A conversation already proven
+   * revoked stays a proven removal rather than being renamed unproven.
+   */
+  withholdIfExpired(channelIds: readonly string[]): void {
+    if (!this.stopIfExpired()) {
+      return;
+    }
+    for (const channelId of channelIds) {
+      if (this.isReleasable(channelId)) {
+        this.withholdChannel(channelId);
+      }
+    }
   }
 
   /**
@@ -262,6 +335,18 @@ class SlackCollectionBudget {
     return this.roots;
   }
 
+  private discardChannel(channelId: string): void {
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.entries[index];
+      if (entry?.channelId !== channelId) {
+        continue;
+      }
+      this.textBytes -= Buffer.byteLength(entry.text, "utf8");
+      this.seen.delete(`${entry.channelId}:${entry.ts}`);
+      this.entries.splice(index, 1);
+    }
+  }
+
   /**
    * Drop everything this attempt holds for a conversation it can no longer
    * prove the connected member shares.
@@ -274,19 +359,30 @@ class SlackCollectionBudget {
   revokeChannel(channelId: string): void {
     this.revoked.add(channelId);
     this.note("scope-lost");
-    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
-      const entry = this.entries[index];
-      if (entry?.channelId !== channelId) {
-        continue;
-      }
-      this.textBytes -= Buffer.byteLength(entry.text, "utf8");
-      this.seen.delete(`${entry.channelId}:${entry.ts}`);
-      this.entries.splice(index, 1);
-    }
+    this.discardChannel(channelId);
+  }
+
+  /**
+   * Withhold a conversation whose final scope proof could not be completed.
+   *
+   * Unproven is neither an allow nor a proven removal, so the attempt simply
+   * may not speak about this conversation: its messages, name, id and link all
+   * stay inside the collector. Nothing falls back to discovery or to the
+   * earlier pre-read proof, which covered only the instant it ran.
+   */
+  withholdChannel(channelId: string): void {
+    this.withheld.add(channelId);
+    this.note("scope-unproven");
+    this.discardChannel(channelId);
   }
 
   isRevoked(channelId: string): boolean {
     return this.revoked.has(channelId);
+  }
+
+  /** True when a fresh proof still authorizes naming this conversation. */
+  isReleasable(channelId: string): boolean {
+    return !this.revoked.has(channelId) && !this.withheld.has(channelId);
   }
 
   /** Keeps a message only when it falls inside the frozen half-open window. */
@@ -457,9 +553,10 @@ async function proveSharedScope(
  * Gate one protected page read on a fresh proof of the member's own access.
  *
  * A proven removal also discards whatever this attempt already holds for the
- * conversation. An unproven lookup stops further reads without discarding
- * content that an earlier live proof did authorize, and is recorded so the
- * result can never be read as complete.
+ * conversation. An unproven lookup stops further reads and is recorded so the
+ * result can never be read as complete; whether the pages it already read may
+ * be released is not decided here but at the final proof, which every
+ * conversation in the bundle must pass.
  */
 async function authorizeChannelRead(
   scope: MorningBriefSlackCollectionScope,
@@ -486,12 +583,24 @@ async function authorizeChannelRead(
 /**
  * Prove the scope once more for every conversation about to leave the collector.
  *
- * Each read was authorized before it started, but its response can be held
- * across a removal. One bounded pass over the live intersection closes that gap;
- * it stops as soon as every pending conversation is named, so it normally costs
- * a single request. An attempt that has already exhausted its request or time
- * budget cannot make this call without breaking that budget, and is already
- * reported as bounded under `requests` or `deadline`.
+ * This is the release boundary. Each read was authorized before it started, but
+ * its response can be held across a removal, and a conversation can reach the
+ * bundle as a name, id and link without any protected read at all — so every
+ * conversation the bundle would carry is pending here, not only the ones that
+ * produced messages. One bounded pass over the live intersection stops as soon
+ * as each pending conversation is named, so it normally costs a single request,
+ * and it spends the allowance reserved for exactly this call.
+ *
+ * A pass that lists the member's whole intersection without a conversation
+ * proves its removal. A pass that repeats a cursor, exhausts its pages or its
+ * reserved requests proves nothing about what is still pending, and what it
+ * could not prove is withheld rather than released. Partial coverage is an
+ * omission of work; it is never permission to publish unconfirmed scope.
+ *
+ * The wall clock is not one of those page budgets. It bounds the attempt rather
+ * than this pass's remaining work, so an expiry is settled by the caller's
+ * release decision over every conversation, not only by the set still pending
+ * here.
  */
 async function confirmSharedScope(
   scope: MorningBriefSlackCollectionScope,
@@ -506,7 +615,7 @@ async function confirmSharedScope(
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
   for (let page = 0; page < MAX_CHANNEL_PAGES; page += 1) {
-    if (!budget.spendRequest()) {
+    if (!budget.spendProofRequest()) {
       break;
     }
     const result = await listSharedSlackChannelsPage(
@@ -515,6 +624,11 @@ async function confirmSharedScope(
       { limit: CHANNEL_PAGE_LIMIT, cursor },
       signal,
     );
+    // An answer that lands after this attempt's own wall clock is no longer a
+    // current proof, however well the request was started inside it.
+    if (budget.stopIfExpired()) {
+      break;
+    }
     for (const channel of result.channels) {
       pending.delete(channel.id);
     }
@@ -533,8 +647,8 @@ async function confirmSharedScope(
     }
     seenCursors.add(cursor);
   }
-  if (!budget.stopped) {
-    budget.note("scope-unproven");
+  for (const channelId of pending) {
+    budget.withholdChannel(channelId);
   }
 }
 
@@ -669,7 +783,8 @@ async function readThreadReplies(
  * and is handed to every provider read and authorization proof. A mid-stream
  * provider failure abandons the attempt with its classified outcome instead of
  * returning the partial data as a successful read. A conversation whose scope
- * is disproved at any point leaves nothing behind in the bundle.
+ * is disproved, or which the final proof could not confirm, leaves nothing
+ * behind in the bundle — no message, name, id or link.
  */
 export async function collectMorningBriefSlackBundle(
   scope: MorningBriefSlackCollectionScope,
@@ -720,20 +835,20 @@ export async function collectMorningBriefSlackBundle(
           truncatedChannels.add(thread.channel.id);
         }
       }
-      // Nothing leaves this collector before one last live proof of the scope
-      // that produced it.
-      await confirmSharedScope(
-        scope,
-        [
-          ...new Set(
-            budget.entries.map((entry) => {
-              return entry.channelId;
-            }),
-          ),
-        ],
-        budget,
-        signal,
-      );
+      // Nothing leaves this collector — message, name, id or link — before one
+      // last live proof of the scope that produced it.
+      const pendingRelease = channels
+        .filter((channel) => {
+          return !budget.isRevoked(channel.id);
+        })
+        .map((channel) => {
+          return channel.id;
+        });
+      await confirmSharedScope(scope, pendingRelease, budget, signal);
+      // The proof is the last awaited work before the projection below, so this
+      // is where the attempt's own wall clock decides whether any of it may
+      // still be released at all.
+      budget.withholdIfExpired(pendingRelease);
       return { channels, readChannels, expandedThreads, truncatedChannels };
     })(),
   );
@@ -743,8 +858,10 @@ export async function collectMorningBriefSlackBundle(
 
   const { channels, readChannels, expandedThreads, truncatedChannels } =
     collected.value;
-  const retained = channels.filter((channel) => {
-    return !budget.isRevoked(channel.id);
+  // Only what the final proof confirmed is describable at all, so the counts
+  // below report the returned payload rather than the withheld identities.
+  const released = channels.filter((channel) => {
+    return budget.isReleasable(channel.id);
   });
   const limits = [...budget.limits].sort();
   const coverage =
@@ -764,7 +881,7 @@ export async function collectMorningBriefSlackBundle(
       timezone: scope.timezone,
       coverage,
       limits,
-      channels: retained.map((channel) => {
+      channels: released.map((channel) => {
         return {
           id: channel.id,
           name: channel.name,
@@ -775,11 +892,11 @@ export async function collectMorningBriefSlackBundle(
       }),
       entries: budget.entries,
       counts: {
-        channels: retained.filter((channel) => {
+        channels: released.filter((channel) => {
           return readChannels.has(channel.id);
         }).length,
         threads: expandedThreads.filter((channelId) => {
-          return !budget.isRevoked(channelId);
+          return budget.isReleasable(channelId);
         }).length,
         messages: budget.entries.length,
         requests: budget.requestCount,

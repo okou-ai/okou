@@ -136,10 +136,7 @@ import {
 } from "./chat-body-cards.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatConversationLocator } from "./chat-conversation-locator.tsx";
-import {
-  customConnectorMcpEnabled$,
-  featureSwitch$,
-} from "../../signals/external/feature-switch.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isStandalonePwa } from "../../lib/keyboard-dismiss-gesture.ts";
 import {
   captureChatWorkHistoryExpanded,
@@ -258,7 +255,9 @@ import type {
 } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
   applyChatThreadEmoji,
+  isChatThreadArchived,
   removeChatThreadEmoji,
+  unarchiveChatThreadTitle,
   CHAT_THREAD_EMOJI_OPTIONS,
 } from "../../signals/chat-page/chat-thread-title.ts";
 import {
@@ -329,6 +328,7 @@ import {
   CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
   CHAT_THREAD_RESPONSE_COMPACT_STACK_CLASS,
   CHAT_THREAD_RESPONSE_STACK_CLASS,
+  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS,
   CHAT_THREAD_WORK_HISTORY_TEXT_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
@@ -787,6 +787,8 @@ function useChatThreadEmojiMenuActions({
   const closeChatThreadEmojiMenu = useSet(closeChatThreadEmojiMenu$);
   const renameChatThread = useSet(renameChatThread$);
   const pageSignal = useGet(pageSignal$);
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const open = emojiMenuThreadId === threadId;
 
   function closeMenu() {
@@ -818,7 +820,11 @@ function useChatThreadEmojiMenuActions({
     if (!activeThreadId) {
       return;
     }
-    const nextTitle = removeChatThreadEmoji(emojiMenuTitle ?? title);
+    const currentTitle = emojiMenuTitle ?? title;
+    const nextTitle =
+      archiveEnabled && isChatThreadArchived(currentTitle)
+        ? unarchiveChatThreadTitle(currentTitle)
+        : removeChatThreadEmoji(currentTitle);
     if (!nextTitle) {
       closeMenu();
       return;
@@ -943,10 +949,16 @@ function ChatThreadEmojiMenuButton({
 
 function useFrequentlyUsedEmoji(): ChatThreadEmojiItem[] {
   const { t } = useTranslation();
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const labels = [
-    t(($) => {
-      return $.chat.thread.emoji.done;
-    }),
+    archiveEnabled
+      ? t(($) => {
+          return $.chat.thread.emoji.archive;
+        })
+      : t(($) => {
+          return $.chat.thread.emoji.done;
+        }),
     t(($) => {
       return $.chat.thread.emoji.urgent;
     }),
@@ -3670,10 +3682,14 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
     return null;
   }
 
+  // The overlay covers the pane while the transcript loads, so it takes the
+  // canvas fill rather than the page's: over a gradient palette a `--background`
+  // cover is a flat block that snaps to the canvas the moment the first events
+  // arrive.
   return (
     <div
       data-chat-skeleton
-      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-background"
+      className="absolute inset-0 z-10 overflow-hidden pointer-events-none bg-workspace-canvas"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
@@ -3714,6 +3730,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className={cn(
           "absolute inset-0 focus:outline-none [overflow-anchor:none]",
+          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
           standalonePwa && "overscroll-contain",
         )}
       >
@@ -3796,7 +3813,7 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
     ? `${window.location.origin}/share/threads/${sharedThreadId}`
     : null;
   return withChatScrollLayout(
-    <footer className="relative shrink-0 border-t border-border/60 bg-background px-4 py-3 sm:px-6">
+    <footer className="relative shrink-0 border-t border-border/60 px-4 py-3 sm:px-6">
       <div className="mx-auto flex w-full max-w-[900px] flex-col gap-2">
         {shareUrl ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -4165,16 +4182,19 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
   const composerLayoutRef = useSet(thread.composerLayoutOnRef$);
   const standalonePwa = isStandalonePwa();
 
+  // The pane's canvas runs behind the composer the way it runs behind the
+  // header. A fill of its own can only match a flat canvas, and a gradient
+  // palette's is not one, so the footer stays transparent and the transcript's
+  // own edge fade handles the boundary above it.
   return (
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0 bg-[hsl(var(--background))]"
+      className="relative shrink-0"
       style={{
         paddingBottom: "max(0.5rem, var(--okou-composer-safe-bottom))",
       }}
     >
-      <div className="pointer-events-none absolute inset-x-0 -top-5 h-[21px] bg-gradient-to-t from-[hsl(var(--background))] to-transparent" />
       {/* `overflow-y-auto` clips at this element's padding box. The composer's
           focus veil is offset down and blurred well past the gap the footer
           leaves, so it is still painting at that boundary and gets sliced off in
@@ -4626,7 +4646,6 @@ function ChatConnectorActionConnectModal() {
 
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
-  const mcpEnabled = useGet(customConnectorMcpEnabled$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const runCallback = useSet(runChatActionCallback$);
   const pageSignal = useGet(pageSignal$);
@@ -4651,10 +4670,7 @@ function ActiveChatConnectorActionConnectModal() {
 
   if (active.kind === "custom") {
     const connector = customConnectors?.find((candidate) => {
-      return (
-        candidate.slug === active.connectorSlug &&
-        (candidate.kind === "http" || mcpEnabled)
-      );
+      return candidate.slug === active.connectorSlug;
     });
     const accountOptions = connector
       ? defaultCustomConnectorAccountOptions(connector)
@@ -4747,25 +4763,18 @@ const CHAT_NOTICE_DESCRIPTION_CLASS =
  */
 const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
 
-function CreditsAvailableMessage() {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
-      <div className="min-w-0">
-        <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
-          {t(($) => {
-            return $.chat.billing.creditsAvailable;
-          })}
-        </p>
-        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-          {t(($) => {
-            return $.chat.billing.creditsAdded;
-          })}
-        </p>
-      </div>
-      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
-    </div>
-  );
+function creditsAvailableCopy(): {
+  readonly headline: string;
+  readonly helper: string;
+} {
+  return {
+    headline: i18n.t(($) => {
+      return $.chat.billing.creditsAvailable;
+    }),
+    helper: i18n.t(($) => {
+      return $.chat.billing.creditsAdded;
+    }),
+  };
 }
 
 function insufficientCreditsCopy(params: {
@@ -4929,21 +4938,26 @@ function InsufficientCreditsCard() {
   const canManageBilling = roleResolved ? isAdminLoadable.data : false;
   const hasAvailableCredits = canBuyCredits && credits !== null && credits > 0;
   const shouldStartProCheckout = !canBuyCredits;
-  const canShowBillingAction = billingResolved && canManageBilling;
+  // Credits on hand leave the reserved action slot empty, the way this notice
+  // has always read once a purchase lands.
+  const canShowBillingAction =
+    billingResolved && canManageBilling && !hasAvailableCredits;
   const checkoutRedirecting = checkoutLoadable.state === "loading";
   const creditCheckoutPreparing =
     creditCheckoutLoadable.state === "loading" ||
     creditPurchaseOrigin === "chat";
 
-  if (hasAvailableCredits) {
-    return <CreditsAvailableMessage />;
-  }
-
-  const { headline, helper } = insufficientCreditsCopy({
-    canBuyCredits,
-    roleResolved: billingResolved && roleResolved,
-    canManageBilling: billingResolved && canManageBilling,
-  });
+  // Credits arriving while the card is on screen replaces this copy and the
+  // action inside the element below, rather than swapping the element itself:
+  // `docs/chat-cards.md` keeps the mounted card's box in layout through every
+  // asynchronous state change.
+  const { headline, helper } = hasAvailableCredits
+    ? creditsAvailableCopy()
+    : insufficientCreditsCopy({
+        canBuyCredits,
+        roleResolved: billingResolved && roleResolved,
+        canManageBilling: billingResolved && canManageBilling,
+      });
 
   const openBilling = () => {
     setSubPage(false);
@@ -4976,7 +4990,14 @@ function InsufficientCreditsCard() {
   return (
     <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
       <div className="min-w-0">
-        <p className="truncate text-[0.9375rem] font-medium text-foreground">
+        <p
+          className={cn(
+            "truncate text-[0.9375rem] font-medium",
+            hasAvailableCredits
+              ? "text-emerald-700 dark:text-emerald-300"
+              : "text-foreground",
+          )}
+        >
           {headline}
         </p>
         <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
@@ -5143,6 +5164,25 @@ function AssistantRecoveryActions({
   );
 }
 
+/**
+ * The contents of one error card, chosen by the caller and handed to the single
+ * `AssistantErrorCard` element it keeps mounted. `docs/chat-cards.md` requires
+ * the sized element itself to survive every asynchronous state change: the
+ * failure-recovery classification lands after the transcript has already
+ * scrolled, and replacing the card component at that moment removes its box
+ * from layout for one pass, which makes WebKit clamp the transcript's scroll
+ * offset by the card's own height. Equal heights do not prevent that; only the
+ * retained element does.
+ */
+interface AssistantErrorCardContent {
+  readonly icon: LucideIcon;
+  readonly title: string;
+  readonly description: string;
+  readonly details?: ReactNode;
+  readonly actions?: ReactNode;
+  readonly testId?: string;
+}
+
 function AssistantErrorCard({
   icon: Icon,
   title,
@@ -5150,14 +5190,7 @@ function AssistantErrorCard({
   details,
   actions,
   testId,
-}: {
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  details?: ReactNode;
-  actions?: ReactNode;
-  testId?: string;
-}) {
+}: AssistantErrorCardContent) {
   return (
     <div
       role="status"
@@ -5189,14 +5222,11 @@ function AssistantErrorCard({
   );
 }
 
-function AssistantErrorRecoveryCard({
-  recovery,
-  thread,
-}: {
-  recovery: AssistantErrorRecovery;
-  thread: ChatPanelSignals;
-}) {
-  const { t } = useTranslation();
+function assistantErrorRecoveryContent(
+  recovery: AssistantErrorRecovery,
+  thread: ChatPanelSignals,
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
   const resetText = assistantRecoveryResetText(recovery);
   const title = (() => {
     if (recovery.kind === "subscription-error") {
@@ -5281,93 +5311,102 @@ function AssistantErrorRecoveryCard({
           : null
     : null;
 
-  return (
-    <AssistantErrorCard
-      icon={
-        recovery.kind === "autonomy-budget-exhausted"
-          ? Hand
-          : recovery.kind === "usage-limit" ||
-              recovery.kind === "execution-timeout"
-            ? Clock
-            : Coffee
-      }
-      title={title}
-      description={`${description}${resetText ? ` ${resetText}` : ""}`}
-      details={
-        <>
-          {`${description}${resetText ? ` ${resetText}` : ""}`}
-          {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
-          {personalSource && (
-            <p className="mt-1">
-              {t(($) => {
-                return $.chat.errors.recovery.newRunCurrentSettings;
-              })}
-            </p>
-          )}
-        </>
-      }
-      actions={<AssistantRecoveryActions recovery={recovery} thread={thread} />}
-      testId="assistant-error-recovery"
-    />
-  );
+  return {
+    icon:
+      recovery.kind === "autonomy-budget-exhausted"
+        ? Hand
+        : recovery.kind === "usage-limit" ||
+            recovery.kind === "execution-timeout"
+          ? Clock
+          : Coffee,
+    title,
+    description: `${description}${resetText ? ` ${resetText}` : ""}`,
+    details: (
+      <>
+        {`${description}${resetText ? ` ${resetText}` : ""}`}
+        {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
+        {personalSource && (
+          <p className="mt-1">
+            {t(($) => {
+              return $.chat.errors.recovery.newRunCurrentSettings;
+            })}
+          </p>
+        )}
+      </>
+    ),
+    actions: <AssistantRecoveryActions recovery={recovery} thread={thread} />,
+    testId: "assistant-error-recovery",
+  };
 }
 
-function NoModelProviderErrorCard() {
+/** Owns the settings command so the card's contents stay hook-free. */
+function ModelSettingsButton() {
   const { t } = useTranslation();
   const openSettings = useSet(openSettingsDialogAt$);
   const pageSignal = useGet(pageSignal$);
 
   return (
-    <AssistantErrorCard
-      icon={AlertCircle}
-      title={t(($) => {
-        return $.chat.errors.genericTitle;
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+      onClick={() => {
+        detach(openSettings("model", pageSignal), Reason.DomCallback);
+      }}
+    >
+      {t(($) => {
+        return $.chat.errors.noModelProviderAction;
       })}
-      description={t(($) => {
-        return $.chat.errors.noModelProviderPrefix;
-      })}
-      details={
-        <span>
-          {t(($) => {
-            return $.chat.errors.noModelProviderPrefix;
-          })}{" "}
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            onClick={() => {
-              detach(openSettings("model", pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.chat.errors.noModelProviderAction;
-            })}
-          </button>{" "}
-          {t(($) => {
-            return $.chat.errors.noModelProviderSuffix;
-          })}
-        </span>
-      }
-    />
+    </button>
   );
 }
 
-function AssistantErrorFallback({ error }: { error: string }) {
-  const { t } = useTranslation();
+function noModelProviderErrorContent(
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
+  return {
+    icon: AlertCircle,
+    title: t(($) => {
+      return $.chat.errors.genericTitle;
+    }),
+    description: t(($) => {
+      return $.chat.errors.noModelProviderPrefix;
+    }),
+    details: (
+      <span>
+        {t(($) => {
+          return $.chat.errors.noModelProviderPrefix;
+        })}{" "}
+        <ModelSettingsButton />{" "}
+        {t(($) => {
+          return $.chat.errors.noModelProviderSuffix;
+        })}
+      </span>
+    ),
+  };
+}
 
+/**
+ * Returns null for the billing errors that own a different card. That choice
+ * reads the failure text the card mounts with, so it cannot change while the
+ * card is on screen: the recovery classification never claims
+ * `insufficient_credits` or `pro_required`.
+ */
+function assistantErrorFallbackContent(
+  error: string,
+  t: TFunction<"common">,
+): AssistantErrorCardContent | null {
   if (isBillingRecoveryError(error)) {
-    return <InsufficientCreditsCard />;
+    return null;
   }
 
   if (error.trim().toLowerCase() === "run cancelled") {
-    return (
-      <AssistantErrorCard
-        icon={Hand}
-        title={t(($) => {
-          return $.chat.errors.runCancelled;
-        })}
-        description=""
-      />
-    );
+    return {
+      icon: Hand,
+      title: t(($) => {
+        return $.chat.errors.runCancelled;
+      }),
+      description: "",
+    };
   }
 
   const noProviderGuidance = RUN_ERROR_GUIDANCE.NO_MODEL_PROVIDER;
@@ -5376,7 +5415,7 @@ function AssistantErrorFallback({ error }: { error: string }) {
     error.toLowerCase().includes(noProviderGuidance.title.toLowerCase());
 
   if (isNoModelProvider) {
-    return <NoModelProviderErrorCard />;
+    return noModelProviderErrorContent(t);
   }
 
   const incompatibleGuidance = RUN_ERROR_GUIDANCE.PROVIDER_INCOMPATIBLE;
@@ -5387,32 +5426,30 @@ function AssistantErrorFallback({ error }: { error: string }) {
     error.includes("Invalid signature in thinking block");
 
   if (isProviderIncompatible) {
-    return (
-      <AssistantErrorCard
-        icon={AlertCircle}
-        title={t(($) => {
-          return $.chat.errors.genericTitle;
-        })}
-        description={t(($) => {
-          return $.chat.errors.providerIncompatiblePrefix;
-        })}
-        details={
-          <span>
+    return {
+      icon: AlertCircle,
+      title: t(($) => {
+        return $.chat.errors.genericTitle;
+      }),
+      description: t(($) => {
+        return $.chat.errors.providerIncompatiblePrefix;
+      }),
+      details: (
+        <span>
+          {t(($) => {
+            return $.chat.errors.providerIncompatiblePrefix;
+          })}{" "}
+          <Link
+            pathname="/"
+            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+          >
             {t(($) => {
-              return $.chat.errors.providerIncompatiblePrefix;
-            })}{" "}
-            <Link
-              pathname="/"
-              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            >
-              {t(($) => {
-                return $.chat.errors.providerIncompatibleAction;
-              })}
-            </Link>
-          </span>
-        }
-      />
-    );
+              return $.chat.errors.providerIncompatibleAction;
+            })}
+          </Link>
+        </span>
+      ),
+    };
   }
 
   const deletedGuidance = RUN_ERROR_GUIDANCE.PROVIDER_DELETED;
@@ -5422,52 +5459,48 @@ function AssistantErrorFallback({ error }: { error: string }) {
       error.toLowerCase().includes(deletedGuidance.guidance.toLowerCase()));
 
   if (isProviderDeleted) {
-    return (
-      <AssistantErrorCard
-        icon={AlertCircle}
-        title={t(($) => {
-          return $.chat.errors.genericTitle;
-        })}
-        description={t(($) => {
-          return $.chat.errors.providerDeletedPrefix;
-        })}
-        details={
-          <span>
+    return {
+      icon: AlertCircle,
+      title: t(($) => {
+        return $.chat.errors.genericTitle;
+      }),
+      description: t(($) => {
+        return $.chat.errors.providerDeletedPrefix;
+      }),
+      details: (
+        <span>
+          {t(($) => {
+            return $.chat.errors.providerDeletedPrefix;
+          })}{" "}
+          <Link
+            pathname="/"
+            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+          >
             {t(($) => {
-              return $.chat.errors.providerDeletedPrefix;
-            })}{" "}
-            <Link
-              pathname="/"
-              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            >
-              {t(($) => {
-                return $.chat.errors.providerDeletedAction;
-              })}
-            </Link>{" "}
-            {t(($) => {
-              return $.chat.errors.providerDeletedSuffix;
+              return $.chat.errors.providerDeletedAction;
             })}
-          </span>
-        }
-      />
-    );
+          </Link>{" "}
+          {t(($) => {
+            return $.chat.errors.providerDeletedSuffix;
+          })}
+        </span>
+      ),
+    };
   }
 
-  return (
-    <AssistantErrorCard
-      icon={AlertCircle}
-      title={t(($) => {
-        return $.chat.errors.genericTitle;
-      })}
-      description={localizedRunError(error)}
-      details={
-        <Markdown
-          className="!text-muted-foreground"
-          source={localizedRunError(error)}
-        />
-      }
-    />
-  );
+  return {
+    icon: AlertCircle,
+    title: t(($) => {
+      return $.chat.errors.genericTitle;
+    }),
+    description: localizedRunError(error),
+    details: (
+      <Markdown
+        className="!text-muted-foreground"
+        source={localizedRunError(error)}
+      />
+    ),
+  };
 }
 
 function AssistantErrorContent({
@@ -5495,12 +5528,19 @@ function AssistantErrorState({
   eventId: string;
   thread: ChatPanelSignals;
 }) {
-  const recovery = useLastResolved(thread.assistantErrorRecovery$);
-  return recovery?.sourceEventId === eventId ? (
-    <AssistantErrorRecoveryCard recovery={recovery} thread={thread} />
-  ) : (
-    <AssistantErrorFallback error={error} />
-  );
+  const { t } = useTranslation();
+  const resolved = useLastResolved(thread.assistantErrorRecovery$);
+  const recovery = resolved?.sourceEventId === eventId ? resolved : null;
+  // The classification resolves after the first paint and selects contents,
+  // not a component: choosing between two card components here would remove
+  // the mounted card and move the transcript by its height.
+  const content = recovery
+    ? assistantErrorRecoveryContent(recovery, thread, t)
+    : assistantErrorFallbackContent(error, t);
+  if (content === null) {
+    return <InsufficientCreditsCard />;
+  }
+  return <AssistantErrorCard {...content} />;
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
@@ -5892,6 +5932,7 @@ function MessageAttachment({
       <ChatVideoPreviewButton
         resourceUrl$={a.signals.resourceUrl$}
         posterLoad={a.signals.previewImageLoad}
+        previewImageUrl$={a.signals.previewImageUrl$}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;
@@ -6081,6 +6122,14 @@ function generationTemplateTypeLabel(
         return $.chat.templates.categories.website;
       });
     }
+    case "custom": {
+      // The catalog's own name, the same word the picker tab uses. What a
+      // custom template produces lives on its row, which this label cannot
+      // read, so naming the catalog is the honest answer here.
+      return i18n.t(($) => {
+        return $.templates.custom;
+      });
+    }
     case "presentation": {
       return i18n.t(($) => {
         return $.chat.templates.categories.presentation;
@@ -6176,6 +6225,34 @@ function MessageAnnotation({
   );
 }
 
+function sourceMessageLinkText(
+  t: TFunction<"common">,
+  part: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"],
+) {
+  const opensChat =
+    part.kind === "feishu" ||
+    (part.kind === "telegram" &&
+      /^https:\/\/t\.me\/[a-z\d_]+$/iu.test(part.href ?? "")) ||
+    (part.kind === "teams" &&
+      part.href?.startsWith("https://teams.microsoft.com/l/chat/") === true);
+  const openLabel =
+    part.kind === "agentphone"
+      ? t(($) => {
+          return $.chat.origins.openMessages;
+        })
+      : opensChat
+        ? t(($) => {
+            return $.chat.origins.openChat;
+          })
+        : t(($) => {
+            return $.chat.origins.openMessage;
+          });
+  return { opensChat, openLabel };
+}
+
 function SourceMessageAnnotation({
   renderPart,
   className,
@@ -6221,36 +6298,36 @@ function SourceMessageAnnotation({
               : t(($) => {
                   return $.chat.origins.agentphone;
                 });
-  const openLabel =
-    part.kind === "feishu"
-      ? t(($) => {
-          return $.chat.origins.openChat;
-        })
-      : t(($) => {
-          return $.chat.origins.openMessage;
-        });
+  const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
-    part.kind === "slack"
-      ? t(($) => {
-          return $.chat.origins.openSlackMessage;
-        })
-      : part.kind === "feishu"
+    opensChat && part.kind !== "feishu"
+      ? t(
+          ($) => {
+            return $.chat.origins.openChatIn;
+          },
+          { integration: sourceLabel },
+        )
+      : part.kind === "slack"
         ? t(($) => {
-            return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
+            return $.chat.origins.openSlackMessage;
           })
-        : part.kind === "teams"
+        : part.kind === "feishu"
           ? t(($) => {
-              return $.chat.origins.openTeamsMessage;
+              return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
             })
-          : part.kind === "telegram"
+          : part.kind === "teams"
             ? t(($) => {
-                return $.chat.origins.openTelegramMessage;
+                return $.chat.origins.openTeamsMessage;
               })
-            : part.kind === "github"
+            : part.kind === "telegram"
               ? t(($) => {
-                  return $.chat.origins.openGithubMessage;
+                  return $.chat.origins.openTelegramMessage;
                 })
-              : sourceLabel;
+              : part.kind === "github"
+                ? t(($) => {
+                    return $.chat.origins.openGithubMessage;
+                  })
+                : openLabel;
   const content = (
     <>
       {part.kind === "slack" ? (
@@ -6377,6 +6454,7 @@ function UserMessageFileReference({
       <ChatVideoPreviewButton
         resourceUrl$={signals.resourceUrl$}
         posterLoad={signals.previewImageLoad}
+        previewImageUrl$={signals.previewImageUrl$}
         ariaLabel={t(
           ($) => {
             return $.chat.attachments.previewFile;

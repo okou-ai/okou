@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.4](https://github.com/vm0-ai/okou/compare/ably-subscriber-v1.1.3...ably-subscriber-v1.1.4) (2026-09-18)
+
+
+### Documentation
+
+* **ably-subscriber:** correct short-token renewal timing ([#35204](https://github.com/vm0-ai/okou/issues/35204)) ([a9b0fe3](https://github.com/vm0-ai/okou/commit/a9b0fe3eed173360fa30323b6e1c288f7ddf632e))
+
 ## [1.1.3](https://github.com/vm0-ai/vm0/compare/ably-subscriber-v1.1.2...ably-subscriber-v1.1.3) (2026-09-15)
 
 

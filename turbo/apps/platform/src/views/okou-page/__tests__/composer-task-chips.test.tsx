@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   click,
   fill,
@@ -13,6 +14,7 @@ import {
   composerInlineTemplates,
   findComposerEditor,
   tabByText,
+  composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
@@ -22,6 +24,9 @@ import {
   mockPresentationTemplateLibrary,
   mockTemplateChat,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+
+const CREATE_WORKFLOW_PROMPT =
+  "Help me create a workflow for this agent. Use the workflow-setup skill, then ask me for the desired outcome, automation, and action before creating the workflow and automation.";
 
 function button(
   label: string,
@@ -49,6 +54,19 @@ async function setupChips(enabled = true): Promise<HTMLElement> {
   return await findComposerEditor();
 }
 
+/** The chips and the add menu are separate switches, so both are named. */
+async function setupChipsWithAddMenu(chips: boolean): Promise<HTMLElement> {
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerTaskChips]: chips,
+      [FeatureSwitchKey.ComposerAddMenu]: true,
+    },
+  });
+  return await findComposerEditor();
+}
+
 /** The chips and the slash panel are separate switches, so both are named. */
 async function setupChipsWithSlashPanel(): Promise<HTMLElement> {
   await setupPage({
@@ -62,14 +80,46 @@ async function setupChipsWithSlashPanel(): Promise<HTMLElement> {
   return await findComposerEditor();
 }
 
-// The selected task is one control: the chip itself removes the selection, so
-// it is addressed by that action rather than by a wrapping group.
-function selectedTask(editor: HTMLElement, task: string): HTMLElement {
+/** Custom is its own switch, so the chips reach members on either side of it. */
+async function setupChipsWithCustomTemplates(): Promise<HTMLElement> {
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+      [FeatureSwitchKey.CustomTemplates]: true,
+    },
+  });
+  return await findComposerEditor();
+}
+
+function composerCard(editor: HTMLElement): HTMLElement {
   const card = editor.closest<HTMLElement>('[data-slot="chat-composer-card"]');
   if (!card) {
     throw new Error("Expected composer card");
   }
-  return button(`Remove ${task}`, card);
+  return card;
+}
+
+// The selected task is one control: the chip itself removes the selection, so
+// it is addressed by that action rather than by a wrapping group.
+function selectedTask(editor: HTMLElement, task: string): HTMLElement {
+  return button(`Remove ${task}`, composerCard(editor));
+}
+
+async function addMenuRow(
+  editor: HTMLElement,
+  label: string,
+): Promise<HTMLElement> {
+  click(button("Add", composerCard(editor)));
+  const menu = await screen.findByRole("menu", { name: "Add" });
+  const row = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return candidate.textContent?.trim() === label;
+  });
+  if (!row) {
+    throw new Error(`Expected the ${label} row`);
+  }
+  return row;
 }
 
 function isPager(item: HTMLElement): boolean {
@@ -170,7 +220,6 @@ test("The start page shows only task choices until one is selected", async () =>
     "Workflow",
     "Presentation",
     "Image",
-    "Video",
     "Website",
     "Visualization",
   ]);
@@ -182,14 +231,7 @@ test("The start page shows only task choices until one is selected", async () =>
   ).toBeNull();
 });
 
-test.each([
-  "Workflow",
-  "Presentation",
-  "Image",
-  "Video",
-  "Website",
-  "Visualization",
-])(
+test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
   "%s moves into the composer and can be removed without losing the draft",
   async (task) => {
     mockTemplateChat();
@@ -225,24 +267,20 @@ test.each([
   },
 );
 
-test.each([
-  "Workflow",
-  "Presentation",
-  "Image",
-  "Video",
-  "Website",
-  "Visualization",
-])("Backspace removes %s from an empty composer", async (task) => {
-  mockTemplateChat();
-  const user = userEvent.setup({ delay: null });
-  const editor = await setupChips();
-  click(button(task, screen.getByRole("group", { name: "Choose a task" })));
-  expect(selectedTask(editor, task)).toBeVisible();
-  await user.keyboard("{Backspace}");
-  await screen.findByRole("group", { name: "Choose a task" });
-  expect(screen.queryByRole("group", { name: task })).toBeNull();
-  expect(editor).toHaveFocus();
-});
+test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
+  "Backspace removes %s from an empty composer",
+  async (task) => {
+    mockTemplateChat();
+    const user = userEvent.setup({ delay: null });
+    const editor = await setupChips();
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+    expect(selectedTask(editor, task)).toBeVisible();
+    await user.keyboard("{Backspace}");
+    await screen.findByRole("group", { name: "Choose a task" });
+    expect(screen.queryByRole("group", { name: task })).toBeNull();
+    expect(editor).toHaveFocus();
+  },
+);
 
 test("Backspace edits a nonempty draft and preserves task selection during composition", async () => {
   mockTemplateChat();
@@ -505,7 +543,6 @@ test("Visualization preferences stay behind once another task is chosen", async 
 
 test.each([
   { task: "Image", mode: "image", instruction: "Create an image." },
-  { task: "Video", mode: "video", instruction: "Create a video." },
   {
     task: "Presentation",
     mode: "presentation",
@@ -570,25 +607,19 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   const restoredTasks = await screen.findByRole("group", {
     name: "Choose a task",
   });
-  click(button("Video", restoredTasks));
-  await screen.findByRole("combobox", { name: "Video models" });
-  const options = await waitFor(() => {
-    return button("Video options 16:9 · 8s · 720p");
+  click(button("Presentation", restoredTasks));
+  const slideCount = await screen.findByRole("combobox", {
+    name: "Slide count",
   });
-  expect(options).toHaveAttribute("aria-expanded", "false");
-  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
-  click(options);
-  const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
-  const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
-    return radio.textContent?.trim() === "9:16";
+  click(slideCount);
+  click(await screen.findByRole("option", { name: "16–20 slides" }));
+  await waitFor(() => {
+    expect(
+      screen.getByRole("combobox", { name: "Slide count" }),
+    ).toHaveTextContent("16–20 slides");
   });
-  if (!portrait) {
-    throw new Error("Portrait ratio missing");
-  }
-  click(portrait);
-  await user.keyboard("{Escape}");
-  click(selectedTask(editor, "Video"));
-  await screen.findByRole("combobox", { name: "Claude Sonnet 4.6" });
+  click(selectedTask(editor, "Presentation"));
+  await composerModelTrigger("Claude Sonnet 4.6");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
   expect(screen.getByText("brief.txt")).toBeInTheDocument();
@@ -611,12 +642,6 @@ test.each([
     prompt: "Put my product in a new scene.",
   },
   {
-    task: "Video",
-    first: "Turn a photo into a video",
-    next: "Explain an idea visually",
-    prompt: "Animate a photo I provide",
-  },
-  {
     task: "Website",
     first: "Build a website for my business",
     next: "Put my café menu online",
@@ -633,8 +658,7 @@ test.each([
   async ({ task, first, next, prompt }) => {
     const capture = mockTemplateChat();
     const editor = await setupChips();
-    const tasks = screen.getByRole("group", { name: "Choose a task" });
-    click(button(task, tasks));
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
     const ideas = await screen.findByRole("group", {
       name: "Ideas to get started",
     });
@@ -665,15 +689,6 @@ test.each([
       "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent.",
     secondPrompt:
       "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting.",
-  },
-  {
-    task: "Video",
-    first: "Turn a photo into a video",
-    second: "Show my product in motion",
-    firstPrompt:
-      "Animate a photo I provide with natural movement. Keep the subject recognizable and ask what should move.",
-    secondPrompt:
-      "Create a short product showcase from my product photo. Keep its appearance consistent and highlight the feature I choose.",
   },
   {
     task: "Website",
@@ -714,6 +729,18 @@ test.each([
   },
 );
 
+/**
+ * A slash panel row opens the picker as well as selecting the task, and the
+ * open dialog hides the composer from the accessibility tree. Close it to read
+ * what the row left behind.
+ */
+async function closeTemplatePicker(): Promise<void> {
+  click(button("Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+}
+
 test("Slash commands keep the selected task and recommendations in sync", async () => {
   mockTemplateChat();
   const editor = await setupChipsWithSlashPanel();
@@ -722,21 +749,69 @@ test("Slash commands keep the selected task and recommendations in sync", async 
   const user = userEvent.setup({ delay: null });
   // The panel's rows act on mousedown, which only a full pointer sequence fires.
   await user.click(button("Illustration", menu));
+  await closeTemplatePicker();
   await waitFor(() => {
     expect(selectedTask(editor, "Image")).toBeVisible();
   });
   expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
   expect(editor).toHaveTextContent("A quiet garden");
   expect(editor).not.toHaveTextContent("/ill");
-  await fill(editor, "A quiet garden /vid");
-  const videoMenu = await screen.findByTestId("slash-workflow-menu");
-  await user.click(button("Video", videoMenu));
+  await fill(editor, "A quiet garden /pres");
+  const presentationMenu = await screen.findByTestId("slash-workflow-menu");
+  await user.click(button("Presentation", presentationMenu));
+  await closeTemplatePicker();
   await waitFor(() => {
-    expect(selectedTask(editor, "Video")).toBeVisible();
+    expect(selectedTask(editor, "Presentation")).toBeVisible();
   });
   expect(screen.queryByRole("group", { name: "Image" })).toBeNull();
-  await screen.findByText("Turn a photo into a video");
+  await screen.findByText("Pitch my business to investors");
   expect(editor).toHaveTextContent("A quiet garden");
+});
+
+// Website has no create mode, so the chips are the only surface that can carry
+// its selection; the row still has to open the picker on the way there.
+test("A slash panel row opens the picker and lands on its task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithSlashPanel();
+  await fill(editor, "A launch page /web");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button("Website", menu));
+
+  await waitFor(() => {
+    return screen.getByRole("dialog");
+  });
+  expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
+  await closeTemplatePicker();
+  await waitFor(() => {
+    expect(selectedTask(editor, "Website")).toBeVisible();
+  });
+  expect(editor).toHaveTextContent("A launch page");
+  expect(editor).not.toHaveTextContent("/web");
+});
+
+// A cover brings its template along instead of opening the picker, but lands
+// the composer in the same task its category row would.
+test("A slash panel cover attaches its template and lands on its task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithSlashPanel();
+  await fill(editor, "A launch page /web");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button(`Use template ${first.title}`, menu));
+
+  await waitFor(() => {
+    expect(selectedTask(editor, "Website")).toBeVisible();
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(editor).toHaveTextContent("A launch page");
+  expect(editor).not.toHaveTextContent("/web");
 });
 
 test("A presentation suggestion inserts a canonical template and preserves the prompt", async () => {
@@ -903,6 +978,23 @@ test("Browsing the catalog opens the existing library in the matching category",
   expect(editor).toHaveTextContent("Keep my draft");
 });
 
+test("The presentation shelf browses Presentation even once Custom exists", async () => {
+  mockTemplateChat();
+  await setupChipsWithCustomTemplates();
+  click(
+    button(
+      "Presentation",
+      screen.getByRole("group", { name: "Choose a task" }),
+    ),
+  );
+  click(button("More templates"));
+  await screen.findByRole("dialog");
+  // Custom is on the nav, so landing on Presentation is the shelf's choice
+  // rather than the only tab the picker could have opened.
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "false");
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+});
+
 test.each([
   {
     task: "Website",
@@ -910,7 +1002,6 @@ test.each([
     browse: "Browse all templates",
   },
   { task: "Image", shelf: "Image styles", browse: "Browse all styles" },
-  { task: "Video", shelf: "Video templates", browse: "Browse all templates" },
 ])(
   "$task shows a cover shelf carrying its whole catalog and attaches a template",
   async ({ task, shelf, browse }) => {
@@ -1170,6 +1261,57 @@ test("Closing or navigating a workflow preview does not edit or send the draft",
   });
   expect(editor.textContent).toBe("My existing draft");
   expect(capture.sentMessages).toHaveLength(0);
+});
+
+/**
+ * The add menu's row and the Workflow chip start the same job, so the row
+ * leaves the composer where the chip would: the prompt in the draft and the
+ * workflow ideas open, rather than a written prompt the member still has to
+ * pair with a chip.
+ */
+test("Create workflow writes its prompt and opens the workflow task", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithAddMenu(true);
+  click(await addMenuRow(editor, "Create workflow"));
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(CREATE_WORKFLOW_PROMPT);
+  });
+  expect(selectedTask(editor, "Workflow")).toBeVisible();
+  await expect(
+    screen.findByRole("group", { name: "Ideas to get started" }),
+  ).resolves.toBeVisible();
+
+  // Choosing the row again restates the task it already opened, so the ideas
+  // have to survive it rather than close as a second chip press would.
+  click(await addMenuRow(editor, "Create workflow"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Replace composer draft?",
+  });
+  click(button("Continue", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(selectedTask(editor, "Workflow")).toBeVisible();
+  expect(
+    screen.getByRole("group", { name: "Ideas to get started" }),
+  ).toBeVisible();
+});
+
+// With the chips off there is no task to open, and the row is still the prompt.
+test("Create workflow selects no task while the chips are off", async () => {
+  mockTemplateChat();
+  const editor = await setupChipsWithAddMenu(false);
+  click(await addMenuRow(editor, "Create workflow"));
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(CREATE_WORKFLOW_PROMPT);
+  });
+  expect(
+    queryAllByRoleFast("button", composerCard(editor)).some((item) => {
+      return item.getAttribute("aria-label") === "Remove Workflow";
+    }),
+  ).toBeFalsy();
 });
 
 test("Reply tracking prepares a custom workflow request without an unrelated template", async () => {

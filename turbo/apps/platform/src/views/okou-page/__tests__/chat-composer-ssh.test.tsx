@@ -48,7 +48,6 @@ test("SSH connection failures do not add Chat-only indicators or change order or
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   const trigger = await findFastControl("button", "Connectors");
   await within(trigger).findByRole("img", { name: "SSH" });
@@ -96,7 +95,6 @@ test("Opening services retains SSH while refreshing and applies the confirmed gr
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   const trigger = await findFastControl("button", "Connectors");
   await within(trigger).findByRole("img", { name: "SSH" });
@@ -144,7 +142,6 @@ test.each([2, 3])(
     await setupPage({
       context,
       path: `/agents/${SCOUT_AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
     });
     const trigger = await findFastControl("button", "Connectors");
     click(trigger);
@@ -186,7 +183,6 @@ test("Switching Agents does not retain the previous Agent's enabled SSH icon", a
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   const trigger = await findFastControl("button", "Connectors");
   await within(trigger).findByRole("img", { name: "SSH" });
@@ -217,7 +213,6 @@ test("Changing user clears retained SSH presentation while the new owner loads",
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   const trigger = await findFastControl("button", "Connectors");
   await within(trigger).findByRole("img", { name: "SSH" });
@@ -250,7 +245,6 @@ test("Changing workspace reloads the chat page before using the new SSH owner", 
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   const trigger = await findFastControl("button", "Connectors");
   await within(trigger).findByRole("img", { name: "SSH" });
@@ -296,7 +290,6 @@ test.each([SCOUT_AGENT_ID, OTHER_AGENT_ID])(
     await setupPage({
       context,
       path: `/agents/${agentId}/chat`,
-      featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
     });
     click(await findFastControl("button", "Connectors"));
     const enabled = agentId === SCOUT_AGENT_ID;
@@ -315,14 +308,13 @@ test.each([SCOUT_AGENT_ID, OTHER_AGENT_ID])(
 );
 
 test.each([
-  { enabled: true, directory: false, configuredCount: 0 },
-  { enabled: false, directory: false, configuredCount: 0 },
-  { enabled: true, directory: true, configuredCount: 0 },
-  { enabled: false, directory: true, configuredCount: 0 },
-  { enabled: true, directory: true, configuredCount: 1 },
+  { directory: false, configuredCount: 0 },
+  { directory: false, configuredCount: 1 },
+  { directory: true, configuredCount: 0 },
+  { directory: true, configuredCount: 1 },
 ])(
-  "Chat SSH setup respects SSH=$enabled, directory=$directory and hosts=$configuredCount",
-  async ({ enabled, directory, configuredCount }) => {
+  "Chat SSH setup respects directory=$directory and hosts=$configuredCount",
+  async ({ directory, configuredCount }) => {
     installComposerConnectorFixture();
     context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
       return respond(200, { configuredCount });
@@ -337,7 +329,6 @@ test.each([
       context,
       path: `/agents/${SCOUT_AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.SshAccess]: enabled,
         [FeatureSwitchKey.ConnectorDirectory]: directory,
       },
     });
@@ -349,7 +340,7 @@ test.each([
     if (!(dialog instanceof HTMLElement)) {
       throw new Error("Missing connector dialog");
     }
-    const showEntry = enabled && configuredCount === 0;
+    const showEntry = configuredCount === 0;
     const initialEntry = showEntry
       ? await findFastControl("link", "Manage SSH hosts", dialog)
       : queryFastControl("link", "Manage SSH hosts", dialog);
@@ -394,7 +385,6 @@ test("Directory SSH setup follows shelves and categories and supports keyboard n
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.SshAccess]: true,
       [FeatureSwitchKey.ConnectorDirectory]: true,
     },
   });

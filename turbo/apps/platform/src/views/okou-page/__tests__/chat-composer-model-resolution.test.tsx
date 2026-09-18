@@ -14,6 +14,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
@@ -103,7 +104,7 @@ function buttonNamed(
 }
 
 async function modelPicker(name: string): Promise<HTMLElement> {
-  return await screen.findByRole("combobox", { name });
+  return await composerModelTrigger(name);
 }
 
 async function readyComposer(name = "Message"): Promise<HTMLElement> {

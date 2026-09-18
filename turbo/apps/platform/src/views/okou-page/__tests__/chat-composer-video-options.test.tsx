@@ -23,6 +23,7 @@ import {
   AGENT_ID,
   composerInlineTemplates,
   context,
+  queryComposerModelTrigger,
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
@@ -63,12 +64,37 @@ function installVideoEnvironment(): void {
   });
 }
 
+/**
+ * These cases reach the video catalog through the legacy select's category
+ * control, which the switch's off lever still serves. The cases that never open
+ * the picker call `setupPage` directly.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
+
 function pickerTrigger(label: string): HTMLElement {
-  const trigger = screen.queryByRole("combobox", { name: label });
-  if (!(trigger instanceof HTMLElement)) {
+  const trigger = queryComposerModelTrigger(label);
+  if (!trigger) {
     throw new Error(`${label} composer model picker not found`);
   }
   return trigger;
+}
+
+/** A slash panel row opens the template picker, and it covers the composer. */
+async function closeTemplatePicker(): Promise<void> {
+  click(fastControl("button", "Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 }
 
 function fastControl(
@@ -259,7 +285,7 @@ test.each([false, true])(
   "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -325,7 +351,7 @@ test.each([false, true])(
   "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
-    await setupPage({
+    await setupLegacyPickerPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -390,70 +416,60 @@ test.each([false, true])(
   },
 );
 
-test.each(["task", "command"] as const)(
-  "Submit the current model's defaults without a template through the video %s",
-  async (entry) => {
-    const submissions = installVideoSubmissionCapture();
-    await setupPage({
-      locale: "en-US",
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: {
-        [FeatureSwitchKey.ComposerSlashTemplatePanel]: entry === "command",
-        [FeatureSwitchKey.ComposerTaskChips]: entry === "task",
-      },
-    });
-    const prompt = "Generate a video without a template.";
-    const editor = await enterText(prompt);
-    if (entry === "task") {
-      click(
-        fastControl(
-          "button",
-          "Video",
-          screen.getByRole("group", { name: "Choose a task" }),
-        ),
-      );
-    } else {
-      await fill(editor, "/");
-      // Presentation leads the panel's Make rows, so Video is the third.
-      await userEvent
-        .setup({ delay: null })
-        .keyboard("{ArrowDown}{ArrowDown}{Enter}");
-      await enterText(prompt);
-    }
-    click(await screen.findByRole("combobox", { name: "Video models" }));
-    click(await screen.findByRole("option", { name: "MiniMax H3" }));
-    await waitFor(() => {
-      expect(
-        fastControl("button", "Video options 16:9 · 8s · 2k"),
-      ).toBeInTheDocument();
-    });
-    await sendCurrent(editor, prompt);
-    await waitFor(() => {
-      expect(submissions).toHaveLength(1);
-    });
-    expect(videoTemplatePart(submissions[0]!)).toBeUndefined();
-    expect(submissions[0]?.runOptions).toBeUndefined();
-    expect(submissions[0]?.userMessage?.parts).toContainEqual({
-      type: "additional_info",
-      text: [
-        "# Video Generation Defaults",
-        "The user set these for videos generated in this run:",
-        "- Aspect ratio: 16:9",
-        "- Duration: 8s",
-        "- Resolution: 2k",
-        "- Audio: on",
-        "Where this run's message asks for something else, the message wins, for that parameter only.",
-        "",
-        "Create a video.",
-      ].join("\n"),
-    });
-  },
-);
+// No surface names Video on its own any more, so a create mode the slash panel
+// does offer is what carries the composer to the type picker.
+test("Submit the current model's defaults without a template through the video type", async () => {
+  const submissions = installVideoSubmissionCapture();
+  await setupPage({
+    locale: "en-US",
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
+    },
+  });
+  const prompt = "Generate a video without a template.";
+  const editor = await enterText(prompt);
+  await fill(editor, "/");
+  // Presentation leads the panel's Make rows, so Illustration is second.
+  await userEvent.setup({ delay: null }).keyboard("{ArrowDown}{Enter}");
+  // The row opens the template picker as well, and it covers the composer.
+  await closeTemplatePicker();
+  await enterText(prompt);
+  click(await screen.findByRole("combobox", { name: "Choose a type" }));
+  click(await screen.findByRole("option", { name: "Video" }));
+  click(await screen.findByRole("combobox", { name: "Video models" }));
+  click(await screen.findByRole("option", { name: "MiniMax H3" }));
+  await waitFor(() => {
+    expect(
+      fastControl("button", "Video options 16:9 · 8s · 2k"),
+    ).toBeInTheDocument();
+  });
+  await sendCurrent(editor, prompt);
+  await waitFor(() => {
+    expect(submissions).toHaveLength(1);
+  });
+  expect(videoTemplatePart(submissions[0]!)).toBeUndefined();
+  expect(submissions[0]?.runOptions).toBeUndefined();
+  expect(submissions[0]?.userMessage?.parts).toContainEqual({
+    type: "additional_info",
+    text: [
+      "# Video Generation Defaults",
+      "The user set these for videos generated in this run:",
+      "- Aspect ratio: 16:9",
+      "- Duration: 8s",
+      "- Resolution: 2k",
+      "- Audio: on",
+      "Where this run's message asks for something else, the message wins, for that parameter only.",
+      "",
+      "Create a video.",
+    ].join("\n"),
+  });
+});
 
 test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
   const submissions = installVideoSubmissionCapture();
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
@@ -505,13 +521,20 @@ test("Changing a Creative Video style retains settings without reopening the pan
   }
   click(edit);
   const dialog = await screen.findByRole("dialog");
+  // A Creative Video draft opens the picker on its own tab without hiding the
+  // rest of the catalog.
   expect(
     queryAllByRoleFast("tab", dialog).map((tab) => {
       return tab.textContent?.trim();
     }),
-  ).toStrictEqual(["Video"]);
-  await userEvent.setup({ delay: null }).click(tabByText("Video"));
-  await userEvent.setup({ delay: null }).keyboard("{End}{ArrowDown}");
+  ).toStrictEqual([
+    "Presentation",
+    "Website",
+    "Illustration",
+    "Video",
+    "Avatar",
+    "Workflow",
+  ]);
   expect(tabByText("Video")).toHaveAttribute("aria-selected", "true");
   const template = VIDEO_TEMPLATE_ITEMS[1]!;
   click(
@@ -542,6 +565,7 @@ test("Changing a Creative Video style retains settings without reopening the pan
 
 async function restoreTemplateDraft(
   template: GenerationTemplateRequest,
+  surface: "chips" | "command" = "chips",
 ): Promise<HTMLElement> {
   installVideoSubmissionCapture();
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
@@ -565,7 +589,8 @@ async function restoreTemplateDraft(
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.IntroVideo]: true,
-      [FeatureSwitchKey.ComposerTaskChips]: true,
+      [FeatureSwitchKey.ComposerTaskChips]: surface === "chips",
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: surface === "command",
     },
   });
   const editor = await screen.findByRole("textbox", { name: "Message" });
@@ -589,9 +614,20 @@ test("A restored Creative Video draft keeps settings collapsed until requested",
 });
 
 test("An Intro Video draft excludes settings even after choosing Create video", async () => {
-  await restoreTemplateDraft({ type: "intro-video", selection: {} });
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  click(fastControl("button", "Video", tasks));
+  const editor = await restoreTemplateDraft(
+    { type: "intro-video", selection: {} },
+    "command",
+  );
+  const user = userEvent.setup({ delay: null });
+  // Video has no Make row of its own, so the composer enters the one below
+  // Presentation and switches the type from there, keeping the saved draft.
+  await user.click(editor);
+  await user.paste(" /");
+  await screen.findByTestId("slash-workflow-menu");
+  await user.keyboard("{ArrowDown}{Enter}");
+  await closeTemplatePicker();
+  click(await screen.findByRole("combobox", { name: "Choose a type" }));
+  click(await screen.findByRole("option", { name: "Video" }));
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button").some((button) => {

@@ -1,6 +1,7 @@
 import type {
   ConnectorCatalogArtifact,
   ConnectorCatalogArtifactConnector,
+  ConnectorCatalogAuthMethod,
 } from "./artifacts";
 import {
   isPrivateTokenLikeKey,
@@ -41,11 +42,42 @@ function addValueRef(valueRef: string, values: Set<string>): void {
 }
 
 function addBindingValues(
-  bindings: Readonly<Record<string, string>>,
+  bindings: Readonly<Record<string, string | undefined>>,
   values: Set<string>,
 ): void {
   for (const valueRef of Object.values(bindings)) {
-    addValueRef(valueRef, values);
+    if (valueRef !== undefined) {
+      addValueRef(valueRef, values);
+    }
+  }
+}
+
+function addAccessSensitiveValues(
+  access: ConnectorCatalogAuthMethod["access"],
+  values: Set<string>,
+): void {
+  for (const [name, binding] of Object.entries(
+    "envBindings" in access ? access.envBindings : {},
+  )) {
+    addSensitiveValue(name, values);
+    addValueRef(
+      typeof binding === "string" ? binding : binding.valueRef,
+      values,
+    );
+  }
+  for (const name of "platformSecrets" in access
+    ? (access.platformSecrets ?? [])
+    : []) {
+    addSensitiveValue(name, values);
+  }
+  if (access.kind === "refresh-token" || access.kind === "automatic") {
+    addBindingValues(access.inputs, values);
+    addBindingValues(access.outputs, values);
+  }
+  if (access.kind === "refresh-token") {
+    for (const name of access.refreshableSecrets) {
+      addSensitiveValue(name, values);
+    }
   }
 }
 
@@ -82,28 +114,10 @@ function connectorCatalogSensitiveValues(
       for (const field of authMethod.grant.fields) {
         addSensitiveValue(field.privateName, values);
       }
-    } else {
+    } else if ("outputs" in authMethod.grant) {
       addBindingValues(authMethod.grant.outputs, values);
     }
-    for (const [name, binding] of Object.entries(
-      authMethod.access.envBindings,
-    )) {
-      addSensitiveValue(name, values);
-      addValueRef(
-        typeof binding === "string" ? binding : binding.valueRef,
-        values,
-      );
-    }
-    for (const name of authMethod.access.platformSecrets ?? []) {
-      addSensitiveValue(name, values);
-    }
-    if (authMethod.access.kind === "refresh-token") {
-      addBindingValues(authMethod.access.inputs, values);
-      addBindingValues(authMethod.access.outputs, values);
-      for (const name of authMethod.access.refreshableSecrets) {
-        addSensitiveValue(name, values);
-      }
-    }
+    addAccessSensitiveValues(authMethod.access, values);
     if (authMethod.revoke.kind === "token-revoke") {
       addBindingValues(authMethod.revoke.inputs, values);
     }
@@ -250,7 +264,9 @@ function publicGrant(
     }
     case "auth-code":
     case "external-code":
-    case "openid-auth": {
+    case "openid-auth":
+    case "none":
+    case "automatic": {
       return { kind: method.grant.kind };
     }
   }
@@ -264,6 +280,10 @@ function publicConnector(connector: ConnectorCatalogArtifactConnector) {
     category: connector.category,
     generation: connector.generation,
     tags: connector.tags,
+    ...(connector.mcp === undefined ? {} : { mcp: connector.mcp }),
+    ...(connector.replaces === undefined
+      ? {}
+      : { replaces: connector.replaces }),
     authMethods: connector.authMethods.map((method) => {
       return {
         id: method.id,

@@ -1,7 +1,10 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { withConnectorConnectionProgress } from "../../connector-connection-progress.ts";
+import {
+  markConnectorConnectionCompleted$,
+  withConnectorConnectionProgress,
+} from "../../connector-connection-progress.ts";
 
 import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
@@ -47,7 +50,7 @@ import {
 import {
   resetSignal,
   waitLoopUntil,
-  settle,
+  waitForOperation,
   tapError,
   withCleanup,
 } from "../../utils.ts";
@@ -75,7 +78,6 @@ import {
   readConnectorAccountCount,
   readConnectorOAuthCompletion,
 } from "./connector-accounts.ts";
-import { syncGoogleAdsConversionMilestones$ } from "../../bootstrap/google-ads-conversion-milestones.ts";
 
 type PostConnectOptions = {
   readonly authorizeVisibleAgents?: boolean;
@@ -86,11 +88,17 @@ type PostConnectOptions = {
 };
 type BrowserAuthPostConnectOptions = PostConnectOptions & {
   readonly connectorIcon: PublicConnectorCatalogIcon;
+  readonly onSuccess?: ConnectorConnectSuccess;
 };
 
 export interface ConnectorConnectionResult {
   readonly connectionId: string | null;
 }
+
+export type ConnectorConnectSuccess = (
+  connectionId: string | null,
+  signal: AbortSignal,
+) => void | Promise<void>;
 
 function shouldAuthorizeAgent(options: PostConnectOptions): boolean {
   return Boolean(options.authorizeVisibleAgents || options.agentId);
@@ -949,7 +957,7 @@ const authorizeConnectorForVisibleAgents$ = command(
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<void> => {
-    const visibleAgents = await get(agents$);
+    const visibleAgents = await waitForOperation(get(agents$), signal);
     signal.throwIfAborted();
     const client = get(apiClient$)(userConnectorsContract);
     await withCleanup(
@@ -1013,7 +1021,6 @@ const finishConnectorConnection$ = command(
     if (options.clearSelectedConnector) {
       set(internalSelectedConnectorSlug$, null);
     }
-    await settle(set(syncGoogleAdsConversionMilestones$, signal), signal);
     return true;
   },
 );
@@ -1195,14 +1202,14 @@ export const connectConnectorNoAuthAndSettle$ = command(
   async (
     { set },
     args: ConnectNoAuthParams & {
-      readonly onSuccess: (connectionId: string | null) => void | Promise<void>;
+      readonly onSuccess: ConnectorConnectSuccess;
     },
     signal: AbortSignal,
   ): Promise<void> => {
     const connected = await set(connectConnectorNoAuth$, args, signal);
     if (connected) {
       signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId);
+      await args.onSuccess(connected.connectionId, signal);
     }
   },
 );
@@ -1235,7 +1242,7 @@ export const runConnectorConnectSuccess$ = command(
   async (
     { set },
     connectorSlug: ConnectorSlug,
-    onSuccess: (connectionId: string | null) => void | Promise<void>,
+    onSuccess: ConnectorConnectSuccess,
     connectionId: string | null,
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1244,7 +1251,10 @@ export const runConnectorConnectSuccess$ = command(
     return await withCleanup(
       (async () => {
         signal.throwIfAborted();
-        await onSuccess(connectionId);
+        await waitForOperation(
+          Promise.resolve(onSuccess(connectionId, signal)),
+          signal,
+        );
         signal.throwIfAborted();
       })(),
       () => {
@@ -1771,7 +1781,7 @@ const connectConnectorOAuthDeviceAuthAndSettleCommand$ = command(
     args: {
       readonly connectorSlug: ConnectorSlug;
       readonly authMethod: ConnectorAuthMethodId;
-      readonly onSuccess: (connectionId: string | null) => void | Promise<void>;
+      readonly onSuccess: ConnectorConnectSuccess;
       readonly options: PostConnectOptions;
       readonly startOptions?: ConnectorDeviceAuthStartOptions;
     },
@@ -1789,7 +1799,7 @@ const connectConnectorOAuthDeviceAuthAndSettleCommand$ = command(
     );
     if (connected) {
       signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId);
+      await args.onSuccess(connected.connectionId, signal);
     }
   },
 );
@@ -2023,6 +2033,9 @@ const connectConnectorExternalCodeCommand$ = command(
 
 export const connectConnectorExternalCode$ = withConnectorConnectionProgress(
   connectConnectorExternalCodeCommand$,
+  // The code-entry session outlives its initial request and already has an
+  // explicit clear command. Do not end that session when progress settles.
+  { cancellable: false },
 );
 
 const completeConnectorExternalCode$ = command(
@@ -2146,7 +2159,7 @@ const completeConnectorExternalCodeAndSettleCommand$ = command(
   async (
     { set },
     args: CompleteConnectorExternalCodeParams & {
-      readonly onSuccess: (connectionId: string | null) => void | Promise<void>;
+      readonly onSuccess: ConnectorConnectSuccess;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -2161,7 +2174,7 @@ const completeConnectorExternalCodeAndSettleCommand$ = command(
     );
     if (connected) {
       signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId);
+      await args.onSuccess(connected.connectionId, signal);
     }
   },
 );
@@ -2344,7 +2357,7 @@ const defaultConnectorProjectionMatchesAuthMethod$ = command(
     connectionId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const { connectors } = await get(connectors$);
+    const { connectors } = await waitForOperation(get(connectors$), signal);
     signal.throwIfAborted();
     return connectors.some((connector) => {
       return (
@@ -2396,6 +2409,10 @@ const openConnectorOAuthAuthCodeWindow$ = command(
     if (authWindow) {
       authWindow.opener = null;
     }
+    const closeWindow = () => {
+      authWindow?.close();
+    };
+    signal.addEventListener("abort", closeWindow, { once: true });
 
     let navigated = false;
     const { options, oauthAttemptId } = await withCleanup(
@@ -2463,6 +2480,7 @@ const openConnectorOAuthAuthCodeWindow$ = command(
           if (signal.aborted) {
             authWindow.close();
           } else {
+            signal.removeEventListener("abort", closeWindow);
             authWindow.location.href = connectorRedirectingPath({
               connectorSlug: args.connectorSlug,
               label: args.connectorLabel,
@@ -2526,7 +2544,15 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
             waitForOAuthAuthCodePopupClosed(oauthStart.authWindow, waitSignal),
           ]),
       () => {
-        set(resetOAuthAuthCodeWaitSignal$, signal);
+        if (
+          connectorOAuthAuthCodeWaitIsCurrent(
+            get(internalConnectorOAuthAuthCodeWaitState$),
+            flowId,
+            oauthStart.oauthAttemptId,
+          )
+        ) {
+          set(resetOAuthAuthCodeWaitSignal$, signal);
+        }
       },
     );
     signal.throwIfAborted();
@@ -2552,6 +2578,7 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
       return false;
     }
     const completedConnectionId = completed.connectionId;
+    set(markConnectorConnectionCompleted$, signal);
 
     set(reloadConnectorConnectionState$);
     const isConnected =
@@ -2604,6 +2631,16 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
     const account = options.account;
     set(internalConnectFlowState$, flow);
     set(internalPollingOAuthAuthCodeConnectorSlug$, connectorSlug);
+    const release = () => {
+      if (get(internalConnectFlowState$)?.id === flow.id) {
+        set(internalPollingOAuthAuthCodeConnectorSlug$, null);
+        set(internalConnectFlowState$, null);
+      }
+      set(internalConnectorOAuthAuthCodeWaitState$, (current) => {
+        return current?.flowId === flow.id ? null : current;
+      });
+    };
+    signal.addEventListener("abort", release, { once: true });
 
     return await withCleanup(
       (async () => {
@@ -2629,7 +2666,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
           signal,
         );
         signal.throwIfAborted();
-        return await set(
+        const result = await set(
           completeConnectorOAuthAuthCodeFlow$,
           {
             flowId: flow.id,
@@ -2641,17 +2678,15 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
           },
           signal,
         );
+        if (result) {
+          await options.onSuccess?.(result.connectionId, signal);
+          signal.throwIfAborted();
+        }
+        return result;
       })(),
       () => {
-        set(internalPollingOAuthAuthCodeConnectorSlug$, (current) => {
-          return current === connectorSlug ? null : current;
-        });
-        set(internalConnectorOAuthAuthCodeWaitState$, (current) => {
-          return current?.flowId === flow.id ? null : current;
-        });
-        set(internalConnectFlowState$, (current) => {
-          return current?.id === flow.id ? null : current;
-        });
+        signal.removeEventListener("abort", release);
+        release();
       },
     );
   },
@@ -2659,6 +2694,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
 
 export const connectConnectorOAuthAuthCode$ = withConnectorConnectionProgress(
   connectConnectorOAuthAuthCodeCommand$,
+  { showDialog: true },
 );
 
 // ---------------------------------------------------------------------------
@@ -2671,7 +2707,7 @@ const connectConnectorOAuthAuthCodeAndSettleCommand$ = command(
     args: {
       readonly connectorSlug: ConnectorSlug;
       readonly method: PublicConnectorCatalogAuthMethodDetail;
-      readonly onSuccess: (connectionId: string | null) => void | Promise<void>;
+      readonly onSuccess: ConnectorConnectSuccess;
       readonly options: BrowserAuthPostConnectOptions;
     },
     signal: AbortSignal,
@@ -2685,7 +2721,7 @@ const connectConnectorOAuthAuthCodeAndSettleCommand$ = command(
     );
     if (connected) {
       signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId);
+      await args.onSuccess(connected.connectionId, signal);
     }
   },
 );
@@ -2693,6 +2729,7 @@ const connectConnectorOAuthAuthCodeAndSettleCommand$ = command(
 export const connectConnectorOAuthAuthCodeAndSettle$ =
   withConnectorConnectionProgress(
     connectConnectorOAuthAuthCodeAndSettleCommand$,
+    { showDialog: true },
   );
 
 /** Menu actions disappear on activation and need their own progress feedback. */

@@ -1,5 +1,18 @@
 # Domain glossary
 
+## Archived chat thread
+
+A chat thread whose canonical title emoji is exactly `✅`. Archiving replaces
+its previous title emoji with `✅`; unarchiving removes that emoji and does not
+restore the previous one. When no title text remains, unarchiving uses
+`New Thread`. Archived chat threads are hidden from ordinary chat thread lists
+by default, except while unread. They remain searchable and can be shown
+explicitly with the global, session-only **Show archived** list setting.
+This is a user-facing organization state and is distinct from archival of old
+chat events.
+
+_Avoid_: Archived chat history, deleted chat thread, completed chat thread
+
 ## Voice draft
 
 A local recording lifecycle initialized by the composer. It captures 16 kHz PCM

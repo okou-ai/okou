@@ -1,5 +1,6 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { fill } from "../../../__tests__/page-helper.ts";
 import {
@@ -101,7 +102,13 @@ test("Show a complete thinking message before the carousel advances", async () =
     ],
   });
 
-  await setupPage({ context, path: RUN_PATH });
+  // The carousel splits the run's own thinking event, which is the producer
+  // an account keeps while thread activity summaries are off.
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
+  });
 
   await readyChat();
   await expect(

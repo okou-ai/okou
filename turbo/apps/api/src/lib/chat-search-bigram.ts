@@ -128,6 +128,48 @@ export function chatSearchMatchRanges(
   return merged;
 }
 
+/** Verify all literal/whole-word query groups, retaining only their first match. */
+export function chatSearchFirstMatchRange(
+  text: string,
+  keyword: string,
+): ChatSearchMatchRange | null {
+  const groups = tokenGroups(keyword);
+  if (groups.length === 0) {
+    return null;
+  }
+  let first: ChatSearchMatchRange | null = null;
+  const missingWords = new Set<string>();
+  for (const group of groups) {
+    if (group.kind === "word") {
+      missingWords.add(group.source.toLowerCase());
+      continue;
+    }
+    const start = text.indexOf(group.source);
+    if (start === -1) {
+      return null;
+    }
+    if (first === null || start < first.start) {
+      first = { start, end: start + group.source.length };
+    }
+  }
+  if (missingWords.size > 0) {
+    // Do not allocate the full text's tokens or every repeated match.
+    for (const match of text.matchAll(TOKEN_PATTERN)) {
+      const word = match[2];
+      if (word === undefined || !missingWords.delete(word.toLowerCase())) {
+        continue;
+      }
+      if (first === null || match.index < first.start) {
+        first = { start: match.index, end: match.index + word.length };
+      }
+      if (missingWords.size === 0) {
+        break;
+      }
+    }
+  }
+  return missingWords.size === 0 ? first : null;
+}
+
 /** Normalized form stored in both search projections during dual-writing. */
 export function chatSearchIndexText(text: string): string {
   return tokenGroups(text)

@@ -37,7 +37,7 @@ function formatBytes(bytes: number): string {
 
 export const hostCommand = new Command()
   .name("host")
-  .description("Deploy and inspect owned static hosted sites")
+  .description("Deploy, inspect, and clone static hosted sites")
   .argument("<dir>", "Static build directory, for example ./dist")
   .option("--site <slug>", "Logical site slug, e.g. my-product-demo")
   .option("--slug-suffix <suffix>", "Reuse a legacy generated site URL suffix")

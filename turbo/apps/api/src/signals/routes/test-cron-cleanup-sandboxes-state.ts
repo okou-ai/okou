@@ -13,7 +13,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { browserSessions } from "@okouai/db/schema/browser-session";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -34,7 +33,9 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
 import { and, eq, inArray, notExists, sql } from "drizzle-orm";
+import { z } from "zod";
 
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
@@ -98,6 +99,7 @@ type CronCleanupSandboxesActionHandler = (
 
 interface HeldPiTestLock {
   held: boolean;
+  pid: number | undefined;
   readonly release: {
     readonly promise: Promise<void>;
     readonly resolve: (value: void) => void;
@@ -1112,11 +1114,12 @@ async function preparePiRecoveryObjectHashes(
     readonly chatThreadId: string;
     readonly kind: PiRecoveryFixtureKind;
     readonly omitBillingCapture: boolean;
+    readonly missingModelKeyId: string | undefined;
   },
 ) {
   let configurationHash = args.sourceInference.input.configurationHash;
-  if (args.omitBillingCapture) {
-    const sourceConfiguration = await readPiInferenceObject(
+  if (args.omitBillingCapture || args.missingModelKeyId) {
+    let configuration = await readPiInferenceObject(
       db,
       {
         runId: args.sourceRunId,
@@ -1127,14 +1130,31 @@ async function preparePiRecoveryObjectHashes(
       },
       piDeferredConfigurationSchema,
     );
-    const { apiInferenceBilling: _billing, ...withoutBilling } =
-      sourceConfiguration;
+    if (args.omitBillingCapture) {
+      const { apiInferenceBilling: _billing, ...withoutBilling } =
+        configuration;
+      configuration = withoutBilling;
+    }
+    if (args.missingModelKeyId) {
+      if (!configuration.builtInModelRuntimeRoute) {
+        throw new Error(
+          "Recovery fixture has no captured built-in model route",
+        );
+      }
+      configuration = {
+        ...configuration,
+        builtInModelRuntimeRoute: {
+          ...configuration.builtInModelRuntimeRoute,
+          modelKeyId: args.missingModelKeyId,
+        },
+      };
+    }
     configurationHash = await publishPiInferenceObject(
       db,
       { userId: args.sourceRun.userId, orgId: args.sourceRun.orgId },
       "configuration",
       piDeferredConfigurationSchema,
-      withoutBilling,
+      configuration,
     );
   }
   let contextHash = args.sourceInference.input.contextHash;
@@ -1331,6 +1351,12 @@ async function seedPiInferenceRecoveryForAction(
   const runId = randomUUID();
   const sessionId = kind === "ready" ? randomUUID() : sourceRun.sessionId;
   const chatThreadId = kind === "ready" ? randomUUID() : sourceRun.chatThreadId;
+  // Simulate a removed credential only in this recovery snapshot. Deleting the
+  // vendor-scoped key would invalidate other tests' active fixture ownership.
+  const missingModelKeyId =
+    readOptionalBoolean(body, "missing_model_key") === true
+      ? randomUUID()
+      : undefined;
   const hashes = await preparePiRecoveryObjectHashes(db, {
     sourceRunId,
     sourceRun,
@@ -1340,13 +1366,17 @@ async function seedPiInferenceRecoveryForAction(
     kind,
     omitBillingCapture:
       readOptionalBoolean(body, "omit_billing_capture") === true,
+    missingModelKeyId,
   });
   signal.throwIfAborted();
   await persistPiRecoveryFixture(db, {
     runId,
     sessionId,
     chatThreadId,
-    sourceRun,
+    sourceRun: {
+      ...sourceRun,
+      builtInModelKeyId: missingModelKeyId ?? sourceRun.builtInModelKeyId,
+    },
     sourceInference,
     kind,
     deadlineAt: readDate(body, "deadline_at") ?? new Date(0),
@@ -1373,27 +1403,6 @@ async function expirePiInferenceForAction(
   return actionOk();
 }
 
-async function deletePiInferenceModelKeyForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [run] = await db
-    .select({ keyId: agentRuns.builtInModelKeyId })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId));
-  if (!run?.keyId) {
-    return actionBadRequest("captured built-in model key is missing");
-  }
-  await db.delete(builtInModelKeys).where(eq(builtInModelKeys.id, run.keyId));
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 async function holdPiInferenceTestLockForAction(
   db: Db,
   body: Record<string, unknown>,
@@ -1405,8 +1414,7 @@ async function holdPiInferenceTestLockForAction(
   if (
     !lockId ||
     !key ||
-    (lockKind !== "org-sandbox-capacity" &&
-      lockKind !== "run-output-projection")
+    (lockKind !== "org-sandbox-capacity" && lockKind !== "agent-run-row")
   ) {
     return actionBadRequest("lock_id, lock_kind, and key are required");
   }
@@ -1414,17 +1422,31 @@ async function holdPiInferenceTestLockForAction(
     return actionBadRequest("test lock already exists");
   }
   const release = createDeferredPromise<void>(signal);
-  const state: HeldPiTestLock = { held: false, release };
+  const state: HeldPiTestLock = { held: false, pid: undefined, release };
   heldPiTestLocks().set(lockId, state);
   const held = await settle(
     db.transaction(async (tx) => {
       if (lockKind === "org-sandbox-capacity") {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
       } else {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${key}`}, 0))`,
-        );
+        const [run] = await tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(eq(agentRuns.id, key))
+          .for("update");
+        if (!run) {
+          throw new Error("Expected the Pi test run row to exist");
+        }
       }
+      const [backend] = await executeRawRows(
+        tx,
+        sql`SELECT pg_backend_pid() AS pid`,
+        z.object({ pid: z.number() }),
+      );
+      if (!backend) {
+        throw new Error("Expected the Pi test lock backend");
+      }
+      state.pid = backend.pid;
       state.held = true;
       await release.promise;
       signal.throwIfAborted();
@@ -1448,8 +1470,9 @@ function getPiInferenceTestLockForAction(
   if (!lockId) {
     return Promise.resolve(actionBadRequest("lock_id is required"));
   }
+  const state = heldPiTestLocks().get(lockId);
   return Promise.resolve(
-    actionOk({ held: heldPiTestLocks().get(lockId)?.held === true }),
+    actionOk({ held: state?.held === true, pid: state?.pid ?? null }),
   );
 }
 
@@ -1544,7 +1567,6 @@ const cronCleanupSandboxesActionHandlers = {
   "get-pi-inference-recovery-deadline": getPiInferenceRecoveryDeadlineForAction,
   "seed-pi-inference-recovery": seedPiInferenceRecoveryForAction,
   "expire-pi-inference": expirePiInferenceForAction,
-  "delete-pi-inference-model-key": deletePiInferenceModelKeyForAction,
   "hold-pi-inference-test-lock": holdPiInferenceTestLockForAction,
   "get-pi-inference-test-lock": getPiInferenceTestLockForAction,
   "release-pi-inference-test-lock": releasePiInferenceTestLockForAction,

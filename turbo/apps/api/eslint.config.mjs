@@ -612,13 +612,6 @@ export default [
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
-      // Content hashes are a byte-identical cryptographic contract shared with
-      // guest-agent; route behavior cannot pin the serializer's full corpus.
-      "src/signals/services/__tests__/storage-content-hash.service.test.ts",
-      // Route BDDs cover citation persistence and public projection; this
-      // privacy-boundary matrix separately pins semantic deduplication and
-      // byte-identical non-Pi passthrough without coupling either to a DB row.
-      "src/signals/services/__tests__/pi-memory-citation-events.test.ts",
       // Pi resource snapshots are a byte-identical discovery contract shared
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
@@ -633,13 +626,25 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // The Morning Brief source budget is a deployed 20-second constant, not
+      // a request input, and shortening it through the preview endpoint would
+      // ship a debug parameter. This suite drives the route's own admission
+      // and collection composition so the deadline and a caller's
+      // cancellation can reach a provider body that is still streaming; every
+      // other reader contract stays on the Gmail preview endpoint.
+      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
+      // #34866 joins a valid claimed PostgreSQL lifecycle, signed Runner route,
+      // built Guest environment filter and real CLI continuation. No production
+      // endpoint creates the default-off deferred source state for this boundary.
+      "src/signals/services/__tests__/pi-deferred-handoff.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
+      // Morning Brief composition reduces five providers to one bounded
+      // request. The preview route can only exercise the sources an owner
+      // has actually connected, so these exact byte, deadline, identity,
+      // retention and language-precedence boundaries have no HTTP ingress.
+      "src/signals/services/__tests__/morning-brief-composition.test.ts",
       "src/signals/services/__tests__/connector-catalog-rejection-authority.test.ts",
       "src/signals/services/__tests__/connector-authorization-provider-state.test.ts",
-      // Preview job-ref aliases are process environment state, and both Stripe
-      // metadata entry points must share one value-free resolution matrix that
-      // cannot be observed completely through a single production API route.
-      "src/signals/services/__tests__/stripe-preview-metadata.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
@@ -672,6 +677,19 @@ export default [
       // copy, erasure closure and the refresh outcome, none of which any
       // production endpoint exposes. The Settings routes cover the rest.
       "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
+      // #34815 needs both commit orders of a Morning Brief classification and a
+      // collection, an Agent transfer arriving mid-read, and the automation
+      // binding and queue admission producers. No endpoint suspends a
+      // transaction at a row lock or fires an automation into a chosen thread;
+      // the preview route suite owns every constructible case.
+      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
+      // #35016 needs both commit orders of a Morning Brief binding reuse and a
+      // thread deletion over the two row locks their cycle ran through. The one
+      // endpoint that reaches an existing binding continues into queue
+      // admission once its binding transaction commits, so it cannot be
+      // suspended at that boundary; deletion stays the real endpoint and the
+      // route suite owns the constructible reuse cases.
+      "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -788,9 +806,6 @@ export default [
       // policy lookup byte-for-byte; individual provider routes cannot cover
       // every lookup-table row without duplicating the contract under test.
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // Content hashes are a byte-identical cryptographic contract shared with
-      // guest-agent; route behavior cannot pin the serializer's full corpus.
-      "src/signals/services/__tests__/storage-content-hash.service.test.ts",
       // Pi resource snapshots are a byte-identical discovery contract shared
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
@@ -805,6 +820,9 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // #34866 must join private lifecycle setup to the public authenticated
+      // route and external Guest/CLI process; the dormant producer has no API.
+      "src/signals/services/__tests__/pi-deferred-handoff.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.
@@ -812,10 +830,6 @@ export default [
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
-      // Preview job-ref aliases are process environment state, and both Stripe
-      // metadata entry points must share one value-free resolution matrix that
-      // cannot be observed completely through a single production API route.
-      "src/signals/services/__tests__/stripe-preview-metadata.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
@@ -848,6 +862,22 @@ export default [
       // erasure closure and refresh outcome have no HTTP ingress; the Settings
       // routes own everything else.
       "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
+      // The source budget is a deployed 20-second constant, not a request
+      // input, and shortening it through the endpoint would ship a debug
+      // parameter. This suite drives the route's own admission and collection
+      // composition so a deadline and a cancellation can reach a provider body
+      // that is still streaming; every other reader contract stays on the
+      // Gmail preview endpoint.
+      "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
+      // #34815's classification/read commit orders, mid-read Agent transfer and
+      // workflow-driven provenance producers need suspended PostgreSQL
+      // transactions and a chosen destination thread, neither of which an HTTP
+      // caller can construct; the preview route suite owns the rest.
+      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
+      // #35016's binding reuse and thread deletion have to arrive in both
+      // orders on the same two rows, which needs a suspended PostgreSQL
+      // transaction; the reuse route suite owns the constructible cases.
+      "src/signals/services/__tests__/workflow-user-automation-thread.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [

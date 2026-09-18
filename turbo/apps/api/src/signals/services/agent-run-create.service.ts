@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
+import { readDisabledPaidTools } from "./paid-tools.service";
 import {
   resolveAgentRunStorage,
   materializeAgentRunStorage,
@@ -375,7 +377,7 @@ import {
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
-import { hasEarlierDeferredDemand } from "./pi-deferred-demand.service";
+import { countEarlierDeferredDemand } from "./pi-deferred-demand.service";
 import {
   admitNewComputeRun,
   lockComputeSessionSnapshot,
@@ -439,7 +441,8 @@ import {
   retainPiInferenceObjects,
 } from "./pi-inference-object.service";
 import {
-  builtInModelRuntimeTarget,
+  isBuiltInModelRuntimeRoutePermitted,
+  resolveBuiltInModelRuntimeRoute,
   type BuiltInModelRuntimeRoute,
 } from "./built-in-model-runtime-route.service";
 
@@ -543,9 +546,9 @@ function buildMcpConnectorPrompt(
   }
 
   return [
-    "# MCP Custom Connectors",
+    "# MCP Connectors",
     "",
-    "The following MCP Custom Connectors were admitted when this Run started:",
+    "The following MCP connectors were admitted when this Run started:",
     ...inventory,
     "",
     "Use the Okou CLI to discover and invoke their tools:",
@@ -1147,6 +1150,14 @@ export interface CreateAgentRunArgs {
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
+  /**
+   * In-memory binding fence for a caller that journals the occurrence this run
+   * belongs to. It runs only after the exact original queue event has been
+   * claimed, inside the same launch transaction that still has to insert the
+   * Run, so a lost claim or a rolled-back INSERT leaves no binding. It is never
+   * serialized into run metadata or the durable queue payload.
+   */
+  readonly bindClaimedQueueFirstRun?: (tx: Tx, runId: string) => Promise<void>;
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
@@ -1184,6 +1195,7 @@ interface ConnectorRuntimeContext {
     | Record<string, SecretConnectorMetadata>
     | undefined;
   readonly connectorSlugs: readonly ConnectorSlug[];
+  readonly mcpConnectorSlugs: readonly ConnectorSlug[];
   readonly connectorSourceIdBySlug: Readonly<Record<string, string>>;
   readonly storedEnvironment: Record<string, string> | undefined;
 }
@@ -2647,43 +2659,27 @@ async function builtInModelProviderEnvironment(
   if (resolvedRoute && resolvedRoute.selectedModel !== selectedModel) {
     return null;
   }
-  let route: BuiltInModelRuntimeRoute;
-  let key:
-    | {
-        readonly id: string;
-        readonly apiKey: string;
-      }
-    | undefined;
-  if (resolvedRoute) {
-    [key] = await db
-      .select({
-        id: builtInModelKeys.id,
-        apiKey: builtInModelKeys.apiKey,
-      })
-      .from(builtInModelKeys)
-      .where(eq(builtInModelKeys.id, resolvedRoute.modelKeyId))
-      .limit(1);
-    route = resolvedRoute;
-  } else {
-    const target = builtInModelRuntimeTarget(selectedModel);
-    [key] = await db
-      .select({
-        id: builtInModelKeys.id,
-        apiKey: builtInModelKeys.apiKey,
-      })
-      .from(builtInModelKeys)
-      .where(eq(builtInModelKeys.vendor, target.vendor))
-      .limit(1);
-    if (!key) {
-      return null;
-    }
-    route = {
-      selectedModel: target.selectedModel,
-      providerType: target.providerType,
-      upstreamModel: target.upstreamModel,
-      modelKeyId: key.id,
-    };
+  const route =
+    resolvedRoute ??
+    (await resolveBuiltInModelRuntimeRoute(
+      db,
+      selectedModel,
+      featureSwitchContext,
+    ));
+  if (
+    !route ||
+    !isBuiltInModelRuntimeRoutePermitted(route, featureSwitchContext)
+  ) {
+    return null;
   }
+  const [key] = await db
+    .select({
+      id: builtInModelKeys.id,
+      apiKey: builtInModelKeys.apiKey,
+    })
+    .from(builtInModelKeys)
+    .where(eq(builtInModelKeys.id, route.modelKeyId))
+    .limit(1);
   if (!key?.apiKey) {
     return null;
   }
@@ -3506,6 +3502,7 @@ interface StoredConnectorRuntimeRow {
   readonly connectorStateRevision: bigint;
   readonly authMethod: ConnectorAuthMethodId;
   readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly isMcp: boolean;
   readonly needsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
 }
@@ -3540,6 +3537,7 @@ interface ConnectorEnvBindingSet {
   readonly connectorStateRevision: bigint;
   readonly authMethod: ConnectorAuthMethodId;
   readonly runtimeBindings: readonly ConnectorRuntimeBindingEntry[];
+  readonly isMcp: boolean;
 }
 
 interface StoredConnectorRequirements {
@@ -3581,6 +3579,7 @@ function emptyConnectorRuntimeContext(): ConnectorRuntimeContext {
     secretConnectorMap: undefined,
     secretConnectorMetadataMap: undefined,
     connectorSlugs: [],
+    mcpConnectorSlugs: [],
     connectorSourceIdBySlug: {},
     storedEnvironment: undefined,
   };
@@ -3615,6 +3614,9 @@ function allowedStoredConnectorRows(
         connectorStateRevision: row.connectorStateRevision,
         authMethod: access.runtimeMethod.authMethodId,
         runtimeMethod: access.runtimeMethod,
+        isMcp:
+          getConnectorRuntimeConnector(snapshot, row.connectorSlug)
+            ?.catalogConnector.mcp !== undefined,
         needsReconnect: row.needsReconnect,
         tokenExpiresAt: row.tokenExpiresAt,
       },
@@ -3653,6 +3655,7 @@ function connectorEnvBindingSets(
       connectorStateRevision: row.connectorStateRevision,
       authMethod: row.authMethod,
       runtimeBindings: metadata.runtimeBindings,
+      isMcp: row.isMcp,
     };
   });
 }
@@ -3908,7 +3911,13 @@ function resolveStoredConnectorMetadata(
     {};
   const environment: Record<string, string> = {};
 
-  for (const { access, connectorSlug, runtimeBindings } of bindingSets) {
+  for (const { access, connectorSlug, runtimeBindings, isMcp } of bindingSets) {
+    if (isMcp) {
+      // Resolve MCP bindings from the matched account at the firewall boundary.
+      // Global aliases could otherwise collide with another connector or a
+      // caller-owned sandbox secret.
+      continue;
+    }
     for (const { envName, valueRef, optional, source } of runtimeBindings) {
       switch (source.kind) {
         case "connector-secret": {
@@ -3976,6 +3985,9 @@ function storedConnectorContextFromSnapshot(
     secretConnectorMetadataMap: undefined,
     connectorSlugs: snapshot.allowedConnectorRows.map((row) => {
       return row.connectorSlug;
+    }),
+    mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
+      return row.isMcp ? [row.connectorSlug] : [];
     }),
     connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
     storedEnvironment: undefined,
@@ -4055,6 +4067,9 @@ async function materializeStoredConnectorContext(
         connectorSlugs: snapshot.allowedConnectorRows.map((row) => {
           return row.connectorSlug;
         }),
+        mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
+          return row.isMcp ? [row.connectorSlug] : [];
+        }),
         connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
         storedEnvironment: compactRecord(resolved.environment),
       });
@@ -4074,7 +4089,10 @@ function eagerStoredConnectorSecretNames(args: {
 }): ReadonlySet<string> {
   const names = new Set<string>();
 
-  for (const { runtimeBindings } of args.snapshot.bindingSets) {
+  for (const { runtimeBindings, isMcp } of args.snapshot.bindingSets) {
+    if (isMcp) {
+      continue;
+    }
     for (const { envName, source } of runtimeBindings) {
       const isNeededByStoredEnvironment =
         args.storedEnvironment?.[envName] !== undefined;
@@ -4125,8 +4143,11 @@ async function materializeEagerStoredConnectorSecrets(
     return context;
   }
 
+  const sandboxBindingSets = snapshot.bindingSets.filter((bindingSet) => {
+    return !bindingSet.isMcp;
+  });
   const encryptedRows = await loadStoredConnectorEncryptedSecretRows(db, {
-    bindingSets: snapshot.bindingSets,
+    bindingSets: sandboxBindingSets,
     names: eagerNames,
   });
   const connectorSecrets = await decryptStoredConnectorSecretRows(
@@ -4138,7 +4159,7 @@ async function materializeEagerStoredConnectorSecrets(
     timing,
   );
   const secrets = resolveStoredConnectorSecrets(
-    snapshot.bindingSets,
+    sandboxBindingSets,
     connectorSecrets,
   );
 
@@ -5215,22 +5236,13 @@ async function loadCustomConnectorContext(
     return emptyCustomConnectorRuntimeContext();
   }
   signal.throwIfAborted();
-  const newRunRows = rows.filter((row) => {
-    return (
-      row.connector.kind !== "mcp" ||
-      isFeatureEnabled(
-        FeatureSwitchKey.CustomConnectorMcp,
-        args.featureSwitchContext,
-      )
-    );
-  });
   const context = await measureApiDispatchTiming(
     timing,
     "api_dispatch_prepare_context_build_custom_connector_firewalls",
     "nested",
     async () => {
       return await buildNewRunCustomConnectorRuntimeContext({
-        rows: newRunRows,
+        rows,
         featureSwitchContext: args.featureSwitchContext,
         connectorCatalogSnapshot: args.connectorCatalogSnapshot,
         grants: args.customConnectorGrants,
@@ -5545,6 +5557,7 @@ function modelProviderPermissionManifest(
 interface BuiltinConnectorManifestSource {
   readonly metadata: ConnectorServerFirewallExecutionMetadata;
   readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
+  readonly isMcp: boolean;
 }
 
 function buildConnectorPermissionBaseline(
@@ -5618,10 +5631,12 @@ function applyBuiltinConnectorMetadataPolicies(
     firewalls.push(
       builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
     );
-    Object.assign(
-      environmentSecretPlaceholders,
-      source.metadata.placeholderValues,
-    );
+    if (!source.isMcp) {
+      Object.assign(
+        environmentSecretPlaceholders,
+        source.metadata.placeholderValues,
+      );
+    }
     if (source.metadata.billable) {
       billableFirewalls.push(name);
     }
@@ -5762,7 +5777,11 @@ async function buildPermissionManifest(
             snapshot,
             connectorSlug,
           });
-          return { metadata, permissionIndex };
+          return {
+            metadata,
+            permissionIndex,
+            isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
+          };
         }),
       );
     },
@@ -5840,13 +5859,12 @@ async function buildPermissionManifest(
 }
 
 /**
- * Caller owns the organization capacity advisory lock. A free slot is not enough
- * on its own: older persisted Sandbox demand holds the same documented
- * `(enqueuedAt, runId)` position that queued promotion and the deferred consumer
- * already respect, so a stream of fresh direct creations cannot repeatedly take
- * a just-freed slot ahead of it. The outcome stays the existing capacity
- * outcome, so a queue-enabled caller queues and a nonqueue caller keeps its
- * current error.
+ * Caller owns the organization capacity advisory lock. Each older eligible
+ * Sandbox demand reserves one currently free slot in the same documented
+ * `(enqueuedAt, runId)` order that queued promotion and the deferred consumer
+ * already respect. Fresh direct work may use spare capacity, but cannot take a
+ * reserved last slot. The outcome stays the existing capacity outcome, so a
+ * queue-enabled caller queues and a nonqueue caller keeps its current error.
  */
 async function checkRunConcurrencyLimit(
   tx: DbTransaction,
@@ -5865,10 +5883,8 @@ async function checkRunConcurrencyLimit(
   if (limit === 0) {
     return null;
   }
-  if (state.activeRunCount >= limit) {
-    return concurrentRunLimit();
-  }
-  return (await hasEarlierDeferredDemand(tx, orgId, at))
+  const earlierDeferredDemand = await countEarlierDeferredDemand(tx, orgId, at);
+  return state.activeRunCount + earlierDeferredDemand >= limit
     ? concurrentRunLimit()
     : null;
 }
@@ -7717,6 +7733,16 @@ function preparedRunnerJobBody(
         ? [[target.customConnectorId, target.sourceId] as const]
         : [];
     });
+  const builtinMcpSlugs = new Set(args.connectorContext.mcpConnectorSlugs);
+  const builtinConnectorSourceEntries = (
+    args.permissionManifest?.builtinRuntimeTargets ?? []
+  ).flatMap((target) => {
+    return target.kind === "builtin" &&
+      target.sourceId !== undefined &&
+      builtinMcpSlugs.has(target.connectorSlug)
+      ? [[target.connectorSlug, target.sourceId] as const]
+      : [];
+  });
   const okouToken = generateOkouToken(
     args.userId,
     args.run.id,
@@ -7733,6 +7759,13 @@ function preparedRunnerJobBody(
         : {
             customConnectorSourceIds: Object.fromEntries(
               customConnectorSourceEntries,
+            ),
+          }),
+      ...(builtinConnectorSourceEntries.length === 0
+        ? {}
+        : {
+            builtinConnectorSourceIds: Object.fromEntries(
+              builtinConnectorSourceEntries,
             ),
           }),
     },
@@ -7804,6 +7837,22 @@ function runnerStoragePlan(
       });
 }
 
+async function withPaidToolPlatformEnvironment(
+  db: Db,
+  owner: Pick<BuildRunnerJobPayloadInput, "orgId" | "userId">,
+  platformEnvironment: Record<string, string> | undefined,
+): Promise<Record<string, string>> {
+  const disabledTools = await readDisabledPaidTools(
+    db,
+    owner.orgId,
+    owner.userId,
+  );
+  return {
+    ...platformEnvironment,
+    [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
+  };
+}
+
 function buildRunnerJobPayload(
   db: Db,
   args: BuildRunnerJobPayloadInput,
@@ -7847,10 +7896,16 @@ function buildRunnerJobPayload(
       "api_dispatch_build_stored_execution_context",
       "nested",
       async () => {
+        const paidToolEnvironment = await withPaidToolPlatformEnvironment(
+          db,
+          args,
+          platformEnvironment,
+        );
+        signal.throwIfAborted();
         return await buildStoredExecutionContextDraft({
           ...args,
           body,
-          platformEnvironment,
+          platformEnvironment: paidToolEnvironment,
           runId: args.run.id,
         });
       },
@@ -8369,7 +8424,7 @@ async function claimQueueFirstAssociationForLaunch(args: {
   if (!args.createArgs.agentRunModelPin) {
     throw new Error("Queue-first claim requires a run model pin");
   }
-  return await claimQueueFirstRunAssociation(args.tx, {
+  const claim = await claimQueueFirstRunAssociation(args.tx, {
     ...association,
     admission: args.admission,
     runId: args.identity.runId,
@@ -8379,6 +8434,13 @@ async function claimQueueFirstAssociationForLaunch(args: {
       : {}),
     timing: args.timing,
   });
+  if (claim.kind === "claimed") {
+    await args.createArgs.bindClaimedQueueFirstRun?.(
+      args.tx,
+      args.identity.runId,
+    );
+  }
+  return claim;
 }
 
 interface CommitFailedLaunchArgs {
@@ -10077,14 +10139,31 @@ async function prepareRunConnectorContexts(
             customConnectorContext,
           };
         }
+        const connectorCatalogSnapshot =
+          args.connectorCatalogSelection.selection;
+        const builtinMcpAvailable =
+          args.createArgs.includeOkouTokenSecret === true;
         return await loadRunConnectorContexts(
           args.db,
           {
             orgId: args.createArgs.orgId,
             userId: args.createArgs.userId,
-            connectorScope: args.connectorScope,
+            connectorScope: {
+              ...args.connectorScope,
+              allowedConnectorSlugs:
+                args.connectorScope.allowedConnectorSlugs.filter((slug) => {
+                  const connector = getConnectorRuntimeConnector(
+                    connectorCatalogSnapshot,
+                    slug,
+                  );
+                  return (
+                    connector?.catalogConnector.mcp === undefined ||
+                    builtinMcpAvailable
+                  );
+                }),
+            },
             threadConnectorSelectionIds: args.threadConnectorSelectionIds,
-            connectorCatalogSnapshot: args.connectorCatalogSelection.selection,
+            connectorCatalogSnapshot,
             featureSwitchContext: args.featureSwitchContext,
             timing: args.timing,
           },
@@ -12902,8 +12981,10 @@ function finalizePreparedRunContext(
       chatThreadId: prepared.args.chatThreadId,
       imageRecognitionAvailable: prepared.context.imageRecognitionAvailable,
       connectorSlugs: prepared.context.connectorContext.connectorSlugs,
-      mcpConnectorSlugs:
-        prepared.context.customConnectorContext.mcpConnectorSlugs,
+      mcpConnectorSlugs: [
+        ...prepared.context.connectorContext.mcpConnectorSlugs,
+        ...prepared.context.customConnectorContext.mcpConnectorSlugs,
+      ],
       selectedImageModel: prepared.context.selectedImageModel,
       cliAvailable: prepared.args.includeOkouTokenSecret === true,
     }),

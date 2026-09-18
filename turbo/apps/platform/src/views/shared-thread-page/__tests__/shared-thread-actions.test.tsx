@@ -1,5 +1,5 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -63,6 +63,45 @@ test("A visitor can continue a shared idea in Platform", async () => {
   expect(signUpUrl.searchParams.get("redirect_url")).toBe(
     handoffUrl.toString(),
   );
+});
+
+test("A signed-in viewer is not asked to sign in or sign up", async () => {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(200, sharedThread());
+  });
+
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_shared_thread_viewer", fullName: "Viewer" } },
+  });
+
+  await expect(
+    screen.findByText("Make this conversation yours"),
+  ).resolves.toBeInTheDocument();
+  // The handoff itself stays: it carries this conversation into a new chat,
+  // which is exactly what an account holder can act on.
+  expect(getLinkByName("Try it yourself")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(linksByName("Sign in")).toHaveLength(0);
+    expect(linksByName("Sign up")).toHaveLength(0);
+  });
+
+  // Clerk republishes on every session-token refresh without the account
+  // changing, and the viewer is the same member on the other side of it. The
+  // prompts must not come back in the window the re-read is open.
+  act(() => {
+    context.mocks.clerk().stateChanged();
+  });
+  expect(linksByName("Sign in")).toHaveLength(0);
+  expect(linksByName("Sign up")).toHaveLength(0);
+
+  // ...nor once it closes.
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(linksByName("Sign in")).toHaveLength(0);
+  expect(linksByName("Sign up")).toHaveLength(0);
+  expect(getLinkByName("Try it yourself")).toBeInTheDocument();
 });
 
 test("A visitor can copy complete public message content", async () => {

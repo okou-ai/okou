@@ -111,6 +111,50 @@ function control(
   return found;
 }
 
+/** The advanced options layer, or null while it is closed. */
+function optionsPanel(dialog: HTMLElement) {
+  return dialog.querySelector<HTMLElement>("[data-intro-video-options]");
+}
+
+/** Opens the options layer and walks it back to its first screen. */
+function optionsRoot(dialog: HTMLElement) {
+  if (!optionsPanel(dialog)) {
+    click(control("More options", dialog));
+  }
+  if (optionsPanel(dialog)?.dataset.introVideoOptions !== "root") {
+    click(control("Back", dialog));
+  }
+  const panel = optionsPanel(dialog);
+  if (!panel) {
+    throw new Error("The options layer did not open");
+  }
+  return panel;
+}
+
+/** Opens one of the layer's two full libraries; the entry states its count. */
+function openLibrary(
+  dialog: HTMLElement,
+  label: "All voices" | "All presenters",
+) {
+  const root = optionsRoot(dialog);
+  const entry = queryAllByRoleFast("button", root).find((button) => {
+    return button.textContent?.trim().startsWith(label);
+  });
+  if (!entry) {
+    throw new Error(`Missing ${label} entry`);
+  }
+  click(entry);
+}
+
+/** The footer's statement of what the template will produce. */
+function summary(dialog: HTMLElement) {
+  const node = dialog.querySelector("[data-intro-video-summary]");
+  if (!node) {
+    throw new Error("Missing intro video selection summary");
+  }
+  return node;
+}
+
 async function openIntroVideo() {
   const user = userEvent.setup({ delay: null });
   await setupPage({
@@ -176,12 +220,12 @@ test.each([
   expect(control("Intro video", dialog, "tab")).toBeVisible();
 });
 
-test("Expanded style tags filter the gallery and preserve the selected style", async () => {
+test("Style filters and search narrow the gallery and preserve the selected style", async () => {
   installCatalogs();
-  const { dialog } = await openIntroVideo();
-  expect(control("Use selection", dialog)).toBeDisabled();
+  const { dialog, user } = await openIntroVideo();
+  expect(control("Pick a style", dialog)).toBeDisabled();
   const tags = within(dialog).getByRole("group", { name: "Browse by style" });
-  expect(queryAllByRoleFast("button", tags)).toHaveLength(6);
+  expect(queryAllByRoleFast("button", tags)).toHaveLength(7);
   click(control("Select style Minimalism", dialog));
   click(control("Handmade and materials", tags));
   expect(control("Handmade and materials", tags)).toHaveAttribute(
@@ -190,12 +234,16 @@ test("Expanded style tags filter the gallery and preserve the selected style", a
   );
   expect(within(dialog).getByText("Watercolor")).toBeVisible();
   expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
-  expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
+  // Filtering the selected style out of view must not drop the selection: the
+  // filter row says so, and offers the way back.
+  expect(control("Use Minimalism", dialog)).toBeEnabled();
+  click(control("Selected: Minimalism", dialog));
+  expect(control("All", tags)).toHaveAttribute("aria-pressed", "true");
   click(control("Pop culture", tags));
   expect(within(dialog).getByRole("status")).toHaveTextContent(
     "No matches found",
   );
-  click(control("Pop culture", tags));
+  click(control("All", tags));
   expect(control("Handmade and materials", tags)).toHaveAttribute(
     "aria-pressed",
     "false",
@@ -204,28 +252,39 @@ test("Expanded style tags filter the gallery and preserve the selected style", a
     "aria-pressed",
     "true",
   );
+  await user.type(within(dialog).getByLabelText("Search styles"), "water");
+  expect(within(dialog).getByText("Watercolor")).toBeVisible();
+  expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
 });
 
 test("Avatar looks require Use, and explicit voice choices survive removing the avatar", async () => {
   const capture = installCatalogs();
   const { dialog, user } = await openIntroVideo();
   click(control("Select style Minimalism", dialog));
-  click(control("Avatar", dialog, "tab"));
+  expect(summary(dialog)).toHaveTextContent("No avatar");
+  openLibrary(dialog, "All presenters");
   await within(dialog).findByText("Daphne");
-  expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");
   click(control("Preview look Daphne in Blue shirt", dialog));
-  expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");
-  click(control("Choose an avatar: Daphne in Blue shirt", dialog));
-  expect(control("Avatar", dialog, "tab")).toHaveTextContent(
-    "Daphne in Blue shirt",
+  click(control("Done", dialog));
+  // Previewing a look is not choosing it.
+  expect(summary(dialog)).toHaveTextContent("No avatar");
+  openLibrary(dialog, "All presenters");
+  click(
+    await within(dialog).findByLabelText(
+      "Choose an avatar: Daphne in Blue shirt",
+    ),
   );
-  expect(control("Use selection", dialog)).toBeEnabled();
-  click(control("Voice", dialog, "tab"));
+  click(control("Done", dialog));
+  expect(summary(dialog)).toHaveTextContent("Daphne in Blue shirt");
+  expect(control("Use Minimalism", dialog)).toBeEnabled();
+  openLibrary(dialog, "All voices");
   click(await within(dialog).findByLabelText("Select voice Annie"));
-  click(control("Avatar", dialog, "tab"));
+  openLibrary(dialog, "All presenters");
   click(within(dialog).getByText("No avatar"));
-  expect(control("Voice", dialog, "tab")).toHaveTextContent("Annie");
-  click(control("Use selection", dialog));
+  click(control("Done", dialog));
+  expect(summary(dialog)).toHaveTextContent("Annie");
+  expect(summary(dialog)).toHaveTextContent("No avatar");
+  click(control("Use Minimalism", dialog));
   await expectInlineTemplate("Intro video");
   await sendComposerMessage(user, "Explain our product");
   await waitFor(() => {
@@ -246,7 +305,7 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
 test("A voice the provider repeats under a second id is listed once", async () => {
   installCatalogs();
   const { dialog } = await openIntroVideo();
-  click(control("Voice", dialog, "tab"));
+  openLibrary(dialog, "All voices");
   await within(dialog).findByLabelText("Select voice Annie");
   expect(within(dialog).getAllByLabelText("Select voice Annie")).toHaveLength(
     1,
@@ -256,27 +315,31 @@ test("A voice the provider repeats under a second id is listed once", async () =
 test("The chosen avatar's own voice can be auditioned at the voice step", async () => {
   installCatalogs();
   const { dialog } = await openIntroVideo();
-  click(control("Avatar", dialog, "tab"));
+  openLibrary(dialog, "All presenters");
   await within(dialog).findByText("Daphne");
   click(control("Choose an avatar: Daphne in Grey blazer", dialog));
-  click(control("Voice", dialog, "tab"));
+  openLibrary(dialog, "All voices");
   const preview = await within(dialog).findByLabelText(
     "Preview voice Daphne - Warm & Friendly",
   );
   expect(preview).toBeEnabled();
   click(within(dialog).getByText("No voiceover"));
-  expect(control("Voice", dialog, "tab")).toHaveTextContent("No voiceover");
+  click(control("Done", dialog));
+  expect(summary(dialog)).toHaveTextContent("No voiceover");
+  openLibrary(dialog, "All voices");
   click(within(dialog).getByText("Avatar’s voice"));
-  expect(control("Voice", dialog, "tab")).toHaveTextContent("Avatar’s voice");
+  click(control("Done", dialog));
+  expect(summary(dialog)).toHaveTextContent("Avatar’s voice");
 });
 
 test("Applying and reopening a template restores all settings without creating another chip", async () => {
   installCatalogs();
   const { dialog, user } = await openIntroVideo();
   click(control("Select style Watercolor", dialog));
-  click(control("Voice", dialog, "tab"));
+  openLibrary(dialog, "All voices");
   click(within(dialog).getByText("No voiceover"));
-  click(control("Use selection", dialog));
+  click(control("Done", dialog));
+  click(control("Use Watercolor", dialog));
   const chip = await expectInlineTemplate("Intro video");
   const edit = chip.querySelector("button");
   if (!edit) {
@@ -284,10 +347,15 @@ test("Applying and reopening a template restores all settings without creating a
   }
   await user.click(edit);
   const reopened = await screen.findByRole("dialog");
-  expect(control("Style", reopened, "tab")).toHaveTextContent("Watercolor");
-  expect(control("Voice", reopened, "tab")).toHaveTextContent("No voiceover");
+  // Reopening lands on the gallery, so the restored settings have to be
+  // readable without opening the options layer again.
+  expect(optionsPanel(reopened)).toBeNull();
+  await expect(
+    within(reopened).findByLabelText("Select style Watercolor"),
+  ).resolves.toHaveAttribute("aria-pressed", "true");
+  expect(summary(reopened)).toHaveTextContent("No voiceover");
   click(control("Select style Minimalism", reopened));
-  click(control("Use selection", reopened));
+  click(control("Use Minimalism", reopened));
   await expectInlineTemplate("Minimalism");
   expect(
     document.querySelectorAll("[data-composer-inline-template]"),
@@ -391,36 +459,41 @@ test("A failed style preview keeps its thumbnail and stays selectable", async ()
   expect(preview).toHaveAttribute("data-preview-playing", "false");
   expect(previewControl).toBeVisible();
   click(control("Select style Minimalism", dialog));
-  expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
-  click(control("Voice", dialog, "tab"));
+  expect(summary(dialog)).toHaveTextContent("Let Okou choose");
+  openLibrary(dialog, "All voices");
   await within(dialog).findByLabelText("Select voice Annie");
-  click(control("Style", dialog, "tab"));
+  click(control("Close options", dialog));
   await expect(
     within(dialog).findByLabelText("Preview Minimalism"),
   ).resolves.toBeVisible();
 });
 
-test("Switching settings with the keyboard preserves the selection", async () => {
+test("The options layer opens from the keyboard and leaves the gallery selection alone", async () => {
   installCatalogs();
   const { dialog, user } = await openIntroVideo();
   click(control("Select style Minimalism", dialog));
-  const tab = control("Style", dialog, "tab");
-  tab.focus();
-  await user.keyboard("{ArrowRight}");
-  expect(control("Avatar", dialog, "tab")).toHaveFocus();
-  expect(control("Avatar", dialog, "tab")).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await user.keyboard("{Home}");
-  expect(control("Style", dialog, "tab")).toHaveFocus();
+  control("More options", dialog).focus();
+  await user.keyboard("{Enter}");
+  const options = optionsPanel(dialog);
+  if (!options) {
+    throw new Error("The options layer did not open");
+  }
+  expect(within(options).getByText("Let Okou choose")).toBeInTheDocument();
+  expect(within(options).getByText("No avatar")).toBeInTheDocument();
+  openLibrary(dialog, "All voices");
+  expect(within(options).getByLabelText("Search voices")).toBeInTheDocument();
+  click(control("Back", dialog));
+  expect(within(options).getByText("No avatar")).toBeInTheDocument();
+  click(control("Close options", dialog));
+  expect(optionsPanel(dialog)).toBeNull();
+  // The gallery stays mounted behind the layer, so its selection survives.
   expect(control("Select style Minimalism", dialog)).toHaveAttribute(
     "aria-pressed",
     "true",
   );
 });
 
-test("Desktop recording handoff keeps both uploaded files without opening the template picker", async () => {
+async function prepareDesktopRecordingHandoff() {
   const capture = installCatalogs();
   context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
     return respond(200, {
@@ -447,9 +520,21 @@ test("Desktop recording handoff keeps both uploaded files without opening the te
   await waitFor(() => {
     expect(message).toHaveTextContent("desktop screen recording");
   });
+  return { capture, message };
+}
+
+test("Desktop recording handoff leaves the composer ready without opening the template picker", async () => {
+  await prepareDesktopRecordingHandoff();
   // The recording arrives as a plain attachment, so the composer stays in the
   // user's hands instead of forcing the intro video template picker open.
   expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
+});
+
+test("Desktop recording handoff submits both uploaded files without selecting a template", async () => {
+  const { capture, message } = await prepareDesktopRecordingHandoff();
   await waitFor(() => {
     expect(control("Send")).toBeEnabled();
   });
@@ -478,7 +563,7 @@ test("Desktop recording handoff keeps both uploaded files without opening the te
   expect(capture.selectedTemplates).toStrictEqual([]);
 });
 
-test("A saved intro video draft cannot send outside the rollout and remains editable", async () => {
+async function rejectUnavailableIntroDraft() {
   const capture = mockTemplateChat();
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
@@ -521,9 +606,19 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
   await screen.findByText(
     "This video template is no longer available. Remove it to send your message.",
   );
+  return { capture, message, user };
+}
+
+test("An unavailable saved intro video draft rejects sending and preserves its text and template", async () => {
+  const { capture, message } = await rejectUnavailableIntroDraft();
   expect(capture.sentMessages).toHaveLength(0);
   expect(message).toHaveTextContent("Explain this product");
   await expectInlineTemplate("Intro video");
+});
+
+test("An unavailable saved intro video draft can send ordinary text after its rejected template is removed", async () => {
+  const { capture, user } = await rejectUnavailableIntroDraft();
+  expect(capture.sentMessages).toHaveLength(0);
   await user.keyboard(
     "{Control>}a{/Control}{Backspace}A regular message{Enter}",
   );
@@ -533,20 +628,30 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
   expect(capture.selectedTemplates).toHaveLength(0);
 });
 
-test("Intro Video never displays or submits the preceding Creative Video settings", async () => {
+async function replaceCreativeVideoWithIntroVideo() {
   const capture = installCatalogs();
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.IntroVideo]: true,
-      [FeatureSwitchKey.ComposerTaskChips]: true,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });
   const user = userEvent.setup({ delay: null });
   const editor = await screen.findByRole("textbox", { name: "Message" });
-  const tasks = screen.getByRole("group", { name: "Choose a task" });
-  click(control("Video", tasks));
+  // Video has no Make row of its own, so the composer enters the row below
+  // Presentation and switches the type from there.
+  await user.click(editor);
+  await user.paste("/");
+  await screen.findByTestId("slash-workflow-menu");
+  await user.keyboard("{ArrowDown}{Enter}");
+  click(control("Close", await screen.findByRole("dialog")));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  click(await screen.findByRole("combobox", { name: "Choose a type" }));
+  click(await screen.findByRole("option", { name: "Video" }));
   click(
     await waitFor(() => {
       return control("Video options 16:9 · 8s · 720p");
@@ -561,17 +666,23 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   }
   click(portrait);
   await user.keyboard("{Escape}");
-  click(control("Remove Video"));
+  click(control("Exit create mode"));
   const dialog = await openTemplatePicker(user);
   click(control("Intro video", dialog, "tab"));
   click(await within(dialog).findByLabelText("Select style Minimalism"));
-  click(control("Voice", dialog, "tab"));
+  openLibrary(dialog, "All voices");
   click(within(dialog).getByText("No voiceover"));
+  click(control("Done", dialog));
   await waitFor(() => {
-    expect(control("Use selection", dialog)).toBeEnabled();
+    expect(control("Use Minimalism", dialog)).toBeEnabled();
   });
-  click(control("Use selection", dialog));
+  click(control("Use Minimalism", dialog));
   await expectInlineTemplate("Intro video");
+  return { capture, editor, user };
+}
+
+test("Intro Video hides the preceding Creative Video controls", async () => {
+  await replaceCreativeVideoWithIntroVideo();
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button").some((button) => {
@@ -581,6 +692,10 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   expect(
     screen.queryByRole("combobox", { name: "Video models" }),
   ).not.toBeInTheDocument();
+});
+
+test("Intro Video submits its template without the preceding Creative Video settings", async () => {
+  const { capture, editor, user } = await replaceCreativeVideoWithIntroVideo();
   await user.click(editor);
   await user.keyboard(" Explain our product{Enter}");
   await waitFor(() => {

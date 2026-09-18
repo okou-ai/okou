@@ -5,7 +5,7 @@ import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
+import { and, asc, eq, gte, lte, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { logger } from "../../lib/log";
@@ -22,6 +22,8 @@ import {
 } from "../external/realtime";
 import {
   createSlackClient,
+  isOptionalSlackConversationContextFailure,
+  slackMessageClientFailure,
   type SlackClient,
 } from "../external/slack-message-client";
 import { settle, tapError } from "../utils";
@@ -49,7 +51,31 @@ import { createUserMessageDocument } from "./chat-user-message.service";
 
 const L = logger("CanonicalSlackIngressProcessor");
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
+const MAX_PROCESSING_ATTEMPTS = 5;
+const RETRY_DELAYS_MS = [
+  60 * 1000,
+  5 * 60 * 1000,
+  30 * 60 * 1000,
+  2 * 60 * 60 * 1000,
+] as const;
 const SWEEP_LIMIT = 20;
+
+function isRetryableSystemErrorCode(code: string): boolean {
+  return (
+    code.startsWith("08") ||
+    code === "40001" ||
+    code === "40P01" ||
+    code === "53300" ||
+    code === "57P01" ||
+    code === "57P03" ||
+    code === "EAI_AGAIN" ||
+    code === "ECONNREFUSED" ||
+    code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    code === "ETIMEDOUT" ||
+    code === "UND_ERR_CONNECT_TIMEOUT"
+  );
+}
 
 const slackAgentEventSchema = z.union([
   z.object({
@@ -101,31 +127,47 @@ function slackPhysicalThreadTs(event: SlackAgentEvent): string {
   return event.thread_ts ?? event.ts;
 }
 
-async function claimIngress(db: Db, ingressId: string, currentTime: Date) {
+function claimableIngress(currentTime: Date) {
   const staleBefore = new Date(
     currentTime.getTime() - PROCESSING_STALE_AFTER_MS,
   );
+  return or(
+    and(
+      eq(slackChatIngress.status, "pending"),
+      lt(slackChatIngress.processingAttemptCount, MAX_PROCESSING_ATTEMPTS),
+    ),
+    and(
+      eq(slackChatIngress.status, "retryable"),
+      lte(slackChatIngress.retryAt, currentTime),
+      lt(slackChatIngress.processingAttemptCount, MAX_PROCESSING_ATTEMPTS),
+    ),
+    and(
+      eq(slackChatIngress.status, "processing"),
+      lt(slackChatIngress.updatedAt, staleBefore),
+      lt(slackChatIngress.processingAttemptCount, MAX_PROCESSING_ATTEMPTS),
+    ),
+  );
+}
+
+async function claimIngress(db: Db, ingressId: string, currentTime: Date) {
   const [claimed] = await db
     .update(slackChatIngress)
     .set({
       status: "processing",
+      processingAttemptCount: sql`${slackChatIngress.processingAttemptCount} + 1`,
+      retryAt: null,
+      lastErrorClass: null,
       lastError: null,
       updatedAt: currentTime,
     })
     .where(
-      and(
-        eq(slackChatIngress.id, ingressId),
-        or(
-          inArray(slackChatIngress.status, ["pending", "failed"]),
-          and(
-            eq(slackChatIngress.status, "processing"),
-            lt(slackChatIngress.updatedAt, staleBefore),
-          ),
-        ),
-      ),
+      and(eq(slackChatIngress.id, ingressId), claimableIngress(currentTime)),
     )
-    .returning({ id: slackChatIngress.id });
-  return claimed !== undefined;
+    .returning({
+      id: slackChatIngress.id,
+      attemptCount: slackChatIngress.processingAttemptCount,
+    });
+  return claimed;
 }
 
 async function loadClaimedIngress(db: Db, ingressId: string) {
@@ -206,25 +248,110 @@ function requireMatchingEvent(
   return event;
 }
 
-async function markIngressFailed(
+interface IngressFailureClassification {
+  readonly errorClass: string;
+  readonly retryable: boolean;
+  readonly retryAfterMs: number;
+}
+
+function errorCode(error: unknown): string | null {
+  if (!(error instanceof Error) || !("code" in error)) {
+    return null;
+  }
+  const code = (error as { readonly code: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+function classifyIngressFailure(error: unknown): IngressFailureClassification {
+  const slackFailure = slackMessageClientFailure(error);
+  if (slackFailure) {
+    return {
+      errorClass: `slack:${slackFailure.code}`,
+      retryable: slackFailure.retryable,
+      retryAfterMs: slackFailure.retryAfterMs ?? 0,
+    };
+  }
+  const code = errorCode(error);
+  if (code && isRetryableSystemErrorCode(code)) {
+    return {
+      errorClass: `system:${code}`,
+      retryable: true,
+      retryAfterMs: 0,
+    };
+  }
+  return {
+    errorClass: code ? `unclassified:${code}` : "unclassified",
+    retryable: false,
+    retryAfterMs: 0,
+  };
+}
+
+interface IngressFailureOutcome {
+  readonly status: "retryable" | "terminal";
+  readonly errorClass: string;
+  readonly retryAt: Date | null;
+  readonly applied: boolean;
+}
+
+function retryDelayMs(attemptCount: number): number {
+  const index = Math.min(
+    Math.max(0, attemptCount - 1),
+    RETRY_DELAYS_MS.length - 1,
+  );
+  return RETRY_DELAYS_MS[index] ?? RETRY_DELAYS_MS.at(-1) ?? 0;
+}
+
+async function markIngressFailure(
   db: Db,
-  ingressId: string,
-  error: unknown,
-): Promise<void> {
-  const message = error instanceof Error ? error.message : "Unknown error";
-  await db
+  args: {
+    readonly ingressId: string;
+    readonly attemptCount: number;
+    readonly error: unknown;
+    readonly currentTime: Date;
+  },
+): Promise<IngressFailureOutcome> {
+  const classification = classifyIngressFailure(args.error);
+  const canRetry =
+    classification.retryable && args.attemptCount < MAX_PROCESSING_ATTEMPTS;
+  const status = canRetry ? "retryable" : "terminal";
+  const errorClass =
+    classification.retryable && !canRetry
+      ? "attempts_exhausted"
+      : classification.errorClass;
+  const retryAt = canRetry
+    ? new Date(
+        args.currentTime.getTime() +
+          Math.max(
+            retryDelayMs(args.attemptCount),
+            classification.retryAfterMs,
+          ),
+      )
+    : null;
+  const message =
+    args.error instanceof Error ? args.error.message : "Unknown error";
+  const [updated] = await db
     .update(slackChatIngress)
     .set({
-      status: "failed",
+      status,
+      retryAt,
+      lastErrorClass: errorClass,
       lastError: message.slice(0, 4000),
-      updatedAt: nowDate(),
+      updatedAt: args.currentTime,
     })
     .where(
       and(
-        eq(slackChatIngress.id, ingressId),
+        eq(slackChatIngress.id, args.ingressId),
         eq(slackChatIngress.status, "processing"),
+        eq(slackChatIngress.processingAttemptCount, args.attemptCount),
       ),
-    );
+    )
+    .returning({ id: slackChatIngress.id });
+  return {
+    status,
+    errorClass,
+    retryAt,
+    applied: updated !== undefined,
+  };
 }
 
 interface PersistedCanonicalSlackIngress {
@@ -383,7 +510,13 @@ async function persistCanonicalSlackMessage(
     signal.throwIfAborted();
     await tx
       .update(slackChatIngress)
-      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+      .set({
+        status: "processed",
+        retryAt: null,
+        lastErrorClass: null,
+        lastError: null,
+        updatedAt: nowDate(),
+      })
       .where(
         and(
           eq(slackChatIngress.id, args.ingress.ingressId),
@@ -392,6 +525,38 @@ async function persistCanonicalSlackMessage(
       );
     signal.throwIfAborted();
   });
+}
+
+async function fetchCanonicalConversationContext(args: {
+  readonly client: SlackClient;
+  readonly ingressId: string;
+  readonly event: SlackAgentEvent;
+  readonly userInfoResolver: ReturnType<SlackClient["createUserInfoResolver"]>;
+}): Promise<{ readonly executionContext: string }> {
+  const result = await settle(
+    fetchConversationContexts(
+      args.client,
+      args.event.channel,
+      args.event.thread_ts,
+      args.event.ts,
+      { userInfoResolver: args.userInfoResolver },
+    ),
+  );
+  if (result.ok) {
+    return result.value;
+  }
+  if (!isOptionalSlackConversationContextFailure(result.error)) {
+    throw result.error;
+  }
+  const failure = slackMessageClientFailure(result.error);
+  L.debug(
+    "Canonical Slack context is unavailable; processing current message",
+    {
+      ingressId: args.ingressId,
+      errorClass: failure ? `slack:${failure.code}` : "slack:authorization",
+    },
+  );
+  return { executionContext: "" };
 }
 
 const persistClaimedCanonicalSlackIngress$ = command(
@@ -455,13 +620,12 @@ const persistClaimedCanonicalSlackIngress$ = command(
         userId: event.user,
         userInfoResolver,
       }),
-      fetchConversationContexts(
+      fetchCanonicalConversationContext({
         client,
-        event.channel,
-        event.thread_ts,
-        event.ts,
-        { userInfoResolver },
-      ),
+        ingressId,
+        event,
+        userInfoResolver,
+      }),
       client.getMessagePermalink(event.channel, event.ts),
     ]);
     signal.throwIfAborted();
@@ -576,7 +740,12 @@ export const processCanonicalSlackIngress$ = command(
       return result.value;
     }
 
-    await markIngressFailed(db, args.ingressId, result.error);
+    const failure = await markIngressFailure(db, {
+      ingressId: args.ingressId,
+      attemptCount: claimed.attemptCount,
+      error: result.error,
+      currentTime: nowDate(),
+    });
     signal.throwIfAborted();
     await tapError(
       (async () => {
@@ -597,10 +766,21 @@ export const processCanonicalSlackIngress$ = command(
       },
     );
     signal.throwIfAborted();
-    L.error("Failed to process canonical Slack ingress", {
-      ingressId: args.ingressId,
-      error: result.error,
-    });
+    if (failure.applied && failure.status === "retryable") {
+      L.warn("Canonical Slack ingress will retry after transient failure", {
+        ingressId: args.ingressId,
+        attemptCount: claimed.attemptCount,
+        errorClass: failure.errorClass,
+        retryAt: failure.retryAt,
+      });
+    } else if (failure.applied) {
+      L.error("Canonical Slack ingress reached a terminal failure", {
+        ingressId: args.ingressId,
+        attemptCount: claimed.attemptCount,
+        errorClass: failure.errorClass,
+        error: result.error,
+      });
+    }
     throw result.error;
   },
 );
@@ -608,21 +788,43 @@ export const processCanonicalSlackIngress$ = command(
 export const drainStaleCanonicalSlackIngress$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
+    const currentTime = nowDate();
     const staleBefore = new Date(
-      nowDate().getTime() - PROCESSING_STALE_AFTER_MS,
+      currentTime.getTime() - PROCESSING_STALE_AFTER_MS,
     );
+    // Older API versions treat `failed` as immediately retryable. Converting
+    // that legacy state also fences failures written during a rolling deploy.
+    await db
+      .update(slackChatIngress)
+      .set({
+        status: "terminal",
+        retryAt: null,
+        lastErrorClass: "legacy_terminal_failure",
+        updatedAt: currentTime,
+      })
+      .where(eq(slackChatIngress.status, "failed"));
+    signal.throwIfAborted();
+    await db
+      .update(slackChatIngress)
+      .set({
+        status: "terminal",
+        retryAt: null,
+        lastErrorClass: "attempts_exhausted",
+        lastError: "Canonical Slack ingress processing attempts exhausted",
+        updatedAt: currentTime,
+      })
+      .where(
+        and(
+          eq(slackChatIngress.status, "processing"),
+          lt(slackChatIngress.updatedAt, staleBefore),
+          gte(slackChatIngress.processingAttemptCount, MAX_PROCESSING_ATTEMPTS),
+        ),
+      );
+    signal.throwIfAborted();
     const rows = await db
       .select({ id: slackChatIngress.id })
       .from(slackChatIngress)
-      .where(
-        or(
-          inArray(slackChatIngress.status, ["pending", "failed"]),
-          and(
-            eq(slackChatIngress.status, "processing"),
-            lt(slackChatIngress.updatedAt, staleBefore),
-          ),
-        ),
-      )
+      .where(claimableIngress(currentTime))
       .orderBy(
         asc(slackChatIngress.updatedAt),
         asc(slackChatIngress.createdAt),

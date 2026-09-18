@@ -519,6 +519,90 @@
       "when": 1789616656879,
       "tag": "1151_morning_brief_collection_occurrences",
       "breakpoints": true
+    },
+    {
+      "idx": 1152,
+      "version": "7",
+      "when": 1789624153813,
+      "tag": "1152_morning_brief_platform_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1153,
+      "version": "7",
+      "when": 1789642535175,
+      "tag": "1153_chat_thread_morning_brief_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 1154,
+      "version": "7",
+      "when": 1789652237949,
+      "tag": "1154_morning_brief_collection_revocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1155,
+      "version": "7",
+      "when": 1789654948741,
+      "tag": "1155_morning_brief_generation_expiry_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1156,
+      "version": "7",
+      "when": 1789657161692,
+      "tag": "1156_retire_gpt_5_5",
+      "breakpoints": true
+    },
+    {
+      "idx": 1157,
+      "version": "7",
+      "when": 1789669312159,
+      "tag": "1157_morning_brief_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 1158,
+      "version": "7",
+      "when": 1789688950614,
+      "tag": "1158_vnc_configuration",
+      "breakpoints": true
+    },
+    {
+      "idx": 1159,
+      "version": "7",
+      "when": 1789695181649,
+      "tag": "1159_mcp_thread_discovery_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 1160,
+      "version": "7",
+      "when": 1789704433571,
+      "tag": "1160_vnc_runner_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 1161,
+      "version": "7",
+      "when": 1789707857887,
+      "tag": "1161_morning_brief_schedule_claims",
+      "breakpoints": true
+    },
+    {
+      "idx": 1162,
+      "version": "7",
+      "when": 1789710405715,
+      "tag": "1162_slack_ingress_retry_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 1163,
+      "version": "7",
+      "when": 1789712151288,
+      "tag": "1163_personal_paid_tool_controls",
+      "breakpoints": true
     }
   ]
 }

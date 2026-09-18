@@ -64,6 +64,8 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
     }
     if semantic_message.starts_with(
         "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
+    ) || semantic_message.starts_with(
+        "this content was flagged for possible biological risk. if this seems wrong, try rephrasing your request. we are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: ",
     ) {
         return Some(FailureReason::SafetyPolicyRefusal);
     }
@@ -223,7 +225,14 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
     if matches!(
         code,
         None | Some(
-            "overloaded_error" | "server_overloaded" | "server_error" | "internal_server_error"
+            "overloaded_error"
+                | "server_overloaded"
+                | "server_error"
+                | "internal_server_error"
+                | "ServiceUnavailableException"
+                | "InternalServerException"
+                | "serviceUnavailableException"
+                | "internalServerException"
         )
     ) && error
         .get("message")
@@ -239,11 +248,21 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
         Some("context_length_exceeded" | "context_window_exceeded" | "prompt_too_long") => {
             Some(FailureReason::ContextWindowExceeded)
         }
-        Some("rate_limit_exceeded" | "rate_limit_error") => {
-            Some(FailureReason::ProviderRateLimited)
-        }
+        Some(
+            "rate_limit_exceeded"
+            | "rate_limit_error"
+            | "ThrottlingException"
+            | "throttlingException",
+        ) => Some(FailureReason::ProviderRateLimited),
         Some("overloaded_error" | "server_overloaded") => Some(FailureReason::ProviderOverloaded),
-        Some("server_error" | "internal_server_error") => Some(FailureReason::ProviderServerError),
+        Some(
+            "server_error"
+            | "internal_server_error"
+            | "ServiceUnavailableException"
+            | "InternalServerException"
+            | "serviceUnavailableException"
+            | "internalServerException",
+        ) => Some(FailureReason::ProviderServerError),
         Some("usage_limit_reached" | "usage_not_included") => Some(FailureReason::UsageLimit),
         Some("content_policy_violation") => Some(FailureReason::SafetyPolicyRefusal),
         Some("model_not_found" | "unsupported_model") => Some(FailureReason::UnsupportedModel),

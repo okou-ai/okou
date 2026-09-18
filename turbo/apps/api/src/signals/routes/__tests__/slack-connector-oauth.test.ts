@@ -19,6 +19,7 @@ import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackConnectRoutes } from "../slack-connect";
 import { slackOauthRoutes } from "../slack-oauth";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
+import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   readGetStartedStatus,
@@ -241,6 +242,53 @@ beforeEach(() => {
     }),
   );
 });
+
+test.each(["primary email", "missing user", "provider failure"])(
+  "preserves connected OAuth state with a %s profile lookup",
+  async (outcome) => {
+    const current = actor();
+    await setGetStartedEnabled(context, current);
+    if (outcome === "primary email") {
+      context.mocks.clerk.users.getUser.mockResolvedValue({
+        id: current.userId,
+        primaryEmailAddressId: "primary",
+        emailAddresses: [
+          { id: "secondary", emailAddress: `secondary-${current.email}` },
+          { id: "primary", emailAddress: current.email },
+        ],
+      });
+    } else {
+      context.mocks.clerk.users.getUser.mockRejectedValue(
+        outcome === "missing user"
+          ? new ClerkUserNotFoundTestError()
+          : new Error("Clerk profile unavailable"),
+      );
+    }
+    const result = await complete(await startInstall(), current);
+    await flushWaitUntilForTest();
+
+    expect(result.searchParams.get("status")).toBe("connected");
+    await expect(integrationStatus()).resolves.toMatchObject({
+      isConnected: true,
+    });
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
+      current.userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+    if (outcome === "provider failure") {
+      expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
+    } else {
+      expect(context.mocks.slack.views.publish).toHaveBeenCalledOnce();
+      const home = JSON.stringify(context.mocks.slack.views.publish.mock.calls);
+      if (outcome === "primary email") {
+        expect(home).toContain(current.email);
+        expect(home).not.toContain(`secondary-${current.email}`);
+      } else {
+        expect(home).not.toContain(current.email);
+      }
+    }
+  },
+);
 
 test("installation grants bot and user scopes and connects the OAuth account", async () => {
   const current = actor();

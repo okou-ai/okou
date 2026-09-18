@@ -75,18 +75,58 @@ installation, schedule and Agent, and the Slack workspace and user.
   A live lease is never stolen and a completed occurrence is never re-collected.
 - **Finite leases and attempts.** A lease lasts 60 seconds; an occurrence allows
   3 attempts and stays claimable for 24 hours after it was first admitted.
-- **Frozen binding.** A retry may only reuse an occurrence whose window,
+  Equality with either deadline is already elapsed: an occurrence is refused at
+  exactly `created_at + 24 hours`, not a millisecond later. A re-claim never
+  rewrites `created_at`, so the lifetime measures the logical occurrence rather
+  than its latest attempt.
+- **Frozen binding.** No existing occurrence is reused unless its window,
   timezone, membership generation, installation, schedule, Agent and Slack
-  binding are all unchanged. A remove and rejoin issues a new membership id, so
-  it cannot revive the old occurrence.
+  binding are all unchanged. This is checked before the row's status is even
+  considered, so a completed, failed or running occurrence admitted under an
+  older binding answers `binding-changed` rather than being reused, replaced or
+  silently swapped for a replacement slot. A remove and rejoin issues a new
+  membership id, so it cannot revive the old occurrence.
 - **Bounded retry.** A rate-limited attempt records the provider's own
   `Retry-After`; the next explicit invocation before that instant is refused.
   This request never sleeps, and there is no inline retry loop.
+- **Commit-time admission.** Waiting for a database lock can outlast a
+  60-second lease, so every lease, retry and lifetime comparison reads the clock
+  _after_ the transition's own waits. Claiming and finalizing take erasure
+  admission, then the member row, then the occurrence row with `FOR UPDATE`, and
+  only then sample the instant they decide against. A request timestamp, a
+  transaction-start `now()` or a statement clock read before a row wait is not
+  that instant. One case is deliberately narrower: when no occurrence row exists
+  yet, the first attempt's lease clock is read before its own `INSERT`, which
+  can still wait — on the parent's foreign-key lock, or on a concurrent
+  claimant's in-doubt tuple. Any such wait only shortens that first lease, and
+  the executor rechecks `collectionLeaseHeld` before the first provider call, so
+  an already-elapsed first claim reads no source. The post-wait clock claim
+  applies to the existing-row transitions, not to that initial insert.
 - **Guarded completion.** Finalization is one conditional update matching the
   exact occurrence, attempt, lease token, membership generation, running status
-  and a lease deadline strictly in the future. Equality with the deadline is
-  already expired. A stale worker therefore cannot overwrite a newer claimant,
-  and its bundle is discarded rather than returned.
+  and a lease deadline strictly after that freshly sampled instant. Equality
+  with the deadline is already expired. Because the transaction already holds
+  the row, the update cannot queue again between the check and the write. A
+  stale worker therefore cannot overwrite a newer claimant, and an attempt whose
+  lease elapsed while it waited has its bundle discarded rather than accepted.
+- **Final local admission.** The pre-transaction authority revalidation, the
+  caller's cancellation check and the lease check all describe the state
+  _before_ finalization's own lock waits. Those waits can outlast a Settings
+  disable, an Agent move, a Slack rebinding or the caller itself, so the
+  completion is admitted once more inside the transaction — after the member and
+  occurrence rows are held and before any write is issued. Two things are
+  decided there: the caller must still be present, and the local half of the
+  owner's authority is re-resolved and compared against the persisted occurrence
+  with the same shared binding comparator a retry uses. Comparing the persisted
+  occurrence with the frozen admission cannot answer this, because both copies
+  are frozen and still agree. A lapsed authority answers `owner-revoked` or
+  `binding-changed` and writes nothing; a cancelled caller unwinds the whole
+  transaction, including anything a joined handoff already reserved, and the
+  occurrence stays `running` until its lease elapses. The membership generation
+  is carried over from the occurrence rather than re-resolved, because no
+  database lock may be held across a Clerk round trip, and the admission takes
+  no new row lock: locking the installation's Agent behind the occurrence would
+  invert the order the Agent-deletion cascade itself takes.
 - **No durable body.** Terminal success is metadata about a collection, never a
   checkpoint of one. A duplicate invocation of a completed occurrence makes no
   provider call and answers `already-completed` with an explicit `bundle: null`.
@@ -94,6 +134,18 @@ installation, schedule and Agent, and the Slack workspace and user.
   exactly once.
 
 Network reads happen outside every database transaction.
+
+**Acceptance boundary.** The local acceptance point is that final admission,
+read inside the finalizing transaction under `READ COMMITTED`. Every local
+authority change that committed before it is observed and refuses the
+completion, and every refusal or cancellation observed there leaves nothing
+durable — not the completion, and not work a joined handoff performed in the
+same transaction. Nothing past that point is retractable: a local change that
+commits after the admission read, a cancellation that arrives after it, or a
+remote Clerk or Slack revocation cannot undo a completion this transaction went
+on to commit. The admission deliberately does not lock the Settings, Agent and
+Slack rows it reads, so it orders itself against those writers only by their
+commit time, not by a writer fence.
 
 ## Owner lifetime and revocation
 
@@ -107,25 +159,70 @@ lifecycle deletion that invalidates the installation.
 
 Claiming and finalizing both take erasure admission first with
 `assertErasureSubjectWritable`, held through `COMMIT`, then lock and recheck that
-member row with `FOR KEY SHARE`. Neither ever creates the parent. Both commit
-orders are therefore closed:
+member row with `FOR KEY SHARE`. Neither ever creates the parent.
 
-- A claim that commits first holds `FOR KEY SHARE` while cleanup's member-row
-  removal queues behind it, and the row is cascaded away on commit.
-- A cleanup that commits first leaves no parent, so the claim refuses.
+That lock orders two transactions but does not survive either of them, and the
+parent is deleted only at the very end of each cleanup. The durable half of the
+boundary is the member row's own `morning_brief_collection_revoked_at` stamp.
+Every cleanup path writes it in the **first transaction it commits**, together
+with the run-authority revocation and the occurrence delete it already performs:
 
-Cleanup additionally revokes this state explicitly in the earliest transaction
-each path already commits — the membership run-authority revocation, and the
-first step of Clerk user and organization deletion — so an owner loses
-collection ownership before the rest of their state is torn down. User and
-organization final cleanup are unchanged and remain the last guarantee. A
-cleanup that wins before finalization causes the bundle to be discarded and
-leaves nothing that could later complete or resurrect. Other owners are
-untouched.
+| Path         | First committed revocation                              |
+| ------------ | ------------------------------------------------------- |
+| Membership   | `cleanupOrgMemberResources`'s run-authority transaction |
+| User         | the `user.deleted` run-cancellation transaction         |
+| Organization | the `organization.deleted` run-cancellation transaction |
+
+That transaction takes `FOR UPDATE` on the member rows in scope before stamping
+them, which conflicts with the claimant's `FOR KEY SHARE`, so the two can never
+decide at the same time. The separate lock is required, not stylistic: an
+`UPDATE` of a non-key column only acquires `FOR NO KEY UPDATE`, which does _not_
+conflict with `FOR KEY SHARE`, so collapsing the two statements would let a
+claim read an unstamped row and commit alongside the revocation. Both orders are
+otherwise closed, and neither depends on the foreign-key cascade:
+
+- A claim that commits first is seen by the revoking transaction, which deletes
+  its occurrence. Cleanup's later member-row removal is the final backstop.
+- A cleanup that commits first leaves the stamp, so the claim refuses — even
+  when the claim's external membership answer was resolved before revocation,
+  even when the stamping transaction found no occurrence to delete, and even
+  though the parent row still exists for the rest of the cleanup.
+
+Only the member row's own deletion clears the stamp, so a member who leaves and
+rejoins starts from a fresh row and a new membership generation. A cleanup that
+fails after that first commit leaves the owner fenced out of collection, which
+is the intended fail-closed direction.
+
+That deletion is also why the stamp alone is not the whole fence. Once a cleanup
+has run to completion, an ordinary preference write — the same one a rejoining
+member's client performs — inserts a parent with no stamp on it. An admission
+whose external membership answer was resolved before the cleanup would otherwise
+find that replacement perfectly writable. So the admission also carries the
+parent's `created_at`, and the claim requires it to be unchanged:
+
+- Preference upserts never rewrite `created_at`, so a live admission is
+  unaffected by ordinary timezone, theme or model writes.
+- A deleted and recreated row has a new `created_at`, so the older generation's
+  request is refused before it claims an attempt, before it reads any source,
+  and without leaving an occurrence in the rejoined member's way at that anchor.
+- It is not part of the occurrence's frozen binding, because deleting the parent
+  cascades every occurrence away: a surviving row always hangs from the
+  generation that admitted it. Other owners are untouched, and a cleanup
+  that wins before finalization causes the bundle to be discarded and leaves
+  nothing that could later complete or resurrect.
 
 **Linearization boundary.** Requests already in flight to Slack cannot be
 retracted. What revocation guarantees is that no result of such a request is
-accepted, persisted or returned after the revoking transaction commits.
+accepted, persisted or returned after the revoking transaction commits. This is
+a local boundary for one owner's collection authority: a result linearized
+before cleanup may still be observed by its own caller afterwards, and no
+wall-clock guarantee is claimed against arbitrary external revocation.
+
+**Deploy order.** The stamp is migration 1154, an additive nullable column. The
+cleanup writers are unconditional and are not behind `simpleMorningBrief`, so
+the migration must ship before the API artifact that writes them; an older
+artifact simply never reads or writes the column. See
+[deployment compatibility](deployment-compatibility.md#morning-brief-collection-revocation-stamp-34860).
 
 This is explicit-invocation authority only. It certifies no autonomous scheduler
 recovery. Durable membership and materialization ownership, and global deletion
@@ -152,39 +249,86 @@ theirs, so a channel discovered at the start of an attempt must not become
 standing read authority for the rest of it.
 
 Every protected history or reply page read is therefore preceded by a fresh
-bounded lookup of the same intersection, and one final lookup runs before the
-bundle leaves the collector. That last pass exists because a response can be
-held across a removal that happened after its own check; it stops as soon as
-every pending conversation is named, so it normally costs one request. Each
-lookup uses the exact organization bot token, connected Slack user and
-workspace, the same fixed `users.conversations` method discovery uses, and the
-same combined cancellation and deadline signal.
-
-Those lookups obey the same finite budgets as the reads, so an attempt that has
-already spent its request or wall-clock budget cannot buy the final lookup. Such
-an attempt is already `partial` under `requests` or `deadline`, and everything it
-returns still carries the per-read proof that preceded it. Raising a budget to
-buy the extra call would be a silent cap increase and is deliberately not done.
+bounded lookup of the same intersection, and one final lookup decides what may
+leave the collector at all. Each lookup uses the exact organization bot token,
+connected Slack user and workspace, the same fixed `users.conversations` method
+discovery uses, and the same combined cancellation and deadline signal.
 
 A lookup produces one of three results, and only the first authorizes a read:
 
-| Result   | Meaning and effect                                                                                                                                                                                                                                                                               |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| shared   | The conversation was named in the member's live intersection. The read proceeds.                                                                                                                                                                                                                 |
-| revoked  | The whole intersection was listed without it. Nothing further is read, and everything the attempt already holds for that conversation is discarded, including its channel entry. The limit is `scope-lost`.                                                                                      |
-| unproven | The lookup ran out of pages, requests or time, or repeated a cursor, and established neither access nor its absence. Nothing further is read. Content an earlier live lookup did authorize is kept. The limit is `scope-unproven`, or the exhausted total budget's own `requests` or `deadline`. |
+| Result   | Meaning and effect                                                                                                                                                                                          |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shared   | The conversation was named in the member's live intersection. The read proceeds.                                                                                                                            |
+| revoked  | The whole intersection was listed without it. Nothing further is read, and everything the attempt already holds for that conversation is discarded, including its channel entry. The limit is `scope-lost`. |
+| unproven | The lookup ran out of pages, requests or time, or repeated a cursor, and established neither access nor its absence. Nothing further is read, and nothing is released. The limit is `scope-unproven`.       |
 
-An unproven lookup is never an allow, and never a healthy empty day: it always
-leaves a named limit and therefore `partial` coverage. There is no fallback to
-bot-only visibility, another workspace, a default account, or the channel list
-discovery produced earlier.
+An unproven lookup is never an allow, never a proven removal, and never a
+healthy empty day: it always leaves a named limit and therefore `partial`
+coverage. There is no fallback to bot-only visibility, another workspace, a
+default account, or the channel list discovery produced earlier.
 
-**Linearization boundary.** The last live lookup is the acceptance boundary for
-scope. A removal that Slack commits after that lookup answers cannot be made
-atomic with this attempt, and a request already in flight cannot be recalled.
-What the boundary guarantees is that content is never released for a scope this
-attempt proved was gone, and that no protected page is read without a proof
-that preceded it.
+### The release boundary
+
+Coverage and authorization are separate facts. A bounded attempt may omit work
+and report it, but partial coverage is never permission to publish a scope this
+attempt could not confirm.
+
+Every conversation the bundle would carry — its messages and equally its name,
+id and link — must pass one final bounded lookup before the envelope is
+returned. The final pass therefore covers every discovered conversation, not
+only the ones that produced messages: a private channel with an empty window is
+still the member's scope, and cannot be named without a current proof. The pass
+stops as soon as each pending conversation is named, so it normally costs one
+request.
+
+- **Confirmed.** The conversation was named. Its content and identity are
+  released, together with whatever truncation its own reads recorded.
+- **Proven revoked.** The member's whole intersection was listed without it.
+  Its content and identity are discarded and the limit is `scope-lost`.
+- **Unconfirmed.** The pass repeated a cursor, or exhausted its three pages or
+  its reserved requests, without resolving this conversation. Its content, name,
+  id and link are all withheld and the limit is `scope-unproven`. A pre-read
+  proof covered only the instant it ran and cannot stand in for this one.
+
+A pass may confirm some conversations and fail to resolve others. That is an
+**in-budget partial proof**: the bundle is returned with exactly the confirmed
+ones, their valid content and their own counts; no unconfirmed identity appears
+anywhere in it. Counts describe the returned payload, while `requests` keeps
+describing the provider work this attempt really did. The attempt is never
+retried inside the collector to turn an unconfirmed result into a successful
+one.
+
+#### Whole-attempt expiry
+
+The wall clock is not one more page budget. It bounds the attempt itself, so
+reaching it is not a partial proof but the end of this attempt's authority to
+say anything at all. Equality with the deadline is already expired.
+
+The release decision reads the clock again after the final pass, whatever that
+pass did and however it stopped. Once the deadline has passed, every
+conversation the bundle would have carried is withheld — including one an
+earlier page of the same pass had already named, because a pending set tracks
+one conversation's proof rather than the lifetime of the attempt. The bundle is
+returned with no entries, no channels, zero released counts, the `deadline` and
+`scope-unproven` limits and `partial` coverage, never as a healthy empty day;
+`requests` still reports the provider work the attempt really did. Nothing
+refreshes the deadline, extends the lease, raises a cap or retries to recover
+it, and the decision reads the clock rather than waiting for a timer to fire.
+
+An in-budget partial proof and an expired attempt are therefore different
+answers: the first may still release what it did confirm, the second may release
+nothing. A cancellation during the final pass abandons the attempt entirely and
+returns no bundle; the cancellation reaches the provider request itself, not
+only the caller's own wait.
+
+**Linearization boundary.** The acceptance boundary for scope is the final
+proof's own response, as it lands inside this attempt's wall clock — not the
+moment the bundle reaches the caller. A removal that Slack commits after that
+response cannot be made atomic with this attempt, and a request already in
+flight cannot be recalled. What the boundary guarantees is that no content or
+conversation identity is released without a proof that Slack answered inside
+this attempt, and that no protected page is read without a proof that preceded
+it.
 
 ### Finite budgets
 
@@ -194,7 +338,7 @@ that preceded it.
 | Channels                  | 20                                      |
 | History pages per channel | 2                                       |
 | Expanded threads          | 10 (one reply page each)                |
-| Provider requests         | 40                                      |
+| Provider requests         | 40 total, 37 for discovery and reads    |
 | Normalized messages       | 500                                     |
 | Projected text            | 128 KiB total, 4 KiB per message        |
 | Wall clock                | 30 s, never beyond the attempt's lease  |
@@ -204,6 +348,16 @@ request and wall-clock budgets as the reads they guard, and introduce no new
 cap. Fewer channels therefore fit inside one attempt than the channel budget
 alone suggests, and an attempt bounded that way reports `requests` or `deadline`
 and `partial` coverage rather than raising a limit.
+
+Because nothing may be released without the final lookup, one enumeration's
+worth of pages is reserved for it inside the same 40-request ceiling: discovery,
+pre-read proofs and protected reads share 37, and the final pass spends up to
+the remaining 3. This lowers effective throughput rather than raising a budget —
+an attempt that would previously have read one more channel now reports
+`requests` a little earlier and still releases what it collected. A content cap
+(`messages` or `text-bytes`) stops reading without spending the reserve, so it
+can never waive the final proof; the wall clock is not reserved the same way, so
+an attempt that runs out of time withholds everything instead.
 
 Every provider read and every authorization lookup receives a combined
 cancellation and deadline signal. The unbounded convenience loops in
@@ -237,11 +391,12 @@ Every limit names work or content that was actually skipped or removed:
 | `channel-pages` / `channels`    | Enumeration stopped at its page budget, or the channel budget dropped a discovered conversation.                      |
 | `history-pages` / `reply-pages` | A channel's window, or a thread, still had pages this attempt may not read.                                           |
 | `threads`                       | An in-window replied root was discovered but not expanded, including roots beyond the tenth inside one complete page. |
-| `requests` / `deadline`         | The total request budget or the wall clock stopped the attempt.                                                       |
+| `requests` / `deadline`         | The read allowance stopped the reads, or the wall clock ended the whole attempt.                                      |
 | `messages` / `text-bytes`       | A message was refused because the attempt already held its full message or total text budget.                         |
 | `entry-text-bytes`              | At least one message's own text was clipped at the per-message ceiling.                                               |
 | `cursor-anomaly`                | A continuation repeated a cursor instead of advancing.                                                                |
-| `scope-lost` / `scope-unproven` | A live authorization lookup disproved, or could not establish, the member's shared access.                            |
+| `scope-lost`                    | A live lookup proved the member no longer shares a conversation, so everything held for it was discarded.             |
+| `scope-unproven`                | A bounded lookup established neither access nor its absence, so the conversation was not read or was withheld.        |
 
 ### Coverage limits
 
@@ -260,6 +415,12 @@ a continuation anomaly or an authorization boundary actually removed is recorded
 as a named limit and makes the attempt `partial`. `complete` therefore means the
 declared scope was read without omission, never that the whole workspace or day
 was.
+
+Omission is the only thing partial coverage buys. It never widens what the
+attempt may release: a conversation the final lookup could not confirm is
+withheld whichever budget ran out first, and the bundle simply describes less.
+An expired wall clock is not an omission of that kind. It ends the attempt's
+authority to release anything, so the bundle describes nothing at all.
 
 ### Data handling
 

@@ -14,7 +14,7 @@ import {
 } from "./preparation-timing";
 import { assertPiApiFirstTurnCompactionSafe } from "./compaction-preflight";
 import { MemoryPiSession, runPiFirstModelTurn } from "./session-memory";
-import { createPiAgentSessionForRuntime } from "./session-runtime";
+import { createPiApiFirstAgentSessionForRuntime } from "./session-runtime";
 import type {
   PiApiAssistantContent,
   PiApiAssistantMessage,
@@ -154,13 +154,13 @@ export async function preparePiApiTurn(
     signal,
   );
 
-  let shell: Awaited<ReturnType<typeof createPiAgentSessionForRuntime>>;
+  let shell: Awaited<ReturnType<typeof createPiApiFirstAgentSessionForRuntime>>;
   try {
     shell = await measurePiPreparation(
       args.onPreparationTiming,
       "runtime_initialize",
       () => {
-        return createPiAgentSessionForRuntime(
+        return createPiApiFirstAgentSessionForRuntime(
           {
             cwd: args.cwd,
             agentDir: args.agentDir,

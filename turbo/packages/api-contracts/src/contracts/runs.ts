@@ -187,20 +187,18 @@ const getRunResponseSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
-  /** Stored run identity; omitted by older APIs. Never a current route projection. */
-  source: z
-    .object({
-      providerType: modelProviderTypeSchema.nullable(),
-      runtimeProviderType: modelProviderTypeSchema.nullable(),
-      model: z.string().nullable(),
-      credentialScope: modelProviderCredentialScopeSchema.nullable(),
-      account: z.discriminatedUnion("status", [
-        z.object({ status: z.literal("unknown") }),
-        z.object({ status: z.literal("unavailable") }),
-        z.object({ status: z.literal("connected"), id: z.uuid() }),
-      ]),
-    })
-    .optional(),
+  /** Stored run identity. Never a current route projection. */
+  source: z.object({
+    providerType: modelProviderTypeSchema.nullable(),
+    runtimeProviderType: modelProviderTypeSchema.nullable(),
+    model: z.string().nullable(),
+    credentialScope: modelProviderCredentialScopeSchema.nullable(),
+    account: z.discriminatedUnion("status", [
+      z.object({ status: z.literal("unknown") }),
+      z.object({ status: z.literal("unavailable") }),
+      z.object({ status: z.literal("connected"), id: z.uuid() }),
+    ]),
+  }),
   /** Omitted when tracing was disabled for this run or by older APIs. */
   langfuseTraceUrl: z.url().optional(),
 });
@@ -736,6 +734,7 @@ const concurrencyInfoSchema = z.object({
   tier: orgTierSchema,
   limit: z.number(),
   active: z.number(),
+  waiting: z.number().optional(),
   available: z.number(),
   memberUsage: z.array(concurrencyMemberUsageSchema),
 });

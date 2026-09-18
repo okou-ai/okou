@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
 import type { TestEmailOutboxStateItem } from "@okouai/api-contracts/contracts/test-email-outbox-state";
@@ -22,17 +23,15 @@ function authenticate(context: TestContext, actor: ApiTestUser) {
     actor.orgRole,
   );
   const emailId = `email_${actor.userId}`;
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
-      {
-        id: actor.userId,
-        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
-        primaryEmailAddressId: emailId,
-        firstName: "BDD",
-        lastName: "Email",
-      },
-    ],
-  });
+  mockClerkUsers(context, [
+    {
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "BDD",
+      lastName: "Email",
+    },
+  ]);
   return { authorization: "Bearer clerk-session" };
 }
 

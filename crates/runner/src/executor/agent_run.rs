@@ -2752,9 +2752,31 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             );
         let should_collect_resource_diagnostics =
             should_collect_resource_diagnostics || should_collect_sigkill_resource_diagnostics;
-        let mut resource_diagnostics = None;
+        // Classify the bounded resource probe before emitting the related exit
+        // records so expected rootfs exhaustion has consistent severity.
+        let mut resource_diagnostics = if should_collect_resource_diagnostics {
+            collect_agent_abnormal_exit_diagnostics(
+                sandbox,
+                context.run_id,
+                sandbox.id(),
+                start.reuse_result,
+                failure_exit_code,
+            )
+            .await
+        } else {
+            None
+        };
+        let guest_memory_oom_killed = guest_memory_oom_killed_agent(agent_domain_oom_kill, &exit);
+        if guest_memory_oom_killed {
+            resource_diagnostics = Some(ResourceFailureDiagnostics {
+                failure_kind: Some(ResourceFailureKind::GuestMemoryOomKilled),
+                ..resource_diagnostics.unwrap_or_default()
+            });
+        }
         if should_log_bootstrap_diagnostics || should_collect_resource_diagnostics {
             let env_key_diagnostics = build_agent_env_key_diagnostics(&env_pairs);
+            let resource_failure_kind =
+                resource_diagnostics.and_then(|diagnostics| diagnostics.failure_kind);
             if should_log_bootstrap_diagnostics {
                 log_agent_bootstrap_abnormal_exit_diagnostics(
                     AgentBootstrapAbnormalExitLogContext {
@@ -2766,6 +2788,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         env_key_diagnostics: &env_key_diagnostics,
                         stdout_stream_diagnostics,
                         session_restore_diagnostics: session_restore_diagnostics.as_ref(),
+                        resource_failure_kind,
                     },
                 );
             }
@@ -2777,23 +2800,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     &exit,
                     &env_diagnostics,
                     &env_key_diagnostics,
+                    resource_failure_kind,
                 );
-                resource_diagnostics = collect_agent_abnormal_exit_diagnostics(
-                    sandbox,
-                    context.run_id,
-                    sandbox.id(),
-                    start.reuse_result,
-                    failure_exit_code,
-                )
-                .await;
             }
-        }
-        let guest_memory_oom_killed = guest_memory_oom_killed_agent(agent_domain_oom_kill, &exit);
-        if guest_memory_oom_killed {
-            resource_diagnostics = Some(ResourceFailureDiagnostics {
-                failure_kind: Some(ResourceFailureKind::GuestMemoryOomKilled),
-                ..resource_diagnostics.unwrap_or_default()
-            });
         }
         let error = agent_failure_error(
             guest_memory_oom_killed,

@@ -166,51 +166,57 @@ async function makeLimitedFreeWorkspace(
 }
 
 describe("GET/PUT /api/model-policies", () => {
-  it("keeps the successor usable after rejecting retired policy and preference writes", async () => {
-    const fixture = seedFixture();
-    useSession(fixture);
-    const client = apiClient();
-    const existing = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    const retired = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          policies: [
-            ...toUpdate(existing.body),
-            makeBuiltInPolicy("claude-fable-5"),
-          ],
-        },
-      }),
-      [400],
-    );
-    expect(retired.body.error.message).toBe(
-      "Claude Fable 5 has been retired. Select Claude Fable 5.1.",
-    );
+  it.each([
+    ["claude-fable-5", "claude-fable-5-1"],
+    ["gpt-5.5", "gpt-5.6-luna"],
+  ] as const)(
+    "rejects retired %s policy and preference writes while keeping %s usable",
+    async (retiredModel, activeModel) => {
+      const fixture = seedFixture();
+      useSession(fixture);
+      const client = apiClient();
+      const existing = await accept(
+        client.list({ headers: authHeaders() }),
+        [200],
+      );
+      const retired = await accept(
+        client.update({
+          headers: authHeaders(),
+          body: {
+            policies: [
+              ...toUpdate(existing.body),
+              makeBuiltInPolicy(retiredModel),
+            ],
+          },
+        }),
+        [400],
+      );
+      expect(retired.body.error.message).toBe(
+        "This model has been retired. Select another available model.",
+      );
 
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    const oldPreference = await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "claude-fable-5", serviceTier: null },
-      }),
-      [400],
-    );
-    expect(oldPreference.body.error.message).toBe(retired.body.error.message);
-    const successor = await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "claude-fable-5-1", serviceTier: null },
-      }),
-      [200],
-    );
-    expect(successor.body.selectedModel).toBe("claude-fable-5-1");
-  });
+      const preferences = setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+      })(userModelPreferenceContract);
+      const oldPreference = await accept(
+        preferences.update({
+          headers: authHeaders(),
+          body: { selectedModel: retiredModel, serviceTier: null },
+        }),
+        [400],
+      );
+      expect(oldPreference.body.error.message).toBe(retired.body.error.message);
+      const successor = await accept(
+        preferences.update({
+          headers: authHeaders(),
+          body: { selectedModel: activeModel, serviceTier: null },
+        }),
+        [200],
+      );
+      expect(successor.body.selectedModel).toBe(activeModel);
+    },
+  );
 
   it("returns 401 for unauthenticated reads and writes", async () => {
     const client = apiClient();
@@ -815,7 +821,7 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it("keeps recently active GPT 5.5 and Claude Sonnet 4.6 selectable", async () => {
+  it("keeps Claude Sonnet 4.6 selectable", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -830,7 +836,6 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           policies: [
             ...toUpdate(listResponse.body),
-            makeBuiltInPolicy("gpt-5.5"),
             makeBuiltInPolicy("claude-sonnet-4-6"),
           ],
         },
@@ -840,7 +845,6 @@ describe("GET/PUT /api/model-policies", () => {
 
     expect(response.body.policies).toStrictEqual(
       expect.arrayContaining([
-        expect.objectContaining({ model: "gpt-5.5" }),
         expect.objectContaining({ model: "claude-sonnet-4-6" }),
       ]),
     );
@@ -1110,64 +1114,63 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
-    "stores priority with a GPT 5.6 user model preference with %s",
-    async (fastSwitch) => {
-      const fixture = await seedFixture();
-      useSession(fixture);
-      const client = apiClient();
-      const preferenceClient = setupApp({
-        context,
-        routes: userModelPreferenceRoutes,
-      })(userModelPreferenceContract);
-      const listResponse = await accept(
-        client.list({ headers: authHeaders() }),
-        [200],
-      );
-      const updates = [
-        ...toUpdate(listResponse.body),
-        makeBuiltInPolicy("gpt-5.6-sol"),
-      ];
-      await accept(
-        client.update({
-          headers: authHeaders(),
-          body: { policies: updates },
-        }),
-        [200],
-      );
+  it("stores priority with a GPT 5.6 user model preference", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const preferenceClient = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const listResponse = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    const updates = [
+      ...toUpdate(listResponse.body),
+      makeBuiltInPolicy("gpt-5.6-sol"),
+    ];
+    await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { policies: updates },
+      }),
+      [200],
+    );
 
-      const switchOff = await accept(
-        preferenceClient.update({
-          headers: authHeaders(),
-          body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
-        }),
-        [400],
-      );
-      expect(switchOff.body.error.message).toBe(
-        "Codex fast mode is not enabled for this workspace",
-      );
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.CodexFastMode]: false,
+    });
+    const switchOff = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
+      }),
+      [400],
+    );
+    expect(switchOff.body.error.message).toBe(
+      "Codex fast mode is not enabled for this workspace",
+    );
 
-      await updateFeatureSwitchesForUser(context, fixture, {
-        [FeatureSwitchKey.CodexFastMode]: false,
-        [fastSwitch]: true,
-      });
-      const priority = await accept(
-        preferenceClient.update({
-          headers: authHeaders(),
-          body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
-        }),
-        [200],
-      );
-      expect(priority.body).toMatchObject({
-        selectedModel: "gpt-5.6-sol",
-        serviceTier: "priority",
-      });
-      expect(
-        (await accept(preferenceClient.get({ headers: authHeaders() }), [200]))
-          .body.serviceTier,
-      ).toBe("priority");
-    },
-  );
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.CodexFastMode]: true,
+    });
+    const priority = await accept(
+      preferenceClient.update({
+        headers: authHeaders(),
+        body: { selectedModel: "gpt-5.6-sol", serviceTier: "priority" },
+      }),
+      [200],
+    );
+    expect(priority.body).toMatchObject({
+      selectedModel: "gpt-5.6-sol",
+      serviceTier: "priority",
+    });
+    expect(
+      (await accept(preferenceClient.get({ headers: authHeaders() }), [200]))
+        .body.serviceTier,
+    ).toBe("priority");
+  });
 
   it("stores Fast for the effective personal route when the organization API provider is missing", async () => {
     const fixture = seedFixture();
@@ -1196,8 +1199,7 @@ describe("GET/PUT /api/model-policies", () => {
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.CodexFastMode]: false,
+      [FeatureSwitchKey.CodexFastMode]: true,
     });
     useSession(fixture);
     const preferences = setupApp({

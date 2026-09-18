@@ -77,6 +77,7 @@ fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {
     let failure_reasons = [
         "session_history_limit",
         "execution_timeout",
+        "guest_root_filesystem_full",
         "insufficient_credits",
         "provider_insufficient_credits",
         "invalid_api_key",

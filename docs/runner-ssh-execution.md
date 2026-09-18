@@ -2,10 +2,9 @@
 
 #32387 implements the Runner-owned execution slice of #32013 (under #31932).
 The [CLI and owner/Agent UI](ssh-access.md) were delivered by #32014 / PR #32722.
-SSH defaults to enabled for staff organizations through the existing feature
-switch; local/PAT Runners remain unsupported.
-Current [API authority](runner-ssh-authority.md), including the feature
-gate and current Agent grant, is required on a cache miss and for first-use pinning.
+SSH is generally available; local/PAT Runners remain unsupported.
+Current [API authority](runner-ssh-authority.md), including the current Agent
+grant, is required on a cache miss and for first-use pinning.
 Successful authority snapshots follow the Run-scoped lifetime below. Run source,
 chat channel, workflows and trigger metadata add no eligibility gate. Retained
 historical Goal provenance follows the same source-independent rule; the retired
@@ -115,7 +114,7 @@ The CLI aggregates verified pages within its own byte/chunk/request/time budgets
 only the first page may wait. Its `lost` array, `stop_reason`, continuation and
 nullable last observation are CLI-owned, not generic RPC framing. See
 [session reading](ssh-access.md#long-commands-and-persistent-shells).
-The staff-gated read contract replaces the old parameter defaults and payload;
+The read contract replaced the old parameter defaults and payload before GA;
 there is no old-reader fallback or mixed-version reader rollout for this change.
 
 `write` accepts `sessionId`, canonical `dataBase64` (at most 16 KiB decoded) and
@@ -195,7 +194,7 @@ successful connection observations, not connectivity warnings.
 
 Runner and helper ship together. Older CLIs retain exec/session behavior; a new
 CLI receiving an unsupported helper/method fails explicitly, without a legacy
-file path. The existing `sshAccess` staff gate applies, with no extra switch,
+file path. File operations use the existing SSH authorization, with no extra
 schema, credential or grant. Tests enter the actual dispatcher through a real
 SSH peer and temporary filesystem. Run the independent OpenSSH lane explicitly
 where `/usr/lib/openssh/sftp-server` is installed:
@@ -548,9 +547,9 @@ without exec, another authentication method or command replay. Keyboard-interact
 OTP/MFA and forced password-change exchanges are not supported.
 
 #33467 adds this contract and execution capability only. Owner configuration and
-API credential writers remain key-only until #33468 delivers reusable credentials.
-SSH is staff-only, so this work adds no legacy compatibility or reader-drain gate;
-see [fallback policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback).
+API credential writers became password-capable in #33468 with reusable credentials.
+Those changes shipped before GA without a legacy compatibility path; current
+cross-version requirements follow [deployment compatibility](deployment-compatibility.md).
 
 Each sandbox's current Run admits up to 8 concurrent SSH requests, before request
 parsing and JIT. There is no Runner-wide SSH request or connection admission cap;
@@ -604,9 +603,9 @@ the command, and missing reports do not prove a host is healthy.
 
 ## Rollout and validation
 
-Staff-default availability is configured in `sshAccess`; explicit overrides and
-current owner/Agent/Run authority still apply. It is not general availability or
-evidence that every deployed artifact is current. API, Platform, Runner/rootfs
+SSH is generally available without a rollout switch. Current owner/Agent/Run
+authority still applies. Source availability is not evidence that every deployed
+artifact is current. API, Platform, Runner/rootfs
 and the selected CLI retain their [deployment compatibility](deployment-compatibility.md)
 boundaries.
 

@@ -946,9 +946,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       const fw = createFirewallApi(context);
       const connectors = createConnectorBddApi(context);
       const { actor, headers } = await firewallRun();
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.CustomConnectorMcp]: true,
-      });
       const mcp = await connectors.createCustomConnector(actor, {
         kind: "mcp",
         displayName: `BDD Automatic MCP ${refreshError}`,

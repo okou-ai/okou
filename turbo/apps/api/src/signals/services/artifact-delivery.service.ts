@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
@@ -6,12 +6,51 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { env } from "../../lib/env";
 import {
+  isS3NotFoundError,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
 
 export class ArtifactDeliveryAliasConflict extends Error {}
+
+/** Registry entries identify an alias; publication access still requires its live policy. */
+export function artifactDeliveryRecord(
+  brand: "vm0" | "okou",
+  kind: "file" | "html",
+  alias: string,
+  signal: AbortSignal,
+) {
+  return computed(async (get) => {
+    const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
+    if (!bucket) {
+      throw new Error("Artifact delivery registry storage is not configured");
+    }
+    const result = await settle(
+      get(
+        readArtifactSharePolicyObject(
+          bucket,
+          artifactDeliveryKey(brand, kind, alias),
+          signal,
+        ),
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      if (isS3NotFoundError(result.error)) {
+        return null;
+      }
+      throw result.error;
+    }
+    const record = artifactDeliveryRecordSchema.parse(
+      JSON.parse(result.value.buffer.toString("utf8")),
+    );
+    if (record.publicBrand !== brand) {
+      throw new Error("Artifact delivery alias has an inconsistent brand");
+    }
+    return record;
+  });
+}
 
 /** Immutable alias ownership survives revocation; only the share policy changes. */
 export const registerArtifactDelivery$ = command(

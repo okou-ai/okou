@@ -11,10 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import {
-  isChatEffortEnabled,
-  isCodexFastModeEnabled,
-} from "@okouai/core/model-feature-switch";
+import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 
 import { badRequestMessage } from "../../lib/error";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
@@ -35,16 +32,12 @@ const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 function validateModelSettingsPatch(args: {
   readonly patch: ModelSettingsPatch | undefined;
   readonly selectedModel: string | null;
-  readonly enabled: boolean;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (args.patch === undefined) {
     return undefined;
   }
   if (args.patch.model !== args.selectedModel) {
     return badRequestMessage("Reasoning effort must target the selected model");
-  }
-  if (!args.enabled) {
-    return badRequestMessage("Reasoning effort selection is not enabled");
   }
   if (!isModelReasoningEffortSupported(args.patch.model, args.patch.effort)) {
     return badRequestMessage(
@@ -124,7 +117,7 @@ const updateUserModelPreferenceInner$ = command(
 
     const modelSettingsPatch = body.data.modelSettingsPatch;
     const featureSwitchContext =
-      body.data.serviceTier === "priority" || modelSettingsPatch !== undefined
+      body.data.serviceTier === "priority"
         ? await get(userFeatureSwitchContext(auth.orgId, auth.userId))
         : undefined;
     signal.throwIfAborted();
@@ -132,9 +125,6 @@ const updateUserModelPreferenceInner$ = command(
     const modelSettingsError = validateModelSettingsPatch({
       patch: modelSettingsPatch,
       selectedModel: body.data.selectedModel,
-      enabled:
-        featureSwitchContext !== undefined &&
-        isChatEffortEnabled(featureSwitchContext),
     });
     if (modelSettingsError) {
       return modelSettingsError;

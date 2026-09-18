@@ -117,16 +117,6 @@ impl LeakCleaner {
         }
     }
 
-    #[cfg(test)]
-    fn abort(&mut self) {
-        // Drop handles first, then abort immediately as a synchronous Drop backstop.
-        self.tx.take();
-        self.shutdown_tx.take();
-        if let Some(handle) = self.handle.take() {
-            handle.abort();
-        }
-    }
-
     fn detach_for_drop(&mut self) {
         self.tx.take();
         self.shutdown_tx.take();
@@ -1006,49 +996,5 @@ mod tests {
             LEAK_CLEANUP_INACTIVITY_TIMEOUT > retry_budget,
             "leak cleaner inactivity timeout must allow one COW finalizer to finish"
         );
-    }
-
-    #[tokio::test]
-    async fn leak_cleaner_abort_closes_sender_and_aborts_task() {
-        struct AbortFlag(Arc<AtomicBool>);
-
-        impl Drop for AbortFlag {
-            fn drop(&mut self) {
-                self.0.store(true, Ordering::SeqCst);
-            }
-        }
-
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<LeakedResources>();
-        let (shutdown_tx, _shutdown_rx) = tokio::sync::oneshot::channel();
-        let (_completed_cleanup_count_tx, completed_cleanup_count_rx) =
-            tokio::sync::watch::channel(0);
-        let aborted = Arc::new(AtomicBool::new(false));
-        let aborted_clone = Arc::clone(&aborted);
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        let handle = tokio::spawn(async move {
-            let _flag = AbortFlag(aborted_clone);
-            let _ = started_tx.send(());
-            std::future::pending::<()>().await;
-        });
-        let mut cleaner = LeakCleaner {
-            tx: Some(tx),
-            shutdown_tx: Some(shutdown_tx),
-            completed_cleanup_count_rx,
-            handle: Some(handle),
-        };
-
-        started_rx.await.unwrap();
-        cleaner.abort();
-
-        assert!(cleaner.tx.is_none());
-        assert!(cleaner.shutdown_tx.is_none());
-        assert!(cleaner.handle.is_none());
-        tokio::time::timeout(std::time::Duration::from_secs(1), async {
-            while !aborted.load(Ordering::SeqCst) {
-                tokio::task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
     }
 }

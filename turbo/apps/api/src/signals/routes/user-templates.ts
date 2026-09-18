@@ -24,11 +24,13 @@ import {
   parseUserTemplatePreviewAssetId,
   userTemplatePageKeys,
   userTemplatePreviewAssetId,
+  userTemplateStorageVersionId,
   userTemplateSummary,
   type UserTemplateRow,
 } from "../services/user-template-data.service";
 import { deleteUserTemplate$ } from "../services/user-template-delete.service";
 import { publishUserTemplate$ } from "../services/user-template-publish.service";
+import { replaceUserTemplatePackage$ } from "../services/user-template-repackage.service";
 import { templateArtifactBucket } from "../services/private-artifact-storage.service";
 import {
   presentationTemplatePreviewPresignedUrlCacheKey,
@@ -133,6 +135,29 @@ function userTemplatePreviewAssetsForRow(args: {
   return userTemplatePageKeys(args.row).map((objectKey) => {
     return userTemplatePreviewAsset({ ...args, objectKey });
   });
+}
+
+/**
+ * The file the template was compiled from, signed the same way its pages are.
+ *
+ * Deliberately not a preview asset: an asset id is a handle a client hands
+ * back to have one page's URL reissued, and that endpoint resolves ids against
+ * the row's rendered pages. The source is reached only through the detail the
+ * reader already loaded, so it needs no handle of its own — and minting one
+ * that the resolve endpoint would refuse is worse than minting none.
+ */
+function userTemplateSourceRequest(args: {
+  readonly row: UserTemplateRow;
+  readonly orgId: string;
+}): PresentationTemplatePreviewPresignedUrlRequest {
+  const objectKey = args.row.sourceStorageKey;
+  return {
+    bucket: templateArtifactBucket(objectKey),
+    objectKey,
+    storageVersionId: userTemplateStorageVersionId(objectKey),
+    resolvedOrgId: args.orgId,
+    publicEndpoint: true,
+  };
 }
 
 function resolvedUserTemplatePreviewAssets(
@@ -306,12 +331,16 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     row,
     orgId: auth.orgId,
   });
+  const sourceRequest = userTemplateSourceRequest({ row, orgId: auth.orgId });
   const urlsByCacheKey = await get(
     resolvePresentationTemplatePreviewPresignedUrls({
       db: set(writeDb$),
-      requests: previewAssets.map((asset) => {
-        return asset.request;
-      }),
+      requests: [
+        ...previewAssets.map((asset) => {
+          return asset.request;
+        }),
+        sourceRequest,
+      ],
     }),
   );
   signal.throwIfAborted();
@@ -322,11 +351,18 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const pageUrls = resolvedPreviewAssets.map((asset) => {
     return asset.url;
   });
+  const source = urlsByCacheKey.get(
+    presentationTemplatePreviewPresignedUrlCacheKey(sourceRequest),
+  );
+  if (source === undefined) {
+    throw new Error(`Source URL not resolved: ${row.id}`);
+  }
   return {
     status: 200 as const,
     body: {
       ...userTemplateSummary(row, pageUrls[0] ?? null, auth.userId),
       pageUrls,
+      sourceUrl: source.url,
       previewAssets: resolvedPreviewAssets,
     },
   };
@@ -371,6 +407,60 @@ const resolvePreviewUrlsInner$ = command(
       body: {
         assets: resolvedUserTemplatePreviewAssets(assets, urlsByCacheKey),
       },
+    };
+  },
+);
+
+const replacePackageParams$ = pathParamsOf(
+  userTemplatesContract.replacePackage,
+);
+const replacePackageBody$ = bodyResultOf(userTemplatesContract.replacePackage);
+const replacePackageInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!(await get(customTemplatesEnabled$))) {
+      return customTemplatesDisabled;
+    }
+    signal.throwIfAborted();
+    const auth = get(organizationAuthContext$);
+    const params = get(replacePackageParams$);
+    const bodyResult = await get(replacePackageBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    const result = await set(
+      replaceUserTemplatePackage$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        templateId: params.templateId,
+        packageFileId: bodyResult.data.packageFileId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.kind === "not-found") {
+      return templateNotFound(params.templateId);
+    }
+    if (result.kind === "rejected") {
+      return result.response;
+    }
+    const coverUrl = await set(coverUrlFor$, {
+      row: result.row,
+      orgId: auth.orgId,
+    });
+    signal.throwIfAborted();
+    // The guidance changed, not who can see it, so the same readers are told
+    // as would be told about any other edit to this row.
+    if (result.row.visibility === "organization") {
+      await publishPresentationTemplatesChangedForOrgSafely(auth.orgId);
+    } else {
+      await publishPresentationTemplatesChangedForUserSafely(auth.userId);
+    }
+    signal.throwIfAborted();
+    return {
+      status: 200 as const,
+      body: userTemplateSummary(result.row, coverUrl, auth.userId),
     };
   },
 );
@@ -490,6 +580,10 @@ export const userTemplatesRoutes: readonly RouteEntry[] = [
   {
     route: userTemplatesContract.resolvePreviewUrls,
     handler: authRoute(templateReadAuth, resolvePreviewUrlsInner$),
+  },
+  {
+    route: userTemplatesContract.replacePackage,
+    handler: authRoute(templatePublishAuth, replacePackageInner$),
   },
   {
     route: userTemplatesContract.update,

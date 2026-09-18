@@ -102,6 +102,7 @@ import * as builtInModelCooldownSchema from "./schema/built-in-model-cooldown";
 import * as workflowSchema from "./schema/workflow";
 import * as computerUseHostSchema from "./schema/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
+import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
 import * as activeInputDeliverySchema from "./schema/active-input-delivery";
 import * as chatThreadSchema from "./schema/chat-thread";
@@ -145,6 +146,8 @@ import * as piMemoryPhase2CheckpointSchema from "./schema/pi-memory-phase2-check
 import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
 import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
+import * as vncCredentialSchema from "./schema/vnc-credential";
+import * as vncConnectionSchema from "./schema/vnc-connection";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
@@ -253,6 +256,7 @@ export const schema = {
   ...workflowSchema,
   ...computerUseHostSchema,
   ...userFeatureSwitchesSchema,
+  ...userDisabledPaidToolsSchema,
   ...userBehaviorCountSchema,
   ...activeInputDeliverySchema,
   ...chatThreadSchema,
@@ -296,6 +300,8 @@ export const schema = {
   ...piMemoryPublicationProvenanceSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
+  ...vncCredentialSchema,
+  ...vncConnectionSchema,
   ...agentSshAccessSchema,
   ...cloudflareAccessConfigSchema,
 };

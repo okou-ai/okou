@@ -135,12 +135,67 @@ protocol change is required. Previously copied URLs remain valid under their
 existing policy. Owner resolution of an old organization alias continues after
 switching it to Only me; recipients lose access.
 
+#### CLI artifact content reads
+
+`GET /api/artifact-references/:reference/read` requires `artifact:read` and
+authorizes content using the same owner, current organization membership,
+public publication, revocation, and selected-version rules as the App viewer.
+It returns `{ url, filename, contentType }` for the authorized delivery. The
+existing typed owner resolver and sharing-management endpoints retain their
+owner checks.
+
+The additive `GET /api/artifact-references/:reference/download` uses the same
+`artifact:read` and visibility boundary. It returns either
+`{ kind: "file", url, filename, contentType }` or
+`{ kind: "html", site: HostedSiteFilesResponse }`. The latter includes the full
+authorized deployment manifest and per-file delivery URLs. Shared sites use
+the selected version's immutable snapshot, rather than the owner's latest
+deployment. Standalone HTML uploads remain file downloads.
+Conversation references selecting a non-HTML hosted file also retain their
+single-file bytes and MIME type; HTML/page references return the full site.
+
+`okou artifact download` and `okou web download-file` use the download endpoint
+for short and long artifact references, including same-origin App URLs. For
+sites, `--out` now names a new or empty directory and the JSON result adds
+`fileCount` and `entrypoint` to `{ path, mimetype, size }`; `path` denotes that
+directory and `size` totals all downloaded files. They fetch delivery URLs
+without forwarding the agent token. Raw file IDs and authenticated web download
+URLs keep their existing `file:read` path and output shape.
+
+`okou host clone` uses the additive
+`GET /api/artifact-references/:reference/files` for artifact references. This
+returns `HostedSiteFilesResponse` through the same visibility resolver and
+retains the existing `host:read` capability; it rejects standalone files.
+Hosted URLs and slugs continue to use the existing `host:read` files endpoint,
+whose authorization now follows current site visibility rather than requiring
+ownership. An optional `hostname` query disambiguates public aliases against
+the configured hosted domains. The existing files response remains compatible
+with older clients. Version requests never bypass the selected shared version.
+Public conversation resources follow their live shared-thread policy and
+independent snapshot, including after the original artifact changes.
+Bare canonical slugs preserve owner/latest-version cloning; explicit public
+URLs follow the selected publication, including for owners and after revocation.
+Owner-only management and version-listing endpoints remain unchanged.
+
+Deploy the additive API endpoint before selecting the matching CLI artifact.
+Older pinned CLIs retain their existing download behavior against the new API;
+the existing read endpoint continues to return entry-page delivery metadata.
+The new CLI needs the download endpoint and the existing `artifact:read` capability,
+issued under `privateArtifacts`. No tolerant reader for an older API, new
+capability, database migration, visibility change, or Worker protocol is added.
+Keep the endpoint in serving and supported rollback APIs while runs pinned to
+the new CLI remain active.
+
 #### Private attachment uploads
 
 CLI artifact output qualifies hostless references with its configured app origin
 (`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
 `https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
-download results use the same complete URL in text, JSON and Markdown. Public
+download results use the same complete URL in text, JSON and Markdown. Integration
+upload completion (Teams, Telegram, Feishu/Lark, AgentPhone and GitHub) and Slack
+canonical publication apply the same CLI normalization before printing. Image
+batch waits also qualify stored artifact and owner references in JSON output,
+including the generated Markdown, without rewriting the batch files. Public
 URLs keep their original bytes, including query strings. API responses and stored
 references retain their existing shapes, so older pinned CLIs retain their prior
 output and the new CLI can consume an older API. Downloading or cloning newly
@@ -161,9 +216,10 @@ retain their original long URL, and no bulk rewrite or database migration runs.
 
 CLI owner resolution adds optional `kind=file|html` to the existing reference
 endpoint. Each mode requires its existing read capability and denies recipient
-access; the browser resolver retains its sharing authorization. Deploy the
-matching API and CLI before relying on short references in clone/download or
-generation-input commands. Existing file IDs and deployment IDs remain valid.
+access; generation inputs, owned-site cloning, and older pinned download
+commands use these modes. Current download commands use the content-read
+endpoint described above. Deploy the matching API and CLI before relying on
+short references. Existing file IDs and deployment IDs remain valid.
 An older API cannot resolve new version-2 indexes; keep capable readers in
 serving and rollback targets once the new writer is enabled.
 
@@ -284,6 +340,20 @@ sends that field; no CLI caller was found. The complete retained 72-hour
 request-log query ending 2026-09-15 at 07:14:20 UTC contained one POST: App
 `0.893.2`, response `202`. It found no non-App or unidentified POST; this is
 bounded caller evidence, not a guarantee about every external client.
+
+#### Organization member display queries
+
+`GET /api/org/members?view=members` retains the existing organization summary
+and current-member profile shape while omitting invitation and membership-request
+data and their provider reads. The Agents page uses this view; organization
+management keeps the full default response. Membership authorization, profile
+cache lifetime, batching, and missing-creator presentation are unchanged.
+
+Old Apps omit `view` and receive the full response from a new API. New Apps can
+also consume an old API: its query-less route ignores `view` and returns the
+same member shape, with the previous management-read cost until the API updates.
+No temporary fallback, App version-floor increase, migration, or Runner protocol
+change is required.
 
 ### Backend
 
@@ -732,6 +802,14 @@ it is upgraded (potentially causing a cache miss, not exposing an active build).
 Runner and guest binaries are deployed as one runner artifact. Compatibility is
 not required between a runner binary and a guest binary from a different version.
 
+Runner archive-size mismatch diagnostics add an optional object to an existing
+failed headers operation. New APIs accept old operations without it; older APIs
+strip the unknown object while retaining the failed operation. Either deployment
+order remains functional, but observing exact byte/source fields requires both
+updated artifacts. Byte counts use bounded decimal strings to preserve u64
+response lengths through JavaScript. No storage schema, Guest protocol, archive
+acceptance or retry policy changes; see [host archive diagnostics](host-archive-phase-diagnostics.md).
+
 The extracted storage cache is a separate, host-local cross-version boundary.
 New readers use `storages/<name-hash>/decoded-v1-<version-hash>/` containing an
 identity/content index and real files. Existing compressed readers continue to
@@ -746,7 +824,7 @@ also bounds each extracted entry's inode footprint.
 
 Unsupported-archive admission records use separate
 `decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
-Only background fill reads these records; foreground lookup probes positive
+Only post-spawn background work reads these records; foreground lookup probes positive
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
 
@@ -756,8 +834,21 @@ even if mount or payload admission did not select them for delivery. This
 observation belongs only to that prepared plan and adds no lookup or retained
 file contents. A missing compressed archive still selects its required fill;
 later plans perform their own positive lookup, so GC eviction cannot become a
-permanent warming exclusion. Unobserved positive entries and rejection records
-retain the existing background checks.
+permanent warming exclusion. Unobserved positive entries retain the existing
+background checks.
+
+After Agent spawn, ordinary warm-source candidates can pass through one
+runner-owned classification batch of at most 16 keys before queue admission.
+Classification shares the existing decoded worker/memory budget, never waits
+for a permit, and owns no waiting queue or remembered negative state. It omits
+warming only after validating a current rejection record and a still-present
+compressed source under their existing locks. Missing fills and archive-required
+consumers keep normal admission. Busy, missing, invalid or unavailable
+classification retains the ordinary background path, including its errors.
+The coordinator owns classification completion and reporting through shutdown;
+dropping its last owner closes admission before any delayed classification can
+submit. Foreground lookup still probes only positive entries. Neither persisted
+format, GC, nor the four-worker/32-queued admission bounds change.
 
 Readers hold that lock while validating the bounded index, identity, file types,
 sizes and content digests, then pin owned bytes through Guest apply. GC can evict
@@ -1583,14 +1674,31 @@ These objects are contracts, not generic fallbacks. Verify the exact outgoing
 SQL against them, record the release they protect, and remove the functions,
 triggers, and views after that release drains.
 
+## SSH general availability
+
+SSH, including Direct and Cloudflare Access, is generally available. The
+`sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
+retired together. Existing registered-key filtering ignores retired overrides;
+no migration, data deletion or rewrite is needed. Owner isolation, Agent grants,
+winning Run/Runner authority, credential encryption and host trust remain required.
+The existing Run-lifetime authority cache and missed-notification window are unchanged.
+
+Promote the API before the App. An older API can still enforce its rollout switch;
+the App retains its existing unavailable/error handling for that response, never
+an authorization bypass. Older loaded Apps may hide SSH until refreshed. Already
+created Runs retain their minted capabilities and prompt snapshot; create a new
+Run to obtain SSH guidance and capabilities. Runner/guest/CLI DTOs and stored
+hosts, credentials, pins, grants and observations do not change. Source-level GA
+does not attest deployment state or waive the protected-reader constraints below.
+
 ## Cloudflare Access for SSH
 
 The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
-Direct and Cloudflare Access now share the existing staff-only `sshAccess` switch;
-there is no independent Access switch. The SSH cohort and Agent grants are unchanged.
-Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
+Direct and Cloudflare Access are generally available with no rollout switches;
+the SSH Agent grant still covers both. The initial delivery used the
+[pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
 Before the first protected configuration or binding is written in a deployed
@@ -1600,8 +1708,7 @@ environment, every serving API must understand protected authority, Runners from
 and the owner-approved evidence boundaries at closure.
 Management stays inside `/connectors/ssh`. Access is a reusable host connection
 setting under the existing SSH Agent grant, not a separately authorized service.
-The SSH feature switch controls rollout for both transports; it does not replace
-the existing Agent permission.
+General availability does not replace the existing Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
@@ -1609,27 +1716,25 @@ The management UI uses the existing canonical Access endpoints; it adds no
 schema or private Runner contract. Unified host forms also accept inline Access
 creation in the host write request. Existing `configId` selections remain valid;
 responses still return only the resolved binding. Deploy API support before the
-App uses inline creation. An older API rejects that write alternative; staff
+App uses inline creation. An older API rejects that write alternative;
 clients should refresh after the current API/App deployment, without a second
 save path or automatic fallback. Existing rows and older App requests remain
 valid, and Runner versions do not need a new decoder for this management change.
 
-With SSH enabled, Access management and
-protected host creation are available without an additional opt-in. With SSH off,
-both transports' management, guest inventory and fresh authority are unavailable.
+Access management and protected host creation require no additional opt-in.
 Already-bound hosts are never silently converted to Direct. Removing a binding
-requires SSH eligibility and an explicit Direct selection. Losing SSH eligibility or changing
-owner clears open secret forms and cancels their pending UI work. API authorization
-and same-owner foreign keys remain authoritative; frontend visibility is not an
+requires owner authorization and an explicit Direct selection. Changing owner
+clears open secret forms and cancels their pending UI work. API authorization and
+same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
 
 SSH save retries (#34503) require a client-generated resource `id` on host creation
 and standalone credential/Access creation. New resources return `201`; same-owner
 existing IDs return `204` without mutation. Host edits retain their existing
 `expectedGeneration` contract. There is no database migration or backfill, and
-Runner/guest protocols are unchanged. Deploy the API before the App. Under the
-staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
-to handle `204`; refresh staff clients after deployment. Do not fall back to a
+Runner/guest protocols are unchanged. Deploy the API before the App. This change shipped
+under the staff-only pre-GA policy; stale Apps/APIs could reject the new/missing
+field or fail to handle `204`. Refresh clients after deployment. Do not fall back to a
 new-ID save or automatically replay it. Deduplication only covers the existing
 resource's lifetime, not deletion or abandoned forms; see
 [SSH access](ssh-access.md#save-retries).
@@ -1639,11 +1744,11 @@ resource's lifetime, not deletion or abandoned forms; see
 | Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
 | Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
 | Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
-| Current API with an unauthorized host or SSH feature off           | Private authority and guest inventory remain unavailable under the SSH gate and Agent grant.           |
+| Current API with an unauthorized host                              | Private authority and guest inventory remain unavailable under owner and Agent authorization.          |
 | Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
 | Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
 
-Feature disable does not make a protected row safe for a pre-Access reader.
+A rollout switch does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
 or conversion is part of deployment.
 
@@ -1653,9 +1758,9 @@ missing/incompatible authority response fails closed; no pre-GA dual decoder is
 introduced. The separate switch removal changes API eligibility and Platform
 visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
 Old pre-removal APIs may still enforce their Access switch, and old App bundles
-may hide Access until refreshed. Both remain pre-GA under `sshAccess`; deploy the
-current API/App and refresh staff clients rather than adding a compatibility alias
-or second decoder. Retired switch overrides are ignored by the existing registered-key
+may hide Access until refreshed. Deploy the current API/App and refresh clients
+rather than adding a compatibility alias or second decoder; see the SSH GA
+boundary above. Retired switch overrides are ignored by the existing registered-key
 filter; no database migration or destructive cleanup is required.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
@@ -1671,6 +1776,28 @@ failure eviction and Run/sandbox teardown remain effective. The accepted
 Run-lifetime missed-notification window includes observed outages; this introduces
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
+
+## Integration source links
+
+Telegram bot DMs, Teams chats, and AgentPhone DMs store their return link in
+the existing optional `source.href` field of the V1 user-message document.
+No new document fields, context columns, or migrations are introduced. Older
+Apps and APIs already accept these URLs, including `sms:`; older Apps may
+label a conversation link as an original-message link until refreshed.
+
+New Apps distinguish message links from conversation links by the provider's
+documented URL shape. Events already stored without `href` remain unlinked;
+their immutable user-message documents and archived snapshots are not rewritten.
+Telegram DMs open the bot conversation. Teams Bot Framework `a:` IDs open
+the bot chat using its `28:` recipient rather than pretending to be Graph
+`19:` chat IDs. AgentPhone DMs open Messages addressed to the inbound destination
+(the assistant number); group events do not expose a single-recipient link.
+
+Desktop adds a narrow external-navigation allowance for single-recipient
+`sms:+E164` links without query parameters or fragments. Older Desktop builds
+continue to deny these links until the Desktop update is installed; browser
+delivery does not upgrade the Electron navigation policy. Opening Messages
+requires a registered handler on the user's device and does not send a message.
 
 ## Integration input attachments
 
@@ -1759,6 +1886,30 @@ The App uses the exact attempt receipt, not account timestamps, account counts, 
 
 The receipt-capable writer from [#32880](https://github.com/vm0-ai/vm0/pull/32880) shipped in release `3d58eaa4609967a4f655f7cd61d0d7cd454ba2a1`: API `1.575.2` completed [production promotion](https://github.com/vm0-ai/vm0/actions/runs/34335229479/job/102417239410) on 2026-09-09 at 09:48:46 UTC, followed by App `0.873.0` at 09:50:38 UTC. Cleanup [#32870](https://github.com/vm0-ai/vm0/issues/32870) retires the optional response field and absent-ID branch after that release. The maintainer explicitly excludes old API rollback compatibility; no rollback restriction is added or changed. Pre-receipt APIs are outside this cleanup's supported boundary. Existing App requests remain accepted, and already-loaded pre-receipt App bundles are not retired by this change; no App version floor increase is included.
 
+### User cancellation in the App
+
+Cancelling a connector connection aborts the current App attempt: owned requests
+and polling stop, its popup closes when the browser still permits access, busy controls are
+released, and unfinished local continuations (including account naming and Chat
+callbacks) must not start or update a newer attempt. Explicit dialog close and
+Escape have the same meaning; outside presses do not cancel pending work. Once
+the App has confirmed success, the action is labelled Close rather than Cancel.
+Provider isolation policies can sever the popup handle, so closing that external
+window is best-effort and is not required to release the App's attempt.
+
+This is **local cancellation**, not a provider revocation or an API transaction
+rollback. The API may already have claimed OAuth state and may finish persisting
+credentials, grants, and the completion receipt after the App stops waiting.
+Keep those accounts and reconcile them through normal refresh/notifications;
+never delete accounts or revoke credentials as compensation. A late receipt
+cannot resume a cancelled App attempt, but it does not prevent an already-started
+API reconnect callback from writing the same account after a newer callback.
+
+No API, persisted-state, or Runner contract changes are needed. Already-loaded
+old Apps retain their previous, non-cancellable behavior until refreshed. A
+stronger cancellation or reconnect-write-order guarantee would require a
+separately designed server protocol.
+
 ## Pi memory summary storage and injection budget
 
 A valid `memory_summary.md` may exceed 2500 exact o200k tokens on disk. The
@@ -1820,6 +1971,62 @@ below the producer change only stops new larger sources; it does not rewrite
 what was already published. The stored source itself is never truncated or
 rewritten by any reader, producer or rollback.
 
+## Connector catalog v4 consumption
+
+Publish the complete v4 catalog before deploying the consumer. The new API
+syncs and accepts only v4. Until a source has accepted v4, its shared catalog
+reader serves the retained accepted v3 snapshot, validating original v3 bytes
+and current executable capabilities. Discovery, execution and firewall permissions
+use that same reader. Normal sync switches subsequent reads to accepted v4.
+The release workflow stays unchanged; no environment variable, generation
+selector or separate warm-up endpoint is needed. MCP capability filtering does
+not block catalog acceptance.
+
+Earlier API binaries continue using their v3 namespace and rows. No database
+migration, source-salt change or historical-byte rewrite is needed. New APIs
+always prefer an accepted v4 snapshot, regardless of catalog version ordering.
+Later candidate failures retain v4; a corrupt accepted v4 snapshot fails rather
+than falling back to v3. Diagnostics describe the v4 sync target and can report
+cold v4 state while the v3 bridge keeps connectors available.
+
+[The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
+and rollback requirements. MCP execution and Automatic OAuth remain separate
+deliveries. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
+bridge cleanup after every serving source and supported bootstrap target has
+accepted v4 and the deployment/rollback window no longer needs the bridge.
+Historical v3 object and row retention for old binaries remains independent.
+
+### Builtin MCP execution
+
+Builtin MCP uses the current App, CLI and Runner contract directly. There is no
+MCP-specific request-header negotiation, old-client HTTP projection, upgrade
+response or Runner claim capability flag. Agent connector replacement applies
+to the complete submitted list, including MCP grants. The CLI is kept current;
+its package URL does not need to match the serving API commit for MCP admission.
+Custom and builtin MCP use the same typed discovery response.
+
+Queued Runs retain their captured CLI package and exact account mapping.
+Builtin MCP admission requires the Run's Okou token for authenticated MCP
+discovery. None/manual methods are executable; the published Plaud Automatic
+method remains unavailable until its handler lands. The addon honors explicit
+owner intent and never injects another owner's credentials when the requested
+owner is absent, including overlapping builtin/custom destinations.
+
+No-auth builtin and custom MCP requests skip credential validity checks and
+proxy auth resolution, including Automatic custom MCP resolved to no
+authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
+field to cap cached account authorization at 30 seconds from validation; this
+also bounds static-token cache reuse. Discovery immediately removes deleted
+accounts, while subsequent proxy requests may reuse an existing lease until
+expiry. Expiry does not interrupt an in-flight request or stream. After
+resolution, the addon rechecks the current owner before forwarding. No new
+Runner wire field or HTTP/custom cache policy is introduced.
+
+The v3 catalog read bridge and its cleanup under
+[#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.
+This execution change adds no environment variable, release workflow change or
+per-service skill.
+
 ## PostHog CIMD OAuth
 
 PostHog OAuth uses a public client identified by
@@ -1873,8 +2080,10 @@ The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v
 launch discriminator without a Runner profile and three sparse ownership/intent/lease
 tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
 expand migration replaces the launch CHECK as NOT VALID; a separate bounded
-validation transaction scans retained runs before API promotion. New runtime
-writers are absent and `piDeferredSandbox` is org-scoped and off, including staff.
+validation transaction scans retained runs before API promotion. The
+`piDeferredSandbox` default remains off, but that default does not establish the
+state of every organization or staff override; historical v4 attempts and their
+retained obligations must remain readable.
 
 After future v4 activation, disabling starts must retain phase/epoch-aware readers,
 consumer/recovery, cancellation, capacity counting, credential retention and erasure.
@@ -1910,17 +2119,21 @@ Its optional Runner header is ignored by older APIs; older Runners remain
 excluded from v4 jobs. The release endpoint and Runner use one strict explicit
 outcome contract: a missing, malformed or unknown outcome retains the receipt
 instead of fabricating a stale acknowledgement. No mixed-response bridge is
-required while the feature is non-GA: no production publisher is enabled and
-`piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
-Runner. The outer Pi launch-config v2 contains a new versioned continuation slot.
-The co-built Guest uses its private Sandbox control token to assemble the handoff
-in a 0600 run-scoped file and passes only an additive path variable to the CLI.
-An older CLI fails its legacy ordinary-token read; a newer CLI under an older
-Guest fails because the authenticated file is absent. Both combinations stop
-before the RPC boundary. Enablement therefore requires the capable API,
-Runner/Guest and newly captured commit-addressed CLI.
-Drain existing v4 intents, leases and release receipts before rolling any of
-those readers back below that floor. No switch is enabled by the consumer
+provided for this non-GA path. New admission remains default-off and the
+user-reported shutdown is the current operational boundary, but historical
+production attempts under #34795 mean retained v4 obligations may still exist.
+The outer Pi launch-config v2 contains a new versioned continuation slot. The
+co-built Guest uses its private Sandbox control token to assemble the handoff in
+a 0600 run-scoped file and passes only an additive path variable to the CLI. The
+entire pre-spawn request and response-body wait stays under the existing user
+cancellation token, original absolute execution deadline and heartbeat terminal
+semantics; a winning control removes unpublished/published startup files and
+starts no child. An older CLI fails its legacy ordinary-token read; a newer CLI
+under an older Guest fails because the authenticated file is absent. Both
+combinations stop before the RPC boundary. Enablement therefore requires the
+capable API, Runner/Guest and newly captured commit-addressed CLI.
+Drain existing v4 intents, leases, claims and release receipts before rolling any
+of those readers back below that floor. No switch is enabled by the consumer
 implementation.
 
 ## Email outbox provider replay and send-time expiry (#34645, #34695)
@@ -2090,3 +2303,126 @@ only that no result of such a request is accepted, persisted or returned after
 the revoking transaction commits. See
 [the collection contract](morning-brief-collection.md) for the source contract,
 lease semantics, finite budgets and declared coverage limits.
+
+## Marketing browser funnel events
+
+The App sends both onboarding entry and actual Stripe redirect actions to
+`POST /api/events` on the environment-matched Marketing origin
+(`https://www.okou.ai` in production). The owner explicitly requested removing
+the previous onboarding-start and checkout-start receivers without aliases.
+Both repositories must ship the matching event contract as a coordinated
+cutover; a new App against an old Marketing deployment receives a failed event
+request, and an old App against the new receiver uses a retired route. Neither
+combination is supported by this prelaunch change. Event failures never block
+the onboarding or checkout flow and are not retried by the App.
+
+Verify the production App version and commit contain the new caller, then raise
+`minimumSupportedVersion` in
+`turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
+in a separate release. Do not guess a version from this PR or raise the floor
+with the first replacement App deployment: production promotes the API first,
+so a refresh could still load an unsupported build. This PR does not change the
+floor or authorize a production rollout.
+
+The existing App API check prompts old clients to refresh on their next handled
+API request. Direct Marketing requests do not pass through that middleware;
+cached old callers before the floor takes effect are outside this prelaunch
+support boundary. Do not roll the App back below the floor or Marketing back
+behind the unified receiver while those App builds are supported.
+
+`sendEvent$(tag)` sends only `tag` (`onboarding-start` or `checkout-start`) and a
+fresh UUID `eventId`. Marketing derives identity from the bearer token, supplies
+the event timestamp, preserves existing first-touch attribution, and records
+events even without attribution cookies. A recorded event returns 200 with
+`{code: "EVENT_RECORDED"}` when usable attribution is available, otherwise an
+empty 204. Errors return their HTTP status with `{code, error}`. The App does
+not consume the response body or add outcome telemetry.
+
+Requests include credentials and keepalive and belong to the App root, so
+navigation never waits for them and a session change cancels pending work.
+There is no ten-second deadline, local attempt marker, deferred onboarding
+handoff, retry, or fallback. Each actual POST is preceded by one Axiom
+`marketing.event.send` record with tag, userId, and orgId; `outcome: started`
+means a send attempt, not server acceptance. No browser request ID header is
+introduced. PostHog product and funnel events remain in the App; advertising
+account selection and delivery belong to Marketing.
+
+Marketing deduplicates onboarding by user/org and checkout by user/org/event
+UUID. These counts differ intentionally from the legacy gtag browser-session/
+account deduplication: another checkout action produces another event. A
+successful event response is not a provider delivery receipt. This change
+retains existing provider sending gates, adds no provider activation or replay,
+and leaves checkout coverage at the existing `RedirectToStripe` producers,
+excluding previews and other payment paths without that producer.
+
+## Morning Brief collection revocation stamp (#34860)
+
+Migration 1154 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
+column. It is additive, has no default and needs no backfill, scan or
+`LOCK TABLE`, so it applies as an ordinary short transaction.
+
+`FOR KEY SHARE` on the member row only orders two transactions; it does not
+outlive either of them. The revocation decision now persists in this column, so
+a claim admitted against an external membership answer resolved before
+revocation still loses after that cleanup commits — including when the cleanup
+found no occurrence to delete, and long before the member row itself is removed.
+
+- **Old code after migration** never reads or writes the column. It stays `NULL`
+  for every member an old artifact touches, which is exactly the unrevoked
+  state, and the older collector keeps its previous behavior.
+- **New code before migration** must not be promoted. Membership, user and
+  organization cleanup write this column **unconditionally**, in the same
+  transaction that already revokes run authority, with no feature check in front
+  of it; the default-off `simpleMorningBrief` switch does not protect it.
+  Promoting the API artifact before migration 1154 has shipped would make those
+  Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
+  column in the same unconditional statement that locks the member row.
+- **Rollback** leaves stamped rows behind. An older artifact ignores them, so a
+  member whose cleanup was interrupted after revocation simply keeps their
+  pre-existing behavior; the rows themselves are deleted with the member row at
+  the end of each cleanup path. There is no dual-write window and nothing to
+  contract later.
+
+The companion parent-generation check needs no schema of its own: the admission
+carries the member row's existing `created_at`, and the claim requires it to be
+unchanged. Ordinary preference upserts preserve that value, so no deployed
+writer has to change; only a deleted and recreated row reads differently, which
+is exactly the case it refuses. An older artifact simply does not compare it.
+
+This repair changes no route registration, environment gate, feature switch,
+schedule, Run, credit, Chat or email behavior, and it does not activate the
+still-unregistered Clerk erasure bridge. It is a local serialization boundary
+for one owner's collection authority; durable membership and materialization
+ownership and global deletion finality remain S7 gates.
+
+## Marketing attribution cutover (#33886)
+
+The App no longer loads gtag, sends Google Ads conversions, looks up an Ads
+account, or polls attribution milestones. Marketing owns the unified business
+events and provider delivery. The API removes the old signup, account and
+milestone attribution routes without aliases, as explicitly requested for this
+prelaunch cutover. Existing pages may lose those retired telemetry calls during
+the API-before-App promotion window; the replacement App removes their callers.
+
+Billing remains operational across that window. Checkout request schemas use
+Zod's default unknown-key stripping, so an older App's extra `adAttribution` is
+ignored rather than rejecting a purchase. The removed `googleAdsConversion`
+response property was optional in the preceding App contract. Both Apps still
+use `completed` and the original purchase response statuses. The retained
+`completePaidCheckout$` polls actual payment reconciliation before continuing
+onboarding or showing billing success. No payment endpoint or fulfillment is
+removed.
+
+The API stops writing Clerk signup attribution and org acquisition columns and
+stops attaching acquisition snapshots to new Stripe billing objects. New
+customers keep `orgId`; sessions and subscriptions retain financial identity,
+tier, price, purchase timestamps and preview routing. Existing metadata copied
+through plan or schedule changes is filtered to avoid reintroducing marketing
+fields, including old privacy receipts; Marketing retains authoritative
+withdrawal state. Historical rows and external objects are not erased in this
+change.
+
+Coordinate the Marketing single-sender cutover with this App/API deployment.
+Verify the replacement App is live before setting a later client floor; an
+already-open old bundle can otherwise continue sending browser conversions.
+This PR does not select a floor or change production provider settings.

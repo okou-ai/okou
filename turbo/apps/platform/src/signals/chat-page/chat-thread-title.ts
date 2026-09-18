@@ -1,3 +1,6 @@
+const ARCHIVED_CHAT_THREAD_EMOJI = "✅";
+const UNARCHIVED_CHAT_THREAD_FALLBACK_TITLE = "New Thread";
+
 export const CHAT_THREAD_EMOJI_OPTIONS = [
   { emoji: "✅" },
   { emoji: "🔥" },
@@ -51,4 +54,22 @@ export function removeChatThreadEmoji(
   title: string | null | undefined,
 ): string {
   return getChatThreadTitleParts(title).text;
+}
+
+export function isChatThreadArchived(
+  title: string | null | undefined,
+): boolean {
+  return getChatThreadTitleParts(title).emoji === ARCHIVED_CHAT_THREAD_EMOJI;
+}
+
+export function archiveChatThreadTitle(
+  title: string | null | undefined,
+): string {
+  return applyChatThreadEmoji(title, ARCHIVED_CHAT_THREAD_EMOJI);
+}
+
+export function unarchiveChatThreadTitle(
+  title: string | null | undefined,
+): string {
+  return removeChatThreadEmoji(title) || UNARCHIVED_CHAT_THREAD_FALLBACK_TITLE;
 }

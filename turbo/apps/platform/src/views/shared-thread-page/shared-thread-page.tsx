@@ -1,11 +1,12 @@
 import type {
   SharedMessage,
+  SharedMessageAttachment,
   SharedThreadResponse,
 } from "@okouai/api-contracts/contracts/shared-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { Button, Card, CardContent, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { useLoadable, useSet } from "ccstate-react";
+import { useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { Root } from "hast";
 import { Copy, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -14,6 +15,8 @@ import {
   BRAND_NAME,
   type BrandName,
 } from "../../signals/branding.ts";
+import { currentUserInfo$ } from "../../signals/auth.ts";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { SharedThreadRichContentSignals } from "../../signals/shared-thread-page/shared-thread-rich-content.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
@@ -33,6 +36,7 @@ import {
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
+  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
@@ -45,7 +49,14 @@ import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
  * tree undefined and are derived by the thread's rich-content signals when the
  * view consumes them.
  */
-export type SharedDisplayMessage = SharedMessage & { readonly tree?: Root };
+export type SharedDisplayAttachment = SharedMessageAttachment & {
+  readonly preview: AttachmentPreviewSignals;
+};
+
+export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
+  readonly tree?: Root;
+  readonly attachments?: readonly SharedDisplayAttachment[];
+};
 
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];
@@ -292,18 +303,20 @@ function SharedThreadHandoff({
 }: {
   readonly assistantName: string;
   readonly handoffUrl: string;
-  readonly signInUrl: string;
+  /** Null once the viewer is known to be signed in; they have an account. */
+  readonly signInUrl: string | null;
 }) {
   const { t } = useTranslation();
+  // The canvas runs behind this bar the way it runs behind the header, for the
+  // reason the chat composer's footer records.
   return (
     <footer
       data-shared-thread-handoff=""
-      className="relative shrink-0 bg-[hsl(var(--background))]"
+      className="relative shrink-0"
       style={{
         paddingBottom: "max(0.5rem, var(--sab))",
       }}
     >
-      <div className="pointer-events-none absolute inset-x-0 -top-5 h-[21px] bg-gradient-to-t from-[hsl(var(--background))] to-transparent" />
       <div className="pb-2 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6">
         <div className="mx-auto max-w-[900px]">
           <Card surface="composer" className="z-10">
@@ -325,13 +338,15 @@ function SharedThreadHandoff({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                  <Button variant="quiet" size="sm" asChild>
-                    <a href={signInUrl}>
-                      {t(($) => {
-                        return $.sharedThread.signIn;
-                      })}
-                    </a>
-                  </Button>
+                  {signInUrl !== null ? (
+                    <Button variant="quiet" size="sm" asChild>
+                      <a href={signInUrl}>
+                        {t(($) => {
+                          return $.sharedThread.signIn;
+                        })}
+                      </a>
+                    </Button>
+                  ) : null}
                   <Button size="sm" asChild>
                     <a href={handoffUrl}>
                       {t(($) => {
@@ -349,6 +364,14 @@ function SharedThreadHandoff({
   );
 }
 
+/**
+ * The public conversation's own header. It sits inside the workspace sheet, as
+ * the chat page's header does: the sheet carries the canvas and its palette, so
+ * a header above it would paint a separate band across the top of the page. It
+ * keeps its fill only where it also keeps its rule, below `sm`: a filled strip
+ * with a rule under it is a top bar, while the same strip without one is a
+ * lighter patch of canvas with nothing to explain where it ends.
+ */
 function SharedThreadHeader({
   brandName,
   homeUrl,
@@ -360,13 +383,14 @@ function SharedThreadHeader({
   readonly brandName: BrandName;
   readonly homeUrl: string;
   readonly shareUrl: string | null;
-  readonly signInUrl: string;
-  readonly signUpUrl: string;
+  /** Both null once the viewer is known to be signed in; they have an account. */
+  readonly signInUrl: string | null;
+  readonly signUpUrl: string | null;
   readonly title: string | null;
 }) {
   const { t } = useTranslation();
   return (
-    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:px-6 md:bg-transparent">
+    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:bg-transparent sm:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <a
           href={homeUrl}
@@ -419,25 +443,29 @@ function SharedThreadHeader({
             <Share2 size={18} />
           </Button>
         ) : null}
-        <Button
-          variant="quiet"
-          size="sm"
-          className="hidden sm:inline-flex"
-          asChild
-        >
-          <a href={signInUrl}>
-            {t(($) => {
-              return $.sharedThread.signIn;
-            })}
-          </a>
-        </Button>
-        <Button size="sm" asChild>
-          <a href={signUpUrl}>
-            {t(($) => {
-              return $.sharedThread.signUp;
-            })}
-          </a>
-        </Button>
+        {signInUrl !== null ? (
+          <Button
+            variant="quiet"
+            size="sm"
+            className="hidden sm:inline-flex"
+            asChild
+          >
+            <a href={signInUrl}>
+              {t(($) => {
+                return $.sharedThread.signIn;
+              })}
+            </a>
+          </Button>
+        ) : null}
+        {signUpUrl !== null ? (
+          <Button size="sm" asChild>
+            <a href={signUpUrl}>
+              {t(($) => {
+                return $.sharedThread.signUp;
+              })}
+            </a>
+          </Button>
+        ) : null}
       </div>
     </header>
   );
@@ -457,7 +485,10 @@ function SharedThreadTranscript({
       <div
         data-testid="shared-thread-scroll"
         tabIndex={-1}
-        className="absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]"
+        className={cn(
+          "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
+          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
+        )}
       >
         <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
           <div
@@ -506,6 +537,17 @@ export function SharedThreadPage({
   // palette rather than the neutral default, as the artifact viewer already
   // does. A signed-out visitor has no palette and keeps that default.
   const mountRef = useSet(shellDocumentAttributesRef$);
+  // The sign-in and sign-up actions are for the visitor this link is written
+  // for. A viewer who already has an account keeps the conversation and the
+  // handoff without being asked to create a second one. Only a settled absence
+  // of a user offers them, so the page a link opens by default renders its
+  // actions immediately rather than after Clerk answers. The last resolved
+  // viewer is what settles it: `currentUserInfo$` re-reads on every Clerk
+  // event, including the session-token refreshes that leave the account alone,
+  // and a hook that returned to its pending state would put the prompts back
+  // in front of the member each time one landed.
+  const viewer = useLastResolved(currentUserInfo$);
+  const viewerSignedIn = viewer !== undefined;
   const groups = sharedThread ? groupSharedMessages(sharedThread.messages) : [];
   // Threads shared under the retired brand keep their stored value, but only
   // okou.ai serves this page, so it always presents the Okou brand.
@@ -529,21 +571,23 @@ export function SharedThreadPage({
   signInUrl.searchParams.set("redirect_url", handoffUrl.toString());
   const signUpUrl = new URL("/sign-up", `${homeUrl}/`);
   signUpUrl.searchParams.set("redirect_url", handoffUrl.toString());
+  const signInHref = viewerSignedIn ? null : signInUrl.toString();
+  const signUpHref = viewerSignedIn ? null : signUpUrl.toString();
 
   return (
     <div
       ref={mountRef}
       className="flex h-full min-h-0 flex-col bg-background text-foreground md:bg-sidebar"
     >
-      <SharedThreadHeader
-        brandName={BRAND_NAME}
-        homeUrl={homeUrl}
-        shareUrl={shareUrl}
-        signInUrl={signInUrl.toString()}
-        signUpUrl={signUpUrl.toString()}
-        title={sharedThread?.title ?? null}
-      />
       <WorkspaceInset beside="nothing">
+        <SharedThreadHeader
+          brandName={BRAND_NAME}
+          homeUrl={homeUrl}
+          shareUrl={shareUrl}
+          signInUrl={signInHref}
+          signUpUrl={signUpHref}
+          title={sharedThread?.title ?? null}
+        />
         {sharedThread ? (
           <>
             <SharedThreadTranscript
@@ -554,7 +598,7 @@ export function SharedThreadPage({
             <SharedThreadHandoff
               assistantName={ASSISTANT_NAME}
               handoffUrl={handoffUrl.toString()}
-              signInUrl={signInUrl.toString()}
+              signInUrl={signInHref}
             />
           </>
         ) : (

@@ -98,7 +98,6 @@ export default defineConfig(({ command }) => ({
         authToken: process.env.SENTRY_AUTH_TOKEN,
         telemetry: false,
         sourcemaps: {
-          // Delete source maps after upload to avoid exposing them
           filesToDeleteAfterUpload: ["./dist/**/*.map"],
         },
       }),

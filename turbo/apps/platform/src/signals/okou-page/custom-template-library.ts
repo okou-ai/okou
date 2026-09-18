@@ -4,10 +4,14 @@ import {
   type UpdateUserTemplateBody,
   type UserTemplateCatalogEntry,
   type UserTemplateDetail,
+  type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
+
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { retryTransientLoad, waitForOperation } from "../utils.ts";
 
 const catalogVersion$ = state(0);
@@ -18,9 +22,17 @@ const catalogVersion$ = state(0);
  * recency order, so nothing is re-sorted here — ownership is read from each
  * row rather than expressed as position.
  */
-const customTemplateCatalog$ = computed(
+export const customTemplateCatalog$ = computed(
   async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
     get(catalogVersion$);
+    // A member without the feature has no catalog, and the routes refuse them
+    // anyway. Answering here rather than at each reader is what keeps the
+    // composer honest: the selected-template chip resolves against this on
+    // every render, for every member, so a reader-side guard would still have
+    // to subscribe — and subscribing is what issues the request.
+    if (get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] !== true) {
+      return [];
+    }
     const client = get(apiClient$)(userTemplatesContract);
     const result = await retryTransientLoad(() => {
       return accept(client.list(), [200]);
@@ -84,18 +96,38 @@ export const visibleCustomTemplates$ = computed(
   },
 );
 
-const internalOpenTemplateId$ = state<string | null>(null);
+/**
+ * The open template, with the kind that decides where it opens.
+ *
+ * The kind travels with the id rather than being read back from the catalog,
+ * because the surface has to be chosen in the same frame as the click: a deck
+ * takes over the panel, a document opens a preview dialog over it, and waiting
+ * for the detail request to say which would render one of them first and then
+ * replace it.
+ */
+interface OpenCustomTemplate {
+  readonly templateId: string;
+  readonly kind: UserTemplateKind;
+}
+
+const internalOpenTemplate$ = state<OpenCustomTemplate | null>(null);
 
 export const openCustomTemplateId$ = computed((get) => {
-  return get(internalOpenTemplateId$);
+  return get(internalOpenTemplate$)?.templateId ?? null;
 });
 
-export const openCustomTemplate$ = command(({ set }, templateId: string) => {
-  set(internalOpenTemplateId$, templateId);
+export const openCustomTemplateKind$ = computed((get) => {
+  return get(internalOpenTemplate$)?.kind ?? null;
 });
+
+export const openCustomTemplate$ = command(
+  ({ set }, template: OpenCustomTemplate) => {
+    set(internalOpenTemplate$, template);
+  },
+);
 
 export const closeCustomTemplate$ = command(({ set }) => {
-  set(internalOpenTemplateId$, null);
+  set(internalOpenTemplate$, null);
 });
 
 /**
@@ -104,7 +136,7 @@ export const closeCustomTemplate$ = command(({ set }) => {
  */
 export const openCustomTemplateDetail$ = computed(
   async (get): Promise<UserTemplateDetail | null> => {
-    const templateId = get(internalOpenTemplateId$);
+    const templateId = get(openCustomTemplateId$);
     if (templateId === null) {
       return null;
     }
@@ -117,6 +149,14 @@ export const openCustomTemplateDetail$ = computed(
   },
 );
 
+/**
+ * One save, start to finish. The caller's loadable is what decides whether the
+ * editor is still accepting input, so this resolves only once the surfaces that
+ * editor can see are carrying the new value — the catalog behind the panel, and
+ * the detail the editor itself reads. Resolving at the PATCH would reopen the
+ * field on the title the server has already replaced, which is the edit the
+ * member would then be correcting.
+ */
 export const updateCustomTemplate$ = command(
   async (
     { get, set },
@@ -137,6 +177,14 @@ export const updateCustomTemplate$ = command(
     );
     signal.throwIfAborted();
     await set(reloadAndAwaitCustomTemplates$, signal);
+    // Only the template still on screen has an editor waiting on its readback.
+    // A visibility change made from a card, or a rename the member walked away
+    // from, has no such reader — and waiting for a detail nobody is showing
+    // would keep a save open on a request that is never made.
+    if (get(openCustomTemplateId$) === args.templateId) {
+      await waitForOperation(get(openCustomTemplateDetail$), signal);
+      signal.throwIfAborted();
+    }
   },
 );
 
@@ -156,8 +204,8 @@ export const deleteCustomTemplate$ = command(
       [204],
     );
     signal.throwIfAborted();
-    if (get(internalOpenTemplateId$) === templateId) {
-      set(internalOpenTemplateId$, null);
+    if (get(openCustomTemplateId$) === templateId) {
+      set(internalOpenTemplate$, null);
     }
     await set(reloadAndAwaitCustomTemplates$, signal);
   },
@@ -166,6 +214,6 @@ export const deleteCustomTemplate$ = command(
 /** Opening the picker always starts from a clean list and no open template. */
 export const resetCustomTemplatePicker$ = command(({ set }) => {
   set(internalSearchQuery$, "");
-  set(internalOpenTemplateId$, null);
+  set(internalOpenTemplate$, null);
   set(reloadCustomTemplates$);
 });

@@ -1971,18 +1971,16 @@ describe("actual compute transactions versus the B1 projector", () => {
         expect(diagnostics.takeFailure(error)).toBeUndefined();
       }
 
-      it.each([
+      describe.each([
         "user",
         "organization",
         "resource_identity_locks",
-        "output_advisory_lock",
         "thread_lock",
         "run_lock",
         "session_lock",
         "projection_write",
-      ] as const)(
-        "attributes a real %s timeout after rollback and allows an idempotent HTTP retry",
-        async (phase) => {
+      ] as const)("real %s output timeout", (phase) => {
+        async function prepareBlockedOutput() {
           const f = await outputFixture();
           await sendOutput(f);
           await flushWaitUntilForTest();
@@ -2004,11 +2002,6 @@ describe("actual compute transactions versus the B1 projector", () => {
                   .from(agents)
                   .where(eq(agents.id, f.agentId))
                   .for("update");
-              }
-              case "output_advisory_lock": {
-                return tx.execute(
-                  sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${f.runId}`}, 0))`,
-                );
               }
               case "thread_lock": {
                 return tx
@@ -2040,6 +2033,11 @@ describe("actual compute transactions versus the B1 projector", () => {
               }
             }
           });
+          return { f, before, held };
+        }
+
+        it(`attributes a real ${phase} timeout after complete diagnostic rollback`, async () => {
+          const { f, before, held } = await prepareBlockedOutput();
           const diagnostics = new RunOutputDiagnostics();
           const writing = settle(projectOutput(f, diagnostics, context.signal));
           await waitForBlockedBy(held.pid);
@@ -2057,6 +2055,11 @@ describe("actual compute transactions versus the B1 projector", () => {
               : phase,
           );
           await expect(contentState(f)).resolves.toStrictEqual(before);
+          await held.release();
+        });
+
+        it(`retries a real ${phase} HTTP timeout after rollback and keeps replay idempotent`, async () => {
+          const { f, before, held } = await prepareBlockedOutput();
           await webhooks.requestAgentEvents(
             outputBody(f, 10),
             outputHeaders(f),
@@ -2081,8 +2084,8 @@ describe("actual compute transactions versus the B1 projector", () => {
             run: accepted.run,
             materialization: [{ latestResultText: "result 10" }],
           });
-        },
-      );
+        });
+      });
 
       it("progresses same-org and unrelated writers around a blocked invocation", async () => {
         const f = await outputFixture();
@@ -2910,13 +2913,14 @@ describe("actual compute transactions versus the B1 projector", () => {
         };
       }
 
-      it.each([
-        "capture",
-        "claim",
-        "completion",
-        "cooldown",
-        "response",
-      ] as const)(
+      function unavailable(f: OutputFixture) {
+        return {
+          status: 200,
+          body: { runId: f.runId, status: "unavailable", messages: [] },
+        };
+      }
+
+      it.each(["capture", "claim", "completion", "cooldown"] as const)(
         "%s commits before closure can project and retains activity deadlines",
         async (stage) => {
           const f = await activityFixture();
@@ -2929,7 +2933,6 @@ describe("actual compute transactions versus the B1 projector", () => {
             {
               runId: f.runId,
               stage: stage === "cooldown" ? "completion" : stage,
-              position: "before",
               work: async (barrier) => {
                 const writing = accepted
                   ? settle(accepted.dispatch())
@@ -2961,14 +2964,17 @@ describe("actual compute transactions versus the B1 projector", () => {
                 } else {
                   expect(rows[0]?.summary).toBe("Checking launch materials");
                 }
-                if (stage === "response") {
+                if (stage === "completion" || stage === "cooldown") {
                   expect(written).toMatchObject({
                     ok: true,
                     value: {
                       status: 200,
                       body: {
                         status: "available",
-                        messages: [{ text: "Checking launch materials" }],
+                        messages:
+                          stage === "completion"
+                            ? [{ text: "Checking launch materials" }]
+                            : [],
                       },
                     },
                   });
@@ -3061,14 +3067,54 @@ describe("actual compute transactions versus the B1 projector", () => {
         },
       );
 
+      it.each(["current-run", "terminal", "cleanup"] as const)(
+        "%s first prevents stale completion and response state",
+        async (change) => {
+          const f = await activityFixture();
+          const entered = createDeferredPromise<void>(context.signal);
+          const release = createDeferredPromise<string>(context.signal);
+          activityProvider(async () => {
+            entered.resolve();
+            return await release.promise;
+          });
+          const pending = summarize(f);
+          await entered.promise;
+          const before = await snapshot(f);
+          if (change === "current-run") {
+            await db
+              .update(chatThreads)
+              .set({ agentSessionRunId: null })
+              .where(eq(chatThreads.id, f.threadId));
+          } else if (change === "terminal") {
+            await db
+              .update(agentRuns)
+              .set({ status: "completed", completedAt: nowDate() })
+              .where(eq(agentRuns.id, f.runId));
+          } else {
+            // Production cleanup owns the same row-level delete. No user API can
+            // remove one collector while a provider request is in flight.
+            await db
+              .delete(runActivitySnapshots)
+              .where(eq(runActivitySnapshots.runId, f.runId));
+          }
+          release.resolve("Stale provider phrase");
+          await expect(pending).resolves.toMatchObject(
+            change === "cleanup" ? unavailable(f) : ineligible(f),
+          );
+          await expect(snapshot(f)).resolves.toStrictEqual(
+            change === "cleanup" ? [] : before,
+          );
+        },
+      );
+
       it.each([
         "close",
-        "close-retained",
         "transfer",
         "current-run",
-        "remove-run",
+        "terminal",
+        "cleanup",
       ] as const)(
-        "reacquires the final INSERT/response barrier after completion: %s",
+        "returns committed completion state before %s can proceed",
         async (change) => {
           const f = await activityFixture();
           activityProvider();
@@ -3076,44 +3122,59 @@ describe("actual compute transactions versus the B1 projector", () => {
             {
               runId: f.runId,
               stage: "completion",
-              position: "after",
               work: async (barrier) => {
-                const pending = summarize(f);
-                await barrier.entered;
-                const closure =
-                  change === "close" || change === "close-retained"
-                    ? await holdClosure(decision(f.userId))
-                    : undefined;
-                if (change === "transfer") {
-                  await db
-                    .update(agents)
-                    .set({ owner: `survivor-${randomUUID()}` })
-                    .where(eq(agents.id, f.agentId));
-                } else if (change === "current-run") {
-                  await db
-                    .update(chatThreads)
-                    .set({ agentSessionRunId: null })
-                    .where(eq(chatThreads.id, f.threadId));
-                } else if (change === "remove-run") {
-                  await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
-                }
-                const before = await snapshot(f);
-                if (change !== "close-retained") {
-                  await db
-                    .delete(runActivitySnapshots)
-                    .where(eq(runActivitySnapshots.runId, f.runId));
-                }
+                let responded = false;
+                const observed = summarize(f).then(
+                  (value) => {
+                    responded = true;
+                    return value;
+                  },
+                  (error: unknown) => {
+                    responded = true;
+                    throw error;
+                  },
+                );
+                const settings = await barrier.entered;
+                const competing = (async () => {
+                  if (change === "close") {
+                    await close(decision(f.userId));
+                  } else if (change === "transfer") {
+                    await db
+                      .update(agents)
+                      .set({ owner: `survivor-${randomUUID()}` })
+                      .where(eq(agents.id, f.agentId));
+                  } else if (change === "current-run") {
+                    await db
+                      .update(chatThreads)
+                      .set({ agentSessionRunId: null })
+                      .where(eq(chatThreads.id, f.threadId));
+                  } else if (change === "terminal") {
+                    await db
+                      .update(agentRuns)
+                      .set({ status: "completed", completedAt: nowDate() })
+                      .where(eq(agentRuns.id, f.runId));
+                  } else {
+                    await db
+                      .delete(runActivitySnapshots)
+                      .where(eq(runActivitySnapshots.runId, f.runId));
+                  }
+                })();
+                await waitForBlockedBy(settings.pid);
+                expect(responded).toBeFalsy();
                 barrier.release();
-                if (closure) {
-                  await waitForBlockedBy(closure.pid);
-                  await closure.release();
-                }
-                await expect(pending).resolves.toMatchObject(ineligible(f));
-                if (change === "close-retained") {
-                  await expect(snapshot(f)).resolves.toStrictEqual(before);
-                } else {
-                  await expect(snapshot(f)).resolves.toHaveLength(0);
-                }
+                const [result] = await Promise.all([observed, competing]);
+                expect(result).toMatchObject({
+                  status: 200,
+                  body: {
+                    status: "available",
+                    messages: [{ text: "Checking launch materials" }],
+                  },
+                });
+                await expect(snapshot(f)).resolves.toMatchObject(
+                  change === "cleanup"
+                    ? []
+                    : [{ summary: "Checking launch materials" }],
+                );
               },
             },
             context.signal,
@@ -3408,7 +3469,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           {
             runId: f.runId,
             stage: "output",
-            position: "before",
             work: async (barrier) => {
               const pending = sendOutput(f);
               await expect(barrier.entered).resolves.toMatchObject({
@@ -3598,7 +3658,6 @@ describe("actual compute transactions versus the B1 projector", () => {
           {
             runId: f.runId,
             stage: "output",
-            position: "before",
             work: async (barrier) => {
               const pending = invokeTerminal(f, "failed");
               await expect(barrier.entered).resolves.toMatchObject({
@@ -5029,11 +5088,13 @@ describe("actual compute transactions versus the B1 projector", () => {
       it("serializes the same run while an independent terminal writer in the organization commits", async () => {
         const first = await terminalFixture("failed");
         const independent = await terminalFixture("failed", first.orgId);
-        // The API cannot pause a writer at its run-specific projection lock.
+        // The run row is the common same-run mutex for every content writer.
         const held = await holdBusinessRow(async (tx) => {
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${first.runId}`}, 0))`,
-          );
+          await tx
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, first.runId))
+            .for("update");
         });
         await startTerminal(first, "failed");
         await startTerminal(first, "failed");
@@ -5112,25 +5173,26 @@ describe("actual compute transactions versus the B1 projector", () => {
       expect(samples).toHaveLength(4);
     });
 
-    it("measures bounded output diagnostic overhead on four subject layouts", async () => {
-      const f = await outputFixture();
-      const sameUserAgent = await bdd.createAgent(f.actor, {
-        displayName: "Synthetic same-user peer",
-        visibility: "public",
-      });
-      const sameUser = await outputForFixture({
-        ...f,
-        agentId: sameUserAgent.agentId,
-      });
-      const sameOrg = await outputFixture(f.orgId);
-      const unrelated = await outputFixture();
-      const samples: { layout: string; elapsedMs: number }[] = [];
-      for (const [layout, peer] of [
-        ["uncontended", undefined],
-        ["same-user", sameUser],
-        ["same-org", sameOrg],
-        ["unrelated", unrelated],
-      ] as const) {
+    it.each(["uncontended", "same-user", "same-org", "unrelated"] as const)(
+      "measures bounded output diagnostic overhead for the %s subject layout",
+      async (layout) => {
+        const f = await outputFixture();
+        let peer: OutputFixture | undefined;
+        if (layout === "same-user") {
+          const sameUserAgent = await bdd.createAgent(f.actor, {
+            displayName: "Synthetic same-user peer",
+            visibility: "public",
+          });
+          peer = await outputForFixture({
+            ...f,
+            agentId: sameUserAgent.agentId,
+          });
+        } else if (layout === "same-org") {
+          peer = await outputFixture(f.orgId);
+        } else if (layout === "unrelated") {
+          peer = await outputFixture();
+        }
+        const samples: { layout: string; elapsedMs: number }[] = [];
         for (let sample = 0; sample < 3; sample++) {
           const sequence = 100 + samples.length * 10;
           const start = performance.now();
@@ -5142,11 +5204,11 @@ describe("actual compute transactions versus the B1 projector", () => {
           // Await owned consumers outside the measured HTTP completion interval.
           await flushWaitUntilForTest();
         }
-      }
-      process.stdout.write(
-        `B2B2_OUTPUT_DIAGNOSTIC_MS ${JSON.stringify(samples)}\n`,
-      );
-      expect(samples).toHaveLength(12);
-    });
+        process.stdout.write(
+          `B2B2_OUTPUT_DIAGNOSTIC_MS ${JSON.stringify(samples)}\n`,
+        );
+        expect(samples).toHaveLength(3);
+      },
+    );
   });
 });

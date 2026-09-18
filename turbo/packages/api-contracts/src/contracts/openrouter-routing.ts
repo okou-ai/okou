@@ -1,4 +1,4 @@
-/** Verified model/API pairs from #33565 (2026-09-13), not the entire US catalog. */
+/** Verified model/API pairs from #33565 and the 2026-09-18 recheck, not the entire US catalog. */
 const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
   messages: [
     "anthropic/claude-opus-5",
@@ -7,13 +7,13 @@ const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
     "anthropic/claude-sonnet-4.6",
   ],
   responses: [
+    "deepseek/deepseek-v4.1-flash",
     "deepseek/deepseek-v4-flash",
     "deepseek/deepseek-v4-pro",
     "openai/gpt-6-astra",
     "openai/gpt-5.6-sol",
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",
-    "openai/gpt-5.5",
   ],
   // Gemini voice uses Google Cloud; remaining platform Chat models lack US support.
   "chat/completions": [],

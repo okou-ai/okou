@@ -166,11 +166,38 @@ audience, so switching Public to organization or private revokes the old public
 link; later Public sharing allocates a new public token. Previously issued
 temporary previews retain their existing expiration.
 
-`okou artifact download <file-id> [-o|--out <path>]` uses the same command
-implementation, output (`path`, `mimetype`, `size`), `file:read` capability, and
-owner authorization as `okou web download-file`. It supports file UUIDs and
-private `/artifacts/<reference>` files, streams bytes to disk, and does not alter
-visibility. Hosted HTML deployments continue to use the hosting commands.
+`okou artifact download <file-id> [-o|--out <path>]` and
+`okou web download-file` share the same download implementation. Artifact
+references require `artifact:read` and follow the viewer's current only-me,
+organization, or public access. Raw file UUIDs and authenticated web-download
+URLs retain `file:read` and their existing file authorization.
+
+Standalone files, including uploaded HTML files, stream to the requested file
+path and return `{ path, mimetype, size }`. Hosted sites download the complete
+deployment manifest, including every HTML page and asset, into an empty or new
+directory specified by `--out`. Their JSON result additionally contains
+`fileCount` and `entrypoint`; `path` is the directory and `size` is the total
+size of its files. Directory structure is preserved, every file's size and hash
+are verified, and external URLs are not mirrored. Conversation references that
+select a non-HTML file inside a site retain single-file download behavior; clone
+accepts the site's HTML references. For example:
+
+```bash
+okou artifact download /artifacts/abc123def4.html --out ./site
+okou host clone /artifacts/abc123def4.html ./site
+```
+
+`okou host clone` uses the same visibility rules. Organization recipients need
+current membership in the original organization, even when another organization
+is active; public recipients need no membership in that organization. Private
+sites remain owner-only. Shared downloads use the selected shared version and
+its stored snapshot, including rewritten dependency assets. Specifying another
+version does not grant access to an unpublished deployment. Both commands leave
+visibility unchanged and fetch delivery URLs without forwarding the CLI token.
+Cloning a public URL follows that publication, even for its owner. Cloning an
+owned site's bare canonical slug retains the owner's latest-version editing
+behavior. Public sites embedded in shared conversations follow the conversation's
+live sharing policy and independent artifact snapshot.
 
 If an update fails or its response is lost, rerun without `--visibility` before retrying: the
 policy write may already have succeeded. Deploy the API and CLI together before

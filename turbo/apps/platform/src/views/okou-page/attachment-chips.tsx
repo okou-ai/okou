@@ -32,10 +32,12 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   connectorConnectionProgressActive$,
-  dismissConnectorConnectionProgress$,
+  cancelConnectorConnection$,
+  connectorConnectionAttempt$,
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "../components/connector-connection-dialog-body.tsx";
+import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -1176,9 +1178,10 @@ function ArtifactPreviewDialogThreadResolver({
 function useCloseArtifactPreview() {
   const rootSignal = useGet(rootSignal$);
   const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
-  const dismissProgress = useSet(dismissConnectorConnectionProgress$);
+  const cancelConnection = useSet(cancelConnectorConnection$);
+  const connectionAttempt = useGet(connectorConnectionAttempt$);
   return () => {
-    dismissProgress();
+    cancelConnection(connectionAttempt);
     closeArtifactCatalogPreview(rootSignal);
   };
 }
@@ -1312,7 +1315,15 @@ function ArtifactPreviewDialogContent({
     <Dialog
       open={visible}
       onOpenChangeComplete={completeDialogExit}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen, details) => {
+        if (
+          !nextOpen &&
+          connectionProgressActive &&
+          details.reason === "outside-press"
+        ) {
+          details.cancel();
+          return;
+        }
         if (!nextOpen && visible) {
           closeWithAnimation();
         }
@@ -1372,8 +1383,9 @@ function ArtifactPreviewDialogContent({
           </div>
           <DialogBody className="overflow-hidden bg-background">
             {connectionProgressActive ? (
-              <div className="flex h-full items-center justify-center p-6">
+              <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
                 <ConnectorConnectionStatus />
+                <ConnectorConnectionCancelButton />
               </div>
             ) : (
               <ArtifactPreviewBody

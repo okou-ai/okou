@@ -77,6 +77,7 @@ const BDD_BUILT_IN_MODEL_KEY_PREFIXES = [
   "built-in-key-bdd-fake-",
   "built-in-key-bdd-dev-seed-",
 ] as const;
+const cancelledBackendRowSchema = z.object({ cancelled: z.boolean() });
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
 const blockedByPidRowSchema = z.object({ blocked: z.boolean() });
@@ -511,6 +512,9 @@ function annotationProjectionSourcePart(
       tenantId: input.context.teamsContext.tenantId,
       channelId: input.context.teamsContext.channelId,
       activityId: input.context.teamsContext.activityId,
+      conversationId: input.context.teamsContext.conversationId,
+      conversationType: input.context.teamsContext.conversationType,
+      botId: null,
     });
   }
   if ("telegramContext" in input.context) {
@@ -519,6 +523,7 @@ function annotationProjectionSourcePart(
       chatId: input.context.telegramContext.chatId,
       messageId: input.context.telegramContext.messageId,
       isDm: input.context.telegramContext.chatType === "private",
+      botUsername: null,
     });
   }
   return createChatEventSourcePart({
@@ -606,6 +611,9 @@ export async function seedChatEventAnnotationProjectionFixture(
           tenantId: "tenant-2",
           channelId: "19:reject@thread.tacv2",
           activityId: "activity-rejected",
+          conversationId: null,
+          conversationType: "channel",
+          botId: null,
         }),
       }),
       runId: null,
@@ -641,6 +649,9 @@ export async function seedChatEventAnnotationProjectionFixture(
           tenantId: "tenant-2",
           channelId: "19:reject@thread.tacv2",
           activityId: "activity-rejected",
+          conversationId: null,
+          conversationType: "channel",
+          botId: null,
         }),
       }),
       runId: null,
@@ -1531,6 +1542,34 @@ async function firstDirectBlockedStatementKind(
 }
 
 /**
+ * Waiters blocked by this holder whose own statement is a `FOR KEY SHARE` lock
+ * on the held thread. A plain waiter count also includes ordinary writers with
+ * no lock timeout of their own, which can still be queued behind the holder
+ * when a fenced writer has already given up, so a test that needs to observe
+ * exactly that writer block and then stop waiting counts only these.
+ */
+async function blockedKeyShareWaiterCount(holderPid: number): Promise<number> {
+  const rows = await executeRawRows(
+    db(),
+    sql`
+      SELECT activity.query AS "query"
+      FROM pg_stat_activity AS activity
+      WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+    `,
+    blockedQueryRowSchema,
+  );
+  return rows.filter((row) => {
+    const query = normalizeBlockedQuery(row.query);
+    return (
+      query !== undefined &&
+      query.startsWith("select") &&
+      query.includes('from "chat_threads"') &&
+      query.includes("for key share")
+    );
+  }).length;
+}
+
+/**
  * Holds one thread row so route tests can observe the first product statement
  * that requires a write-oriented lock. Product APIs cannot pause at this
  * boundary, and the fixture does not change the held row.
@@ -1542,6 +1581,7 @@ export async function holdChatThreadRowLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly blockedWaiterCount: () => Promise<number>;
+  readonly blockedKeyShareWaiterCount: () => Promise<number>;
   readonly firstBlockedStatementKind: () => Promise<ChatThreadBlockedStatementKind | null>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
@@ -1581,6 +1621,9 @@ export async function holdChatThreadRowLockFixture(args: {
     done,
     blockedWaiterCount: async () => {
       return await transitiveBlockedWaiterCount(holderPid);
+    },
+    blockedKeyShareWaiterCount: async () => {
+      return await blockedKeyShareWaiterCount(holderPid);
     },
     firstBlockedStatementKind: async () => {
       return await firstDirectBlockedStatementKind(holderPid);
@@ -1870,6 +1913,7 @@ export async function holdChatEventQueueAdmissionLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly directWaiterCount: () => Promise<number>;
+  readonly cancelBlockedWaiters: () => Promise<number>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
@@ -1902,6 +1946,23 @@ export async function holdChatEventQueueAdmissionLockFixture(args: {
     done,
     directWaiterCount: async () => {
       return await directBlockedWaiterCount(holderPid);
+    },
+    // A real database failure at the admission boundary cannot be requested
+    // through any API. Only queries blocked on this fixture's own lock are
+    // cancelled, which is the production failure a waiting tick can observe.
+    cancelBlockedWaiters: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT pg_cancel_backend(activity.pid) AS "cancelled"
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        cancelledBackendRowSchema,
+      );
+      return rows.filter((row) => {
+        return row.cancelled;
+      }).length;
     },
   };
 }

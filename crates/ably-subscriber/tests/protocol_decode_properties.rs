@@ -695,22 +695,75 @@ fn assert_rejection_contract(bytes: &[u8], secret: Option<&str>) -> TestCaseResu
     }
 }
 
+fn assert_protocol_message_round_trip(mut expected: ProtocolMessage) -> TestCaseResult {
+    let encoded = encode_msg(&expected).map_err(|error| {
+        TestCaseError::fail(format!("protocol message failed to encode: {error}"))
+    })?;
+    let decoded = decode_msg(&encoded).map_err(|error| {
+        TestCaseError::fail(format!(
+            "encoded protocol message failed to decode: {error}"
+        ))
+    })?;
+
+    // Encode the original input, then canonicalize only the expected root data.
+    // Keep decoded data and nested nulls intact to check the decoder's contract.
+    for message in expected.messages.iter_mut().flatten() {
+        if message
+            .data
+            .as_ref()
+            .is_some_and(serde_json::Value::is_null)
+        {
+            message.data = None;
+        }
+    }
+
+    prop_assert_eq!(
+        ProtocolMessageSnapshot::from(&decoded),
+        ProtocolMessageSnapshot::from(&expected),
+    );
+    Ok(())
+}
+
+#[test]
+fn round_trip_normalizes_root_null_message_data() -> TestCaseResult {
+    assert_protocol_message_round_trip(ProtocolMessage {
+        action: 0,
+        messages: Some(vec![AblyMessage {
+            data: Some(serde_json::Value::Null),
+            ..Default::default()
+        }]),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn round_trip_preserves_nested_null_message_data() -> TestCaseResult {
+    let messages = [
+        None,
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!([null, {"nested": null}])),
+        Some(serde_json::json!({"nested": null, "array": [null]})),
+    ]
+    .into_iter()
+    .map(|data| AblyMessage {
+        data,
+        ..Default::default()
+    })
+    .collect();
+
+    assert_protocol_message_round_trip(ProtocolMessage {
+        action: action::MESSAGE,
+        messages: Some(messages),
+        ..Default::default()
+    })
+}
+
 proptest! {
     #![proptest_config(property_config())]
 
     #[test]
     fn generated_protocol_messages_round_trip(expected in protocol_message_strategy()) {
-        let encoded = encode_msg(&expected).map_err(|error| {
-            TestCaseError::fail(format!("generated protocol message failed to encode: {error}"))
-        })?;
-        let decoded = decode_msg(&encoded).map_err(|error| {
-            TestCaseError::fail(format!("encoded protocol message failed to decode: {error}"))
-        })?;
-
-        prop_assert_eq!(
-            ProtocolMessageSnapshot::from(&decoded),
-            ProtocolMessageSnapshot::from(&expected),
-        );
+        assert_protocol_message_round_trip(expected)?;
     }
 
     #[test]

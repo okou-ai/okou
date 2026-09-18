@@ -467,7 +467,6 @@ describe("CHAT effort: automation launches", () => {
     const scenario = await entitledChatActor({}, "pro");
     const { actor, agentId, runnerGroup } = scenario;
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.PiLoop]: false,
     });
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
@@ -504,57 +503,38 @@ describe("CHAT effort: automation launches", () => {
     };
   }
 
-  it.each([true, false])(
-    "uses the latest thread effort and rollout state for a queued automation (enabled=%s)",
-    async (enabled) => {
-      const { actor, runnerGroup, threadId, runId, claimed, automationId } =
-        await startAutomation();
-      await chat.updateThreadModelSelection(
-        actor,
-        threadId,
-        "claude-sonnet-5",
-        {
-          reasoningEffort: "extra",
-        },
-      );
-      const queued = await accept(
-        threadPiAutomationsClient().run({
-          headers: sessionHeaders(actor),
-          params: { id: automationId },
-        }),
-        [201],
-      );
-      expect(queued.body.runId).toBeNull();
-      await chat.updateThreadModelSelection(
-        actor,
-        threadId,
-        "claude-sonnet-5",
-        {
-          reasoningEffort: "high",
-        },
-      );
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.Effort]: enabled,
-      });
-      await completeChatRunOk(runId, claimed.sandboxHeaders, {
-        cliAgentType: "claude-code",
-      });
-      await flushWaitUntilForTest();
-      const nextRunId = await lastThreadPiAutomationRun(actor, threadId);
-      expect(nextRunId).not.toBe(runId);
-      const next = await claimChatRun(runnerGroup, nextRunId);
-      expect(next.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-        enabled ? "high" : undefined,
-      );
-      await expect(
-        chat.readThreadMetadata(actor, threadId),
-      ).resolves.toMatchObject({
-        modelSettings: { "claude-sonnet-5": { effort: "high" } },
-      });
-      await cancelChatRun(actor, nextRunId, next.sandboxHeaders);
-    },
-    90_000,
-  );
+  it("uses the latest thread effort for a queued automation", async () => {
+    const { actor, runnerGroup, threadId, runId, claimed, automationId } =
+      await startAutomation();
+    await chat.updateThreadModelSelection(actor, threadId, "claude-sonnet-5", {
+      reasoningEffort: "extra",
+    });
+    const queued = await accept(
+      threadPiAutomationsClient().run({
+        headers: sessionHeaders(actor),
+        params: { id: automationId },
+      }),
+      [201],
+    );
+    expect(queued.body.runId).toBeNull();
+    await chat.updateThreadModelSelection(actor, threadId, "claude-sonnet-5", {
+      reasoningEffort: "high",
+    });
+    await completeChatRunOk(runId, claimed.sandboxHeaders, {
+      cliAgentType: "claude-code",
+    });
+    await flushWaitUntilForTest();
+    const nextRunId = await lastThreadPiAutomationRun(actor, threadId);
+    expect(nextRunId).not.toBe(runId);
+    const next = await claimChatRun(runnerGroup, nextRunId);
+    expect(next.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("high");
+    await expect(
+      chat.readThreadMetadata(actor, threadId),
+    ).resolves.toMatchObject({
+      modelSettings: { "claude-sonnet-5": { effort: "high" } },
+    });
+    await cancelChatRun(actor, nextRunId, next.sandboxHeaders);
+  }, 90_000);
 
   it("uses route defaults for unsupported effort at automation launch", async () => {
     const { actor, runnerGroup, threadId, runId, claimed, automationId } =

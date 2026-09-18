@@ -11,12 +11,7 @@ import {
   listSshCredentials,
   updateSshCredential,
 } from "../services/ssh-credential.service";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -35,31 +30,11 @@ import {
   updateSshConnection,
 } from "../services/ssh-connection.service";
 
-const sshConfigurationUnavailable = Object.freeze(
-  sshErrorResponse(
-    404,
-    SSH_ERROR_CODES.UNAVAILABLE,
-    "SSH configuration is not available",
-  ),
-);
-
 const sshAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
   accept: ["session"],
 } as const;
-
-const sshFeatureContext$ = computed(
-  async (get): Promise<FeatureSwitchContext | null> => {
-    const auth = get(organizationAuthContext$);
-    const context = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    return isFeatureEnabled(FeatureSwitchKey.SshAccess, context)
-      ? context
-      : null;
-  },
-);
 
 function mapSshFailure(result: {
   readonly kind: "bad_request" | "not_found" | "conflict";
@@ -83,11 +58,6 @@ const listSshConnectionsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
 
     const connections = await listSshConnections(
       get(db$),
@@ -102,11 +72,6 @@ const listSshConnectionsInner$ = command(
 const summarizeSshConnectionsInner$ = command(
   async ({ get }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
 
     const summary = await summarizeSshConnections(
       get(db$),
@@ -121,12 +86,11 @@ const summarizeSshConnectionsInner$ = command(
 const createSshConnectionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
 
+    const featureContext = await get(
+      userFeatureSwitchContext(auth.orgId, auth.userId),
+    );
+    signal.throwIfAborted();
     const bodyResult = await get(bodyResultOf(sshConnectionsContract.create));
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -157,12 +121,11 @@ const createSshConnectionInner$ = command(
 const updateSshConnectionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
 
+    const featureContext = await get(
+      userFeatureSwitchContext(auth.orgId, auth.userId),
+    );
+    signal.throwIfAborted();
     const [params, bodyResult] = await Promise.all([
       get(pathParamsOf(sshConnectionsContract.update)),
       get(bodyResultOf(sshConnectionsContract.update)),
@@ -195,11 +158,6 @@ const updateSshConnectionInner$ = command(
 const deleteSshConnectionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
 
     const params = await get(pathParamsOf(sshConnectionsContract.delete));
     signal.throwIfAborted();
@@ -220,11 +178,6 @@ const deleteSshConnectionInner$ = command(
 const resetSshConnectionHostKeyInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
 
     const [params, bodyResult] = await Promise.all([
       get(pathParamsOf(sshConnectionsContract.resetHostKey)),
@@ -258,11 +211,6 @@ const listSshObservationsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
     const observations = await listSshConnectionObservations(
       get(db$),
       auth.orgId,
@@ -277,11 +225,6 @@ const listSshCredentialsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const owner = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
     const credentials = await listSshCredentials(get(db$), owner);
     signal.throwIfAborted();
     return { status: 200 as const, body: { credentials } };
@@ -291,11 +234,10 @@ const createSshCredentialInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const owner = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
+    const featureContext = await get(
+      userFeatureSwitchContext(owner.orgId, owner.userId),
+    );
     signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
     const body = await get(bodyResultOf(sshCredentialsContract.create));
     signal.throwIfAborted();
     if (!body.ok) {
@@ -325,11 +267,10 @@ const updateSshCredentialInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const owner = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
+    const featureContext = await get(
+      userFeatureSwitchContext(owner.orgId, owner.userId),
+    );
     signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
     const [body, params] = await Promise.all([
       get(bodyResultOf(sshCredentialsContract.update)),
       get(pathParamsOf(sshCredentialsContract.update)),
@@ -358,11 +299,6 @@ const updateSshCredentialInner$ = command(
 const deleteSshCredentialInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(organizationAuthContext$);
-    const featureContext = await get(sshFeatureContext$);
-    signal.throwIfAborted();
-    if (!featureContext) {
-      return sshConfigurationUnavailable;
-    }
     const [body, params] = await Promise.all([
       get(bodyResultOf(sshCredentialsContract.delete)),
       get(pathParamsOf(sshCredentialsContract.delete)),

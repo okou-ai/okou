@@ -682,9 +682,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   it("preserves model settings through snapshot compaction and patch replay", async () => {
     const { actor, providerId, thread } =
       await createSnapshotCursorScenario("Effort snapshot");
-    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.Effort]: true,
-    });
     await api.updateOrgModelPolicies(actor, [
       {
         model: "claude-sonnet-5",
@@ -2137,7 +2134,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     });
     for (const selectedModel of [
       "gpt-5.6-sol",
-      "gpt-5.5",
+      "gpt-5.6-terra",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
     ] as const) {

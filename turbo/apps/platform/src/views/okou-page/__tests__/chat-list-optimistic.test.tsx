@@ -6,6 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -24,6 +26,22 @@ import {
 } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
+
+/**
+ * These cases read the model through the legacy select's controls, which the
+ * switch's off lever still serves.
+ */
+async function setupLegacyPickerPage(
+  options: Parameters<typeof setupPage>[0],
+): Promise<void> {
+  await setupPage({
+    ...options,
+    featureSwitches: {
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      ...options.featureSwitches,
+    },
+  });
+}
 
 async function selectClaudeSonnet(): Promise<void> {
   click(await screen.findByRole("combobox"));
@@ -100,7 +118,7 @@ async function openUnconfirmedConversation() {
     });
   });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -235,7 +253,7 @@ test("Server confirmation settles a new conversation without duplication", async
     });
   });
 
-  await setupPage({
+  await setupLegacyPickerPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
