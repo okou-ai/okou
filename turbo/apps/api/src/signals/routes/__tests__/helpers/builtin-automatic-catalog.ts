@@ -15,6 +15,7 @@ export async function installBuiltinAutomaticMcpCatalog(
     readonly endpoint?: string;
     readonly isolateSource?: boolean;
     readonly additionalAutomaticMethodId?: string;
+    readonly additionalNoAuthMethodId?: string;
   } = {},
 ) {
   const slug = args.slug ?? `builtin-${randomUUID().slice(0, 8)}`;
@@ -63,6 +64,20 @@ export async function installBuiltinAutomaticMcpCatalog(
           method,
           ...(args.additionalAutomaticMethodId
             ? [{ ...method, id: args.additionalAutomaticMethodId }]
+            : []),
+          ...(args.additionalNoAuthMethodId
+            ? [
+                {
+                  id: args.additionalNoAuthMethodId,
+                  label: "No authentication",
+                  description: null,
+                  visible: true,
+                  storage: { version: 1, secrets: [], variables: [] },
+                  grant: { kind: "none" },
+                  access: { kind: "none" },
+                  revoke: { kind: "none" },
+                },
+              ]
             : []),
         ],
         firewall: {

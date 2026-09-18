@@ -29,6 +29,7 @@ import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.
 import {
   getConnectorRuntimeMethod,
   loadConnectorRuntimeSnapshot,
+  type ConnectorRuntimeMethod,
 } from "./connector-catalog-runtime.service";
 import {
   replaceConnectorConnection,
@@ -130,11 +131,10 @@ interface Failure {
 class StaleBuiltinContractError extends Error {}
 
 function contractFromMethod(
-  connectorSlug: string,
-  authMethodId: string,
+  runtime: ConnectorRuntimeMethod,
   endpoint: string | undefined,
-  method: ConnectorAuthMethodRuntimeConfig,
 ): BuiltinContract | null {
+  const { connectorSlug, authMethodId, method } = runtime;
   if (
     endpoint === undefined ||
     method.grant.kind !== "automatic" ||
@@ -182,10 +182,8 @@ async function currentContract(
   });
   return runtime
     ? contractFromMethod(
-        connectorSlug,
-        authMethodId,
+        runtime,
         snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint,
-        runtime.method,
       )
     : null;
 }
@@ -436,10 +434,8 @@ export const startBuiltinConnectorAutomatic$ = command(
   > => {
     const db = set(writeDb$);
     const contract = contractFromMethod(
-      args.resolved.connectorSlug,
-      args.resolved.authMethodId,
+      args.resolved.runtimeMethod,
       args.resolved.catalogConnector.mcp?.endpoint,
-      args.resolved.method,
     );
     if (!contract) {
       return { kind: "error", reason: "stale-contract" };

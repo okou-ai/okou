@@ -30,7 +30,7 @@ import {
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import { resolveConnectorCredentialAccess } from "./connector-credential-access.service";
-import { resolveBuiltinAutomaticRuntimeFirewall } from "./builtin-automatic-firewall.service";
+import { resolveBuiltinMcpRuntimeFirewall } from "./builtin-mcp-firewall.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -479,11 +479,11 @@ async function resolveConnectorRuntimeTargetStates(args: {
           })
         : undefined;
     const refresh = builtinByTarget.get(connectorRuntimeTargetKey(target));
-    const automaticFirewall =
+    const mcpFirewall =
       accountResolution?.kind === "resolved" &&
       builtinCatalogSelection &&
       credentialAccess?.kind === "ok"
-        ? resolveBuiltinAutomaticRuntimeFirewall({
+        ? resolveBuiltinMcpRuntimeFirewall({
             snapshot: builtinCatalogSelection,
             connectorSlug: registration.connectorSlug,
             authMethodId: accountResolution.account.authMethod,
@@ -499,7 +499,7 @@ async function resolveConnectorRuntimeTargetStates(args: {
               target,
               state: "available",
               networkPolicy: refresh.networkPolicy,
-              ...(automaticFirewall ? { firewall: automaticFirewall } : {}),
+              ...(mcpFirewall ? { firewall: mcpFirewall } : {}),
               ...(refresh.nextRefreshAt
                 ? { nextSyncAt: refresh.nextRefreshAt }
                 : {}),

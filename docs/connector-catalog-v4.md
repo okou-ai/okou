@@ -109,7 +109,9 @@ resolution validates the stored binding and serializes refresh and token rotatio
 Providers without refresh tokens work until the access token expires. A no-auth
 account bypasses credential validity, storage-version and refresh checks. Each
 Run receives an account-specific inline firewall; runtime sync updates it when
-the same account is reconnected between OAuth and no-auth.
+the same account is reconnected between OAuth and no-auth. Switching to an
+explicit no-auth or manual method also replaces the previous Automatic firewall
+with the current catalog configuration, preserving the exact account binding.
 
 The existing auth-method discovery switch `plaudConnector` defaults off and
 controls only `plaud-mcp / automatic`. It does not gate existing account

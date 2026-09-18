@@ -351,7 +351,7 @@ import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { resolveBuiltinAutomaticRuntimeFirewall } from "./builtin-automatic-firewall.service";
+import { resolveBuiltinMcpRuntimeFirewall } from "./builtin-mcp-firewall.service";
 import {
   connectorCredentialSecretReadCondition,
   resolveConnectorCredentialAccess,
@@ -5855,7 +5855,7 @@ async function buildPermissionManifest(
           const sourceId = args.connectorSourceIdBySlug?.[connectorSlug];
           const automaticFirewall =
             automaticAccount && sourceId
-              ? resolveBuiltinAutomaticRuntimeFirewall({
+              ? resolveBuiltinMcpRuntimeFirewall({
                   snapshot,
                   connectorSlug,
                   sourceId,

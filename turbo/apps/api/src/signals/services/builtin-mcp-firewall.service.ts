@@ -5,25 +5,44 @@ import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.serv
 /** Proxy-only marker; the API resolves the exact account outside the sandbox. */
 const BUILTIN_MCP_AUTOMATIC_AUTH_HEADER = `Bearer \${{ secrets.BUILTIN_MCP_ACCESS_TOKEN }}`;
 
-type BuiltinAutomaticRuntimeFirewall = ExecutionFirewallInlineEntry & {
+type BuiltinMcpRuntimeFirewall = ExecutionFirewallInlineEntry & {
   readonly sourceId: string;
   readonly customConnectorId?: never;
 };
 
-export function resolveBuiltinAutomaticRuntimeFirewall(args: {
+export function resolveBuiltinMcpRuntimeFirewall(args: {
   readonly snapshot: ConnectorRuntimeSelection;
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly automaticAuthType: "none" | "oauth" | null;
   readonly sourceId: string;
-}): BuiltinAutomaticRuntimeFirewall | null {
+}): BuiltinMcpRuntimeFirewall | null {
   const connector = args.snapshot.connectors.get(args.connectorSlug);
   const method = connector?.methods.get(args.authMethodId);
-  if (method?.method.grant.kind !== "automatic") {
+  if (!connector?.catalogConnector.mcp || !method) {
     return null;
   }
-  const mcp = connector?.catalogConnector.mcp;
-  if (!mcp || args.automaticAuthType === null) {
+  if (method.method.grant.kind !== "automatic") {
+    // A running account may have switched away from Automatic on reconnect.
+    // Replace its previous inline auth with the current catalog configuration.
+    const firewall = args.snapshot.serverFirewalls.getRuntimeFirewall(
+      args.connectorSlug,
+    );
+    if (!firewall) {
+      throw new Error("Builtin MCP connector has no catalog firewall");
+    }
+    return {
+      kind: "inline",
+      sourceId: args.sourceId,
+      firewall: {
+        ...firewall,
+        apis: firewall.apis.map((api, index) => {
+          return { ...api, id: `${args.connectorSlug}:${index}` };
+        }),
+      },
+    };
+  }
+  if (args.automaticAuthType === null) {
     throw new Error(
       "Builtin Automatic account has no resolved MCP authentication",
     );
@@ -36,7 +55,7 @@ export function resolveBuiltinAutomaticRuntimeFirewall(args: {
       apis: [
         {
           id: `${args.connectorSlug}:0`,
-          base: mcp.endpoint,
+          base: connector.catalogConnector.mcp.endpoint,
           auth:
             args.automaticAuthType === "oauth"
               ? {

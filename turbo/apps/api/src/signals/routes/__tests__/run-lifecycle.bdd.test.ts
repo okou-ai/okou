@@ -2,7 +2,10 @@ import nativePiFixtures from "../../../../../../packages/api-contracts/src/contr
 import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import { connectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  connectorAutomaticContract,
+  connectorNoAuthGrantContract,
+} from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import {
@@ -182,6 +185,7 @@ import {
 import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { connectorsAutomaticRoutes } from "../connectors-automatic";
+import { connectorsRoutes } from "../connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
 import { installBuiltinAutomaticMcpCatalog } from "./helpers/builtin-automatic-catalog";
@@ -10917,6 +10921,129 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           connector: { credentialResolution: "none" },
         });
       }
+      await api.requestCancelRun(actor, run.runId, [200]);
+      await connectors.deleteBuiltinConnectorAccount(
+        actor,
+        catalog.slug,
+        connectionId,
+      );
+    },
+  );
+
+  it.each(["none", "manual"] as const)(
+    "replaces running builtin Automatic auth when reconnecting to %s",
+    async (authMode) => {
+      const catalog = await installBuiltinAutomaticMcpCatalog({
+        slug: "manual-mcp",
+        additionalNoAuthMethodId: "public-connect",
+      });
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: "cimd",
+        initialExpiresIn: 3600,
+      });
+      const api = createRunsApi(context);
+      const connectors = createConnectorBddApi(context);
+      const fw = createFirewallApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const connectionId = await connectBuiltinAutomaticRuntime({
+        actor,
+        agentId,
+        ...catalog,
+        issuer: provider.issuer,
+      });
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "change the connected builtin MCP authentication method",
+        modelProvider: "anthropic-api-key",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
+      expect(
+        inlineFirewallApis(claim.firewalls, catalog.slug)[0]?.auth,
+      ).toStrictEqual({
+        headers: {
+          Authorization: `Bearer \${{ secrets.BUILTIN_MCP_ACCESS_TOKEN }}`,
+        },
+      });
+      if (authMode === "none") {
+        const client = setupApp({ context, routes: connectorsRoutes })(
+          connectorNoAuthGrantContract,
+        );
+        await accept(
+          client.connect({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { connectorSlug: catalog.slug },
+            body: {
+              authMethod: "public-connect",
+              account: { intent: "reconnect", connectionId },
+            },
+          }),
+          [200],
+        );
+      } else {
+        await installApiTestConnectorCatalog();
+        await connectors.connectManualGrant(
+          actor,
+          catalog.slug,
+          "api-token",
+          {
+            apiKey: "reconnected-manual-token",
+          },
+          agentId,
+          { intent: "reconnect", connectionId },
+        );
+      }
+      const [updated] = await api.syncConnectorRuntime(run.runId, {
+        targets: [target],
+      });
+      expect(updated).toMatchObject({
+        state: "available",
+        firewall: {
+          sourceId: connectionId,
+          firewall: {
+            apis: [
+              {
+                auth:
+                  authMode === "none"
+                    ? {}
+                    : {
+                        headers: {
+                          Authorization: `Bearer \${{ secrets.MCP_API_KEY }}`,
+                        },
+                      },
+              },
+            ],
+          },
+        },
+      });
+      if (updated?.state !== "available" || !updated.firewall) {
+        throw new Error("Expected the reconnected MCP runtime firewall");
+      }
+      const auth = await fw.requestFirewallAuth(
+        {
+          authorization: `Bearer ${claim.sandboxToken}`,
+        },
+        {
+          encryptedSecrets:
+            claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+          authHeaders: updated.firewall.firewall.apis[0]?.auth.headers ?? {},
+          matchedFirewall: {
+            name: catalog.slug,
+            apiId: `${catalog.slug}:0`,
+            connectorSlug: catalog.slug,
+            sourceId: connectionId,
+            routingVariables: {},
+          },
+        },
+        [200],
+      );
+      expect(auth.body).toMatchObject({
+        headers:
+          authMode === "none"
+            ? {}
+            : { Authorization: "Bearer reconnected-manual-token" },
+      });
       await api.requestCancelRun(actor, run.runId, [200]);
       await connectors.deleteBuiltinConnectorAccount(
         actor,
