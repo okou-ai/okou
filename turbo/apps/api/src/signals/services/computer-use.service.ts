@@ -2,6 +2,10 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { command, computed, type Computed } from "ccstate";
 import {
+  assertErasureSubjectWritable,
+  type ErasureSubject,
+} from "@okouai/db/operations/account-erasure";
+import {
   and,
   asc,
   desc,
@@ -10,6 +14,7 @@ import {
   isNotNull,
   isNull,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import {
@@ -56,6 +61,7 @@ import {
   publishUserSignal,
 } from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
+import { settle } from "../utils";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 import type { Tx } from "../../lib/db-types";
 
@@ -1558,6 +1564,30 @@ export const createComputerUseCommand$ = command(
   },
 );
 
+const COMPUTER_USE_COMMAND_GET_LOCK_TIMEOUT = "1s";
+const COMPUTER_USE_COMMAND_GET_STATEMENT_TIMEOUT = "5s";
+
+function computerUseCommandGetSubjects(params: {
+  readonly orgId: string;
+  readonly userId: string;
+}): readonly ErasureSubject[] {
+  return [
+    { subjectKind: "user", subjectId: params.userId },
+    { subjectKind: "organization", subjectId: params.orgId },
+  ];
+}
+
+async function setComputerUseCommandGetDeadlines(
+  tx: ComputerUseTx,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_COMMAND_GET_LOCK_TIMEOUT}, true)`,
+  );
+  await tx.execute(
+    sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_COMMAND_GET_STATEMENT_TIMEOUT}, true)`,
+  );
+}
+
 export const getComputerUseCommand$ = command(
   async (
     { set },
@@ -1569,39 +1599,67 @@ export const getComputerUseCommand$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const now = nowDate();
-    const row = await db.transaction(async (tx) => {
-      await failStaleRunningComputerUseCommands(
-        tx,
-        { orgId: params.orgId, userId: params.userId, now },
-        signal,
-      );
-      const [commandRow] = await tx
-        .select({
-          command: computerUseCommands,
-          hostName: computerUseHosts.displayName,
-        })
-        .from(computerUseCommands)
-        .leftJoin(
-          computerUseHosts,
-          eq(computerUseCommands.hostId, computerUseHosts.id),
-        )
-        .where(
-          and(
-            eq(computerUseCommands.orgId, params.orgId),
-            eq(computerUseCommands.userId, params.userId),
-            eq(computerUseCommands.id, params.commandId),
-            ...(params.hostId
-              ? [eq(computerUseCommands.hostId, params.hostId)]
-              : []),
-          ),
-        )
-        .limit(1);
-      return commandRow;
-    });
     signal.throwIfAborted();
-    return row ? serializeCommand(row.command, row.hostName) : null;
+    const db = set(writeDb$);
+    const value = await db.transaction(
+      async (tx) => {
+        await setComputerUseCommandGetDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(
+            tx,
+            computerUseCommandGetSubjects(params),
+          ),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            return null;
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
+
+        // Admission can wait behind an erasure mutation. One fresh clock after
+        // that wait owns every timeout comparison and timestamp in this sweep.
+        const now = nowDate();
+        await failStaleRunningComputerUseCommands(
+          tx,
+          { orgId: params.orgId, userId: params.userId, now },
+          signal,
+        );
+        const [commandRow] = await tx
+          .select({
+            command: computerUseCommands,
+            hostName: computerUseHosts.displayName,
+          })
+          .from(computerUseCommands)
+          .leftJoin(
+            computerUseHosts,
+            eq(computerUseCommands.hostId, computerUseHosts.id),
+          )
+          .where(
+            and(
+              eq(computerUseCommands.orgId, params.orgId),
+              eq(computerUseCommands.userId, params.userId),
+              eq(computerUseCommands.id, params.commandId),
+              ...(params.hostId
+                ? [eq(computerUseCommands.hostId, params.hostId)]
+                : []),
+            ),
+          )
+          .limit(1);
+        const result = commandRow
+          ? serializeCommand(commandRow.command, commandRow.hostName)
+          : null;
+        signal.throwIfAborted();
+        return result;
+      },
+      { isolationLevel: "read committed" },
+    );
+    signal.throwIfAborted();
+    return value;
   },
 );
 

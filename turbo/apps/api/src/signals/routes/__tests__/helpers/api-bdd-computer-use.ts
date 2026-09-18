@@ -367,8 +367,8 @@ export function createComputerUseBddApi(context: TestContext) {
     );
   }
 
-  function commandClient() {
-    return setupApp({ context, routes: computerUseRoutes })(
+  function commandClient(signal?: AbortSignal) {
+    return setupApp({ context, routes: computerUseRoutes, signal })(
       computerUseCommandContract,
     );
   }
@@ -651,9 +651,10 @@ export function createComputerUseBddApi(context: TestContext) {
     async readComputerUseCommand(
       auth: ComputerUseAuth,
       commandId: string,
+      signal?: AbortSignal,
     ): Promise<ComputerUseCommandResponse> {
       const response = await accept(
-        commandClient().get({
+        commandClient(signal).get({
           headers: authenticate(auth),
           params: { commandId },
         }),
@@ -666,9 +667,10 @@ export function createComputerUseBddApi(context: TestContext) {
       auth: ComputerUseAuth,
       commandId: string,
       statuses: readonly (200 | 401 | 403 | 404)[],
+      signal?: AbortSignal,
     ) {
       return await accept(
-        commandClient().get({
+        commandClient(signal).get({
           headers: authenticate(auth),
           params: { commandId },
         }),
