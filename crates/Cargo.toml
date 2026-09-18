@@ -64,6 +64,7 @@ sandbox-firecracker = { path = "sandbox-firecracker" }
 sandbox-mock = { path = "sandbox-mock" }
 shell-quote = { path = "shell-quote" }
 runner-rpc-proto = { path = "runner-rpc-proto" }
+rfb-client = { path = "rfb-client" }
 tracing-test-support = { path = "tracing-test-support" }
 guest-control-server = { path = "guest-control-server" }
 guest-control-client = { path = "guest-control-client" }

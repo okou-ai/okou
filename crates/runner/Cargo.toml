@@ -49,6 +49,7 @@ which = { workspace = true, features = ["real-sys"] }
 zstd = { workspace = true, features = ["zstdmt"] }
 guest-control-proto = { workspace = true }
 runner-rpc-proto = { workspace = true }
+rfb-client = { workspace = true }
 russh = { workspace = true, features = ["ring", "rsa"] }
 pkcs8 = { workspace = true, features = ["encryption", "std"] }
 pkcs5 = { workspace = true, features = ["alloc", "pbes2"] }
@@ -68,6 +69,7 @@ serde_json = { workspace = true, features = ["std"] }
 # so runner-rs gets auto-bumped when any guest crate version changes.
 [dev-dependencies]
 guest-control-client = { workspace = true }
+png = { workspace = true }
 log = { workspace = true }
 tracing-log = { workspace = true, features = ["log-tracer", "std"] }
 # `test-util` feature exposes `with_test_defaults_v2()` on `aws_sdk_s3::Config`,
