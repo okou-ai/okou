@@ -334,6 +334,13 @@ async fn execute_inner_preserves_system_stream_log_after_nonzero_exit_guest_copy
     assert_eq!(system_log, b"guest system log\n");
     let system_stream_log = tokio::fs::read(&system_stream_log_path).await.unwrap();
     assert_eq!(system_stream_log, b"bootstrap diagnostic\n");
+    for message in [
+        "agent bootstrap abnormal exit diagnostics",
+        "agent abnormal exit env diagnostics",
+        "agent abnormal exit in-vm diagnostics",
+    ] {
+        assert_eq!(captured_event(&events, message).level, tracing::Level::WARN);
+    }
     let bootstrap_event = captured_event(&events, "agent bootstrap abnormal exit diagnostics");
     assert_eq!(
         bootstrap_event
@@ -1022,6 +1029,21 @@ async fn execute_inner_abnormal_exit_collects_guest_diagnostics() {
     std::io::Write::write_all(&mut syntax_check.stdin.take().unwrap(), call.cmd.as_bytes())
         .unwrap();
     assert!(syntax_check.wait().unwrap().success());
+    for message in [
+        "agent bootstrap abnormal exit diagnostics",
+        "agent abnormal exit env diagnostics",
+        "agent abnormal exit in-vm diagnostics",
+    ] {
+        let event = captured_event(&events, message);
+        assert_eq!(event.level, tracing::Level::INFO);
+        assert_eq!(
+            event
+                .fields
+                .get("resource_failure_kind")
+                .map(String::as_str),
+            Some("guest_root_filesystem_full")
+        );
+    }
     let event = captured_event(&events, "agent abnormal exit in-vm diagnostics");
     assert_eq!(
         event.fields.get("guest_root_fs_usage").map(String::as_str),
@@ -1078,6 +1100,7 @@ async fn execute_inner_keeps_partial_resource_output_when_diagnostic_helper_fail
         event.fields.get("guest_root_fs_usage").map(String::as_str),
         Some("/tmp status=started")
     );
+    assert_eq!(event.level, tracing::Level::INFO);
 }
 
 #[tokio::test]

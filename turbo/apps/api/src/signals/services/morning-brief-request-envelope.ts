@@ -22,6 +22,11 @@
  * [the composition contract](../../../../../../docs/morning-brief-composition.md).
  */
 
+import {
+  allocateMorningBriefRequest,
+  MORNING_BRIEF_REQUEST_MAX_BYTES,
+  type MorningBriefRequestAllocation,
+} from "./morning-brief-collection-plan";
 import type { MorningBriefLanguagePlan } from "./morning-brief-language-policy";
 import {
   morningBriefSourceOmissions,
@@ -77,7 +82,7 @@ const MORNING_BRIEF_RESPONSE_SCHEMA = {
  * the request could not fit are three different losses of the same day, and a
  * report that names only the third tells the model its input was complete.
  */
-export interface MorningBriefCoverageReport {
+interface MorningBriefCoverageReport {
   readonly source: MorningBriefSourceKind;
   readonly coverage: string;
   readonly included: number;
@@ -124,29 +129,6 @@ export function morningBriefCoverageReport(
       collection,
       stages.byNormalizedCap[collection.source] ?? 0,
       stages.byRequest[collection.source] ?? 0,
-    );
-  });
-}
-
-/**
- * The widest the coverage report can serialize for these collections.
- *
- * The real report is only known after allocation, but the envelope has to be
- * measured before it, and `"byRequest":0` is narrower than `"byRequest":137`. A
- * few bytes is enough to push a request that was budgeted to exactly the
- * ceiling over it, so the measurement uses each source's item count — the
- * largest value the request stage can take — and the real report can then only
- * be narrower.
- */
-export function morningBriefWidestCoverageReport(
-  collections: readonly MorningBriefSourceCollection[],
-  byNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"],
-): readonly MorningBriefCoverageReport[] {
-  return collections.map((collection) => {
-    return reportFor(
-      collection,
-      byNormalizedCap[collection.source] ?? 0,
-      collection.items.length,
     );
   });
 }
@@ -208,4 +190,61 @@ export function morningBriefEnvelopeBytes(args: {
   return morningBriefRequestBytes(
     buildMorningBriefRequest({ ...args, items: [] }),
   );
+}
+
+/**
+ * Pack whole evidence items against the exact document this module serializes.
+ *
+ * There is no synthetic "widest" coverage report. `included`, `byRequest` and
+ * `knownTotal` can cross digit boundaries independently, so no one extreme is
+ * guaranteed to dominate every final combination. Instead, allocation is
+ * finite and monotone: build the actual document, reduce only the item budget
+ * and force at least one currently accepted whole item out, then repack until
+ * that exact serialization fits or no whole item remains.
+ */
+export function packMorningBriefRequest(args: {
+  readonly collections: readonly MorningBriefSourceCollection[];
+  readonly language: MorningBriefLanguagePlan;
+  readonly instructions: string | null;
+  readonly omittedByNormalizedCap: MorningBriefOmissionStages["byNormalizedCap"];
+  readonly maxBytes?: number;
+}): {
+  readonly request: MorningBriefModelRequest;
+  readonly envelopeBytes: number;
+  readonly totalBytes: number;
+  readonly allocation: MorningBriefRequestAllocation;
+} {
+  const maxBytes = args.maxBytes ?? MORNING_BRIEF_REQUEST_MAX_BYTES;
+  let itemBudget = maxBytes;
+  while (true) {
+    const allocation = allocateMorningBriefRequest(args.collections, {
+      maxBytes: itemBudget,
+    });
+    const coverage = morningBriefCoverageReport(args.collections, {
+      byNormalizedCap: args.omittedByNormalizedCap,
+      byRequest: allocation.omittedBySource,
+    });
+    const envelopeBytes = morningBriefEnvelopeBytes({
+      language: args.language,
+      instructions: args.instructions,
+      coverage,
+    });
+    const request = buildMorningBriefRequest({
+      language: args.language,
+      instructions: args.instructions,
+      coverage,
+      items: allocation.items,
+    });
+    const totalBytes = morningBriefRequestBytes(request);
+    if (allocation.items.length === 0 || totalBytes <= maxBytes) {
+      return { request, envelopeBytes, totalBytes, allocation };
+    }
+    itemBudget = Math.max(
+      0,
+      Math.min(
+        itemBudget - Math.max(1, totalBytes - maxBytes),
+        allocation.bytes - 1,
+      ),
+    );
+  }
 }

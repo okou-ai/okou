@@ -177,7 +177,7 @@ async function claimResources(
     for (const resource of event.resources) {
       const read = {
         utcDay: event.observedAt.slice(0, 10),
-        resourceType: event.category === "tweet.read" ? "post" : "user",
+        resourceType: event.category === "posts.read" ? "post" : "user",
         resourceId: resource.id,
       };
       const key = resourceKey(read);

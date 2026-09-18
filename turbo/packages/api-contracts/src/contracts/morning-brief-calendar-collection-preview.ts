@@ -19,6 +19,11 @@ export const morningBriefCalendarOutcomeSchema = z.enum([
   "complete",
   /** Busy blocks only: `freeBusyReader` never exposes event detail. */
   "free-busy-only",
+  /**
+   * The list named this calendar without an access role this reader
+   * understands, so whether it holds events is unknown rather than empty.
+   */
+  "unknown-access",
   /** Endpoint-local denial. Sibling calendars still count as read. */
   "denied",
   "not-found",
@@ -47,6 +52,13 @@ export const morningBriefCalendarTruncationSchema = z.enum([
   "response-bytes",
   "text-characters",
   "unreadable-event-time",
+  /**
+   * An identity could not be represented within its ceiling. Shortening it
+   * would invent a different calendar or event, so the owner was dropped.
+   */
+  "oversized-identity",
+  /** A display link exceeded its ceiling; a clipped URL points elsewhere. */
+  "oversized-link",
 ]);
 
 export type MorningBriefCalendarTruncation = z.infer<

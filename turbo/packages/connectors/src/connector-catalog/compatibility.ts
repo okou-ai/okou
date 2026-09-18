@@ -23,6 +23,7 @@ import {
 } from "./contracts";
 
 const COMPATIBILITY_REASON_ORDER = [
+  "unsupported-protocol",
   "missing-grant-provider",
   "missing-access-provider",
   "missing-revoke-provider",
@@ -44,7 +45,7 @@ export const connectorCatalogCompatibilityEvaluationSchema = z
   })
   .strict();
 
-const EXECUTABLE_CAPABILITY_EVALUATOR_VERSION = 2;
+const EXECUTABLE_CAPABILITY_EVALUATOR_VERSION = 3;
 
 export interface ExecutableCapabilityState {
   readonly digest: string;
@@ -126,8 +127,30 @@ function methodClientContract(
   return { kind: "static-public-literal" };
 }
 
-function methodContract(
+type ExecutableCatalogAuthMethod = ConnectorCatalogAuthMethod & {
+  readonly grant: Exclude<
+    ConnectorCatalogAuthMethod["grant"],
+    { kind: "none" | "automatic" }
+  >;
+  readonly access: Exclude<
+    ConnectorCatalogAuthMethod["access"],
+    { kind: "none" | "automatic" }
+  >;
+};
+
+function hasExecutableAuthShape(
   method: ConnectorCatalogAuthMethod,
+): method is ExecutableCatalogAuthMethod {
+  return (
+    method.grant.kind !== "none" &&
+    method.grant.kind !== "automatic" &&
+    method.access.kind !== "none" &&
+    method.access.kind !== "automatic"
+  );
+}
+
+function methodContract(
+  method: ExecutableCatalogAuthMethod,
 ): ConnectorAuthProviderMethodContract {
   const grantOutputNames =
     method.grant.kind === "manual"
@@ -188,8 +211,10 @@ function addProviderReasons(
     reasons.add("missing-grant-provider");
   }
   if (
-    method.access.kind === "refresh-token" &&
-    registration?.handlers.access !== "refresh-token"
+    method.access.kind === "none" ||
+    method.access.kind === "automatic" ||
+    (method.access.kind === "refresh-token" &&
+      registration?.handlers.access !== "refresh-token")
   ) {
     reasons.add("missing-access-provider");
   }
@@ -212,6 +237,7 @@ function hasUnapprovedConfigurationIdentity(
 }
 
 function evaluateMethod(args: {
+  readonly unsupportedProtocol: boolean;
   readonly method: ConnectorCatalogAuthMethod;
   readonly registration:
     | ConnectorAuthProviderRegistrationCapability
@@ -219,7 +245,16 @@ function evaluateMethod(args: {
   readonly configuredNames: ReadonlySet<string>;
 }): ConnectorCatalogCompatibilityReason[] {
   const reasons = new Set<ConnectorCatalogCompatibilityReason>();
+  if (args.unsupportedProtocol) {
+    reasons.add("unsupported-protocol");
+  }
   addProviderReasons(reasons, args.method, args.registration);
+
+  if (!hasExecutableAuthShape(args.method)) {
+    return COMPATIBILITY_REASON_ORDER.filter((reason) => {
+      return reasons.has(reason);
+    });
+  }
 
   const contract = methodContract(args.method);
   const contractMatches =
@@ -256,6 +291,7 @@ export function evaluateConnectorCatalogCompatibility(args: {
   const filtered = args.artifact.connectors.flatMap((connector) => {
     return connector.authMethods.flatMap((method) => {
       const reasons = evaluateMethod({
+        unsupportedProtocol: connector.mcp !== undefined,
         method,
         registration: registrations.get(
           registrationKey(connector.slug, method.id),

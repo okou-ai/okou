@@ -8,8 +8,9 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
+import { stubTestTimezone } from "../../../__tests__/env-stub";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -65,6 +66,16 @@ const OWNER_CALENDAR = "owner@example.test";
 const TEAM_CALENDAR = "team@example.test";
 const EXEC_CALENDAR = "exec@example.test";
 
+/** Distinct per-account credentials, so "which account" is observable. */
+const DEFAULT_ACCOUNT_TOKEN = "calendar-default-account-token";
+const SELECTED_ACCOUNT_TOKEN = "calendar-selected-account-token";
+
+/** The collector's own caps, restated so a drift in either side is visible. */
+const MAX_EVENTS = 200;
+const MAX_TEXT_CHARACTERS = 40_000;
+const MAX_IDENTITY_CHARACTERS = 512;
+const MAX_LINK_CHARACTERS = 2048;
+
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
@@ -108,6 +119,8 @@ function authHeaders(actor: ApiTestUser) {
 interface CalendarCall {
   readonly pathname: string;
   readonly search: string;
+  /** The credential the provider was actually shown for this call. */
+  readonly authorization: string | null;
 }
 
 interface CalendarStub {
@@ -117,7 +130,7 @@ interface CalendarStub {
 interface StubCalendar {
   readonly id: string;
   readonly summary?: string;
-  readonly accessRole: string;
+  readonly accessRole?: string;
   readonly primary?: boolean;
   readonly timeZone?: string;
 }
@@ -126,15 +139,51 @@ interface StubEvent {
   readonly id: string;
   readonly status?: string;
   readonly summary?: string;
+  readonly location?: string;
+  readonly description?: string;
   readonly start: Record<string, string>;
   readonly end: Record<string, string>;
   readonly recurringEventId?: string;
   readonly iCalUID?: string;
   readonly htmlLink?: string;
+  readonly organizer?: {
+    readonly email?: string;
+    readonly displayName?: string;
+  };
   readonly attendees?: readonly {
     readonly email: string;
     readonly responseStatus?: string;
   }[];
+}
+
+/**
+ * Every character the response actually retains, counted from the body.
+ *
+ * Walking the delivered items keeps the assertion independent of whichever
+ * fields the collector believes it charged: the promise is about the text a
+ * composed brief would have to carry, not about an internal counter.
+ */
+function retainedTextLength(items: readonly unknown[]): number {
+  let total = 0;
+  const visit = (value: unknown): void => {
+    if (typeof value === "string") {
+      total += value.length;
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        visit(entry);
+      }
+      return;
+    }
+    if (value !== null && typeof value === "object") {
+      for (const entry of Object.values(value)) {
+        visit(entry);
+      }
+    }
+  };
+  visit(items);
+  return total;
 }
 
 /**
@@ -143,38 +192,62 @@ interface StubEvent {
  */
 function stubCalendar(args: {
   readonly calendars?: readonly StubCalendar[];
+  /** One entry per calendar-list page; each but the last offers a token. */
+  readonly calendarPages?: readonly (readonly StubCalendar[])[];
   readonly events?: ReadonlyMap<string, readonly StubEvent[]>;
   readonly eventStatus?: ReadonlyMap<string, number>;
+  /** Calendars answered with a body past the shared per-response ceiling. */
+  readonly oversized?: ReadonlySet<string>;
+  /** Calendars answered with a body the event schema rejects. */
+  readonly malformed?: ReadonlySet<string>;
   readonly listStatus?: number;
   readonly pages?: ReadonlyMap<string, string>;
-  readonly holdFirstEvents?: Promise<void>;
-  readonly onFirstEventsHeld?: () => void;
+  readonly holdEvents?: ReadonlyMap<string, Promise<void>>;
+  readonly onEventsHeld?: () => void;
   /** Sent with a failing event response, as a real rate limit would be. */
   readonly retryAfterSeconds?: number;
 }): CalendarStub {
   const calls: CalendarCall[] = [];
-  let held = false;
+  let listPage = 0;
+
+  const record = (request: Request): URL => {
+    const url = new URL(request.url);
+    calls.push({
+      pathname: url.pathname,
+      search: url.search,
+      authorization: request.headers.get("authorization"),
+    });
+    return url;
+  };
 
   server.use(
     http.get(CALENDAR_LIST_URL, ({ request }) => {
-      const url = new URL(request.url);
-      calls.push({ pathname: url.pathname, search: url.search });
+      record(request);
       if (args.listStatus !== undefined) {
         return HttpResponse.json(
           { error: { code: args.listStatus } },
           { status: args.listStatus },
         );
       }
-      return HttpResponse.json({ items: args.calendars ?? [] });
+      if (args.calendarPages === undefined) {
+        return HttpResponse.json({ items: args.calendars ?? [] });
+      }
+      const page = args.calendarPages[listPage] ?? [];
+      listPage += 1;
+      // Every page offers a continuation, so the collector has to stop at its
+      // own page cap rather than follow the provider to the end of the list.
+      return HttpResponse.json({
+        items: page,
+        nextPageToken: `list-page-${listPage}`,
+      });
     }),
     http.get(CALENDAR_EVENTS_URL, async ({ request, params }) => {
-      const url = new URL(request.url);
-      calls.push({ pathname: url.pathname, search: url.search });
+      record(request);
       const calendarId = decodeURIComponent(String(params["calendarId"]));
-      if (args.holdFirstEvents && !held) {
-        held = true;
-        args.onFirstEventsHeld?.();
-        await args.holdFirstEvents;
+      const hold = args.holdEvents?.get(calendarId);
+      if (hold) {
+        args.onEventsHeld?.();
+        await hold;
       }
       const status = args.eventStatus?.get(calendarId);
       if (status !== undefined) {
@@ -188,6 +261,12 @@ function stubCalendar(args: {
                 : { "retry-after": String(args.retryAfterSeconds) },
           },
         );
+      }
+      if (args.malformed?.has(calendarId)) {
+        return HttpResponse.json({ items: [{ id: 42 }] });
+      }
+      if (args.oversized?.has(calendarId)) {
+        return HttpResponse.json({ items: [], padding: "z".repeat(300_000) });
       }
       // A calendar in `pages` always offers another page, so the collector
       // must stop at its own page cap rather than follow the provider.
@@ -244,10 +323,15 @@ async function connectCalendar(
     readonly email: string;
     readonly subject: string;
     readonly displayName?: string;
+    /**
+     * Each account is issued its own credential, so a claim that one account
+     * was read can be checked against what the provider was actually shown.
+     */
+    readonly accessToken?: string;
   },
 ): Promise<string> {
   mockGoogleCalendarConnectorOAuth({
-    accessToken: "calendar-access-token",
+    accessToken: args.accessToken ?? "calendar-access-token",
     email: args.email,
     subject: args.subject,
   });
@@ -294,6 +378,7 @@ async function setupOwner(timezone = "Asia/Shanghai"): Promise<Fixture> {
   await connectCalendar(actor, agentId, {
     email: OWNER_CALENDAR,
     subject: `calendar-${randomUUID()}`,
+    accessToken: DEFAULT_ACCOUNT_TOKEN,
   });
   await runsApi.enableAgentConnectors(actor, agentId, ["google-calendar"]);
   const installation = await installMorningBriefFixture(
@@ -567,6 +652,7 @@ describe("Morning Brief calendar collection preview", () => {
         email: "selected@example.test",
         subject: `calendar-selected-${randomUUID()}`,
         displayName: "Selected",
+        accessToken: SELECTED_ACCOUNT_TOKEN,
       },
     );
     const chatThreadId = await bindMorningBriefThreadFixture(
@@ -577,7 +663,7 @@ describe("Morning Brief calendar collection preview", () => {
       chatThreadId,
       connectorId: selectedConnectorId,
     });
-    stubCalendar({
+    const stub = stubCalendar({
       calendars: [{ id: OWNER_CALENDAR, accessRole: "owner", primary: true }],
       events: new Map([
         [
@@ -595,6 +681,19 @@ describe("Morning Brief calendar collection preview", () => {
 
     const response = await collectOk(fixture);
     expect(response.body.items[0]?.eventId).toBe("selected-event");
+    // The two accounts hold different credentials, so "the chosen account was
+    // used" is an observation at the provider boundary rather than an
+    // inference from a shared fixture token.
+    expect(stub.calls).not.toStrictEqual([]);
+    expect(
+      stub.calls.map((call) => {
+        return call.authorization;
+      }),
+    ).toStrictEqual(
+      stub.calls.map(() => {
+        return `Bearer ${SELECTED_ACCOUNT_TOKEN}`;
+      }),
+    );
   });
 
   it("fails closed when the explicitly selected account loses its access", async () => {
@@ -655,6 +754,7 @@ describe("Morning Brief calendar collection preview", () => {
     const fixture = await setupOwner();
     const arrived = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    let held = 0;
     const stub = stubCalendar({
       calendars: [
         { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
@@ -667,16 +767,23 @@ describe("Morning Brief calendar collection preview", () => {
           OWNER_CALENDAR,
           [
             timed(
-              "held-event",
+              "collected-event",
               "2026-03-10T01:00:00.000Z",
               "2026-03-10T01:30:00.000Z",
             ),
           ],
         ],
       ]),
-      holdFirstEvents: release.promise,
-      onFirstEventsHeld: () => {
-        if (!arrived.settled()) {
+      // Let the owner's event be collected, then stop both workers so no
+      // sibling can advance while the grant withdrawal is still committing.
+      holdEvents: new Map([
+        [TEAM_CALENDAR, release.promise],
+        ["third@example.test", release.promise],
+        ["fourth@example.test", release.promise],
+      ]),
+      onEventsHeld: () => {
+        held += 1;
+        if (held === 2 && !arrived.settled()) {
           arrived.resolve();
         }
       },
@@ -686,8 +793,8 @@ describe("Morning Brief calendar collection preview", () => {
     async function expectRevokedCollection() {
       // Observe an early request failure while waiting for the actual hold.
       await Promise.race([arrived.promise, collection]);
-      const heldCalls = eventCalls(stub).length;
-      expect(heldCalls).toBeGreaterThan(0);
+      const heldCalls = eventCalls(stub);
+      expect(heldCalls).toHaveLength(3);
       await revokeAgentConnectorGrantFixture(
         { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
         { agentId: fixture.agentId, connectorSlug: "google-calendar" },
@@ -700,7 +807,7 @@ describe("Morning Brief calendar collection preview", () => {
       // The release fence discards everything collected before the withdrawal,
       // including the calendars that had already answered.
       // Nothing new was issued after the revocation landed.
-      expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
+      expect(eventCalls(stub)).toStrictEqual(heldCalls);
       return response;
     }
     const result = await settleIncludingAbort(expectRevokedCollection());
@@ -750,6 +857,7 @@ describe("Morning Brief calendar collection preview", () => {
     const fixture = await setupOwner();
     const arrived = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    let held = 0;
     const stub = stubCalendar({
       calendars: [
         { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
@@ -762,16 +870,23 @@ describe("Morning Brief calendar collection preview", () => {
           OWNER_CALENDAR,
           [
             timed(
-              "held-event",
+              "collected-event",
               "2026-03-10T01:00:00.000Z",
               "2026-03-10T01:30:00.000Z",
             ),
           ],
         ],
       ]),
-      holdFirstEvents: release.promise,
-      onFirstEventsHeld: () => {
-        if (!arrived.settled()) {
+      // Keep both workers held while the membership is replaced, after the
+      // owner's event has already been collected under the old membership.
+      holdEvents: new Map([
+        [TEAM_CALENDAR, release.promise],
+        ["third@example.test", release.promise],
+        ["fourth@example.test", release.promise],
+      ]),
+      onEventsHeld: () => {
+        held += 1;
+        if (held === 2 && !arrived.settled()) {
           arrived.resolve();
         }
       },
@@ -780,8 +895,8 @@ describe("Morning Brief calendar collection preview", () => {
     const collection = collectOk(fixture);
     async function expectRevokedCollection() {
       await Promise.race([arrived.promise, collection]);
-      const heldCalls = eventCalls(stub).length;
-      expect(heldCalls).toBeGreaterThan(0);
+      const heldCalls = eventCalls(stub);
+      expect(heldCalls).toHaveLength(3);
       // A removal and rejoin issues a new immutable membership id. The new
       // membership does not speak for what the previous one started.
       await seedMembership(fixture.actor, `orgmem_${randomUUID()}`);
@@ -790,7 +905,7 @@ describe("Morning Brief calendar collection preview", () => {
       }
 
       const response = await collection;
-      expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
+      expect(eventCalls(stub)).toStrictEqual(heldCalls);
       return response;
     }
     const result = await settleIncludingAbort(expectRevokedCollection());
@@ -849,6 +964,13 @@ describe("Morning Brief calendar collection preview", () => {
     const response = await collectOk(fixture);
     expect(response.body.status).toBe("unavailable");
     expect(response.body.items).toStrictEqual([]);
+    // The list was read in full and nothing in it grants event detail, which
+    // is a scope this account does not hold rather than a provider failure.
+    expect(response.body).toMatchObject({
+      failure: "not-authorized",
+      coverage: { calendarList: "complete" },
+    });
+    expect(response.body.coverage.calendars[0]?.outcome).toBe("free-busy-only");
     expect(eventCalls(stub)).toStrictEqual([]);
   });
 
@@ -1093,6 +1215,329 @@ describe("Morning Brief calendar collection preview", () => {
     expect(response.body.coverage.calendars[0]?.outcome).toBe("truncated");
   });
 
+  describe("event time normalization", () => {
+    /** One readable calendar holding exactly these events. */
+    function stubOwnerEvents(events: readonly StubEvent[]): CalendarStub {
+      return stubCalendar({
+        calendars: [{ id: OWNER_CALENDAR, accessRole: "owner", primary: true }],
+        events: new Map([[OWNER_CALENDAR, events]]),
+      });
+    }
+
+    function idsOf(body: MorningBriefCalendarCollection): readonly string[] {
+      return body.items.map((item) => {
+        return item.eventId;
+      });
+    }
+
+    /** The calendar kept usable content but declared the events it lost. */
+    function expectDeclaredTimeGap(body: MorningBriefCalendarCollection): void {
+      expect(body.coverage.truncations).toContain("unreadable-event-time");
+      expect(body.coverage.calendars[0]?.outcome).toBe("truncated");
+      expect(body.status).toBe("partial");
+    }
+
+    it("never rolls an impossible date into a real meeting", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        // February 2026 ends on the 28th. Lenient parsing turns this into
+        // 2026-03-02T01:00Z, which lands inside this anchor's window.
+        {
+          id: "impossible",
+          status: "confirmed",
+          summary: "Never happened",
+          start: { dateTime: "2026-02-30T01:00:00Z" },
+          end: { dateTime: "2026-02-30T02:00:00Z" },
+        },
+        timed(
+          "sibling",
+          "2026-03-02T03:00:00.000Z",
+          "2026-03-02T04:00:00.000Z",
+        ),
+      ]);
+
+      const body = await collectAt(fixture, "2026-03-01T02:30:00.000Z");
+      expect(idsOf(body)).toStrictEqual(["sibling"]);
+      expectDeclaredTimeGap(body);
+    });
+
+    it("resolves an offsetless time by its declared zone, not the server's", async () => {
+      // The suite runs in UTC, so the server timezone is moved for this case:
+      // the expected instants are the declared zones' own, under a process
+      // clock that agrees with neither.
+      onTestFinished(() => {
+        stubTestTimezone("UTC");
+      });
+      stubTestTimezone("Asia/Shanghai");
+      const fixture = await setupOwner();
+      stubTestTimezone("America/New_York");
+      // The same wall time in two zones also cannot collapse onto one instant,
+      // so no single server timezone can produce this pair.
+      stubOwnerEvents([
+        {
+          id: "shanghai",
+          status: "confirmed",
+          summary: "Shanghai standup",
+          start: { dateTime: "2026-03-10T09:00:00", timeZone: "Asia/Shanghai" },
+          end: { dateTime: "2026-03-10T10:00:00", timeZone: "Asia/Shanghai" },
+        },
+        {
+          id: "new-york",
+          status: "confirmed",
+          summary: "New York standup",
+          start: {
+            dateTime: "2026-03-10T09:00:00",
+            timeZone: "America/New_York",
+          },
+          end: {
+            dateTime: "2026-03-10T10:00:00",
+            timeZone: "America/New_York",
+          },
+        },
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toMatchObject([
+        {
+          eventId: "shanghai",
+          start: "2026-03-10T01:00:00.000Z",
+          end: "2026-03-10T02:00:00.000Z",
+          eventTimezone: "Asia/Shanghai",
+        },
+        {
+          eventId: "new-york",
+          start: "2026-03-10T13:00:00.000Z",
+          end: "2026-03-10T14:00:00.000Z",
+          eventTimezone: "America/New_York",
+        },
+      ]);
+      expect(response.body.coverage.truncations).not.toContain(
+        "unreadable-event-time",
+      );
+    });
+
+    it("declares an offsetless time with no usable zone instead of guessing one", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "no-zone",
+          status: "confirmed",
+          summary: "Context-free",
+          start: { dateTime: "2026-03-10T09:00:00" },
+          end: { dateTime: "2026-03-10T10:00:00" },
+        },
+        {
+          id: "unknown-zone",
+          status: "confirmed",
+          summary: "Unknown zone",
+          start: { dateTime: "2026-03-10T09:00:00", timeZone: "Mars/Olympus" },
+          end: { dateTime: "2026-03-10T10:00:00", timeZone: "Mars/Olympus" },
+        },
+        timed("kept", "2026-03-10T01:00:00.000Z", "2026-03-10T01:30:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["kept"]);
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("keeps an explicit offset exactly, even against a conflicting zone", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "offset",
+          status: "confirmed",
+          summary: "Offset",
+          // An explicit offset already identifies the instant; a `timeZone`
+          // alongside it is provenance, not a second interpretation.
+          start: {
+            dateTime: "2026-03-10T09:00:00.250+08:00",
+            timeZone: "America/New_York",
+          },
+          end: {
+            dateTime: "2026-03-10T10:00:00-05:00",
+            timeZone: "America/New_York",
+          },
+        },
+        timed("utc", "2026-03-11T02:00:00.000Z", "2026-03-11T03:00:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toMatchObject([
+        {
+          eventId: "offset",
+          start: "2026-03-10T01:00:00.250Z",
+          end: "2026-03-10T15:00:00.000Z",
+        },
+        {
+          eventId: "utc",
+          start: "2026-03-11T02:00:00.000Z",
+          end: "2026-03-11T03:00:00.000Z",
+        },
+      ]);
+      expect(response.body.coverage.truncations).not.toContain(
+        "unreadable-event-time",
+      );
+    });
+
+    it("declares a wall time its zone never had, or had twice", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "skipped",
+          status: "confirmed",
+          summary: "Spring forward",
+          // America/New_York jumps 02:00 to 03:00 on 2026-03-08.
+          start: {
+            dateTime: "2026-03-08T02:30:00",
+            timeZone: "America/New_York",
+          },
+          end: {
+            dateTime: "2026-03-08T03:30:00",
+            timeZone: "America/New_York",
+          },
+        },
+        {
+          id: "repeated",
+          status: "confirmed",
+          summary: "Fall back",
+          // 2026-11-01T01:30 happens twice in America/New_York.
+          start: {
+            dateTime: "2026-11-01T01:30:00",
+            timeZone: "America/New_York",
+          },
+          end: {
+            dateTime: "2026-11-01T02:30:00",
+            timeZone: "America/New_York",
+          },
+        },
+        timed("kept", "2026-03-10T01:00:00.000Z", "2026-03-10T01:30:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["kept"]);
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("rejects a backwards timed range while keeping a zero-length one", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        // An end before its start describes no interval at all.
+        timed(
+          "backwards",
+          "2026-03-10T02:00:00.000Z",
+          "2026-03-10T01:00:00.000Z",
+        ),
+        timed("point", "2026-03-10T05:00:00.000Z", "2026-03-10T05:00:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["point"]);
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("rejects backwards and empty all-day ranges", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "backwards-all-day",
+          status: "confirmed",
+          summary: "Backwards",
+          start: { date: "2026-03-11" },
+          end: { date: "2026-03-10" },
+        },
+        {
+          id: "empty-all-day",
+          status: "confirmed",
+          summary: "Empty",
+          // The end date is exclusive, so this covers no day at all.
+          start: { date: "2026-03-10" },
+          end: { date: "2026-03-10" },
+        },
+        {
+          id: "conference",
+          status: "confirmed",
+          summary: "Conference",
+          start: { date: "2026-03-10" },
+          end: { date: "2026-03-12" },
+        },
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["conference"]);
+      expect(response.body.items[0]).toMatchObject({
+        allDay: true,
+        start: "2026-03-10",
+        end: "2026-03-12",
+        localDayOffset: 0,
+      });
+      expectDeclaredTimeGap(response.body);
+    });
+
+    it("keeps an event that straddles either window edge", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        // Begins before the window and runs into it: it overlaps rather than
+        // starting inside, so it has no covered local day.
+        timed(
+          "straddles-start",
+          "2026-03-09T15:00:00.000Z",
+          "2026-03-09T17:00:00.000Z",
+        ),
+        // Begins on the last covered day and runs past the exclusive end.
+        timed(
+          "straddles-end",
+          "2026-03-12T15:00:00.000Z",
+          "2026-03-12T17:00:00.000Z",
+        ),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toMatchObject([
+        { eventId: "straddles-start", localDayOffset: null },
+        { eventId: "straddles-end", localDayOffset: 2 },
+      ]);
+      expect(response.body).toMatchObject({
+        status: "ok",
+        failure: null,
+        coverage: { truncations: [] },
+      });
+    });
+
+    it("rejects an event that states two different representations", async () => {
+      const fixture = await setupOwner();
+      stubOwnerEvents([
+        {
+          id: "both",
+          status: "confirmed",
+          summary: "Both",
+          // Claiming a date and a time states two different moments.
+          start: { date: "2026-03-10", dateTime: "2026-03-10T09:00:00Z" },
+          end: { date: "2026-03-11" },
+        },
+        {
+          id: "mixed",
+          status: "confirmed",
+          summary: "Mixed",
+          start: { date: "2026-03-10" },
+          end: { dateTime: "2026-03-10T10:00:00Z" },
+        },
+        {
+          id: "empty-endpoint",
+          status: "confirmed",
+          summary: "Empty endpoint",
+          start: { timeZone: "Asia/Shanghai" },
+          end: { dateTime: "2026-03-10T10:00:00Z" },
+        },
+        timed("kept", "2026-03-10T01:00:00.000Z", "2026-03-10T01:30:00.000Z"),
+      ]);
+
+      const response = await collectOk(fixture);
+      expect(idsOf(response.body)).toStrictEqual(["kept"]);
+      expectDeclaredTimeGap(response.body);
+    });
+  });
+
   it("deduplicates one event repeated across two pages of a calendar", async () => {
     const fixture = await setupOwner();
     const repeated = timed(
@@ -1197,5 +1642,623 @@ describe("Morning Brief calendar collection preview", () => {
     expect(response.body.failure).toBe("rate-limited");
     // One attempt, not a retry loop.
     expect(eventCalls(stub)).toHaveLength(1);
+  });
+
+  describe("final output budget", () => {
+    const LONG_SUMMARY = "s".repeat(100);
+    const LONG_ORGANIZER = "o".repeat(200);
+    const LONG_CALENDAR_NAME = "c".repeat(200);
+
+    /** Four readable calendars, each offering a full page of wordy events. */
+    function crowdedCalendars(): {
+      readonly calendars: readonly StubCalendar[];
+      readonly events: ReadonlyMap<string, readonly StubEvent[]>;
+    } {
+      const calendars = Array.from({ length: 4 }, (_, index) => {
+        return {
+          id: `crowded-${index}@example.test`,
+          summary: LONG_CALENDAR_NAME,
+          accessRole: "reader",
+        };
+      });
+      const events = new Map(
+        calendars.map((calendar, calendarIndex) => {
+          return [
+            calendar.id,
+            Array.from({ length: 50 }, (_, eventIndex) => {
+              return {
+                ...timed(
+                  `crowded-${calendarIndex}-${eventIndex}`,
+                  "2026-03-10T01:00:00.000Z",
+                  "2026-03-10T01:30:00.000Z",
+                ),
+                summary: LONG_SUMMARY,
+                organizer: { displayName: LONG_ORGANIZER },
+              };
+            }),
+          ] as const;
+        }),
+      );
+      return { calendars, events };
+    }
+
+    it("keeps the retained text inside its promised budget when ordinary fields repeat", async () => {
+      const fixture = await setupOwner();
+      const { calendars, events } = crowdedCalendars();
+      const stub = stubCalendar({ calendars, events });
+
+      const response = await collectOk(fixture);
+
+      // 200 events, each carrying a 100-character summary, a 200-character
+      // organizer and a 200-character calendar name, is 100,000 characters of
+      // ordinary displayed text. The shared byte ceilings never see it: five
+      // small responses stay far inside them.
+      expect(eventCalls(stub)).toHaveLength(4);
+      expect(retainedTextLength(response.body.items)).toBeLessThanOrEqual(
+        MAX_TEXT_CHARACTERS,
+      );
+      expect(response.body.items.length).toBeLessThan(MAX_EVENTS);
+      expect(response.body.items).not.toStrictEqual([]);
+      // What could not be carried is declared, and the day is not a healthy one.
+      expect(response.body.status).toBe("partial");
+      expect(response.body.coverage.truncations).toContain("text-characters");
+      expect(
+        response.body.coverage.calendars.every((entry) => {
+          return entry.outcome !== "complete" || entry.calendarId.length === 0;
+        }) ||
+          response.body.coverage.calendars.some((entry) => {
+            return entry.outcome === "truncated";
+          }),
+      ).toBeTruthy();
+      // The organizer and the calendar name are retained, so they are exactly
+      // the text the budget had to account for.
+      const first = response.body.items[0];
+      expect(first?.organizer).toBe(LONG_ORGANIZER);
+      expect(first?.calendarSummary).toBe(LONG_CALENDAR_NAME);
+    });
+
+    it("allocates the shared budget the same way whichever calendar answers first", async () => {
+      const description = "d".repeat(500);
+      const calendars = [
+        { id: "race-a@example.test", accessRole: "reader" },
+        { id: "race-b@example.test", accessRole: "reader" },
+      ];
+      const events = new Map(
+        calendars.map((calendar, calendarIndex) => {
+          return [
+            calendar.id,
+            Array.from({ length: 50 }, (_, eventIndex) => {
+              return {
+                ...timed(
+                  `race-${calendarIndex}-${eventIndex}`,
+                  "2026-03-10T01:00:00.000Z",
+                  "2026-03-10T01:30:00.000Z",
+                ),
+                description,
+              };
+            }),
+          ] as const;
+        }),
+      );
+
+      /** Collect with `firstToAnswer` served before its sibling. */
+      async function collectRacing(
+        firstToAnswer: string,
+      ): Promise<MorningBriefCalendarCollection> {
+        const fixture = await setupOwner();
+        const answered = createDeferredPromise<void>(context.signal);
+        server.use(
+          http.get(CALENDAR_LIST_URL, () => {
+            return HttpResponse.json({ items: calendars });
+          }),
+          http.get(CALENDAR_EVENTS_URL, async ({ params }) => {
+            const calendarId = decodeURIComponent(String(params["calendarId"]));
+            if (calendarId !== firstToAnswer) {
+              // Arrival order, not a sleep: the sibling has already answered.
+              await answered.promise;
+            }
+            const body = HttpResponse.json({
+              items: events.get(calendarId) ?? [],
+            });
+            if (calendarId === firstToAnswer) {
+              answered.resolve();
+            }
+            return body;
+          }),
+        );
+        const response = await collectOk(fixture);
+        return response.body;
+      }
+
+      const aFirst = await collectRacing("race-a@example.test");
+      const bFirst = await collectRacing("race-b@example.test");
+
+      // Both calendars want more than the budget can hold, so the order their
+      // responses arrive in decides nothing: the owner's day is allocated in
+      // the stable calendar order either way.
+      expect(retainedTextLength(aFirst.items)).toBeLessThanOrEqual(
+        MAX_TEXT_CHARACTERS,
+      );
+      expect(aFirst.items).not.toStrictEqual([]);
+      expect(aFirst.coverage.truncations).toContain("text-characters");
+      expect(bFirst.items).toStrictEqual(aFirst.items);
+      expect(bFirst.coverage.truncations).toStrictEqual(
+        aFirst.coverage.truncations,
+      );
+      expect(bFirst.status).toBe(aFirst.status);
+    });
+
+    it("keeps at most two hundred events and says so", async () => {
+      const fixture = await setupOwner();
+      const calendars = Array.from({ length: 5 }, (_, index) => {
+        return { id: `many-${index}@example.test`, accessRole: "reader" };
+      });
+      const events = new Map(
+        calendars.map((calendar, calendarIndex) => {
+          return [
+            calendar.id,
+            Array.from({ length: 50 }, (_, eventIndex) => {
+              return timed(
+                `many-${calendarIndex}-${eventIndex}`,
+                "2026-03-10T01:00:00.000Z",
+                "2026-03-10T01:30:00.000Z",
+              );
+            }),
+          ] as const;
+        }),
+      );
+      stubCalendar({ calendars, events });
+
+      const response = await collectOk(fixture);
+      expect(response.body.items).toHaveLength(MAX_EVENTS);
+      expect(response.body.coverage.truncations).toContain("events");
+      expect(response.body.coverage.truncations).not.toContain(
+        "text-characters",
+      );
+      expect(response.body.status).toBe("partial");
+      // 250 short events stay far inside the character budget, so this is the
+      // event cap and nothing else.
+      expect(retainedTextLength(response.body.items)).toBeLessThan(
+        MAX_TEXT_CHARACTERS,
+      );
+    });
+
+    it("stops at the calendar-list page cap and reports the unfollowed remainder", async () => {
+      const fixture = await setupOwner();
+      const page = (prefix: string): readonly StubCalendar[] => {
+        return Array.from({ length: 50 }, (_, index) => {
+          return {
+            id: `${prefix}-${String(index).padStart(2, "0")}@example.test`,
+            accessRole: "reader",
+          };
+        });
+      };
+      const stub = stubCalendar({
+        calendarPages: [page("first"), page("second")],
+        events: new Map(),
+      });
+
+      const response = await collectOk(fixture);
+      // Two pages were followed and the third token was not, so the list is
+      // declared incomplete instead of being presented as the whole account.
+      expect(
+        stub.calls.filter((call) => {
+          return call.pathname.endsWith("/calendarList");
+        }),
+      ).toHaveLength(2);
+      expect(response.body.coverage.calendarList).toBe("truncated");
+      expect(response.body.coverage.truncations).toContain(
+        "calendar-list-pages",
+      );
+      expect(response.body.coverage.truncations).toContain("calendars");
+      expect(eventCalls(stub)).toHaveLength(8);
+      expect(response.body.status).toBe("unavailable");
+    });
+
+    it("drops an unrepresentable identity and keeps its valid siblings", async () => {
+      const fixture = await setupOwner();
+      const oversizedId = "x".repeat(MAX_IDENTITY_CHARACTERS + 1);
+      const oversizedLink = `https://calendar.google.com/event?eid=${"y".repeat(
+        MAX_LINK_CHARACTERS,
+      )}`;
+      const stub = stubCalendar({
+        calendars: [
+          { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
+          // A calendar id this long cannot address a request or name a
+          // coverage entry, so it is never asked for.
+          {
+            id: `${"c".repeat(MAX_IDENTITY_CHARACTERS)}@example.test`,
+            accessRole: "reader",
+          },
+        ],
+        events: new Map([
+          [
+            OWNER_CALENDAR,
+            [
+              timed(
+                "kept-first",
+                "2026-03-10T01:00:00.000Z",
+                "2026-03-10T01:30:00.000Z",
+              ),
+              timed(
+                oversizedId,
+                "2026-03-10T02:00:00.000Z",
+                "2026-03-10T02:30:00.000Z",
+              ),
+              {
+                ...timed(
+                  "kept-recurring",
+                  "2026-03-10T03:00:00.000Z",
+                  "2026-03-10T03:30:00.000Z",
+                ),
+                iCalUID: `${oversizedId}@google.test`,
+              },
+              {
+                ...timed(
+                  "kept-linked",
+                  "2026-03-10T04:00:00.000Z",
+                  "2026-03-10T04:30:00.000Z",
+                ),
+                htmlLink: oversizedLink,
+              },
+              timed(
+                "kept-last",
+                "2026-03-10T05:00:00.000Z",
+                "2026-03-10T05:30:00.000Z",
+              ),
+            ],
+          ],
+        ]),
+      });
+
+      const response = await collectOk(fixture);
+      const ids = response.body.items.map((item) => {
+        return item.eventId;
+      });
+
+      // The two events whose identity cannot be carried are gone whole. No
+      // prefix of either survives as a new, colliding identity.
+      expect(ids).toStrictEqual(["kept-first", "kept-linked", "kept-last"]);
+      expect(
+        ids.some((id) => {
+          return id.startsWith("xxx");
+        }),
+      ).toBeFalsy();
+      expect(
+        response.body.items.some((item) => {
+          return item.iCalUID !== null && item.iCalUID.startsWith("xxx");
+        }),
+      ).toBeFalsy();
+      // A URL has no shorter form, so the event keeps its place without one.
+      expect(
+        response.body.items.find((item) => {
+          return item.eventId === "kept-linked";
+        })?.link,
+      ).toBeNull();
+      expect(response.body.coverage.truncations).toContain(
+        "oversized-identity",
+      );
+      expect(response.body.coverage.truncations).toContain("oversized-link");
+      expect(response.body.status).toBe("partial");
+      // The unusable calendar is declared through the same limit and is never
+      // requested under a clipped id.
+      expect(eventCalls(stub)).toHaveLength(1);
+      expect(
+        response.body.coverage.calendars.map((entry) => {
+          return entry.calendarId;
+        }),
+      ).toStrictEqual([OWNER_CALENDAR]);
+    });
+  });
+
+  describe("coverage of what was never read", () => {
+    it("reports an unrecognized access role as unknown coverage, not a quiet day", async () => {
+      const fixture = await setupOwner();
+      const stub = stubCalendar({
+        calendars: [
+          { id: "mystery@example.test", accessRole: "mystery" },
+          { id: "roleless@example.test" },
+        ],
+      });
+
+      const response = await collectOk(fixture);
+      // Whether these calendars hold anything is unknown. Presenting them as a
+      // complete empty read would be the same answer as a real quiet day.
+      expect(response.body.status).toBe("unavailable");
+      expect(response.body.items).toStrictEqual([]);
+      expect(response.body.coverage.calendars).toStrictEqual([
+        {
+          calendarId: "mystery@example.test",
+          summary: null,
+          accessRole: "mystery",
+          primary: false,
+          outcome: "unknown-access",
+          retryAfterMs: null,
+        },
+        {
+          calendarId: "roleless@example.test",
+          summary: null,
+          accessRole: null,
+          primary: false,
+          outcome: "unknown-access",
+          retryAfterMs: null,
+        },
+      ]);
+      expect(response.body.failure).toBe("provider-failed");
+      expect(eventCalls(stub)).toStrictEqual([]);
+    });
+
+    it("reports an account with an empty calendar list as no readable scope", async () => {
+      const fixture = await setupOwner();
+      const stub = stubCalendar({ calendars: [] });
+
+      const response = await collectOk(fixture);
+      // Nothing was opened, so nothing can be reported as quiet.
+      expect(response.body).toMatchObject({
+        status: "unavailable",
+        failure: "not-authorized",
+        items: [],
+        coverage: { calendarList: "complete", calendars: [] },
+      });
+      expect(eventCalls(stub)).toStrictEqual([]);
+    });
+
+    it("keeps a throttled calendar rate-limited without a Retry-After header", async () => {
+      const fixture = await setupOwner();
+      const stub = stubCalendar({
+        calendars: [{ id: OWNER_CALENDAR, accessRole: "owner", primary: true }],
+        eventStatus: new Map([[OWNER_CALENDAR, 429]]),
+      });
+
+      const response = await collectOk(fixture);
+      // Whether the provider volunteered a wait does not change what happened
+      // to the read.
+      expect(response.body.coverage.calendars[0]).toMatchObject({
+        outcome: "rate-limited",
+        retryAfterMs: null,
+      });
+      expect(response.body.coverage.retryAfterMs).toBeNull();
+      expect(response.body.failure).toBe("rate-limited");
+      expect(eventCalls(stub)).toHaveLength(1);
+    });
+
+    it("does not call a denied calendar throttled because it offered a wait", async () => {
+      const fixture = await setupOwner();
+      const stub = stubCalendar({
+        calendars: [{ id: OWNER_CALENDAR, accessRole: "owner", primary: true }],
+        eventStatus: new Map([[OWNER_CALENDAR, 403]]),
+        retryAfterSeconds: 30,
+      });
+
+      const response = await collectOk(fixture);
+      // The hint is kept because it is real, but nothing throttled this read.
+      expect(response.body.coverage.calendars[0]).toMatchObject({
+        outcome: "denied",
+        retryAfterMs: 30_000,
+      });
+      expect(response.body.failure).toBe("provider-failed");
+      expect(eventCalls(stub)).toHaveLength(1);
+    });
+
+    it("keeps a readable sibling through a throttled, oversized and malformed calendar", async () => {
+      const fixture = await setupOwner();
+      const throttled = "throttled@example.test";
+      const oversized = "oversized@example.test";
+      const malformed = "malformed@example.test";
+      stubCalendar({
+        calendars: [
+          { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
+          { id: throttled, accessRole: "reader" },
+          { id: oversized, accessRole: "reader" },
+          { id: malformed, accessRole: "reader" },
+        ],
+        events: new Map([
+          [
+            OWNER_CALENDAR,
+            [
+              timed(
+                "survivor",
+                "2026-03-10T01:00:00.000Z",
+                "2026-03-10T01:30:00.000Z",
+              ),
+            ],
+          ],
+        ]),
+        eventStatus: new Map([[throttled, 429]]),
+        oversized: new Set([oversized]),
+        malformed: new Set([malformed]),
+      });
+
+      const response = await collectOk(fixture);
+      const outcomes = new Map(
+        response.body.coverage.calendars.map((entry) => {
+          return [entry.calendarId, entry.outcome] as const;
+        }),
+      );
+      expect(
+        response.body.items.map((item) => {
+          return item.eventId;
+        }),
+      ).toStrictEqual(["survivor"]);
+      expect(response.body.status).toBe("partial");
+      expect(outcomes.get(OWNER_CALENDAR)).toBe("complete");
+      expect(outcomes.get(throttled)).toBe("rate-limited");
+      expect(outcomes.get(oversized)).toBe("failed");
+      expect(outcomes.get(malformed)).toBe("failed");
+      expect(response.body.coverage.truncations).toContain("response-bytes");
+      // Usable content survived, so the source itself did not fail.
+      expect(response.body.failure).toBeNull();
+    });
+  });
+
+  describe("concurrent worker lifetime", () => {
+    const JOIN_CALENDARS = [
+      { id: "join-1@example.test", accessRole: "reader" },
+      { id: "join-2@example.test", accessRole: "reader" },
+      { id: "join-3@example.test", accessRole: "reader" },
+      { id: "join-4@example.test", accessRole: "reader" },
+    ] as const;
+
+    it("cancels both started calendar reads and issues nothing afterwards", async () => {
+      const fixture = await setupOwner();
+      const cancellation = new Error(`cancelled ${randomUUID()}`);
+      const controller = new AbortController();
+      const started = JOIN_CALENDARS.slice(0, 2).map((calendar) => {
+        return calendar.id;
+      });
+      const deferreds = (): ReadonlyMap<
+        string,
+        ReturnType<typeof createDeferredPromise<void>>
+      > => {
+        return new Map(
+          started.map((calendarId) => {
+            return [
+              calendarId,
+              createDeferredPromise<void>(context.signal),
+            ] as const;
+          }),
+        );
+      };
+      const arrived = deferreds();
+      const cancelled = deferreds();
+      const finished = deferreds();
+      const held = JOIN_CALENDARS[1].id;
+      const release = createDeferredPromise<void>(context.signal);
+      const eventRequests: string[] = [];
+
+      server.use(
+        http.get(CALENDAR_LIST_URL, () => {
+          return HttpResponse.json({ items: [...JOIN_CALENDARS] });
+        }),
+        http.get(CALENDAR_EVENTS_URL, async ({ request, params }) => {
+          const calendarId = decodeURIComponent(String(params["calendarId"]));
+          eventRequests.push(calendarId);
+          // Neither calendar answers on its own, so both reads stay started
+          // until the cancellation actually reaches them.
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              cancelled.get(calendarId)?.resolve();
+            },
+            { once: true },
+          );
+          arrived.get(calendarId)?.resolve();
+          // The held calendar outlives its sibling's cancellation and is
+          // released explicitly, so no handler survives this test.
+          await (calendarId === held
+            ? release.promise
+            : cancelled.get(calendarId)?.promise);
+          finished.get(calendarId)?.resolve();
+          return HttpResponse.json({ items: [] });
+        }),
+      );
+
+      const settle = async (
+        deferred: ReadonlyMap<
+          string,
+          ReturnType<typeof createDeferredPromise<void>>
+        >,
+      ): Promise<void> => {
+        await Promise.all(
+          [...deferred.values()].map((entry) => {
+            return entry.promise;
+          }),
+        );
+      };
+
+      await seedMembership(fixture.actor, fixture.membershipId);
+      const pending = setupApp({
+        context,
+        routes: morningBriefCalendarCollectionPreviewRoutes,
+        signal: controller.signal,
+        rethrowErrors: true,
+      })(morningBriefCalendarCollectionPreviewContract).collect({
+        headers: authHeaders(fixture.actor),
+        body: { anchor: ANCHOR_ISO },
+      });
+
+      // Arrival, not a sleep: both workers are inside a started provider read
+      // and one of them is held.
+      await settle(arrived);
+      const startedRequests = [...eventRequests].sort();
+      controller.abort(cancellation);
+      // Awaiting each request's own abort proves the cancellation reached
+      // every started read rather than only the one that answered first.
+      await settle(cancelled);
+      release.resolve();
+      await settle(finished);
+
+      // The caller receives the cancellation instead of a collection, so it is
+      // propagated rather than masked into a partial day.
+      await expect(pending).rejects.toThrow(cancellation.message);
+      // Concurrency two, so exactly two calendars were ever started, and the
+      // remaining two are never requested after the cancellation boundary.
+      expect(startedRequests).toStrictEqual([...started].sort());
+      expect([...eventRequests].sort()).toStrictEqual(startedRequests);
+    });
+
+    it("declares a calendar whose id cannot address a request and keeps its sibling", async () => {
+      const fixture = await setupOwner();
+      const siblingArrived = createDeferredPromise<void>(context.signal);
+      const releaseSibling = createDeferredPromise<void>(context.signal);
+      const eventRequests: string[] = [];
+      // A lone surrogate is a valid JSON string and an impossible URL
+      // component. Encoding it inside the worker throws, which is the one
+      // provider-driven way a per-calendar read rejects rather than reporting.
+      const unencodable = "\uD800";
+
+      server.use(
+        http.get(CALENDAR_LIST_URL, () => {
+          return HttpResponse.json({
+            items: [
+              { id: unencodable, accessRole: "reader" },
+              { id: TEAM_CALENDAR, accessRole: "reader" },
+            ],
+          });
+        }),
+        http.get(CALENDAR_EVENTS_URL, async ({ params }) => {
+          const calendarId = decodeURIComponent(String(params["calendarId"]));
+          eventRequests.push(calendarId);
+          siblingArrived.resolve();
+          // Held until the test releases it, so a collection that abandoned
+          // this started read would have to answer without its events.
+          await releaseSibling.promise;
+          return HttpResponse.json({
+            items: [
+              timed(
+                "sibling-survived",
+                "2026-03-10T01:00:00.000Z",
+                "2026-03-10T01:30:00.000Z",
+              ),
+            ],
+          });
+        }),
+      );
+
+      const collection = collectOk(fixture);
+      await siblingArrived.promise;
+      releaseSibling.resolve();
+      const response = await collection;
+
+      // The unusable calendar is a declared limit on one calendar, not a
+      // failure of the collection, and the sibling read that was already
+      // started still reaches the result.
+      expect(
+        response.body.items.map((item) => {
+          return item.eventId;
+        }),
+      ).toStrictEqual(["sibling-survived"]);
+      expect(response.body.status).toBe("partial");
+      expect(response.body.coverage.truncations).toContain(
+        "oversized-identity",
+      );
+      // It is never requested, under its raw id or a clipped one.
+      expect(eventRequests).toStrictEqual([TEAM_CALENDAR]);
+      expect(
+        response.body.coverage.calendars.map((entry) => {
+          return entry.calendarId;
+        }),
+      ).toStrictEqual([TEAM_CALENDAR]);
+    });
   });
 });

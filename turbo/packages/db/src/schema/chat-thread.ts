@@ -220,6 +220,11 @@ export const chatThreads = pgTable(
         table.agentId,
         table.lastMessageAt.desc(),
       ),
+      index("idx_chat_threads_user_last_message_id").on(
+        table.userId,
+        table.lastMessageAt.desc(),
+        table.id.desc(),
+      ),
     ];
   },
 );

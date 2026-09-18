@@ -418,7 +418,9 @@ function acceptedEntries(args: {
     AcceptedConnectorServerFirewallEntry
   >();
   for (const connector of args.connectors) {
-    if (connector.firewall.kind === "none") {
+    // MCP transport metadata cannot supply HTTP execution rules or reusable
+    // HTTP permission bundles before the protocol-aware runtime in #34910.
+    if (connector.mcp !== undefined || connector.firewall.kind === "none") {
       continue;
     }
     if (entries.has(connector.slug)) {

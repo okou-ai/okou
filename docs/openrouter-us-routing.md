@@ -4,17 +4,22 @@
 organizations and disabled by default for other users. Existing per-user
 feature-switch overrides take precedence, including an explicit `false` for
 staff. When enabled, it selects `https://us.openrouter.ai` only for platform-owned
-keys and the verified model/API pairs in `openrouter-routing.ts`. BYOK,
-connection presets, saved URLs, direct providers, model defaults and
-provider-selection policy are unchanged.
+keys and the verified model/API pairs in `openrouter-routing.ts`. Built-in
+DeepSeek models then require their OpenRouter US candidate instead of selecting
+the direct DeepSeek candidate. BYOK, connection presets, saved URLs, other
+direct providers and model defaults are unchanged.
 
 The 2026-09-13 tests and official US catalog comparison in
-[#33565](https://github.com/vm0-ai/vm0/issues/33565) support four Claude Messages
-models and seven GPT/DeepSeek Responses models among the current platform routes.
-Gemini voice uses Google Cloud after [#33769](https://github.com/vm0-ai/vm0/pull/33769)
-and is outside this OpenRouter switch. No remaining platform Chat Completions or
+[#33565](https://github.com/vm0-ai/vm0/issues/33565), plus the 2026-09-18
+recheck, support four Claude Messages models and seven GPT/DeepSeek Responses
+models among the current platform routes. The recheck completed V4 Flash and V4
+Pro Responses on the US host; V4.1 Flash was present in the authenticated US
+catalog and reached its only in-region upstream, BaseTen, where the shared pool
+returned a temporary 429 rather than a data-region rejection. Gemini voice uses
+Google Cloud after [#33769](https://github.com/vm0-ai/vm0/pull/33769) and is
+outside this OpenRouter switch. No remaining platform Chat Completions or
 dedicated transcription model has verified US support. Unsupported combinations
-retain their global endpoint, including DeepSeek V4.1 Flash, Claude Fable 5.1, the current internal
+retain their global endpoint, including Claude Fable 5.1, the current internal
 text/image/translation helpers and dedicated transcription. Catalog presence
 alone does not authorize another API or model; update the allowlist only after
 verifying that combination.
@@ -22,10 +27,14 @@ verifying that combination.
 ## Selection and capture
 
 Built-in primary/fallback selection resolves the platform key before choosing
-the endpoint. The execution context captures the environment, Codex/Pi metadata,
-and exact firewall destinations together. US overrides use an existing inline
-firewall entry so a later name lookup cannot restore the global endpoint.
-Unverified API paths retain their current destination and auth binding.
+the endpoint. With the switch enabled, a built-in model that has a direct
+DeepSeek candidate is restricted to an allowlisted OpenRouter US Responses
+candidate. A missing or cooling OpenRouter key makes that route unavailable; it
+does not fall back to direct DeepSeek or the global OpenRouter host. The
+execution context captures the environment, Codex/Pi metadata, and exact
+firewall destinations together. US overrides use an existing inline firewall
+entry so a later name lookup cannot restore the global endpoint. Unverified API
+paths retain their current destination and auth binding.
 
 Pi memory Stage 1 retains its batch-selected
 platform model/key, but reads each work owner's feature context before inference;

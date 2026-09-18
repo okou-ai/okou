@@ -53,7 +53,7 @@ import {
   morningBriefRequestBytes,
   buildMorningBriefRequest,
   morningBriefCoverageReport,
-  morningBriefWidestCoverageReport,
+  packMorningBriefRequest,
 } from "../morning-brief-request-envelope";
 import {
   boundCombinedNormalizedItems,
@@ -129,7 +129,12 @@ function bundleFixture() {
 function item(
   source: MorningBriefSourceKind,
   record: string,
-  overrides: Partial<MorningBriefSourceItem> = {},
+  overrides: Partial<
+    Omit<
+      MorningBriefSourceItem,
+      "occurredAt" | "timeSemantics" | "endsAt" | "dateRange"
+    >
+  > = {},
 ): MorningBriefSourceItem {
   return {
     identity: {
@@ -143,6 +148,7 @@ function item(
     occurredAt: new Date("2026-09-17T06:00:00.000Z"),
     timeSemantics: "instant",
     endsAt: null,
+    dateRange: null,
     title: record,
     body: "",
     truncated: false,
@@ -256,6 +262,26 @@ describe("combined normalized ceiling", () => {
     expect(overflowed.omitted).toBe(1);
     expect(overflowed.collections[0]?.items).toHaveLength(0);
     expect(overflowed.bytes).toBeLessThan(exact);
+  });
+
+  it("keeps a complete source inside the exact cap without a partial-status underestimate", () => {
+    const only = item("calendar", "e1", {
+      body: '跨日"会议',
+    });
+    const collections = [collection("calendar", [only])];
+    const exact = aggregateOracle(collections);
+
+    const fitted = boundCombinedNormalizedItems(collections, exact);
+    expect(fitted.omitted).toBe(0);
+    expect(fitted.collections[0]?.coverage).toBe("complete");
+    expect(aggregateOracle(fitted.collections)).toBe(exact);
+
+    const overflowed = boundCombinedNormalizedItems(collections, exact - 1);
+    expect(overflowed.omitted).toBe(1);
+    expect(overflowed.collections[0]?.coverage).toBe("partial");
+    expect(aggregateOracle(overflowed.collections)).toBeLessThanOrEqual(
+      exact - 1,
+    );
   });
 
   it("charges the metadata that travels with the items", () => {
@@ -464,11 +490,22 @@ describe("retained source authority", () => {
     connectionId: null,
     accountRef: "T123:U456",
     scopeDigest: morningBriefScopeDigest(["conversations.history"]),
+    endpoints: [],
     membershipId: "orgmem_1",
     agentId: "agent_1",
     capturedAt: "2026-09-17T06:00:00.000Z",
     containers: ["C1"],
     contributed: true,
+  };
+
+  /** A connector-backed source proves a connection, an account and endpoints. */
+  const gmailDescriptor: MorningBriefRetainedSourceDescriptor = {
+    ...descriptor,
+    source: "gmail",
+    connectionId: "conn_1",
+    accountRef: "owner@example.test",
+    endpoints: ["https://gmail.googleapis.com/gmail/v1/users/me/messages"],
+    containers: ["thread-1"],
   };
 
   it("digests an unchanged grant identically regardless of order", () => {
@@ -494,10 +531,44 @@ describe("retained source authority", () => {
     ).toBe("rejected");
   });
 
+  it("rejects supplied material whose account was never proved", () => {
+    // Null identity is "not observed", never "any account": a later check given
+    // this descriptor would have nothing to ask the provider about.
+    expect(
+      boundMorningBriefDescriptors([{ ...gmailDescriptor, accountRef: null }]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+    expect(
+      boundMorningBriefDescriptors([
+        { ...gmailDescriptor, connectionId: null },
+      ]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+    expect(
+      boundMorningBriefDescriptors([{ ...gmailDescriptor, endpoints: [] }]),
+    ).toStrictEqual({ kind: "rejected", reason: "unproven-authority" });
+  });
+
+  it("accepts an unproven source that supplied nothing", () => {
+    // An unconfigured connector has no retained input, so there is nothing for
+    // a later check to defend and no reason to fail the whole composition.
+    expect(
+      boundMorningBriefDescriptors([
+        {
+          ...gmailDescriptor,
+          connectionId: null,
+          accountRef: null,
+          scopeDigest: "",
+          endpoints: [],
+          containers: [],
+          contributed: false,
+        },
+      ]).kind,
+    ).toBe("bounded");
+  });
+
   it("revalidates supplied-but-uncited material and skips sources that supplied none", () => {
     const supplied = morningBriefSourcesToRevalidate([
       descriptor,
-      { ...descriptor, source: "gmail", contributed: false },
+      { ...gmailDescriptor, contributed: false },
     ]);
 
     expect(
@@ -549,35 +620,68 @@ describe("retained source authority", () => {
 describe("language precedence", () => {
   it("keeps Agent instructions as the authority over a member locale", () => {
     const plan = planMorningBriefLanguage({
-      instructions: { versionId: "ver_1", digest: "d1" },
+      instructions: { state: "available", versionId: "ver_1", digest: "d1" },
       memberLocale: "en-US",
     });
 
     expect(plan.authority).toBe("agent-instructions");
-    expect(plan.instructionsVersionId).toBe("ver_1");
+    expect(plan.instructions).toStrictEqual({
+      state: "available",
+      versionId: "ver_1",
+      digest: "d1",
+    });
     // The same call applies the fallback only when the text says nothing.
     expect(plan.fallbackLanguage).toBe("en-US");
   });
 
   it("uses the member locale when no instructions exist", () => {
     const plan = planMorningBriefLanguage({
-      instructions: null,
+      instructions: { state: "no-storage", versionId: null },
       memberLocale: "ja-JP",
     });
 
     expect(plan.authority).toBe("member-locale");
     expect(plan.fallbackLanguage).toBe("ja-JP");
-    expect(plan.instructionsDigest).toBeNull();
+    expect(plan.instructions).toStrictEqual({
+      state: "no-storage",
+      versionId: null,
+    });
+  });
+
+  it("keeps the version a proven absence was read under", () => {
+    // An empty file and a version without the target are answers *from* a
+    // configuration, so the plan says which one it read rather than dropping
+    // the evidence that anything was read at all.
+    expect(
+      planMorningBriefLanguage({
+        instructions: { state: "empty-file", versionId: "ver_9" },
+        memberLocale: "ja-JP",
+      }).instructions,
+    ).toStrictEqual({ state: "empty-file", versionId: "ver_9" });
+    expect(
+      planMorningBriefLanguage({
+        instructions: { state: "no-target", versionId: "ver_9" },
+        memberLocale: null,
+      }),
+    ).toStrictEqual({
+      authority: "default",
+      fallbackLanguage: MORNING_BRIEF_DEFAULT_LANGUAGE,
+      instructions: { state: "no-target", versionId: "ver_9" },
+    });
   });
 
   it("falls back to the declared default for an absent or unknown locale", () => {
     expect(
-      planMorningBriefLanguage({ instructions: null, memberLocale: null })
-        .authority,
+      planMorningBriefLanguage({
+        instructions: { state: "no-storage", versionId: null },
+        memberLocale: null,
+      }).authority,
     ).toBe("default");
     expect(
-      planMorningBriefLanguage({ instructions: null, memberLocale: "xx-YY" })
-        .fallbackLanguage,
+      planMorningBriefLanguage({
+        instructions: { state: "no-storage", versionId: null },
+        memberLocale: "xx-YY",
+      }).fallbackLanguage,
     ).toBe(MORNING_BRIEF_DEFAULT_LANGUAGE);
   });
 
@@ -587,7 +691,7 @@ describe("language precedence", () => {
     // Settings still offers exactly the ten UI locales; neither is one of them.
     expect(
       planMorningBriefLanguage({
-        instructions: null,
+        instructions: { state: "no-storage", versionId: null },
         memberLocale: "zh-Hans",
       }).authority,
     ).toBe("member-locale");
@@ -688,7 +792,7 @@ describe("exact request bytes", () => {
 
   it("keeps the assembled request inside the ceiling it was budgeted against", () => {
     const language = planMorningBriefLanguage({
-      instructions: null,
+      instructions: { state: "no-storage", versionId: null },
       memberLocale: "en-US",
     });
     const items = Array.from({ length: 200 }, (_, index) => {
@@ -728,7 +832,7 @@ describe("exact request bytes", () => {
 
   it("reserves the whole instruction file before allocating evidence", () => {
     const language = planMorningBriefLanguage({
-      instructions: { versionId: "ver_1", digest: "d1" },
+      instructions: { state: "available", versionId: "ver_1", digest: "d1" },
       memberLocale: null,
     });
     const instructions = "写成简体中文。".repeat(4096);
@@ -866,59 +970,68 @@ describe("declared bounds", () => {
   });
 });
 
-describe("envelope reservation against the final report", () => {
-  it("reserves enough for the coverage counts allocation will actually produce", () => {
-    const language = planMorningBriefLanguage({
-      instructions: null,
-      memberLocale: null,
+describe("request packing against the final report", () => {
+  const language = planMorningBriefLanguage({
+    instructions: { state: "no-storage", versionId: null },
+    memberLocale: null,
+  });
+
+  it("repacks when included and omitted counts cross different digit boundaries", () => {
+    // This is the concrete count-width counterexample: with 40 records, the
+    // final included=20/omitted=20 report is one byte wider than the synthetic
+    // included=0/omitted=40 extreme used by the old reservation.
+    const items = Array.from({ length: 40 }, (_, index) => {
+      return item("slack", `m${index.toString()}`, {
+        body: '"'.repeat(1500),
+        priority: index,
+      });
     });
-    // Many items so the real omitted count is three digits wide, where an
-    // envelope measured at "omitted":0 would under-reserve.
+    const collections = [collection("slack", items)];
+    const packed = packMorningBriefRequest({
+      collections,
+      language,
+      instructions: "i".repeat(59_856),
+      omittedByNormalizedCap: {},
+    });
+
+    expect(packed.allocation.omittedItems).toBeGreaterThan(0);
+    expect(Buffer.byteLength(JSON.stringify(packed.request), "utf8")).toBe(
+      packed.totalBytes,
+    );
+    expect(packed.totalBytes).toBeLessThanOrEqual(
+      MORNING_BRIEF_REQUEST_MAX_BYTES,
+    );
+  });
+
+  it("reports composed source and normalized omissions in the packed document", () => {
     const items = Array.from({ length: 400 }, (_, index) => {
       return item("gmail", `m${index.toString()}`, {
         body: "e".repeat(400),
         priority: index,
       });
     });
-    const collections = [collection("gmail", items)];
-
-    const envelopeBytes = morningBriefEnvelopeBytes({
+    const collections = [
+      {
+        ...collection("gmail", items),
+        omittedBySource: { known: 17, unknownRemaining: true },
+      },
+    ];
+    const packed = packMorningBriefRequest({
+      collections,
       language,
       instructions: null,
-      coverage: morningBriefWidestCoverageReport(collections, {}),
-    });
-    const allocated = allocateMorningBriefRequest(collections, {
-      overheadBytes: envelopeBytes,
-    });
-    const request = buildMorningBriefRequest({
-      language,
-      instructions: null,
-      coverage: morningBriefCoverageReport(collections, {
-        byNormalizedCap: {},
-        byRequest: allocated.omittedBySource,
-      }),
-      items: allocated.items,
+      omittedByNormalizedCap: { gmail: 9 },
     });
 
-    expect(allocated.omittedItems).toBeGreaterThan(99);
-    expect(morningBriefRequestBytes(request)).toBeLessThanOrEqual(
+    expect(packed.allocation.omittedItems).toBeGreaterThan(99);
+    expect(packed.totalBytes).toBeLessThanOrEqual(
       MORNING_BRIEF_REQUEST_MAX_BYTES,
     );
-  });
-
-  it("never measures narrower than the report allocation can produce", () => {
-    const collections = [
-      collection("gmail", [item("gmail", "m0"), item("gmail", "m1")]),
-    ];
-    const widest = morningBriefWidestCoverageReport(collections, {});
-    const real = morningBriefCoverageReport(collections, {
-      byNormalizedCap: {},
-      byRequest: { gmail: 1 },
-    });
-
-    expect(JSON.stringify(widest).length).toBeGreaterThanOrEqual(
-      JSON.stringify(real).length,
-    );
+    const [report] = packed.request.coverage;
+    expect(report?.omitted.bySource.known).toBe(17);
+    expect(report?.omitted.byNormalizedCap).toBe(9);
+    expect(report?.omitted.byRequest).toBe(packed.allocation.omittedItems);
+    expect(report?.omitted.unknownRemaining).toBeTruthy();
   });
 });
 
@@ -928,20 +1041,20 @@ describe("five-source normalization", () => {
       {
         source: "google-calendar",
         status: "ok",
-        anchor: "2026-09-17T06:00:00.000Z",
-        collectedAt: "2026-09-17T06:00:00.000Z",
-        timezone: "Asia/Shanghai",
+        anchor: "2026-11-01T20:00:00.000Z",
+        collectedAt: "2026-11-01T20:00:00.000Z",
+        timezone: "America/Los_Angeles",
         window: {
-          startAt: "2026-09-16T16:00:00.000Z",
-          endAt: "2026-09-17T16:00:00.000Z",
-          startDate: "2026-09-17",
-          endDateExclusive: "2026-09-18",
+          startAt: "2026-11-01T07:00:00.000Z",
+          endAt: "2026-11-02T08:00:00.000Z",
+          startDate: "2026-11-01",
+          endDateExclusive: "2026-11-02",
         },
         items: [
           {
             calendarId: "cal-1",
             calendarSummary: "Work",
-            calendarTimezone: "Asia/Shanghai",
+            calendarTimezone: "America/Los_Angeles",
             eventId: "evt-1",
             iCalUID: null,
             recurringEventId: null,
@@ -950,8 +1063,8 @@ describe("five-source normalization", () => {
             location: null,
             descriptionExcerpt: null,
             allDay: true,
-            start: "2026-09-17",
-            end: "2026-09-19",
+            start: "2026-11-01",
+            end: "2026-11-02",
             eventTimezone: null,
             localDayOffset: 0,
             organizer: null,
@@ -975,8 +1088,24 @@ describe("five-source normalization", () => {
 
     const [only] = normalized.items;
     expect(only?.timeSemantics).toBe("date-only");
-    // The exclusive end survives; a two-day offsite is not reported as today.
-    expect(only?.endsAt?.toISOString()).toBe("2026-09-19T00:00:00.000Z");
+    // The exclusive end survives as a calendar date. No UTC midnight is
+    // fabricated into either model-visible instant field, including across the
+    // 25-hour fall-back day in America/Los_Angeles.
+    expect(only?.occurredAt).toBeNull();
+    expect(only?.endsAt).toBeNull();
+    expect(only?.dateRange).toStrictEqual({
+      startDate: "2026-11-01",
+      endDateExclusive: "2026-11-02",
+      timezone: "America/Los_Angeles",
+    });
+    const serialized = serializeForTest(only as MorningBriefSourceItem);
+    expect(serialized.time).toStrictEqual({
+      kind: "date-only",
+      startDate: "2026-11-01",
+      endDateExclusive: "2026-11-02",
+      timezone: "America/Los_Angeles",
+    });
+    expect(JSON.stringify(serialized)).not.toContain("T00:00:00.000Z");
     expect(only?.identity.container).toBe("cal-1");
   });
 
@@ -1281,10 +1410,10 @@ describe("allocation under an unsatisfiable reservation", () => {
 
 describe("request ceiling measured on the consumed serialization", () => {
   const language = planMorningBriefLanguage({
-    instructions: { versionId: "ver_1", digest: "d1" },
+    instructions: { state: "available", versionId: "ver_1", digest: "d1" },
     memberLocale: null,
   });
-  const instructions = "写成简体中文。".repeat(64);
+  const instructions = "i".repeat(59_856);
 
   function assemble(
     collections: readonly MorningBriefSourceCollection[],
@@ -1302,11 +1431,13 @@ describe("request ceiling measured on the consumed serialization", () => {
     });
   }
 
-  it("meets the ceiling exactly and drops a whole item one byte under", () => {
-    // Escaping, non-ASCII, the coverage metadata and the whole instruction file
-    // are all inside the measured document.
-    const only = item("gmail", "m0", {
-      body: '"早安"'.repeat(64),
+  it("meets the actual 128 KiB ceiling exactly and drops a whole item one byte under", () => {
+    // Full instruction text, escaping, non-ASCII and control characters all
+    // share the same consumed serialization. ASCII padding then lands that
+    // independent oracle exactly on the production ceiling.
+    const prefix = '"早安"\u0001'.repeat(64);
+    const baseItem = item("gmail", "m0", {
+      body: prefix,
       facts: morningBriefItemFacts({
         reasons: [
           { branch: "recent", detail: null, unread: true },
@@ -1315,80 +1446,46 @@ describe("request ceiling measured on the consumed serialization", () => {
         bodySource: "text-plain",
       }),
     });
+    const baseCollections = [collection("gmail", [baseItem])];
+    const baseBytes = Buffer.byteLength(
+      JSON.stringify(assemble(baseCollections, [baseItem], {})),
+      "utf8",
+    );
+    const only = {
+      ...baseItem,
+      body: prefix + "x".repeat(MORNING_BRIEF_REQUEST_MAX_BYTES - baseBytes),
+    };
     const collections = [collection("gmail", [only])];
-    const envelopeBytes = morningBriefEnvelopeBytes({
-      language,
-      instructions,
-      coverage: morningBriefWidestCoverageReport(collections, {}),
-    });
-    // The oracle: the exact bytes of the request this composition would send.
-    const exact = Buffer.byteLength(
+    const oracle = Buffer.byteLength(
       JSON.stringify(assemble(collections, [only], {})),
       "utf8",
     );
+    expect(oracle).toBe(MORNING_BRIEF_REQUEST_MAX_BYTES);
 
-    const fitted = allocateMorningBriefRequest(collections, {
-      maxBytes: exact,
-      overheadBytes: envelopeBytes,
-    });
-    expect(fitted.items).toHaveLength(1);
-    expect(
-      Buffer.byteLength(
-        JSON.stringify(assemble(collections, fitted.items, {})),
-        "utf8",
-      ),
-    ).toBe(exact);
-
-    const overflowed = allocateMorningBriefRequest(collections, {
-      maxBytes: exact - 1,
-      overheadBytes: envelopeBytes,
-    });
-    expect(overflowed.items).toHaveLength(0);
-    expect(overflowed.omittedBySource.gmail).toBe(1);
-  });
-
-  it("reserves for the widest omission counts the report can produce", () => {
-    const items = Array.from({ length: 300 }, (_, index) => {
-      return item("gmail", `m${index.toString()}`, {
-        body: "e".repeat(400),
-        priority: index,
-      });
-    });
-    const collections = [
-      {
-        ...collection("gmail", items),
-        omittedBySource: { known: 17, unknownRemaining: true },
-      },
-    ];
-    const envelopeBytes = morningBriefEnvelopeBytes({
+    const fitted = packMorningBriefRequest({
+      collections,
       language,
       instructions,
-      coverage: morningBriefWidestCoverageReport(collections, { gmail: 9 }),
+      omittedByNormalizedCap: {},
     });
-    const allocated = allocateMorningBriefRequest(collections, {
-      overheadBytes: envelopeBytes,
-    });
-    const request = buildMorningBriefRequest({
+    expect(fitted.allocation.items).toHaveLength(1);
+    expect(fitted.totalBytes).toBe(MORNING_BRIEF_REQUEST_MAX_BYTES);
+    expect(Buffer.byteLength(JSON.stringify(fitted.request), "utf8")).toBe(
+      fitted.totalBytes,
+    );
+
+    const overflowed = packMorningBriefRequest({
+      collections,
       language,
       instructions,
-      coverage: morningBriefCoverageReport(collections, {
-        byNormalizedCap: { gmail: 9 },
-        byRequest: allocated.omittedBySource,
-      }),
-      items: allocated.items,
+      omittedByNormalizedCap: {},
+      maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES - 1,
     });
-
-    expect(allocated.omittedItems).toBeGreaterThan(99);
-    expect(
-      Buffer.byteLength(JSON.stringify(request), "utf8"),
-    ).toBeLessThanOrEqual(MORNING_BRIEF_REQUEST_MAX_BYTES);
-    const [report] = request.coverage;
-    // Three independent reductions, each reported as itself.
-    expect(report?.omitted.bySource.known).toBe(17);
-    expect(report?.omitted.byNormalizedCap).toBe(9);
-    expect(report?.omitted.byRequest).toBe(allocated.omittedItems);
-    expect(report?.omitted.knownTotal).toBe(17 + 9 + allocated.omittedItems);
-    expect(report?.omitted.unknownRemaining).toBeTruthy();
+    expect(overflowed.allocation.items).toHaveLength(0);
+    expect(overflowed.allocation.omittedBySource.gmail).toBe(1);
+    expect(overflowed.totalBytes).toBeLessThanOrEqual(
+      MORNING_BRIEF_REQUEST_MAX_BYTES - 1,
+    );
   });
 
   it("reports every stage that reduced a source, not only the last one", () => {

@@ -415,6 +415,23 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     expect(github.provenance.limitations.length).toBeGreaterThan(0);
   });
 
+  it("keeps an empty Chat snapshot explicit without inventing evidence", async () => {
+    const f = await fixture({ github: false });
+    scriptGithub({});
+
+    const chat = sourceReport(await compose(f), "chat");
+
+    expect(chat.coverage).toBe("empty");
+    expect(chat.items).toBe(0);
+    expect(chat.includedInRequest).toBe(0);
+    expect(chat.timeSemantics.outstanding).toBe(0);
+    expect(chat.provenance.observedAt).not.toBeNull();
+    expect(chat.provenance.branches).toStrictEqual([
+      expect.objectContaining({ name: "unread", status: "empty" }),
+    ]);
+    expect(chat.omitted.knownTotal).toBe(0);
+  });
+
   it("leaves a source nobody connected unconfigured rather than empty", async () => {
     const f = await fixture({ github: false });
     scriptGithub({});

@@ -875,11 +875,11 @@ describe("connector account lifecycle routes", () => {
       const catalogBytes = Buffer.from(
         JSON.stringify(API_TEST_CONNECTOR_CATALOG),
       );
-      const catalogKey = `connectors/v3/releases/${API_TEST_CONNECTOR_CATALOG.catalogVersion}/catalog.json`;
+      const catalogKey = `connectors/v4/releases/${API_TEST_CONNECTOR_CATALOG.catalogVersion}/catalog.json`;
       const objects = new Map([
         [catalogKey, catalogBytes],
         [
-          "connectors/v3/active.json",
+          "connectors/v4/active.json",
           Buffer.from(
             JSON.stringify({
               catalogVersion: API_TEST_CONNECTOR_CATALOG.catalogVersion,

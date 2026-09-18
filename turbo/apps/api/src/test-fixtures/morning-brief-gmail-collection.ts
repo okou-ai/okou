@@ -134,6 +134,28 @@ export async function selectThreadGmailAccountFixture(args: {
     .onConflictDoNothing();
 }
 
+/**
+ * Move the canonical thread's selection onto a different connected account.
+ *
+ * This is the row the Settings account picker writes when an owner changes
+ * which mailbox a brief reads, and the only way to express that change while a
+ * collection is already running.
+ */
+export async function reselectThreadGmailAccountFixture(args: {
+  readonly chatThreadId: string;
+  readonly connectorId: string;
+}): Promise<void> {
+  await db()
+    .update(chatThreadConnectorSelections)
+    .set({ connectorId: args.connectorId })
+    .where(
+      and(
+        eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
+        eq(chatThreadConnectorSelections.connectorSlug, "gmail"),
+      ),
+    );
+}
+
 export async function revokeAgentConnectorGrantFixture(
   owner: MorningBriefOwner,
   args: { readonly agentId: string; readonly connectorSlug: string },

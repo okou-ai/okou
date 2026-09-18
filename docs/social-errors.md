@@ -66,13 +66,12 @@ than being invented. Current local artifact/reconciliation errors can also
 legitimately omit provider advice. No migration or backfill is needed.
 
 The API persists bounded provider status/code/retryability evidence separately
-from public download metadata. Ordinary requests log that allowlisted evidence
-only for the normalized `invalid_input` reason, to diagnose rejected provider
-request input. Structured provider codes can override HTTP 400, so the raw
-status alone does not trigger the warning. Other failures retain their HTTP
-error and retry advice without emitting this generic warning. The public
-projection never includes the evidence object. Safe existing download
-code/message diagnostics remain usable.
+from public download metadata. Ordinary provider rejections retain their
+normalized HTTP error and retry advice without a duplicate service warning.
+An `invalid_input` result alone does not establish a first-party request
+construction fault. Structured provider codes can still override HTTP 400's
+input classification. The public projection never includes the evidence object.
+Safe existing download code/message diagnostics remain usable.
 
 Old commit-addressed CLIs still handle code/message envelopes and ignore new
 metadata. New CLIs keep the existing status-based retry advice for responses

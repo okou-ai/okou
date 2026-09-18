@@ -114,6 +114,7 @@ export function normalizeMorningBriefSlack(
       // a reply pulled from an older root is still reported at its own time.
       timeSemantics: "instant",
       endsAt: null,
+      dateRange: null,
       title: `#${entry.channelName}`,
       body: entry.text,
       // Slack clips a long message at its own ceiling on a code point
@@ -196,6 +197,9 @@ export function morningBriefSlackDescriptor(args: {
     connectionId: null,
     accountRef: `${args.workspaceId}:${args.slackUserId}`,
     scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_SLACK_READ_SURFACE),
+    // The native installation authorizes against the shared conversations
+    // below rather than a per-request URL policy.
+    endpoints: [],
     membershipId: args.membershipId,
     agentId: args.agentId,
     capturedAt: args.capturedAt.toISOString(),

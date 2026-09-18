@@ -814,7 +814,7 @@ function toggleVoicePreview(event: ReactMouseEvent<HTMLButtonElement>): void {
   detach(audio.play(), Reason.DomCallback);
 }
 
-export interface VoiceCardVoice {
+interface VoiceCardVoice {
   readonly id: string;
   readonly name: string;
   readonly sampleUrl?: string;
@@ -829,12 +829,12 @@ export interface VoiceCardVoice {
  * DOM contract for the row that hosts a {@link VoicePreviewControl}: the toggle
  * finds its audio through the card and flips `data-playing` for the icon swap.
  */
-export const VOICE_PREVIEW_CARD_PROPS = {
+const VOICE_PREVIEW_CARD_PROPS = {
   "data-avatar-voice-card": "",
   "data-playing": "false",
 } as const;
 
-export const VOICE_PREVIEW_CARD_CLASS = "group/voice";
+const VOICE_PREVIEW_CARD_CLASS = "group/voice";
 
 export function VoicePreviewControl({
   voice,
@@ -1344,9 +1344,12 @@ function IntroVideoVoiceFilters() {
 
 function IntroVideoVoiceCatalog({
   selectedVoiceId,
+  query,
   onSelect,
 }: {
   readonly selectedVoiceId: string | undefined;
+  /** Narrows the pages already loaded; the provider has no name search. */
+  readonly query?: string;
   readonly onSelect: (voice: IntroVideoVoice) => void;
 }) {
   const { t } = useTranslation();
@@ -1369,6 +1372,10 @@ function IntroVideoVoiceCatalog({
   const handleLoadMore = () => {
     detach(loadMore(pageSignal), Reason.DomCallback, "HeyGen voice paging");
   };
+  const needle = query?.trim().toLowerCase() ?? "";
+  const visibleItems = (visibleCatalog?.items ?? []).filter((voice) => {
+    return needle === "" || voice.name.toLowerCase().includes(needle);
+  });
 
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1388,9 +1395,9 @@ function IntroVideoVoiceCatalog({
           </div>
         ) : visibleCatalog === undefined ? (
           <AvatarVoiceSkeletonGrid />
-        ) : visibleCatalog.items.length > 0 ? (
+        ) : visibleItems.length > 0 ? (
           <div className="grid grid-cols-1 gap-2.5">
-            {visibleCatalog.items.map((voice) => {
+            {visibleItems.map((voice) => {
               return (
                 <AvatarVoiceCard
                   key={voice.id}
@@ -1426,11 +1433,13 @@ export function VoiceLibraryToolbar() {
 export function VoiceLibraryContent({
   header,
   selectedVoiceId,
+  query,
   onSelect,
 }: {
   /** Rendered inside the picker so its own previews stop when a card plays. */
   readonly header?: ReactNode;
   readonly selectedVoiceId: string | undefined;
+  readonly query?: string;
   readonly onSelect: (voice: IntroVideoVoice) => void;
 }) {
   return (
@@ -1442,6 +1451,7 @@ export function VoiceLibraryContent({
       {header}
       <IntroVideoVoiceCatalog
         selectedVoiceId={selectedVoiceId}
+        query={query}
         onSelect={onSelect}
       />
     </div>

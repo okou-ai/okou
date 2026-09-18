@@ -10,7 +10,7 @@ import { writeDb$ } from "../external/db";
 import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { withChatThreadContentWrite } from "../services/chat-thread-content-erasure-admission.service";
-import { latestRunFinishEventSubquery } from "../services/chat-thread-read-state-query";
+import { latestReadWatermarkEventSubquery } from "../services/chat-thread-read-state-query";
 import { chatThreadUnreads } from "../services/chat-thread.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -60,11 +60,14 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         .from(chatThreads)
         .where(eq(chatThreads.id, params.id))
         .limit(1);
-      const latestRunFinish = latestRunFinishEventSubquery(tx, params.id);
+      const latestReadWatermark = latestReadWatermarkEventSubquery(
+        tx,
+        params.id,
+      );
       const [updated] = await tx
         .update(chatThreads)
-        .set({ lastReadAt: latestRunFinish.createdAt })
-        .from(latestRunFinish)
+        .set({ lastReadAt: latestReadWatermark.createdAt })
+        .from(latestReadWatermark)
         .where(
           and(
             eq(chatThreads.id, params.id),
@@ -72,7 +75,7 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
             isNotNull(chatThreads.agentId),
             or(
               isNull(chatThreads.lastReadAt),
-              gt(latestRunFinish.createdAt, chatThreads.lastReadAt),
+              gt(latestReadWatermark.createdAt, chatThreads.lastReadAt),
             ),
           ),
         )

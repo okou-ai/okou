@@ -2,7 +2,11 @@ import { z } from "zod";
 
 import { connectorAuthMethodIdSchema } from "../../connector-identity";
 
-import { connectorCatalogVersionSchema, privateNameSchema } from "./common";
+import {
+  connectorCatalogVersionSchema,
+  connectorSlugSchema,
+  privateNameSchema,
+} from "./common";
 import { ConnectorCatalogRelationshipError } from "./relationship-error";
 
 export const publicFieldIdSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/u);
@@ -27,6 +31,59 @@ export const connectorValueRefSchema = z
 const connectorSecretRefSchema = z
   .string()
   .regex(/^\$secrets\.[A-Z][A-Z0-9_]*$/u);
+
+export const connectorMcpSchema = z
+  .object({
+    transport: z.literal("streamable-http"),
+    endpoint: z
+      .string()
+      .url()
+      .refine((value) => {
+        if (!URL.canParse(value)) {
+          return false;
+        }
+        const url = new URL(value);
+        return (
+          url.protocol === "https:" &&
+          url.href === value &&
+          !url.username &&
+          !url.password &&
+          !url.hash &&
+          !url.search &&
+          !/[{}?#]/u.test(value) &&
+          /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z][a-z0-9-]*$/u.test(
+            url.hostname,
+          ) &&
+          url.hostname.split(".").every((label) => {
+            return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u.test(label);
+          }) &&
+          !/(?:^|\.)(?:localhost|local|internal|invalid)$/u.test(url.hostname)
+        );
+      }, "MCP endpoint must be a canonical fixed public HTTPS URL"),
+  })
+  .strict();
+
+export const connectorReplacementSchema = z
+  .object({ connectorSlug: connectorSlugSchema })
+  .strict();
+
+const connectorAutomaticTokenBindingsSchema = z
+  .object({
+    accessToken: connectorSecretRefSchema,
+    refreshToken: connectorSecretRefSchema.optional(),
+  })
+  .strict();
+
+export const noneGrantSourceSchema = z
+  .object({ kind: z.literal("none") })
+  .strict();
+export const automaticGrantSourceSchema = z
+  .object({
+    kind: z.literal("automatic"),
+    callbackOrigin: z.literal("api"),
+    outputs: connectorAutomaticTokenBindingsSchema,
+  })
+  .strict();
 
 const categoryGroupSourceSchema = z
   .object({
@@ -183,6 +240,8 @@ const deviceAuthGrantSourceSchema = z
   .strict();
 
 const connectorGrantSourceSchema = z.discriminatedUnion("kind", [
+  noneGrantSourceSchema,
+  automaticGrantSourceSchema,
   manualGrantSourceSchema,
   authCodeGrantSourceSchema,
   openIdGrantSourceSchema,
@@ -220,6 +279,14 @@ const refreshTokenAccessSourceSchema = z
   .strict();
 
 export const connectorAccessSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("none") }).strict(),
+  z
+    .object({
+      kind: z.literal("automatic"),
+      inputs: connectorAutomaticTokenBindingsSchema,
+      outputs: connectorAutomaticTokenBindingsSchema,
+    })
+    .strict(),
   staticAccessSourceSchema,
   refreshTokenAccessSourceSchema,
 ]);
@@ -259,6 +326,8 @@ export const connectorSourceSchema = z
     category: connectorCategoryIdSchema,
     generation: z.array(connectorGenerationTypeSchema),
     tags: z.array(z.string().min(1)),
+    mcp: connectorMcpSchema.optional(),
+    replaces: connectorReplacementSchema.optional(),
     authMethods: z.array(connectorAuthMethodSourceSchema).min(1),
   })
   .strict();
@@ -297,15 +366,38 @@ function authMethodValueRefs(
   authMethod: ConnectorAuthMethodSource,
 ): readonly string[] {
   const refs: string[] = [];
-  if (authMethod.grant.kind !== "manual") {
-    refs.push(...Object.values(authMethod.grant.outputs));
+  if ("outputs" in authMethod.grant) {
+    refs.push(
+      ...Object.values(authMethod.grant.outputs).filter(
+        (value): value is string => {
+          return value !== undefined;
+        },
+      ),
+    );
   }
-  for (const binding of Object.values(authMethod.access.envBindings)) {
+  for (const binding of Object.values(
+    "envBindings" in authMethod.access ? authMethod.access.envBindings : {},
+  )) {
     refs.push(typeof binding === "string" ? binding : binding.valueRef);
   }
-  if (authMethod.access.kind === "refresh-token") {
-    refs.push(...Object.values(authMethod.access.inputs));
-    refs.push(...Object.values(authMethod.access.outputs));
+  if (
+    authMethod.access.kind === "refresh-token" ||
+    authMethod.access.kind === "automatic"
+  ) {
+    refs.push(
+      ...Object.values(authMethod.access.inputs).filter(
+        (value): value is string => {
+          return value !== undefined;
+        },
+      ),
+    );
+    refs.push(
+      ...Object.values(authMethod.access.outputs).filter(
+        (value): value is string => {
+          return value !== undefined;
+        },
+      ),
+    );
   }
   if (authMethod.revoke.kind === "token-revoke") {
     refs.push(...Object.values(authMethod.revoke.inputs));
@@ -325,7 +417,11 @@ function authStorageSets(
   return {
     secretNames: new Set(authMethod.storage.secrets),
     variableNames: new Set(authMethod.storage.variables),
-    platformSecrets: new Set(authMethod.access.platformSecrets ?? []),
+    platformSecrets: new Set(
+      "platformSecrets" in authMethod.access
+        ? (authMethod.access.platformSecrets ?? [])
+        : [],
+    ),
   };
 }
 
@@ -534,6 +630,10 @@ export function validateConnectorSourceSemantics(args: {
   readonly connectorSlug: string;
   readonly source: ConnectorSource;
 }): void {
+  validateConnectorProtocolSemantics({
+    connectorSlug: args.connectorSlug,
+    ...args.source,
+  });
   assertUnique({
     values: args.source.authMethods.map((authMethod) => {
       return authMethod.id;
@@ -545,6 +645,116 @@ export function validateConnectorSourceSemantics(args: {
       connectorSlug: args.connectorSlug,
       authMethod,
     });
+  }
+}
+
+type ConnectorProtocolAuthMethod = Pick<
+  ConnectorAuthMethodSource,
+  "id" | "storage" | "client" | "access" | "revoke"
+> & {
+  readonly grant: {
+    readonly kind: string;
+    readonly outputs?: Readonly<Record<string, string | undefined>>;
+  };
+};
+
+function validateAutomaticTokenStorage(
+  method: ConnectorProtocolAuthMethod,
+): void {
+  if (
+    method.access.kind !== "automatic" ||
+    method.grant.outputs === undefined
+  ) {
+    throw new ConnectorCatalogRelationshipError(
+      "mcp-auth-contract",
+      "Automatic token bindings are missing",
+    );
+  }
+  const outputs = method.grant.outputs;
+  for (const key of ["accessToken", "refreshToken"] as const) {
+    if (
+      outputs[key] !== method.access.inputs[key] ||
+      outputs[key] !== method.access.outputs[key]
+    ) {
+      throw new ConnectorCatalogRelationshipError(
+        "mcp-auth-contract",
+        "Automatic grant and access bindings must match",
+      );
+    }
+  }
+  const names = Object.values(outputs)
+    .filter((value): value is string => {
+      return value !== undefined;
+    })
+    .map(valueRefName);
+  if (
+    new Set(names).size !== names.length ||
+    method.storage.variables.length !== 0 ||
+    method.storage.secrets.length !== names.length ||
+    names.some((name) => {
+      return !method.storage.secrets.includes(name);
+    })
+  ) {
+    throw new ConnectorCatalogRelationshipError(
+      "mcp-auth-contract",
+      "Automatic storage must exactly match distinct token bindings",
+    );
+  }
+}
+
+/** Protocol declarations are explicit; slug suffixes have no consumer meaning. */
+export function validateConnectorProtocolSemantics(args: {
+  readonly connectorSlug: string;
+  readonly mcp?: ConnectorSource["mcp"];
+  readonly replaces?: ConnectorSource["replaces"];
+  readonly authMethods: readonly ConnectorProtocolAuthMethod[];
+}): void {
+  if (
+    args.replaces !== undefined &&
+    (args.mcp === undefined ||
+      args.replaces.connectorSlug === args.connectorSlug)
+  ) {
+    throw new ConnectorCatalogRelationshipError(
+      "invalid-replacement",
+      "Replacement requires an MCP connector and a distinct predecessor",
+    );
+  }
+  for (const method of args.authMethods) {
+    const generic =
+      method.grant.kind === "none" || method.grant.kind === "automatic";
+    if (!generic) {
+      if (method.access.kind === "none" || method.access.kind === "automatic") {
+        throw new ConnectorCatalogRelationshipError(
+          "mcp-auth-contract",
+          "MCP access does not match its grant",
+        );
+      }
+      continue;
+    }
+    if (
+      args.mcp === undefined ||
+      method.client !== undefined ||
+      method.revoke.kind !== "none" ||
+      method.access.kind !== method.grant.kind
+    ) {
+      throw new ConnectorCatalogRelationshipError(
+        "mcp-auth-contract",
+        "Generic MCP authentication requires matching access and runtime-owned client and revoke",
+      );
+    }
+    if (method.grant.kind === "none") {
+      if (
+        method.storage.secrets.length !== 0 ||
+        method.storage.variables.length !== 0
+      ) {
+        throw new ConnectorCatalogRelationshipError(
+          "mcp-auth-contract",
+          "No-auth MCP storage must be empty",
+        );
+      }
+      continue;
+    }
+    validateAutomaticTokenStorage(method);
   }
 }
 

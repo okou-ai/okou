@@ -758,7 +758,9 @@ describe("POST /api/image-recognition", () => {
     expect(calls).toBe(1);
     await expect(readUsageRecord(actor)).resolves.toStrictEqual([
       expect.objectContaining({
-        runId: actor.runId,
+        title: "Unavailable thread",
+        threadId: null,
+        runId: null,
         tokens: 4000,
         credits: EXPECTED_CHARGE,
       }),
@@ -960,7 +962,9 @@ describe("POST /api/image-recognition", () => {
     ).resolves.toStrictEqual({ raw: 6, hourly: 0 });
     await expect(readUsageRecord(actor)).resolves.toStrictEqual([
       expect.objectContaining({
-        runId: actor.runId,
+        title: "Unavailable thread",
+        threadId: null,
+        runId: null,
         tokens: 8000,
         credits: EXPECTED_CHARGE * 2,
       }),

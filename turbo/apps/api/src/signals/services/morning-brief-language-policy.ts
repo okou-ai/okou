@@ -23,6 +23,8 @@
 
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
 
+import type { MorningBriefInstructionsProvenance } from "./morning-brief-language-context.service";
+
 /** The language used when nothing else applies. */
 export const MORNING_BRIEF_DEFAULT_LANGUAGE = "en-US";
 
@@ -71,9 +73,16 @@ export type MorningBriefLanguageAuthority =
 export interface MorningBriefLanguagePlan {
   readonly authority: MorningBriefLanguageAuthority;
   readonly fallbackLanguage: MorningBriefOutputLanguage;
-  /** The frozen provenance of the instruction text, when there is any. */
-  readonly instructionsVersionId: string | null;
-  readonly instructionsDigest: string | null;
+  /**
+   * What was proven about the Agent's instructions for this invocation.
+   *
+   * Absence is provenance too. "No volume was ever published", "that version
+   * carries no instructions file" and "that version's file is empty" are three
+   * different observations, and each names the configuration it was read from,
+   * so a consumer can tell a read absence from an assumed one and revalidate
+   * the exact thing that was read.
+   */
+  readonly instructions: MorningBriefInstructionsProvenance;
 }
 
 /**
@@ -89,10 +98,7 @@ export interface MorningBriefLanguagePlan {
  * owner had configured nothing.
  */
 export function planMorningBriefLanguage(args: {
-  readonly instructions: {
-    readonly versionId: string;
-    readonly digest: string;
-  } | null;
+  readonly instructions: MorningBriefInstructionsProvenance;
   readonly memberLocale: string | null;
 }): MorningBriefLanguagePlan {
   const fallbackLanguage =
@@ -105,19 +111,13 @@ export function planMorningBriefLanguage(args: {
     isMorningBriefOutputLanguage(args.memberLocale)
       ? "member-locale"
       : "default";
-  if (args.instructions === null) {
-    return {
-      authority: localeAuthority,
-      fallbackLanguage,
-      instructionsVersionId: null,
-      instructionsDigest: null,
-    };
-  }
   return {
-    authority: "agent-instructions",
+    authority:
+      args.instructions.state === "available"
+        ? "agent-instructions"
+        : localeAuthority,
     fallbackLanguage,
-    instructionsVersionId: args.instructions.versionId,
-    instructionsDigest: args.instructions.digest,
+    instructions: args.instructions,
   };
 }
 

@@ -109,6 +109,24 @@ installation, schedule and Agent, and the Slack workspace and user.
   the row, the update cannot queue again between the check and the write. A
   stale worker therefore cannot overwrite a newer claimant, and an attempt whose
   lease elapsed while it waited has its bundle discarded rather than accepted.
+- **Final local admission.** The pre-transaction authority revalidation, the
+  caller's cancellation check and the lease check all describe the state
+  _before_ finalization's own lock waits. Those waits can outlast a Settings
+  disable, an Agent move, a Slack rebinding or the caller itself, so the
+  completion is admitted once more inside the transaction — after the member and
+  occurrence rows are held and before any write is issued. Two things are
+  decided there: the caller must still be present, and the local half of the
+  owner's authority is re-resolved and compared against the persisted occurrence
+  with the same shared binding comparator a retry uses. Comparing the persisted
+  occurrence with the frozen admission cannot answer this, because both copies
+  are frozen and still agree. A lapsed authority answers `owner-revoked` or
+  `binding-changed` and writes nothing; a cancelled caller unwinds the whole
+  transaction, including anything a joined handoff already reserved, and the
+  occurrence stays `running` until its lease elapses. The membership generation
+  is carried over from the occurrence rather than re-resolved, because no
+  database lock may be held across a Clerk round trip, and the admission takes
+  no new row lock: locking the installation's Agent behind the occurrence would
+  invert the order the Agent-deletion cascade itself takes.
 - **No durable body.** Terminal success is metadata about a collection, never a
   checkpoint of one. A duplicate invocation of a completed occurrence makes no
   provider call and answers `already-completed` with an explicit `bundle: null`.
@@ -116,6 +134,18 @@ installation, schedule and Agent, and the Slack workspace and user.
   exactly once.
 
 Network reads happen outside every database transaction.
+
+**Acceptance boundary.** The local acceptance point is that final admission,
+read inside the finalizing transaction under `READ COMMITTED`. Every local
+authority change that committed before it is observed and refuses the
+completion, and every refusal or cancellation observed there leaves nothing
+durable — not the completion, and not work a joined handoff performed in the
+same transaction. Nothing past that point is retractable: a local change that
+commits after the admission read, a cancellation that arrives after it, or a
+remote Clerk or Slack revocation cannot undo a completion this transaction went
+on to commit. The admission deliberately does not lock the Settings, Agent and
+Slack rows it reads, so it orders itself against those writers only by their
+commit time, not by a writer fence.
 
 ## Owner lifetime and revocation
 

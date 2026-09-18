@@ -1026,6 +1026,7 @@ test("Inspect connector catalog diagnostics", async () => {
 test("Summarize a connector catalog that has never synced", async () => {
   context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
     return respond(200, {
+      schemaVersion: 4,
       state: "never-synced",
       active: null,
       lastAttempt: null,
@@ -1064,6 +1065,7 @@ test("Refresh connector diagnostics on each Debug entry", async () => {
   context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
     const requestedAt = "2026-08-19T04:00:00.000Z";
     return respond(200, {
+      schemaVersion: 4,
       state: "current",
       active: {
         catalogVersion,
@@ -1146,6 +1148,7 @@ test("Refresh connector diagnostics on each Debug entry", async () => {
 test("Distinguish an uncached connector-catalog rejection", async () => {
   context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
     return respond(200, {
+      schemaVersion: 4,
       state: "stale",
       active: {
         catalogVersion: "2026-07-25.1",

@@ -22,11 +22,15 @@ provider's own identity rather than a flattened string:
 | Slack    | Workspace + channel + the exact fractional timestamp and thread identity; half-open source window and the declared old-root reply limit                           |
 | Chat     | Thread + event identity and unread snapshot semantics; the destination and every Morning Brief or unknown-provenance thread excluded by the reader                |
 
-`timeSemantics` records why an item is in the window — a precise instant, a
-timed span that only overlaps it, an end-exclusive all-day date, or outstanding
-backlog that predates it. Losing that distinction is how a brief starts
-describing a three-day conference as "today" or drops an issue that has been
-open for a week.
+Time is discriminated rather than flattened. Precise activity, timed overlap
+and outstanding backlog carry real observed instants. An all-day Calendar item
+instead carries `{ kind: "date-only", startDate, endDateExclusive, timezone }`.
+It has no `occurredAt` or `endsAt` instant in the serialized evidence: parsing
+`2026-11-01` as UTC midnight would describe the previous local afternoon in
+America/Los_Angeles and would turn that DST day into the wrong span. A private
+ordering key may rank the item, but it never becomes model-visible evidence.
+Losing that distinction is how a brief starts describing a three-day conference
+as "today" or drops an issue that has been open for a week.
 
 Beside it travels every provider fact the collector already paid to read:
 each branch that selected the record with its own reason and unread flag, the
@@ -112,8 +116,16 @@ account and items are serialized together, and that document's UTF-8 size is
 the number. A budget blind to the metadata travelling beside the items bounds
 something nobody holds. Each item is charged exactly what it adds — its own
 serialization plus the one separator byte every element after the first in its
-array costs — so the reported size is the document's real size rather than a
-parallel counter that can drift from it.
+array costs — including the exact `partial` to `complete` metadata transition
+when the final item fits. The returned size is then re-measured from the
+consumer's document rather than trusted from a parallel counter.
+
+Request coverage is not reserved through a synthetic "widest" report. Included
+and omitted counts can cross different digit boundaries, so no one extreme is
+always widest. Packing instead builds the final coverage metadata and exact
+request, lowers only the whole-item budget by any measured overflow, and repeats
+monotonically until the consumed serialization fits or no item remains. Agent
+instruction text is never sliced.
 
 Both ceilings measure documents this pipeline builds. The **provider body** that
 carries the request is the integration consumer's own boundary and is a
@@ -123,6 +135,11 @@ roughly doubles a quote-heavy payload, and a 127,390-byte inner document became
 to be enforced against the complete outgoing body; reusing an inner-document
 measurement as transport proof is exactly how a request that "fit" arrives
 oversized.
+
+The preview's `evidenceDigest` fingerprints the serialized evidence items only;
+it is not a digest of coverage, language instructions, the provider wrapper or
+the complete outgoing body. The integration consumer owns that complete-body
+digest and transport fence.
 
 The combined ceiling and the request ceiling both drop **whole items**. A
 half sentence attributed to a real message is worse evidence than no message, so
@@ -190,6 +207,20 @@ away — leaving a title, heading or bullet that renders as nothing. Validation
 therefore runs against the escaped value that actually gets published, not the
 raw one.
 
+## The account a source is admitted with
+
+Every OAuth source's account choice is resolved **once, before any source of the
+attempt reads**, and the frozen choice decides both authorization and which
+credential is loaded. Resolving a selection when each reader happens to start
+lets an account chosen after admission decide what a later source reads, so the
+attempt would stop being the attempt that was admitted.
+
+Explicit absence is frozen too. A source the owner had not connected at
+admission does not acquire an account mid-attempt; connecting one belongs to the
+next attempt. A different account selected afterwards revokes the source — the
+material the previous account produced is not released, and the read never
+silently continues on the new one.
+
 ## Retained source authority
 
 A collection deadline does not make old authority valid forever. Result
@@ -199,11 +230,24 @@ authorizer whether that exact input is still allowed.
 
 What is retained for those questions is a credential-free descriptor: source,
 the exact selected connection and account reference, a digest of the
-authorization surface actually exercised, the membership generation, the Agent,
-when it was captured, **the containers the evidence actually came from**, and
-whether it entered the model input. At most one per source, at most 24
-containers, 2 KiB each and 8 KiB in total. No raw source body, prompt,
+authorization surface actually exercised, **one endpoint per permission whose
+result the input still holds**, the membership generation, the Agent, when it
+was captured, **the containers the evidence actually came from**, and whether it
+entered the model input. At most one per source, at most 24 containers, at most
+8 endpoints, 2 KiB each and 8 KiB in total. No raw source body, prompt,
 credential or unrestricted URL blob is persisted or logged.
+
+The digest is taken over the **effective permissions the read was admitted
+under**, never over constant method names: a digest of method names hashes
+identically after a grant is withdrawn, so it cannot detect the narrowing it
+exists to detect. The endpoints are the same representative URLs the shared
+reader's release fence already re-evaluates, which is what makes a later check a
+repeat of the same live check rather than a narrower question.
+
+A source that supplied material and cannot prove a connection, an account and an
+endpoint is **rejected**, not described. A null account is "not observed", never
+"any account": a descriptor without one would make every later check pass by
+having nothing to ask about.
 
 The containers matter: a digest of constant method names proves which API was
 called, not which channels, threads or mailboxes the owner's evidence came from,
@@ -215,6 +259,38 @@ pass by having nothing to check while the evidence went out anyway.
 It is evidence about an input, never a bearer capability and never a cached
 allow — every field exists so a later check can be re-run, and none of them can
 stand in for its answer.
+
+Revalidation runs on the composition path itself, after the last network await
+and before any reservation. It re-enters the **existing** authorizers rather
+than a second engine: connector sources re-run the shared reader's identity and
+URL-policy gates for the frozen account and every retained endpoint, native
+Slack re-runs the same shared-conversation enumeration its collector proves
+against, and Chat re-resolves the same ownership, visibility and provenance
+predicates its collector resolved. No credential is decrypted and no provider
+payload is fetched: whether an input may still be used is a permission question,
+not a reason to fetch it again.
+
+The whole phase is bounded at 5 seconds and further constrained by the attempt's
+own reservation, whichever is nearer; shared-channel and permission work is
+counted inside it rather than given a budget of its own. A check that does not
+finish inside the phase is not a proof of authority, so its source is withheld
+like a revoked one.
+
+Material whose authority was withdrawn is removed and the authorized siblings
+are planned again, with that source's day reported as failed rather than as a
+quiet morning. Whole-owner loss — a lost membership, a disabled or reinstalled
+brief, an Agent the member can no longer act through — yields no plan at all, and
+losing every supplied source is an authority change rather than an empty brief.
+
+Contribution is decided by the material the final request actually carries. An
+item dropped by allocation supplied nothing, and marking its source contributing
+would make a later check defend evidence the model never received.
+
+An external permission check **cannot** atomically prevent a revoke that lands
+after it answers. Network preflight therefore runs outside every transaction,
+and the consumer that finally releases the material re-evaluates its own local
+predicates inside its own fence. What is bounded here is that material whose
+authority is already gone never reaches that consumer.
 
 Everything that entered the model input is revalidated, **including material the
 model never cited**: it may have used a message without citing it, so reducing
@@ -273,6 +349,18 @@ These outcomes are distinct and stay distinct:
 | A complete, valid, nonempty file                                                                                      | It stays in the sole request, which may apply the locale/default when the text carries no applicable language directive. |
 | Inaccessible storage, corrupt archive, duplicate or missing promised target, oversize, invalid UTF-8, storage timeout | Failure. Missing data under an existing promised version is never absence.                                               |
 
+Absence is reported as the state it was read in and the configuration it was
+read from: `no-storage` (no volume was ever published, so there is no version),
+`no-target` (that version carries no instructions file) and `empty-file` (that
+version's file is empty). The manifest is decoded strictly, because replacing a
+byte it cannot read would turn a promised path into a path that matches
+nothing — and "matches nothing" is absence. Inside the archive, every entry
+claiming the canonical path is counted before any type filtering: a regular file
+beside a same-path symlink or directory is ambiguous, not a single file, and no
+link, include or URL is ever followed. An archive that decompresses past the
+ceiling is oversize rather than corrupt, because the ceiling is this pipeline's
+bound and not a fault in the owner's data.
+
 A read error must never masquerade as either usable case: an owner whose
 instructions are unreadable has not asked for English. If the complete policy and
 request cannot fit, that is recorded as language-context-unavailable before the
@@ -285,7 +373,19 @@ A healthy empty collection settles with zero generation and zero delivery withou
 any storage I/O.
 
 The version is resolved before network reads and that immutable version is read
-outside any transaction. Once reserved, the language policy is frozen for that
+outside any transaction. One absolute deadline starts before that resolution and
+bounds everything the phase owns; it is the tighter of the five seconds and what
+is left of the collection budget, and reaching it is already expired. The clock
+and cancellation are rechecked after every wait and after the synchronous parse
+and extraction, so a successful response whose own timer has not fired yet
+cannot be released late, and an exhausted budget asks storage for nothing at
+all.
+
+Every frozen outcome is revalidated against live configuration before the
+generation reservation, absence included: an available or empty file must still
+be that version, a missing target must still be missing under that version, and
+`no-storage` must still be unconfigured. A failure is never absence and never
+reaches this boundary. Once reserved, the language policy is frozen for that
 invocation: a later instructions-only edit applies to the next occurrence and
 authorizes neither another POST nor a silent rewrite. The policy, version and
 digest are frozen with the generation; the raw text stays ephemeral. A validated

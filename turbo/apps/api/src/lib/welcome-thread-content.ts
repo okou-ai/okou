@@ -1,6 +1,7 @@
 import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { WELCOME_THREAD_ASSETS } from "@okouai/core/welcome-thread-assets";
 
 import de from "./welcome-thread-content/de-DE.json";
 import en from "./welcome-thread-content/en-US.json";
@@ -19,13 +20,12 @@ interface WelcomeContent {
 }
 
 /**
- * Approved #33205 copy from #30147 at ae8708dbff466a35614f17d83bd849eee81f1ce7.
- * Only file labels and the two route-owned diagrams were adapted. This version
- * belongs to the source template; persisted messages are immutable, and their
- * retry identity must remain independent of this version and localized text.
+ * Copy and media for newly created welcome threads. This version belongs to
+ * the source template; persisted messages are immutable, and their retry
+ * identity must remain independent of this version and localized text.
  */
 const WELCOME_THREAD_TEMPLATE = Object.freeze({
-  version: 1,
+  version: 2,
   locales: {
     "en-US": en,
     "pt-BR": pt,
@@ -40,31 +40,23 @@ const WELCOME_THREAD_TEMPLATE = Object.freeze({
   } satisfies Record<UserLocale, WelcomeContent>,
 });
 
-// These immutable official examples are shared by every recipient. Their
-// ordinary chat previews are implemented separately in #33205's S2.
-const IMAGE_URL =
-  "https://static.vm0.io/vm0/artifact-templates/illustration/assets/bb2f13d1-f849-4a5c-a493-524bc0eda5c2/ref-bookshop-interior.jpg";
-const PRESENTATION_URL =
-  "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html";
-const VIDEO_URL =
-  "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4";
-
 export function welcomeThreadContent(args: {
   readonly locale: UserLocale;
   readonly appUrl: string;
 }): WelcomeContent {
   const template = WELCOME_THREAD_TEMPLATE.locales[args.locale];
   const origin = new URL(args.appUrl).origin;
+  const wwwUrl = derivePlatformServiceOrigin(origin, "www");
   const values: Readonly<Record<string, string>> = {
+    // The official examples and scene shots are shared by every recipient.
+    ...WELCOME_THREAD_ASSETS,
     assistantName: PUBLIC_BRAND_PRESENTATION.assistantName,
-    imageUrl: IMAGE_URL,
-    presentationPreviewUrl: PRESENTATION_URL,
-    presentationUrl: PRESENTATION_URL,
-    slideCount: "15",
-    videoUrl: VIDEO_URL,
+    origin,
     worksUrl: `${origin}/works`,
     inviteUrl: `${origin}/?settings=people`,
-    docsUrl: `${derivePlatformServiceOrigin(origin, "www")}/docs`,
+    wwwUrl,
+    webServicesUrl: `${wwwUrl}/en/web-services`,
+    workflowExamplesUrl: `${wwwUrl}/en/workflow-automation-examples`,
   };
   const interpolate = (text: string) => {
     return text.replace(/\{\{(\w+)\}\}/gu, (_, key: string) => {

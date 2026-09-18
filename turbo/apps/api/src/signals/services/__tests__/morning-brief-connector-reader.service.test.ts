@@ -32,6 +32,7 @@ import {
 } from "../../utils";
 import {
   admitMorningBriefCollection,
+  freezeMorningBriefSourceSelection,
   startMorningBriefSourceDeadline,
   type MorningBriefSourceDeadline,
 } from "../morning-brief-connector-reader.service";
@@ -299,8 +300,21 @@ async function collectWithSourceBudget(
   if (admission.kind !== "ok") {
     throw new Error(`Expected admission, received ${admission.reason}`);
   }
+  // The route freezes the account choice at admission; this drives the same
+  // production path rather than letting the reader resolve its own.
+  const authority = await freezeMorningBriefSourceSelection(
+    db(),
+    admission.scope,
+    "gmail",
+  );
   return await collectMorningBriefGmail(
-    { db: db(), clerk: store.get(clerk$), scope: admission.scope, deadline },
+    {
+      db: db(),
+      clerk: store.get(clerk$),
+      scope: admission.scope,
+      authority,
+      deadline,
+    },
     signal,
   );
 }

@@ -13,7 +13,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { browserSessions } from "@okouai/db/schema/browser-session";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -1112,11 +1111,12 @@ async function preparePiRecoveryObjectHashes(
     readonly chatThreadId: string;
     readonly kind: PiRecoveryFixtureKind;
     readonly omitBillingCapture: boolean;
+    readonly missingModelKeyId: string | undefined;
   },
 ) {
   let configurationHash = args.sourceInference.input.configurationHash;
-  if (args.omitBillingCapture) {
-    const sourceConfiguration = await readPiInferenceObject(
+  if (args.omitBillingCapture || args.missingModelKeyId) {
+    let configuration = await readPiInferenceObject(
       db,
       {
         runId: args.sourceRunId,
@@ -1127,14 +1127,31 @@ async function preparePiRecoveryObjectHashes(
       },
       piDeferredConfigurationSchema,
     );
-    const { apiInferenceBilling: _billing, ...withoutBilling } =
-      sourceConfiguration;
+    if (args.omitBillingCapture) {
+      const { apiInferenceBilling: _billing, ...withoutBilling } =
+        configuration;
+      configuration = withoutBilling;
+    }
+    if (args.missingModelKeyId) {
+      if (!configuration.builtInModelRuntimeRoute) {
+        throw new Error(
+          "Recovery fixture has no captured built-in model route",
+        );
+      }
+      configuration = {
+        ...configuration,
+        builtInModelRuntimeRoute: {
+          ...configuration.builtInModelRuntimeRoute,
+          modelKeyId: args.missingModelKeyId,
+        },
+      };
+    }
     configurationHash = await publishPiInferenceObject(
       db,
       { userId: args.sourceRun.userId, orgId: args.sourceRun.orgId },
       "configuration",
       piDeferredConfigurationSchema,
-      withoutBilling,
+      configuration,
     );
   }
   let contextHash = args.sourceInference.input.contextHash;
@@ -1331,6 +1348,12 @@ async function seedPiInferenceRecoveryForAction(
   const runId = randomUUID();
   const sessionId = kind === "ready" ? randomUUID() : sourceRun.sessionId;
   const chatThreadId = kind === "ready" ? randomUUID() : sourceRun.chatThreadId;
+  // Simulate a removed credential only in this recovery snapshot. Deleting the
+  // vendor-scoped key would invalidate other tests' active fixture ownership.
+  const missingModelKeyId =
+    readOptionalBoolean(body, "missing_model_key") === true
+      ? randomUUID()
+      : undefined;
   const hashes = await preparePiRecoveryObjectHashes(db, {
     sourceRunId,
     sourceRun,
@@ -1340,13 +1363,17 @@ async function seedPiInferenceRecoveryForAction(
     kind,
     omitBillingCapture:
       readOptionalBoolean(body, "omit_billing_capture") === true,
+    missingModelKeyId,
   });
   signal.throwIfAborted();
   await persistPiRecoveryFixture(db, {
     runId,
     sessionId,
     chatThreadId,
-    sourceRun,
+    sourceRun: {
+      ...sourceRun,
+      builtInModelKeyId: missingModelKeyId ?? sourceRun.builtInModelKeyId,
+    },
     sourceInference,
     kind,
     deadlineAt: readDate(body, "deadline_at") ?? new Date(0),
@@ -1369,27 +1396,6 @@ async function expirePiInferenceForAction(
     .update(agentRunInference)
     .set({ deadlineAt: readDate(body, "deadline_at") ?? new Date(0) })
     .where(eq(agentRunInference.runId, runId));
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function deletePiInferenceModelKeyForAction(
-  db: Db,
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-) {
-  const runId = readString(body, "run_id");
-  if (!runId) {
-    return actionBadRequest("run_id is required");
-  }
-  const [run] = await db
-    .select({ keyId: agentRuns.builtInModelKeyId })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId));
-  if (!run?.keyId) {
-    return actionBadRequest("captured built-in model key is missing");
-  }
-  await db.delete(builtInModelKeys).where(eq(builtInModelKeys.id, run.keyId));
   signal.throwIfAborted();
   return actionOk();
 }
@@ -1544,7 +1550,6 @@ const cronCleanupSandboxesActionHandlers = {
   "get-pi-inference-recovery-deadline": getPiInferenceRecoveryDeadlineForAction,
   "seed-pi-inference-recovery": seedPiInferenceRecoveryForAction,
   "expire-pi-inference": expirePiInferenceForAction,
-  "delete-pi-inference-model-key": deletePiInferenceModelKeyForAction,
   "hold-pi-inference-test-lock": holdPiInferenceTestLockForAction,
   "get-pi-inference-test-lock": getPiInferenceTestLockForAction,
   "release-pi-inference-test-lock": releasePiInferenceTestLockForAction,

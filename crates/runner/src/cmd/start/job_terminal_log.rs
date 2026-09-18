@@ -228,7 +228,13 @@ fn log_job_execution_failed(
                 "runner job reached execution time limit"
             );
         }
-        ExecutionFailureKind::Generic if diagnostic.is_some_and(is_info_level_job_failure) => {
+        ExecutionFailureKind::Generic
+            if failure
+                .resource_diagnostics
+                .and_then(|diagnostics| diagnostics.failure_kind)
+                == Some(executor::ResourceFailureKind::GuestRootFilesystemFull)
+                || diagnostic.is_some_and(is_info_level_job_failure) =>
+        {
             emit_job_execution_failed!(tracing::Level::INFO, "job execution failed");
         }
         ExecutionFailureKind::Generic => {
@@ -1550,7 +1556,7 @@ mod tests {
     }
 
     #[test]
-    fn classified_resource_failure_logs_resource_fields() {
+    fn root_filesystem_full_logs_resource_fields_at_info() {
         let failure = executor::ExecutionFailure::new(137, "Agent exited with code 137", None)
             .with_resource_diagnostics(Some(executor::ResourceFailureDiagnostics {
                 failure_kind: Some(executor::ResourceFailureKind::GuestRootFilesystemFull),
@@ -1564,7 +1570,7 @@ mod tests {
 
         let event = capture_job_failure_log(&failure);
 
-        assert_eq!(event.level, Level::ERROR);
+        assert_eq!(event.level, Level::INFO);
         assert_eq!(
             event.fields.get("message").map(String::as_str),
             Some("job execution failed")

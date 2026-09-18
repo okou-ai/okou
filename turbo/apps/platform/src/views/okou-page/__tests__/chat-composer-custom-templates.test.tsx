@@ -40,6 +40,7 @@ function customTemplate(
     createdAt: "2026-01-02T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
     pageUrls: ["https://example.test/page-1.png"],
+    sourceUrl: "https://example.test/source.pptx?signature=abc",
     previewAssets: [],
     ...overrides,
   };
@@ -49,9 +50,11 @@ function mockCustomTemplates(templates: readonly UserTemplateDetail[]): void {
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(
       200,
-      templates.map(({ pageUrls: _pageUrls, ...entry }) => {
-        return entry;
-      }),
+      templates.map(
+        ({ pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry }) => {
+          return entry;
+        },
+      ),
     );
   });
 }
@@ -89,9 +92,11 @@ function mockCustomTemplateStore(
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(
       200,
-      templates.map(({ pageUrls: _pageUrls, ...entry }) => {
-        return entry;
-      }),
+      templates.map(
+        ({ pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry }) => {
+          return entry;
+        },
+      ),
     );
   });
   context.mocks.api(
@@ -142,6 +147,7 @@ function mockCustomTemplateStore(
       templates[index] = updated;
       const {
         pageUrls: _pageUrls,
+        sourceUrl: _sourceUrl,
         previewAssets: _previewAssets,
         ...summary
       } = updated;
@@ -378,8 +384,13 @@ test("Using a custom template sends the row id and nothing about its kind", asyn
   await expect(screen.findByText("Q3 board review")).resolves.toBeVisible();
 });
 
-test("A document template is described by its file, not by a page count", async () => {
-  const documentTemplate = customTemplate({
+const DOCUMENT_SOURCE_URL =
+  "https://storage.example.test/private-artifacts/brand-report.docx?signature=abc";
+
+function documentTemplate(
+  overrides: Partial<UserTemplateDetail> = {},
+): UserTemplateDetail {
+  return customTemplate({
     id: "33333333-3333-4333-8333-333333333333",
     title: "Brand report",
     sourceFilename: "brand-report.docx",
@@ -387,10 +398,25 @@ test("A document template is described by its file, not by a page count", async 
     coverUrl: null,
     pageCount: null,
     pageUrls: [],
+    sourceUrl: DOCUMENT_SOURCE_URL,
+    ...overrides,
   });
-  mockCustomTemplates([documentTemplate]);
+}
+
+/** The preview dialog the picker opens over itself, found by what it renders. */
+function previewDialogAround(frame: HTMLElement): HTMLElement {
+  const preview = frame.closest<HTMLElement>('[role="dialog"]');
+  if (!preview) {
+    throw new Error("Source preview dialog not found");
+  }
+  return preview;
+}
+
+test("A document template is described by its file, not by a page count", async () => {
+  const template = documentTemplate();
+  mockCustomTemplates([template]);
   context.mocks.api(userTemplatesContract.get, ({ respond }) => {
-    return respond(200, documentTemplate);
+    return respond(200, template);
   });
 
   const { dialog } = await openCustomPanel();
@@ -402,15 +428,56 @@ test("A document template is described by its file, not by a page count", async 
     within(dialog).findByText("brand-report.docx"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).queryByText("0 pages")).not.toBeInTheDocument();
+  // Nothing was rendered for it, so the tile carries the format it was
+  // compiled from rather than an empty frame.
+  expect(within(dialog).getByText("DOCX")).toBeInTheDocument();
+});
 
+test("Opening a Word template hands the source file to the Office viewer", async () => {
+  mockCustomTemplateStore([documentTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Brand report");
   click(buttonByName("Preview Brand report", dialog)!);
 
-  await expect(
-    within(dialog).findByText("From brand-report.docx"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(dialog).queryByText("0 pages · from brand-report.docx"),
-  ).not.toBeInTheDocument();
+  // The browser cannot draw a Word document, so the file goes to the viewer
+  // that can — the same one an attached document already opens in.
+  const frame = await screen.findByTitle("brand-report.docx preview");
+  const viewerUrl = new URL(frame.getAttribute("src") ?? "");
+  expect(`${viewerUrl.origin}${viewerUrl.pathname}`).toBe(
+    "https://view.officeapps.live.com/op/embed.aspx",
+  );
+  expect(viewerUrl.searchParams.get("src")).toBe(DOCUMENT_SOURCE_URL);
+
+  // The dialog carries the management column the panel shows for a deck, so
+  // what a member can do to a template does not depend on its kind.
+  const preview = previewDialogAround(frame);
+  expect(within(preview).getByText("From brand-report.docx")).toBeVisible();
+  expect(within(preview).getByLabelText("Rename template")).toBeVisible();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+  // The catalog stays mounted behind the dialog instead of being replaced by
+  // it, which is what separates opening a document from opening a deck.
+  expect(within(dialog).getByText("brand-report.docx")).toBeInTheDocument();
+});
+
+test("A PDF template opens in the browser's own viewer", async () => {
+  mockCustomTemplateStore([
+    documentTemplate({
+      title: "Annual report",
+      sourceFilename: "annual-report.pdf",
+    }),
+  ]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Annual report");
+  click(buttonByName("Preview Annual report", dialog)!);
+
+  // A PDF needs neither our viewer nor Microsoft's: the browser renders it
+  // from the source URL, handed over unchanged.
+  const frame = await screen.findByTitle("annual-report.pdf preview");
+  expect(frame).toHaveAttribute("src", `${DOCUMENT_SOURCE_URL}#navpanes=0`);
 });
 
 async function openDetail(
@@ -628,9 +695,11 @@ test("Deleting a custom template removes it from the panel", async () => {
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
     return respond(
       200,
-      templates.map(({ pageUrls: _pageUrls, ...entry }) => {
-        return entry;
-      }),
+      templates.map(
+        ({ pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry }) => {
+          return entry;
+        },
+      ),
     );
   });
   context.mocks.api(userTemplatesContract.delete, ({ params, respond }) => {

@@ -473,6 +473,7 @@ export const apiConnectorsHandlers = [
 
   mockApi(connectorCatalogContract.diagnostics, ({ respond }) => {
     return respond(200, {
+      schemaVersion: 4,
       state: "stale",
       active: {
         catalogVersion: "2026-07-25.1",

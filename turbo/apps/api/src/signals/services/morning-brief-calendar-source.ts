@@ -18,7 +18,8 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-calendar-collection-preview";
 
 import {
-  morningBriefScopeDigest,
+  morningBriefProvenAuthority,
+  type MorningBriefSourceAuthorityProof,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
 import {
@@ -27,13 +28,7 @@ import {
   type MorningBriefSourceCoverage,
   type MorningBriefSourceItem,
   type MorningBriefSourceProvenance,
-  type MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
-
-/** The Calendar authorization surface a Morning Brief read exercises. */
-const MORNING_BRIEF_CALENDAR_READ_SURFACE: readonly string[] = [
-  "https://www.googleapis.com/auth/calendar.readonly",
-];
 
 /**
  * Which kind of instant this event contributes.
@@ -45,10 +40,7 @@ const MORNING_BRIEF_CALENDAR_READ_SURFACE: readonly string[] = [
  */
 function calendarTimeSemantics(
   item: MorningBriefCalendarItem,
-): MorningBriefTimeSemantics {
-  if (item.allDay) {
-    return "date-only";
-  }
+): "instant" | "overlap" {
   return item.localDayOffset === null ? "overlap" : "instant";
 }
 
@@ -107,15 +99,14 @@ function calendarProvenance(
 }
 
 /**
- * The instant an item is ordered and reported by.
+ * Private ordering key only; never serialized as an event instant.
  *
- * An all-day event's `start` is a calendar date, so parsing it yields that
- * date's UTC midnight. That is acceptable for ordering precisely because
- * `timeSemantics` already tells the reader it is a date rather than a moment;
- * the exclusive `end` travels separately and is not rounded away.
+ * `Date.parse` is used only to rank ISO values. Its UTC interpretation never
+ * becomes evidence: only real timed values become model-visible instants, while
+ * a date-only event stays an exclusive-end range in the frozen local timezone.
  */
-function calendarInstant(value: string): Date {
-  return new Date(value);
+function calendarOrderValue(item: MorningBriefCalendarItem): number {
+  return Date.parse(item.start);
 }
 
 /**
@@ -130,16 +121,13 @@ export function normalizeMorningBriefCalendar(
   account: string,
 ): MorningBriefSourceCollection {
   const ranked = [...collection.items].sort((left, right) => {
-    return (
-      calendarInstant(left.start).getTime() -
-      calendarInstant(right.start).getTime()
-    );
+    return calendarOrderValue(left) - calendarOrderValue(right);
   });
-  const items: MorningBriefSourceItem[] = ranked.map((event, index) => {
+  const items = ranked.map((event, index): MorningBriefSourceItem => {
     const link = event.link;
-    return {
+    const common = {
       identity: {
-        source: "calendar",
+        source: "calendar" as const,
         account,
         container: event.calendarId,
         record: event.eventId,
@@ -150,19 +138,12 @@ export function normalizeMorningBriefCalendar(
           event.recurringEventId === null ? null : event.originalStartTime,
       },
       priority: index,
-      occurredAt: calendarInstant(event.start),
-      timeSemantics: calendarTimeSemantics(event),
-      endsAt: calendarInstant(event.end),
       title: event.summary ?? "",
       body: event.descriptionExcerpt ?? "",
       // The collector declares when it clipped an attendee list; the excerpt
       // itself is bounded by that same read.
       truncated: event.attendeesTruncated,
       links: link === null ? [] : [{ label: "Open in Calendar", url: link }],
-      // The original date strings travel verbatim beside the ordering instant.
-      // An all-day event's `start` is a calendar date, and the moment it is
-      // only a `Date` the request can no longer tell a whole day in the owner's
-      // timezone from midnight UTC.
       facts: morningBriefItemFacts({
         startedAtRaw: event.start,
         endsAtRaw: event.end,
@@ -174,6 +155,26 @@ export function normalizeMorningBriefCalendar(
         actor: event.organizer,
         limitations: event.attendeesTruncated ? ["attendees"] : [],
       }),
+    };
+    if (event.allDay) {
+      return {
+        ...common,
+        timeSemantics: "date-only",
+        occurredAt: null,
+        endsAt: null,
+        dateRange: {
+          startDate: event.start,
+          endDateExclusive: event.end,
+          timezone: collection.timezone,
+        },
+      };
+    }
+    return {
+      ...common,
+      timeSemantics: calendarTimeSemantics(event),
+      occurredAt: new Date(event.start),
+      endsAt: new Date(event.end),
+      dateRange: null,
     };
   });
   return {
@@ -208,19 +209,24 @@ export function normalizeMorningBriefCalendar(
  * a digest of constants.
  */
 export function morningBriefCalendarDescriptor(args: {
-  readonly accountRef: string | null;
-  readonly connectionId: string | null;
+  /** What this source's reads were actually authorized by, or null. */
+  readonly proof: MorningBriefSourceAuthorityProof | null;
   readonly membershipId: string;
   readonly agentId: string;
   readonly capturedAt: Date;
   readonly contributed: boolean;
   readonly containers: readonly string[];
 }): MorningBriefRetainedSourceDescriptor {
+  const proven = morningBriefProvenAuthority(args.proof);
   return {
     source: "calendar",
-    connectionId: args.connectionId,
-    accountRef: args.accountRef,
-    scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_CALENDAR_READ_SURFACE),
+    connectionId: proven.connectionId,
+    // The exact Google account the shared reader pinned, not the member's own
+    // user id: a first-party id proves nothing about which calendar account
+    // this material came from.
+    accountRef: args.proof?.accountRef ?? null,
+    scopeDigest: proven.scopeDigest,
+    endpoints: proven.endpoints,
     membershipId: args.membershipId,
     agentId: args.agentId,
     capturedAt: args.capturedAt.toISOString(),

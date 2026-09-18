@@ -442,6 +442,13 @@ try {
   assert.equal(historicalRecovery.databaseVerifiedOnTarget, true);
   assert.equal(historicalRecovery.recoverySchema, true);
   assert.equal(object(historicalRecovery.totals).verified, 2);
+  assert.ok(
+    Array.isArray(historicalRecovery.missingOptionalFields) &&
+      historicalRecovery.missingOptionalFields.includes(
+        "vnc_credentials.encrypted_password",
+      ),
+    "Recovery must accept retained snapshots predating VNC storage",
+  );
   await db.query(
     "CREATE TABLE ssh_credentials (id uuid PRIMARY KEY, encrypted_private_key text, encrypted_passphrase text, encrypted_password text, CHECK ((encrypted_private_key IS NOT NULL AND encrypted_password IS NULL) OR (encrypted_private_key IS NULL AND encrypted_passphrase IS NULL AND encrypted_password IS NOT NULL)))",
   );
@@ -601,6 +608,72 @@ try {
     }
   } finally {
     await db.query("DROP TABLE cloudflare_access_configs");
+  }
+  // VNC is optional only when its entire table predates the recovery snapshot.
+  // Current snapshots require its exact primary key and password ciphertext.
+  await db.query(
+    "CREATE TABLE vnc_credentials (id uuid PRIMARY KEY, encrypted_password text NOT NULL)",
+  );
+  const vncId = randomUUID();
+  await db.query("INSERT INTO vnc_credentials VALUES ($1, $2)", [
+    vncId,
+    sshTarget,
+  ]);
+  try {
+    const before: unknown[] = (await db.query("SELECT * FROM vnc_credentials"))
+      .rows;
+    const vncRecovery = await cli("recovery-vnc", [
+      "--verify",
+      "--recovery-schema",
+    ]);
+    assert.equal(vncRecovery.databaseVerifiedOnTarget, true);
+    assert.equal(object(vncRecovery.totals).verified, 1);
+    assert.equal(object(vncRecovery.totals).updated, 0);
+    assert.deepEqual(
+      (await db.query("SELECT * FROM vnc_credentials")).rows,
+      before,
+      "Recovery verification must preserve VNC ciphertext",
+    );
+    await db.query("UPDATE vnc_credentials SET encrypted_password=$1", [
+      sshSource,
+    ]);
+    const sourceVnc = await cli("recovery-source-vnc", [
+      "--verify",
+      "--recovery-schema",
+    ]);
+    assert.equal(sourceVnc.databaseVerifiedOnTarget, false);
+    assert.equal(object(sourceVnc.totals).source, 1);
+    assert.equal(object(sourceVnc.totals).updated, 0);
+    await db.query("UPDATE vnc_credentials SET encrypted_password=$1", [
+      sshTarget,
+    ]);
+    for (const [column, code] of [
+      ["encrypted_password", "storage_manifest_mismatch"],
+      ["id", "primary_key_manifest_mismatch"],
+    ]) {
+      await db.query(
+        `ALTER TABLE vnc_credentials RENAME COLUMN "${column}" TO fixture_missing_column`,
+      );
+      try {
+        const malformedVnc = await cli(
+          "recovery-missing-vnc-" + column,
+          ["--verify", "--recovery-schema"],
+          false,
+          true,
+        );
+        assert.equal(malformedVnc.complete, false);
+        assert.deepEqual(malformedVnc.failureDetails, {
+          stage: "storage_manifest",
+          code,
+        });
+      } finally {
+        await db.query(
+          `ALTER TABLE vnc_credentials RENAME COLUMN fixture_missing_column TO "${column}"`,
+        );
+      }
+    }
+  } finally {
+    await db.query("DROP TABLE vnc_credentials");
   }
   for (const [index, modeArgs] of [[], ["--migrate"]].entries()) {
     const rejectedReport = join(

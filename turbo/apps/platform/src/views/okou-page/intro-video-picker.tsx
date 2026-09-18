@@ -1,12 +1,19 @@
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { Button, Input, Skeleton, cn } from "@okouai/ui";
+import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
+import type {
+  IntroVideoAvatar,
+  IntroVideoStyle,
+  IntroVideoVoice,
+} from "@okouai/api-contracts/contracts/intro-video-presenter";
+import { Button, IconButton, Input, Skeleton, cn } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import {
   ArrowRight,
   Check,
   ChevronLeft,
   ChevronRight,
+  RotateCcw,
   Search,
   SlidersHorizontal,
   UserRound,
@@ -19,7 +26,11 @@ import { useTranslation } from "react-i18next";
 import type { IntroVideoPickerSignals } from "../../signals/okou-page/intro-video-picker.ts";
 import { introVideoStyleGallerySignals } from "../../signals/okou-page/intro-video-style-gallery.ts";
 import { introVideoAvatarPickerSignals } from "../../signals/okou-page/intro-video-catalog-picker.ts";
-import { groupIntroVideoAvatars } from "../../signals/okou-page/intro-video-avatar-groups.ts";
+import { introVideoVoicePickerSignals } from "../../signals/okou-page/intro-video-voice-picker.ts";
+import {
+  groupIntroVideoAvatars,
+  type IntroVideoAvatarGroup,
+} from "../../signals/okou-page/intro-video-avatar-groups.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { IntroVideoStyleCard } from "./intro-video-style-card.tsx";
@@ -30,10 +41,14 @@ import {
 import { IntroVideoAvatarGroupCard } from "./intro-video-avatar-group-card.tsx";
 import { IntroVideoCatalogPagination } from "./intro-video-catalog-pagination.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
+import { SCROLL_FADE_Y } from "./scroll-fade.ts";
 import {
-  VOICE_PREVIEW_CARD_CLASS,
-  VOICE_PREVIEW_CARD_PROPS,
-  type VoiceCardVoice,
+  TEMPLATE_TILE_MEDIA,
+  TEMPLATE_TILE_RING,
+  TEMPLATE_TILE_RING_SELECTED,
+  TEMPLATE_TILE_SELECTED_BADGE,
+} from "./template-tile.ts";
+import {
   VoiceLibraryContent,
   VoiceLibraryToolbar,
   VoicePreviewControl,
@@ -44,133 +59,19 @@ import {
 } from "./intro-video-selection-labels.ts";
 
 /**
- * Width of the advanced options layer, plus the 8px of air it keeps on its
- * right edge and the 8px gutter between it and the gallery. The gallery section
- * reserves the whole figure as padding, so the panel floats over empty space
- * rather than over cards.
+ * The options layer's width, and the gutter the gallery section gives up for
+ * it: 344 plus 8px of air on the layer's right edge and 8px between the layer
+ * and the cards. The section takes the whole figure as padding, so the layer
+ * floats over empty space rather than over a card.
  */
 const OPTIONS_PANEL_WIDTH = "w-[344px]";
 const OPTIONS_PANEL_RESERVE = "pr-[360px]";
 
+/** How many of each library the layer's first screen offers outright. */
+const PANEL_PREVIEW_COUNT = 2;
+
 interface PickerProps {
   readonly signals: IntroVideoPickerSignals;
-}
-
-function PickerOptionBody({
-  leading,
-  title,
-  description,
-  selected,
-}: {
-  readonly leading: ReactNode;
-  readonly title: string;
-  readonly description: string;
-  readonly selected: boolean;
-}) {
-  return (
-    <>
-      {leading}
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="mt-1 block text-xs font-normal text-muted-foreground">
-          {description}
-        </span>
-      </span>
-      {selected && (
-        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-          <Check size={12} />
-        </span>
-      )}
-    </>
-  );
-}
-
-function PickerOption({
-  title,
-  description,
-  icon,
-  selected,
-  onSelect,
-}: {
-  readonly title: string;
-  readonly description: string;
-  readonly icon: ReactNode;
-  readonly selected: boolean;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={cn(
-        "h-auto w-full justify-start gap-3 whitespace-normal rounded-xl border-border bg-card p-3 text-left hover:bg-state-hover",
-        selected && "border-primary",
-      )}
-    >
-      <PickerOptionBody
-        leading={
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-state-hover text-muted-foreground">
-            {icon}
-          </span>
-        }
-        title={title}
-        description={description}
-        selected={selected}
-      />
-    </Button>
-  );
-}
-
-/**
- * The avatar's own voice, auditionable like a library voice. A preview button
- * cannot nest inside the plain option's `Button`, so this row owns the same
- * card contract the library cards use and keeps selection on the row itself.
- */
-function AvatarVoicePickerOption({
-  voice,
-  title,
-  description,
-  selected,
-  onSelect,
-}: {
-  readonly voice: VoiceCardVoice;
-  readonly title: string;
-  readonly description: string;
-  readonly selected: boolean;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <div
-      {...VOICE_PREVIEW_CARD_PROPS}
-      role="button"
-      tabIndex={0}
-      aria-pressed={selected}
-      onClick={onSelect}
-      onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (event.target !== event.currentTarget) {
-          return;
-        }
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
-      className={cn(
-        VOICE_PREVIEW_CARD_CLASS,
-        "flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        selected && "border-primary",
-      )}
-    >
-      <PickerOptionBody
-        leading={<VoicePreviewControl voice={voice} />}
-        title={title}
-        description={description}
-        selected={selected}
-      />
-    </div>
-  );
 }
 
 function PickerMessage({
@@ -206,7 +107,7 @@ function PickerMessage({
 
 function PickerSkeleton() {
   return (
-    <div className="grid grid-cols-2 gap-3 @[560px]/panel:grid-cols-3">
+    <div className="grid grid-cols-2 gap-3 @[720px]/panel:grid-cols-3">
       {Array.from({ length: 6 }, (_, index) => {
         return <Skeleton key={index} className="aspect-video rounded-xl" />;
       })}
@@ -242,292 +143,746 @@ function StyleSearch({ signals }: PickerProps) {
   );
 }
 
-function StyleTags({
-  signals,
-  hasOther,
-}: PickerProps & { readonly hasOther: boolean }) {
+function StyleToolbar({ signals }: PickerProps) {
   const { t } = useTranslation();
-  const labels = useIntroVideoStyleGroupLabels();
-  const group = useGet(signals.group$);
-  const setGroup = useSet(signals.setGroup$);
+  const panelOpen = useGet(signals.panelOpen$);
+  const setPanelOpen = useSet(signals.setPanelOpen$);
+  const label = t(($) => {
+    return $.chat.introVideo.picker.moreOptions;
+  });
   return (
-    <TemplateFilterPillRow
-      className="shrink-0 px-4 sm:px-6"
-      label={t(($) => {
-        return $.chat.introVideo.style.browseGroups;
-      })}
-      active={group}
-      pills={[
-        {
-          id: "all",
-          label: t(($) => {
-            return $.artifacts.templates.all;
-          }),
-        },
-        ...INTRO_VIDEO_STYLE_TAGS.map((id) => {
-          return { id, label: labels[id] };
-        }),
-        ...(hasOther ? [{ id: "other", label: labels.other }] : []),
-      ]}
-      onSelect={setGroup}
-    />
-  );
-}
-
-function StyleGallery({ signals }: PickerProps) {
-  const catalog = useLoadable(introVideoStyleGallerySignals.catalog$);
-  const reload = useSet(introVideoStyleGallerySignals.reload$);
-  const style = useGet(signals.style$);
-  const setStyle = useSet(signals.setStyle$);
-  const group = useGet(signals.group$);
-  const query = useGet(signals.query$).trim().toLowerCase();
-  const items =
-    catalog.state === "hasData"
-      ? catalog.data.filter((item) => {
-          const matchesGroup =
-            group === "all" ||
-            (group === "other"
-              ? !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
-                  return item.tags.includes(tag);
-                })
-              : item.tags.includes(group));
-          return (
-            matchesGroup &&
-            (query === "" || item.name.toLowerCase().includes(query))
-          );
-        })
-      : [];
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div
-        data-intro-video-catalog-scroll=""
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-6 pt-4 sm:px-6"
+    // 68px, the height the sibling tabs' toolbar row states, so the search box
+    // does not move when the category changes.
+    <div className="flex h-[68px] shrink-0 items-center gap-2 px-4 sm:px-6 sm:pr-14">
+      <StyleSearch signals={signals} />
+      <Button
+        type="button"
+        variant="outline"
+        aria-label={label}
+        aria-expanded={panelOpen}
+        aria-controls="intro-video-options"
+        onClick={() => {
+          setPanelOpen(!panelOpen);
+        }}
+        className="ml-auto shrink-0 gap-2"
       >
-        {catalog.state === "hasError" ? (
-          <PickerMessage error onRetry={reload} />
-        ) : catalog.state === "loading" ? (
-          <PickerSkeleton />
-        ) : items.length === 0 ? (
-          <PickerMessage />
-        ) : (
-          // Columns follow the section's own width, not the viewport: the
-          // options panel takes 360px off it while the window never changes.
-          <div className="grid grid-cols-2 items-start gap-3 @[560px]/panel:grid-cols-3 @[880px]/panel:grid-cols-4">
-            {items.map((item) => {
-              return (
-                <IntroVideoStyleCard
-                  key={item.id}
-                  style={item}
-                  selected={
-                    style?.kind === "catalog" && style.style.id === item.id
-                  }
-                  onSelect={() => {
-                    setStyle({ kind: "catalog", style: item });
-                  }}
-                />
-              );
-            })}
-          </div>
-        )}
-      </div>
-      {/* Soften the hard clip where cards scroll up under the filter row; the
-          workflow tab draws the same wash under its own pills. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-6 bg-gradient-to-b from-card to-transparent" />
+        <SlidersHorizontal size={16} />
+        {/* Below this width the label is what the toolbar runs out of room
+            for first; the icon and the accessible name both stay. */}
+        <span className="hidden @[520px]/panel:inline">{label}</span>
+      </Button>
     </div>
   );
 }
 
-function StylePicker({ signals }: PickerProps) {
+/**
+ * The count of what the filters left, or — when the chosen style is not among
+ * them — a way back to it. A selection the user cannot see is the one thing
+ * this row has to answer for.
+ */
+function StyleCount({
+  signals,
+  ready,
+  shown,
+  total,
+  hiddenSelection,
+}: PickerProps & {
+  readonly ready: boolean;
+  readonly shown: number;
+  readonly total: number;
+  readonly hiddenSelection: string | null;
+}) {
   const { t } = useTranslation();
-  const catalog = useLoadable(introVideoStyleGallerySignals.catalog$);
-  const panelOpen = useGet(signals.panelOpen$);
-  const setPanelOpen = useSet(signals.setPanelOpen$);
-  const hasOther =
-    catalog.state === "hasData" &&
-    catalog.data.some((item) => {
-      return !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
-        return item.tags.includes(tag);
-      });
-    });
+  const clearFilters = useSet(signals.clearFilters$);
+  if (!ready) {
+    // Before the catalog resolves there is nothing to count, and a restored
+    // style would read as filtered out of a wall that has not arrived.
+    return null;
+  }
+  if (hiddenSelection !== null) {
+    return (
+      <Button
+        type="button"
+        variant="quiet"
+        size="xs"
+        className="shrink-0 font-normal"
+        onClick={clearFilters}
+      >
+        {t(
+          ($) => {
+            return $.chat.introVideo.picker.selectedStyle;
+          },
+          { name: hiddenSelection },
+        )}
+      </Button>
+    );
+  }
   return (
-    <>
-      {/* 68px, the height the sibling tabs' toolbar row states, so the search
-          box does not move when the category changes. */}
-      <div className="flex h-[68px] shrink-0 items-center gap-3 px-4 sm:px-6 sm:pr-14">
-        <StyleSearch signals={signals} />
-        <Button
-          type="button"
-          variant="outline"
-          aria-expanded={panelOpen}
-          onClick={() => {
-            setPanelOpen(!panelOpen);
-          }}
-          className="ml-auto shrink-0 gap-2"
-        >
-          <SlidersHorizontal size={16} />
-          {t(($) => {
-            return $.chat.introVideo.picker.moreOptions;
-          })}
-        </Button>
-      </div>
-      <StyleTags signals={signals} hasOther={hasOther} />
-      <StyleGallery signals={signals} />
-    </>
+    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+      {shown === total
+        ? t(
+            ($) => {
+              return $.chat.introVideo.picker.styleCount;
+            },
+            { count: shown },
+          )
+        : t(
+            ($) => {
+              return $.chat.introVideo.picker.styleCountOf;
+            },
+            { shown, total },
+          )}
+    </span>
   );
 }
 
-function AvatarPicker({ signals }: PickerProps) {
+function StyleFilterRow({
+  signals,
+  hasOther,
+  ready,
+  shown,
+  total,
+  hiddenSelection,
+}: PickerProps & {
+  readonly hasOther: boolean;
+  readonly ready: boolean;
+  readonly shown: number;
+  readonly total: number;
+  readonly hiddenSelection: string | null;
+}) {
   const { t } = useTranslation();
-  const selection = useGet(signals.avatar$);
-  const setSelection = useSet(signals.setAvatar$);
+  const labels = useIntroVideoStyleGroupLabels();
+  const group = useGet(signals.group$);
+  const setGroup = useSet(signals.setGroup$);
+  const fade = useGet(signals.filterFade$);
+  const setFilterRowRef = useSet(signals.setFilterRowRef$);
+  return (
+    <div className="flex shrink-0 items-center gap-3 px-4 pb-3 sm:px-6">
+      <TemplateFilterPillRow
+        layout="scroll"
+        className="min-w-0 flex-1"
+        fade={fade}
+        scrollerRef={setFilterRowRef}
+        label={t(($) => {
+          return $.chat.introVideo.style.browseGroups;
+        })}
+        active={group}
+        pills={[
+          {
+            id: "all",
+            label: t(($) => {
+              return $.artifacts.templates.all;
+            }),
+          },
+          ...INTRO_VIDEO_STYLE_TAGS.map((id) => {
+            return { id, label: labels[id] };
+          }),
+          ...(hasOther ? [{ id: "other", label: labels.other }] : []),
+        ]}
+        onSelect={setGroup}
+      />
+      <StyleCount
+        signals={signals}
+        ready={ready}
+        shown={shown}
+        total={total}
+        hiddenSelection={hiddenSelection}
+      />
+    </div>
+  );
+}
+
+function StyleGallery({
+  signals,
+  items,
+  loading,
+  error,
+}: PickerProps & {
+  readonly items: readonly IntroVideoStyle[];
+  readonly loading: boolean;
+  readonly error: boolean;
+}) {
+  const style = useGet(signals.style$);
+  const setStyle = useSet(signals.setStyle$);
+  const reload = useSet(introVideoStyleGallerySignals.reload$);
+  const fade = useGet(signals.galleryFade$);
+  const setGalleryRef = useSet(signals.setGalleryRef$);
+  return (
+    <div
+      ref={setGalleryRef}
+      data-fade={fade === "none" ? undefined : fade}
+      data-intro-video-catalog-scroll=""
+      className={cn(
+        "min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6",
+        SCROLL_FADE_Y,
+      )}
+    >
+      {error ? (
+        <PickerMessage error onRetry={reload} />
+      ) : loading ? (
+        <PickerSkeleton />
+      ) : items.length === 0 ? (
+        <PickerMessage />
+      ) : (
+        // Columns follow the section's own width, not the viewport: the
+        // options layer takes 360px off it while the window never changes.
+        <div className="grid grid-cols-1 gap-x-4 gap-y-5 @[420px]/panel:grid-cols-2 @[720px]/panel:grid-cols-3">
+          {items.map((item) => {
+            return (
+              <IntroVideoStyleCard
+                key={item.id}
+                style={item}
+                selected={
+                  style?.kind === "catalog" && style.style.id === item.id
+                }
+                onSelect={() => {
+                  setStyle({ kind: "catalog", style: item });
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A compact row in the options layer: icon, title, one line of detail. It is a
+ * `div` rather than a `Button` because a library row carries its own preview
+ * control, and a button cannot nest inside a button.
+ */
+function PanelRow({
+  leading,
+  title,
+  detail,
+  selected,
+  onSelect,
+}: {
+  readonly leading: ReactNode;
+  readonly title: string;
+  readonly detail?: string;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.target !== event.currentTarget) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2.5 rounded-xl border border-border bg-card px-2.5 py-2 text-left transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "border-primary bg-state-selected",
+      )}
+    >
+      {leading}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium leading-5">
+          {title}
+        </span>
+        {detail ? (
+          <span className="block truncate text-[11px] font-normal leading-4 text-muted-foreground">
+            {detail}
+          </span>
+        ) : null}
+      </span>
+      {selected ? (
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+          <Check size={12} />
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function PanelIcon({ children }: { readonly children: ReactNode }) {
+  return (
+    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-state-hover text-muted-foreground">
+      {children}
+    </span>
+  );
+}
+
+/** Label left, chevron right — the way into a full library. */
+function PanelMoreRow({
+  label,
+  onSelect,
+}: {
+  readonly label: string;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      onClick={onSelect}
+      className="mt-1.5 w-full justify-between px-2.5 text-[13px]"
+    >
+      <span className="min-w-0 truncate text-left">{label}</span>
+      <ChevronRight size={15} />
+    </Button>
+  );
+}
+
+function PanelPresenterTile({
+  name,
+  detail,
+  imageUrl,
+  selected,
+  onSelect,
+}: {
+  readonly name: string;
+  readonly detail: string;
+  readonly imageUrl?: string;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`${name} · ${detail}`}
+      aria-pressed={selected}
+      onClick={onSelect}
+      className="group/tile relative block min-w-0 cursor-pointer text-left focus-visible:outline-none"
+    >
+      <span
+        className={cn(
+          TEMPLATE_TILE_MEDIA,
+          TEMPLATE_TILE_RING,
+          "grid aspect-[3/4] place-items-center group-focus-visible/tile:ring-1 group-focus-visible/tile:ring-ring",
+          selected && TEMPLATE_TILE_RING_SELECTED,
+        )}
+      >
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <UserRoundX size={20} className="text-muted-foreground" />
+        )}
+        {selected ? (
+          <span className={TEMPLATE_TILE_SELECTED_BADGE}>
+            <Check size={13} />
+          </span>
+        ) : null}
+      </span>
+      <span className="mt-1.5 block truncate px-0.5 text-xs font-medium leading-4 text-foreground">
+        {name}
+      </span>
+      <span className="block truncate px-0.5 text-[11px] leading-4 text-muted-foreground">
+        {detail}
+      </span>
+    </button>
+  );
+}
+
+function usePresenterGroups(): {
+  readonly groups: readonly IntroVideoAvatarGroup[];
+  readonly loaded: boolean;
+  readonly hasNext: boolean;
+} {
   const catalog = useLoadable(introVideoAvatarPickerSignals.catalogPage$);
   const lastCatalog = useLastResolved(
     introVideoAvatarPickerSignals.catalogPage$,
   );
   const generation = useGet(introVideoAvatarPickerSignals.generation$);
-  const paging = useLoadable(introVideoAvatarPickerSignals.paging$);
-  const loadMore = useSet(introVideoAvatarPickerSignals.loadMore$);
-  const setSentinelRef = useSet(introVideoAvatarPickerSignals.setSentinelRef$);
-  const reload = useSet(introVideoAvatarPickerSignals.reload$);
-  const pageSignal = useGet(pageSignal$);
   const visible =
     catalog.state === "hasData"
       ? catalog.data
       : lastCatalog?.generation === generation
         ? lastCatalog
         : undefined;
-  const groups = visible ? groupIntroVideoAvatars(visible.items) : [];
-  return (
-    <>
-      <div className="flex shrink-0 items-center gap-2 px-3 pb-3">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-pressed={selection.kind === "none"}
-          onClick={() => {
-            setSelection({ kind: "none" });
-          }}
-          className={cn(
-            "gap-2 border-border px-2.5 text-xs",
-            selection.kind === "none" && "border-primary bg-state-selected",
-          )}
-        >
-          <UserRoundX size={14} />
-          {t(($) => {
-            return $.chat.introVideo.avatar.none;
-          })}
-        </Button>
-      </div>
-      <div
-        data-intro-video-catalog-scroll=""
-        className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"
-      >
-        <div className="grid grid-cols-2 items-stretch gap-3">
-          {groups.map((group) => {
-            return (
-              <IntroVideoAvatarGroupCard
-                key={group.id}
-                group={group}
-                selected={
-                  selection.kind === "catalog" ? selection.avatar : undefined
-                }
-                onSelect={(avatar) => {
-                  setSelection({ kind: "catalog", avatar });
-                }}
-              />
-            );
-          })}
-        </div>
-        {catalog.state === "hasError" ? (
-          <PickerMessage error onRetry={reload} />
-        ) : visible === undefined ? (
-          <div className="mt-3">
-            <PickerSkeleton />
-          </div>
-        ) : groups.length === 0 ? (
-          <PickerMessage />
-        ) : null}
-        <IntroVideoCatalogPagination
-          hasNext={visible?.hasNext ?? false}
-          loading={paging.state === "loading"}
-          error={paging.state === "hasError" ? paging.error : null}
-          onLoadMore={() => {
-            detach(loadMore(pageSignal), Reason.DomCallback);
-          }}
-          onReload={reload}
-          onSentinelRef={setSentinelRef}
-        />
-      </div>
-    </>
-  );
+  return {
+    groups: visible ? groupIntroVideoAvatars(visible.items) : [],
+    loaded: visible !== undefined,
+    hasNext: visible?.hasNext ?? false,
+  };
 }
 
-function VoicePicker({ signals }: PickerProps) {
+function useVoiceCatalog(): {
+  readonly voices: readonly IntroVideoVoice[];
+  readonly complete: boolean;
+} {
+  const catalog = useLoadable(introVideoVoicePickerSignals.catalogPage$);
+  const lastCatalog = useLastResolved(
+    introVideoVoicePickerSignals.catalogPage$,
+  );
+  const generation = useGet(introVideoVoicePickerSignals.generation$);
+  const visible =
+    catalog.state === "hasData"
+      ? catalog.data
+      : lastCatalog?.generation === generation
+        ? lastCatalog
+        : undefined;
+  return {
+    voices: visible?.items ?? [],
+    complete: visible !== undefined && !visible.hasNext,
+  };
+}
+
+function voiceDetail(voice: IntroVideoVoice): string {
+  return [voice.language, voice.gender].filter(Boolean).join(" · ");
+}
+
+/**
+ * The default-voice row. When a presenter is chosen its own voice is what
+ * "default" means, and that voice has a sample, so the row carries the same
+ * preview control a library row does.
+ */
+function DefaultVoiceRow({ signals }: PickerProps) {
   const { t } = useTranslation();
   const avatar = useGet(signals.avatar$);
-  const selection = useGet(signals.voice$);
-  const setSelection = useSet(signals.setVoice$);
-  const defaultVoiceTitle = t(($) => {
+  const voice = useGet(signals.voice$);
+  const setVoice = useSet(signals.setVoice$);
+  const title = t(($) => {
     return avatar.kind === "none"
       ? $.chat.introVideo.voice.auto
       : $.chat.introVideo.picker.avatarVoice;
   });
-  const defaultVoiceDescription = t(($) => {
-    return avatar.kind === "none"
-      ? $.chat.introVideo.picker.autoVoiceDescription
-      : $.chat.introVideo.voice.defaultDescription;
-  });
-  const defaultVoiceSample: VoiceCardVoice | undefined =
+  const sample =
     avatar.kind === "catalog" && avatar.avatar.defaultVoiceSampleUrl
       ? {
           id: avatar.avatar.defaultVoiceId,
-          name: avatar.avatar.defaultVoiceName ?? defaultVoiceTitle,
+          name: avatar.avatar.defaultVoiceName ?? title,
           sampleUrl: avatar.avatar.defaultVoiceSampleUrl,
         }
       : undefined;
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
-      <div className="flex shrink-0 justify-end">
+    <PanelRow
+      leading={
+        sample ? (
+          <VoicePreviewControl voice={sample} />
+        ) : (
+          <PanelIcon>
+            <Volume2 size={15} />
+          </PanelIcon>
+        )
+      }
+      title={title}
+      detail={t(($) => {
+        return avatar.kind === "none"
+          ? $.chat.introVideo.picker.autoVoiceDescription
+          : $.chat.introVideo.voice.defaultDescription;
+      })}
+      selected={voice.kind === "default"}
+      onSelect={() => {
+        setVoice({ kind: "default" });
+      }}
+    />
+  );
+}
+
+function NoVoiceoverRow({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const voice = useGet(signals.voice$);
+  const setVoice = useSet(signals.setVoice$);
+  return (
+    <PanelRow
+      leading={
+        <PanelIcon>
+          <VolumeX size={15} />
+        </PanelIcon>
+      }
+      title={t(($) => {
+        return $.chat.introVideo.voice.none;
+      })}
+      detail={t(($) => {
+        return $.chat.introVideo.voice.noneShortDescription;
+      })}
+      selected={voice.kind === "none"}
+      onSelect={() => {
+        setVoice({ kind: "none" });
+      }}
+    />
+  );
+}
+
+function OptionsVoiceSection({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const voice = useGet(signals.voice$);
+  const setVoice = useSet(signals.setVoice$);
+  const setView = useSet(signals.setPanelView$);
+  const { voices, complete } = useVoiceCatalog();
+  return (
+    <>
+      <p className="mb-2 text-xs font-medium text-muted-foreground">
+        {t(($) => {
+          return $.chat.introVideo.voice.label;
+        })}
+      </p>
+      <div className="grid gap-1.5">
+        <DefaultVoiceRow signals={signals} />
+        <NoVoiceoverRow signals={signals} />
+        {voices.slice(0, PANEL_PREVIEW_COUNT).map((item) => {
+          return (
+            <PanelRow
+              key={item.id}
+              leading={<VoicePreviewControl voice={item} />}
+              title={item.name}
+              detail={voiceDetail(item)}
+              selected={voice.kind === "catalog" && voice.voice.id === item.id}
+              onSelect={() => {
+                setVoice({ kind: "catalog", voice: item });
+              }}
+            />
+          );
+        })}
+      </div>
+      <PanelMoreRow
+        label={
+          complete
+            ? t(
+                ($) => {
+                  return $.chat.introVideo.picker.allVoicesCount;
+                },
+                { total: voices.length },
+              )
+            : t(($) => {
+                return $.chat.introVideo.picker.allVoices;
+              })
+        }
+        onSelect={() => {
+          setView("voice");
+        }}
+      />
+    </>
+  );
+}
+
+function OptionsPresenterSection({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const avatar = useGet(signals.avatar$);
+  const setAvatar = useSet(signals.setAvatar$);
+  const setView = useSet(signals.setPanelView$);
+  const { groups, loaded, hasNext } = usePresenterGroups();
+  return (
+    <>
+      <p className="mb-2 mt-5 text-xs font-medium text-muted-foreground">
+        {t(($) => {
+          return $.chat.introVideo.avatar.label;
+        })}
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        <PanelPresenterTile
+          name={t(($) => {
+            return $.chat.introVideo.avatar.none;
+          })}
+          detail={t(($) => {
+            return $.chat.introVideo.avatar.noneDetail;
+          })}
+          selected={avatar.kind === "none"}
+          onSelect={() => {
+            setAvatar({ kind: "none" });
+          }}
+        />
+        {groups.slice(0, PANEL_PREVIEW_COUNT).map((group) => {
+          const look = selectedLookInGroup(group, avatar) ?? group.looks[0];
+          return (
+            <PanelPresenterTile
+              key={group.id}
+              name={group.name}
+              detail={look.name}
+              imageUrl={look.previewImageUrl}
+              selected={
+                avatar.kind === "catalog" && avatar.avatar.groupId === group.id
+              }
+              onSelect={() => {
+                setAvatar({ kind: "catalog", avatar: look });
+              }}
+            />
+          );
+        })}
+      </div>
+      <PanelMoreRow
+        label={
+          loaded && !hasNext
+            ? t(
+                ($) => {
+                  return $.chat.introVideo.picker.allPresentersCount;
+                },
+                { total: groups.length },
+              )
+            : t(($) => {
+                return $.chat.introVideo.picker.allPresenters;
+              })
+        }
+        onSelect={() => {
+          setView("avatar");
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * The layer's first screen. It is not a pair of summary rows into two
+ * libraries: the defaults and the first of each library are the choice most
+ * people make, so they are offered outright and the libraries are the way
+ * past them.
+ */
+function OptionsRootView({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <OptionsVoiceSection signals={signals} />
+      <OptionsPresenterSection signals={signals} />
+      <p className="mt-5 rounded-xl bg-state-hover px-3 py-2.5 text-xs leading-5 text-muted-foreground">
+        {t(($) => {
+          return $.chat.introVideo.picker.optionsNote;
+        })}
+      </p>
+    </>
+  );
+}
+
+function selectedLookInGroup(
+  group: IntroVideoAvatarGroup,
+  avatar: IntroVideoOptions["avatar"],
+): IntroVideoAvatar | undefined {
+  return avatar.kind === "catalog" && avatar.avatar.groupId === group.id
+    ? avatar.avatar
+    : undefined;
+}
+
+function PanelLibrarySearch({
+  signals,
+  label,
+}: PickerProps & { readonly label: string }) {
+  const query = useGet(signals.libraryQuery$);
+  const setQuery = useSet(signals.setLibraryQuery$);
+  return (
+    <Input
+      aria-label={label}
+      placeholder={label}
+      className="h-9 text-sm"
+      value={query}
+      onChange={(event) => {
+        setQuery(event.target.value);
+      }}
+    />
+  );
+}
+
+function AvatarLibraryView({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const selection = useGet(signals.avatar$);
+  const setSelection = useSet(signals.setAvatar$);
+  const query = useGet(signals.libraryQuery$).trim().toLowerCase();
+  const catalog = useLoadable(introVideoAvatarPickerSignals.catalogPage$);
+  const paging = useLoadable(introVideoAvatarPickerSignals.paging$);
+  const loadMore = useSet(introVideoAvatarPickerSignals.loadMore$);
+  const setSentinelRef = useSet(introVideoAvatarPickerSignals.setSentinelRef$);
+  const reload = useSet(introVideoAvatarPickerSignals.reload$);
+  const pageSignal = useGet(pageSignal$);
+  const { groups, loaded, hasNext } = usePresenterGroups();
+  const matches = groups.filter((group) => {
+    return query === "" || group.name.toLowerCase().includes(query);
+  });
+  return (
+    <>
+      <div className="mb-3">
+        <PanelLibrarySearch
+          signals={signals}
+          label={t(($) => {
+            return $.chat.introVideo.picker.searchPresenters;
+          })}
+        />
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-pressed={selection.kind === "none"}
+        onClick={() => {
+          setSelection({ kind: "none" });
+        }}
+        className={cn(
+          "mb-3 gap-2 border-border px-2.5 text-xs",
+          selection.kind === "none" && "border-primary bg-state-selected",
+        )}
+      >
+        <UserRoundX size={14} />
+        {t(($) => {
+          return $.chat.introVideo.avatar.none;
+        })}
+      </Button>
+      <div className="grid grid-cols-2 items-stretch gap-3">
+        {matches.map((group) => {
+          return (
+            <IntroVideoAvatarGroupCard
+              key={group.id}
+              group={group}
+              selected={
+                selection.kind === "catalog" ? selection.avatar : undefined
+              }
+              onSelect={(avatar) => {
+                setSelection({ kind: "catalog", avatar });
+              }}
+            />
+          );
+        })}
+      </div>
+      {catalog.state === "hasError" ? (
+        <PickerMessage error onRetry={reload} />
+      ) : !loaded ? (
+        <div className="mt-3">
+          <PickerSkeleton />
+        </div>
+      ) : matches.length === 0 ? (
+        <PickerMessage />
+      ) : null}
+      <IntroVideoCatalogPagination
+        hasNext={hasNext}
+        loading={paging.state === "loading"}
+        error={paging.state === "hasError" ? paging.error : null}
+        onLoadMore={() => {
+          detach(loadMore(pageSignal), Reason.DomCallback);
+        }}
+        onReload={reload}
+        onSentinelRef={setSentinelRef}
+      />
+    </>
+  );
+}
+
+function VoiceLibraryView({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const selection = useGet(signals.voice$);
+  const setSelection = useSet(signals.setVoice$);
+  const query = useGet(signals.libraryQuery$);
+  return (
+    <>
+      <div className="mb-3 flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <PanelLibrarySearch
+            signals={signals}
+            label={t(($) => {
+              return $.chat.introVideo.picker.searchVoices;
+            })}
+          />
+        </div>
         <VoiceLibraryToolbar />
       </div>
       <VoiceLibraryContent
+        query={query}
         header={
           <>
-            {defaultVoiceSample ? (
-              <AvatarVoicePickerOption
-                voice={defaultVoiceSample}
-                title={defaultVoiceTitle}
-                description={defaultVoiceDescription}
-                selected={selection.kind === "default"}
-                onSelect={() => {
-                  setSelection({ kind: "default" });
-                }}
-              />
-            ) : (
-              <PickerOption
-                title={defaultVoiceTitle}
-                description={defaultVoiceDescription}
-                icon={<Volume2 size={17} />}
-                selected={selection.kind === "default"}
-                onSelect={() => {
-                  setSelection({ kind: "default" });
-                }}
-              />
-            )}
-            <PickerOption
-              title={t(($) => {
-                return $.chat.introVideo.voice.none;
-              })}
-              description={t(($) => {
-                return $.chat.introVideo.voice.noneDescription;
-              })}
-              icon={<VolumeX size={17} />}
-              selected={selection.kind === "none"}
-              onSelect={() => {
-                setSelection({ kind: "none" });
-              }}
-            />
+            <DefaultVoiceRow signals={signals} />
+            <NoVoiceoverRow signals={signals} />
           </>
         }
         selectedVoiceId={
@@ -537,109 +892,42 @@ function VoicePicker({ signals }: PickerProps) {
           setSelection({ kind: "catalog", voice });
         }}
       />
-    </div>
-  );
-}
-
-/**
- * The panel's first screen: what the two optional settings are currently worth,
- * and a way into each library. Reading the value here is the point — the user
- * never has to open a library to find out what they are getting.
- */
-function OptionsRow({
-  icon,
-  label,
-  value,
-  onSelect,
-}: {
-  readonly icon: ReactNode;
-  readonly label: string;
-  readonly value: string;
-  readonly onSelect: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="quiet"
-      aria-label={label}
-      onClick={onSelect}
-      className="h-auto w-full justify-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-state-hover"
-    >
-      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-state-hover text-muted-foreground">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{label}</span>
-        <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
-          {value}
-        </span>
-      </span>
-      <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
-    </Button>
-  );
-}
-
-function OptionsRootView({ signals }: PickerProps) {
-  const { t } = useTranslation();
-  const avatar = useGet(signals.avatar$);
-  const voice = useGet(signals.voice$);
-  const setView = useSet(signals.setPanelView$);
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-2">
-      <OptionsRow
-        icon={<Volume2 size={17} />}
-        label={t(($) => {
-          return $.chat.introVideo.voice.label;
-        })}
-        value={voiceSelectionLabel(t, voice, avatar)}
-        onSelect={() => {
-          setView("voice");
-        }}
-      />
-      <OptionsRow
-        icon={<UserRound size={17} />}
-        label={t(($) => {
-          return $.chat.introVideo.avatar.label;
-        })}
-        value={avatarSelectionLabel(t, avatar)}
-        onSelect={() => {
-          setView("avatar");
-        }}
-      />
-    </div>
+    </>
   );
 }
 
 /**
  * The advanced settings, floating 8px inside the dialog rather than docked to
- * its edge. Two close buttons in one corner were the confusion; making the
- * layers visibly separate — inset, own radius, own shadow — is what resolves
- * it. The radius is derived from the dialog's: inner = outer (16) − gap (8).
+ * its edge. Its close control is the shared 36px `IconButton` the dialog uses
+ * for its own, and it lands on the same optical position, so the one × in that
+ * corner never changes size or moves when the layer opens; it closes the top
+ * layer first, which is what a stacked layer is expected to do. The radius is
+ * derived from the dialog's: inner = outer (16) − gap (8).
  */
 function OptionsPanel({ signals }: PickerProps) {
   const { t } = useTranslation();
   const view = useGet(signals.panelView$);
   const setView = useSet(signals.setPanelView$);
   const setPanelOpen = useSet(signals.setPanelOpen$);
+  const resetOptions = useSet(signals.resetOptions$);
   return (
     <aside
+      id="intro-video-options"
       data-intro-video-options={view}
       aria-label={t(($) => {
         return $.chat.introVideo.picker.settings;
       })}
       className={cn(
         "absolute inset-y-2 right-2 z-20 flex flex-col overflow-hidden rounded-lg border border-border bg-card",
-        "shadow-[0_8px_24px_-12px_rgba(0,0,0,0.12)] dark:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]",
+        "shadow-[0_8px_24px_-12px_rgba(0,0,0,0.12)] dark:shadow-[0_12px_32px_-12px_rgba(0,0,0,0.5)]",
         "motion-safe:animate-intro-video-options-in",
         OPTIONS_PANEL_WIDTH,
       )}
     >
-      <header className="flex shrink-0 items-center gap-1 p-2">
+      <header className="flex h-[52px] shrink-0 items-center gap-1 border-b border-border px-2">
         {view === "root" ? null : (
-          <Button
+          <IconButton
             type="button"
-            variant="quiet"
-            size="icon-sm"
             aria-label={t(($) => {
               return $.chat.introVideo.picker.back;
             })}
@@ -647,27 +935,20 @@ function OptionsPanel({ signals }: PickerProps) {
               setView("root");
             }}
           >
-            <ChevronLeft size={16} />
-          </Button>
+            <ChevronLeft size={18} />
+          </IconButton>
         )}
-        <h3
-          className={cn(
-            "min-w-0 flex-1 truncate text-sm font-medium",
-            view === "root" && "pl-2",
-          )}
-        >
+        <p className="min-w-0 flex-1 truncate px-2 text-sm font-semibold">
           {t(($) => {
             return view === "voice"
-              ? $.chat.introVideo.voice.heading
+              ? $.chat.introVideo.picker.allVoices
               : view === "avatar"
-                ? $.chat.introVideo.avatar.heading
+                ? $.chat.introVideo.picker.allPresenters
                 : $.chat.introVideo.picker.moreOptions;
           })}
-        </h3>
-        <Button
+        </p>
+        <IconButton
           type="button"
-          variant="quiet"
-          size="icon-sm"
           aria-label={t(($) => {
             return $.chat.introVideo.picker.closeOptions;
           })}
@@ -675,17 +956,97 @@ function OptionsPanel({ signals }: PickerProps) {
             setPanelOpen(false);
           }}
         >
-          <X size={16} />
-        </Button>
+          <X size={20} />
+        </IconButton>
       </header>
-      {view === "voice" ? (
-        <VoicePicker signals={signals} />
-      ) : view === "avatar" ? (
-        <AvatarPicker signals={signals} />
-      ) : (
-        <OptionsRootView signals={signals} />
-      )}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4">
+        {view === "voice" ? (
+          <VoiceLibraryView signals={signals} />
+        ) : view === "avatar" ? (
+          <AvatarLibraryView signals={signals} />
+        ) : (
+          <OptionsRootView signals={signals} />
+        )}
+      </div>
+      <footer className="flex h-[56px] shrink-0 items-center gap-2 border-t border-border px-4">
+        {view === "root" ? (
+          <Button type="button" variant="quiet" onClick={resetOptions}>
+            <RotateCcw size={15} />
+            {t(($) => {
+              return $.chat.introVideo.picker.reset;
+            })}
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          className="ml-auto"
+          onClick={() => {
+            setPanelOpen(false);
+          }}
+        >
+          {t(($) => {
+            return $.chat.introVideo.picker.done;
+          })}
+        </Button>
+      </footer>
     </aside>
+  );
+}
+
+/**
+ * What the template will produce, stated where the primary action is. Each
+ * value is the way back into the layer that owns it — while the layer is open
+ * it already says both, so the footer stops repeating them.
+ */
+function SelectionSummary({ signals }: PickerProps) {
+  const { t } = useTranslation();
+  const voice = useGet(signals.voice$);
+  const avatar = useGet(signals.avatar$);
+  const setView = useSet(signals.setPanelView$);
+  return (
+    <div
+      data-intro-video-summary=""
+      className="hidden min-w-0 flex-1 items-center gap-1 @[560px]/panel:flex"
+    >
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        className="min-w-0 gap-1.5 px-2 text-[13px] font-normal"
+        onClick={() => {
+          setView("root");
+        }}
+      >
+        <Volume2 size={15} />
+        <span className="shrink-0 text-muted-foreground">
+          {t(($) => {
+            return $.chat.introVideo.voice.label;
+          })}
+        </span>
+        <span className="min-w-0 truncate font-medium">
+          {voiceSelectionLabel(t, voice, avatar)}
+        </span>
+      </Button>
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        className="min-w-0 gap-1.5 px-2 text-[13px] font-normal"
+        onClick={() => {
+          setView("root");
+        }}
+      >
+        <UserRound size={15} />
+        <span className="shrink-0 text-muted-foreground">
+          {t(($) => {
+            return $.chat.introVideo.avatar.label;
+          })}
+        </span>
+        <span className="min-w-0 truncate font-medium">
+          {avatarSelectionLabel(t, avatar)}
+        </span>
+      </Button>
+    </div>
   );
 }
 
@@ -700,9 +1061,35 @@ export function IntroVideoPicker({
   const { t } = useTranslation();
   const template = useGet(signals.template$);
   const style = useGet(signals.style$);
-  const avatar = useGet(signals.avatar$);
-  const voice = useGet(signals.voice$);
+  const group = useGet(signals.group$);
+  const query = useGet(signals.query$).trim().toLowerCase();
   const panelOpen = useGet(signals.panelOpen$);
+  const catalog = useLoadable(introVideoStyleGallerySignals.catalog$);
+  const all = catalog.state === "hasData" ? catalog.data : [];
+  const items = all.filter((item) => {
+    const matchesGroup =
+      group === "all" ||
+      (group === "other"
+        ? !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
+            return item.tags.includes(tag);
+          })
+        : item.tags.includes(group));
+    return (
+      matchesGroup && (query === "" || item.name.toLowerCase().includes(query))
+    );
+  });
+  const hasOther = all.some((item) => {
+    return !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
+      return item.tags.includes(tag);
+    });
+  });
+  const hiddenSelection =
+    style?.kind === "catalog" &&
+    !items.some((item) => {
+      return item.id === style.style.id;
+    })
+      ? style.style.name
+      : null;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -712,52 +1099,56 @@ export function IntroVideoPicker({
           panelOpen && OPTIONS_PANEL_RESERVE,
         )}
       >
-        <StylePicker signals={signals} />
-        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 sm:px-6">
-          <p
-            data-intro-video-summary=""
-            className="min-w-0 truncate text-xs text-muted-foreground"
+        <StyleToolbar signals={signals} />
+        <StyleFilterRow
+          signals={signals}
+          hasOther={hasOther}
+          ready={catalog.state === "hasData"}
+          shown={items.length}
+          total={all.length}
+          hiddenSelection={hiddenSelection}
+        />
+        <StyleGallery
+          signals={signals}
+          items={items}
+          loading={catalog.state === "loading"}
+          error={catalog.state === "hasError"}
+        />
+        <footer className="flex h-[60px] shrink-0 items-center gap-2 border-t border-border px-4 sm:px-6">
+          {panelOpen ? null : <SelectionSummary signals={signals} />}
+          <div className="flex-1" />
+          <Button
+            type="button"
+            variant="outline"
+            className="hidden shrink-0 @[560px]/panel:inline-flex"
+            onClick={onCancel}
           >
-            {style
+            {t(($) => {
+              return $.chat.introVideo.footer.cancel;
+            })}
+          </Button>
+          <Button
+            type="button"
+            disabled={!template}
+            className="shrink-0"
+            onClick={() => {
+              if (template) {
+                onSelect(template);
+              }
+            }}
+          >
+            {style?.kind === "catalog"
               ? t(
                   ($) => {
-                    return $.chat.introVideo.picker.selectionSummary;
+                    return $.chat.introVideo.picker.useStyle;
                   },
-                  {
-                    voice: voiceSelectionLabel(t, voice, avatar),
-                    avatar: avatarSelectionLabel(t, avatar),
-                  },
+                  { name: style.style.name },
                 )
               : t(($) => {
-                  return $.chat.introVideo.picker.chooseStyle;
+                  return $.chat.introVideo.picker.pickStyle;
                 })}
-          </p>
-          <div className="flex shrink-0 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="hidden sm:inline-flex"
-              onClick={onCancel}
-            >
-              {t(($) => {
-                return $.chat.introVideo.footer.cancel;
-              })}
-            </Button>
-            <Button
-              type="button"
-              disabled={!template}
-              onClick={() => {
-                if (template) {
-                  onSelect(template);
-                }
-              }}
-            >
-              {t(($) => {
-                return $.chat.introVideo.picker.useSelection;
-              })}
-              <ArrowRight size={15} />
-            </Button>
-          </div>
+            <ArrowRight size={15} />
+          </Button>
         </footer>
       </div>
       {panelOpen ? <OptionsPanel signals={signals} /> : null}

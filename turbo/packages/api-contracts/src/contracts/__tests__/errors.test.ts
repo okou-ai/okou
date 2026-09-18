@@ -152,6 +152,42 @@ describe("formatRunErrorForExternalSurface", () => {
     ).toBe(CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE);
   });
 
+  it.each(["claude-code", "codex", null, undefined] as const)(
+    "offers manual continuation for the structured output limit with framework %s",
+    (framework) => {
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: "private upstream diagnostic",
+          failureReason: "output_token_limit",
+          framework,
+        }),
+      ).toBe(
+        "The model reached its output limit before finishing. Ask it to continue from where it stopped.",
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    "response_connection_lost",
+    "context_window_exceeded",
+    "future_reason",
+  ] as const)(
+    "does not infer continuation guidance from output-limit text with reason %s",
+    (failureReason) => {
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message:
+            "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens",
+          failureReason,
+          framework: "codex",
+        }),
+      ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+    },
+  );
+
   it("replaces a content-policy refusal with non-retry guidance", () => {
     const formatted = formatRunErrorForExternalSurface({
       code: "UNKNOWN",

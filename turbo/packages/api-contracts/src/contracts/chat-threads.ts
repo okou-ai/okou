@@ -321,7 +321,7 @@ const chatThreadUnreadsSchema = z.object({
 
 export const indicatorSchema = z.enum(["active", "unread"]);
 
-const indicatorsSchema = z.object({
+export const indicatorsSchema = z.object({
   agents: z.record(z.string().uuid(), indicatorSchema),
   threads: z.record(z.string().uuid(), indicatorSchema),
 });

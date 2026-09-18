@@ -18,6 +18,12 @@ const DECK =
 const VIDEO =
   "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4";
 
+const WELCOME_STEP_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14";
+const WELCOME_SCENE_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-17-1e76170cef99";
+const QUICK_START = "https://okou-quick-start-deck.okou.app";
+
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
     return candidate.textContent === name;
@@ -110,6 +116,51 @@ test.each(
   },
 );
 
+test("Welcome diagrams and the quick start open without uploaded artifacts", async () => {
+  const diagrams = [
+    ["Slack scene", `${WELCOME_SCENE_BASE}/slack-scene.png`],
+    ["Model tiers", `${WELCOME_SCENE_BASE}/model-tiers.png`],
+    ["Workflow templates", `${WELCOME_STEP_BASE}/workflow-template-picker.png`],
+    ["New agent", `${WELCOME_STEP_BASE}/new-agent.png`],
+  ] as const;
+  const chat = createMarkdownChatFixture(context);
+  const content = [
+    ...diagrams.map(([name, url]) => {
+      return `[${name}](${url})`;
+    }),
+    `[View the quick start](${QUICK_START})`,
+  ].join("\n\n");
+  const row = chat.outputMessage(content, { seqId: 1 });
+  chat.install({
+    rows: () => {
+      return [
+        {
+          ...row,
+          runId: null,
+          runEventId: null,
+          runEventSequenceNumber: null,
+        },
+      ];
+    },
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(200, { runs: [] });
+  });
+  await setupPage({ context, path: chat.path });
+  await screen.findByText("View the quick start");
+  for (const [name, url] of diagrams) {
+    click(link(name));
+    await expect(
+      screen.findByTestId("attachment-lightbox-image"),
+    ).resolves.toHaveAttribute("src", url);
+    await closePreview();
+  }
+  // The quick start is a hosted site on okou.app, and hosted-site framing is
+  // resolved per environment (resolveHostedSiteDomains), so its in-thread frame
+  // only exists on production hostnames. Assert the link survives here.
+  expect(link("View the quick start")).toHaveAttribute("href", QUICK_START);
+});
+
 test("Unlisted external HTML and altered catalog URLs keep ordinary link behavior", async () => {
   const urls = [
     "https://example.com/page.html",
@@ -118,6 +169,8 @@ test("Unlisted external HTML and altered catalog URLs keep ordinary link behavio
     `${DECK}?redirect=https://example.com`,
     DECK.replace("https://", "http://"),
     DECK.replace("https://", "https://user@"),
+    `${QUICK_START}/unlisted.html`,
+    QUICK_START.replace("okou.app", "okou.app.evil.example"),
   ];
   const chat = createMarkdownChatFixture(context);
   chat.install({

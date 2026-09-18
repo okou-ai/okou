@@ -10,6 +10,7 @@ const CODEX_CONTEXT_WINDOW_EXHAUSTED_PREFIX: &str =
     "codex ran out of room in the model's context window.";
 const CODEX_RATE_LIMIT_RETRY_EXHAUSTED_MESSAGE: &str =
     "exceeded retry limit, last status: 429 too many requests";
+const CODEX_OUTPUT_TOKEN_LIMIT_MESSAGE: &str = "stream disconnected before completion: Incomplete response returned, reason: max_output_tokens";
 const CODEX_UNSUPPORTED_MODEL_MESSAGE_SUFFIX: &str =
     "' model is not supported when using Codex with a ChatGPT account.";
 const CONTENT_POLICY_REJECTION_ERROR_TYPE: &str = "invalid_request_error";
@@ -28,6 +29,14 @@ pub(crate) fn is_codex_model_capacity_message(message: &str) -> bool {
     message
         .to_ascii_lowercase()
         .contains(CODEX_MODEL_CAPACITY_MESSAGE)
+}
+
+/// Match only the native Codex terminal error for an incomplete provider response.
+/// Callers must establish that this is model failure text, not normal output.
+pub(crate) fn is_codex_output_token_limit_message(message: &str) -> bool {
+    message
+        .trim()
+        .eq_ignore_ascii_case(CODEX_OUTPUT_TOKEN_LIMIT_MESSAGE)
 }
 
 pub(crate) fn is_codex_context_window_exceeded_message(message: &str) -> bool {

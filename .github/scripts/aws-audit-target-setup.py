@@ -31,6 +31,8 @@ TAGS = [{"Key": "ManagedBy", "Value": "vm0-audit-32264"}]
 DIRECTORY = Path(__file__).resolve().parents[1] / "aws-audit-32264"
 SDK_CONFIG = Config(retries={"mode": "standard", "max_attempts": 3}, read_timeout=30)
 MAX_OBJECT_BYTES = 20 * 1024 * 1024
+# GitHub keeps this numeric identity stable across owner and repository renames.
+OKOU_REPOSITORY_ID = "1096175506"
 
 
 def require(condition, message):
@@ -72,7 +74,12 @@ def create_after_policy_propagation(operation, **parameters):
 
 
 def workflow_identity():
-    require(os.environ.get("GITHUB_REPOSITORY") == "vm0-ai/vm0", "wrong_repository")
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    require(
+        os.environ.get("GITHUB_REPOSITORY_ID") == OKOU_REPOSITORY_ID,
+        "wrong_repository",
+    )
+    require(bool(repository), "wrong_repository")
     require(os.environ.get("GITHUB_REF") == "refs/heads/main", "main_required")
     require(
         os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch",
@@ -80,7 +87,7 @@ def workflow_identity():
     )
     require(
         os.environ.get("GITHUB_WORKFLOW_REF")
-        == "vm0-ai/vm0/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
+        == f"{repository}/.github/workflows/aws-audit-target-setup.yml@refs/heads/main",
         "wrong_workflow",
     )
     request_url = urllib.parse.urlsplit(os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"])

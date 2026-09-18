@@ -142,7 +142,7 @@ export function morningBriefSourceWaves(
 }
 
 /** What survived request budgeting, and what it cost to say so honestly. */
-interface MorningBriefRequestAllocation {
+export interface MorningBriefRequestAllocation {
   readonly items: readonly MorningBriefSourceItem[];
   readonly bytes: number;
   readonly omittedBySource: Readonly<

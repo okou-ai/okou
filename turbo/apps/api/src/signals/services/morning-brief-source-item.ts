@@ -78,7 +78,7 @@ export type MorningBriefTimeSemantics =
  * stops two calendars' copies of one meeting, or an email and the Chat thread
  * discussing it, from being silently merged.
  */
-export interface MorningBriefItemIdentity {
+interface MorningBriefItemIdentity {
   readonly source: MorningBriefSourceKind;
   readonly account: string;
   /** Container: mailbox, calendar, repository, channel or thread. */
@@ -101,7 +101,7 @@ export interface MorningBriefItemIdentity {
  * these, so a model cannot invent a URL, and no link in generated text is ever
  * fetched.
  */
-export interface MorningBriefDisplayLink {
+interface MorningBriefDisplayLink {
   readonly label: string;
   readonly url: string;
 }
@@ -114,7 +114,7 @@ export interface MorningBriefDisplayLink {
  * reasons, and reducing that to the first one is how "you were asked to review
  * this" silently becomes "something changed".
  */
-export interface MorningBriefItemReason {
+interface MorningBriefItemReason {
   readonly branch: string;
   /** The provider's own reason word for that branch, when it supplies one. */
   readonly detail: string | null;
@@ -129,7 +129,7 @@ export interface MorningBriefItemReason {
  * request: dropping it turns "the head you were asked to review is failing"
  * into an undated claim about a branch that has since moved.
  */
-export interface MorningBriefCheckState {
+interface MorningBriefCheckState {
   readonly headSha: string;
   /** `unknown` is deliberately not `success`: an unread check is not green. */
   readonly state: string;
@@ -149,7 +149,7 @@ export interface MorningBriefCheckState {
  * buys nothing and costs the request the ability to distinguish two records
  * that happen to share a title.
  */
-export interface MorningBriefItemFacts {
+interface MorningBriefItemFacts {
   /** Every branch that selected this record, never reduced to the first. */
   readonly reasons: readonly MorningBriefItemReason[];
   /** The provider's own lifecycle or response word for the record. */
@@ -205,15 +205,11 @@ export function morningBriefItemFacts(
   return { ...NO_ITEM_FACTS, ...observed };
 }
 
-/** One normalized piece of evidence. */
-export interface MorningBriefSourceItem {
+/** Fields every normalized piece of evidence carries. */
+interface MorningBriefSourceItemBase {
   readonly identity: MorningBriefItemIdentity;
   /** Ranking within its own source; smaller sorts first. Adapter-owned. */
   readonly priority: number;
-  readonly occurredAt: Date;
-  readonly timeSemantics: MorningBriefTimeSemantics;
-  /** All-day and multi-day records keep their exclusive end. */
-  readonly endsAt: Date | null;
   readonly title: string;
   readonly body: string;
   /**
@@ -227,6 +223,31 @@ export interface MorningBriefSourceItem {
   readonly links: readonly MorningBriefDisplayLink[];
   readonly facts: MorningBriefItemFacts;
 }
+
+/** A calendar date range is not an instant and never receives a UTC timestamp. */
+interface MorningBriefDateOnlyItem extends MorningBriefSourceItemBase {
+  readonly timeSemantics: "date-only";
+  readonly occurredAt: null;
+  readonly endsAt: null;
+  readonly dateRange: {
+    readonly startDate: string;
+    readonly endDateExclusive: string;
+    readonly timezone: string;
+  };
+}
+
+/** Every non-date-only claim is represented by real observed instants. */
+interface MorningBriefInstantItem extends MorningBriefSourceItemBase {
+  readonly timeSemantics: Exclude<MorningBriefTimeSemantics, "date-only">;
+  readonly occurredAt: Date;
+  readonly endsAt: Date | null;
+  readonly dateRange: null;
+}
+
+/** One normalized piece of evidence, discriminated by its temporal semantics. */
+export type MorningBriefSourceItem =
+  | MorningBriefDateOnlyItem
+  | MorningBriefInstantItem;
 
 /**
  * What one provider branch asked for, so a window edge stays checkable.
@@ -357,12 +378,23 @@ export const MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES = 1024 * 1024;
  * become ISO 8601 strings and nothing else changes. Serializing the same object
  * the request will serialize is the only way the byte budget can be exact.
  */
+type MorningBriefSerializedTime =
+  | {
+      readonly kind: "date-only";
+      readonly startDate: string;
+      readonly endDateExclusive: string;
+      readonly timezone: string;
+    }
+  | {
+      readonly kind: Exclude<MorningBriefTimeSemantics, "date-only">;
+      readonly occurredAt: string;
+      readonly endsAt: string | null;
+    };
+
 interface MorningBriefSerializedItem {
   readonly identity: MorningBriefItemIdentity;
   readonly priority: number;
-  readonly occurredAt: string;
-  readonly timeSemantics: MorningBriefTimeSemantics;
-  readonly endsAt: string | null;
+  readonly time: MorningBriefSerializedTime;
   readonly title: string;
   readonly body: string;
   readonly truncated: boolean;
@@ -373,12 +405,18 @@ interface MorningBriefSerializedItem {
 export function serializeMorningBriefItem(
   item: MorningBriefSourceItem,
 ): MorningBriefSerializedItem {
+  const time: MorningBriefSerializedTime =
+    item.timeSemantics === "date-only"
+      ? { kind: "date-only", ...item.dateRange }
+      : {
+          kind: item.timeSemantics,
+          occurredAt: item.occurredAt.toISOString(),
+          endsAt: item.endsAt === null ? null : item.endsAt.toISOString(),
+        };
   return {
     identity: item.identity,
     priority: item.priority,
-    occurredAt: item.occurredAt.toISOString(),
-    timeSemantics: item.timeSemantics,
-    endsAt: item.endsAt === null ? null : item.endsAt.toISOString(),
+    time,
     title: item.title,
     body: item.body,
     truncated: item.truncated,
@@ -464,7 +502,7 @@ export function serializeMorningBriefAggregate(
 }
 
 /** The exact UTF-8 size of that aggregate document. */
-export function morningBriefAggregateBytes(
+function morningBriefAggregateBytes(
   collections: readonly MorningBriefSourceCollection[],
 ): number {
   return Buffer.byteLength(
@@ -527,31 +565,6 @@ export function dedupeMorningBriefItems(
 }
 
 /**
- * What the cap charges before a single item is placed.
- *
- * Measured with empty item arrays, and with any `complete` source already
- * widened to `partial`, because that is the only metadata value the cap itself
- * can change. Everything else — provenance, request counts, the collector's own
- * omission account — is fixed before this runs, so the base is exact for a
- * source that is already partial and conservative by two bytes for one that is
- * not.
- */
-function aggregateBaseBytes(
-  collections: readonly MorningBriefSourceCollection[],
-): number {
-  return morningBriefAggregateBytes(
-    collections.map((collection) => {
-      return {
-        ...collection,
-        coverage:
-          collection.coverage === "complete" ? "partial" : collection.coverage,
-        items: [],
-      };
-    }),
-  );
-}
-
-/**
  * Apply the combined normalized ceiling by dropping whole trailing items.
  *
  * Items are considered in the fixed source order, then by each adapter's own
@@ -585,49 +598,69 @@ export function boundCombinedNormalizedItems(
     MorningBriefSourceKind,
     MorningBriefSourceItem[]
   >();
-  let bytes = aggregateBaseBytes(ordered);
+
+  /** Build the exact representation implied by the currently kept items. */
+  const currentCollections = (): readonly MorningBriefSourceCollection[] => {
+    return ordered.map((collection) => {
+      const kept = keptBySource.get(collection.source) ?? [];
+      const dropped = collection.items.length - kept.length;
+      return {
+        ...collection,
+        items: kept,
+        coverage:
+          dropped > 0 && collection.coverage === "complete"
+            ? ("partial" as const)
+            : collection.coverage,
+      };
+    });
+  };
+
+  let bytes = morningBriefAggregateBytes(currentCollections());
   let omitted = 0;
   for (const collection of ordered) {
     const kept: MorningBriefSourceItem[] = [];
+    keptBySource.set(collection.source, kept);
     const sorted = [...collection.items].sort((left, right) => {
       return left.priority - right.priority;
     });
     for (const item of sorted) {
-      // The first item in a source's array pays no separator; every later one
-      // pays exactly the comma that precedes it.
       const itemBytes =
         morningBriefItemBytes(item) - (kept.length === 0 ? 1 : 0);
-      if (bytes + itemBytes > maxBytes) {
+      // If this is the last missing item, the exact final representation changes
+      // `partial` back to `complete`. Charge that byte in the same decision;
+      // neither a smaller provisional status nor a wider blanket reservation can
+      // move an otherwise exact-boundary item across the cap.
+      const coverageBytes =
+        collection.coverage === "complete" &&
+        kept.length + 1 === collection.items.length
+          ? Buffer.byteLength(JSON.stringify("complete"), "utf8") -
+            Buffer.byteLength(JSON.stringify("partial"), "utf8")
+          : 0;
+      const charge = itemBytes + coverageBytes;
+      if (bytes + charge > maxBytes) {
         omitted += 1;
         continue;
       }
-      bytes += itemBytes;
       kept.push(item);
+      bytes += charge;
     }
-    keptBySource.set(collection.source, kept);
   }
+  const bounded = currentCollections();
   const omittedBySource: Partial<Record<MorningBriefSourceKind, number>> = {};
-  const bounded = ordered.map((collection) => {
-    const kept = keptBySource.get(collection.source) ?? [];
-    const dropped = collection.items.length - kept.length;
+  for (const collection of ordered) {
+    const dropped =
+      collection.items.length -
+      (keptBySource.get(collection.source)?.length ?? 0);
     if (dropped > 0) {
       omittedBySource[collection.source] = dropped;
     }
-    return {
-      ...collection,
-      items: kept,
-      coverage:
-        dropped > 0 && collection.coverage === "complete"
-          ? ("partial" as const)
-          : collection.coverage,
-    };
-  });
+  }
   return {
     collections: bounded,
     omitted,
     omittedBySource,
-    // Measured on the document that actually resulted, so the reported size is
-    // the document's size rather than the running reservation.
+    // Re-measure the consumer's document rather than exposing the running
+    // counter as the oracle.
     bytes: morningBriefAggregateBytes(bounded),
   };
 }
