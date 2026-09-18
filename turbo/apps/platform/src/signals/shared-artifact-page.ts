@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { createArtifactViewerFullscreenSignals } from "./artifact-viewer-fullscreen.ts";
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
 import { clerk$ } from "./auth.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
@@ -82,6 +83,7 @@ export function createSharedArtifactPreview(
 export function createSharedArtifactViewerSignals() {
   return {
     imageCanvas: createZoomableImageCanvasSignals(),
+    fullscreen: createArtifactViewerFullscreenSignals(),
   };
 }
 

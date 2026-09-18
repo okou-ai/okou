@@ -92,8 +92,6 @@ test.each(
       path: NEW_CHAT_PATH,
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-        // A second row per model would make the model options ambiguous here.
-        [FeatureSwitchKey.CodexFastMode]: layout === "compact",
       },
     });
     const trigger = await waitFor(() => {
@@ -125,8 +123,9 @@ test.each(
             await screen.findByRole("region", { name: "Chat models" }),
           )
         : await screen.findByRole("option", {
+            // A Fast-capable model adds its own " Fast" row beside the plain one.
             name: (name) => {
-              return name.includes(modelLabel);
+              return name.includes(modelLabel) && !name.endsWith(" Fast");
             },
           });
     if (!option) {
@@ -165,7 +164,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });

@@ -161,7 +161,6 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { buildVideoRunOptionsPrompt } from "@okouai/core/video-run-options-prompt";
 import {
@@ -486,7 +485,6 @@ function shouldTouchThreadSortFromNormalSend(
 }
 
 interface NormalSendFeatureSwitches {
-  readonly codexFastModeEnabled: boolean;
   /**
    * Carried whole so downstream checks can read it without reloading the
    * switches this request already read.
@@ -1072,7 +1070,6 @@ async function resolveExplicitRunConfiguration(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly body: NormalSendBody;
-  readonly codexFastModeEnabled: boolean;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedRunConfiguration | NormalSendFailure | undefined> {
@@ -1134,7 +1131,6 @@ async function resolveExplicitRunConfiguration(params: {
       return validateCodexServiceTier({
         body: params.body,
         modelPin,
-        codexFastModeEnabled: params.codexFastModeEnabled,
       });
     },
   );
@@ -1151,7 +1147,6 @@ async function resolveExplicitRunConfiguration(params: {
       codexServiceTier: codexServiceTierForRun({
         body: params.body,
         modelPin,
-        codexFastModeEnabled: params.codexFastModeEnabled,
       }),
     },
     params.featureSwitchContext,
@@ -1165,7 +1160,6 @@ async function resolveNormalSendFeatureSwitches(
 ): Promise<NormalSendFeatureSwitches> {
   const context = await loadUserFeatureSwitchContext(db, orgId, userId);
   return {
-    codexFastModeEnabled: isCodexFastModeEnabled(context),
     featureSwitchContext: context,
   };
 }
@@ -1792,8 +1786,6 @@ function resolveExplicitThreadRunConfiguration(
             thread.codexServiceTier === "fast" &&
             isCodexFastServiceTierSupported({
               selectedModel: configuration.modelPin.selectedModel,
-              codexFastModeEnabled:
-                settings.featureSwitches.codexFastModeEnabled,
             })
               ? "fast"
               : undefined,
@@ -1879,7 +1871,6 @@ async function resolveThread(params: {
           requestedCodexServiceTier: params.requestedCodexServiceTier,
           persistRequestedCodexServiceTier:
             params.persistRequestedCodexServiceTier,
-          codexFastModeEnabled: params.featureSwitches.codexFastModeEnabled,
         });
       },
     );
@@ -2780,7 +2771,6 @@ function resolveTimedExplicitRunConfiguration(
         orgId: args.orgId,
         userId: args.userId,
         body: args.body,
-        codexFastModeEnabled: featureSwitches.codexFastModeEnabled,
         featureSwitchContext: featureSwitches.featureSwitchContext,
         timing: args.timing,
       });
@@ -3687,20 +3677,13 @@ function codexFastServiceTierRequested(body: NormalSendBody): boolean {
 function validateCodexServiceTier(params: {
   readonly body: NormalSendBody;
   readonly modelPin: ThreadModelPin;
-  readonly codexFastModeEnabled: boolean;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (!codexFastServiceTierRequested(params.body)) {
     return undefined;
   }
-  if (!params.codexFastModeEnabled) {
-    return badRequestMessage(
-      "Codex fast mode is not enabled for this workspace",
-    );
-  }
   if (
     isCodexFastServiceTierSupported({
       selectedModel: params.modelPin.selectedModel,
-      codexFastModeEnabled: params.codexFastModeEnabled,
     })
   ) {
     return undefined;
@@ -3713,12 +3696,10 @@ function validateCodexServiceTier(params: {
 function codexServiceTierForRun(params: {
   readonly body: NormalSendBody;
   readonly modelPin: ThreadModelPin;
-  readonly codexFastModeEnabled: boolean;
 }): "fast" | undefined {
   return codexFastServiceTierRequested(params.body) &&
     isCodexFastServiceTierSupported({
       selectedModel: params.modelPin.selectedModel,
-      codexFastModeEnabled: params.codexFastModeEnabled,
     })
     ? "fast"
     : undefined;

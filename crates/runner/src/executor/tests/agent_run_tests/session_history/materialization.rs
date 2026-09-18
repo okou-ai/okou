@@ -625,7 +625,7 @@ async fn run_in_sandbox_restores_session_history_from_workspace_sidecar() {
         "workspace_cache"
     );
     assert_eq!(
-        transfers[0]["session_history_codec_reason"],
+        transfers[0]["session_history_codec_decision"],
         "below_threshold"
     );
     assert_eq!(
@@ -1277,7 +1277,7 @@ async fn run_in_sandbox_restores_large_inline_codex_history_without_cleanup() {
         history.len()
     );
     assert_eq!(
-        transfers[0]["session_history_codec_reason"],
+        transfers[0]["session_history_codec_decision"],
         "below_threshold"
     );
 }

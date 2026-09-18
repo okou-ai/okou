@@ -299,10 +299,7 @@ import {
   updateUserModelPreference$,
   userModelPreference$,
 } from "../../signals/external/user-model-preference.ts";
-import {
-  codexFastModeEnabled$,
-  featureSwitch$,
-} from "../../signals/external/feature-switch.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   selectedComputerUseHostId,
@@ -9768,14 +9765,12 @@ function ComposerRunModelPickerControl({
   signals,
   value,
   onChange,
-  codexFastModeEnabled,
   desktopLayout,
   mediaModelPanel,
 }: {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  codexFastModeEnabled: boolean;
   desktopLayout: boolean;
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
@@ -9809,7 +9804,6 @@ function ComposerRunModelPickerControl({
         onOpenChange={(open) => {
           setModelPickerOpen(open);
         }}
-        codexFastModeEnabled={codexFastModeEnabled}
         {...(mediaModelPanel ? { mediaModelPanel } : {})}
       />
     </div>
@@ -9880,14 +9874,12 @@ function ComposerModelPickerControls({
   signals,
   value,
   onChange,
-  codexFastModeEnabled,
   imageModel,
   videoModel,
 }: {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  codexFastModeEnabled: boolean;
   imageModel: ComposerResolvedImageModelPickerState | undefined;
   videoModel: ComposerResolvedVideoModelPickerState | undefined;
 }) {
@@ -9961,7 +9953,6 @@ function ComposerModelPickerControls({
           signals={signals}
           value={value}
           onChange={onChange}
-          codexFastModeEnabled={codexFastModeEnabled}
           desktopLayout={desktopLayout}
           mediaModelPanel={mediaModelPanel}
         />
@@ -9975,14 +9966,12 @@ function ComposerMediaModelPickerControls({
   signals,
   value,
   onChange,
-  codexFastModeEnabled,
   imageModel,
   videoModel,
 }: {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  codexFastModeEnabled: boolean;
   imageModel: ComposerImageModelPickerState | undefined;
   videoModel: ComposerVideoModelPickerState | undefined;
 }) {
@@ -10010,7 +9999,6 @@ function ComposerMediaModelPickerControls({
       signals={signals}
       value={value}
       onChange={onChange}
-      codexFastModeEnabled={codexFastModeEnabled}
       imageModel={resolvedImageModel}
       videoModel={resolvedVideoModel}
     />
@@ -10026,7 +10014,6 @@ function ComposerModelPickerSlotBase({
   imageModel: ComposerImageModelPickerState | undefined;
   videoModel: ComposerVideoModelPickerState | undefined;
 }) {
-  const codexFastModeEnabled = useGet(codexFastModeEnabled$);
   const modelSelection = useLastLoadable(signals.model.modelSelection$);
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
@@ -10053,7 +10040,6 @@ function ComposerModelPickerSlotBase({
           signals={signals}
           value={value}
           onChange={onModelPickerChange}
-          codexFastModeEnabled={codexFastModeEnabled}
           imageModel={imageModel}
           videoModel={videoModel}
         />
@@ -10062,7 +10048,6 @@ function ComposerModelPickerSlotBase({
           signals={signals}
           value={value}
           onChange={onModelPickerChange}
-          codexFastModeEnabled={codexFastModeEnabled}
           imageModel={undefined}
           videoModel={undefined}
         />
@@ -10254,12 +10239,10 @@ function ComposerTemporaryModelNotice({
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateUserModelPreference$,
   );
-  const codexFastModeEnabled = useGet(codexFastModeEnabled$);
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveModelFirstUserDefaultSelection({
     userPreference,
     policies,
-    codexFastModeEnabled,
   });
   const selectionServiceTier =
     selection?.codexServiceTier === "fast" ? "priority" : null;

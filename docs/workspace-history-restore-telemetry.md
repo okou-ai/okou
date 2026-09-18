@@ -68,8 +68,9 @@ Successful restores add these fields:
 | Field                                    | Meaning                                                                                                                                                     |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `session_history_wire_codec`             | Caller-selected `none` or `zstd`, independent of stored representation                                                                                      |
-| `session_history_codec_reason`           | `native_zstd`, `below_threshold`, `sample_rejected` or `sample_accepted`                                                                                    |
-| `session_history_selection_ms`           | Host wall duration of the existing bounded selector, including worker scheduling and joining                                                                |
+| `session_history_codec_decision`         | Current policy: `native_zstd`, `below_threshold` or `above_threshold`; the last value includes exactly 16 MiB                                               |
+| `session_history_codec_reason`           | Legacy sampling policy only: `native_zstd`, `below_threshold`, `sample_rejected` or `sample_accepted`; omitted by new Runners                               |
+| `session_history_selection_ms`           | Host wall duration of codec selection; the current representation/size decision has no worker, while legacy sampling includes worker scheduling and joining |
 | `session_history_transfer_bytes`         | Logical guest file payload length, before optional wire compression                                                                                         |
 | `session_history_restore_representation` | Logical guest payload is `raw` or `codex_zstd`                                                                                                              |
 | `session_history_wire_bytes`             | Actual completed DATA payload bytes for zstd, or raw request payload bytes; excludes framing, paths, credit/control messages and replies                    |
@@ -107,10 +108,20 @@ public APIs discard these measurements.
 This bounds instrumentation work but does not establish zero latency/CPU overhead.
 
 API fields are optional. Old Runners remain accepted; old APIs strip additions.
+New Runners emit `session_history_codec_decision` instead of
+`session_history_codec_reason`: native-zstd histories retain raw transport,
+raw histories below 16 MiB retain raw transport, and raw histories of at least
+16 MiB select the existing zstd fast encoder without sampling. The legacy reason
+enum stays unchanged for draining Runners. An old API drops only the unknown
+decision field from a new Runner's payload, preserving its operation and existing
+measurements; explicit decisions become queryable when both versions support them.
+Missing decision metadata does not imply a rejected sample or a raw transfer.
+
 Use containing API/Runner/artifact cohorts and report source, framework, size,
 representation, success/failure and missing-field coverage before comparing
 durations or compression ratios. Join existing resource and startup observations
 by run ID; do not put identities or paths in metric labels. These measurements
 deliver [#34789](https://github.com/vm0-ai/okou/issues/34789); current production
-baselines and an optimization/no-change decision remain on
+baselines and post-deployment validation of the large-history compression change
+in [#35270](https://github.com/vm0-ai/okou/issues/35270) remain on
 [#34728](https://github.com/vm0-ai/okou/issues/34728).

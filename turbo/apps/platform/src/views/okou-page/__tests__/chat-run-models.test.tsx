@@ -196,7 +196,6 @@ describe("a model or speed change during an active run", () => {
     await setupPage({
       context,
       path: RUN_PATH,
-      featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
     });
 
     await readyChat();
@@ -246,7 +245,6 @@ test("Keep a next-run model choice through active-run steering", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await readyChat();
@@ -317,7 +315,6 @@ test("Preserve the current execution mode for an active-run follow-up", async ()
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await readyChat();
@@ -450,7 +447,6 @@ test("Mark model and speed transitions between runs", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
   });
 
   await readyChat();
@@ -964,15 +960,15 @@ test("Recover when a model is at capacity", async () => {
   const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
+  // Fast-capable models always carry their own Fast row, so each plain row is
+  // addressed by its exact label rather than a shared prefix.
   await expect(
-    screen.findByRole("option", { name: /^GPT 5\.6 Luna/iu }),
+    screen.findByRole("option", { name: "GPT 5.6 Luna" }),
   ).resolves.toBeVisible();
   expect(
     screen.getByRole("option", { name: /^DeepSeek V4 Flash/iu }),
   ).toBeVisible();
-  const paidOnlyOption = screen.getByRole("option", {
-    name: /^GPT 5\.6 Sol/iu,
-  });
+  const paidOnlyOption = screen.getByRole("option", { name: "GPT 5.6 Sol" });
   expect(within(paidOnlyOption).getByText("Pro")).toBeVisible();
   await user.keyboard("{Escape}");
 
@@ -1512,9 +1508,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   expect(
     screen.queryByRole("option", { name: /^GPT 5\.6 Sol/iu }),
   ).not.toBeInTheDocument();
-  await user.click(
-    await screen.findByRole("option", { name: /^GPT 5\.6 Luna/iu }),
-  );
+  await user.click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
 
   expect(picker).toHaveTextContent("GPT 5.6 Luna");
   expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);

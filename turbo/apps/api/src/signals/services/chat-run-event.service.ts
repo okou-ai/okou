@@ -1,4 +1,3 @@
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import type { FeatureSwitchContext } from "@okouai/core";
 
 import { badRequestMessage } from "../../lib/error";
@@ -41,7 +40,6 @@ export async function resolveRunChatThreadModelContext(params: {
     userId: params.userId,
     threadId: params.threadId,
     persistRequestedCodexServiceTier: false,
-    codexFastModeEnabled: isCodexFastModeEnabled(featureSwitchContext),
   });
   if (!resolved) {
     return badRequestMessage("Chat thread not found");

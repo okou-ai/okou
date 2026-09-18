@@ -1,4 +1,4 @@
-import { Button, Card } from "@okouai/ui";
+import { Button, Card, IconButton, cn } from "@okouai/ui";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -7,6 +7,8 @@ import {
   ArrowUpRight,
   LockKeyhole,
   LogIn,
+  Maximize2,
+  Minimize2,
   Share2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -33,11 +35,17 @@ import { copyAttachmentLinkToClipboard } from "../okou-page/attachment-url.ts";
 
 function ArtifactViewerActions({
   artifact,
+  viewer,
 }: {
   artifact: SharedArtifactPreview;
+  viewer: SharedArtifactViewerSignals;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
+  const [enterLoadable, enterFullscreen] = useLoadableSet(
+    viewer.fullscreen.enter$,
+  );
+  const enterButtonRef = useSet(viewer.fullscreen.enterButtonRef$);
   const continueUrl = new URL("/", window.location.origin);
   continueUrl.searchParams.set(
     "prompt",
@@ -56,6 +64,22 @@ function ArtifactViewerActions({
   );
   return (
     <div className="flex shrink-0 items-center gap-1">
+      <Button
+        ref={enterButtonRef}
+        variant="quiet"
+        size="icon-sm"
+        iconSize="md"
+        showTooltip
+        disabled={enterLoadable.state === "loading"}
+        aria-label={t(($) => {
+          return $.artifacts.actions.enterFullscreen;
+        })}
+        onClick={() => {
+          detach(enterFullscreen(pageSignal), Reason.DomCallback);
+        }}
+      >
+        <Maximize2 aria-hidden />
+      </Button>
       {artifact.publicUrl === null && !artifact.sharedThreadSnapshot ? (
         <ArtifactShareMenu
           surface="viewer"
@@ -208,6 +232,14 @@ export function SharedArtifactPage({
 }) {
   const { t } = useTranslation();
   const mountRef = useSet(shellDocumentAttributesRef$);
+  const fullscreen = useGet(viewer.fullscreen.fullscreen$);
+  const containerRef = useSet(viewer.fullscreen.containerRef$);
+  const exitButtonRef = useSet(viewer.fullscreen.exitButtonRef$);
+  const exitFullscreen = useSet(viewer.fullscreen.exit$);
+  const pageSignal = useGet(pageSignal$);
+  const exitLabel = t(($) => {
+    return $.artifacts.actions.exitFullscreen;
+  });
   const title =
     artifact?.filename ??
     t(($) => {
@@ -218,7 +250,13 @@ export function SharedArtifactPage({
       ref={mountRef}
       className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground"
     >
-      <header className="relative z-10 flex h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-background px-3 sm:gap-4 sm:px-6">
+      <header
+        hidden={fullscreen}
+        className={cn(
+          "relative z-10 h-14 shrink-0 items-center gap-3 border-b border-border/70 bg-background px-3 sm:gap-4 sm:px-6",
+          fullscreen ? "hidden" : "flex",
+        )}
+      >
         <a
           href="/"
           aria-label={BRAND_NAME}
@@ -240,7 +278,7 @@ export function SharedArtifactPage({
           )}
         </div>
         {artifact !== null ? (
-          <ArtifactViewerActions artifact={artifact} />
+          <ArtifactViewerActions artifact={artifact} viewer={viewer} />
         ) : (
           <Button asChild variant="quiet" size="sm">
             <a href="/">
@@ -256,6 +294,7 @@ export function SharedArtifactPage({
         )}
       </header>
       <main
+        ref={containerRef}
         className={`relative min-h-0 flex-1 bg-muted/30 ${artifact === null ? "overflow-y-auto" : "overflow-hidden"}`}
       >
         {artifact !== null ? (
@@ -267,6 +306,19 @@ export function SharedArtifactPage({
           />
         ) : (
           <ArtifactAccessPage />
+        )}
+        {artifact !== null && fullscreen && (
+          <IconButton
+            ref={exitButtonRef}
+            aria-label={exitLabel}
+            aria-keyshortcuts="Escape"
+            className="absolute right-6 top-6 z-20 size-11 border border-border/70 bg-background/90 text-foreground opacity-40 backdrop-blur-sm transition-none hover:opacity-100 focus-visible:opacity-100 active:opacity-100 motion-safe:transition-opacity motion-safe:duration-200 motion-safe:ease-out sm:size-9"
+            onClick={() => {
+              detach(exitFullscreen(pageSignal), Reason.DomCallback);
+            }}
+          >
+            <Minimize2 size={18} aria-hidden />
+          </IconButton>
         )}
       </main>
     </div>

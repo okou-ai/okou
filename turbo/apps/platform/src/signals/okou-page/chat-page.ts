@@ -7,7 +7,6 @@ import {
   DEFAULT_VIDEO_MODEL,
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
-import { codexFastModeEnabled$ } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
 import {
@@ -94,7 +93,6 @@ export const chatPageModelSelection$ = computed(
       return isCodexFastModeAvailableForSelection({
         policies,
         selectedModel: user.value.selectedModel,
-        codexFastModeEnabled: get(codexFastModeEnabled$),
       })
         ? { ...selection, codexServiceTier: "fast" }
         : selection;
@@ -104,7 +102,6 @@ export const chatPageModelSelection$ = computed(
     return resolveModelFirstUserDefaultSelection({
       userPreference,
       policies,
-      codexFastModeEnabled: get(codexFastModeEnabled$),
     });
   },
 );

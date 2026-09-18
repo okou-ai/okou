@@ -714,10 +714,7 @@ export function createAssistantErrorRecoverySignals(deps: {
           }
         : null;
       const features = get(featureSwitch$);
-      const runOptions = runOptionsFromModelProviderSelection(
-        modelSelection,
-        features[FeatureSwitchKey.CodexFastMode] ?? false,
-      );
+      const runOptions = runOptionsFromModelProviderSelection(modelSelection);
       await set(
         deps.chatEvents.sendEvent$,
         {

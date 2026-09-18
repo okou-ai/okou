@@ -235,9 +235,11 @@ test("Lab orders features by name within each rollout stage", async () => {
   await screen.findByRole("heading", { name: "Lab" });
 
   const banking = featureSwitchRow(FeatureSwitchKey.Banking);
-  const codexFastMode = featureSwitchRow(FeatureSwitchKey.CodexFastMode);
+  const realAgentInPreview = featureSwitchRow(
+    FeatureSwitchKey.RealAgentInPreview,
+  );
   expect(
-    banking.compareDocumentPosition(codexFastMode) &
+    banking.compareDocumentPosition(realAgentInPreview) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });

@@ -277,12 +277,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Workday HCM and finance connector",
     enabled: false,
   },
-
-  [FeatureSwitchKey.CodexFastMode]: {
-    maintainer: "lancy@okou.ai",
-    description: "Enable Codex fast mode for GPT 5.6 runs.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatPreference]: {
     maintainer: "lancy@okou.ai",
     description:
