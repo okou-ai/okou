@@ -355,6 +355,13 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "api#test": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/api-contracts/src/contracts/__tests__/fixtures/x-resource-observations.json"
+      ]
+    },
     "dev": {
       "cache": false,
       "persistent": true

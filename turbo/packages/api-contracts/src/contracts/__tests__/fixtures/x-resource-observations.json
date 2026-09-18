@@ -1,0 +1,228 @@
+{
+  "cases": [
+    {
+      "name": "json-identities-and-remainder",
+      "runId": "00000000-0000-4000-8000-000000000001",
+      "flowId": "10000000-0000-4000-8000-000000000001",
+      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
+      "request": {
+        "method": "GET",
+        "path": "/2/tweets",
+        "permission": "tweet.read"
+      },
+      "chunks": [
+        {
+          "observedAt": "2026-09-18T12:00:00.000Z",
+          "body": "{\"data\":[{\"id\":\"001\"},{\"id\":\"001\"},{\"id\":\"1\"},{}],\"meta\":{\"result_count\":4},\"includes\":{\"tweets\":[{\"id\":\"2\"}],\"users\":[{\"id\":\"001\"}],\"polls\":[{\"id\":\"9\"}]}}"
+        }
+      ],
+      "completion": "response",
+      "expectedPayloads": [
+        {
+          "runId": "00000000-0000-4000-8000-000000000001",
+          "events": [
+            {
+              "idempotencyKey": "d5120a22-cd5b-5f80-b8ef-a28ad9e71b2b",
+              "kind": "connector",
+              "provider": "x",
+              "category": "posts.read",
+              "quantity": 6,
+              "protocol": "x-resource-v1",
+              "observedAt": "2026-09-18T12:00:00.000Z",
+              "resources": [
+                { "id": "2", "occurrences": 1 },
+                { "id": "001", "occurrences": 2 },
+                { "id": "1", "occurrences": 1 }
+              ],
+              "remainder": [
+                { "reason": "missing_id", "quantity": 1 },
+                { "reason": "unsupported_resource", "quantity": 1 }
+              ]
+            },
+            {
+              "idempotencyKey": "2ad4d6a6-7426-53a6-bb57-9f802a2fed6e",
+              "kind": "connector",
+              "provider": "x",
+              "category": "user.read",
+              "quantity": 1,
+              "protocol": "x-resource-v1",
+              "observedAt": "2026-09-18T12:00:00.000Z",
+              "resources": [{ "id": "001", "occurrences": 1 }],
+              "remainder": []
+            }
+          ]
+        }
+      ],
+      "expectedFirstUnits": 6,
+      "expectedRepeatUnits": 2
+    },
+    {
+      "name": "counts-ignore-incidental-identities",
+      "runId": "00000000-0000-4000-8000-000000000002",
+      "flowId": "10000000-0000-4000-8000-000000000002",
+      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
+      "request": {
+        "method": "GET",
+        "path": "/2/tweets/counts/recent",
+        "permission": "tweet.read"
+      },
+      "chunks": [
+        {
+          "observedAt": "2026-09-18T12:00:00.000Z",
+          "body": "{\"data\":[{\"id\":\"900\",\"tweet_count\":3}],\"meta\":{\"total_tweet_count\":3},\"includes\":{\"tweets\":[{\"id\":\"1\"},{\"id\":\"2\"}]}}"
+        }
+      ],
+      "completion": "response",
+      "expectedPayloads": [
+        {
+          "runId": "00000000-0000-4000-8000-000000000002",
+          "events": [
+            {
+              "idempotencyKey": "b10cab7e-4caf-5ff8-92da-36b34a6a415c",
+              "kind": "connector",
+              "provider": "x",
+              "category": "posts.read",
+              "quantity": 3,
+              "protocol": "x-resource-v1",
+              "observedAt": "2026-09-18T12:00:00.000Z",
+              "resources": [],
+              "remainder": [{ "reason": "unsupported_resource", "quantity": 3 }]
+            }
+          ]
+        }
+      ],
+      "expectedFirstUnits": 3,
+      "expectedRepeatUnits": 3
+    },
+    {
+      "name": "malformed-json-count-fallback",
+      "runId": "00000000-0000-4000-8000-000000000003",
+      "flowId": "10000000-0000-4000-8000-000000000003",
+      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
+      "request": {
+        "method": "GET",
+        "path": "/2/tweets?ids=1,2",
+        "permission": "tweet.read"
+      },
+      "chunks": [
+        {
+          "observedAt": "2026-09-18T12:00:00.000Z",
+          "body": "{\"data\":[{\"id\":\"1\"}]} trailing"
+        }
+      ],
+      "completion": "response",
+      "expectedPayloads": [
+        {
+          "runId": "00000000-0000-4000-8000-000000000003",
+          "events": [
+            {
+              "idempotencyKey": "d32a0aed-ac88-519f-aeb2-2404fb41b734",
+              "kind": "connector",
+              "provider": "x",
+              "category": "posts.read",
+              "quantity": 2,
+              "protocol": "x-resource-v1",
+              "observedAt": "2026-09-18T12:00:00.000Z",
+              "resources": [],
+              "remainder": [{ "reason": "parse_fallback", "quantity": 2 }]
+            }
+          ]
+        }
+      ],
+      "expectedFirstUnits": 2,
+      "expectedRepeatUnits": 2
+    },
+    {
+      "name": "future-capability-keeps-counts",
+      "runId": "00000000-0000-4000-8000-000000000004",
+      "flowId": "10000000-0000-4000-8000-000000000004",
+      "capability": { "protocol": "x-resource-v1", "startDate": "2099-01-01" },
+      "request": {
+        "method": "GET",
+        "path": "/2/tweets",
+        "permission": "tweet.read"
+      },
+      "chunks": [
+        {
+          "observedAt": "2026-09-18T12:00:00.000Z",
+          "body": "{\"data\":[{\"id\":\"1\"},{\"id\":\"1\"}]}"
+        }
+      ],
+      "completion": "response",
+      "expectedPayloads": [
+        {
+          "runId": "00000000-0000-4000-8000-000000000004",
+          "events": [
+            {
+              "idempotencyKey": "63578406-14b7-5e70-bda8-bc3e3fdb0395",
+              "kind": "connector",
+              "provider": "x",
+              "category": "posts.read",
+              "quantity": 2
+            }
+          ]
+        }
+      ],
+      "expectedFirstUnits": 2,
+      "expectedRepeatUnits": 2
+    },
+    {
+      "name": "ndjson-crosses-utc-midnight",
+      "runId": "00000000-0000-4000-8000-000000000005",
+      "flowId": "10000000-0000-4000-8000-000000000005",
+      "capability": { "protocol": "x-resource-v1", "startDate": "2026-09-18" },
+      "request": {
+        "method": "GET",
+        "path": "/2/tweets/search/stream",
+        "permission": "tweet.read"
+      },
+      "chunks": [
+        {
+          "observedAt": "2026-09-18T23:59:59.999Z",
+          "body": "{\"data\":{\"id\":\"001\"}}\n"
+        },
+        {
+          "observedAt": "2026-09-19T00:00:00.000Z",
+          "body": "{\"data\":{\"id\":\"001\"}}\n{\"data\":"
+        }
+      ],
+      "completion": "error",
+      "expectedPayloads": [
+        {
+          "runId": "00000000-0000-4000-8000-000000000005",
+          "events": [
+            {
+              "idempotencyKey": "d9b3d119-5522-5d12-b7cb-a41990c3427e",
+              "kind": "connector",
+              "provider": "x",
+              "category": "posts.read",
+              "quantity": 1,
+              "protocol": "x-resource-v1",
+              "observedAt": "2026-09-18T23:59:59.999Z",
+              "resources": [{ "id": "001", "occurrences": 1 }],
+              "remainder": []
+            }
+          ]
+        },
+        {
+          "runId": "00000000-0000-4000-8000-000000000005",
+          "events": [
+            {
+              "idempotencyKey": "cba1bc31-3664-539b-996d-03dc5d23378e",
+              "kind": "connector",
+              "provider": "x",
+              "category": "posts.read",
+              "quantity": 1,
+              "protocol": "x-resource-v1",
+              "observedAt": "2026-09-19T00:00:00.000Z",
+              "resources": [{ "id": "001", "occurrences": 1 }],
+              "remainder": []
+            }
+          ]
+        }
+      ],
+      "expectedFirstUnits": 2,
+      "expectedRepeatUnits": 0
+    }
+  ]
+}
