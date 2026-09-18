@@ -66,6 +66,7 @@ import {
   holdMorningBriefGenerationSlot,
   lockMorningBriefGeneration,
   readMorningBriefGeneration,
+  readMorningBriefGenerationRecovery,
   readPlatformGenerationReceipt,
   recordMorningBriefGenerationOutcome,
   recordMorningBriefGenerationSkip,
@@ -172,6 +173,25 @@ export type MorningBriefGenerationExecution =
       readonly kind: "collection-completed-without-generation";
       readonly occurrence: MorningBriefCollectionOccurrenceView;
     };
+
+/**
+ * Content-free resolution of the exact durable S5 attempt a native slot bound.
+ *
+ * This is deliberately S5 vocabulary. The native scheduler may map it onto its
+ * own settlement outcomes, but it does not inspect S5 rows or reinterpret model
+ * output itself. A deliverable result still has to pass S6's authority fence.
+ */
+interface MorningBriefGenerationRecovery {
+  readonly kind:
+    | "pending"
+    | "deliverable"
+    | "empty-skip"
+    | "collection-failed"
+    | "model-skip"
+    | "generation-failed"
+    | "generation-unknown";
+  readonly attemptId: string;
+}
 
 /** What the in-transaction handoff produced for the request that follows it. */
 type AdmittedGeneration =
@@ -1257,6 +1277,108 @@ const resolveExistingGeneration$ = command(
       occurrence,
       generation: viewOfRow(released.row, receipt),
     };
+  },
+);
+
+function recoveryOfGeneration(
+  row: NonNullable<
+    Awaited<ReturnType<typeof readMorningBriefGenerationRecovery>>
+  >,
+  at: Date,
+): MorningBriefGenerationRecovery {
+  const recovered = (
+    kind: MorningBriefGenerationRecovery["kind"],
+  ): MorningBriefGenerationRecovery => {
+    return { kind, attemptId: row.attemptId };
+  };
+  switch (row.state) {
+    case "reserved": {
+      return recovered("pending");
+    }
+    case "skipped_empty": {
+      return recovered("empty-skip");
+    }
+    case "skipped_incomplete": {
+      return recovered("collection-failed");
+    }
+    case "succeeded": {
+      if (row.decision === "skip") {
+        return recovered("model-skip");
+      }
+      // S6 must not be asked to release owner content after its retention
+      // boundary. The row can still exist until maintenance physically purges
+      // it, but the content is already conclusively unavailable to delivery.
+      return recovered(
+        row.decision === "deliver" && row.expiresAt.getTime() > at.getTime()
+          ? "deliverable"
+          : "generation-unknown",
+      );
+    }
+    case "invocation_outcome_unknown": {
+      return recovered("generation-unknown");
+    }
+    case "output_rejected":
+    case "provider_failed":
+    case "not_invoked":
+    case "result_discarded": {
+      return recovered("generation-failed");
+    }
+  }
+}
+
+/**
+ * Resolve the exact S5 attempt a native occurrence already bound.
+ *
+ * No source is recollected, no provider request is possible and no saved body
+ * is selected. A live reservation remains pending. A lapsed reservation is
+ * settled through S5's existing stale-reservation transition, then read again
+ * so a concurrent terminal writer wins honestly. Physical retention deletion
+ * is the only way a terminal row disappears; because the caller supplied the
+ * durable attempt id, that absence is an unknown generation, never an empty
+ * collection and never permission to generate again.
+ */
+export const recoverMorningBriefGeneration$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: MorningBriefCollectionOwner;
+      readonly attemptId: string;
+      readonly purpose: MorningBriefExecutionPurpose;
+    },
+    signal: AbortSignal,
+  ): Promise<MorningBriefGenerationRecovery> => {
+    const db = set(writeDb$);
+    let row = await readMorningBriefGenerationRecovery(db, args);
+    signal.throwIfAborted();
+    if (row === undefined) {
+      return { kind: "generation-unknown", attemptId: args.attemptId };
+    }
+
+    if (
+      row.state === "reserved" &&
+      row.reservationExpiresAt.getTime() <= nowDate().getTime()
+    ) {
+      const key: MorningBriefGenerationKey = {
+        owner: row.owner,
+        scheduledFor: row.scheduledFor,
+        collectionKind: row.collectionKind,
+        collectionVersion: row.collectionVersion,
+      };
+      await db.transaction(async (tx) => {
+        await resolveStaleMorningBriefGeneration(tx, key);
+      });
+      signal.throwIfAborted();
+      // The stale transition may have lost to the original terminal writer.
+      // Re-read by exact attempt so either committed outcome is classified, and
+      // a concurrent retention deletion is reported as unknown.
+      row = await readMorningBriefGenerationRecovery(db, args);
+      signal.throwIfAborted();
+      if (row === undefined) {
+        return { kind: "generation-unknown", attemptId: args.attemptId };
+      }
+    }
+
+    return recoveryOfGeneration(row, nowDate());
   },
 );
 

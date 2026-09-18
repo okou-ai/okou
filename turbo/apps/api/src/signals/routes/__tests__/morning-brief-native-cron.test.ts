@@ -10,14 +10,19 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { clearMockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   bindMorningBriefThreadFixture,
   seedOrdinaryChatThreadFixture$,
 } from "../../../test-fixtures/morning-brief-chat-collection";
 import { seedInstalledMorningBrief } from "../../../test-fixtures/morning-brief-collection";
-import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
+import {
+  expireMorningBriefGenerationReservation,
+  expireMorningBriefGenerationRetention,
+  failMorningBriefGenerationUpdates,
+  readPlatformGenerationReceipts,
+} from "../../../test-fixtures/morning-brief-generation";
 import {
   drainEmailOutbox,
   readEmailOutboxRow,
@@ -29,19 +34,25 @@ import {
   enqueueUnsentLegacyEmail,
   countOrgAgentRuns,
   deleteLegacyMorningBriefInstallation,
+  holdNativeScheduleRow,
   interruptNativeSettlement,
+  interruptNativeSettlementAfterGeneration,
   makeNativeOccurrenceDue,
+  purgeExpiredNativeGenerations,
   readLegacyAutomation,
   readNativeDeliveries,
   readNativeGenerations,
   readNativeOccurrences,
   readNativeSchedule,
   readThreadEventTypes,
+  replaceNativeEpochWithFutureObligation,
   revokeNativeAuthorityForTest,
   resumableOccurrenceAnchors,
   seedRecipientAddress,
   setLegacyReconciliationState,
+  suppressNativeDeliveryRecovery,
 } from "../../../test-fixtures/morning-brief-native-schedule";
+import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
 import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
@@ -227,8 +238,14 @@ interface ProviderCalls {
   readonly generation: string[];
 }
 
+type ProviderOutcome =
+  | "deliver"
+  | "model-skip"
+  | "provider-failure"
+  | "transport-failure";
+
 /** Script both provider boundaries and count every crossing request. */
-function scriptProviders(outcome: "deliver" | "provider-failure" = "deliver"): {
+function scriptProviders(outcome: ProviderOutcome = "deliver"): {
   readonly calls: ProviderCalls;
 } {
   const calls: ProviderCalls = { generation: [] };
@@ -241,6 +258,9 @@ function scriptProviders(outcome: "deliver" | "provider-failure" = "deliver"): {
           { status: 503 },
         );
       }
+      if (outcome === "transport-failure") {
+        return HttpResponse.error();
+      }
       return HttpResponse.json({
         id: "gen-01HNATIVECRON",
         model: "google/gemini-3.8-flash",
@@ -248,19 +268,26 @@ function scriptProviders(outcome: "deliver" | "provider-failure" = "deliver"): {
           {
             finish_reason: "stop",
             message: {
-              content: JSON.stringify({
-                decision: "deliver",
-                language: "en-US",
-                title: "Release readiness",
-                sections: [
-                  {
-                    heading: "Decisions",
-                    items: [
-                      { text: "The release ships today.", citations: ["c1"] },
-                    ],
-                  },
-                ],
-              }),
+              content: JSON.stringify(
+                outcome === "model-skip"
+                  ? { decision: "skip", reason: "nothing_actionable" }
+                  : {
+                      decision: "deliver",
+                      language: "en-US",
+                      title: "Release readiness",
+                      sections: [
+                        {
+                          heading: "Decisions",
+                          items: [
+                            {
+                              text: "The release ships today.",
+                              citations: ["c1"],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+              ),
             },
           },
         ],
@@ -434,34 +461,40 @@ describe("native Morning Brief cron", () => {
   });
 
   // The crash this covers is the one the durable receipt exists for: Chat and
-  // its receipt COMMIT, then the process dies before the native settlement.
-  // The row is put back into exactly that state — attempt bound, delivery
-  // pending, settlement absent — rather than seeding any synthetic result.
-  it("recovers a delivered brief whose settlement crashed after the chat receipt", async () => {
+  // its receipt COMMIT, then the native settlement CAS is interrupted by the
+  // owner-scoped PostgreSQL fault. No result, delivery or occurrence is seeded.
+  it("recovers a delivered brief from its receipt after the S5 result is purged", async () => {
     const f = await fixture();
     scriptSlack();
     const { calls } = scriptProviders();
 
     await tickUntilNative(f);
+    const interrupt = await interruptNativeSettlementAfterGeneration(
+      f,
+      context.signal,
+    );
     const due = await makeNativeOccurrenceDue(f);
     await accept(tick(f), [200]);
     expect(calls.generation).toHaveLength(1);
-    const beforeCrash = await readNativeOccurrences(f);
-    expect(beforeCrash[0]?.generationAttemptId).not.toBeNull();
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        scheduledFor: due,
+        settledAt: null,
+        deliveryPending: true,
+        generationAttemptId: expect.any(String),
+      },
+    ]);
+    await interrupt();
 
-    // Unwind only the settlement. Everything the delivery committed stays, and
-    // the claimant's lease is still held, which is exactly what a process that
-    // died between the Chat COMMIT and its own settlement leaves behind.
-    // And the accepted result is past its retention, so recovery cannot lean
-    // on it: only the durable receipt can prove the brief was delivered.
+    // The accepted body is logically expired and then physically removed by
+    // the real bounded retention engine. The Chat receipt and S2 outbox intent
+    // survive independently and are the first recovery authority.
     await expireMorningBriefGenerationRetention(
       { orgId: f.orgId, userId: f.userId },
       new Date(now() - 1000),
     );
-    await interruptNativeSettlement(f, {
-      scheduledFor: due,
-      leaseToken: randomUUID(),
-    });
+    await expect(purgeExpiredNativeGenerations(f)).resolves.toBe(1);
+    await expect(readNativeGenerations(f)).resolves.toHaveLength(0);
 
     const recovery = await accept(tick(f), [200]);
     expect(recovery.body.deliveriesRecovered).toBe(1);
@@ -479,10 +512,350 @@ describe("native Morning Brief cron", () => {
     expect(settled[0]?.outcome).toBe("delivered");
     expect(settled[0]?.settledAt).not.toBeNull();
     expect(settled[0]?.deliveryPending).toBeFalsy();
+    // The committed pre-crash email intent is still owned by S2 and sends once.
+    const outboxId = deliveries[0]?.emailOutboxId;
+    expect(outboxId).not.toBeNull();
+    await drainEmailOutbox([outboxId ?? ""], context.signal);
+    expect(emailSends()).toHaveLength(1);
     // The member owes a future occurrence again, from the settlement clock.
     const after = await readNativeSchedule(f);
     expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
   });
+
+  // Each case commits the real S5 outcome, then the owner-scoped PostgreSQL
+  // fault interrupts native settlement. The next tick must recover from that
+  // exact durable state without routing a non-deliver result through S6.
+  it.each<{
+    readonly provider: ProviderOutcome;
+    readonly state: string;
+    readonly outcome: string;
+    readonly receiptOutcome: string;
+  }>([
+    {
+      provider: "model-skip",
+      state: "succeeded",
+      outcome: "model-skip",
+      receiptOutcome: "response_received",
+    },
+    {
+      provider: "provider-failure",
+      state: "provider_failed",
+      outcome: "generation-failed",
+      receiptOutcome: "provider_error",
+    },
+    {
+      provider: "transport-failure",
+      state: "invocation_outcome_unknown",
+      outcome: "generation-unknown",
+      receiptOutcome: "invocation_unknown",
+    },
+  ])(
+    "recovers durable S5 $state after settlement interruption without another POST",
+    async ({ provider, state, outcome, receiptOutcome }) => {
+      const f = await fixture();
+      scriptSlack();
+      const { calls } = scriptProviders(provider);
+      await tickUntilNative(f);
+      const interrupt = await interruptNativeSettlementAfterGeneration(
+        f,
+        context.signal,
+      );
+      await makeNativeOccurrenceDue(f);
+
+      await accept(tick(f), [200]);
+      expect(calls.generation).toHaveLength(1);
+      const [generation] = await readNativeGenerations(f);
+      expect(generation?.state).toBe(state);
+      const attemptId = generation?.attemptId;
+      expect(attemptId).toBeDefined();
+      await expect(
+        readPlatformGenerationReceipts([attemptId ?? ""]),
+      ).resolves.toMatchObject([{ outcome: receiptOutcome }]);
+      await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+        {
+          state: "claimed",
+          outcome: null,
+          settledAt: null,
+          deliveryPending: true,
+          generationAttemptId: attemptId,
+        },
+      ]);
+      await interrupt();
+      // Logical content retention has elapsed, but the terminal metadata row is
+      // still durable. Recovery must use that exact S5 state now rather than
+      // waiting for physical deletion to collapse it into unknown.
+      await expireMorningBriefGenerationRetention(f, new Date(now() - 1000));
+
+      const recovery = await accept(tick(f), [200]);
+      expect(recovery.body.deliveriesRecovered).toBe(1);
+      expect(calls.generation).toHaveLength(1);
+      const [settled] = await readNativeOccurrences(f);
+      expect(settled).toMatchObject({
+        state: "settled",
+        outcome,
+        settledAt: expect.any(Date),
+        deliveryPending: false,
+        generationAttemptId: attemptId,
+      });
+      await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
+
+      // The exact obligation is consumed once; a later tick neither settles it
+      // again nor changes the preserved platform receipt/cost facts.
+      const settledAt = settled?.settledAt;
+      const repeated = await accept(tick(f), [200]);
+      expect(repeated.body.deliveriesRecovered).toBe(0);
+      expect((await readNativeOccurrences(f))[0]?.settledAt).toStrictEqual(
+        settledAt,
+      );
+      expect(calls.generation).toHaveLength(1);
+      await expect(
+        readPlatformGenerationReceipts([attemptId ?? ""]),
+      ).resolves.toMatchObject([{ outcome: receiptOutcome }]);
+    },
+  );
+
+  it("settles one claimed lease once across overlapping recovery ticks", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders("model-skip");
+    await tickUntilNative(f);
+    const interrupt = await interruptNativeSettlementAfterGeneration(
+      f,
+      context.signal,
+    );
+    await makeNativeOccurrenceDue(f);
+    await accept(tick(f), [200]);
+    await interrupt();
+
+    const barrier = await holdNativeScheduleRow(f, context.signal);
+    const first = tick(f);
+    const firstPid = await barrier.waitForBlocked();
+    const second = tick(f);
+    await waitForDeferredBlocker(firstPid);
+    await barrier.release();
+    const [firstResult, secondResult] = await Promise.all([
+      accept(first, [200]),
+      accept(second, [200]),
+    ]);
+
+    expect(
+      firstResult.body.deliveriesRecovered +
+        secondResult.body.deliveriesRecovered,
+    ).toBe(1);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        state: "settled",
+        outcome: "model-skip",
+        settledAt: expect.any(Date),
+        leaseToken: null,
+        deliveryPending: false,
+      },
+    ]);
+    expect(calls.generation).toHaveLength(1);
+  }, 20_000);
+
+  it("lets a newer epoch win while recovery settles only the old occurrence", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders("model-skip");
+    await tickUntilNative(f);
+    const interrupt = await interruptNativeSettlementAfterGeneration(
+      f,
+      context.signal,
+    );
+    await makeNativeOccurrenceDue(f);
+    await accept(tick(f), [200]);
+    await interrupt();
+    const oldEpoch = (await readNativeOccurrences(f))[0]?.ownerEpoch;
+
+    // Queue the replacement first, then recovery, behind the real schedule-row
+    // lock. PostgreSQL observes both waiters; once released, the newer epoch and
+    // its future obligation commit before the old occurrence closes.
+    const barrier = await holdNativeScheduleRow(f, context.signal);
+    const replacing = replaceNativeEpochWithFutureObligation(f);
+    const replacingPid = await barrier.waitForBlocked();
+    const recovering = tick(f);
+    await waitForDeferredBlocker(replacingPid);
+    await barrier.release();
+    const [replacement, recovered] = await Promise.all([
+      replacing,
+      accept(recovering, [200]),
+    ]);
+
+    expect(recovered.body.deliveriesRecovered).toBe(1);
+    expect(replacement.ownerEpoch).toBe((oldEpoch ?? 0) + 1);
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      ownerEpoch: replacement.ownerEpoch,
+      nextRunAt: replacement.nextRunAt,
+      scheduleOwner: "native",
+    });
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        ownerEpoch: oldEpoch,
+        outcome: "model-skip",
+        settledAt: expect.any(Date),
+        deliveryPending: false,
+        settledNextRunAt: null,
+      },
+    ]);
+    expect(calls.generation).toHaveLength(1);
+  }, 20_000);
+
+  it("keeps a live S5 reservation pending, then settles its exact lapsed attempt unknown", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(f);
+    const failOwnerWrite = await failMorningBriefGenerationUpdates(
+      f,
+      context.signal,
+    );
+    const interrupt = await interruptNativeSettlementAfterGeneration(
+      f,
+      context.signal,
+    );
+    await makeNativeOccurrenceDue(f);
+
+    // The request and anonymous cost receipt commit, but every owner-state write
+    // fails. The exact S5 attempt therefore remains durably reserved while the
+    // native settlement is interrupted.
+    await accept(tick(f), [200]);
+    expect(calls.generation).toHaveLength(1);
+    const [generation] = await readNativeGenerations(f);
+    expect(generation?.state).toBe("reserved");
+    const attemptId = generation?.attemptId;
+    await expect(
+      readPlatformGenerationReceipts([attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+    await failOwnerWrite();
+    await interrupt();
+
+    const live = await accept(tick(f), [200]);
+    expect(live.body.deliveriesRecovered).toBe(0);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      { settledAt: null, deliveryPending: true },
+    ]);
+    expect(calls.generation).toHaveLength(1);
+
+    await expireMorningBriefGenerationReservation(f, new Date(now() - 1000));
+    const expired = await accept(tick(f), [200]);
+    expect(expired.body.deliveriesRecovered).toBe(1);
+    await expect(readNativeGenerations(f)).resolves.toMatchObject([
+      {
+        attemptId,
+        state: "invocation_outcome_unknown",
+        failureReason: "persistence_failed",
+      },
+    ]);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        state: "settled",
+        outcome: "generation-unknown",
+        deliveryPending: false,
+      },
+    ]);
+    expect(calls.generation).toHaveLength(1);
+  });
+
+  it("settles a physically missing bound S5 result as unknown, never as an empty day", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders("model-skip");
+    await tickUntilNative(f);
+    const interrupt = await interruptNativeSettlementAfterGeneration(
+      f,
+      context.signal,
+    );
+    await makeNativeOccurrenceDue(f);
+    await accept(tick(f), [200]);
+    const [generation] = await readNativeGenerations(f);
+    const attemptId = generation?.attemptId;
+    expect(generation?.state).toBe("succeeded");
+    await interrupt();
+
+    await expireMorningBriefGenerationRetention(f, new Date(now() - 1000));
+    await expect(purgeExpiredNativeGenerations(f)).resolves.toBe(1);
+    const recovery = await accept(tick(f), [200]);
+
+    expect(recovery.body.deliveriesRecovered).toBe(1);
+    expect(calls.generation).toHaveLength(1);
+    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
+      {
+        generationAttemptId: attemptId,
+        outcome: "generation-unknown",
+        settledAt: expect.any(Date),
+        deliveryPending: false,
+      },
+    ]);
+    await expect(
+      readPlatformGenerationReceipts([attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("drains more than one 25-row recovery batch across overlapping ticks", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(f);
+    const suppress = await suppressNativeDeliveryRecovery(f, context.signal);
+    const base = now();
+
+    // Every row comes from the real native generation and S6 transaction. The
+    // database fault only refuses the later pending-flag clear, allowing one
+    // owner to retain more than a full recovery batch without synthetic rows.
+    for (let index = 0; index < 26; index += 1) {
+      mockNow(base + index * 120_000);
+      await makeNativeOccurrenceDue(f);
+      const executed = await accept(tick(f), [200]);
+      expect(executed.body.claimed).toBe(1);
+    }
+    expect(calls.generation).toHaveLength(26);
+    await expect(readNativeOccurrences(f)).resolves.toSatisfy(
+      (rows: Awaited<ReturnType<typeof readNativeOccurrences>>) => {
+        return (
+          rows.length === 26 &&
+          rows.every((row) => {
+            return row.settledAt !== null && row.deliveryPending;
+          })
+        );
+      },
+    );
+    await suppress();
+
+    // Both ticks discover the same first batch before either may mutate it:
+    // the held schedule parent is the real lock-order barrier, and observing
+    // two PostgreSQL waiters proves the overlap without a sleep.
+    const barrier = await holdNativeScheduleRow(f, context.signal);
+    const first = tick(f);
+    const firstPid = await barrier.waitForBlocked();
+    const second = tick(f);
+    await waitForDeferredBlocker(firstPid);
+    await barrier.release();
+    const [firstResult, secondResult] = await Promise.all([
+      accept(first, [200]),
+      accept(second, [200]),
+    ]);
+    expect(
+      firstResult.body.deliveriesRecovered +
+        secondResult.body.deliveriesRecovered,
+    ).toBe(25);
+    expect(calls.generation).toHaveLength(26);
+    expect(
+      (await readNativeOccurrences(f)).filter((row) => {
+        return row.deliveryPending;
+      }),
+    ).toHaveLength(1);
+
+    // A later bounded tick reaches the next page and makes finite progress.
+    const later = await accept(tick(f), [200]);
+    expect(later.body.deliveriesRecovered).toBe(1);
+    expect(
+      (await readNativeOccurrences(f)).filter((row) => {
+        return row.deliveryPending;
+      }),
+    ).toHaveLength(0);
+    expect(calls.generation).toHaveLength(26);
+  }, 120_000);
 
   // The counterexample the receipt pass cannot answer on its own: a bound,
   // unsettled slot whose receipt recovery has not resolved yet — in production
@@ -490,28 +863,6 @@ describe("native Morning Brief cron", () => {
   // would call S5 first, and after the real result sweep a completed collection
   // with no generation reads as a healthy empty day, bypassing a Chat receipt
   // that has already committed. It must therefore never be resumable.
-  it("settles a known provider failure once without another POST", async () => {
-    const f = await fixture();
-    scriptSlack();
-    const { calls } = scriptProviders("provider-failure");
-    await tickUntilNative(f);
-    await makeNativeOccurrenceDue(f);
-
-    await accept(tick(f), [200]);
-    await accept(tick(f), [200]);
-
-    expect(calls.generation).toHaveLength(1);
-    await expect(readNativeOccurrences(f)).resolves.toMatchObject([
-      {
-        state: "settled",
-        outcome: "generation-failed",
-        settledAt: expect.any(Date),
-        deliveryPending: false,
-      },
-    ]);
-    await expect(readNativeDeliveries(f)).resolves.toHaveLength(0);
-  });
-
   it("never resumes a bound unsettled slot into generation", async () => {
     const f = await fixture();
     scriptSlack();

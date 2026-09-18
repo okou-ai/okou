@@ -30,8 +30,10 @@ import {
   executeMorningBriefComposedGeneration$,
   type MorningBriefComposedExecution,
 } from "./morning-brief-composed-generation.service";
+import { recoverMorningBriefGeneration$ } from "./morning-brief-generation-executor.service";
 import type {
   NativeDeliveryRecovery,
+  NativeDeliveryRecoveryResolution,
   NativeSlotExecution,
   NativeSlotExecutor,
   NativeTickDependencies,
@@ -451,7 +453,7 @@ export const recoverNativeMorningBriefDelivery$ = command(
       readonly occurrence: MorningBriefNativeOccurrenceRow;
     },
     signal: AbortSignal,
-  ): Promise<"delivered" | "pending" | "terminal-failure"> => {
+  ): Promise<NativeDeliveryRecoveryResolution> => {
     const db = set(writeDb$);
     const [receipt] = await db
       .select({ chatEventId: morningBriefDeliveries.chatEventId })
@@ -469,18 +471,43 @@ export const recoverNativeMorningBriefDelivery$ = command(
     if (receipt !== undefined) {
       // Already delivered. Email recovery stays with S6's receipt and the S2
       // shared outbox; this consumer only releases the scheduler's obligation.
-      return "delivered";
+      return { kind: "settle", outcome: "delivered" };
     }
 
-    if (args.occurrence.generationAttemptId === null) {
-      return "terminal-failure";
+    const generationAttemptId = args.occurrence.generationAttemptId;
+    if (generationAttemptId === null) {
+      return { kind: "settle", outcome: "generation-unknown" };
     }
+
+    // No receipt exists, so consult S5's canonical, content-free readback for
+    // the exact attempt this occurrence bound. This never recollects, parses a
+    // provider payload or opens another invocation admission.
+    const generation = await set(
+      recoverMorningBriefGeneration$,
+      {
+        owner: args.owner,
+        attemptId: generationAttemptId,
+        purpose: "production",
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (generation.kind === "pending") {
+      return { kind: "pending" };
+    }
+    if (generation.kind !== "deliverable") {
+      return { kind: "settle", outcome: generation.kind };
+    }
+
+    // Only an accepted, retained `deliver` result reaches S6. S6 remains the
+    // sole content-release and Chat/email authority; recovery never reads or
+    // interprets the saved body itself.
     const retried = await set(
       deliverMorningBriefResult$,
       {
         orgId: args.owner.orgId,
         userId: args.owner.userId,
-        resultAttemptId: args.occurrence.generationAttemptId,
+        resultAttemptId: generation.attemptId,
         purpose: "production",
         nativeAuthority: {
           ownerEpoch: args.occurrence.ownerEpoch,
@@ -489,14 +516,25 @@ export const recoverNativeMorningBriefDelivery$ = command(
       },
       signal,
     );
-    if (retried.kind === "rejected") {
-      // `result-not-found` after retention has been exhausted with no committed
-      // receipt is the only terminal delivery failure.
-      return retried.reason === "result-not-found"
-        ? "terminal-failure"
-        : "pending";
+    if (retried.kind !== "rejected") {
+      return { kind: "settle", outcome: "delivered" };
     }
-    return "delivered";
+    if (
+      retried.reason === "result-not-found" ||
+      retried.reason === "result-expired"
+    ) {
+      return { kind: "settle", outcome: "generation-unknown" };
+    }
+    if (retried.reason === "result-not-deliverable") {
+      // S5 classified this immutable row as deliverable. If S6 cannot validate
+      // that same exact attempt, it is terminally inconsistent rather than a
+      // reason to spin or to regenerate.
+      return { kind: "settle", outcome: "generation-failed" };
+    }
+    // Authority and destination refusals can change while the retained result
+    // remains valid. Keep the obligation pending for a later finite recovery;
+    // a revoking writer still clears it under the exact epoch fence.
+    return { kind: "pending" };
   },
 );
 

@@ -315,6 +315,72 @@ export async function readMorningBriefGeneration(
   return row;
 }
 
+/**
+ * The content-free S5 facts needed to recover one already-bound attempt.
+ *
+ * Recovery identifies the exact attempt the native occurrence durably bound;
+ * it never searches by a reconstructed time window and never reads the saved
+ * title or Markdown before S6 has re-proved release authority.
+ */
+interface MorningBriefGenerationRecoveryRow {
+  readonly owner: MorningBriefCollectionOwner;
+  readonly scheduledFor: Date;
+  readonly collectionKind: string;
+  readonly collectionVersion: number;
+  readonly attemptId: string;
+  readonly state: MorningBriefGenerationState;
+  readonly decision: "deliver" | "skip" | null;
+  readonly reservationExpiresAt: Date;
+  readonly expiresAt: Date;
+}
+
+export async function readMorningBriefGenerationRecovery(
+  db: Pick<ReadonlyDb, "select">,
+  args: {
+    readonly owner: MorningBriefCollectionOwner;
+    readonly attemptId: string;
+    readonly purpose: (typeof morningBriefGenerations.$inferSelect)["executionPurpose"];
+  },
+): Promise<MorningBriefGenerationRecoveryRow | undefined> {
+  const [row] = await db
+    .select({
+      orgId: morningBriefGenerations.orgId,
+      userId: morningBriefGenerations.userId,
+      scheduledFor: morningBriefGenerations.scheduledFor,
+      collectionKind: morningBriefGenerations.collectionKind,
+      collectionVersion: morningBriefGenerations.collectionVersion,
+      attemptId: morningBriefGenerations.attemptId,
+      state: morningBriefGenerations.state,
+      decision: morningBriefGenerations.decision,
+      reservationExpiresAt: morningBriefGenerations.reservationExpiresAt,
+      expiresAt: morningBriefGenerations.expiresAt,
+    })
+    .from(morningBriefGenerations)
+    .where(
+      and(
+        eq(morningBriefGenerations.orgId, args.owner.orgId),
+        eq(morningBriefGenerations.userId, args.owner.userId),
+        eq(morningBriefGenerations.attemptId, args.attemptId),
+        eq(morningBriefGenerations.executionPurpose, args.purpose),
+      ),
+    )
+    .limit(1);
+  if (row === undefined) {
+    return undefined;
+  }
+  return {
+    owner: { orgId: row.orgId, userId: row.userId },
+    scheduledFor: row.scheduledFor,
+    collectionKind: row.collectionKind,
+    collectionVersion: row.collectionVersion,
+    attemptId: row.attemptId,
+    state: row.state,
+    decision: row.decision,
+    reservationExpiresAt: row.reservationExpiresAt,
+    expiresAt: row.expiresAt,
+  };
+}
+
 function fenceCondition(fence: MorningBriefGenerationFence) {
   return and(
     generationKey(fence.key),

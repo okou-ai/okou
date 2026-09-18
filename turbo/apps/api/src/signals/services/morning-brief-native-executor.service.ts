@@ -241,12 +241,21 @@ function outcomeFor(execution: NativeSlotExecution): {
  * receipt exists may the same saved result be retried under current authority.
  * Neither path regenerates, and neither settles the schedule a second time.
  */
+export type NativeDeliveryRecoveryResolution =
+  | { readonly kind: "pending" }
+  | {
+      readonly kind: "settle";
+      readonly outcome: Parameters<
+        typeof settleMorningBriefNativeOccurrence
+      >[2]["outcome"];
+    };
+
 export interface NativeDeliveryRecovery {
   readonly resolve: (
     owner: MorningBriefMemberIdentity,
     occurrence: MorningBriefNativeOccurrenceRow,
     signal: AbortSignal,
-  ) => Promise<"delivered" | "pending" | "terminal-failure">;
+  ) => Promise<NativeDeliveryRecoveryResolution>;
 }
 
 /** Everything the tick needs from outside itself. */
@@ -308,22 +317,24 @@ const runDeliveryRecoveryPass$ = command(
       }
       const owner = { orgId: occurrence.orgId, userId: occurrence.userId };
       const resolution = await deps.delivery.resolve(owner, occurrence, signal);
-      if (resolution === "pending") {
+      if (resolution.kind === "pending") {
+        continue;
+      }
+      const generationAttemptId = occurrence.generationAttemptId;
+      if (generationAttemptId === null) {
+        // The discovery query requires this value, but retain the guard at the
+        // mutation boundary rather than widening a malformed obligation.
         continue;
       }
       const closed = await db.transaction(async (tx) => {
         return await closeRecoveredMorningBriefDelivery(tx, owner, {
           scheduledFor: occurrence.scheduledFor,
           expectedEpoch: occurrence.ownerEpoch,
+          expectedGenerationAttemptId: generationAttemptId,
           leaseToken: occurrence.leaseToken,
           // A slot that bound its attempt but crashed before its own settlement
           // still owes that settlement; one already settled only owes the clear.
-          settleAs:
-            occurrence.settledAt !== null
-              ? null
-              : resolution === "delivered"
-                ? "delivered"
-                : "generation-unknown",
+          settleAs: occurrence.settledAt !== null ? null : resolution.outcome,
           at: nowDate(),
         });
       });
@@ -334,8 +345,8 @@ const runDeliveryRecoveryPass$ = command(
         continue;
       }
       counters.deliveriesRecovered += 1;
-      if (resolution === "terminal-failure") {
-        log.warn("Morning Brief delivery exhausted its retention", {
+      if (resolution.outcome === "generation-unknown") {
+        log.warn("Morning Brief generation recovery resolved unknown", {
           orgId: occurrence.orgId,
           scheduledFor: occurrence.scheduledFor.toISOString(),
         });
