@@ -89,12 +89,14 @@ function notFoundError(): Error {
 interface StorageBoundary {
   /** Every key a download asked for, in order. */
   readonly reads: readonly string[];
+  /** Clear the observed-read ledger between calibrated route requests. */
+  readonly resetReads: () => void;
   /** Serve these bytes instead of what the canonical publisher wrote. */
   readonly replace: (suffix: string, body: Buffer) => void;
   /** Run before a download answers, once per matching key. */
   readonly beforeRead: (
     suffix: string,
-    hook: () => void | Promise<void>,
+    hook: (signal: AbortSignal | undefined) => void | Promise<void>,
   ) => void;
 }
 
@@ -108,7 +110,10 @@ interface StorageBoundary {
 function installStorageBoundary(): StorageBoundary {
   const objects = new Map<string, Buffer>();
   const replacements = new Map<string, Buffer>();
-  const hooks = new Map<string, () => void | Promise<void>>();
+  const hooks = new Map<
+    string,
+    (signal: AbortSignal | undefined) => void | Promise<void>
+  >();
   const reads: string[] = [];
 
   function replacementFor(key: string): Buffer | undefined {
@@ -120,11 +125,14 @@ function installStorageBoundary(): StorageBoundary {
     return undefined;
   }
 
-  async function runHook(key: string): Promise<void> {
+  async function runHook(
+    key: string,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
     for (const [suffix, hook] of hooks) {
       if (key.endsWith(suffix)) {
         hooks.delete(suffix);
-        await hook();
+        await hook(signal);
       }
     }
   }
@@ -175,33 +183,47 @@ function installStorageBoundary(): StorageBoundary {
     }
   }
 
-  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
-    const input = commandInput(command);
-    const key = typeof input.Key === "string" ? input.Key : "";
-    if (command instanceof PutObjectCommand) {
-      storeObject(input, key);
+  context.mocks.s3.send.mockImplementation(
+    async (command: unknown, options?: unknown) => {
+      const input = commandInput(command);
+      const key = typeof input.Key === "string" ? input.Key : "";
+      const abortSignal =
+        typeof options === "object" &&
+        options !== null &&
+        "abortSignal" in options &&
+        options.abortSignal instanceof AbortSignal
+          ? options.abortSignal
+          : undefined;
+      if (command instanceof PutObjectCommand) {
+        storeObject(input, key);
+        return {};
+      }
+      if (command instanceof HeadObjectCommand) {
+        return { ContentLength: storedObject(key).length, ETag: `"${key}"` };
+      }
+      if (command instanceof GetObjectCommand) {
+        reads.push(key);
+        await runHook(key, abortSignal);
+        const body = storedObject(key);
+        return { ContentLength: body.length, Body: Readable.from([body]) };
+      }
+      if (command instanceof ListObjectsV2Command) {
+        return listObjects(
+          typeof input.Prefix === "string" ? input.Prefix : "",
+        );
+      }
+      if (command instanceof DeleteObjectsCommand) {
+        deleteObjects(input);
+      }
       return {};
-    }
-    if (command instanceof HeadObjectCommand) {
-      return { ContentLength: storedObject(key).length, ETag: `"${key}"` };
-    }
-    if (command instanceof GetObjectCommand) {
-      reads.push(key);
-      await runHook(key);
-      const body = storedObject(key);
-      return { ContentLength: body.length, Body: Readable.from([body]) };
-    }
-    if (command instanceof ListObjectsV2Command) {
-      return listObjects(typeof input.Prefix === "string" ? input.Prefix : "");
-    }
-    if (command instanceof DeleteObjectsCommand) {
-      deleteObjects(input);
-    }
-    return {};
-  });
+    },
+  );
 
   return {
     reads,
+    resetReads() {
+      reads.length = 0;
+    },
     replace(suffix, body) {
       replacements.set(suffix, body);
     },
@@ -397,6 +419,43 @@ function membershipBarrier(member: Member): MembershipBarrier {
           }
         },
       };
+    },
+  };
+}
+
+/** Track the real Clerk boundary and optionally advance the application clock. */
+function ownerLookupClock(member: Member) {
+  const lookup =
+    context.mocks.clerk.organizations.getOrganizationMembershipList;
+  const answer = lookup.getMockImplementation();
+  if (!answer) {
+    throw new Error("Expected seeded Clerk organization memberships");
+  }
+  let matched = 0;
+  let advanceAt: number | null = null;
+  let advanceTo: number | null = null;
+  lookup.mockImplementation(async (...args: unknown[]) => {
+    const memberships = await answer(...args);
+    if (isOwnerLookup(args, member)) {
+      matched += 1;
+      if (matched === advanceAt && advanceTo !== null) {
+        mockNow(advanceTo);
+      }
+    }
+    return memberships;
+  });
+  return {
+    matched: () => {
+      return matched;
+    },
+    reset: () => {
+      matched = 0;
+      advanceAt = null;
+      advanceTo = null;
+    },
+    advance: (index: number, instant: number) => {
+      advanceAt = index;
+      advanceTo = instant;
     },
   };
 }
@@ -854,22 +913,79 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
   });
 
   describe("the absolute storage deadline", () => {
-    async function composeWithReadAt(elapsedMs: number) {
+    const timedOut = {
+      result: "incomplete",
+      reason: "language-context-unavailable",
+      detail: "timed-out",
+    } as const;
+
+    function archiveReads(storage: StorageBoundary): readonly string[] {
+      return storage.reads.filter((key) => {
+        return key.endsWith("/archive.tar.gz");
+      });
+    }
+
+    async function composeNoTargetAfterParseAt(elapsedMs: number) {
+      const storage = installStorageBoundary();
+      const member = await briefMember();
+      await publishInstructions(member, "Write in Finnish.");
+      storage.replace(
+        "/manifest.json",
+        manifestOf([{ path: "NOTES.md", size: 4 }]),
+      );
+      const base = now();
+      mockNow(base);
+      storage.beforeRead("/manifest.json", () => {
+        // This is the nearest real external boundary to synchronous decode,
+        // JSON parse and target filtering. The pure production admission
+        // helper covers the exact post-parse clock edge.
+        mockNow(base + elapsedMs);
+      });
+      const body = await compose(member, new Date(base).toISOString());
+      return { body, storage };
+    }
+
+    it.each([
+      ["before", STORAGE_PHASE_MS - 1, true],
+      ["at", STORAGE_PHASE_MS, false],
+      ["after", STORAGE_PHASE_MS + 10, false],
+    ] as const)(
+      "releases no-target absence only when manifest parsing finishes %s the deadline",
+      async (_boundary, elapsedMs, accepted) => {
+        const { body, storage } = await composeNoTargetAfterParseAt(elapsedMs);
+
+        if (accepted) {
+          expect(body.result).toBe("composed");
+          if (body.result !== "composed") {
+            return;
+          }
+          expect(body.composition.language?.instructions).toMatchObject({
+            state: "no-target",
+          });
+        } else {
+          expect(body).toStrictEqual(timedOut);
+        }
+        expect(archiveReads(storage)).toStrictEqual([]);
+      },
+    );
+
+    async function composeAfterExtractionAt(elapsedMs: number) {
       const storage = installStorageBoundary();
       const member = await briefMember();
       await publishInstructions(member, "Write in Finnish.");
       const base = now();
       mockNow(base);
       storage.beforeRead("/archive.tar.gz", () => {
-        // The storage phase timer is a real timer and has not fired: only the
-        // absolute clock says this successful response is too late.
+        // The route cannot yield inside synchronous extraction; this storage
+        // response is its nearest real boundary, while the production helper
+        // pins equality for the check immediately after extraction.
         mockNow(base + elapsedMs);
       });
       return await compose(member, new Date(base).toISOString());
     }
 
-    it("accepts a response that arrives just before the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS - 1);
+    it("accepts extraction just before the deadline", async () => {
+      const body = await composeAfterExtractionAt(STORAGE_PHASE_MS - 1);
 
       expect(body.result).toBe("composed");
       if (body.result !== "composed") {
@@ -880,55 +996,131 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       });
     });
 
-    it("expires a response that arrives exactly at the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS);
-
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
-      });
+    it("expires extraction exactly at the deadline", async () => {
+      await expect(
+        composeAfterExtractionAt(STORAGE_PHASE_MS),
+      ).resolves.toStrictEqual(timedOut);
     });
 
-    it("expires a response that arrives after the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS + 10);
-
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
-      });
+    it("expires extraction after the deadline", async () => {
+      await expect(
+        composeAfterExtractionAt(STORAGE_PHASE_MS + 10),
+      ).resolves.toStrictEqual(timedOut);
     });
 
-    /**
-     * The storage phase is the tighter of its own five seconds and what is
-     * left of the collection budget, and once that is spent it stops asking
-     * storage for anything else.
-     */
-    it("expires on the collection budget and stops reading storage", async () => {
+    async function calibrateLanguageEntry(
+      storage: StorageBoundary,
+      member: Member,
+      ownerLookups: ReturnType<typeof ownerLookupClock>,
+      base: number,
+    ): Promise<number> {
+      let lookupAtManifest = 0;
+      storage.beforeRead("/manifest.json", () => {
+        lookupAtManifest = ownerLookups.matched();
+      });
+      const calibration = await compose(member, new Date(base).toISOString());
+      expect(calibration.result).toBe("composed");
+      expect(lookupAtManifest).toBeGreaterThan(0);
+      ownerLookups.reset();
+      storage.resetReads();
+      mockNow(base);
+      return lookupAtManifest;
+    }
+
+    it("uses the genuinely tighter remaining collection budget", async () => {
       const storage = installStorageBoundary();
       const member = await briefMember();
       await publishInstructions(member, "Write in Danish.");
       const base = now();
       mockNow(base);
+      const ownerLookups = ownerLookupClock(member);
+      const languageEntry = await calibrateLanguageEntry(
+        storage,
+        member,
+        ownerLookups,
+        base,
+      );
+      ownerLookups.advance(languageEntry, base + COLLECTION_PHASE_MS - 1000);
       storage.beforeRead("/manifest.json", () => {
-        // Barely a second of the storage phase is gone, but the collection
-        // phase this read has to finish inside is over.
         mockNow(base + COLLECTION_PHASE_MS);
       });
 
       const body = await compose(member, new Date(base).toISOString());
 
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
+      expect(body).toStrictEqual(timedOut);
+      expect(context.mocks.abortSignal.timeout).toHaveBeenCalledWith(1000);
+      expect(archiveReads(storage)).toStrictEqual([]);
+    });
+
+    it("does no storage work when the collection budget is already exhausted", async () => {
+      const storage = installStorageBoundary();
+      const member = await briefMember();
+      await publishInstructions(member, "Write in Danish.");
+      const base = now();
+      mockNow(base);
+      const ownerLookups = ownerLookupClock(member);
+      const languageEntry = await calibrateLanguageEntry(
+        storage,
+        member,
+        ownerLookups,
+        base,
+      );
+      ownerLookups.advance(languageEntry, base + COLLECTION_PHASE_MS);
+
+      const body = await compose(member, new Date(base).toISOString());
+
+      expect(body).toStrictEqual(timedOut);
+      expect(storage.reads).toStrictEqual([]);
+    });
+
+    it("joins held storage work when the caller cancels", async () => {
+      const storage = installStorageBoundary();
+      const member = await briefMember();
+      await publishInstructions(member, "Write in Danish.");
+      const controller = new AbortController();
+      const cancellation = new Error("language storage caller cancelled");
+      const arrived = createDeferredPromise<void>(context.signal);
+      const cancelled = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const finished = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve();
+        }
       });
-      expect(
-        storage.reads.filter((key) => {
-          return key.endsWith("/archive.tar.gz");
-        }),
-      ).toStrictEqual([]);
+      storage.beforeRead("/manifest.json", async (storageSignal) => {
+        if (!storageSignal) {
+          throw new Error("Expected the storage read to own a signal");
+        }
+        storageSignal.addEventListener(
+          "abort",
+          () => {
+            cancelled.resolve();
+          },
+          { once: true },
+        );
+        arrived.resolve();
+        await release.promise;
+        finished.resolve();
+      });
+
+      const pending = setupApp({
+        context,
+        routes: morningBriefCompositionPreviewRoutes,
+        signal: controller.signal,
+        rethrowErrors: true,
+      })(morningBriefCompositionPreviewContract).compose({
+        headers: sessionHeaders(member),
+        body: { anchor: new Date(now()).toISOString() },
+      });
+
+      await arrived.promise;
+      controller.abort(cancellation);
+      await cancelled.promise;
+      release.resolve();
+      await finished.promise;
+      await expect(pending).rejects.toThrow(cancellation.message);
+      expect(archiveReads(storage)).toStrictEqual([]);
     });
   });
 });
