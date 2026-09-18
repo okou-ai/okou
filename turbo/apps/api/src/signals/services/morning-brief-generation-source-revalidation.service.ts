@@ -8,10 +8,12 @@ import { clerk$ } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
+  admitMorningBriefNativeCollection,
   startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
 } from "./morning-brief-connector-reader.service";
 import type { MorningBriefCollectionOwner } from "./morning-brief-collection-occurrence.service";
+import { loadMorningBriefNativeRetainedAuthority } from "./morning-brief-native-generation-admission.service";
 import {
   morningBriefSourcesToRevalidate,
   type MorningBriefRetainedSourceDescriptor,
@@ -205,17 +207,32 @@ export const revalidateMorningBriefStoredGenerationSources$ = command(
     const deadline = startMorningBriefSourceDeadline(
       STORED_SOURCE_REVALIDATION_MS,
     );
-    const admitted = await admitMorningBriefCollection(
-      {
-        db,
-        clerk: get(clerk$),
-        orgId: args.owner.orgId,
-        userId: args.owner.userId,
-        anchor: generation.scheduledFor,
-        deadline,
-      },
-      signal,
-    );
+    const admissionArgs = {
+      db,
+      clerk: get(clerk$),
+      orgId: args.owner.orgId,
+      userId: args.owner.userId,
+      anchor: generation.scheduledFor,
+      deadline,
+    };
+    const nativeAuthority =
+      args.purpose === "production"
+        ? await loadMorningBriefNativeRetainedAuthority(db, {
+            ...args.owner,
+            scheduledFor: generation.scheduledFor,
+            generationAttemptId: args.resultAttemptId,
+          })
+        : undefined;
+    signal.throwIfAborted();
+    const admitted =
+      args.purpose === "production"
+        ? nativeAuthority === undefined
+          ? { kind: "denied" as const, reason: "not-installed" }
+          : await admitMorningBriefNativeCollection(
+              { ...admissionArgs, authority: nativeAuthority },
+              signal,
+            )
+        : await admitMorningBriefCollection(admissionArgs, signal);
     signal.throwIfAborted();
     if (admitted.kind !== "ok") {
       return "owner-revoked";

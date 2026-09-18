@@ -36,6 +36,7 @@ import { clerk$, type ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
+  admitMorningBriefNativeCollection,
   freezeMorningBriefSourceSelection,
   startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
@@ -60,6 +61,7 @@ import {
   normalizeMorningBriefChat,
 } from "./morning-brief-chat-source";
 import { executeMorningBriefGithubCollection } from "./morning-brief-github-collection.service";
+import type { MorningBriefNativeActiveAuthority } from "./morning-brief-native-generation-admission.service";
 import {
   morningBriefGithubDescriptor,
   normalizeMorningBriefGithub,
@@ -310,6 +312,7 @@ export const composeMorningBrief$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly anchor: Date;
+      readonly nativeAuthority?: MorningBriefNativeActiveAuthority;
     },
     signal: AbortSignal,
   ): Promise<MorningBriefCompositionOutcome> => {
@@ -324,17 +327,21 @@ export const composeMorningBrief$ = command(
     );
     const phaseDeadlineAt = new Date(phaseDeadline.at);
 
-    const admitted = await admitMorningBriefCollection(
-      {
-        db,
-        clerk,
-        orgId: args.orgId,
-        userId: args.userId,
-        anchor: args.anchor,
-        deadline: phaseDeadline,
-      },
-      signal,
-    );
+    const admissionArgs = {
+      db,
+      clerk,
+      orgId: args.orgId,
+      userId: args.userId,
+      anchor: args.anchor,
+      deadline: phaseDeadline,
+    };
+    const admitted =
+      args.nativeAuthority === undefined
+        ? await admitMorningBriefCollection(admissionArgs, signal)
+        : await admitMorningBriefNativeCollection(
+            { ...admissionArgs, authority: args.nativeAuthority },
+            signal,
+          );
     signal.throwIfAborted();
     if (admitted.kind !== "ok") {
       return { kind: "denied", reason: admitted.reason };

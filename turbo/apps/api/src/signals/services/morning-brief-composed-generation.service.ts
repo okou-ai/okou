@@ -14,6 +14,7 @@ import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   admitMorningBriefCollection,
+  admitMorningBriefNativeCollection,
   startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
 } from "./morning-brief-connector-reader.service";
@@ -39,6 +40,7 @@ import {
   MORNING_BRIEF_DEFAULT_LANGUAGE,
   type MorningBriefLanguagePlan,
 } from "./morning-brief-language-policy";
+import type { MorningBriefNativeActiveAuthority } from "./morning-brief-native-generation-admission.service";
 import {
   invokeAndPersist$,
   viewOfRow,
@@ -154,11 +156,7 @@ export type MorningBriefComposedExecution =
   | MorningBriefGenerationExecution;
 
 /** The native occurrence claim bound to the reserved attempt before POST. */
-interface MorningBriefNativeGenerationAuthority {
-  readonly ownerEpoch: number;
-  readonly membershipId: string;
-  readonly leaseToken: string;
-}
+type MorningBriefNativeGenerationAuthority = MorningBriefNativeActiveAuthority;
 
 class NativeGenerationAuthorityLost extends Error {
   constructor() {
@@ -225,8 +223,14 @@ async function composedAdmission(
     orgId: scope.orgId,
     userId: scope.userId,
   };
-  const state = await loadMorningBriefMigrationState(db, owner);
-  if (state.kind !== "installed" || !state.automation.enabled) {
+  const state =
+    scope.nativeAuthority === undefined
+      ? await loadMorningBriefMigrationState(db, owner)
+      : null;
+  if (
+    scope.nativeAuthority === undefined &&
+    (state === null || state.kind !== "installed" || !state.automation.enabled)
+  ) {
     return null;
   }
   const ownerRow = await loadMorningBriefCollectionOwnerRow(db, owner);
@@ -242,9 +246,9 @@ async function composedAdmission(
     windowEnd: scheduledFor,
     timezone: scope.timezone,
     membershipId: scope.membershipId,
-    workflowId: state.installation.id,
-    automationId: state.automation.id,
-    agentId: state.installation.agentId,
+    workflowId: scope.installationId,
+    automationId: scope.automationId,
+    agentId: scope.agentId,
     slackWorkspaceId: null,
     slackUserId: null,
   };
@@ -410,17 +414,21 @@ export const executeMorningBriefComposedGeneration$ = command(
       return { kind: "not-executed", reason: "generation-not-configured" };
     }
 
-    const admitted = await admitMorningBriefCollection(
-      {
-        db,
-        clerk,
-        orgId: args.owner.orgId,
-        userId: args.owner.userId,
-        anchor: args.scheduledFor,
-        deadline: startMorningBriefSourceDeadline(COMPOSED_ADMISSION_BUDGET_MS),
-      },
-      signal,
-    );
+    const admissionArgs = {
+      db,
+      clerk,
+      orgId: args.owner.orgId,
+      userId: args.owner.userId,
+      anchor: args.scheduledFor,
+      deadline: startMorningBriefSourceDeadline(COMPOSED_ADMISSION_BUDGET_MS),
+    };
+    const admitted =
+      args.nativeAuthority === undefined
+        ? await admitMorningBriefCollection(admissionArgs, signal)
+        : await admitMorningBriefNativeCollection(
+            { ...admissionArgs, authority: args.nativeAuthority },
+            signal,
+          );
     signal.throwIfAborted();
     if (admitted.kind !== "ok") {
       return { kind: "denied", reason: admitted.reason };
@@ -479,6 +487,7 @@ export const executeMorningBriefComposedGeneration$ = command(
         orgId: args.owner.orgId,
         userId: args.owner.userId,
         anchor: args.scheduledFor,
+        nativeAuthority: args.nativeAuthority,
       },
       signal,
     );
