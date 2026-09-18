@@ -225,19 +225,23 @@ test.each([false, true])(
   },
 );
 
-test("a public artifact reference downloads freshly authorized file bytes", async () => {
+test("a signed-in viewer downloads freshly authorized bytes from a normal artifact reference", async () => {
   const browser = context.mocks.browser.blobDownload();
   const previewUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
   const video = { url: previewUrl };
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      url: video.url,
-      filename: "lightvid01.mp4",
-      contentType: "video/mp4",
-      expiresAt: "2099-01-01T00:00:00Z",
-      target: { kind: "file", id: FILE_ID },
-    });
-  });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ request, respond }) => {
+      expect(request.headers.has("authorization")).toBeTruthy();
+      return respond(200, {
+        url: video.url,
+        filename: "lightvid01.mp4",
+        contentType: "video/mp4",
+        expiresAt: "2099-01-01T00:00:00Z",
+        target: { kind: "file", id: FILE_ID },
+      });
+    },
+  );
   const downloadUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=download`;
   context.mocks.http.get(`${R2_ORIGIN}/files/launch.mp4`, ({ request }) => {
     return new URL(request.url).searchParams.get("X-Amz-Signature") ===
@@ -249,7 +253,10 @@ test("a public artifact reference downloads freshly authorized file bytes", asyn
   });
   mockSharedMessage(`![Launch video](${VIDEO})`);
 
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_shared_artifact_viewer", fullName: "Viewer" } },
+  });
 
   const card = await screen.findByTestId("markdown-artifact-preview-video");
   await waitFor(() => {
@@ -284,22 +291,26 @@ test("a public artifact reference downloads freshly authorized file bytes", asyn
   );
 });
 
-test("switching shared conversations cancels an active download and resets the viewer", async () => {
+test("a signed-in viewer switching shared conversations cancels the active download and resets the preview", async () => {
   const browser = context.mocks.browser.blobDownload();
   const clipboard = context.mocks.browser.clipboardWriteText();
   const requested = context.mocks.deferred<void>();
   const cancelled = context.mocks.deferred<void>();
   const videoUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
   const nextId = "30000000-0000-4000-8000-000000000703";
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      url: videoUrl,
-      filename: "lightvid01.mp4",
-      contentType: "video/mp4",
-      expiresAt: "2099-01-01T00:00:00Z",
-      target: { kind: "file", id: FILE_ID },
-    });
-  });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ request, respond }) => {
+      expect(request.headers.has("authorization")).toBeTruthy();
+      return respond(200, {
+        url: videoUrl,
+        filename: "lightvid01.mp4",
+        contentType: "video/mp4",
+        expiresAt: "2099-01-01T00:00:00Z",
+        target: { kind: "file", id: FILE_ID },
+      });
+    },
+  );
   context.mocks.api(sharedThreadsContract.get, ({ params, respond }) => {
     return respond(
       200,
@@ -335,7 +346,10 @@ test("switching shared conversations cancels an active download and resets the v
     },
   );
 
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_shared_artifact_viewer", fullName: "Viewer" } },
+  });
 
   click(await screen.findByTestId("markdown-artifact-preview-video"));
 
