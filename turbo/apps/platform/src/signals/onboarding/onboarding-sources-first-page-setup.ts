@@ -5,6 +5,7 @@ import {
   OnboardingSkillsPage,
   OnboardingSlackPage,
 } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
+import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboarding-ready-page.tsx";
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
@@ -184,4 +185,14 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingSlackPage,
+});
+
+export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({
+  step: "ready",
+  title: () => {
+    return i18n.t(($) => {
+      return $.onboarding.sourcesFirst.documentTitles.ready;
+    });
+  },
+  Page: OnboardingReadyPage,
 });

@@ -22,7 +22,6 @@ import {
   ProductMark,
 } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
-import { useWelcomeHandoff } from "./onboarding-welcome-dialog.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 const SKILL_FILE_ACCEPT = ".md,text/markdown";
@@ -172,8 +171,7 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
 
 export function OnboardingSkillsPage() {
   const { t } = useTranslation();
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("skills", openWelcome);
+  const flow = useSourcesFirstFlow("skills");
   const updateUi = useSet(updateSourcesFirstUi$);
   const imported = flow.draft.importedWorkflowName;
 
@@ -205,7 +203,6 @@ export function OnboardingSkillsPage() {
       onBack={flow.goBack}
       contentWidth="single"
     >
-      {welcomeDialog}
       <SkillDropCard imported={imported} />
       <input
         id={SKILL_FILE_INPUT_ID}
@@ -255,8 +252,7 @@ function SlackPreview() {
 export function OnboardingSlackPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("slack", openWelcome);
+  const flow = useSourcesFirstFlow("slack");
   const connected = flow.draft.slackStatus === "connected";
 
   return (
@@ -292,7 +288,6 @@ export function OnboardingSlackPage() {
       onBack={flow.goBack}
       contentWidth="single"
     >
-      {welcomeDialog}
       <OnboardingPanel
         title={t(($) => {
           return $.onboarding.sourcesFirst.slack.rowTitle;

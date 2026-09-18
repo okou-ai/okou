@@ -20,14 +20,12 @@ import {
   ProductMark,
 } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
-import { useWelcomeHandoff } from "./onboarding-welcome-dialog.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 export function OnboardingIndustryPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("industry", openWelcome);
+  const flow = useSourcesFirstFlow("industry");
 
   return (
     <OnboardingStepLayout
@@ -47,7 +45,6 @@ export function OnboardingIndustryPage() {
       onBack={flow.goBack}
       contentWidth="grid"
     >
-      {welcomeDialog}
       <RadioGroup
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
@@ -137,8 +134,7 @@ function InvitedList({ invites }: { readonly invites: readonly string[] }) {
 export function OnboardingTeamPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("team", openWelcome);
+  const flow = useSourcesFirstFlow("team");
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
 
@@ -172,7 +168,6 @@ export function OnboardingTeamPage() {
       onBack={flow.goBack}
       contentWidth="single"
     >
-      {welcomeDialog}
       <OnboardingPanel
         title={t(($) => {
           return $.onboarding.sourcesFirst.team.panelTitle;
@@ -223,8 +218,7 @@ export function OnboardingTeamPage() {
 export function OnboardingExperiencePage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("experience", openWelcome);
+  const flow = useSourcesFirstFlow("experience");
   const experienced = flow.draft.experienced;
 
   // The answer decides the branch, so the next step is resolved from the
@@ -233,9 +227,7 @@ export function OnboardingExperiencePage() {
     const next = nextSourcesFirstStep("experience", flow.flow, experienced);
     if (next) {
       flow.goTo(next);
-      return;
     }
-    openWelcome();
   };
 
   return (
@@ -255,7 +247,6 @@ export function OnboardingExperiencePage() {
       primaryDisabled={experienced === null}
       onBack={flow.goBack}
     >
-      {welcomeDialog}
       <RadioGroup
         value={experienced === null ? "" : experienced ? "yes" : "no"}
         onValueChange={(value) => {
@@ -295,8 +286,7 @@ export function OnboardingExperiencePage() {
 export function OnboardingSubscriptionPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const { welcomeDialog, openWelcome } = useWelcomeHandoff();
-  const flow = useSourcesFirstFlow("subscription", openWelcome);
+  const flow = useSourcesFirstFlow("subscription");
   const provider = flow.draft.provider;
 
   const connectAndContinue = (): void => {
@@ -327,7 +317,6 @@ export function OnboardingSubscriptionPage() {
       onSecondary={flow.goNext}
       onBack={flow.goBack}
     >
-      {welcomeDialog}
       <RadioGroup
         value={provider ?? ""}
         onValueChange={(value) => {

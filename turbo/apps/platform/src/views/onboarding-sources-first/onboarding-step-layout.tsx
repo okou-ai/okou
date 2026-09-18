@@ -75,6 +75,7 @@ export function OnboardingStepLayout({
   secondaryLabel,
   onSecondary,
   onBack,
+  footnote,
   contentWidth = "pair",
   children,
 }: {
@@ -89,6 +90,8 @@ export function OnboardingStepLayout({
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly onBack?: () => void;
+  /** A line under the action, for a step that carries an offer or a note. */
+  readonly footnote?: ReactNode;
   readonly contentWidth?: OnboardingContentWidth;
   readonly children: ReactNode;
 }) {
@@ -107,10 +110,11 @@ export function OnboardingStepLayout({
         key={`${String(currentStep)}-${title}`}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6"
       >
-        {/* Every step starts on the same line, so the stepper and the cards
-            never move between steps. */}
-        <div className="flex w-full flex-1 items-start py-8">
-          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 lg:flex-row lg:items-start lg:gap-14 lg:pl-10">
+        {/* The step sits on one raised surface: the question on the left, the
+            cards that answer it grouped on the right. Every step starts on the
+            same line, so nothing moves as the flow advances. */}
+        <div className="flex w-full flex-1 items-start py-2">
+          <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-10 rounded-3xl border border-border/60 bg-background px-8 py-10 shadow-surface lg:flex-row lg:items-start lg:gap-14 lg:px-12">
             <div className="w-full shrink-0 lg:w-[380px]">
               {/* How far along you are, and the way back one step. The back
                   control sits in the gutter every step reserves for it, so the
@@ -143,7 +147,7 @@ export function OnboardingStepLayout({
                 {description}
               </p>
               {/* The step's one filled action, with its opt-out beside it. */}
-              <div className="mt-9 flex flex-wrap items-center gap-2">
+              <div className="mt-14 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   size="lg"
@@ -172,10 +176,15 @@ export function OnboardingStepLayout({
                   </Button>
                 ) : null}
               </div>
+              {footnote ? (
+                <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                  {footnote}
+                </p>
+              ) : null}
             </div>
             <div
               className={cn(
-                "w-full min-w-0 lg:flex-1",
+                "w-full min-w-0 lg:mt-20 lg:flex-1",
                 CONTENT_WIDTHS[contentWidth],
               )}
             >

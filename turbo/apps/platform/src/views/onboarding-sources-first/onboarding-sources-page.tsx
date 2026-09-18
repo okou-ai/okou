@@ -95,9 +95,7 @@ export function OnboardingSourcesPage() {
   const { t } = useTranslation();
   const ui = useGet(sourcesFirstUi$);
   const updateUi = useSet(updateSourcesFirstUi$);
-  const flow = useSourcesFirstFlow("sources", () => {
-    // The first step always has a next step; finishing is handled downstream.
-  });
+  const flow = useSourcesFirstFlow("sources");
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const justConnected = useGet(justConnectedSlugs$);
   const connectedSlugs: readonly ConnectorSlug[] =

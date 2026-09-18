@@ -16,7 +16,8 @@ export type SourcesFirstStep =
   | "experience"
   | "subscription"
   | "skills"
-  | "slack";
+  | "slack"
+  | "ready";
 
 export type SlackSetupStatus = "disconnected" | "installed" | "connected";
 
@@ -32,7 +33,7 @@ export interface SourcesFirstDraft {
   readonly importedWorkflowName: string | null;
   readonly slackStatus: SlackSetupStatus;
   readonly slackWorkspace: string;
-  /** Edited copy of the matched starting prompt, kept when the dialog closes. */
+  /** Edited copy of the matched starting prompt, kept across step changes. */
   readonly startingPromptDraft: string;
   /** `industry:source` the draft was generated from, so a later change re-seeds it. */
   readonly startingPromptKey: string;
@@ -68,14 +69,12 @@ interface SourcesFirstUi {
   readonly inviteEmail: string;
   /** File name waiting for import confirmation, null when no file is chosen. */
   readonly pendingSkillName: string | null;
-  readonly welcomeOpen: boolean;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
   searchOpen: false,
   inviteEmail: "",
   pendingSkillName: null,
-  welcomeOpen: false,
 });
 
 export const sourcesFirstUi$ = computed((get) => {
@@ -143,7 +142,7 @@ export function sourcesFirstSteps(
     experienced === true ? ["subscription", "skills"] : [];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
-  return [...base, ...experiencedSteps, ...slackStep];
+  return [...base, ...experiencedSteps, ...slackStep, "ready"];
 }
 
 /**

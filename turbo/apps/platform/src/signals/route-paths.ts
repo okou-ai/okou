@@ -64,6 +64,7 @@ export const ROUTES = {
   onboardingSubscription: "/onboarding/subscription",
   onboardingSkills: "/onboarding/skills",
   onboardingSlack: "/onboarding/slack",
+  onboardingReady: "/onboarding/ready",
   desktopAuthStart: "/desktop-auth/start",
   desktopAuthCallback: "/desktop-auth/callback",
   desktopAuthConsume: "/desktop-auth/consume",

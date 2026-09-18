@@ -4141,6 +4141,7 @@
       "documentTitles": {
         "experience": "Your AI experience",
         "industry": "Choose your field",
+        "ready": "Okou is ready",
         "skills": "Import your skills",
         "slack": "Add Okou to Slack",
         "sources": "Connect your work",
@@ -4587,7 +4588,7 @@
         "title": "Bring the people who do this work with you."
       },
       "welcome": {
-        "copy": "A first task, picked for your work.",
+        "copy": "Start with a first task, picked for the work you just connected.",
         "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
         "promptLabel": "Your starting prompt",
         "start": "Start with Okou",

@@ -20,6 +20,7 @@ const STEP_ROUTES: Readonly<Record<SourcesFirstStep, RoutePath>> = {
   subscription: ROUTES.onboardingSubscription,
   skills: ROUTES.onboardingSkills,
   slack: ROUTES.onboardingSlack,
+  ready: ROUTES.onboardingReady,
 };
 
 interface SourcesFirstFlowState {
@@ -29,7 +30,7 @@ interface SourcesFirstFlowState {
   readonly currentStep: number;
   readonly totalSteps: number;
   readonly goBack: (() => void) | undefined;
-  /** Moves to the next step, or opens the welcome handoff on the last one. */
+  /** Moves to the next step; the last step's action is its own. */
   readonly goNext: () => void;
   readonly goTo: (step: SourcesFirstStep) => void;
 }
@@ -40,7 +41,6 @@ interface SourcesFirstFlowState {
  */
 export function useSourcesFirstFlow(
   step: SourcesFirstStep,
-  onFinish: () => void,
 ): SourcesFirstFlowState {
   const flow = useGet(sourcesFirstFlow$);
   const draft = useGet(sourcesFirstDraft$);
@@ -66,9 +66,7 @@ export function useSourcesFirstFlow(
       const next = nextSourcesFirstStep(step, flow, draft.experienced);
       if (next) {
         goTo(next);
-        return;
       }
-      onFinish();
     },
     goTo,
   };
