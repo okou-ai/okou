@@ -189,13 +189,14 @@ const getConnectorListInner$ = computed(async (get) => {
   const result = await get(
     connectorList({ orgId: auth.orgId, userId: auth.userId }),
   );
-  const projection = await get(connectorClientProjection$);
+  const projection =
+    result.connectors.length > 0 ? await get(connectorClientProjection$) : null;
   return {
     status: 200 as const,
     body: {
       ...result,
       connectors: result.connectors.filter((connector) => {
-        return projection.allowsSlug(connector.slug);
+        return !projection || projection.allowsSlug(connector.slug);
       }),
     },
   };
@@ -204,10 +205,6 @@ const getConnectorListInner$ = computed(async (get) => {
 const getConnectorBySlugInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorsBySlugContract.get));
-  const projection = await get(connectorClientProjection$);
-  if (!projection.allowsSlug(params.connectorSlug)) {
-    return connectorClientUpgradeRequired();
-  }
   const connector = await get(
     connectorBySlug({
       orgId: auth.orgId,
@@ -218,6 +215,10 @@ const getConnectorBySlugInner$ = computed(async (get) => {
   if (!connector) {
     return notFound("Connector not found");
   }
+  const projection = await get(connectorClientProjection$);
+  if (!projection.allowsSlug(params.connectorSlug)) {
+    return connectorClientUpgradeRequired();
+  }
 
   return { status: 200 as const, body: connector };
 });
@@ -225,10 +226,6 @@ const getConnectorBySlugInner$ = computed(async (get) => {
 const getScopeDiffInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorScopeDiffContract.getScopeDiff));
-  const projection = await get(connectorClientProjection$);
-  if (!projection.allowsSlug(params.connectorSlug)) {
-    return connectorClientUpgradeRequired();
-  }
   const diff = await get(
     connectorScopeDiff({
       orgId: auth.orgId,
@@ -239,6 +236,10 @@ const getScopeDiffInner$ = computed(async (get) => {
   );
   if (!diff) {
     return notFound("Connector not found");
+  }
+  const projection = await get(connectorClientProjection$);
+  if (!projection.allowsSlug(params.connectorSlug)) {
+    return connectorClientUpgradeRequired();
   }
 
   return { status: 200 as const, body: diff };

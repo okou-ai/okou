@@ -220,9 +220,15 @@ const getConnectorCatalogInner$ = command(
     signal.throwIfAborted();
 
     const params = get(pathParamsOf(connectorCatalogContract.get));
-    const projection = await get(connectorClientProjection$);
+    const projection = await settleConnectorCatalogRead(
+      get(connectorClientProjection$),
+      signal,
+    );
+    if (!projection.ok) {
+      return connectorCatalogUnavailable();
+    }
     signal.throwIfAborted();
-    if (!projection.allowsSlug(params.connectorSlug)) {
+    if (!projection.value.allowsSlug(params.connectorSlug)) {
       return connectorClientUpgradeRequired();
     }
     const connector = await settleConnectorCatalogRead(
@@ -252,9 +258,15 @@ const getConnectorCatalogPermissionsInner$ = command(
     signal.throwIfAborted();
 
     const params = get(pathParamsOf(connectorCatalogContract.permissions));
-    const projection = await get(connectorClientProjection$);
+    const projection = await settleConnectorCatalogRead(
+      get(connectorClientProjection$),
+      signal,
+    );
+    if (!projection.ok) {
+      return connectorCatalogUnavailable();
+    }
     signal.throwIfAborted();
-    if (!projection.allowsSlug(params.connectorSlug)) {
+    if (!projection.value.allowsSlug(params.connectorSlug)) {
       return connectorClientUpgradeRequired();
     }
     const permissions = await settleConnectorCatalogRead(

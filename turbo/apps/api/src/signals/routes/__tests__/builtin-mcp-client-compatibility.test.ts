@@ -8,6 +8,8 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   connectorNoAuthGrantContract,
+  connectorScopeDiffContract,
+  connectorsBySlugContract,
   connectorsMainContract,
   connectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
@@ -178,6 +180,50 @@ describe("builtin MCP client compatibility", () => {
       [200],
     );
     expect(list.body.connectors).toStrictEqual([]);
+    const incompatibleReads = await Promise.all([
+      accept(accounts().connections({ headers, query: target }), [426]),
+      accept(
+        accounts().connection({
+          headers,
+          params: { connectionId },
+          query: target,
+        }),
+        [426],
+      ),
+      accept(
+        accounts().scopeDiff({
+          headers,
+          params: { connectionId },
+          query: { connectorSlug: target.connectorSlug },
+        }),
+        [426],
+      ),
+      accept(
+        accounts().inspect({
+          headers,
+          body: { selections: [{ target, connectionId }] },
+        }),
+        [426],
+      ),
+      accept(
+        setupApp({ context, routes })(connectorsBySlugContract).get({
+          headers,
+          params: { connectorSlug: target.connectorSlug },
+        }),
+        [426],
+      ),
+      accept(
+        setupApp({ context, routes })(connectorScopeDiffContract).getScopeDiff({
+          headers,
+          params: { connectorSlug: target.connectorSlug },
+        }),
+        [426],
+      ),
+    ]);
+    for (const result of incompatibleReads) {
+      expect(result.body.error.code).toBe("CONNECTOR_CLIENT_UPGRADE_REQUIRED");
+      expect(result.headers.get("Cache-Control")).toBe("no-store");
+    }
     await accept(
       accounts().setDefault({
         headers,

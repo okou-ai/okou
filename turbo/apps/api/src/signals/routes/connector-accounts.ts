@@ -82,9 +82,16 @@ const inspectInner$ = computed(async (get) => {
   if (!body.ok) {
     return body.response;
   }
+  const accounts = await listConnectorAccountsByIds(get(db$), {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    connectionIds: body.data.selections.map((selection) => {
+      return selection.connectionId;
+    }),
+  });
   if (
-    body.data.selections.some((selection) => {
-      return selection.target.kind === "builtin";
+    accounts.some((account) => {
+      return account.target.kind === "builtin";
     })
   ) {
     const projection = await get(connectorClientProjection$);
@@ -96,13 +103,6 @@ const inspectInner$ = computed(async (get) => {
       return connectorClientUpgradeRequired();
     }
   }
-  const accounts = await listConnectorAccountsByIds(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    connectionIds: body.data.selections.map((selection) => {
-      return selection.connectionId;
-    }),
-  });
   const accountsById = new Map(
     accounts.map((account) => {
       return [account.id, account];
@@ -158,12 +158,6 @@ const summariesInner$ = computed(async (get) => {
 const connectionsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(connectorAccountsContract.connections));
-  if (
-    query.kind === "builtin" &&
-    !(await get(connectorClientProjection$)).allowsTarget(query)
-  ) {
-    return connectorClientUpgradeRequired();
-  }
   const result = await listConnectorAccountsForTarget(get(db$), {
     orgId: auth.orgId,
     userId: auth.userId,
@@ -181,6 +175,12 @@ const connectionsInner$ = computed(async (get) => {
   if (result.kind === "missing") {
     return notFound("Connector target not found");
   }
+  if (
+    query.kind === "builtin" &&
+    !(await get(connectorClientProjection$)).allowsTarget(query)
+  ) {
+    return connectorClientUpgradeRequired();
+  }
   return {
     status: 200 as const,
     body: {
@@ -197,32 +197,28 @@ const connectionInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.connection));
   const query = get(queryOf(connectorAccountsContract.connection));
-  if (
-    query.kind === "builtin" &&
-    !(await get(connectorClientProjection$)).allowsTarget(query)
-  ) {
-    return connectorClientUpgradeRequired();
-  }
   const account = await getConnectorAccount(get(db$), {
     orgId: auth.orgId,
     userId: auth.userId,
     target: targetFromQuery(query),
     connectionId: params.connectionId,
   });
-  return account
-    ? { status: 200 as const, body: account }
-    : notFound("Connector account not found");
+  if (!account) {
+    return notFound("Connector account not found");
+  }
+  if (
+    query.kind === "builtin" &&
+    !(await get(connectorClientProjection$)).allowsTarget(query)
+  ) {
+    return connectorClientUpgradeRequired();
+  }
+  return { status: 200 as const, body: account };
 });
 
 const scopeDiffInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.scopeDiff));
   const query = get(queryOf(connectorAccountsContract.scopeDiff));
-  if (
-    !(await get(connectorClientProjection$)).allowsSlug(query.connectorSlug)
-  ) {
-    return connectorClientUpgradeRequired();
-  }
   const diff = await get(
     connectorScopeDiff({
       orgId: auth.orgId,
@@ -231,9 +227,15 @@ const scopeDiffInner$ = computed(async (get) => {
       selection: { kind: "exact", connectorId: params.connectionId },
     }),
   );
-  return diff
-    ? { status: 200 as const, body: diff }
-    : notFound("Connector account not found");
+  if (!diff) {
+    return notFound("Connector account not found");
+  }
+  if (
+    !(await get(connectorClientProjection$)).allowsSlug(query.connectorSlug)
+  ) {
+    return connectorClientUpgradeRequired();
+  }
+  return { status: 200 as const, body: diff };
 });
 
 const renameInner$ = command(
