@@ -5,7 +5,9 @@ import { stubTestTimezone } from "../../../__tests__/env-stub";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
+  holdProductionXResourceAdmissionForTest,
   holdXResourceAdmissionForTest,
+  withXResourceAdmissionScopeFixture,
   withXResourceClock,
 } from "../../../test-fixtures/x-resource-admission";
 import {
@@ -174,5 +176,70 @@ describe("X resource read retention", () => {
     }
     expect(completed.value.deleted).toBe(1);
     expect((await fixture.read()).rows).toStrictEqual(rows.slice(1));
+  });
+
+  it("cleans owned reads while another test scope holds admission", async () => {
+    const fixture = await historicalFixture([
+      { utcDay: "2026-09-15", resourceType: "post", resourceId: resourceId() },
+    ]);
+    // Infrastructure exception: HTTP cannot hold another worker's admission
+    // open. Its real lock must not block this test's explicitly owned rows.
+    const gate = await withXResourceAdmissionScopeFixture(
+      randomUUID(),
+      async () => {
+        return await holdXResourceAdmissionForTest(context.signal);
+      },
+    );
+    const completion = Promise.allSettled([gate.done]);
+    onTestFinished(async () => {
+      gate.release();
+      await completion;
+    });
+
+    const result = await fixture.cleanup(() => {
+      return new Date("2026-09-18T00:00:00.000Z");
+    });
+    expect(result.deleted).toBe(1);
+    expect((await fixture.read()).rows).toStrictEqual([]);
+    gate.release();
+    await gate.done;
+  });
+
+  it("preserves production admission and restores the enclosing test scope", async () => {
+    const fixture = await historicalFixture([
+      { utcDay: "2026-09-15", resourceType: "post", resourceId: resourceId() },
+    ]);
+    const other = await historicalFixture([
+      { utcDay: "2026-09-15", resourceType: "post", resourceId: resourceId() },
+    ]);
+    const clock = () => {
+      return new Date("2026-09-18T00:00:00.000Z");
+    };
+    const gate = await holdProductionXResourceAdmissionForTest(context.signal);
+    const completion = Promise.allSettled([gate.done]);
+    const pending = Promise.allSettled([
+      withXResourceAdmissionScopeFixture(undefined, async () => {
+        return await fixture.cleanup(clock);
+      }),
+    ]);
+    onTestFinished(async () => {
+      gate.release();
+      await completion;
+      await pending;
+    });
+    await expect.poll(gate.waiterCount).toBe(1);
+
+    // The production waiter and holder remain active. Shared setup must have
+    // restored this test's scope for its second owned cleanup to finish.
+    expect((await other.cleanup(clock)).deleted).toBe(1);
+    expect((await other.read()).rows).toStrictEqual([]);
+    gate.release();
+    await gate.done;
+    const [result] = await pending;
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+    expect(result.value.deleted).toBe(1);
+    expect((await fixture.read()).rows).toStrictEqual([]);
   });
 });

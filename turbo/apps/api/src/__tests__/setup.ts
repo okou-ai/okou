@@ -14,6 +14,7 @@ import { clearMockNow } from "../lib/time";
 import { server } from "../mocks/server";
 import { clearAllDetached } from "../signals/utils";
 import { withUsageEventCompactionScopeFixture } from "../test-fixtures/usage-event-compaction";
+import { withXResourceAdmissionScopeFixture } from "../test-fixtures/x-resource-admission";
 import {
   installApiTestConnectorCatalog,
   mockApiTestConnectorProviderConfiguration,
@@ -43,7 +44,9 @@ function createApiTestKmsClient(): SecretKmsClient {
 
 aroundEach(async (runTest) => {
   await withUsageEventCompactionScopeFixture(randomUUID(), async () => {
-    await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
+    await withXResourceAdmissionScopeFixture(randomUUID(), async () => {
+      await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
+    });
   });
 });
 
