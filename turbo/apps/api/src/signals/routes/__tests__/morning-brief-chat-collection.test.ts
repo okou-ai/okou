@@ -1042,6 +1042,10 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       mockNow(candidateDeadline(startedAt) - 100);
       await discovery.release();
       await agent.waitForBlocked();
+      // Arrival proves the real query is already in flight under the 100 ms
+      // server setting. Move the application clock to the same absolute
+      // boundary, but do not release the lock: PostgreSQL alone must end it.
+      mockNow(candidateDeadline(startedAt));
       const response = await accept(pending, [200]);
 
       expect(response.body).toMatchObject({

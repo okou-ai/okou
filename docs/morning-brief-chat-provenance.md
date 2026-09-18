@@ -268,11 +268,14 @@ stale content again. The limits worth stating:
   and a query-level observer proves the body SELECT did not start. A fresh
   request then reaches that exact SELECT and exposes `2s` lock, `5s` statement
   and `12s` transaction settings, so the absence check is not vacuous.
-- A separate case starts the per-thread transaction with 100 ms remaining and
-  leaves its Agent query blocked. PostgreSQL's `transaction_timeout` ends that
-  transaction without a test-side release; the route awaits cleanup, and a
-  following healthy request proves the pool remains usable. This is the real
-  server-side cancellation proof, distinct from clock-controlled equality.
+- A separate case starts the per-thread transaction with 100 ms remaining. Once
+  `pg_blocking_pids` proves its Agent query is in flight, the controlled
+  application clock advances to the same boundary, but the test never releases
+  the lock. PostgreSQL's `transaction_timeout` alone ends the transaction; the
+  checked-out client owns the resulting connection event, the route awaits
+  cleanup, and a following healthy request proves the pool remains usable. This
+  is the real server-side cancellation proof, distinct from merely discarding a
+  late result.
 - Final authority coverage holds the last external membership response, then
   blocks the subsequent canonical ownership query in PostgreSQL. Releasing it
   at exact whole-attempt equality withholds every item and identifier, and a
