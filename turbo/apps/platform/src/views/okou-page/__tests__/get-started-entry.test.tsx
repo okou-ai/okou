@@ -830,11 +830,11 @@ test("The workflow step ends by handing over the prompt itself", async () => {
   const steps = await screen.findByRole("dialog", {
     name: "One good run becomes something the team keeps",
   });
-  expect(
-    within(steps).getByText("Start from a template"),
-  ).toBeInTheDocument();
+  expect(within(steps).getByText("Start from a template")).toBeInTheDocument();
   expect(within(steps).getByText("Run it once")).toBeInTheDocument();
-  expect(within(steps).getByText("Save it, then give it a schedule")).toBeInTheDocument();
+  expect(
+    within(steps).getByText("Save it, then give it a schedule"),
+  ).toBeInTheDocument();
 
   click(buttonNamed("Give me one to try", steps));
 
