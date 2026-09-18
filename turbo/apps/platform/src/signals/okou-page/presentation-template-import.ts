@@ -98,15 +98,45 @@ function presentationTemplateImportPrompt(): string {
  * Repeating that decision here would give the run two answers that can
  * disagree, and the one in the guide is the one that read the file.
  *
- * Naming the catalog is what this message does have to carry. The guide's
- * presentation branch ends at `okou presentation-template publish`, which
- * writes to the presentation table; a template published there never reaches
- * the Custom pane, which reads the user template catalog. Its document branch
- * already publishes here and adds `--kind document` itself, so saying the
- * command once covers both without this message claiming a kind.
+ * Which skill reads the file and which command publishes it are absent for the
+ * same reason the deck's message leaves out the guide: they describe how the
+ * run works, not what the member asked for, and a message reciting them reads
+ * as a script written for someone else in the member's own thread.
+ * `customTemplateImportGuidance` carries them where only the run sees them.
  */
 function customTemplateImportPrompt(): string {
-  return "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
+  return "Analyse this file and save it as a reusable template.";
+}
+
+/**
+ * What the run has to be told and the member does not.
+ *
+ * Sent as the message's `additional_info` part, which reaches the agent's
+ * prompt and never the thread's visible text, so the correction below can be
+ * as specific as the run needs without the member reading instructions
+ * addressed to it.
+ *
+ * Naming the catalog is what this has to carry. The guide's presentation
+ * branch ends at `okou presentation-template publish`, which writes to the
+ * presentation table; a template published there never reaches the Custom
+ * pane, which reads the user template catalog. Its document branch already
+ * publishes here and adds `--kind document` itself, so saying the command once
+ * covers both without claiming a kind.
+ */
+function customTemplateImportGuidance(): string {
+  return [
+    "# Custom Template Import",
+    "The user imported this file from the Custom template pane:",
+    "- Analyse it with the `reverse-template` skill, which decides whether the file is a deck, a Word document, a PDF document or artwork and follows the branch that matches.",
+    "- Publish the result with `okou user-template publish` so it appears under Custom.",
+    "- Do not publish it with `okou presentation-template publish`. That is the command the guide's presentation branch names, and it writes to the other catalog, which the Custom pane never reads.",
+  ].join("\n");
+}
+
+/** One import's message: what the member reads, and what only the run reads. */
+interface TemplateImportMessage {
+  readonly prompt: string;
+  readonly additionalInfo: string | undefined;
 }
 
 /**
@@ -117,19 +147,25 @@ function customTemplateImportPrompt(): string {
  * sentence for whatever the input accepted, so inspecting the file here could
  * only start refusing something it accepts today.
  */
-function templateImportPrompt(args: {
+function templateImportMessage(args: {
   readonly file: File;
   readonly customTemplates: boolean;
-}): string | null {
+}): TemplateImportMessage | null {
   if (!args.customTemplates) {
-    return presentationTemplateImportPrompt();
+    return {
+      prompt: presentationTemplateImportPrompt(),
+      additionalInfo: undefined,
+    };
   }
   // The kind still decides whether the file can become a template at all, even
   // though the message no longer names it: a source matching no kind is one
   // this catalog cannot compile, and refusing it here costs the member nothing.
   return importedTemplateKind(args.file) === null
     ? null
-    : customTemplateImportPrompt();
+    : {
+        prompt: customTemplateImportPrompt(),
+        additionalInfo: customTemplateImportGuidance(),
+      };
 }
 
 /**
@@ -161,8 +197,8 @@ export const importPresentationTemplateDeck$ = command(
     // Decided before the upload so a file that cannot become a template is
     // refused while the user still has the picker open, rather than after the
     // bytes have been spent and a run has started.
-    const prompt = templateImportPrompt({ file, customTemplates });
-    if (prompt === null) {
+    const message = templateImportMessage({ file, customTemplates });
+    if (message === null) {
       toast.error(
         i18n.t(
           ($) => {
@@ -186,10 +222,15 @@ export const importPresentationTemplateDeck$ = command(
     if (!attached) {
       return false;
     }
-    set(signals.draft.setDraftInput$, prompt);
+    set(signals.draft.setDraftInput$, message.prompt);
 
     const action = await get(signals.submission.primaryAction$);
     signal.throwIfAborted();
-    return await set(signals.submission.submitCurrentInput$, action, signal);
+    return await set(
+      signals.submission.submitCurrentInput$,
+      action,
+      message.additionalInfo,
+      signal,
+    );
   },
 );
