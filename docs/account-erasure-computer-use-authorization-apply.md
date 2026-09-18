@@ -89,9 +89,9 @@ failed completion publish nothing.
 ## Post-authentication SQL inventory
 
 The inventory below is for the canonical chat Apply source in this change. It
-counts driver SQL statements, not BEGIN/COMMIT protocol messages. The first B1
-subject-lock statement includes the READ COMMITTED isolation guard introduced by
-#35245; there is no separate isolation probe.
+counts every SQL statement the driver issues, including `BEGIN` and `COMMIT` (or
+`ROLLBACK`). The first B1 subject-lock statement includes the READ COMMITTED
+isolation guard introduced by #35245; there is no separate isolation probe.
 
 Before the transaction, a live request performs exactly two statements:
 
@@ -102,6 +102,7 @@ The accepted transaction contains the following statements:
 
 | Phase                                                         |   Statements | Cardinality                               |
 | ------------------------------------------------------------- | -----------: | ----------------------------------------- |
+| `BEGIN ISOLATION LEVEL READ COMMITTED`                        |            1 | fixed per attempt                         |
 | Local deadlines                                               |            2 | fixed                                     |
 | Unlocked canonical identity                                   |            1 | fixed                                     |
 | B1 shared subject locks, with isolation folded into the first |       2 or 3 | same owner or distinct shared-Agent owner |
@@ -115,21 +116,23 @@ The accepted transaction contains the following statements:
 | Sidebar sequence UPSERT                                       |            1 | fixed                                     |
 | Sidebar event INSERT                                          |            1 | fixed                                     |
 | Exact request completion UPDATE                               |            1 | fixed                                     |
-| **Accepted transaction total**                                | **15 or 16** | subject cardinality                       |
-| **Accepted total including the two locators**                 | **17 or 18** | subject cardinality                       |
+| `COMMIT`                                                      |            1 | `ROLLBACK` replaces it on failure         |
+| **Accepted transaction total**                                | **17 or 18** | subject cardinality                       |
+| **Accepted total including the two locators**                 | **19 or 20** | subject cardinality                       |
 
 A closed subject stops after deadlines, identity, subject locks and the closure
-lookup: 6/7 statements in the transaction, or 8/9 including the two preflight
-reads. An initially missing or unauthorized identity uses three transaction
-statements, or five including preflight. A request missing or expired at its
-retained pin uses 11/12 transaction statements, or 13/14 including preflight,
+lookup: 8/9 statements in the transaction, or 10/11 including the two preflight
+reads. An initially missing or unauthorized identity uses five transaction
+statements, or seven including preflight. A request missing or expired at its
+retained pin uses 13/14 transaction statements, or 15/16 including preflight,
 and performs no mutation.
 
-The longest ownership-change retry fails at the caller-local thread re-read
-after 10/11 transaction statements. With the fixed three-attempt bound, two
-such failures followed by success use at most 37 statements for a same-owner
-Agent or 40 for a distinct shared owner, including the two unrepeated preflight
-reads. Database and request-pin failures are not retried by this ownership loop.
+The longest ownership-change retry reaches the caller-local thread re-read in a
+12/13-statement failed transaction, including its `BEGIN` and `ROLLBACK`. With
+the fixed three-attempt bound, two such failures followed by success use at most
+43 statements for a same-owner Agent or 46 for a distinct shared owner,
+including the two unrepeated preflight reads. Database and request-pin failures
+are not retried by this ownership loop.
 These are source-derived statement counts, not endpoint or production latency.
 
 ## Host and residual boundaries

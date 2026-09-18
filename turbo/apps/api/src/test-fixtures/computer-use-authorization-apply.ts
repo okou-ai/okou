@@ -25,6 +25,12 @@ function requestTokenHash(requestToken: string): string {
   return createHash("sha256").update(requestToken).digest("hex");
 }
 
+/**
+ * Infrastructure exception: locator-race cases intentionally mutate fields
+ * that have no production writer, so the original opaque token can no longer
+ * address the row through HTTP. This exact test-owned id read verifies only
+ * that Apply did not complete or relabel that moved row.
+ */
 export async function readComputerUseAuthorizationRequestByIdFixture(
   requestId: string,
 ): Promise<{
