@@ -797,10 +797,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
       args.featureSwitchContext,
     ),
     introVideoEnabled,
-    customConnectorMcpEnabled: isFeatureEnabled(
-      FeatureSwitchKey.CustomConnectorMcp,
-      args.featureSwitchContext,
-    ),
+    customConnectorMcpEnabled: true,
     triggerSource: args.command.triggerSource ?? "web",
     cloudBrowserEnabled: args.cloudBrowserEnabled,
   };

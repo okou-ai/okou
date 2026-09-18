@@ -63,10 +63,6 @@ import {
   type StoredCustomConnectorOAuthState,
 } from "./connector-oauth-state.service";
 import {
-  customConnectorMcpDisabledResponse,
-  isCustomConnectorMcpEnabled,
-} from "./custom-connector-mcp-feature.service";
-import {
   type ConnectorConnectionMutationResolution,
   replaceConnectorConnection,
   resolveConnectorConnectionMutation,
@@ -516,15 +512,6 @@ function buildCustomConnectorOAuth2AuthorizationUrl(args: {
   return url.toString();
 }
 
-function customConnectorOAuthMcpIsDisabled(
-  connector: CustomConnectorRow,
-  featureContext: FeatureSwitchContext,
-): boolean {
-  return (
-    connector.kind === "mcp" && !isCustomConnectorMcpEnabled(featureContext)
-  );
-}
-
 function isCustomOAuthConnector(
   connector: CustomConnectorRow,
 ): connector is CustomConnectorRow & {
@@ -837,11 +824,6 @@ function automaticNoAuthAgentAuthorizationFailure(
         `Authentication connected, but agent authorization failed: ${authorization.message}`,
       );
     }
-    case "mcpFeatureDisabled": {
-      return badRequestMessage(
-        "Authentication connected, but MCP custom connector management is not enabled",
-      );
-    }
   }
 }
 
@@ -982,13 +964,6 @@ export const startCustomConnectorOAuth2$ = command(
     if (isIntegrationManagedCustomConnector(connector) && !args.feishuContext) {
       return integrationManagedCustomConnectorMutationForbidden();
     }
-    const featureContext = await get(
-      userFeatureSwitchContext(args.orgId, args.userId),
-    );
-    signal.throwIfAborted();
-    if (customConnectorOAuthMcpIsDisabled(connector, featureContext)) {
-      return customConnectorMcpDisabledResponse();
-    }
     if (automaticOAuth && !args.automaticOAuthClient) {
       return badRequestMessage(
         "Automatic OAuth client identity is unavailable",
@@ -998,6 +973,10 @@ export const startCustomConnectorOAuth2$ = command(
     if (customOAuth) {
       prepared = prepareCustomOAuthStart(connector, args);
     } else if (automaticOAuth && args.automaticOAuthClient) {
+      const featureContext = await get(
+        userFeatureSwitchContext(args.orgId, args.userId),
+      );
+      signal.throwIfAborted();
       const automatic = await prepareAutomaticOAuthStart(
         {
           db: set(writeDb$),
@@ -1124,9 +1103,6 @@ export const startCustomConnectorAutomaticOAuthReauthorization$ = command(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-    if (customConnectorOAuthMcpIsDisabled(connector, featureContext)) {
-      return customConnectorMcpDisabledResponse();
-    }
     const db = set(writeDb$);
     const connection = await loadConnection({
       db,

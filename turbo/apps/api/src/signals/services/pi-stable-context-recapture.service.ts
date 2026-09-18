@@ -112,10 +112,7 @@ function featurePromptInputs(
       FeatureSwitchKey.IntroVideo,
       featureContext,
     ),
-    customConnectorMcpEnabled: isFeatureEnabled(
-      FeatureSwitchKey.CustomConnectorMcp,
-      featureContext,
-    ),
+    customConnectorMcpEnabled: true,
   };
 }
 

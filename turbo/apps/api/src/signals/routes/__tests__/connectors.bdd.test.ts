@@ -2273,9 +2273,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       queryInjections: [],
       authMode: "none" as const,
     };
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const http = await connectorsApi.createCustomConnector(
       admin,
       httpDefinition,
@@ -2431,9 +2428,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("uses exact reconnect semantics for HTTP and MCP custom connectors", async () => {
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const definitions = [
       manualHttpCustomConnectorCreateBody({
         displayName: "BDD HTTP Account Mutation",
@@ -3243,7 +3237,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     await connectorsApi.deleteCustomConnector(admin, connector.id);
   });
 
-  it("reuses confidential OAuth for MCP and gates callback writes", async () => {
+  it("reuses confidential OAuth for MCP and connects the agent", async () => {
     mockEnv("APP_URL", "https://app.okou.test");
     const provider = mockCustomConnectorOAuth2Provider(context);
     const bdd = createBddApi(context);
@@ -3252,12 +3246,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const member = bdd.user({
       orgId: admin.orgId,
       orgRole: "org:member",
-    });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
-    await connectorsApi.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
     });
     const agent = await bdd.createAgent(member, {
       displayName: "BDD MCP OAuth Agent",
@@ -3354,32 +3342,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     expect(connected).toMatchObject({ connected: true });
     expectNoVisibleSecret(connected, clientSecret);
 
-    const blockedCallbackUrl = await connectorsApi.startCustomConnectorOAuth2(
-      member,
-      created.id,
-    );
-    await connectorsApi.updateFeatureSwitches(member, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
-    const blockedCallback =
-      await connectorsApi.completeCustomConnectorOAuth2CallbackResult({
-        code: "bdd-mcp-oauth-blocked-code",
-        state: stateFromAuthorizationUrl(blockedCallbackUrl),
-      });
-    expect(blockedCallback.body).toStrictEqual({
-      status: "error",
-      message: "MCP custom connector management is not enabled",
-    });
-    expect(provider.tokenBodies).toHaveLength(1);
-
-    const blockedStart = await connectorsApi.requestStartCustomConnectorOAuth2(
-      member,
-      created.id,
-      [403],
-    );
-    expectApiError(blockedStart.body);
-    expect(blockedStart.body.error.code).toBe("FORBIDDEN");
-
     await connectorsApi.deleteDefaultCustomConnectorAccount(member, created.id);
     await connectorsApi.deleteCustomConnector(admin, created.id);
     await bdd.deleteAgent(member, agent.agentId);
@@ -3396,9 +3358,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const admin = bdd.user({ orgRole: "org:admin" });
     const agent = await bdd.createAgent(admin, {
       displayName: "BDD Automatic OAuth Agent",
-    });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
     });
     const connector = await connectorsApi.createCustomConnector(admin, {
       kind: "mcp",
@@ -3480,9 +3439,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     const admin = bdd.user({ orgRole: "org:admin" });
     const agent = await bdd.createAgent(admin, {
       displayName: "BDD Automatic auth Agent",
-    });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
     });
     const connector = await connectorsApi.createCustomConnector(admin, {
       kind: "mcp",
@@ -3611,9 +3567,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       registration: "cimd",
     });
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const definition = {
       kind: "mcp" as const,
       displayName: "BDD Automatic Callback Binding",
@@ -3686,9 +3639,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       registration: "dcr",
     });
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const connector = await connectorsApi.createCustomConnector(admin, {
       kind: "mcp",
       displayName: "BDD Automatic DCR",
@@ -3773,9 +3723,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         dcrTokenEndpointAuthMethod: tokenEndpointAuthMethod,
       });
       const admin = createBddApi(context).user({ orgRole: "org:admin" });
-      await connectorsApi.updateFeatureSwitches(admin, {
-        [FeatureSwitchKey.CustomConnectorMcp]: true,
-      });
       const connector = await connectorsApi.createCustomConnector(admin, {
         kind: "mcp",
         displayName: `BDD Automatic DCR ${tokenEndpointAuthMethod}`,
@@ -3824,9 +3771,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       issuerParameterSupported: false,
     });
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const connector = await connectorsApi.createCustomConnector(admin, {
       kind: "mcp",
       displayName: "BDD Automatic Discovery Fallback",
@@ -3862,9 +3806,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       synchronizeAuthorizationServerDiscovery: true,
     });
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const connector = await connectorsApi.createCustomConnector(admin, {
       kind: "mcp",
       displayName: "BDD Concurrent Automatic DCR",
@@ -3892,9 +3833,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const connectorBody = {
       kind: "mcp" as const,
       displayName: "BDD Temporary Automatic OAuth",
@@ -4036,9 +3974,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       mockEnv("APP_URL", "https://app.okou.ai");
       const provider = mockAutomaticMcpOAuthProvider(context, providerOptions);
       const admin = createBddApi(context).user({ orgRole: "org:admin" });
-      await connectorsApi.updateFeatureSwitches(admin, {
-        [FeatureSwitchKey.CustomConnectorMcp]: true,
-      });
       const connector = await connectorsApi.createCustomConnector(admin, {
         kind: "mcp",
         displayName: "BDD Rejected Automatic OAuth",
@@ -4079,9 +4014,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       challengeScope: "read",
     });
     const admin = createBddApi(context).user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const connector = await connectorsApi.createCustomConnector(admin, {
       kind: "mcp",
       displayName: "BDD Automatic DCR Scope Conflict",
@@ -4124,9 +4056,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     mockEnv("APP_URL", "https://app.okou.test");
     const bdd = createBddApi(context);
     const admin = bdd.user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const definition = {
       kind: "mcp" as const,
       displayName: "BDD Automatic OAuth",
@@ -6459,24 +6388,13 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     ).resolves.toStrictEqual([]);
   });
 
-  it("manages MCP definitions and keeps feature-off operations access-reducing", async () => {
+  it("manages MCP definitions, credentials, and agent access", async () => {
     const bdd = createBddApi(context);
     bdd.acceptAgentStorageWrites();
     const admin = bdd.user({ orgRole: "org:admin" });
     const initialDefinition = manualMcpConnectorBody({
       displayName: "BDD MCP Management",
       endpoint: "https://mcp-management.example.test/server",
-    });
-    const disabledCreate = await connectorsApi.requestCreateCustomConnector(
-      admin,
-      initialDefinition,
-      [403],
-    );
-    expectApiError(disabledCreate.body);
-    expect(disabledCreate.body.error.code).toBe("FORBIDDEN");
-
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
     });
     const rejectedPublicMcp = await connectorsApi.requestCreateCustomConnector(
       admin,
@@ -6567,9 +6485,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "Custom connector protocol kind cannot be changed",
     );
 
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: false,
-    });
     await expect(
       connectorsApi.readCustomConnector(admin, created.id),
     ).resolves.toMatchObject({
@@ -6581,35 +6496,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       created.id,
       {
         ...movedDefinition,
-        displayName: "BDD MCP Renamed While Disabled",
+        displayName: "BDD MCP Renamed",
       },
     );
     expect(renamed).toMatchObject({
-      displayName: "BDD MCP Renamed While Disabled",
+      displayName: "BDD MCP Renamed",
       endpoint: movedDefinition.endpoint,
       storageVersion: 1,
     });
-
-    const blockedDefinition = await connectorsApi.requestUpdateCustomConnector(
-      admin,
-      created.id,
-      {
-        ...movedDefinition,
-        endpoint: "https://mcp-management.example.test/v3/server",
-      },
-      [403],
-    );
-    expectApiError(blockedDefinition.body);
-    expect(blockedDefinition.body.error.code).toBe("FORBIDDEN");
-
-    const valueWrite = await connectorsApi.requestSetCustomConnectorValues(
-      admin,
-      created.id,
-      [{ key: "secret", kind: "secret", value: "replacement" }],
-      [403],
-    );
-    expectApiError(valueWrite.body);
-    expect(valueWrite.body.error.code).toBe("FORBIDDEN");
 
     await expect(
       connectorsApi.updateAgentCustomConnectors(
@@ -6619,16 +6513,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         "remove",
       ),
     ).resolves.not.toContain(created.id);
-    const blockedGrant = await connectorsApi.requestUpdateAgentCustomConnectors(
-      admin,
-      agent.agentId,
-      [created.id],
-      [403],
-      "add",
-    );
-    expectApiError(blockedGrant.body);
-    expect(blockedGrant.body.error.code).toBe("FORBIDDEN");
-
     await connectorsApi.deleteDefaultCustomConnectorAccount(admin, created.id);
     await expect(
       connectorsApi.readCustomConnector(admin, created.id),
@@ -6640,9 +6524,6 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
   it("rejects unsafe MCP endpoints and protected transport headers", async () => {
     const bdd = createBddApi(context);
     const admin = bdd.user({ orgRole: "org:admin" });
-    await connectorsApi.updateFeatureSwitches(admin, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
 
     const hybrid = await connectorsApi.requestCreateCustomConnectorRaw(admin, {
       ...manualMcpConnectorBody({

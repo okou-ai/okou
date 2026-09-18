@@ -23,6 +23,7 @@ import {
 } from "../services/mcp-chat-threads.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { getMcpChatMessages } from "../services/mcp-chat-messages.service";
+import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
 import { awaitWithSignal, settle } from "../utils";
 
 function unavailable() {
@@ -145,6 +146,16 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
     {
       readScope: MCP_READ_SCOPE,
       scopes: principal.scopes,
+      searchMessages: async (input, readSignal) => {
+        return await get(
+          searchMcpChatMessages(
+            { db: set(writeDb$), bucket: env("R2_USER_STORAGES_BUCKET_NAME") },
+            principal,
+            input,
+            readSignal,
+          ),
+        );
+      },
       getMessages: async (input, readSignal) => {
         return await get(
           getMcpChatMessages(

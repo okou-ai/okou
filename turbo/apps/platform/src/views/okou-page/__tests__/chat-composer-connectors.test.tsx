@@ -1,6 +1,5 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
@@ -969,7 +968,6 @@ test("Add or remove a connected connector for the active agent", async () => {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.CustomConnectorMcp]: false },
   });
 
   await loadComposer();
@@ -977,9 +975,7 @@ test("Add or remove a connected connector for the active agent", async () => {
   await user.click(screen.getByLabelText("Add GitHub"));
   await expect(screen.findByLabelText("Remove GitHub")).resolves.toBeVisible();
   await user.click(screen.getByLabelText("Remove DeepWiki"));
-  await waitFor(() => {
-    expect(screen.queryByLabelText(/DeepWiki/u)).toBeNull();
-  });
+  await expect(screen.findByLabelText("Add DeepWiki")).resolves.toBeVisible();
   expect(fixture.builtinAuthorizationUpdates).toStrictEqual([
     {
       agentId: SCOUT_AGENT_ID,

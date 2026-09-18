@@ -84,7 +84,6 @@ import {
   publishCustomConnectorUserInvalidationAfterCommit,
   type CapturedConnectorClientInvalidationAbort,
 } from "./connector-client-invalidation.service";
-import { isCustomConnectorMcpEnabled } from "./custom-connector-mcp-feature.service";
 import {
   type ConnectorConnectionMetadataArgs,
   replaceConnectorConnection,
@@ -632,32 +631,6 @@ function credentialContractChanged(args: {
     args.existing.authMode !== args.definition.authMode ||
     !credentialFieldsEqual(args.existing.fields, args.definition.fields) ||
     !oauthConfigsEqual(args.existing.oauthConfig, args.nextOAuthConfig)
-  );
-}
-
-function mcpDefinitionUpdateIsAccessNeutralOrReducing(args: {
-  readonly existing: CustomConnectorMcpRow;
-  readonly definition: ValidatedMcpDefinition;
-  readonly nextOAuthConfig: CustomConnectorOAuthConfigRow | null;
-  readonly requestedStorageVersion: number | undefined;
-}): boolean {
-  return (
-    args.existing.endpoint === args.definition.endpoint &&
-    args.existing.transport === args.definition.transport &&
-    args.existing.authMode === args.definition.authMode &&
-    jsonValuesEqual(args.existing.fields, args.definition.fields) &&
-    jsonValuesEqual(
-      args.existing.headerInjections,
-      args.definition.headerInjections,
-    ) &&
-    jsonValuesEqual(
-      args.existing.queryInjections,
-      args.definition.queryInjections,
-    ) &&
-    args.existing.skillMarkdown === args.definition.skillMarkdown &&
-    oauthConfigsEqual(args.existing.oauthConfig, args.nextOAuthConfig) &&
-    (args.requestedStorageVersion === undefined ||
-      args.requestedStorageVersion >= args.existing.storageVersion)
   );
 }
 
@@ -1891,24 +1864,12 @@ export const createCustomConnector$ = command(
       readonly input: CreateCustomConnectorBody;
     },
     signal: AbortSignal,
-  ): Promise<CustomConnectorRow | BadRequestResponse | ForbiddenResponse> => {
+  ): Promise<CustomConnectorRow | BadRequestResponse> => {
     const canonicalInput = definitionFromCreateInput(args.input);
     const writeDb = set(writeDb$);
     const v = validateDefinition(canonicalInput);
     if (isBadRequest(v)) {
       return v;
-    }
-    const featureSwitchContext =
-      v.kind === "mcp"
-        ? await get(userFeatureSwitchContext(args.orgId, args.userId))
-        : null;
-    signal.throwIfAborted();
-    if (
-      v.kind === "mcp" &&
-      featureSwitchContext &&
-      !isCustomConnectorMcpEnabled(featureSwitchContext)
-    ) {
-      return forbidden("MCP custom connector management is not enabled");
     }
     const invalidPermissionBundle = await validatePermissionBundleRef(
       writeDb,
@@ -1930,9 +1891,9 @@ export const createCustomConnector$ = command(
 
     let encryptedClientSecret: string | null = null;
     if (oauthConfigUpdate.kind === "upsert" && oauthConfigUpdate.clientSecret) {
-      const featureContext =
-        featureSwitchContext ??
-        (await get(userFeatureSwitchContext(args.orgId, args.userId)));
+      const featureContext = await get(
+        userFeatureSwitchContext(args.orgId, args.userId),
+      );
       signal.throwIfAborted();
       encryptedClientSecret = await encryptStoredSecretValue(
         oauthConfigUpdate.clientSecret,
@@ -2301,60 +2262,6 @@ function prepareCustomConnectorUpdate(args: {
     : { definition, oauthConfigUpdate };
 }
 
-function mcpUpdateRequiresEnabledFeature(args: {
-  readonly existing: CustomConnectorRow;
-  readonly definition: ValidatedDefinition;
-  readonly oauthConfigUpdate: ValidatedOAuthConfigUpdate;
-  readonly comparisonNextOAuthConfig: CustomConnectorOAuthConfigRow | null;
-  readonly requestedStorageVersion: number | undefined;
-  readonly featureEnabled: boolean;
-}): boolean {
-  if (
-    args.featureEnabled ||
-    args.existing.kind !== "mcp" ||
-    args.definition.kind !== "mcp"
-  ) {
-    return false;
-  }
-  if (
-    args.oauthConfigUpdate.kind === "upsert" &&
-    args.oauthConfigUpdate.clientSecret !== null
-  ) {
-    return true;
-  }
-  return !mcpDefinitionUpdateIsAccessNeutralOrReducing({
-    existing: args.existing,
-    definition: args.definition,
-    nextOAuthConfig: args.comparisonNextOAuthConfig,
-    requestedStorageVersion: args.requestedStorageVersion,
-  });
-}
-
-function customConnectorUpdateFeatureForbiddenMessage(args: {
-  readonly existing: CustomConnectorRow;
-  readonly definition: ValidatedDefinition;
-  readonly oauthConfigUpdate: ValidatedOAuthConfigUpdate;
-  readonly comparisonNextOAuthConfig: CustomConnectorOAuthConfigRow | null;
-  readonly requestedStorageVersion: number | undefined;
-  readonly featureSwitchContext: NonNullable<FeatureSwitchContextArg> | null;
-}): string | null {
-  if (
-    mcpUpdateRequiresEnabledFeature({
-      existing: args.existing,
-      definition: args.definition,
-      oauthConfigUpdate: args.oauthConfigUpdate,
-      comparisonNextOAuthConfig: args.comparisonNextOAuthConfig,
-      requestedStorageVersion: args.requestedStorageVersion,
-      featureEnabled:
-        args.featureSwitchContext === null ||
-        isCustomConnectorMcpEnabled(args.featureSwitchContext),
-    })
-  ) {
-    return "MCP custom connector management is not enabled";
-  }
-  return null;
-}
-
 function resolveCustomConnectorUpdateWrite(args: {
   readonly existing: CustomConnectorRow;
   readonly definition: ValidatedDefinition;
@@ -2437,38 +2344,15 @@ export const updateCustomConnectorDefinition$ = command(
     if (invalidPermissionBundle) {
       return invalidPermissionBundle;
     }
-    const featureSwitchContext =
-      existingConnector.kind === "mcp"
-        ? await get(userFeatureSwitchContext(args.orgId, args.userId))
-        : null;
-    signal.throwIfAborted();
     let encryptedClientSecret =
       existingConnector.oauthConfig?.encryptedClientSecret ?? null;
-    const comparisonNextOAuthConfig = nextOAuthConfigForUpdate({
-      connector: existingConnector,
-      orgId: args.orgId,
-      update: prepared.oauthConfigUpdate,
-      encryptedClientSecret,
-    });
-    const featureForbiddenMessage =
-      customConnectorUpdateFeatureForbiddenMessage({
-        existing: existingConnector,
-        definition: prepared.definition,
-        oauthConfigUpdate: prepared.oauthConfigUpdate,
-        comparisonNextOAuthConfig,
-        requestedStorageVersion: args.input.storageVersion,
-        featureSwitchContext,
-      });
-    if (featureForbiddenMessage) {
-      return forbidden(featureForbiddenMessage);
-    }
     if (
       prepared.oauthConfigUpdate.kind === "upsert" &&
       prepared.oauthConfigUpdate.clientSecret
     ) {
-      const featureContext =
-        featureSwitchContext ??
-        (await get(userFeatureSwitchContext(args.orgId, args.userId)));
+      const featureContext = await get(
+        userFeatureSwitchContext(args.orgId, args.userId),
+      );
       signal.throwIfAborted();
       encryptedClientSecret = await encryptStoredSecretValue(
         prepared.oauthConfigUpdate.clientSecret,
@@ -3090,12 +2974,6 @@ export const setCustomConnectorValues$ = command(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-    if (
-      connector.kind === "mcp" &&
-      !isCustomConnectorMcpEnabled(featureSwitchContext)
-    ) {
-      return forbidden("MCP custom connector management is not enabled");
-    }
     const values = validateValueInputs({ connector, values: args.values });
     if (isBadRequest(values)) {
       return values;
@@ -3597,8 +3475,7 @@ const authorizeProposalAgent$ = command(
     }
     if (
       added.status === "customConnectorPermissionSelectionRequired" ||
-      added.status === "invalidCustomConnectorPermissions" ||
-      added.status === "mcpFeatureDisabled"
+      added.status === "invalidCustomConnectorPermissions"
     ) {
       return undefined;
     }

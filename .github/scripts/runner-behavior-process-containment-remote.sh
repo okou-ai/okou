@@ -87,6 +87,16 @@ assert_env_value NODE_EXTRA_CA_CERTS /usr/local/share/ca-certificates/vm0-proxy-
 assert_env_value SSL_CERT_FILE /etc/ssl/certs/ca-certificates.crt
 assert_env_value REQUESTS_CA_BUNDLE /etc/ssl/certs/ca-certificates.crt
 assert_env_value CARGO_HTTP_CAINFO /etc/ssl/certs/ca-certificates.crt
+assert_env_value RUSTUP_HOME /usr/local/rustup
+# Exercise the preinstalled toolchain through the actual agent tool environment,
+# outside any project that could select a different toolchain.
+mkdir "$marker/rust-toolchain-smoke"
+(
+  cd "$marker/rust-toolchain-smoke"
+  rustc --version
+  cargo --version
+  cargo fmt --version
+)
 if sudo find /run/vm0-exec -mindepth 1 -maxdepth 2 -print -quit | grep -q .; then
   echo "Guest Agent startup left a generic environment script" >&2
   exit 1
