@@ -13220,7 +13220,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, enabled.runId, [200]);
 
     await setPaidToolDisabled(context, actor, "web-search", true);
-    await setPaidToolDisabled(context, actor, "video-rendering", true);
+    await setPaidToolDisabled(context, actor, "video-generation", true);
     await connectors.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PaidToolControls]: false,
     });
@@ -13232,7 +13232,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     const rolloutOffClaim = await api.claimRunnerJob(rolloutOff.runId);
     expect(
       rolloutOffClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
-    ).toBe('["video-rendering","web-search"]');
+    ).toBe('["video-generation","web-search"]');
     await api.requestCancelRun(actor, rolloutOff.runId, [200]);
   });
 

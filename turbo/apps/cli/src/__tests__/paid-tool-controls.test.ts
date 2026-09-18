@@ -302,7 +302,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   it("allows voice generation when only unrelated and future tools are disabled", async () => {
     vi.stubEnv(
       DISABLED_PAID_TOOLS_ENV_VAR,
-      '["image-generation", "video-generation", "avatar-video-generation", "video-rendering", "future-tool"]',
+      '["image-generation", "video-generation", "avatar-video-generation", "future-tool"]',
     );
     let submissions = 0;
     server.use(
@@ -337,7 +337,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     async ({ args, tool }) => {
       vi.stubEnv(
         DISABLED_PAID_TOOLS_ENV_VAR,
-        '["image-generation", "video-rendering"]',
+        '["image-generation", "video-generation"]',
       );
       await expect(run([...args, "--help"])).rejects.toMatchObject({
         code: "commander.helpDisplayed",

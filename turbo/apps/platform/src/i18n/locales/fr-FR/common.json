@@ -5862,10 +5862,6 @@
           "description": "Créez des vidéos avec les modèles intégrés.",
           "name": "Génération de vidéos"
         },
-        "video-rendering": {
-          "description": "Effectuez le rendu de compositions vidéo dans le cloud.",
-          "name": "Rendu vidéo"
-        },
         "voice-generation": {
           "description": "Créez des paroles avec les voix intégrées.",
           "name": "Génération de voix"

@@ -19,8 +19,7 @@ rows; user and organization deletion remove their respective rows.
 
 The shared catalog includes `web-search`, `people-search`, `scrape`, `finance`,
 `maps`, `seo`, `social`, `image-recognition`, `image-generation`,
-`video-generation`, `voice-generation`, `avatar-video-generation`, and
-`video-rendering`.
+`video-generation`, `voice-generation`, and `avatar-video-generation`.
 
 ## Settings and run semantics
 
@@ -55,35 +54,25 @@ Provider discovery reports when a built-in option is disabled and preserves
 connector alternatives. Free help, prompt compilation, template authoring,
 resource catalogs and existing result observation remain available.
 
-| Tool ID                   | Paid execution covered                                                         | Free branches preserved                                |
-| ------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| `image-generation`        | Built-in image generation, image-batch start and hidden batch worker           | Prompt compilation, provider and connector guidance    |
-| `video-generation`        | Built-in video generation and hidden intro Video Agent submission              | Template authoring, provider guidance and agent status |
-| `voice-generation`        | Built-in voice generation and hidden intro narration                           | Provider and connector guidance                        |
-| `avatar-video-generation` | Built-in avatar video and hidden intro presenter generation                    | Avatar/voice catalogs and connector guidance           |
-| `video-rendering`         | Managed cloud render, repeated submission and resume that replays a submission | Local dry-run, status and resume without replay        |
+| Tool ID                   | Paid execution covered                                               | Free branches preserved                             |
+| ------------------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
+| `image-generation`        | Built-in image generation, image-batch start and hidden batch worker | Prompt compilation, provider and connector guidance |
+| `video-generation`        | Built-in video generation                                            | Template authoring and provider guidance            |
+| `voice-generation`        | Built-in voice generation                                            | Provider and connector guidance                     |
+| `avatar-video-generation` | Built-in avatar video                                                | Avatar/voice catalogs and connector guidance        |
 
 Checks precede uploads, artifact preparation and execution output writes. A
-render resume may read the existing job to determine whether recovery would
-submit again; it checks the preference before that submission. A disabled batch
-worker does not create a misleading completion file.
-
-The full intro Video Agent creates a video under `video-generation`. It does
-not require the separate narration or presenter controls, which apply to their
-own paid commands. Controlled compositions use the render control and whichever
-speech/presenter commands they actually invoke. A local recording/camera flow
-does not acquire a paid dependency solely because it is an intro video.
+disabled batch worker does not create a misleading completion file.
 
 The creation UI explains disabled choices and links to settings. Explicit
 built-in image/video creation checks current owner preferences before sending;
 a failed read does not assume the tools are enabled. Selected templates can
 also be discussed without generating anything, so a template alone does not
-block ordinary messages. Intro route hints describe the relevant default;
-the CLI checks the actual route selected by the agent. Confirmed settings saves
-refresh creation hints, and workspace changes do not retain the previous
-owner's preference state. New proactive UI follows the UI feature switch;
-saved restrictions still apply to explicit creation and CLI execution while
-the switch is off.
+block ordinary messages. The CLI checks the actual paid command selected by
+the agent. Confirmed settings saves refresh creation hints. Workspace changes
+do not retain the previous owner's preference state. New proactive UI follows
+the UI feature switch; saved restrictions still apply to explicit creation and
+CLI execution while the switch is off.
 
 ## Compatibility and activation
 
@@ -99,6 +88,17 @@ creation checks, which read preferences even while the UI switch is off.
 An older API rejects writes for unfamiliar IDs, and an older pinned
 CLI ignores those IDs; already prepared jobs therefore do not gain media
 enforcement retroactively.
+
+Intro Video and managed cloud rendering were retired in
+[#35196](https://github.com/vm0-ai/okou/pull/35196). Their hidden commands and
+`okou video render` are gone, so `video-rendering` is no longer in the supported
+catalog or settings. No database migration or snapshot rewrite is needed:
+stored preferences and API read lists already carry arbitrary string IDs, and
+current CLI commands do not act on this retired ID. Retaining existing rows
+preserves restrictions for pinned CLI versions that still recognize the ID;
+normal membership, user, and organization cleanup still applies. API writes
+validate the current catalog; an older settings client trying to change the
+retired tool must refresh. The UI remains behind the default-off feature switch.
 
 An absent or empty variable means no disabled tools for contexts without this
 policy. Unknown string IDs are ignored by older CLIs, allowing later catalog

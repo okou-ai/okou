@@ -5862,10 +5862,6 @@
           "description": "Crea vídeos con modelos integrados.",
           "name": "Generación de vídeos"
         },
-        "video-rendering": {
-          "description": "Renderiza composiciones de vídeo en la nube.",
-          "name": "Renderizado de vídeo"
-        },
         "voice-generation": {
           "description": "Crea audio con voces integradas.",
           "name": "Generación de voz"

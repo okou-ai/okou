@@ -5787,10 +5787,6 @@
           "description": "내장 모델로 동영상을 만듭니다.",
           "name": "동영상 생성"
         },
-        "video-rendering": {
-          "description": "클라우드에서 동영상 구성을 렌더링합니다.",
-          "name": "동영상 렌더링"
-        },
         "voice-generation": {
           "description": "내장 음성으로 말소리를 만듭니다.",
           "name": "음성 생성"

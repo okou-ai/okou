@@ -5787,10 +5787,6 @@
           "description": "組み込みモデルで動画を生成します。",
           "name": "動画生成"
         },
-        "video-rendering": {
-          "description": "クラウドで動画をレンダリングします。",
-          "name": "動画レンダリング"
-        },
         "voice-generation": {
           "description": "組み込みの音声で読み上げを生成します。",
           "name": "音声生成"

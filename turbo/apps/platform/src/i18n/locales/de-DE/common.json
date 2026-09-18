@@ -5801,10 +5801,6 @@
           "description": "Videos mit integrierten Modellen erstellen.",
           "name": "Videoerzeugung"
         },
-        "video-rendering": {
-          "description": "Videokompositionen in der Cloud rendern.",
-          "name": "Video-Rendering"
-        },
         "voice-generation": {
           "description": "Sprache mit integrierten Stimmen erstellen.",
           "name": "Spracherzeugung"

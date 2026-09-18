@@ -15,7 +15,6 @@ export const PAID_TOOL_IDS = [
   "video-generation",
   "voice-generation",
   "avatar-video-generation",
-  "video-rendering",
 ] as const;
 
 export const paidToolIdSchema = z.enum(PAID_TOOL_IDS);

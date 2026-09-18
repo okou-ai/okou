@@ -5787,10 +5787,6 @@
           "description": "Buat video dengan model bawaan.",
           "name": "Pembuatan video"
         },
-        "video-rendering": {
-          "description": "Render komposisi video di cloud.",
-          "name": "Rendering video"
-        },
         "voice-generation": {
           "description": "Buat ucapan dengan suara bawaan.",
           "name": "Pembuatan suara"

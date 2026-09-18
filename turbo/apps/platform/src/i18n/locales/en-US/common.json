@@ -5793,10 +5793,6 @@
           "description": "Create videos with built-in models.",
           "name": "Video generation"
         },
-        "video-rendering": {
-          "description": "Render video compositions in the cloud.",
-          "name": "Video rendering"
-        },
         "voice-generation": {
           "description": "Create speech with built-in voices.",
           "name": "Voice generation"
