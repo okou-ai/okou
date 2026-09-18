@@ -11,15 +11,19 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { clearMockNow, now } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   pauseMorningBriefAutomation,
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
 import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
-import { rejectEmailOutboxCompletion } from "../../../test-fixtures/email-outbox";
 import {
+  holdEmailOutboxRow,
+  rejectEmailOutboxCompletion,
+} from "../../../test-fixtures/email-outbox";
+import {
+  ageEmailOutboxItem,
   deleteOwnedChatThread,
   rejectMorningBriefDeliveryInsert,
   holdDeliveryAgentRow,
@@ -39,6 +43,7 @@ import {
   revokeMemberMorningBriefDeliveries,
   seedMemberEmailAddress,
   seedUnrelatedEmailIntent,
+  spendEmailOutboxAttempts,
   suppressEmailAddress,
   unsubscribeMember,
 } from "../../../test-fixtures/morning-brief-delivery";
@@ -225,6 +230,18 @@ interface ProviderCalls {
 }
 
 /** Every argument list the shared sender handed the Resend SDK boundary. */
+function membershipRequestOrgId(request: unknown): string {
+  if (
+    typeof request === "object" &&
+    request !== null &&
+    "organizationId" in request &&
+    typeof request.organizationId === "string"
+  ) {
+    return request.organizationId;
+  }
+  throw new Error("Expected an organization membership request");
+}
+
 function emailSends(): readonly {
   readonly payload: Record<string, unknown>;
   readonly options: { readonly idempotencyKey?: string };
@@ -653,36 +670,205 @@ describe("Morning Brief native delivery", () => {
     expect(anonymous.body).toBe("Not found");
   });
 
-  it("keeps a generic sibling and expiry cleanup moving when the owner lookup fails", async () => {
-    const f = await fixture();
+  it("keeps a healthy native and generic sibling moving after an unavailable owner", async () => {
+    const unavailable = await fixture();
+    const healthy = await fixture();
+    const outsideScope = await fixture();
     scriptSlack();
     scriptProviders();
-    const attemptId = await generateAcceptedResult(f);
-    await accept(deliver(f, attemptId), [200]);
-    const [queued] = await readOutbox(f);
 
-    // A generic producer's item, unrelated to Morning Brief.
-    const siblingId = await seedUnrelatedEmailIntent("sibling@example.test");
+    for (const owner of [unavailable, healthy, outsideScope]) {
+      const attemptId = await generateAcceptedResult(owner);
+      await accept(deliver(owner, attemptId), [200]);
+    }
+    const [unavailableItem] = await readOutbox(unavailable);
+    const [healthyItem] = await readOutbox(healthy);
+    const [outsideItem] = await readOutbox(outsideScope);
+    const genericId = await seedUnrelatedEmailIntent("sibling@example.test");
+    if (!unavailableItem || !healthyItem || !outsideItem) {
+      throw new Error("Expected one native email intent per owner");
+    }
 
-    // The remote membership lookup fails for the native owner only.
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new Error("clerk unavailable"),
+    // Fix deterministic FIFO order without changing any payload or deadline:
+    // unavailable A is older than healthy B, while C stays outside this drain.
+    await ageEmailOutboxItem(unavailableItem.id, 120_000);
+    await ageEmailOutboxItem(healthyItem.id, 60_000);
+    const originalUnavailable = await readEmailOutboxRow(unavailableItem.id);
+    const originalOutside = await readEmailOutboxRow(outsideItem.id);
+
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const membershipRead = membershipReads.getMockImplementation();
+    if (!membershipRead) {
+      throw new Error("Expected the membership fixture boundary");
+    }
+    const checkedOrgIds: string[] = [];
+    membershipReads.mockClear();
+    membershipReads.mockImplementation((...args) => {
+      const orgId = membershipRequestOrgId(args[0]);
+      checkedOrgIds.push(orgId);
+      return orgId === unavailable.orgId
+        ? Promise.reject(new Error("clerk unavailable"))
+        : membershipRead(...args);
+    });
+
+    await drainEmailOutbox(
+      [unavailableItem.id, healthyItem.id, genericId],
+      context.signal,
     );
 
-    await drainEmailOutbox([queued!.id, siblingId], context.signal);
+    // A's failed authority read cannot authorize B, but it also cannot consume
+    // another iteration's preflight. B receives its own exact-owner lookup.
+    expect(checkedOrgIds).toStrictEqual([unavailable.orgId, healthy.orgId]);
+    await expect(readEmailOutboxRow(unavailableItem.id)).resolves.toStrictEqual(
+      originalUnavailable,
+    );
+    await expect(readEmailOutboxRow(healthyItem.id)).resolves.toMatchObject({
+      status: "sent",
+      attempts: 1,
+    });
+    await expect(readEmailOutboxRow(genericId)).resolves.toMatchObject({
+      status: "sent",
+      attempts: 1,
+    });
+    await expect(readEmailOutboxRow(outsideItem.id)).resolves.toStrictEqual(
+      originalOutside,
+    );
+    expect(
+      emailSends().map((send) => {
+        return send.payload["to"];
+      }),
+    ).toStrictEqual([`${healthy.userId}@example.test`, "sibling@example.test"]);
 
-    // The native intent is neither sent nor failed: it keeps its state and its
-    // attempt count for a later pass.
-    const held = await readEmailOutboxRow(queued!.id);
-    expect(held?.status).toBe("pending");
-    expect(held?.attempts).toBe(0);
+    // A later scoped pass retries only A. Its unresolved evidence still does
+    // not consume an attempt or rewrite S2's payload/key fence.
+    checkedOrgIds.length = 0;
+    membershipReads.mockClear();
+    await drainEmailOutbox(
+      [unavailableItem.id, healthyItem.id, genericId],
+      context.signal,
+    );
+    expect(checkedOrgIds).toStrictEqual([unavailable.orgId]);
+    await expect(readEmailOutboxRow(unavailableItem.id)).resolves.toStrictEqual(
+      originalUnavailable,
+    );
+    expect(emailSends()).toHaveLength(2);
+  });
 
-    // The unrelated producer still went out.
-    const drainedSibling = await readEmailOutboxRow(siblingId);
-    expect(drainedSibling?.status).toBe("sent");
-    const sends = emailSends();
-    expect(sends).toHaveLength(1);
-    expect(sends[0]?.payload["to"]).toBe("sibling@example.test");
+  it("resolves expired and exhausted native intents without a remote owner read", async () => {
+    const expired = await fixture();
+    const exhausted = await fixture();
+    scriptSlack();
+    scriptProviders();
+
+    for (const owner of [expired, exhausted]) {
+      const attemptId = await generateAcceptedResult(owner);
+      await accept(deliver(owner, attemptId), [200]);
+    }
+    const [expiredItem] = await readOutbox(expired);
+    const [exhaustedItem] = await readOutbox(exhausted);
+    if (!expiredItem || !exhaustedItem) {
+      throw new Error("Expected native email intents");
+    }
+
+    // Freeze the boundary so equality with the original 15-minute lifetime is
+    // deterministic, then put the other row exactly at the attempt ceiling.
+    const boundary = now();
+    mockNow(boundary);
+    await ageEmailOutboxItem(expiredItem.id, 15 * 60 * 1000);
+    await spendEmailOutboxAttempts(exhaustedItem.id, 3);
+
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    membershipReads.mockRejectedValue(new Error("clerk unavailable"));
+
+    await drainEmailOutbox([expiredItem.id, exhaustedItem.id], context.signal);
+
+    // Both outcomes are local and fail closed; an unavailable authority cannot
+    // keep either row alive or make the drain contact Resend.
+    expect(membershipReads).not.toHaveBeenCalled();
+    await expect(readEmailOutboxRow(expiredItem.id)).resolves.toMatchObject({
+      status: "failed",
+      attempts: 0,
+      lastError: "Email outbox item expired before delivery",
+      providerIdempotencyKey: null,
+      providerRequest: null,
+    });
+    await expect(readEmailOutboxRow(exhaustedItem.id)).resolves.toMatchObject({
+      status: "failed",
+      attempts: 3,
+      lastError: "Email outbox item exhausted its delivery attempts",
+      providerIdempotencyKey: null,
+      providerRequest: null,
+    });
+    expect(emailSends()).toHaveLength(0);
+  });
+
+  it("retries a sibling with exact evidence when a worker holds the preflight candidate", async () => {
+    const claimed = await fixture();
+    const healthy = await fixture();
+    scriptSlack();
+    scriptProviders();
+
+    for (const owner of [claimed, healthy]) {
+      const attemptId = await generateAcceptedResult(owner);
+      await accept(deliver(owner, attemptId), [200]);
+    }
+    const [claimedItem] = await readOutbox(claimed);
+    const [healthyItem] = await readOutbox(healthy);
+    if (!claimedItem || !healthyItem) {
+      throw new Error("Expected native email intents");
+    }
+    await ageEmailOutboxItem(claimedItem.id, 120_000);
+    await ageEmailOutboxItem(healthyItem.id, 60_000);
+
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const membershipRead = membershipReads.getMockImplementation();
+    if (!membershipRead) {
+      throw new Error("Expected the membership fixture boundary");
+    }
+    const checkedOrgIds: string[] = [];
+    membershipReads.mockClear();
+    membershipReads.mockImplementation((...args) => {
+      checkedOrgIds.push(membershipRequestOrgId(args[0]));
+      return membershipRead(...args);
+    });
+
+    // This is the real FOR UPDATE / SKIP LOCKED race: the preflight sees A,
+    // while the claim cannot take A and initially selects B.
+    const held = await holdEmailOutboxRow(claimedItem.id, context.signal);
+    await drainEmailOutbox([claimedItem.id, healthyItem.id], context.signal);
+
+    // The mismatched A evidence is never borrowed. A is excluded for this pass,
+    // then B is reselected only after the boundary resolves B's own authority.
+    expect(checkedOrgIds).toStrictEqual([claimed.orgId, healthy.orgId]);
+    await expect(readEmailOutboxRow(claimedItem.id)).resolves.toMatchObject({
+      status: "pending",
+      attempts: 0,
+    });
+    await expect(readEmailOutboxRow(healthyItem.id)).resolves.toMatchObject({
+      status: "sent",
+      attempts: 1,
+    });
+    expect(emailSends()).toHaveLength(1);
+    expect(emailSends()[0]?.payload["to"]).toBe(
+      `${healthy.userId}@example.test`,
+    );
+
+    // Once the concurrent claim releases, A can make progress under A's own
+    // evidence in a later bounded pass.
+    await held.release();
+    checkedOrgIds.length = 0;
+    membershipReads.mockClear();
+    await drainEmailOutbox([claimedItem.id], context.signal);
+    expect(checkedOrgIds).toStrictEqual([claimed.orgId]);
+    await expect(readEmailOutboxRow(claimedItem.id)).resolves.toMatchObject({
+      status: "sent",
+      attempts: 1,
+    });
+    expect(emailSends()).toHaveLength(2);
   });
 
   it("refuses a native send after the recipient rejoins under a new membership", async () => {

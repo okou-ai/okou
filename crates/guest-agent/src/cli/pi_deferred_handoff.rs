@@ -50,19 +50,23 @@ fn request_timeout(deadline_at: i64) -> Result<Duration, AgentError> {
     Ok(Duration::from_millis(remaining_ms).min(HANDOFF_REQUEST_MAX_TIMEOUT))
 }
 
-/// Fetch and persist authenticated deferred handoff bytes before child spawn.
+/// Whether this Pi launch requires authenticated deferred preparation.
+pub(super) fn is_required(runtime: &CliRuntimeConfig<'_>) -> Result<bool, AgentError> {
+    Ok(deferred_launch_config(runtime)?.is_some())
+}
+
+/// Fetch authenticated deferred handoff bytes without publishing them.
 ///
-/// The HTTP client owns `OKOU_API_TOKEN`. The child receives only the path to
-/// the resulting 0600 file, so ordinary user/agent tokens cannot be confused
-/// with the Sandbox control credential and the private credential never enters
-/// the child's environment.
+/// The caller owns execution controls for the whole future. Keeping publication
+/// separate lets that owner revalidate cancellation, its original absolute
+/// deadline, and heartbeat state after the final response body is collected.
 pub(super) async fn prepare_for_cli(
     runtime: &CliRuntimeConfig<'_>,
     http: &HttpClient,
-) -> Result<(), AgentError> {
-    let Some(config) = deferred_launch_config(runtime)? else {
-        return Ok(());
-    };
+) -> Result<Vec<u8>, AgentError> {
+    let config = deferred_launch_config(runtime)?.ok_or_else(|| {
+        AgentError::Execution("Deferred Pi handoff preparation was not required".to_string())
+    })?;
     if config.api_first_turn.run_id.as_str() != runtime.run_id.as_ref() {
         return Err(AgentError::Execution(
             "Deferred Pi handoff run identity mismatch".to_string(),
@@ -122,8 +126,28 @@ pub(super) async fn prepare_for_cli(
         }
     }
 
+    Ok(payload)
+}
+
+/// Publish already authenticated handoff bytes to the private child boundary.
+pub(super) fn publish_for_cli(
+    runtime: &CliRuntimeConfig<'_>,
+    payload: &[u8],
+) -> Result<(), AgentError> {
     let path = runtime.pi_deferred_handoff_file.as_ref();
     paths::ensure_parent_dir(path)?;
-    paths::write_private(path, &payload)?;
+    paths::write_private(path, payload)?;
     Ok(())
+}
+
+/// Remove a prepared boundary file when pre-spawn control ownership wins.
+pub(super) fn discard_for_cli(runtime: &CliRuntimeConfig<'_>) {
+    if let Err(error) = std::fs::remove_file(runtime.pi_deferred_handoff_file.as_ref())
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        guest_telemetry::log_warn!(
+            "sandbox:guest-agent",
+            "Failed to remove deferred Pi handoff after pre-spawn control: {error}"
+        );
+    }
 }

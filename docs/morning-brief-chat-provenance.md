@@ -149,23 +149,36 @@ attempt:
 | `orgId` / `userId` | The authenticated caller. Never accepted as input.                               |
 | `membershipId`     | The immutable Clerk membership generation. A removal and rejoin issues a new id. |
 | `installationId`   | The canonical Morning Brief installation this attempt speaks for.                |
+| `automationId`     | The exact enabled daily-delivery automation inside that installation.            |
 | `agentId`          | The Agent that installation runs on.                                             |
-| `chatThreadId`     | The destination thread, excluded from its own collection.                        |
+| `chatThreadId`     | The nullable destination identity, including the decision that none exists yet.  |
 
 Before any envelope is released, `morningBriefScopeIsCurrent` re-derives all of
-it live: the subjects are still open, the member still holds **that same**
-membership generation, the canonical brief is still **that same** installed and
-enabled installation on **that same** Agent, and the Agent is still visible to
-them. A different enabled installation, a membership that left and rejoined, and
-a brief Agent that became private under another owner all withhold the payload.
-The same function runs once at admission, so an admitted scope is one the
+it live. It first observes the immutable membership generation through Clerk,
+with no database transaction or lock held across that network wait. It then
+opens one short local transaction: sorted shared erasure admission comes first,
+followed by the existing canonical migration-state reader and Brief-Agent
+visibility read. That final local decision compares the exact installation,
+automation, Agent and nullable destination. A changed `null`/non-`null`
+destination is a changed binding; absence is not a wildcard.
+
+The transaction is the local linearization point. A subject closure committed
+while Clerk was answering is visible to its erasure admission. A closure that
+arrives after admission waits for the short local decision to finish. The
+canonical reader and Agent check run while those subject locks remain held, and
+no network call runs in the transaction. A different enabled automation or
+installation, a rebound destination, a membership that left and rejoined, and a
+Brief Agent that became private under another owner all withhold the payload.
+The same function runs once before collection, so an admitted scope is one the
 release check would accept; that costs one extra membership read per attempt and
 is deliberate.
 
-This is admission and release fencing, not instantaneous revocation. Work
-already executing inside PostgreSQL is not retracted, and a collection that
-already returned a body is not recalled by a later change — the guarantee is
-that nothing is _released_ under authority that no longer holds.
+This does not promise a Clerk/PostgreSQL atomic transaction. Clerk can revoke a
+membership after its answer, and local authority can change after the local
+transaction commits. Work already executing inside PostgreSQL is not retracted,
+and a collection that already returned a body is not recalled by a later
+change. The guarantee is an external observation followed by a final local
+fence, not retroactive recall.
 
 The per-thread erasure admission, the source-Agent and thread-owner checks and
 the thread row lock below are unchanged and still authoritative for the thread
@@ -219,16 +232,25 @@ transition. The guarantee is about which side of the boundary the data came
 from, not about revoking data afterwards.
 
 Erasure uses the shared subject admission. The collector writes nothing, but a
-closed subject must not release that subject's Chat content either, and taking
-the same shared admission means a closure waits for an in-flight collection
-instead of completing while one is still reading. A whole-owner invalidation
-discards the entire payload rather than part of it.
+closed subject must not release that subject's Chat content either. Per-thread
+reads retain their own short admission transactions. At whole-owner release,
+the final local transaction reacquires admission **after** the last Clerk wait
+and retains it through canonical binding and Brief-Agent validation. A closure
+that already committed is denied; a later closure waits for that decision. A
+whole-owner invalidation discards the entire payload rather than part of it.
 
 ### What the tests do and do not establish
 
 Every authority and budget case runs through the registered preview route with a
-real request, a real PostgreSQL wait and the real authorizer; only Clerk's own
-HTTP answers are doubled. The limits worth stating:
+real request, real PostgreSQL state and the real authorizer; only Clerk's own
+HTTP answers are doubled. Automation replacement and nullable destination
+rebinding are committed while a request is blocked at its real thread-read
+boundary. The erasure case holds the final Clerk answer, commits a dormant B1
+closure through the lifecycle projector, and only then releases the answer. B1
+has no public closure ingress, so that uniquely owned closure is the necessary
+fixture exception. Removing the automation/destination comparisons or the
+post-Clerk local transaction makes the corresponding route regression release
+stale content again. The limits worth stating:
 
 - Suspension points are the ones a request really has — the Agent row lock, the
   thread row lock and the live membership lookup. There is no test that stalls

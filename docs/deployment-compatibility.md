@@ -135,6 +135,30 @@ protocol change is required. Previously copied URLs remain valid under their
 existing policy. Owner resolution of an old organization alias continues after
 switching it to Only me; recipients lose access.
 
+#### CLI artifact content reads
+
+`GET /api/artifact-references/:reference/read` requires `artifact:read` and
+authorizes content using the same owner, current organization membership,
+public publication, revocation, and selected-version rules as the App viewer.
+It returns `{ url, filename, contentType }` for the authorized delivery. The
+existing typed owner resolver and sharing-management endpoints retain their
+owner checks.
+
+`okou artifact download` and `okou web download-file` use this endpoint for
+short and long artifact references, including same-origin App URLs. They fetch
+the returned delivery URL without forwarding the agent token. Hosted HTML
+downloads contain the entry document; complete owned-site source downloads
+remain the responsibility of `okou host clone`. Raw file IDs and authenticated
+web download URLs keep their existing `file:read` path.
+
+Deploy the additive API endpoint before selecting the matching CLI artifact.
+Older pinned CLIs keep their existing owner-only behavior against the new API;
+the new CLI needs the new endpoint and the existing `artifact:read` capability,
+issued under `privateArtifacts`. No tolerant reader for an older API, new
+capability, database migration, visibility change, or Worker protocol is added.
+Keep the endpoint in serving and supported rollback APIs while runs pinned to
+the new CLI remain active.
+
 #### Private attachment uploads
 
 CLI artifact output qualifies hostless references with its configured app origin
@@ -165,9 +189,10 @@ retain their original long URL, and no bulk rewrite or database migration runs.
 
 CLI owner resolution adds optional `kind=file|html` to the existing reference
 endpoint. Each mode requires its existing read capability and denies recipient
-access; the browser resolver retains its sharing authorization. Deploy the
-matching API and CLI before relying on short references in clone/download or
-generation-input commands. Existing file IDs and deployment IDs remain valid.
+access; generation inputs, owned-site cloning, and older pinned download
+commands use these modes. Current download commands use the content-read
+endpoint described above. Deploy the matching API and CLI before relying on
+short references. Existing file IDs and deployment IDs remain valid.
 An older API cannot resolve new version-2 indexes; keep capable readers in
 serving and rollback targets once the new writer is enabled.
 
@@ -1997,8 +2022,10 @@ The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v
 launch discriminator without a Runner profile and three sparse ownership/intent/lease
 tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
 expand migration replaces the launch CHECK as NOT VALID; a separate bounded
-validation transaction scans retained runs before API promotion. New runtime
-writers are absent and `piDeferredSandbox` is org-scoped and off, including staff.
+validation transaction scans retained runs before API promotion. The
+`piDeferredSandbox` default remains off, but that default does not establish the
+state of every organization or staff override; historical v4 attempts and their
+retained obligations must remain readable.
 
 After future v4 activation, disabling starts must retain phase/epoch-aware readers,
 consumer/recovery, cancellation, capacity counting, credential retention and erasure.
@@ -2034,17 +2061,21 @@ Its optional Runner header is ignored by older APIs; older Runners remain
 excluded from v4 jobs. The release endpoint and Runner use one strict explicit
 outcome contract: a missing, malformed or unknown outcome retains the receipt
 instead of fabricating a stale acknowledgement. No mixed-response bridge is
-required while the feature is non-GA: no production publisher is enabled and
-`piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
-Runner. The outer Pi launch-config v2 contains a new versioned continuation slot.
-The co-built Guest uses its private Sandbox control token to assemble the handoff
-in a 0600 run-scoped file and passes only an additive path variable to the CLI.
-An older CLI fails its legacy ordinary-token read; a newer CLI under an older
-Guest fails because the authenticated file is absent. Both combinations stop
-before the RPC boundary. Enablement therefore requires the capable API,
-Runner/Guest and newly captured commit-addressed CLI.
-Drain existing v4 intents, leases and release receipts before rolling any of
-those readers back below that floor. No switch is enabled by the consumer
+provided for this non-GA path. New admission remains default-off and the
+user-reported shutdown is the current operational boundary, but historical
+production attempts under #34795 mean retained v4 obligations may still exist.
+The outer Pi launch-config v2 contains a new versioned continuation slot. The
+co-built Guest uses its private Sandbox control token to assemble the handoff in
+a 0600 run-scoped file and passes only an additive path variable to the CLI. The
+entire pre-spawn request and response-body wait stays under the existing user
+cancellation token, original absolute execution deadline and heartbeat terminal
+semantics; a winning control removes unpublished/published startup files and
+starts no child. An older CLI fails its legacy ordinary-token read; a newer CLI
+under an older Guest fails because the authenticated file is absent. Both
+combinations stop before the RPC boundary. Enablement therefore requires the
+capable API, Runner/Guest and newly captured commit-addressed CLI.
+Drain existing v4 intents, leases, claims and release receipts before rolling any
+of those readers back below that floor. No switch is enabled by the consumer
 implementation.
 
 ## Email outbox provider replay and send-time expiry (#34645, #34695)
