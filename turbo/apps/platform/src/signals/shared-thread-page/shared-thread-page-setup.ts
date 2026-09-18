@@ -13,6 +13,7 @@ import {
 } from "../../views/shared-thread-page/shared-thread-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { apiClient$ } from "../api-client.ts";
+import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { pathParams$ } from "../route.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -34,7 +35,18 @@ export const setupSharedThreadPage$ = command(
     if (result.status === 200) {
       const messages: SharedDisplayThread["messages"][number][] = [];
       const richMessages: (typeof result.body.messages)[number][] = [];
-      for (const message of result.body.messages) {
+      for (const source of result.body.messages) {
+        const message = {
+          ...source,
+          attachments: source.attachments?.map((attachment) => {
+            return {
+              ...attachment,
+              preview: createAttachmentPreviewSignals(attachment.url, {
+                contentType: attachment.contentType,
+              }),
+            };
+          }),
+        };
         if (message.role !== "assistant") {
           messages.push(message);
           continue;

@@ -249,6 +249,7 @@ export const revalidateMorningBriefStoredGenerationSources$ = command(
           installation.kind === "connected"
             ? {
                 botToken: installation.botToken,
+                workspaceId: installation.workspaceId,
                 slackUserId: installation.slackUserId,
               }
             : null,

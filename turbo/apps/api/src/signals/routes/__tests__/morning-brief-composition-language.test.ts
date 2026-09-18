@@ -54,7 +54,6 @@ const store = createStore();
 const CANONICAL_TARGET = "CLAUDE.md";
 const INSTRUCTIONS_MAX_BYTES = 64 * 1024;
 const STORAGE_PHASE_MS = 5000;
-const COLLECTION_PHASE_MS = 45_000;
 
 afterEach(() => {
   clearMockNow();
@@ -854,22 +853,79 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
   });
 
   describe("the absolute storage deadline", () => {
-    async function composeWithReadAt(elapsedMs: number) {
+    const timedOut = {
+      result: "incomplete",
+      reason: "language-context-unavailable",
+      detail: "timed-out",
+    } as const;
+
+    function archiveReads(storage: StorageBoundary): readonly string[] {
+      return storage.reads.filter((key) => {
+        return key.endsWith("/archive.tar.gz");
+      });
+    }
+
+    async function composeNoTargetAfterParseAt(elapsedMs: number) {
+      const storage = installStorageBoundary();
+      const member = await briefMember();
+      await publishInstructions(member, "Write in Finnish.");
+      storage.replace(
+        "/manifest.json",
+        manifestOf([{ path: "NOTES.md", size: 4 }]),
+      );
+      const base = now();
+      mockNow(base);
+      storage.beforeRead("/manifest.json", () => {
+        // This is the nearest real external boundary to synchronous decode,
+        // JSON parse and target filtering. The pure production admission
+        // helper covers the exact post-parse clock edge.
+        mockNow(base + elapsedMs);
+      });
+      const body = await compose(member, new Date(base).toISOString());
+      return { body, storage };
+    }
+
+    it.each([
+      ["before", STORAGE_PHASE_MS - 1, true],
+      ["at", STORAGE_PHASE_MS, false],
+      ["after", STORAGE_PHASE_MS + 10, false],
+    ] as const)(
+      "releases no-target absence only when manifest parsing finishes %s the deadline",
+      async (_boundary, elapsedMs, accepted) => {
+        const { body, storage } = await composeNoTargetAfterParseAt(elapsedMs);
+
+        if (accepted) {
+          expect(body.result).toBe("composed");
+          if (body.result !== "composed") {
+            return;
+          }
+          expect(body.composition.language?.instructions).toMatchObject({
+            state: "no-target",
+          });
+        } else {
+          expect(body).toStrictEqual(timedOut);
+        }
+        expect(archiveReads(storage)).toStrictEqual([]);
+      },
+    );
+
+    async function composeAfterExtractionAt(elapsedMs: number) {
       const storage = installStorageBoundary();
       const member = await briefMember();
       await publishInstructions(member, "Write in Finnish.");
       const base = now();
       mockNow(base);
       storage.beforeRead("/archive.tar.gz", () => {
-        // The storage phase timer is a real timer and has not fired: only the
-        // absolute clock says this successful response is too late.
+        // The route cannot yield inside synchronous extraction; this storage
+        // response is its nearest real boundary, while the production helper
+        // pins equality for the check immediately after extraction.
         mockNow(base + elapsedMs);
       });
       return await compose(member, new Date(base).toISOString());
     }
 
-    it("accepts a response that arrives just before the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS - 1);
+    it("accepts extraction just before the deadline", async () => {
+      const body = await composeAfterExtractionAt(STORAGE_PHASE_MS - 1);
 
       expect(body.result).toBe("composed");
       if (body.result !== "composed") {
@@ -880,55 +936,54 @@ describe("POST /api/morning-brief/collection-preview/compose — Agent language"
       });
     });
 
-    it("expires a response that arrives exactly at the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS);
-
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
-      });
+    it("expires extraction exactly at the deadline", async () => {
+      await expect(
+        composeAfterExtractionAt(STORAGE_PHASE_MS),
+      ).resolves.toStrictEqual(timedOut);
     });
 
-    it("expires a response that arrives after the deadline", async () => {
-      const body = await composeWithReadAt(STORAGE_PHASE_MS + 10);
-
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
-      });
+    it("expires extraction after the deadline", async () => {
+      await expect(
+        composeAfterExtractionAt(STORAGE_PHASE_MS + 10),
+      ).resolves.toStrictEqual(timedOut);
     });
 
-    /**
-     * The storage phase is the tighter of its own five seconds and what is
-     * left of the collection budget, and once that is spent it stops asking
-     * storage for anything else.
-     */
-    it("expires on the collection budget and stops reading storage", async () => {
+    it("joins held storage work when the caller cancels", async () => {
       const storage = installStorageBoundary();
       const member = await briefMember();
       await publishInstructions(member, "Write in Danish.");
-      const base = now();
-      mockNow(base);
-      storage.beforeRead("/manifest.json", () => {
-        // Barely a second of the storage phase is gone, but the collection
-        // phase this read has to finish inside is over.
-        mockNow(base + COLLECTION_PHASE_MS);
+      const controller = new AbortController();
+      const cancellation = new Error("language storage caller cancelled");
+      const arrived = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const finished = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve();
+        }
+      });
+      storage.beforeRead("/manifest.json", async () => {
+        arrived.resolve();
+        await release.promise;
+        finished.resolve();
       });
 
-      const body = await compose(member, new Date(base).toISOString());
-
-      expect(body).toStrictEqual({
-        result: "incomplete",
-        reason: "language-context-unavailable",
-        detail: "timed-out",
+      const pending = setupApp({
+        context,
+        routes: morningBriefCompositionPreviewRoutes,
+        signal: controller.signal,
+        rethrowErrors: true,
+      })(morningBriefCompositionPreviewContract).compose({
+        headers: sessionHeaders(member),
+        body: { anchor: new Date(now()).toISOString() },
       });
-      expect(
-        storage.reads.filter((key) => {
-          return key.endsWith("/archive.tar.gz");
-        }),
-      ).toStrictEqual([]);
-    });
+
+      await arrived.promise;
+      controller.abort(cancellation);
+      release.resolve();
+      await finished.promise;
+      await expect(pending).rejects.toThrow(cancellation.message);
+      expect(archiveReads(storage)).toStrictEqual([]);
+    }, 60_000);
   });
 });

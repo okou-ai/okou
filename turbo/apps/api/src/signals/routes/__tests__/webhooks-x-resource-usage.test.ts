@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import type { z } from "zod";
 
@@ -31,6 +32,7 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   generatedStripeCustomerId,
   postUsageAllowanceInvoicePaid,
@@ -57,17 +59,26 @@ const DAY_MS = 86_400_000;
 beforeEach(() => {
   mockEnv("ENV", "development");
   mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));
-  mockEnv(
-    "X_RESOURCE_BILLING_START_DATE",
-    new Date(now() - DAY_MS).toISOString().slice(0, 10),
-  );
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
 });
 
-async function createRun(actor = bdd.user()): Promise<RunFixture> {
+async function createRun(
+  actor = bdd.user(),
+  deduplicationEnabled = true,
+): Promise<RunFixture> {
+  if (!actor.orgId) {
+    throw new Error("X resource test requires an organization");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    {
+      [FeatureSwitchKey.XResourceDeduplication]: deduplicationEnabled,
+    },
+  );
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
@@ -628,23 +639,15 @@ describe("X daily resource usage webhook", () => {
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
   });
 
-  it("rejects observations before the configured start date", async () => {
-    const fixture = await createRun();
-    mockEnv(
-      "X_RESOURCE_BILLING_START_DATE",
-      new Date(now() + DAY_MS).toISOString().slice(0, 10),
-    );
-    const response = await accept(
-      submit(fixture, [observation([resourceId()])]),
-      [400],
-    );
-    expect(response.body.error.code).toBe("BAD_REQUEST");
-  });
-
-  it("leaves the resource protocol dormant while preserving legacy-only ingestion", async () => {
+  it("records resources with deduplication off and charges full quantities in mixed batches", async () => {
     const configuredPricing = await pricing();
-    const fixture = await createRun();
-    mockEnv("X_RESOURCE_BILLING_START_DATE", undefined);
+    const fixture = await createRun(bdd.user(), false);
+    const id = resourceId();
+    const resource = observation([], {
+      quantity: 5,
+      resources: [{ id, occurrences: 3 }],
+      remainder: [{ reason: "missing_id", quantity: 2 }],
+    });
     const legacy: UsageEvent = {
       idempotencyKey: randomUUID(),
       kind: "connector",
@@ -652,9 +655,69 @@ describe("X daily resource usage webhook", () => {
       category: "posts.read",
       quantity: 1,
     };
-    await accept(submit(fixture, [legacy, observation([resourceId()])]), [400]);
+    await accept(submit(fixture, [legacy, resource]), [200]);
+    await accept(submit(fixture, [resource]), [200]);
+    await accept(submit(fixture, [observation([id])]), [200]);
+    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(7);
+
+    // An enabled owner sees the global history recorded by a disabled owner.
+    const enabled = await createRun();
+    await accept(submit(enabled, [observation([id])]), [200]);
+    await expect(chargedUnits(enabled, configuredPricing)).resolves.toBe(0);
+  });
+
+  it("applies switch changes to new sources without repricing accepted retries", async () => {
+    const configuredPricing = await pricing();
+    const fixture = await createRun(bdd.user(), false);
+    if (!fixture.actor.orgId) {
+      throw new Error("X resource test requires an organization");
+    }
+    const actor = { ...fixture.actor, orgId: fixture.actor.orgId };
+    const id = resourceId();
+    const whileOff = observation([], {
+      quantity: 4,
+      resources: [{ id, occurrences: 3 }],
+      remainder: [{ reason: "missing_id", quantity: 1 }],
+    });
+    await accept(submit(fixture, [whileOff]), [200]);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.XResourceDeduplication]: true,
+    });
+    const whileOn = observation([id]);
+    await accept(submit(fixture, [whileOff, whileOn]), [200]);
+    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(4);
+
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.XResourceDeduplication]: false,
+    });
+    const disabledAgain = observation([], {
+      quantity: 3,
+      resources: [{ id, occurrences: 2 }],
+      remainder: [{ reason: "missing_id", quantity: 1 }],
+    });
+    await accept(submit(fixture, [whileOff, whileOn, disabledAgain]), [200]);
+    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(7);
+  });
+
+  it("keeps time admission and atomic validation while deduplication is off", async () => {
+    const configuredPricing = await pricing();
+    const fixture = await createRun(bdd.user(), false);
+    const id = resourceId();
+    const event = observation([id]);
+    await accept(
+      submit(fixture, [
+        event,
+        observation([resourceId()], {
+          observedAt: new Date(now() - 2 * DAY_MS).toISOString(),
+        }),
+      ]),
+      [400],
+    );
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(0);
-    await accept(submit(fixture, [legacy]), [200]);
+    const enabled = await createRun();
+    await accept(submit(enabled, [observation([id])]), [200]);
+    await expect(chargedUnits(enabled, configuredPricing)).resolves.toBe(1);
+    await accept(submit(fixture, [event]), [200]);
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
   });
 

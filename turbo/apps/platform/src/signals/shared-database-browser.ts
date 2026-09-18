@@ -28,7 +28,10 @@ import { reportSharedWorkerFailure } from "./shared-worker-failure.ts";
 import { clerk$, clerkUser$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { readClerkToken, waitForClerkSession } from "./clerk-token.ts";
-import { applyChatThreadReadCursorUpdated$ } from "./chat-thread-list-reload.ts";
+import {
+  applyChatThreadReadCursorUpdated$,
+  reloadChatIndicatorsLocally$,
+} from "./chat-thread-list-reload.ts";
 import { syncActiveChatEvents$ } from "./chat-page/chat-event-signal-registry.ts";
 import { catchUpChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { reportForceUpgradeRequired } from "./force-upgrade.ts";
@@ -145,6 +148,11 @@ const syncSharedDatabaseInvalidation$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (dataKey.kind === "chat-event") {
+      // Message-created is also the only realtime signal emitted by a native
+      // runless delivery. Invalidate the canonical unread resource before the
+      // event reaches the open-thread handlers, so they can read the new server
+      // watermark while processing that same event.
+      set(reloadChatIndicatorsLocally$);
       await set(syncActiveChatEvents$, dataKey.threadId, signal);
       return;
     }

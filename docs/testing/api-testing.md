@@ -171,15 +171,18 @@ sockets/streams, detached work, and temporary files. Such cleanup bounds
 residue and resource lifetime; it must not delete, overwrite, or restore
 pre-existing shared state to make an assertion pass.
 
-Usage-compaction admission has a UUID-owned async-local lock namespace around
-each API test, including its hooks and background work. Shared and exclusive
-participants in that scenario still contend through real PostgreSQL locks;
-unrelated tests do not. Without a test scope the production lock key is unchanged.
+Usage-compaction and X-resource admission each have a UUID-owned async-local lock
+namespace around each API test, including its hooks and background work. Shared
+and exclusive participants in that scenario still contend through real PostgreSQL
+locks; unrelated tests do not. Without a test scope the production lock key is unchanged.
 Compaction behavior tests must call the organization-scoped test route so a
 scoped lock never protects a global sweep over another test's rows. The operator
 billing-backfill subprocess retains its production lock and explicit owned
 organization filter; its sequential tests do not establish concurrent admission
 with a scoped API call.
+
+X-resource retention tests likewise use the resource-ID-scoped test route;
+never invoke a successful production-global cleanup under a test-scoped lock.
 
 ## Commands
 

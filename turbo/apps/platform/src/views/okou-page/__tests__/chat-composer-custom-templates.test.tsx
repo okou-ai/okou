@@ -212,6 +212,37 @@ test("The Custom category stays hidden while the switch is off", async () => {
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
+test("The picker opens on Custom once the switch is on", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+
+  // Custom leads the nav for this member, so the picker lands there without a
+  // click rather than on the first format below it.
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "true");
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("The picker keeps opening on Presentation while the switch is off", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  await openCustomPanel(false);
+
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+});
+
+test("A named category still wins over the one the nav leads with", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { user } = await openCustomPanel();
+  await user.click(tabByText("Presentation"));
+
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "false");
+});
+
 test("The switch decides whether the catalog is requested at all", async () => {
   let listed = 0;
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
@@ -247,6 +278,24 @@ test("The Custom category lists every reachable template", async () => {
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Partner QBR")).toBeInTheDocument();
+});
+
+test("A card carries who can see the template and nothing else about it", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+
+  await expect(
+    within(dialog).findByText("Private"),
+  ).resolves.toBeInTheDocument();
+  // A grid is read by what tells its tiles apart, and the file a template was
+  // compiled from says nothing about the one beside it. Both facts are still
+  // on the detail column, which is where they are asked for.
+  expect(within(dialog).queryByText("18 pages")).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText("q3-board-final-v4.pptx"),
+  ).not.toBeInTheDocument();
 });
 
 test("A colleague's template names its owner and offers no management", async () => {
@@ -412,22 +461,16 @@ function previewDialogAround(frame: HTMLElement): HTMLElement {
   return preview;
 }
 
-test("A document template is described by its file, not by a page count", async () => {
+test("A document template with no cover is tiled by its format", async () => {
   const template = documentTemplate();
   mockCustomTemplates([template]);
-  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
-    return respond(200, template);
-  });
 
   const { dialog } = await openCustomPanel();
   click(tabByText("Custom"));
 
-  // A document is its styles. The card still names the file it was compiled
-  // from, and claims no pages rather than reporting zero of them.
   await expect(
-    within(dialog).findByText("brand-report.docx"),
+    within(dialog).findByText("Brand report"),
   ).resolves.toBeInTheDocument();
-  expect(within(dialog).queryByText("0 pages")).not.toBeInTheDocument();
   // Nothing was rendered for it, so the tile carries the format it was
   // compiled from rather than an empty frame.
   expect(within(dialog).getByText("DOCX")).toBeInTheDocument();
@@ -458,7 +501,7 @@ test("Opening a Word template hands the source file to the Office viewer", async
   expect(buttonByName("Use this template", preview)).toBeTruthy();
   // The catalog stays mounted behind the dialog instead of being replaced by
   // it, which is what separates opening a document from opening a deck.
-  expect(within(dialog).getByText("brand-report.docx")).toBeInTheDocument();
+  expect(within(dialog).getByText("Brand report")).toBeInTheDocument();
 });
 
 test("A PDF template opens in the browser's own viewer", async () => {

@@ -267,6 +267,7 @@ async function retainedSourcesStillAuthorized(
     readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
     readonly slack: {
       readonly botToken: string;
+      readonly workspaceId: string;
       readonly slackUserId: string;
     } | null;
   },
@@ -719,6 +720,7 @@ const invokeComposedTransport$ = command(
       installation.kind === "connected"
         ? {
             botToken: installation.botToken,
+            workspaceId: installation.workspaceId,
             slackUserId: installation.slackUserId,
           }
         : null;

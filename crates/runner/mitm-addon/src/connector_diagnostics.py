@@ -203,19 +203,22 @@ def record_allow_context(
     _pin_diagnostic_snapshot(flow, classification)
 
 
-def maybe_make_firewall_allow_local_response(
+def maybe_make_connector_owner_local_response(
     flow: http.HTTPFlow,
-    classification: request_classification.FirewallAllow,
+    classification: request_classification.FirewallAllow | request_classification.FirewallAmbiguous,
     *,
     commit: bool,
 ) -> bool:
-    """Diagnose an inactive shared-base owner for an unknown endpoint.
+    """Diagnose an inactive shared-base owner before any credential injection.
 
     This applies only to a non-browser ``firewall_allow`` whose matched firewall
     has no permission/rule for the endpoint and whose sandbox and original-URL
     context is complete. ``requestheaders()`` passes ``commit=False`` for its
     provisional probe; ``request()`` passes ``commit=True`` for the committed
     path.
+
+    A noncandidate explicit intent against a sole active owner may use the same
+    local diagnostic. It never resumes that other owner's authentication path.
 
     ``commit`` controls catalog snapshot retention, not response construction.
     Once snapshot selection is reached, the committed path pins that snapshot
@@ -233,10 +236,17 @@ def maybe_make_firewall_allow_local_response(
     if _is_browser_diagnostic_skip(flow):
         return False
 
-    allow = classification.firewall_allow
     sandbox_info = classification.sandbox_info
-    if not _firewall_allow_is_unknown_endpoint(allow):
-        return False
+    if classification.kind == "firewall_ambiguous":
+        ambiguous = classification.firewall_ambiguous
+        if ambiguous.reason != "connector_intent_not_candidate" or len(ambiguous.candidates) != 1:
+            return False
+        matched_firewall_name = ambiguous.candidates[0]
+    else:
+        allow = classification.firewall_allow
+        if not _firewall_allow_is_unknown_endpoint(allow):
+            return False
+        matched_firewall_name = allow.name
 
     original_url = flow_metadata.original_url(flow.metadata)
     if not original_url:
@@ -250,7 +260,7 @@ def maybe_make_firewall_allow_local_response(
         original_url,
         flow.request.method,
         active_firewall_names=_active_firewall_names(sandbox_info),
-        matched_firewall_name=allow.name,
+        matched_firewall_name=matched_firewall_name,
         connector_intent=_present_connector_intent_from_flow(flow),
     )
     if resolution is None or resolution.candidate is None:
@@ -529,6 +539,7 @@ def _select_diagnostic_snapshot(
     flow: http.HTTPFlow,
     classification: request_classification.Allow
     | request_classification.FirewallAllow
+    | request_classification.FirewallAmbiguous
     | None = None,
 ) -> builtin_connector_diagnostics.DiagnosticCatalogSnapshot:
     pinned = _diagnostic_snapshot_from_flow(flow)

@@ -57,7 +57,9 @@ impl ParkCoordinator {
         }
 
         match inner.state.clone() {
-            CoordinatorState::Open | CoordinatorState::Parked => {
+            CoordinatorState::Open
+            | CoordinatorState::Parked
+            | CoordinatorState::RunningHandoff => {
                 inner.active_run_id = Some(run_id.to_owned());
                 inner.assignment_cancel = CancellationToken::new();
                 Ok(())
@@ -159,10 +161,26 @@ impl ParkCoordinator {
     }
 
     pub(crate) fn mark_parked(&self, attempt: &ParkAttempt) -> Result<(), PrepareParkError> {
+        self.complete_transfer(attempt, CoordinatorState::Parked)
+    }
+
+    /// Transfer a quiesced, still-running sandbox without reopening operations.
+    pub(crate) fn mark_running_handoff(
+        &self,
+        attempt: &ParkAttempt,
+    ) -> Result<(), PrepareParkError> {
+        self.complete_transfer(attempt, CoordinatorState::RunningHandoff)
+    }
+
+    fn complete_transfer(
+        &self,
+        attempt: &ParkAttempt,
+        destination: CoordinatorState,
+    ) -> Result<(), PrepareParkError> {
         let mut inner = self.inner();
         match inner.state.clone() {
             CoordinatorState::ReadyForPark { attempt_id } if attempt_id == attempt.id => {
-                inner.state = CoordinatorState::Parked;
+                inner.state = destination;
                 inner.assignment_cancel.cancel();
                 inner.active_run_id = None;
                 Ok(())
@@ -175,7 +193,7 @@ impl ParkCoordinator {
     pub(crate) fn reopen_after_unpark(&self) -> Result<(), PrepareParkError> {
         let mut inner = self.inner();
         match inner.state.clone() {
-            CoordinatorState::Parked => {
+            CoordinatorState::Parked | CoordinatorState::RunningHandoff => {
                 inner.state = CoordinatorState::Open;
                 Ok(())
             }
@@ -196,7 +214,9 @@ impl ParkCoordinator {
         }
 
         match inner.state {
-            CoordinatorState::Parked => TerminateAdmission::RefusedIdle,
+            CoordinatorState::Parked | CoordinatorState::RunningHandoff => {
+                TerminateAdmission::RefusedIdle
+            }
             CoordinatorState::Terminating => TerminateAdmission::Accepted,
             _ => {
                 inner.state = CoordinatorState::Terminating;
@@ -218,11 +238,19 @@ impl ParkCoordinator {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CoordinatorState {
     Open,
-    ClosingForPark { attempt_id: ParkAttemptId },
-    ReadyForPark { attempt_id: ParkAttemptId },
+    ClosingForPark {
+        attempt_id: ParkAttemptId,
+    },
+    ReadyForPark {
+        attempt_id: ParkAttemptId,
+    },
     Parked,
+    /// An exact successor owns a running VM with Guest operations still fenced.
+    RunningHandoff,
     Terminating,
-    Dirty { reason: DirtyReason },
+    Dirty {
+        reason: DirtyReason,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -556,6 +584,57 @@ mod tests {
         assert!(coordinator.reopen_after_unpark().is_ok());
         assert_eq!(coordinator.state(), CoordinatorState::Open);
         assert_eq!(coordinator.ensure_operation_start_allowed(), Ok(()));
+    }
+
+    #[test]
+    fn running_handoff_retires_predecessor_but_keeps_operations_closed() {
+        let coordinator = ParkCoordinator::new();
+        coordinator.bind_run_control("predecessor").unwrap();
+        let old_controls = coordinator
+            .guest_rpc_assignment_cancellation("predecessor")
+            .unwrap();
+        let attempt = begin_attempt(&coordinator);
+        complete_attempt(&coordinator, &attempt);
+        coordinator.mark_running_handoff(&attempt).unwrap();
+
+        assert!(old_controls.is_cancelled());
+        assert!(
+            coordinator
+                .ensure_run_control_matches("predecessor")
+                .is_err()
+        );
+        assert_eq!(coordinator.state(), CoordinatorState::RunningHandoff);
+        assert!(coordinator.ensure_operation_start_allowed().is_err());
+        assert!(coordinator.mark_parked(&attempt).is_err());
+        coordinator.bind_run_control("successor").unwrap();
+        assert!(
+            coordinator
+                .guest_rpc_assignment_cancellation("successor")
+                .is_err()
+        );
+        assert_eq!(
+            coordinator.begin_terminate(Some("predecessor")),
+            TerminateAdmission::RunControlMismatch
+        );
+        coordinator.reopen_after_unpark().unwrap();
+        assert!(coordinator.ensure_operation_start_allowed().is_ok());
+        assert!(
+            coordinator
+                .guest_rpc_assignment_cancellation("successor")
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn failed_running_handoff_cannot_reopen_or_bind_another_owner() {
+        let coordinator = ParkCoordinator::new();
+        let attempt = begin_attempt(&coordinator);
+        complete_attempt(&coordinator, &attempt);
+        coordinator.mark_running_handoff(&attempt).unwrap();
+        coordinator.mark_dirty(DirtyReason::new("deflation failed"));
+        assert!(coordinator.bind_run_control("successor").is_err());
+        assert!(coordinator.reopen_after_unpark().is_err());
+        assert!(coordinator.ensure_operation_start_allowed().is_err());
     }
 
     #[test]

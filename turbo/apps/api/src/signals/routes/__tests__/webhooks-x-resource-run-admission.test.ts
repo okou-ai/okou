@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv } from "../../../lib/env";
-import { now, nowDate } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { holdRunAllowanceAdmissionForTest } from "../../../test-fixtures/usage-run-admission-lock";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -27,10 +26,6 @@ describe("X resource account cleanup and Run admission", () => {
     const orgId = requireOrgId(actor);
     const model = "claude-sonnet-5";
     await fixture.configureBuiltInPiModel(actor, model);
-    mockEnv(
-      "X_RESOURCE_BILLING_START_DATE",
-      nowDate().toISOString().slice(0, 10),
-    );
     await postUsageAllowanceInvoicePaid(context.signal, {
       orgId,
       userId: actor.userId,

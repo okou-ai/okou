@@ -130,6 +130,11 @@ export const morningBriefScheduleClaims = pgTable(
         table.orgId,
         table.ownerUserId,
       ),
+      // User erasure is global across organizations, so it cannot rely on the
+      // org-leading membership index above (production remains PostgreSQL 17).
+      index("idx_morning_brief_schedule_claims_owner_user").on(
+        table.ownerUserId,
+      ),
       check(
         "chk_morning_brief_schedule_claims_queue_disposition",
         sql`${table.queueDisposition} IN ('queued', 'claimed')`,

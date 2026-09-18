@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-const filterTimestampSchema = z.iso
+export const mcpFilterTimestampSchema = z.iso
   .datetime()
   .regex(/:\d{2}(?:\.\d{1,6})?Z$/u, "Use at most six fractional-second digits");
 
-function timestampKey(value: string): string {
+export function mcpTimestampKey(value: string): string {
   const withoutZone = value.slice(0, -1);
   return value.includes(".")
     ? withoutZone.padEnd(26, "0")
@@ -15,8 +15,8 @@ export const mcpListChatThreadsInputSchema = z
   .strictObject({
     agentId: z.uuid().optional(),
     title: z.string().trim().min(1).max(200).optional(),
-    since: filterTimestampSchema.optional(),
-    before: filterTimestampSchema.optional(),
+    since: mcpFilterTimestampSchema.optional(),
+    before: mcpFilterTimestampSchema.optional(),
     activity: z.enum(["active", "idle"]).optional(),
     unread: z.boolean().optional(),
     limit: z.number().int().min(1).max(50).default(20),
@@ -27,7 +27,7 @@ export const mcpListChatThreadsInputSchema = z
       return (
         !input.since ||
         !input.before ||
-        timestampKey(input.since) < timestampKey(input.before)
+        mcpTimestampKey(input.since) < mcpTimestampKey(input.before)
       );
     },
     { message: "since must be earlier than before" },

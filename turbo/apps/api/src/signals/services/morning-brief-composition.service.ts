@@ -80,12 +80,9 @@ import {
 } from "./morning-brief-language-policy";
 import { loadMorningBriefMemberLocale } from "./morning-brief-member-locale.service";
 import {
-  buildMorningBriefRequest,
-  morningBriefCoverageReport,
-  morningBriefEnvelopeBytes,
   morningBriefCitationLinks,
-  type MorningBriefModelRequest,
-  morningBriefWidestCoverageReport,
+  packMorningBriefRequest,
+  type MorningBriefProviderRequest,
 } from "./morning-brief-request-envelope";
 import { collectMorningBriefSlackBundle } from "./morning-brief-slack-collection.service";
 import {
@@ -100,6 +97,8 @@ import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-re
 import {
   boundCombinedNormalizedItems,
   dedupeMorningBriefItems,
+  MORNING_BRIEF_NO_OMISSIONS,
+  MORNING_BRIEF_NO_PROVENANCE,
   type MorningBriefDisplayLink,
   type MorningBriefSourceCollection,
   type MorningBriefSourceKind,
@@ -644,7 +643,7 @@ const planMorningBriefRequest$ = command(
         readonly envelopeBytes: number;
         readonly totalBytes: number;
         readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
-        readonly request: MorningBriefModelRequest | null;
+        readonly request: MorningBriefProviderRequest | null;
         /** The final collections, with any withdrawn source's day removed. */
         readonly collections: readonly MorningBriefSourceCollection[];
         readonly revoked: ReadonlySet<MorningBriefSourceKind>;
@@ -807,6 +806,7 @@ async function proveRetainedAuthority(
           ? null
           : {
               botToken: input.slack.botToken,
+              workspaceId: input.slack.workspaceId,
               slackUserId: input.slack.slackUserId,
             },
       deadline: input.deadline,
@@ -886,7 +886,7 @@ interface MorningBriefAllocated {
    * attempt that built it and is never persisted, logged or serialized into an
    * HTTP response.
    */
-  readonly request: MorningBriefModelRequest | null;
+  readonly request: MorningBriefProviderRequest | null;
 }
 
 /** Measure the envelope, allocate the evidence and size the exact request. */
@@ -897,30 +897,19 @@ function allocateForCollections(
     readonly instructions: string | null;
   },
 ): MorningBriefAllocated {
-  const envelopeBytes = morningBriefEnvelopeBytes({
+  const packed = packMorningBriefRequest({
+    collections,
     language: context.language,
     instructions: context.instructions,
-    // Measured at its widest, because the real counts are only known after
-    // allocation and a narrower measurement would under-reserve.
-    coverage: morningBriefWidestCoverageReport(collections),
+    omittedByNormalizedCap: {},
   });
-  const allocation = allocateMorningBriefRequest(collections, {
-    maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
-    overheadBytes: envelopeBytes,
-  });
-  if (allocation.items.length === 0) {
-    return { envelopeBytes, totalBytes: 0, allocation, request: null };
-  }
-  const request = buildMorningBriefRequest({
-    language: context.language,
-    instructions: context.instructions,
-    coverage: morningBriefCoverageReport(
-      collections,
-      allocation.omittedBySource,
-    ),
-    items: allocation.items,
-  });
-  return { envelopeBytes, totalBytes: request.bodyBytes, allocation, request };
+  return {
+    envelopeBytes: packed.envelopeBytes,
+    totalBytes: packed.totalBytes,
+    allocation: packed.allocation,
+    request:
+      packed.allocation.items.length === 0 ? null : packed.providerRequest,
+  };
 }
 
 /**
@@ -942,7 +931,7 @@ function withdrawRevokedSources(
       ...collection,
       coverage: "failed",
       items: [],
-      omittedBySource: 0,
+      omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
     };
   });
 }
@@ -1140,7 +1129,8 @@ async function readGithubSource(
         coverage: execution.kind === "not-executed" ? "unconfigured" : "failed",
         items: [],
         requests: 0,
-        omittedBySource: 0,
+        omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
       },
       descriptor: null,
     };
@@ -1149,8 +1139,6 @@ async function readGithubSource(
   return {
     normalized,
     descriptor: morningBriefGithubDescriptor({
-      // The exact login of the selected token, resolved by the collector.
-      login: execution.bundle.login,
       proof: args.authority.proof,
       membershipId: args.scope.membershipId,
       agentId: args.scope.agentId,
@@ -1269,7 +1257,8 @@ async function readSlackSource(
         coverage: "failed",
         items: [],
         requests: 0,
-        omittedBySource: 0,
+        omittedBySource: MORNING_BRIEF_NO_OMISSIONS,
+        provenance: MORNING_BRIEF_NO_PROVENANCE,
       },
       descriptor: describe([]),
     };

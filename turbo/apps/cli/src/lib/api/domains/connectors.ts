@@ -337,23 +337,19 @@ export async function listRunMcpConnectors(): Promise<McpConnector[]> {
 }
 
 export async function reauthorizeRunMcpConnectorOAuth(
-  connectorId: string,
+  target: ConnectorAccountTarget,
   scopes: readonly string[],
   signal: AbortSignal,
-): Promise<McpConnectorOAuthReauthorizationResponse | null> {
+): Promise<McpConnectorOAuthReauthorizationResponse> {
   const config = await getClientConfig();
   const client = initClient(mcpConnectorsContract, config);
   const result = await client.reauthorizeOAuth({
     headers: {},
-    params: { id: connectorId },
-    body: { scopes: [...scopes] },
+    body: { target, scopes: [...scopes] },
     fetchOptions: { signal },
   });
   if (result.status === 200) {
     return mcpConnectorOAuthReauthorizationResponseSchema.parse(result.body);
-  }
-  if (result.status === 404) {
-    return null;
   }
   handleError(result, "Failed to reauthorize MCP OAuth scopes");
 }

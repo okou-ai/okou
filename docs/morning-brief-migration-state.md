@@ -423,7 +423,11 @@ drain, Run transaction and callback dispatcher against PostgreSQL. It observes:
 
 The generic scheduler regression suite remains the authority for unchanged
 insufficient-credit behavior: credit failures neither increment the failure
-count nor disable recurring schedules. These are executed boundaries, not an
+count nor disable recurring schedules. At a representative retained-history
+scale of 80,000 rows (slightly above one year at the measured 215 daily
+schedules), PostgreSQL uses the dedicated owner-user index for global user
+erasure, the org-leading owner index for membership erasure, and the sequence
+index for the current-claim read. These are executed boundaries, not an
 assertion that `claim_sequence` is the later S7b choice or rollback epoch.
 
 ### What this slice does not do

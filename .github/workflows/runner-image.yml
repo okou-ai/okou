@@ -324,19 +324,33 @@ jobs:
       - name: Configure sccache
         shell: bash
         env:
-          SCCACHE_GHA_ENABLED: "true"
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          SCCACHE_BUCKET: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          SCCACHE_REGION: auto
+          SCCACHE_S3_KEY_PREFIX: runner-sccache/${{ matrix.id }}/
+          SCCACHE_GHA_ENABLED: "false"
+          SCCACHE_IDLE_TIMEOUT: "0"
         run: |
+          : "${AWS_ACCESS_KEY_ID:?missing R2 access key}"
+          : "${AWS_SECRET_ACCESS_KEY:?missing R2 secret key}"
+          : "${R2_ACCOUNT_ID:?missing R2 account}"
+          : "${SCCACHE_BUCKET:?missing R2 bucket}"
+          export SCCACHE_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
           SCCACHE_CONF_PATH="${RUNNER_TEMP:-/tmp}/sccache.toml"
           cat > "$SCCACHE_CONF_PATH" <<'EOF'
           server_startup_timeout_ms = 60000
           EOF
 
+          # Share compiler outputs across PR and merge-group refs without the
+          # GitHub cache quota. Keep the server alive for this job: a restart
+          # from a build step would not inherit the startup-only credentials.
           SCCACHE_CONF="$SCCACHE_CONF_PATH" ${SCCACHE_PATH:-sccache} --start-server
 
           {
             echo "CARGO_INCREMENTAL=0"
             echo "SCCACHE_CONF=$SCCACHE_CONF_PATH"
-            echo "SCCACHE_GHA_ENABLED=true"
             echo "RUSTC_WRAPPER=sccache"
           } >> "$GITHUB_ENV"
 

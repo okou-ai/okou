@@ -63,7 +63,6 @@ const TASK_ICONS = {
   workflow: Route,
   presentation: Presentation,
   image: Image,
-  video: Video,
   website: Globe,
   visualization: ChartNoAxesCombined,
 } as const;
@@ -127,6 +126,14 @@ const IMAGE_IDEAS = [
   "greetingCard",
   "brandCharacter",
 ] as const;
+/**
+ * Video has no chip and no slash Make row, and the type picker that could still
+ * switch a create mode over to it renders only while the task chips are off --
+ * which is when this whole surface is absent. So nothing reaches the video
+ * ideas row or the video shelf below today; both stay only because
+ * `ComposerTemplateTask` still derives from the surviving `video` create mode.
+ * Retiring that mode removes them and their `chat.taskChips` copy together.
+ */
 const VIDEO_IDEAS = [
   "animatePhoto",
   "productDemo",
@@ -170,6 +177,7 @@ const TASK_TEMPLATE_SHELF = {
     width: "w-[118px]",
     ratio: "aspect-[4/5]",
   },
+  // Unreachable alongside the ideas row; see the note on VIDEO_IDEAS.
   video: { category: "video", width: "w-[200px]", ratio: "aspect-video" },
   website: { category: "website", width: "w-[200px]", ratio: "aspect-video" },
 } as const satisfies Record<
@@ -391,14 +399,14 @@ export function ComposerTaskChips({
     },
     { returnObjects: true },
   );
-  const tasks: readonly ComposerTask[] = [
+  /** Video is not offered here; see the note on VIDEO_IDEAS for the rest. */
+  const tasks = [
     "workflow",
     "presentation",
     "image",
-    "video",
     "website",
     "visualization",
-  ];
+  ] as const satisfies readonly ComposerTask[];
   return (
     <section
       className="flex min-w-0 flex-col gap-5"

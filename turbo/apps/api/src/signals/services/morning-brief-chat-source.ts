@@ -25,10 +25,12 @@ import {
   morningBriefScopeDigest,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import type {
-  MorningBriefSourceCollection,
-  MorningBriefSourceCoverage,
-  MorningBriefSourceItem,
+import {
+  morningBriefItemFacts,
+  type MorningBriefSourceCollection,
+  type MorningBriefSourceCoverage,
+  type MorningBriefSourceItem,
+  type MorningBriefSourceProvenance,
 } from "./morning-brief-source-item";
 
 /**
@@ -54,6 +56,54 @@ function chatCoverage(
   // none of them released content. Both are complete reads with no items, and
   // the distinction is carried by the collector's own skip list.
   return collection.items.length === 0 ? "empty" : "complete";
+}
+
+/**
+ * The exclusions the reader applied by policy rather than by a budget.
+ *
+ * The destination thread and threads that have hosted Morning Brief content are
+ * deliberately never eligible, so counting them as lost evidence would report a
+ * coverage gap that does not exist. Every other skip is a thread the owner has
+ * unread and this brief could not represent.
+ */
+function isMorningBriefChatPolicyExclusion(reason: string): boolean {
+  return reason === "destination_thread" || reason === "morning_brief_thread";
+}
+
+/**
+ * The unread snapshot this collection describes.
+ *
+ * Unread Chat has no activity window: it is standing state observed once, and
+ * `collectedAt` is the only instant that makes the count meaningful. Every skip
+ * reason and truncation is named so a partial read is never readable as an
+ * empty inbox.
+ */
+function chatProvenance(
+  collection: MorningBriefChatCollection,
+): MorningBriefSourceProvenance {
+  const reasons = new Set<string>(collection.truncations);
+  for (const skipped of collection.skipped) {
+    reasons.add(skipped.reason);
+  }
+  return {
+    startAt: null,
+    endAt: null,
+    startDate: null,
+    endDateExclusive: null,
+    timezone: null,
+    observedAt: collection.collectedAt,
+    collectedAt: collection.collectedAt,
+    branches: [
+      {
+        name: "unread",
+        status: collection.result,
+        startAt: null,
+        endAt: null,
+        observedAt: collection.collectedAt,
+      },
+    ],
+    limitations: [...reasons],
+  };
 }
 
 /** The readable text of one thread, oldest excerpt first. */
@@ -97,6 +147,7 @@ export function normalizeMorningBriefChat(
       // Unread is standing state, not something that happened in the window.
       timeSemantics: "outstanding",
       endsAt: null,
+      dateRange: null,
       title: "",
       body: chatBody(thread),
       truncated: thread.truncations.length > 0,
@@ -104,6 +155,16 @@ export function normalizeMorningBriefChat(
       // exposes no thread URL, and inventing one here would be exactly the
       // fabrication the citation rules exist to prevent.
       links: [],
+      // The reader's own provenance decision travels with the item: only
+      // `ordinary` threads are released, and that is the fact a later check
+      // re-runs rather than re-derives.
+      facts: morningBriefItemFacts({
+        reasons: [{ branch: "unread", detail: null, unread: true }],
+        state: thread.provenance,
+        startedAtRaw: thread.terminal.at,
+        seriesId: thread.agentId,
+        limitations: thread.truncations,
+      }),
     };
   });
   return {
@@ -113,7 +174,16 @@ export function normalizeMorningBriefChat(
     // Chat reads its own database rather than a provider, so it spends no
     // provider request budget.
     requests: 0,
-    omittedBySource: collection.skipped.length,
+    provenance: chatProvenance(collection),
+    // Chat is the one source that can count what it dropped: every skipped
+    // thread is a thread it looked at. Policy exclusions are not losses, and a
+    // truncation means candidates it never reached at all.
+    omittedBySource: {
+      known: collection.skipped.filter((skipped) => {
+        return !isMorningBriefChatPolicyExclusion(skipped.reason);
+      }).length,
+      unknownRemaining: collection.truncations.length > 0,
+    },
   };
 }
 

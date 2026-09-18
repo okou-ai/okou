@@ -56,7 +56,7 @@ interface AudienceDraft {
 
 async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
   const reference = parseArtifactReference(source.url, location.origin);
-  const target = reference
+  const resolved = reference
     ? (
         await accept(
           client(artifactReferencesContract).resolve({
@@ -65,10 +65,21 @@ async function loadShareDetails(client: ApiClientFactory, source: ShareSource) {
           }),
           [200],
         )
-      ).body.target
-    : artifactSharingTarget(source.url);
+      ).body
+    : null;
+  const target = resolved?.target ?? artifactSharingTarget(source.url);
   if (!target) {
     return null;
+  }
+  // A conversation snapshot is independent of its source resource, including
+  // when its owner opens it in a normal thread's preview surface.
+  if (resolved?.sharedThreadSnapshot) {
+    return {
+      target,
+      status: null,
+      audience: undefined,
+      copyUrl: new URL(source.copyUrl ?? source.url, location.origin).href,
+    };
   }
   // Viewing access does not imply ownership. Only this endpoint authorizes the
   // permission controls; its 404 response identifies a read-only recipient.

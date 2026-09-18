@@ -70,8 +70,8 @@ type PatchedHTMLIFrameElementPrototype = HTMLIFrameElement &
 
 type StderrWriteArgs = [
   chunk: string | Uint8Array,
-  encodingOrCallback?: string | ((error?: Error | null) => void),
-  callback?: (error?: Error | null) => void,
+  encodingOrCallback?: string | ((error?: Error) => void),
+  callback?: (error?: Error) => void,
 ];
 
 type StderrWrite = (...args: StderrWriteArgs) => boolean;

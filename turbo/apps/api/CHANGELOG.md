@@ -8,6 +8,61 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.631.0](https://github.com/vm0-ai/okou/compare/api-v1.630.0...api-v1.631.0) (2026-09-18)
+
+
+### Features
+
+* **api:** journal legacy morning brief schedule claims and settle once ([#34857](https://github.com/vm0-ai/okou/issues/34857)) ([3710eeb](https://github.com/vm0-ai/okou/commit/3710eeb2d27ec1fb1110f17adce845cdeeab489a))
+* **connectors:** execute builtin mcp through unified connector flows ([#35132](https://github.com/vm0-ai/okou/issues/35132)) ([fc30ccb](https://github.com/vm0-ai/okou/commit/fc30ccb62f1ee00b66379aa4dcf3dc3f97df1763))
+
+
+### Bug Fixes
+
+* **api:** bound calendar envelope identity and coverage ([#35163](https://github.com/vm0-ai/okou/issues/35163)) ([6bcb0d3](https://github.com/vm0-ai/okou/commit/6bcb0d32fe4e0fd81676ee14304a493e8ea764ea))
+* **api:** revalidate complete morning brief source set ([#35184](https://github.com/vm0-ai/okou/issues/35184)) ([d473d0d](https://github.com/vm0-ai/okou/commit/d473d0d290f3a6c121614ee0e51ef2995e6b660e))
+* **platform:** refresh native delivery read state ([#35179](https://github.com/vm0-ai/okou/issues/35179)) ([09999f9](https://github.com/vm0-ai/okou/commit/09999f93b4aab05b3f247a37b0602ee05ecb6dd1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.468.0
+    * @okouai/connectors bumped to 3.13.0
+    * @okouai/core bumped to 8.680.4
+    * @okouai/db bumped to 1.273.0
+    * @okouai/pi-agent-runtime bumped to 1.33.14
+
+## [1.630.0](https://github.com/vm0-ai/okou/compare/api-v1.629.0...api-v1.630.0) (2026-09-18)
+
+
+### Features
+
+* add vnc agent authorization and native sharing modes ([#35143](https://github.com/vm0-ai/okou/issues/35143)) ([381535e](https://github.com/vm0-ai/okou/commit/381535e0cd7879c6859f20312dfcdf9419252b9f))
+
+
+### Bug Fixes
+
+* **api:** align native email claim lock order ([#35174](https://github.com/vm0-ai/okou/issues/35174)) ([0060d40](https://github.com/vm0-ai/okou/commit/0060d4060418bc21b6198dc458d258a620cbcb30))
+* **api:** clarify private artifact download guidance ([#35151](https://github.com/vm0-ai/okou/issues/35151)) ([8189d0c](https://github.com/vm0-ai/okou/commit/8189d0c4f5928a82c87ee58fb1351f87bb3c1e5d))
+* **api:** keep native email siblings progressing ([#35160](https://github.com/vm0-ai/okou/issues/35160)) ([d9c0684](https://github.com/vm0-ai/okou/commit/d9c0684816b6e7a5a6ceb09f60b42789a5a94c50))
+* **api:** preserve morning brief source facts and bounded allocation ([#35064](https://github.com/vm0-ai/okou/issues/35064)) ([eb6317d](https://github.com/vm0-ai/okou/commit/eb6317d7dbdd4ba536251770caa212d0bcbb615e))
+* **api:** revalidate complete morning brief binding ([#35168](https://github.com/vm0-ai/okou/issues/35168)) ([c92b6dd](https://github.com/vm0-ai/okou/commit/c92b6dd710788056d23ea802b2591573eb234469))
+* **api:** validate github check-run lifecycle ([#35161](https://github.com/vm0-ai/okou/issues/35161)) ([e308b65](https://github.com/vm0-ai/okou/commit/e308b6523af131d3277781b89415346aeef4b02f))
+* honor artifact sharing permissions in cli downloads ([#35162](https://github.com/vm0-ai/okou/issues/35162)) ([5bbdb8a](https://github.com/vm0-ai/okou/commit/5bbdb8a2220c110497afe59ff25d8a18e45896e0))
+* use the refreshed quick start deck in welcome threads ([#35181](https://github.com/vm0-ai/okou/issues/35181)) ([9065172](https://github.com/vm0-ai/okou/commit/9065172e555179e161d907cd9af4a6cc5e4feff0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.467.0
+    * @okouai/core bumped to 8.680.3
+    * @okouai/db bumped to 1.272.0
+    * @okouai/pi-agent-runtime bumped to 1.33.13
+
 ## [1.629.0](https://github.com/vm0-ai/okou/compare/api-v1.628.0...api-v1.629.0) (2026-09-18)
 
 

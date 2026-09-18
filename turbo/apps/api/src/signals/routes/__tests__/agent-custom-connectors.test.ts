@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -428,9 +427,6 @@ describe("PUT /api/agents/:id/custom-connectors", () => {
       actor,
       "catalog-independent-http",
     );
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.CustomConnectorMcp]: true,
-    });
     const mcpConnector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       displayName: "Catalog Independent MCP",
