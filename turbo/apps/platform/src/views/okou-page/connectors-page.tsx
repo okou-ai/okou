@@ -147,6 +147,12 @@ import {
   openBuiltinAccountManager$,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectorAccountNameDialog } from "./components/settings/connector-account-name-dialog.tsx";
+import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
+import { VncAccessManagementDialog } from "./components/settings/vnc-access-management-dialog.tsx";
+import { VncLoadError } from "./vnc-load-error.tsx";
+import { vncSummary$ } from "../../signals/vnc.ts";
+import { vncAgentAccessRows$ } from "../../signals/vnc-access.ts";
+import { filteredVncSummary$ } from "../../signals/okou-page/settings/vnc-connector.ts";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import { SshAccessManagementDialog } from "./components/settings/ssh-access-management-dialog.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
@@ -180,6 +186,13 @@ type ConnectorPresentation =
     }
   | {
       readonly kind: "ssh";
+      readonly category: string;
+      readonly label: string;
+      readonly connected: boolean;
+      readonly configuredCount: number;
+    }
+  | {
+      readonly kind: "vnc";
       readonly category: string;
       readonly label: string;
       readonly connected: boolean;
@@ -515,11 +528,11 @@ interface ConnectorsScopeBadge {
   readonly needsAttention: boolean;
 }
 
-/** How many SSH hosts this workspace has, which is zero until it has any. */
-function configuredSshHosts(
+/** Configured hosts determine whether a remote-access service is connected. */
+function configuredRemoteAccessHosts(
   summary: Loadable<{ configuredCount: number } | null>,
 ): number {
-  return sshSummaryData(summary)?.configuredCount ?? 0;
+  return remoteAccessSummaryData(summary)?.configuredCount ?? 0;
 }
 
 /** The custom connectors the page needs: all of them, and the connected ones. */
@@ -548,13 +561,14 @@ function connectorsScopeBadge(
     readonly needsAttention: boolean;
   }>,
   custom: number,
+  remoteAccess: number,
 ): ConnectorsScopeBadge {
   const connected =
     loadable.state === "hasData"
       ? loadable.data
       : { count: 0, needsAttention: false };
   return {
-    connected: connected.count,
+    connected: connected.count + remoteAccess,
     custom,
     needsAttention: connected.needsAttention,
   };
@@ -1324,7 +1338,7 @@ function buildConnectorsBrowseModel({
   categoryFilter,
   connectionFilter,
   ready,
-  sshAvailable,
+  remoteAccessCount,
   remoteAccessLabel,
 }: {
   readonly catalogItems: readonly PlatformConnectorCatalogStatusItem[];
@@ -1336,7 +1350,7 @@ function buildConnectorsBrowseModel({
   readonly categoryFilter: string | null;
   readonly connectionFilter: ConnectorsConnectionFilter;
   readonly ready: boolean;
-  readonly sshAvailable: boolean;
+  readonly remoteAccessCount: number;
   readonly remoteAccessLabel: string;
 }): ConnectorsBrowseModel {
   const filtered =
@@ -1374,7 +1388,7 @@ function buildConnectorsBrowseModel({
   // response happens to contain: inside a category the response holds only
   // that category, and a filter that offers nothing else is a dead end.
   const chipSections = categoryFilterSections(categoryMetadata);
-  if (sshAvailable) {
+  if (remoteAccessCount > 0) {
     chipSections.push({
       category: REMOTE_ACCESS_CATEGORY,
       label: remoteAccessLabel,
@@ -1400,9 +1414,10 @@ function buildConnectorsBrowseModel({
     // Chips come from the whole catalog, not the filtered view: a chip row
     // that empties itself when you pick a chip cannot be used to pick another.
     chipSections,
-    categoryCounts: sshAvailable
-      ? { ...categoryCounts, [REMOTE_ACCESS_CATEGORY]: 1 }
-      : categoryCounts,
+    categoryCounts:
+      remoteAccessCount > 0
+        ? { ...categoryCounts, [REMOTE_ACCESS_CATEGORY]: remoteAccessCount }
+        : categoryCounts,
   };
 }
 
@@ -1640,6 +1655,7 @@ function ConnectorsConnectedPanel({
   renderCard,
   extras,
   extraCount,
+  suppressEmpty = false,
 }: {
   readonly connected: readonly PlatformConnectorCatalogStatusItem[];
   readonly ready: boolean;
@@ -1649,12 +1665,13 @@ function ConnectorsConnectedPanel({
   ) => ReactNode;
   readonly extras: ReactNode;
   readonly extraCount: number;
+  readonly suppressEmpty?: boolean;
 }) {
   const { t } = useTranslation();
   if (!ready) {
     return <ConnectorCardSkeletons />;
   }
-  if (connected.length + extraCount === 0) {
+  if (connected.length + extraCount === 0 && !suppressEmpty) {
     return (
       <ConnectorEmptyState
         message={t(($) => {
@@ -1682,6 +1699,35 @@ function ConnectorsConnectedPanel({
   );
 }
 
+function RemoteAccessConnectedPanel(
+  props: Parameters<typeof ConnectorsConnectedPanel>[0],
+) {
+  const summary = useLoadable(vncSummary$);
+  const filtered = useLoadable(filteredVncSummary$);
+  const rows = useLoadable(vncAgentAccessRows$);
+  const failed = [summary.state, filtered.state, rows.state].includes(
+    "hasError",
+  );
+  return (
+    <>
+      <SshDirectoryLoadError />
+      <VncDirectoryLoadError />
+      <ConnectorsConnectedPanel {...props} suppressEmpty={failed} />
+    </>
+  );
+}
+
+function remoteAccessLoadState(
+  ssh: Loadable<{ configuredCount: number } | null>,
+  vnc: Loadable<{ configuredCount: number } | null>,
+): "loading" | "hasError" | "hasData" {
+  const states = new Set([ssh.state, vnc.state]);
+  if (states.has("hasError")) {
+    return "hasError";
+  }
+  return states.has("loading") ? "loading" : "hasData";
+}
+
 function connectorLabelForSlug(
   connectors: readonly PlatformConnectorCatalogStatusItem[],
   connectorSlug: ConnectorSlug | null,
@@ -1699,13 +1745,15 @@ function connectorLabelForSlug(
 function effectiveConnectorCatalogCount(
   catalogStatusLoadable: Loadable<PublicConnectorCatalogDiscoveryResponse>,
   sshSummary: Loadable<{ readonly configuredCount: number } | null>,
+  vncSummary: Loadable<{ readonly configuredCount: number } | null>,
 ): number | null {
   if (catalogStatusLoadable.state !== "hasData") {
     return null;
   }
   return (
     catalogStatusLoadable.data.totalConnectorCount +
-    (sshSummary.state === "hasData" && sshSummary.data ? 1 : 0)
+    (sshSummary.state === "hasData" && sshSummary.data ? 1 : 0) +
+    (vncSummary.state === "hasData" && vncSummary.data ? 1 : 0)
   );
 }
 
@@ -1820,7 +1868,20 @@ function SshDirectoryLoadError() {
   ) : null;
 }
 
-function sshSummaryData(summary: Loadable<{ configuredCount: number } | null>) {
+function VncDirectoryLoadError() {
+  const summary = useLoadable(vncSummary$);
+  const filtered = useLoadable(filteredVncSummary$);
+  const rows = useLoadable(vncAgentAccessRows$);
+  return summary.state === "hasError" ||
+    filtered.state === "hasError" ||
+    rows.state === "hasError" ? (
+    <VncLoadError />
+  ) : null;
+}
+
+function remoteAccessSummaryData(
+  summary: Loadable<{ configuredCount: number } | null>,
+) {
   return summary.state === "hasData" ? summary.data : null;
 }
 
@@ -1828,6 +1889,8 @@ function buildConnectorPresentation(
   connectors: readonly PlatformConnectorCatalogStatusItem[],
   sshSummary: Loadable<{ configuredCount: number } | null>,
   sshLabel: string,
+  vncSummary: Loadable<{ configuredCount: number } | null>,
+  vncLabel: string,
 ) {
   const items: ConnectorPresentation[] = connectors.map((connector) => {
     return {
@@ -1839,7 +1902,7 @@ function buildConnectorPresentation(
       connected: connector.connected,
     };
   });
-  const ssh = sshSummaryData(sshSummary);
+  const ssh = remoteAccessSummaryData(sshSummary);
   if (ssh) {
     items.push({
       kind: "ssh",
@@ -1849,14 +1912,27 @@ function buildConnectorPresentation(
       configuredCount: ssh.configuredCount,
     });
   }
+  const vnc = remoteAccessSummaryData(vncSummary);
+  if (vnc) {
+    items.push({
+      kind: "vnc",
+      category: REMOTE_ACCESS_CATEGORY,
+      label: vncLabel,
+      connected: vnc.configuredCount > 0,
+      configuredCount: vnc.configuredCount,
+    });
+  }
   return {
     items,
-    // A pending SSH read must not display the empty-catalog message.
-    filteredCount: items.length + (sshSummary.state === "loading" ? 1 : 0),
+    // A pending remote access read must not display the empty-catalog message.
+    filteredCount:
+      items.length +
+      Number(sshSummary.state === "loading") +
+      Number(vncSummary.state === "loading"),
   };
 }
 
-function SshShelfCategory({
+function RemoteAccessShelfCategory({
   enabled,
   groups,
   renderCard,
@@ -1921,6 +1997,8 @@ export function ConnectorsPage() {
   const relatedCatalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
   const filteredCatalogItemsLoadable = useFilteredCatalogItems(shelfEnabled);
   const sshSummary = useLoadable(sshSummary$);
+  const vncSummary = useLoadable(vncSummary$);
+  const filteredVncSummary = useLoadable(filteredVncSummary$);
   const filteredSshSummary = useLoadable(filteredSshSummary$);
   const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
   const accountSummariesLoadable = useLoadable(
@@ -1975,10 +2053,16 @@ export function ConnectorsPage() {
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
   );
-  const scopeBadge = connectorsScopeBadge(connectedBadge, custom.all.length);
-  // SSH belongs to the connected scope once hosts exist; until then it is only
+  const scopeBadge = connectorsScopeBadge(
+    connectedBadge,
+    custom.all.length,
+    Number(configuredRemoteAccessHosts(sshSummary) > 0) +
+      Number(configuredRemoteAccessHosts(vncSummary) > 0),
+  );
+  // Remote access belongs to the connected scope once hosts exist; until then it is only
   // a thing to discover, and the catalog already carries it.
-  const connectedSshCount = configuredSshHosts(filteredSshSummary);
+  const connectedSshCount = configuredRemoteAccessHosts(filteredSshSummary);
+  const connectedVncCount = configuredRemoteAccessHosts(filteredVncSummary);
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
 
@@ -1989,6 +2073,7 @@ export function ConnectorsPage() {
   const connectorCatalogCount = effectiveConnectorCatalogCount(
     catalogStatusLoadable,
     sshSummary,
+    vncSummary,
   );
   const categoryMetadata = localizeConnectorCategoryMetadata(
     catalogStatusLoadable.state === "hasData"
@@ -2112,6 +2197,10 @@ export function ConnectorsPage() {
     t(($) => {
       return $.ssh.label;
     }),
+    filteredVncSummary,
+    t(($) => {
+      return $.vnc.label;
+    }),
   );
   const remoteAccessLabel = t(($) => {
     return $.connectors.catalog.remoteAccess;
@@ -2133,13 +2222,17 @@ export function ConnectorsPage() {
     categoryFilter,
     connectionFilter,
     ready: shelfEnabled && filteredCatalogItemsLoadable.state === "hasData",
-    sshAvailable: Boolean(sshSummaryData(sshSummary)),
+    remoteAccessCount:
+      Number(Boolean(remoteAccessSummaryData(sshSummary))) +
+      Number(Boolean(remoteAccessSummaryData(vncSummary))),
     remoteAccessLabel,
   });
 
   const renderPresentationCard = (item: ConnectorPresentation) => {
     return item.kind === "ssh" ? (
       <SshConnectorCard key="ssh" configuredCount={item.configuredCount} />
+    ) : item.kind === "vnc" ? (
+      <VncConnectorCard key="vnc" configuredCount={item.configuredCount} />
     ) : (
       renderCard(item.connector)
     );
@@ -2167,7 +2260,8 @@ export function ConnectorsPage() {
       remoteAccessPanel={
         <>
           <SshDirectoryLoadError />
-          <SshShelfCategory
+          <VncDirectoryLoadError />
+          <RemoteAccessShelfCategory
             enabled={browse.showShelves}
             groups={grouped}
             renderCard={renderPresentationCard}
@@ -2256,12 +2350,16 @@ export function ConnectorsPage() {
               activeTab={activeTab}
               builtinPanel={builtinPanel}
               connectedPanel={
-                <ConnectorsConnectedPanel
+                <RemoteAccessConnectedPanel
                   connected={browse.connected}
                   ready={browse.ready}
                   connectionFilter={connectionFilter}
                   renderCard={renderCard}
-                  extraCount={custom.connected.length + connectedSshCount}
+                  extraCount={
+                    custom.connected.length +
+                    Number(connectedSshCount > 0) +
+                    Number(connectedVncCount > 0)
+                  }
                   extras={
                     <>
                       {custom.connected.length > 0 && (
@@ -2270,6 +2368,9 @@ export function ConnectorsPage() {
                           isAdmin={isAdmin}
                           className="contents"
                         />
+                      )}
+                      {connectedVncCount > 0 && (
+                        <VncConnectorCard configuredCount={connectedVncCount} />
                       )}
                       {connectedSshCount > 0 && (
                         <SshConnectorCard configuredCount={connectedSshCount} />
@@ -2286,17 +2387,24 @@ export function ConnectorsPage() {
                   remote={
                     <>
                       <SshDirectoryLoadError />
-                      <SshShelfCategory
+                      <VncDirectoryLoadError />
+                      <RemoteAccessShelfCategory
                         enabled
                         groups={grouped}
                         renderCard={renderPresentationCard}
                       />
                     </>
                   }
-                  remoteState={filteredSshSummary.state}
-                  remoteCount={Number(
-                    Boolean(sshSummaryData(filteredSshSummary)),
+                  remoteState={remoteAccessLoadState(
+                    filteredSshSummary,
+                    filteredVncSummary,
                   )}
+                  remoteCount={
+                    Number(
+                      Boolean(remoteAccessSummaryData(filteredSshSummary)),
+                    ) +
+                    Number(Boolean(remoteAccessSummaryData(filteredVncSummary)))
+                  }
                 />
               }
             />
@@ -2305,6 +2413,7 @@ export function ConnectorsPage() {
       </main>
 
       <SshAccessManagementDialog />
+      <VncAccessManagementDialog />
 
       {accountConnect && (
         <ConnectModal

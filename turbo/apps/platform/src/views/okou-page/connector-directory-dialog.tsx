@@ -24,6 +24,8 @@ import { Button, cn } from "@okouai/ui";
 import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectorAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
+import { vncSummary$ } from "../../signals/vnc.ts";
+import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { sshSummary$ } from "../../signals/ssh.ts";
 import {
   bindConnectorCategoryRail$,
@@ -434,9 +436,35 @@ function DirectoryCategoryChips({
   );
 }
 
+function DirectoryAttention({
+  connectors,
+  renderCard,
+}: {
+  readonly connectors: ConnectorDirectoryModel["attention"];
+  readonly renderCard: RenderConnectorCard;
+}) {
+  const { t } = useTranslation();
+  if (connectors.length === 0) {
+    return null;
+  }
+  return (
+    <DirectorySection
+      tone="warning"
+      title={t(($) => {
+        return $.chat.connectors.directory.needsAttention;
+      })}
+    >
+      {connectors.map((item) => {
+        return renderCard(item, true);
+      })}
+    </DirectorySection>
+  );
+}
+
 function DirectoryDiscoverPanel({
   model,
   showSsh,
+  showVnc,
   renderCard,
   search,
   category,
@@ -445,6 +473,7 @@ function DirectoryDiscoverPanel({
 }: {
   readonly model: ConnectorDirectoryModel;
   readonly showSsh: boolean;
+  readonly showVnc: boolean;
   readonly renderCard: RenderConnectorCard;
   readonly search: string;
   readonly category: string | null;
@@ -452,25 +481,14 @@ function DirectoryDiscoverPanel({
   readonly onCreateCustom: () => void;
 }) {
   const { t } = useTranslation();
-  // Connection health has no other home in the composer: the connector popover
-  // lists what is connected but not whether it still works.
-  const attention =
-    model.attention.length > 0 ? (
-      <DirectorySection
-        tone="warning"
-        title={t(($) => {
-          return $.chat.connectors.directory.needsAttention;
-        })}
-      >
-        {model.attention.map((item) => {
-          return renderCard(item, true);
-        })}
-      </DirectorySection>
-    ) : null;
+  const attention = (
+    <DirectoryAttention connectors={model.attention} renderCard={renderCard} />
+  );
   if (
     model.discover.length === 0 &&
     model.matchedConnected.length === 0 &&
-    !showSsh
+    !showSsh &&
+    !showVnc
   ) {
     return (
       <>
@@ -511,19 +529,23 @@ function DirectoryDiscoverPanel({
             })}
           </DirectorySection>
         )}
-        {(model.discover.length > 0 || showSsh) && (
+        {(model.discover.length > 0 || showSsh || showVnc) && (
           <DirectorySection
             title={t(
               ($) => {
                 return $.chat.connectors.directory.matchCount;
               },
-              { count: model.discover.length + Number(showSsh) },
+              {
+                count:
+                  model.discover.length + Number(showSsh) + Number(showVnc),
+              },
             )}
           >
             {model.discover.map((item) => {
               return renderCard(item, false);
             })}
             {showSsh && <SshConnectorCard configuredCount={0} />}
+            {showVnc && <VncConnectorCard configuredCount={0} />}
           </DirectorySection>
         )}
       </>
@@ -550,13 +572,14 @@ function DirectoryDiscoverPanel({
         chips={model.shelfLayout.chips}
         onSelect={onSelectCategory}
       />
-      {showSsh && (
+      {(showSsh || showVnc) && (
         <DirectorySection
           title={t(($) => {
             return $.connectors.catalog.remoteAccess;
           })}
         >
-          <SshConnectorCard configuredCount={0} />
+          {showSsh && <SshConnectorCard configuredCount={0} />}
+          {showVnc && <VncConnectorCard configuredCount={0} />}
         </DirectorySection>
       )}
     </>
@@ -674,6 +697,7 @@ function DirectoryToolbar({
 function DirectoryBody({
   tab,
   showSsh,
+  showVnc,
   loading,
   model,
   renderCard,
@@ -684,6 +708,7 @@ function DirectoryBody({
 }: {
   readonly tab: ConnectorDirectoryTab;
   readonly showSsh: boolean;
+  readonly showVnc: boolean;
   readonly loading: boolean;
   readonly model: ConnectorDirectoryModel;
   readonly renderCard: RenderConnectorCard;
@@ -700,6 +725,7 @@ function DirectoryBody({
       <DirectoryDiscoverPanel
         model={model}
         showSsh={showSsh}
+        showVnc={showVnc}
         renderCard={renderCard}
         search={search}
         category={category}
@@ -743,6 +769,17 @@ function DirectoryBrowseView({
 }) {
   const { t } = useTranslation();
   const summary = useLoadable(sshSummary$);
+  const vncSummary = useLoadable(vncSummary$);
+  const vncAvailable =
+    vncSummary.state === "hasData" && vncSummary.data?.configuredCount === 0;
+  const showVnc =
+    vncAvailable &&
+    (category === null || category === REMOTE_ACCESS_CATEGORY) &&
+    `vnc ${t(($) => {
+      return $.vnc.description;
+    })}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
   const sshAvailable =
     summary.state === "hasData" && summary.data?.configuredCount === 0;
   const showSsh =
@@ -755,18 +792,19 @@ function DirectoryBrowseView({
   // The chip row comes from the browse response, not from what is currently
   // shown: a chip row that empties itself when you pick a chip cannot be used
   // to pick another one.
-  const sections = sshAvailable
-    ? [
-        ...model.chipSections,
-        {
-          category: REMOTE_ACCESS_CATEGORY,
-          label: remoteAccessLabel,
-          menuLabel: remoteAccessLabel,
-          groupId: null,
-          connectors: [],
-        },
-      ]
-    : model.chipSections;
+  const sections =
+    sshAvailable || vncAvailable
+      ? [
+          ...model.chipSections,
+          {
+            category: REMOTE_ACCESS_CATEGORY,
+            label: remoteAccessLabel,
+            menuLabel: remoteAccessLabel,
+            groupId: null,
+            connectors: [],
+          },
+        ]
+      : model.chipSections;
   return (
     <>
       <DirectoryToolbar
@@ -786,8 +824,12 @@ function DirectoryBrowseView({
         <DirectoryCategoryChips
           sections={sections}
           categoryCounts={
-            sshAvailable
-              ? { ...categoryCounts, [REMOTE_ACCESS_CATEGORY]: 1 }
+            sshAvailable || vncAvailable
+              ? {
+                  ...categoryCounts,
+                  [REMOTE_ACCESS_CATEGORY]:
+                    Number(sshAvailable) + Number(vncAvailable),
+                }
               : categoryCounts
           }
           selected={category}
@@ -808,6 +850,7 @@ function DirectoryBrowseView({
         <DirectoryBody
           tab={tab}
           showSsh={showSsh}
+          showVnc={showVnc}
           loading={loading}
           model={model}
           renderCard={renderCard}
