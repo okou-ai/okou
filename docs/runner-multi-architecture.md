@@ -189,13 +189,18 @@ does not use a metal host, rootfs, or snapshot. Execution waits for both its
 compiled test and the selected image, then uses the same host and immutable image
 hashes supplied by `runner-build`.
 
-Each producer uploads its test binary with provenance and passes the immutable
-GitHub artifact ID to its consumer. Before contacting metal, the consumer
-validates the source SHA, workflow run, producer attempt, test identity, target,
-and binary hash. Artifact names include the producer attempt to keep uploads
-distinct on reruns. A consumer-only rerun uses the earlier successful producer's
-artifact ID and attempt, even when its own attempt has advanced. Missing or
-invalid artifacts fail the job; there is no fallback to another run or target.
+Each producer uploads its compressed test binary and provenance to R2 under
+`runner-binaries/<run_id>/<producer_attempt>/<test>-<target>.zst` and the matching
+`.json` key. These objects transfer a compiled test between jobs in the same
+workflow run; they are not reused across runs or PRs. They use the existing
+seven-day lifecycle policy for the `runner-binaries/` prefix.
+
+Before contacting metal, the consumer validates the source SHA, repository,
+workflow run, producer attempt, test identity, target, and binary hash. A
+consumer-only rerun uses the earlier successful producer's attempt, even when its
+own attempt has advanced. Missing, expired, or invalid artifacts fail the job;
+rerun the producer to publish a fresh artifact after expiration. There is no
+fallback to another run or target.
 
 The Crates gate requires both compilation and execution when a native test is
 selected. A failed or skipped producer cannot turn its dependent execution into
