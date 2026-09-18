@@ -5263,6 +5263,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     const claim = await runsApi.claimRunnerJob(run.id);
     expect(claim.prompt).toBe("do the Feishu task");
     expect(claim.platformEnvironment.OKOU_AGENT_ID).toBe(alternateAgentId);
+    expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe(platform);
     expect(claim.appendSystemPrompt).toContain(
       `You are currently running inside: ${provider.name}`,
     );

@@ -139,6 +139,7 @@ interface RecordedSpeech {
   readonly contentType: string;
   readonly size: number;
   readonly url: string;
+  readonly privateArtifacts: boolean;
   readonly durationSeconds: number;
   readonly creditsCharged: number;
   readonly model: string;
@@ -1139,6 +1140,7 @@ export const recordGeneratedSpeech$ = command(
       contentType: SPEECH_CONTENT_TYPE,
       size: params.audioBytes.byteLength,
       url,
+      privateArtifacts: artifact.isPrivate,
       durationSeconds: params.durationSeconds,
       creditsCharged: estimatedSpeechCredits(
         params.durationSeconds,

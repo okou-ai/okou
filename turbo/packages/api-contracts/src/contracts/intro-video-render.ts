@@ -52,6 +52,7 @@ export const introVideoRenderPhaseSchema = z.enum([
 ]);
 export const introVideoRenderResultSchema = z.object({
   url: artifactUrlSchema,
+  privateArtifacts: z.boolean().optional(),
   filename: z.string(),
   contentType: z.literal("video/mp4"),
   size: z.number().int().positive(),

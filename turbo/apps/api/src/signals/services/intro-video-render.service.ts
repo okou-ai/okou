@@ -551,6 +551,7 @@ const persistRender$ = command(
       );
       artifact = {
         url: stored.url,
+        privateArtifacts: stored.isPrivate,
         filename: stored.filename,
         contentType: "video/mp4",
         size: bytes.length,
