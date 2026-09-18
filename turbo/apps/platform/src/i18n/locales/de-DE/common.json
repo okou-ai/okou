@@ -444,6 +444,7 @@
       "description": "Es ist möglicherweise privat oder nicht mehr verfügbar.",
       "help": "Bitte die Person, die diesen Link geteilt hat, den Zugriff zu prüfen.",
       "signedInAs": "Angemeldet als {{email}}",
+      "signedInDescription": "Es existiert möglicherweise nicht oder wurde für ein anderes Konto oder eine andere Organisation freigegeben.",
       "signIn": "Anmelden",
       "signInFailed": "Die Anmeldung konnte nicht geöffnet werden. Bitte versuche es erneut.",
       "switchAccount": "Konto wechseln",

@@ -458,6 +458,7 @@
       "description": "Puede que sea privado o que ya no esté disponible.",
       "help": "Pide a la persona que compartió este enlace que revise el acceso.",
       "signedInAs": "Sesión iniciada como {{email}}",
+      "signedInDescription": "Puede que no exista o que se haya compartido con otra cuenta u organización.",
       "signIn": "Iniciar sesión",
       "signInFailed": "No se pudo abrir el inicio de sesión. Inténtalo de nuevo.",
       "switchAccount": "Cambiar de cuenta",

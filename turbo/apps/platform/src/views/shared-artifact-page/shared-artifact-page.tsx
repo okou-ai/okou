@@ -153,17 +153,25 @@ function ArtifactAccessPage() {
             })}
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            {t(($) => {
-              return $.artifacts.access.description;
-            })}
+            {user
+              ? t(($) => {
+                  return $.artifacts.access.signedInDescription;
+                })
+              : t(($) => {
+                  return $.artifacts.access.description;
+                })}
             <br />
             {t(($) => {
               return $.artifacts.access.help;
             })}
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
+            {/* The API answers every denial with one status so artifacts cannot
+                be enumerated, so a signed-in visitor's next step is a guess.
+                Only offer a primary action when it is known to help. */}
             <Button
               type="button"
+              variant={user ? "outline" : "default"}
               disabled={accessLoadable.state === "loading"}
               aria-busy={accessLoadable.state === "loading"}
               onClick={() => {
@@ -300,7 +308,11 @@ export function SharedArtifactPage({
         {artifact !== null ? (
           <ArtifactPreviewBody
             artifact={undefined}
-            fullscreen={false}
+            // Escape leaves fullscreen through a document listener, which a
+            // cross-origin frame would swallow, so the frame keeps the focus
+            // it took on mount instead of claiming it again on the switch.
+            focusHtmlOnMount={!fullscreen}
+            fullscreen={fullscreen}
             imageCanvasSignals={viewer.imageCanvas}
             preview={artifact.preview}
           />
