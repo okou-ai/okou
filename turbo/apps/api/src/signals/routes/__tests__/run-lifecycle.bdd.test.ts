@@ -15619,7 +15619,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       expect.objectContaining({
         source: "chat",
         runId: null,
-        title: "Deleted chats",
+        title: "Unavailable thread",
         credits: 17,
       }),
     );
@@ -15666,7 +15666,7 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
     });
     expect(listedUsage).toMatchObject({
       runId: null,
-      title: "Deleted chats",
+      title: "Unavailable thread",
     });
     expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
 
@@ -15792,6 +15792,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 14,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 14,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 14,
+              usageKinds: [{ kind: "image", credits: 14 }],
+            },
+          ],
+        },
+      ],
     });
     expect(aggregated.body.members[1]).toMatchObject({
       userId: actor.userId,
@@ -15801,6 +15814,19 @@ describe("BILL-02: usage reads for an entitled organization with runs", () => {
       cacheReadInputTokens: 0,
       cacheCreationInputTokens: 0,
       creditsCharged: 7,
+      breakdown: [
+        {
+          kind: "image",
+          credits: 7,
+          providers: [
+            {
+              provider: imageProvider,
+              credits: 7,
+              usageKinds: [{ kind: "image", credits: 7 }],
+            },
+          ],
+        },
+      ],
     });
 
     await api.requestCancelRun(actor, actorRun.runId, [200]);

@@ -35,7 +35,7 @@ import type { Tx } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
 import { piResourceIndexHash } from "../../../lib/pi-resource-index";
 import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settle } from "../../utils";
 import {
   beginPiStableContextPublication,
   completePiStableContextPublication,
@@ -51,7 +51,10 @@ import {
   PI_STABLE_CONTEXT_AGENT_SUBJECT,
   retirePiStableContextPublication,
 } from "../pi-stable-context-generation.service";
-import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
+import {
+  deleteClerkAgentLifecycleData,
+  deleteClerkStableContextLifecycleData,
+} from "../agent-lifecycle.service";
 import { enqueuePiResourceVersionIndexes } from "../pi-resource-version-index.service";
 import { piStableContextErasureSubjectDigest } from "../pi-stable-context-erasure.service";
 import { lockCanonicalAgentMutation } from "../agent-mutation-lock.service";
@@ -1849,6 +1852,212 @@ describe("Pi stable context generation fences", () => {
       ).resolves.toStrictEqual([
         { generation: 1, status: "pending", input: repairedInput },
       ]);
+    },
+  );
+
+  it.each(["user", "organization"] as const)(
+    "orders Clerk %s owned-Agent head cleanup with archive repair",
+    async (scopeKind) => {
+      const fixture = await seed();
+      const storageId = randomUUID();
+      const versionId = randomUUID().replaceAll("-", "").repeat(2);
+      storageIds.push(storageId);
+      await db.insert(storages).values({
+        id: storageId,
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        name: `clerk-head-lock-${storageId}`,
+        s3Prefix: `test/pi-stable-context/${storageId}`,
+      });
+      await db.insert(storageVersions).values({
+        id: versionId,
+        storageId,
+        s3Key: `test/pi-stable-context/${storageId}/${versionId}`,
+        archiveSize: 1,
+        fileCount: 1,
+        createdBy: fixture.userId,
+      });
+      await db.insert(piResourceVersionIndexes).values({
+        storageVersionId: versionId,
+        extractorVersion: 1,
+        sourceArchiveSize: 1,
+      });
+      await db
+        .delete(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, fixture.headId));
+      const [lowHeadId, highHeadId] = [randomUUID(), randomUUID()].sort();
+      if (!lowHeadId || !highHeadId) {
+        throw new Error("Expected ordered Clerk cleanup head IDs");
+      }
+      const mount = {
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        name: `clerk-head-lock-${storageId}`,
+        storageId,
+        versionId,
+        mountPath: "/home/user/workspace",
+        archiveSize: 1,
+      };
+      const input: PiStableContextBuildInput = {
+        ...fixture.input,
+        owner: {
+          ...fixture.input.owner,
+          userId: fixture.otherUserId,
+        },
+        storageMounts: [mount],
+        persistedStorageMounts: [
+          {
+            orgId: mount.orgId,
+            userId: mount.userId,
+            name: mount.name,
+            storageId: mount.storageId,
+            version: mount.versionId,
+            mountPath: mount.mountPath,
+          },
+        ],
+      };
+      // The erased owner owns the Agent, but another user owns these heads.
+      // Reverse heap order so an unordered FK cascade reaches high before low.
+      await db.insert(piStableContextHeads).values([
+        {
+          id: highHeadId,
+          orgId: fixture.orgId,
+          userId: fixture.otherUserId,
+          agentId: fixture.agentId,
+          variantDigest: randomUUID().replaceAll("-", "").repeat(2),
+          agentGeneration: 1,
+          userGeneration: 1,
+          status: "pending",
+          input,
+          inputDigest: randomUUID().replaceAll("-", "").repeat(2),
+        },
+        {
+          id: lowHeadId,
+          orgId: fixture.orgId,
+          userId: fixture.otherUserId,
+          agentId: fixture.agentId,
+          variantDigest: randomUUID().replaceAll("-", "").repeat(2),
+          agentGeneration: 1,
+          userGeneration: 1,
+          status: "pending",
+          input,
+          inputDigest: randomUUID().replaceAll("-", "").repeat(2),
+        },
+      ]);
+      await db
+        .update(storageVersions)
+        .set({ archiveSize: 2 })
+        .where(eq(storageVersions.id, versionId));
+
+      const signal = AbortSignal.timeout(15_000);
+      const holderStarted = createDeferredPromise<number>(signal);
+      const releaseHolder = createDeferredPromise<void>(signal);
+      const holder = db.transaction(async (tx) => {
+        const result = await tx.execute(
+          sql`SELECT pg_backend_pid()::int AS "pid"`,
+        );
+        const pid = Number(result.rows[0]?.pid);
+        if (!Number.isInteger(pid)) {
+          throw new Error("Expected Clerk cleanup low-head holder pid");
+        }
+        await tx
+          .select({ id: piStableContextHeads.id })
+          .from(piStableContextHeads)
+          .where(eq(piStableContextHeads.id, lowHeadId))
+          .for("update");
+        holderStarted.resolve(pid);
+        await releaseHolder.promise;
+      });
+      const holderPid = await holderStarted.promise;
+      const repairStarted = createDeferredPromise<number>(signal);
+      const repair = db.transaction(async (tx) => {
+        const result = await tx.execute(
+          sql`SELECT pg_backend_pid()::int AS "pid"`,
+        );
+        const pid = Number(result.rows[0]?.pid);
+        if (!Number.isInteger(pid)) {
+          throw new Error("Expected Clerk cleanup archive repair pid");
+        }
+        repairStarted.resolve(pid);
+        await enqueuePiResourceVersionIndexes(tx, [versionId], signal);
+      });
+      const operations: Promise<unknown>[] = [holder, repair];
+      onTestFinished(async () => {
+        if (!releaseHolder.settled()) {
+          releaseHolder.resolve();
+        }
+        await Promise.allSettled(operations);
+      });
+      const repairPid = await repairStarted.promise;
+      await expect
+        .poll(async () => {
+          const result = await pool.query<{ blocked: boolean }>(
+            `SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS blocked`,
+            [repairPid, holderPid],
+          );
+          return result.rows[0]?.blocked ?? false;
+        })
+        .toBeTruthy();
+
+      const deletion = db.transaction(async (tx) => {
+        await deleteClerkStableContextLifecycleData(
+          tx,
+          scopeKind === "user"
+            ? { kind: "user", userId: fixture.userId }
+            : { kind: "organization", orgId: fixture.orgId },
+          [fixture.agentId],
+        );
+        await tx.delete(agents).where(eq(agents.id, fixture.agentId));
+      });
+      operations.push(deletion);
+      await expect
+        .poll(async () => {
+          const result = await pool.query<{ blocked: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1
+               FROM pg_stat_activity a
+               WHERE a.pid <> $1::int
+                 AND (
+                   $1::int = ANY(pg_blocking_pids(a.pid))
+                   OR $2::int = ANY(pg_blocking_pids(a.pid))
+                 )
+             ) AS blocked`,
+            [repairPid, holderPid],
+          );
+          return result.rows[0]?.blocked ?? false;
+        })
+        .toBeTruthy();
+      const highHeadProbe = await settle(
+        db.transaction(async (tx) => {
+          await tx
+            .select({ id: piStableContextHeads.id })
+            .from(piStableContextHeads)
+            .where(eq(piStableContextHeads.id, highHeadId))
+            .for("update", { noWait: true });
+        }),
+        signal,
+      );
+
+      releaseHolder.resolve();
+      const settled = await Promise.allSettled(operations);
+      expect(highHeadProbe).toMatchObject({ ok: true });
+      expect(
+        settled.map((result) => {
+          return result.status;
+        }),
+      ).toStrictEqual(["fulfilled", "fulfilled", "fulfilled"]);
+      await expect(
+        db
+          .select({ id: piStableContextHeads.id })
+          .from(piStableContextHeads)
+          .where(inArray(piStableContextHeads.id, [lowHeadId, highHeadId])),
+      ).resolves.toHaveLength(0);
+      await expect(
+        db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, fixture.agentId)),
+      ).resolves.toHaveLength(0);
     },
   );
 

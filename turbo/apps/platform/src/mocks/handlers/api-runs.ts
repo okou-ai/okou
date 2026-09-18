@@ -18,6 +18,13 @@ export const apiRunsHandlers = [
       status: "completed",
       prompt: "Test prompt",
       appendSystemPrompt: null,
+      source: {
+        providerType: null,
+        runtimeProviderType: null,
+        model: null,
+        credentialScope: null,
+        account: { status: "unknown" },
+      },
       result: { agentSessionId: "session-1", output: "" },
       createdAt: "2026-03-10T00:00:00Z",
     }),

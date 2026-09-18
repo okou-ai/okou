@@ -172,29 +172,55 @@ completed request is therefore still a live writer that closure denies, not a
 bypassing no-op.
 
 `publishThreadListChanged` runs only after a successful `COMMIT`, to the
-admitted user and organization. A denied, rolled-back or paused request consumes
-no sequence id, appends no event and publishes nothing.
+admitted user and organization — the `user-org:<userId>:<orgId>` channel of the
+session that applied. A denied, rolled-back or paused request consumes no
+sequence id, appends no event and publishes nothing, on that channel or on any
+other.
 
-Cancellation is bounded, and the bound is the pre-`COMMIT` rollback window.
-While the writer's own `signal.throwIfAborted()` still runs before `COMMIT`, an
-abort rolls the executed statements back, and that is what a case proves: the
+Cancellation is bounded, and the exact bound is the writer's **last
+in-transaction abort check**: the `signal.throwIfAborted()` that
+`withChatThreadContentWrite` runs immediately after the write callback returns,
+in `chat-thread-content-erasure-admission.service.ts`. An abort that this check
+observes rolls the executed statements back, and that is what a case proves: the
 thread update, the sequence, the event and the completion had all executed and
-none of them survived. That guarantee stops at `COMMIT`. An abort that arrives
-after the transaction has committed cannot undo the data, and the caller can
-still lose the `200` response and the `threadListChanged` publication that
-follows it — the write is durable, the notification is not retried, and the
-cursor a client later reads is the durable event. So "a cancelled request
-consumes nothing" is true only before `COMMIT`; after it, cancellation costs a
-response and possibly a publication, not the write. Cancellation of the
-application operation is what the writer observes; a raw client disconnect is
-not by itself server-side cancellation. No publication retry is introduced here.
+none of them survived.
+
+The guarantee stops there, not at `COMMIT`. That check runs **before** `COMMIT`
+is dispatched, so an abort arriving in the window between it and the `COMMIT`
+the driver then sends is already too late: the transaction commits and the data
+is durable. The writer's next `throwIfAborted` runs after the transaction and
+turns that abort into a failed response, so the caller loses the `200` and the
+`threadListChanged` publication that would have followed it — the write is
+durable, the notification is not retried, and the cursor a client later reads is
+the durable event. So "a cancelled request consumes nothing" is true only up to
+that last in-transaction check; after it, cancellation costs a response and a
+publication, not the write.
+
+Cancellation of the application operation is what the writer observes; a raw
+client disconnect or an abandoned `fetch` is not by itself server-side
+cancellation of the operation. No cancellation or retry API is added here, and
+nothing cancels a `COMMIT` already in flight.
 
 ## Evidence
 
 `turbo/apps/api/src/signals/routes/__tests__/browser-authorization-erasure.test.ts`
-holds eighteen cases at the real HTTP boundary against real PostgreSQL and the
+holds nineteen cases at the real HTTP boundary against real PostgreSQL and the
 real dormant B1 projector. Requests are created with a real run token through
 the real create endpoint and applied with a real authenticated session.
+
+Every publication assertion is scoped to an **exact channel and topic**, not to
+the topic alone. The Ably client mock records `channels.get(name)` and the
+returned channel's `publish(topic)` on two separate spies that every channel
+shares, so a topic-only count cannot tell one publication per owner from two
+under a single owner or one routed to the wrong channel. The shared
+`publishedChannelTopics` helper in
+`turbo/apps/api/src/signals/routes/__tests__/helpers/realtime-publications.ts`
+recovers each publish's channel from the last `channels.get` whose global
+invocation order precedes it; every publisher in `signals/external/realtime.ts`
+performs the `get` and that channel's `publish` in one synchronous step with no
+await between them, so the pairing is exact rather than an assumption about
+call order. Cases that expect nothing still assert that **no** channel received
+the topic, which is strictly stronger than a scoped zero.
 
 - Closure denial for the thread user, for a **legitimately distinct** shared
   Agent owner — a second member of the same organization who owns the Agent from
@@ -209,9 +235,14 @@ the real create endpoint and applied with a real authenticated session.
 - Writer-first: the apply pauses at `COMMIT` with every write executed; an
   exclusive closure is proved blocked through `pg_blocking_pids`; an independent
   reader still observes the old thread state, a null `completed_at`, the old
-  event list and zero invalidations; an unrelated owner applies normally
-  meanwhile; after release exactly one invalidation per accepted apply is
-  published and the landed closure then denies the next apply.
+  event list and zero invalidations. An unrelated owner — a genuinely different
+  user in a genuinely different organization — applies normally meanwhile, and
+  while the target is still paused the count is asserted **per owner**: exactly
+  one on the unrelated owner's own channel, zero on the target's, and no third
+  channel. After release each owner has exactly one on its own channel and the
+  total is two, and the landed closure then denies the next apply without adding
+  one. A global total of two would also be satisfied by two publications under
+  one owner or by either one misrouted, which is why it is not asserted alone.
 - Identity gaps: an Agent owner transferred under the locks, a thread deleted
   under the locks, and a cross-organization transfer before the apply.
 - Request window: deletion after the preflight, and a TTL that lapses after the
@@ -248,10 +279,21 @@ the real create endpoint and applied with a real authenticated session.
 - Real operation cancellation **after an executed write**: the barrier pauses
   after the completion `UPDATE` and asserts its `rowCount` is 1, so the thread
   update, the sequence, the event and the completion had all run and were still
-  uncommitted; the abort then reaches the writer's existing pre-`COMMIT` check
-  and everything rolls back. This is server-side cancellation of the operation,
-  not an abandoned client fetch, and it is not a claim about undoing anything
-  after `COMMIT`.
+  uncommitted; the abort then reaches the writer's last in-transaction check,
+  which still runs after this pause, and everything rolls back. This is
+  server-side cancellation of the operation, not an abandoned client fetch, and
+  it is not a claim about undoing anything after `COMMIT`.
+- Real operation cancellation **at the commit boundary**, which is the other
+  side of that bound. The barrier holds the driver's own `COMMIT` before it is
+  dispatched, so PostgreSQL has neither executed nor acknowledged it — the pause
+  is a pre-dispatch barrier, not a server-acknowledged `COMMIT`. What it is past
+  is the writer's last in-transaction abort check. While paused the state is
+  still unchanged and unpublished; the abort then lands and releasing sends a
+  `COMMIT` that succeeds. The case asserts the full accepted state afterwards —
+  the selection, the completion stamp and the next sidebar sequence id — while
+  the caller's `200` fails and **no** channel receives a `threadListChanged`.
+  That is the loss this contract describes: a response and a notification, not
+  the write. No in-flight `COMMIT` is cancelled and no publication is retried.
 - A held parent thread lock propagates as a real failure, not a closure `404`.
 - Parity: unknown token, another member's token, a foreign owner's token, an
   unauthenticated caller, an organization-less session, a thread without an
@@ -260,11 +302,34 @@ the real create endpoint and applied with a real authenticated session.
   `completed_at` stamp, repeat apply and a second link minted from the same run
   all still work.
 
+### Sensitivity of the per-channel assertions
+
+The per-owner assertions were checked against a deliberate, uncommitted mutation
+of the service that routed every apply's invalidation to the first owner that
+reached the publish, so the paused writer-first target was suppressed and the
+unrelated owner's was duplicated. The number of `threadListChanged`
+publications stayed at two. Under that mutation the retained total — two
+publications, two channel entries — still passed, and the writer-first case
+failed on `threadListInvalidations(fixture)`, receiving `0` where `1` is
+required. That is the concrete demonstration that a topic-only count could not
+have caught a misroute and that the per-channel binding does. The mutation was
+reverted before any commit; the service blob in this tree is
+`4f59282b0b129c8a186dc6dfdc8625f2acad113e`, unchanged. It is a test-validation
+control, not a reported production defect: no misrouting has been observed in
+the real publisher, which derives its channel from the admitted session's own
+user and organization.
+
 ### Baseline failure and candidate pass
 
 Same tree, one blob different in each row: only
 `turbo/apps/api/src/signals/services/browser-authorization.service.ts` is
-replaced, and the whole eighteen-case file is run against each build.
+replaced, and the whole file is run against each build.
+
+These three rows were measured when the file held **eighteen** cases. The later
+publication-scope and commit-boundary work changed only this file, the shared
+test helper and this document — the service blob is byte-identical — so the
+rows are kept as the historical record of that comparison rather than
+re-measured against the nineteen-case file.
 
 | Build                                                   | Result                        |
 | ------------------------------------------------------- | ----------------------------- |

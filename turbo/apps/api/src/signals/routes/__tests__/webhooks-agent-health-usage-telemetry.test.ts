@@ -30,7 +30,7 @@ describe("agent usage event webhook", () => {
         idempotencyKey: randomUUID(),
         kind: "connector" as const,
         provider: "x" as const,
-        category: "tweet.read" as const,
+        category: "posts.read" as const,
         quantity: 1,
         observedAt: "2026-09-16T00:00:00.000Z",
         resources: [{ id: "9007199254740993", occurrences: 1 }],

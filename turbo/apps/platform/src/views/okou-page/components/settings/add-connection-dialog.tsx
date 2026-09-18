@@ -1222,6 +1222,7 @@ function getConnectMethodContentComponent(
     case "none": {
       return NoAuthConnectMethodContent;
     }
+    case "automatic":
     case "managed": {
       return null;
     }

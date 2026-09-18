@@ -14,7 +14,10 @@
 
 import { createHash } from "node:crypto";
 
+import type { MorningBriefSourceAuthorityProof } from "./morning-brief-connector-reader.service";
 import type { MorningBriefSourceKind } from "./morning-brief-source-item";
+
+export type { MorningBriefSourceAuthorityProof };
 
 /** At most one descriptor per source. */
 export const MORNING_BRIEF_MAX_RETAINED_DESCRIPTORS = 5;
@@ -61,12 +64,26 @@ export interface MorningBriefRetainedSourceDescriptor {
   /**
    * A digest of the authorization surface this read actually exercised.
    *
-   * It is the granted scope set where the provider exposes one, and otherwise
-   * the exact provider methods that were called. Either way it is a digest, not
-   * the scopes: a later narrowing is detectable without the descriptor
-   * describing what a token can still do.
+   * For a connector source it is the effective permissions the shared reader
+   * admitted the read under; for the first-party sources it is the granted
+   * surface they read through. Either way it is a digest, not the scopes: a
+   * later narrowing is detectable without the descriptor describing what a
+   * token can still do. It is never a digest of constant method names, which
+   * would hash identically after a grant was withdrawn.
    */
   readonly scopeDigest: string;
+  /**
+   * The exact endpoints whose results this input still holds.
+   *
+   * One representative URL per distinct permission, which is precisely what the
+   * shared reader's release fence already re-evaluates. Retaining them is what
+   * lets a later phase repeat the *same* live check instead of asking a
+   * narrower question; a digest alone cannot name what to re-ask.
+   *
+   * Empty for the first-party sources, which authorize against their own
+   * containers rather than an HTTP policy.
+   */
+  readonly endpoints: readonly string[];
   readonly membershipId: string;
   readonly agentId: string;
   readonly capturedAt: string;
@@ -101,6 +118,35 @@ export function morningBriefScopeDigest(scopes: readonly string[]): string {
   return createHash("sha256").update(canonical, "utf8").digest("hex");
 }
 
+/**
+ * The connection, authorization surface and endpoints a real read proved.
+ *
+ * An absent proof means no authorized read released anything for this source,
+ * which is recorded as exactly that. The empty digest is deliberate: a digest
+ * over an empty scope list is still a valid-looking hash, and a descriptor that
+ * looks proven without a proof is the failure this whole module exists to
+ * prevent.
+ */
+export function morningBriefProvenAuthority(
+  proof: MorningBriefSourceAuthorityProof | null,
+): {
+  readonly connectionId: string | null;
+  readonly scopeDigest: string;
+  readonly endpoints: readonly string[];
+} {
+  if (proof === null) {
+    return { connectionId: null, scopeDigest: "", endpoints: [] };
+  }
+  return {
+    connectionId: proof.connectionId,
+    // The permissions this read was actually admitted under, so a later
+    // narrowing is detectable. Constant method names describe an API, not an
+    // authority, and would digest identically after a grant was withdrawn.
+    scopeDigest: morningBriefScopeDigest(proof.permissions),
+    endpoints: proof.endpoints,
+  };
+}
+
 function descriptorBytes(
   descriptor: MorningBriefRetainedSourceDescriptor,
 ): number {
@@ -113,7 +159,48 @@ type MorningBriefDescriptorSetError =
   | "descriptor-too-large"
   | "set-too-large"
   | "account-ref-too-large"
-  | "too-many-containers";
+  | "too-many-containers"
+  | "too-many-endpoints"
+  | "unproven-authority";
+
+/**
+ * How many endpoints one descriptor names.
+ *
+ * The reader keeps one representative URL per distinct permission and the
+ * accepted catalog gives a source a small, fixed permission set, so this bounds
+ * a real quantity rather than an arbitrary one.
+ */
+const MORNING_BRIEF_MAX_DESCRIPTOR_ENDPOINTS = 8;
+
+/** Whether this source's authority is an OAuth connection the owner selected. */
+function isConnectorBackedSource(source: MorningBriefSourceKind): boolean {
+  return source === "gmail" || source === "calendar" || source === "github";
+}
+
+/**
+ * Whether this descriptor can actually carry a later permission check.
+ *
+ * Only material that entered the model input has to be re-askable, so a source
+ * that supplied nothing is not held to it. For one that did, a null connection,
+ * an unproven account or no retained endpoint would make every later check pass
+ * by having nothing to ask about — while the evidence it was meant to cover
+ * went out anyway. Chat and native Slack carry no connector row, so their proof
+ * is the owner-scoped identity and the containers they actually read.
+ */
+function provesRetainedAuthority(
+  descriptor: MorningBriefRetainedSourceDescriptor,
+): boolean {
+  if (!descriptor.contributed) {
+    return true;
+  }
+  if (descriptor.accountRef === null || descriptor.scopeDigest === "") {
+    return false;
+  }
+  if (!isConnectorBackedSource(descriptor.source)) {
+    return descriptor.containers.length > 0;
+  }
+  return descriptor.connectionId !== null && descriptor.endpoints.length > 0;
+}
 
 /**
  * Accept a retained set only when it fits every declared bound.
@@ -148,6 +235,12 @@ export function boundMorningBriefDescriptors(
       descriptor.containers.length > MORNING_BRIEF_MAX_DESCRIPTOR_CONTAINERS
     ) {
       return { kind: "rejected", reason: "too-many-containers" };
+    }
+    if (descriptor.endpoints.length > MORNING_BRIEF_MAX_DESCRIPTOR_ENDPOINTS) {
+      return { kind: "rejected", reason: "too-many-endpoints" };
+    }
+    if (!provesRetainedAuthority(descriptor)) {
+      return { kind: "rejected", reason: "unproven-authority" };
     }
     if (
       descriptor.accountRef !== null &&

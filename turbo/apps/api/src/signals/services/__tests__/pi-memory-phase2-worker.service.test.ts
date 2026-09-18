@@ -15,6 +15,7 @@ import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { randomUUID } from "node:crypto";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
+import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -47,7 +48,6 @@ import {
 } from "../pi-memory-phase2-job.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
-import { computeContentHashFromHashes } from "../storage-content-hash.service";
 import { prepareStorageUploadForAuth$ } from "../storage-write.service";
 import {
   createPhase2TestScope,

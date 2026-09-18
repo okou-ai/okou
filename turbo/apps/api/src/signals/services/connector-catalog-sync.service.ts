@@ -68,6 +68,7 @@ import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
+import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { persistConnectorCatalogRuntimeProjection } from "./connector-catalog-runtime-projection.service";
 import {
   invalidateAllPiStableContexts,
@@ -437,6 +438,7 @@ function statusFromState(
 ): ConnectorCatalogRawSyncStatus {
   const active = activeStatusFromState(state);
   return {
+    schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
     state:
       active === null
         ? "never-synced"
@@ -1109,11 +1111,21 @@ async function commitValidatedCandidate(
   },
   signal: AbortSignal,
 ): Promise<SyncAttemptResult> {
-  const previousSnapshotResult = args.baseline?.activeCatalogVersion
-    ? await settle(loadConnectorRuntimeSnapshot(runtime.db), signal)
-    : undefined;
+  // The sync baseline is v4-only; retained v3 may still be serving before the
+  // first v4 acceptance. Compare permission bundles against the serving state.
+  const previousSnapshotResult = await settle(
+    loadConnectorRuntimeSnapshot(runtime.db),
+    signal,
+  );
   signal.throwIfAborted();
-  if (previousSnapshotResult && !previousSnapshotResult.ok) {
+  if (
+    !previousSnapshotResult.ok &&
+    !(
+      previousSnapshotResult.error instanceof
+        ExternalConnectorCatalogUnavailableError &&
+      previousSnapshotResult.error.reason === "missing_current_identity"
+    )
+  ) {
     log.warn("Failed to load previous connector runtime snapshot", {
       error: previousSnapshotResult.error,
     });
@@ -1163,10 +1175,9 @@ async function commitValidatedCandidate(
   await publishCatalogPermissionBundleWakeups({
     db: runtime.db,
     currentArtifact: args.candidate.artifact,
-    previousSnapshot:
-      previousSnapshotResult?.ok === true
-        ? previousSnapshotResult.value
-        : undefined,
+    previousSnapshot: previousSnapshotResult.ok
+      ? previousSnapshotResult.value
+      : undefined,
   });
   signal.throwIfAborted();
   const response = await responseFromState({

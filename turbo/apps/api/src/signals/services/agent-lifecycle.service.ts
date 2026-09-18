@@ -83,7 +83,7 @@ export async function deleteAgentStableContextLifecycleData(
     .where(eq(piStableContextArtifacts.agentId, agentId));
 }
 
-async function deleteStableContextLifecycleData(
+export async function deleteClerkStableContextLifecycleData(
   tx: Tx,
   scope: ClerkDeletionScope,
   agentIds: readonly string[],
@@ -98,6 +98,13 @@ async function deleteStableContextLifecycleData(
     await tx
       .delete(piStableContextPublications)
       .where(eq(piStableContextPublications.orgId, scope.orgId));
+    // The Agent FK cascade has no deterministic row order. Remove its complete
+    // head set explicitly after generation locks so archive repair and every
+    // lifecycle writer acquire heads in the same UUID order.
+    await deleteStableContextHeads(
+      tx,
+      eq(piStableContextHeads.orgId, scope.orgId),
+    );
     return;
   }
   const ownedAgentGenerationCondition =
@@ -131,13 +138,25 @@ async function deleteStableContextLifecycleData(
             ),
       ),
     );
+  const ownedAgentHeadCondition =
+    agentIds.length === 0
+      ? undefined
+      : eq(
+          piStableContextHeads.agentId,
+          sql`ANY(${sql.param(agentIds)}::uuid[])`,
+        );
+  const userHeadCondition = eq(piStableContextHeads.userId, scope.userId);
+  const headCondition = ownedAgentHeadCondition
+    ? or(userHeadCondition, ownedAgentHeadCondition)
+    : userHeadCondition;
+  if (!headCondition) {
+    throw new Error("Stable-context head cleanup condition is empty");
+  }
   // Stable artifacts are bound to the executing user even when the Agent is
-  // public or owned by somebody else. Generation locks come before heads;
-  // owned-Agent deletion separately cascades every other audience.
-  await deleteStableContextHeads(
-    tx,
-    eq(piStableContextHeads.userId, scope.userId),
-  );
+  // public or owned by somebody else. Generation locks come before the full
+  // head set. Explicitly delete every audience of an owned Agent in UUID order
+  // before its FK cascade; the cascade retains ownership of their artifacts.
+  await deleteStableContextHeads(tx, headCondition);
   await tx
     .delete(piStableContextArtifacts)
     .where(eq(piStableContextArtifacts.userId, scope.userId));
@@ -148,7 +167,7 @@ export async function deleteStableContextLifecycleAfterAuthorityRemoval(
   scope: ClerkDeletionScope,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await deleteStableContextLifecycleData(tx, scope, []);
+    await deleteClerkStableContextLifecycleData(tx, scope, []);
   });
 }
 
@@ -284,7 +303,7 @@ export async function deleteClerkAgentLifecycleData(
     });
     const removed = await deleteRunConversations(tx, runIds);
     await deleteLockedRuns(tx, runIds);
-    await deleteStableContextLifecycleData(tx, scope, agentIds);
+    await deleteClerkStableContextLifecycleData(tx, scope, agentIds);
     if (scope.kind === "user") {
       for (const agent of ownedAgents) {
         await removeAgentInstructionsStorageInTransaction(tx, {
@@ -306,7 +325,7 @@ export async function deleteClerkAgentLifecycleData(
       // Agent cascades drain child-row writers that could initialize non-FK
       // lifecycle metadata after the first sweep. Remove that late state while
       // the erasure and canonical Agent locks are still held.
-      await deleteStableContextLifecycleData(tx, scope, agentIds);
+      await deleteClerkStableContextLifecycleData(tx, scope, agentIds);
     }
     return await releaseDeletedConversationReferences(tx, removed);
   });

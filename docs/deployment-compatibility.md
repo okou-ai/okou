@@ -19,7 +19,8 @@ surfaces are on different versions.
 
 ## Pi stable-context schema rollout and rollback
 
-Migration 1158 adds `pi_stable_context_erasure_fences`,
+Migration 1159, following the additive VNC migration 1158, adds
+`pi_stable_context_erasure_fences`,
 `pi_stable_context_generations`,
 `pi_stable_context_publications`, `pi_stable_context_heads`,
 `pi_stable_context_artifacts`, and `pi_stable_context_artifact_resources`. It creates empty tables only: it does
@@ -37,7 +38,7 @@ the same check. A refresh admitted before closure either finishes first and is
 subsequently cleaned up, or waits and observes the fence. The table is
 feature-local deletion finality: it does not register the dormant account-
 erasure bridge, retain the raw Clerk identifier, or authorize deletion of any
-other product data. Keep stable-context activation on hold until migration 1158
+other product data. Keep stable-context activation on hold until migration 1159
 and this API writer are present on every serving API instance.
 
 Mixed-version API operation is safe by construction. A new reader with no
@@ -1974,6 +1975,31 @@ and requeued, and materialization re-classifies it as `over_limit`. Rolling back
 below the producer change only stops new larger sources; it does not rewrite
 what was already published. The stored source itself is never truncated or
 rewritten by any reader, producer or rollback.
+
+## Connector catalog v4 consumption
+
+Publish the complete v4 catalog before deploying the consumer. The new API
+syncs and accepts only v4. Until a source has accepted v4, its shared catalog
+reader serves the retained accepted v3 snapshot, validating original v3 bytes
+and current executable capabilities. Discovery, execution and firewall permissions
+use that same reader. Normal sync switches subsequent reads to accepted v4.
+The release workflow stays unchanged; no environment variable, generation
+selector or separate warm-up endpoint is needed. MCP capability filtering does
+not block catalog acceptance.
+
+Earlier API binaries continue using their v3 namespace and rows. No database
+migration, source-salt change or historical-byte rewrite is needed. New APIs
+always prefer an accepted v4 snapshot, regardless of catalog version ordering.
+Later candidate failures retain v4; a corrupt accepted v4 snapshot fails rather
+than falling back to v3. Diagnostics describe the v4 sync target and can report
+cold v4 state while the v3 bridge keeps connectors available.
+
+[The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
+and rollback requirements. MCP execution and Automatic OAuth remain separate
+deliveries. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
+bridge cleanup after every serving source and supported bootstrap target has
+accepted v4 and the deployment/rollback window no longer needs the bridge.
+Historical v3 object and row retention for old binaries remains independent.
 
 ## PostHog CIMD OAuth
 

@@ -32,6 +32,11 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  channelsPublishedTo,
+  countPublishedTo,
+  userOrgChannelName,
+} from "./helpers/realtime-publications";
 import { createRouteMocks } from "./helpers/route-test";
 import { browserAuthorizationRoutes } from "../browser-authorization";
 
@@ -282,12 +287,60 @@ async function readSelection(fixture: AuthorizationFixture): Promise<{
   };
 }
 
-/** The `threadListChanged` invalidations published so far, counted from a
- * cleared mock so an earlier setup write is never attributed to this request. */
-function countThreadListInvalidations(): number {
-  return context.mocks.ably.publish.mock.calls.filter((call) => {
-    return call[0] === "threadListChanged";
-  }).length;
+/**
+ * Start this case's publication evidence from an empty paired view, so an
+ * earlier setup write is never attributed to the request under test. Both spies
+ * are cleared together because a publish's channel is recovered from the `get`
+ * that produced it, and `mockClear` drops the calls and their invocation order
+ * as one.
+ */
+function clearPublications(): void {
+  context.mocks.ably.channelGet.mockClear();
+  context.mocks.ably.publish.mockClear();
+}
+
+/**
+ * The `threadListChanged` invalidations actually routed to one owner's own
+ * `user-org:<userId>:<orgId>` channel. Counting the topic alone cannot tell one
+ * publication per owner from two under a single owner or one sent to the wrong
+ * channel, because the client mock hands every channel the same `publish` spy;
+ * {@link countPublishedTo} binds each publish back to the `channels.get` call
+ * that produced it instead of pairing the two spies by position.
+ */
+function threadListInvalidations(fixture: AuthorizationFixture): number {
+  return countPublishedTo(context.mocks, {
+    channel: userOrgChannelName({
+      userId: fixture.actor.userId,
+      orgId: fixture.orgId,
+    }),
+    topic: "threadListChanged",
+  });
+}
+
+/** Every channel a `threadListChanged` reached, so a case still bounds the
+ * total it expects without letting one owner's two publications stand in for
+ * one each. */
+function threadListInvalidationChannels(): readonly string[] {
+  return channelsPublishedTo(context.mocks, "threadListChanged");
+}
+
+/** No sidebar invalidation reached this owner, and none reached anyone else
+ * either: a denial, rollback or pause must not merely misroute its publication.
+ */
+function expectNoInvalidation(fixture: AuthorizationFixture): void {
+  expect(threadListInvalidations(fixture)).toBe(0);
+  expect(threadListInvalidationChannels()).toStrictEqual([]);
+}
+
+/** Exactly one invalidation, on this owner's own channel and nowhere else. */
+function expectOneInvalidation(fixture: AuthorizationFixture): void {
+  expect(threadListInvalidations(fixture)).toBe(1);
+  expect(threadListInvalidationChannels()).toStrictEqual([
+    userOrgChannelName({
+      userId: fixture.actor.userId,
+      orgId: fixture.orgId,
+    }),
+  ]);
 }
 
 /** Every observable effect an accepted apply would have produced. */
@@ -353,19 +406,24 @@ describe("account erasure fences cloud browser authorization apply", () => {
         subjectKind: "user",
         subjectId: fixture.actor.userId,
       });
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
       const denied = await applyAuthorization(fixture, [404]);
       expect(denied.status).toBe(404);
       await flushWaitUntilForTest();
 
       await expectUnchanged(fixture, before);
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
 
       // The denied attempt consumed no durable sequence, so the next accepted
       // apply takes the very next sidebar sequence id.
       await removeErasureSubjectsFixture([closed.jobId]);
       await applyAuthorization(fixture, [200]);
       await expectApplied(fixture, before);
+
+      // The accepted apply publishes its own invalidation, and it goes to this
+      // owner's channel rather than merely somewhere.
+      await flushWaitUntilForTest();
+      expectOneInvalidation(fixture);
     },
   );
 
@@ -448,7 +506,9 @@ describe("account erasure fences cloud browser authorization apply", () => {
       const unrelated = await createAuthorizationFixture();
       const before = await readApplyState(fixture);
       const unrelatedBefore = await readApplyState(unrelated);
-      context.mocks.ably.publish.mockClear();
+      expect(unrelated.actor.userId).not.toBe(fixture.actor.userId);
+      expect(unrelated.orgId).not.toBe(fixture.orgId);
+      clearPublications();
 
       const closed = await withChatThreadContentBarrierFixture(
         {
@@ -475,11 +535,24 @@ describe("account erasure fences cloud browser authorization apply", () => {
             // An independent reader still sees the pre-commit state and no
             // outbound invalidation has been published for it.
             await expectUnchanged(fixture, before);
-            expect(countThreadListInvalidations()).toBe(0);
+            expectNoInvalidation(fixture);
 
             // An unrelated owner is not serialized behind that barrier.
             await applyAuthorization(unrelated, [200]);
             await expectApplied(unrelated, unrelatedBefore);
+            await flushWaitUntilForTest();
+
+            // The unrelated apply published exactly one invalidation, on its own
+            // channel; the still paused target has none. A global count of one
+            // could not tell those two owners apart.
+            expect(threadListInvalidations(unrelated)).toBe(1);
+            expect(threadListInvalidations(fixture)).toBe(0);
+            expect(threadListInvalidationChannels()).toStrictEqual([
+              userOrgChannelName({
+                userId: unrelated.actor.userId,
+                orgId: unrelated.orgId,
+              }),
+            ]);
 
             barrier.release();
             await applying;
@@ -494,15 +567,24 @@ describe("account erasure fences cloud browser authorization apply", () => {
 
       await flushWaitUntilForTest();
       await expectApplied(fixture, before);
-      // Exactly one invalidation for this apply, published only after COMMIT.
-      // The unrelated owner's accepted apply published the other.
-      expect(countThreadListInvalidations()).toBe(2);
+      // Exactly one invalidation per owner, each on that owner's own channel,
+      // and the target's was published only after its COMMIT. A global total of
+      // two is also satisfied by two publications under one owner or by either
+      // one routed to the wrong channel, so it is asserted per owner here.
+      expect(threadListInvalidations(fixture)).toBe(1);
+      expect(threadListInvalidations(unrelated)).toBe(1);
+      expect(threadListInvalidationChannels()).toHaveLength(2);
 
       // The closure landed behind the admitted write, so the next apply of the
       // same live token is denied and changes nothing.
       const applied = await readApplyState(fixture);
       await applyAuthorization(fixture, [404]);
+      await flushWaitUntilForTest();
       await expectUnchanged(fixture, applied);
+      // The denied repeat adds no invalidation, for either owner.
+      expect(threadListInvalidations(fixture)).toBe(1);
+      expect(threadListInvalidations(unrelated)).toBe(1);
+      expect(threadListInvalidationChannels()).toHaveLength(2);
     },
   );
 
@@ -553,12 +635,13 @@ describe("account erasure fences cloud browser authorization apply", () => {
         agentId: fixture.agentId,
         orgId: `org_${randomUUID()}`,
       });
-      context.mocks.ably.publish.mockClear();
-      await applyAuthorization(fixture, [404]);
+      clearPublications();
+      const refused = await applyAuthorization(fixture, [404]);
+      expect(refused.status).toBe(404);
       await flushWaitUntilForTest();
 
       await expectUnchanged(fixture, before);
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
     },
   );
 
@@ -594,7 +677,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
     async () => {
       const fixture = await createAuthorizationFixture();
       const before = await readApplyState(fixture);
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
 
       await withChatThreadContentBarrierFixture(
         {
@@ -622,7 +705,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(
         before.events,
       );
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
     },
   );
 
@@ -632,7 +715,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
     async () => {
       const fixture = await createAuthorizationFixture();
       const before = await readApplyState(fixture);
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
 
       await withChatThreadContentBarrierFixture(
         {
@@ -659,7 +742,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       await expect(sidebarHostEvents(fixture)).resolves.toStrictEqual(
         before.events,
       );
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
     },
   );
 
@@ -670,7 +753,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       const fixture = await createAuthorizationFixture();
       const peer = orgScoped(bdd.user({ orgId: fixture.orgId }));
       const before = await readApplyState(fixture);
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
 
       // A second real session owns this exact request row, so the apply's own
       // `FOR NO KEY UPDATE` pin waits on a lock this test holds. The stored
@@ -706,7 +789,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       mockNow(STARTED_AT_MS);
       await flushWaitUntilForTest();
       await expectUnchanged(fixture, before);
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
 
       // The unexpired control: a later link minted from the same run waits on
       // the very same pin and still applies. A wait is not an expiry, and the
@@ -732,6 +815,11 @@ describe("account erasure fences cloud browser authorization apply", () => {
       await laterHolder.done;
       await applyingLater;
       await expectApplied(later, laterBefore);
+      // The accepted control published exactly one invalidation on this owner's
+      // own channel, so the lapsed apply's zero above is a real absence rather
+      // than a counter that never observes this owner's publications.
+      await flushWaitUntilForTest();
+      expectOneInvalidation(later);
     },
   );
 
@@ -741,7 +829,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
     async () => {
       const fixture = await createAuthorizationFixture();
       const before = await readApplyState(fixture);
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
 
       await withBrowserAuthorizationApplyBarrierFixture(
         {
@@ -766,7 +854,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       await flushWaitUntilForTest();
 
       await expectUnchanged(fixture, before);
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
     },
   );
 
@@ -832,7 +920,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
         chatThreadId: fixture.threadId,
         signal: context.signal,
       });
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
       // A genuine transaction failure is neither the accepted 200 nor the
       // closure 404.
       await expect(applyAuthorization(fixture, [200, 404])).rejects.toThrow(
@@ -843,7 +931,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       await flushWaitUntilForTest();
 
       await expectUnchanged(fixture, before);
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
 
       // The reserved sequence rolled back with it: the next accepted apply
       // still takes the id this attempt had already allocated for itself.
@@ -859,7 +947,7 @@ describe("account erasure fences cloud browser authorization apply", () => {
       const fixture = await createAuthorizationFixture();
       const before = await readApplyState(fixture);
       const cancelled = new AbortController();
-      context.mocks.ably.publish.mockClear();
+      clearPublications();
 
       await withBrowserAuthorizationApplyBarrierFixture(
         {
@@ -876,8 +964,9 @@ describe("account erasure fences cloud browser authorization apply", () => {
             expect(completed.rowCount).toBe(1);
 
             // Real server-side cancellation of the operation, not an abandoned
-            // client fetch: the writer's own pre-COMMIT check observes it and
-            // rolls the executed statements back.
+            // client fetch: the writer's own last in-transaction check still
+            // runs after this pause and observes it, so the executed statements
+            // roll back.
             cancelled.abort();
             barrier.release();
             await expect(applying).rejects.toThrow(
@@ -890,7 +979,57 @@ describe("account erasure fences cloud browser authorization apply", () => {
       await flushWaitUntilForTest();
 
       await expectUnchanged(fixture, before);
-      expect(countThreadListInvalidations()).toBe(0);
+      expectNoInvalidation(fixture);
+    },
+  );
+
+  it(
+    "keeps a committed apply when the operation is cancelled at the commit boundary, publishing nothing",
+    { timeout: CASE_TIMEOUT_MS },
+    async () => {
+      const fixture = await createAuthorizationFixture();
+      const before = await readApplyState(fixture);
+      const cancelled = new AbortController();
+      clearPublications();
+
+      await withChatThreadContentBarrierFixture(
+        {
+          chatThreadId: fixture.threadId,
+          // This barrier holds the driver's own `COMMIT` before it is dispatched
+          // to PostgreSQL, so the server has neither run nor acknowledged it.
+          // What it does sit past is the writer's last in-transaction
+          // `throwIfAborted`, which is the real end of the rollback guarantee.
+          stopAt: "commit",
+          work: async (barrier) => {
+            const applying = applyAuthorization(fixture, [200, 404], {
+              signal: cancelled.signal,
+            });
+            await barrier.entered;
+            // Nothing is visible or published yet, exactly as in the writer-first
+            // case: the executed statements are still inside the transaction.
+            await expectUnchanged(fixture, before);
+            expectNoInvalidation(fixture);
+
+            // An abort that arrives only here is past every in-transaction
+            // check, so releasing sends a `COMMIT` that succeeds. The caller
+            // loses its response; it does not undo the write.
+            cancelled.abort();
+            barrier.release();
+            await expect(applying).rejects.toThrow(
+              /Unknown response status 500/,
+            );
+          },
+        },
+        context.signal,
+      );
+      await flushWaitUntilForTest();
+
+      // The write is durable — the same state an accepted apply leaves — while
+      // the 200 and the invalidation that follow the transaction are both lost.
+      // The durable sidebar event is what a client reading its cursor still
+      // sees; no publication is retried for it.
+      await expectApplied(fixture, before);
+      expectNoInvalidation(fixture);
     },
   );
 

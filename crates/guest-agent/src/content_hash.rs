@@ -1,5 +1,5 @@
-//! Content-addressable storage hash — Rust port of the TS implementation
-//! at `turbo/apps/api/src/signals/services/storage-content-hash.service.ts`.
+//! Content-addressable storage hash — Rust port of the shared TypeScript
+//! contract at `turbo/packages/api-contracts/src/contracts/storage-content-hash.ts`.
 //!
 //! `version_id` in VAS *is* this hash — the TS function is the sole producer
 //! across every prepare/commit route. Guest-side we recompute it locally so
@@ -99,7 +99,7 @@ mod tests {
     use serde::Deserialize;
 
     const CONTENT_HASH_CONTRACT: &str = include_str!(
-        "../../../turbo/apps/api/src/signals/services/__tests__/storage-content-hash-contract.json"
+        "../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/storage-content-hash.json"
     );
 
     #[derive(Deserialize)]

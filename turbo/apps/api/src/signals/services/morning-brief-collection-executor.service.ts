@@ -31,6 +31,7 @@ import {
   type MorningBriefCollectionAdmission,
   type MorningBriefCollectionClaim,
   type MorningBriefCollectionCompletion,
+  type MorningBriefCollectionFinalAdmission,
   type MorningBriefCollectionOccurrenceRow,
   type MorningBriefCollectionOwner,
 } from "./morning-brief-collection-occurrence.service";
@@ -448,6 +449,48 @@ export async function morningBriefLocalAuthorityStillCurrent(
 }
 
 /**
+ * The final admission one completion is accepted by, inside its transaction.
+ *
+ * `finalizeMorningBriefCollection` calls this after its owner and occurrence
+ * locks and before it writes anything, which is the only place two facts the
+ * database layer cannot see are still actionable: whether the caller is still
+ * there, and whether the owner's current local authority still permits this
+ * occurrence's work. Throwing unwinds the transaction, so a cancelled caller
+ * commits neither the completion nor anything the joined handoff reserved;
+ * returning a rejection writes nothing in the first place.
+ *
+ * It re-resolves exactly the canonical installation resolution admission used
+ * and compares it against the persisted occurrence, so there is no second
+ * adoption algorithm and no always-allow path. Only local rows are read — the
+ * Clerk membership generation is carried over from the occurrence — because a
+ * transaction must never be held open across a network round trip.
+ */
+async function admitCollectionCompletion(
+  tx: Tx,
+  occurrence: MorningBriefCollectionOccurrenceRow,
+  signal: AbortSignal,
+): Promise<MorningBriefCollectionFinalAdmission> {
+  signal.throwIfAborted();
+  const authority = await morningBriefLocalAuthorityStillCurrent(
+    tx,
+    occurrence,
+  );
+  // Re-checked after the read it just spent, so this is the freshest
+  // cancellation the transaction can observe before its guarded write.
+  signal.throwIfAborted();
+  if (authority.kind === "current") {
+    return { kind: "admitted" };
+  }
+  return {
+    kind: "rejected",
+    reason:
+      authority.kind === "binding-changed"
+        ? "binding-changed"
+        : "owner-revoked",
+  };
+}
+
+/**
  * The owner's live Morning Brief authority, without the Slack credential.
  *
  * It is the same canonical resolution admission uses — the implementation
@@ -707,14 +750,26 @@ export const executeMorningBriefSlackCollection$ = command(
     // unexpired deadline in one statement, so no separate check can disagree
     // with it. Equality with the deadline is already expired. The instant it
     // compares is read inside that transition, after its owner and row locks,
-    // because waiting for them can outlast the lease this attempt holds.
+    // because waiting for them can outlast the lease this attempt holds. The
+    // checks above describe the state before those waits, so cancellation and
+    // the local half of the owner's authority are admitted again inside the
+    // transaction, where a refusal still costs nothing.
     const finalized = await db.transaction(async (tx) => {
       const result = await finalizeMorningBriefCollection(
         tx,
         admission,
         claim,
         completion,
-        nowDate,
+        {
+          clock: nowDate,
+          admit: async (finalizingTx, occurrence) => {
+            return await admitCollectionCompletion(
+              finalizingTx,
+              occurrence,
+              signal,
+            );
+          },
+        },
       );
       // The handoff joins this transaction rather than following it, so no
       // downstream stage can ever be admitted for a bundle whose collection
@@ -729,16 +784,15 @@ export const executeMorningBriefSlackCollection$ = command(
           bundle: collected.bundle,
           at: result.at,
         });
+        // The handoff takes its own locks, so cancellation is honored once more
+        // before this callback returns and lets both writes commit together.
+        signal.throwIfAborted();
       }
       return result;
     });
     signal.throwIfAborted();
     if (finalized.kind !== "finalized") {
-      return {
-        kind: "conflict",
-        reason:
-          finalized.kind === "owner-revoked" ? "owner-revoked" : "claim-lost",
-      };
+      return { kind: "conflict", reason: finalized.kind };
     }
     const occurrence = occurrenceView(finalized.occurrence);
     if (collected.kind !== "collected") {

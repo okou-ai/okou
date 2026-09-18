@@ -666,6 +666,7 @@
       "renameImportedTemplate": "टेम्पलेट का नाम बदलें",
       "searchConnector": "टेम्पलेट खोजें",
       "searchConnectors": "टेम्पलेट खोजें",
+      "selected": "चयनित",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
       "selectVideo": "वीडियो टेम्पलेट {{title}} चुनें",
@@ -1886,6 +1887,7 @@
         "heading": "अवतार चुनें",
         "label": "अवतार",
         "none": "कोई अवतार नहीं",
+        "noneDetail": "केवल शैली",
         "previewLook": "{{name}} रूप का पूर्वावलोकन"
       },
       "catalog": {
@@ -1898,17 +1900,29 @@
         "cancel": "रद्द करें"
       },
       "picker": {
-        "autoVoiceDescription": "अपने कंटेंट के अनुकूल आवाज़ खोजें।",
+        "allPresenters": "सभी प्रेज़ेंटर",
+        "allPresentersCount": "सभी प्रेज़ेंटर ({{total}})",
+        "allVoices": "सभी आवाज़ें",
+        "allVoicesCount": "सभी आवाज़ें ({{total}})",
+        "autoVoiceDescription": "आपकी शैली से मेल खाती आवाज़",
         "avatarVoice": "अवतार की आवाज़",
         "back": "वापस",
-        "chooseStyle": "शैली चुनें",
         "closeOptions": "विकल्प बंद करें",
+        "done": "हो गया",
         "moreOptions": "अधिक विकल्प",
         "noMatches": "कोई परिणाम नहीं मिला।",
+        "optionsNote": "इन्हें चैट के चिप से कभी भी बदला जा सकता है।",
+        "pickStyle": "शैली चुनें",
+        "reset": "रीसेट करें",
+        "searchPresenters": "प्रेज़ेंटर खोजें",
         "searchStyles": "शैलियाँ खोजें",
-        "selectionSummary": "आवाज़: {{voice}} · अवतार: {{avatar}}",
+        "searchVoices": "आवाज़ें खोजें",
+        "selectedStyle": "चयनित: {{name}}",
         "settings": "इंट्रो वीडियो की सेटिंग",
-        "useSelection": "चयन इस्तेमाल करें"
+        "styleCount_one": "{{count}} शैली",
+        "styleCount_other": "{{count}} शैलियाँ",
+        "styleCountOf": "{{total}} में से {{shown}}",
+        "useStyle": "{{name}} इस्तेमाल करें"
       },
       "style": {
         "auto": "Okou को चुनने दें",
@@ -1927,10 +1941,9 @@
       "voice": {
         "auto": "Okou को चुनने दें",
         "defaultDescription": "चुने गए अवतार की डिफ़ॉल्ट आवाज़ इस्तेमाल करें",
-        "heading": "आवाज़ चुनें",
         "label": "आवाज़",
         "none": "बिना वॉइसओवर",
-        "noneDescription": "नरेशन न जोड़ें; म्यूट करने को न कहने पर मूल ऑडियो बनाए रखें।"
+        "noneShortDescription": "मूल ऑडियो रखें"
       }
     },
     "mail": {
@@ -2113,7 +2126,10 @@
       "number": "संख्या"
     },
     "sidebar": {
+      "allArchived": "आपकी सभी चैट आर्काइव हो गई हैं",
+      "allCaughtUp": "सब पूरा हो गया",
       "allChats": "सभी चैट",
+      "archive": "चैट आर्काइव करें",
       "chatsWith": "{{agentName}} के साथ चैट",
       "chatThreads": "चैट थ्रेड",
       "delete": "चैट हटाएं",
@@ -2132,7 +2148,10 @@
       "pinned": "पिन की गई",
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
+      "showArchived": "आर्काइव की गई चैट दिखाएं",
+      "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
+      "unarchive": "आर्काइव से निकालें",
       "unpin": "चैट अनपिन करें",
       "unread": "अपठित",
       "unreadOnly": "केवल अपठित"
@@ -2844,6 +2863,7 @@
       "ariaLabel": "चैट थ्रेड",
       "changeIcon": "आइकन बदलें",
       "emoji": {
+        "archive": "आर्काइव करें",
         "done": "हो गया",
         "idea": "विचार",
         "no": "नहीं",
@@ -3561,6 +3581,7 @@
           "sourceUnavailable": "स्रोत अनुपलब्ध",
           "stale": "बासी",
           "unchanged": "स्थिर",
+          "unsupportedProtocol": "असमर्थित प्रोटोकॉल",
           "unsupportedSchema": "असमर्थित स्कीमा"
         }
       },
@@ -5477,7 +5498,7 @@
         "usage": {
           "balanceDescription": "आपकी टीम के पास खर्च करने के लिए कितना बचा है।",
           "balanceTitle": "क्रेडिट शेष",
-          "usageDescription": "चैट, ऑटोमेशन और चैनलों पर आपका क्रेडिट उपयोग।",
+          "usageDescription": "आपका क्रेडिट उपयोग, थ्रेड के अनुसार समूहीकृत।",
           "usageTitle": "क्रेडिट उपयोग"
         }
       },
@@ -5641,9 +5662,12 @@
         "codexDescription": "Codex-समर्थित मॉडल मार्गों के लिए Codex डिवाइस लॉगिन से कनेक्ट करें।",
         "codexTitle": "ChatGPT (Codex)",
         "description": "केवल आपके रनों में, आपकी अपनी साख के साथ उपयोग किया जाता है।",
+        "disconnectAccount": "खाता डिस्कनेक्ट करें",
+        "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
+        "disconnecting": "डिस्कनेक्ट हो रहा है…",
+        "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
         "reconnectAccount": "फिर से कनेक्ट करें",
-        "removeAccount": "हटाएँ",
         "sectionTitle": "निजी",
         "status": {
           "connected": "जुड़े हुए",
@@ -5770,7 +5794,7 @@
         "codexTitle": "ChatGPT सत्र को पुनः कनेक्ट करने की आवश्यकता है"
       },
       "toasts": {
-        "accountRemoved": "खाता हटा दिया गया",
+        "accountDisconnected": "खाता डिस्कनेक्ट हो गया",
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
         "disconnected": "{{provider}} डिस्कनेक्ट हो गया",
         "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",
@@ -6391,36 +6415,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "इस बिलिंग अवधि में कोई उपयोग नहीं",
-        "description": "चैट, ऑटोमेशन और चैनल पर खर्च किए गए क्रेडिट यहाँ दिखते हैं.",
+        "description": "थ्रेड में खर्च किए गए क्रेडिट यहाँ दिखते हैं.",
         "noBillingPeriodDescription": "बिलिंग अवधि शुरू होने पर टीम का उपयोग यहाँ दिखेगा.",
         "noBillingPeriodTitle": "कोई सक्रिय बिलिंग अवधि नहीं",
         "rangeTitle": "इस समय सीमा में कोई उपयोग नहीं",
-        "teamDescription": "आपकी टीम द्वारा चैट, ऑटोमेशन और चैनल पर खर्च किए गए क्रेडिट यहाँ दिखते हैं."
+        "teamDescription": "आपकी टीम द्वारा थ्रेड में खर्च किए गए क्रेडिट यहाँ दिखते हैं."
       },
       "loadError": "आपका उपयोग लोड नहीं किया जा सका.",
       "loadMore": "और लोड करें",
       "myUsage": "मेरा उपयोग",
       "teamLoadError": "टीम उपयोग लोड नहीं किया जा सका.",
       "teamUsage": "टीम का उपयोग",
+      "thread": "थ्रेड",
+      "unavailableThread": "अनुपलब्ध थ्रेड",
       "untitled": "(शीर्षक रहित)"
     },
-    "sources": {
-      "agent": "एजेंट",
-      "automation": "ऑटोमेशन",
-      "chat": "चैट",
-      "email": "ईमेल",
-      "github": "GitHub",
-      "other": "अन्य",
-      "phone": "फ़ोन",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} चैट",
-      "chat_other": "{{value}} चैट",
       "credit_one": "{{value}} क्रेडिट",
-      "credit_other": "{{value}} क्रेडिट"
+      "credit_other": "{{value}} क्रेडिट",
+      "thread_one": "{{value}} थ्रेड",
+      "thread_other": "{{value}} थ्रेड"
     }
   },
   "workflows": {

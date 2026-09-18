@@ -665,6 +665,7 @@
       "renameImportedTemplate": "템플릿 이름 바꾸기",
       "searchConnector": "템플릿 검색",
       "searchConnectors": "템플릿 검색",
+      "selected": "선택됨",
       "selectStyle": "스타일 선택 {{style}}",
       "selectTemplate": "템플릿 선택 {{title}}",
       "selectVideo": "비디오 템플릿 선택 {{title}}",
@@ -1878,6 +1879,7 @@
         "heading": "아바타 선택",
         "label": "아바타",
         "none": "아바타 없음",
+        "noneDetail": "스타일만",
         "previewLook": "{{name}} 모습 미리보기"
       },
       "catalog": {
@@ -1890,17 +1892,28 @@
         "cancel": "취소"
       },
       "picker": {
-        "autoVoiceDescription": "콘텐츠에 맞는 음성을 선택합니다.",
+        "allPresenters": "모든 프레젠터",
+        "allPresentersCount": "모든 프레젠터 ({{total}})",
+        "allVoices": "모든 음성",
+        "allVoicesCount": "모든 음성 ({{total}})",
+        "autoVoiceDescription": "스타일에 어울리는 음성",
         "avatarVoice": "아바타 음성",
         "back": "뒤로",
-        "chooseStyle": "스타일 선택",
         "closeOptions": "옵션 닫기",
+        "done": "완료",
         "moreOptions": "추가 옵션",
         "noMatches": "결과가 없습니다.",
+        "optionsNote": "채팅의 칩에서 언제든지 변경할 수 있습니다.",
+        "pickStyle": "스타일 선택",
+        "reset": "초기화",
+        "searchPresenters": "프레젠터 검색",
         "searchStyles": "스타일 검색",
-        "selectionSummary": "음성: {{voice}} · 아바타: {{avatar}}",
+        "searchVoices": "음성 검색",
+        "selectedStyle": "선택됨: {{name}}",
         "settings": "인트로 영상 설정",
-        "useSelection": "선택 항목 사용"
+        "styleCount_other": "스타일 {{count}}개",
+        "styleCountOf": "{{total}}개 중 {{shown}}개",
+        "useStyle": "{{name}} 사용"
       },
       "style": {
         "auto": "Okou에게 맡기기",
@@ -1919,10 +1932,9 @@
       "voice": {
         "auto": "Okou에게 맡기기",
         "defaultDescription": "선택한 아바타의 기본 음성 사용",
-        "heading": "음성 선택",
         "label": "음성",
         "none": "내레이션 없음",
-        "noneDescription": "내레이션을 추가하지 않으며, 음소거 요청이 없으면 원본 오디오를 유지합니다."
+        "noneShortDescription": "원본 오디오 유지"
       }
     },
     "mail": {
@@ -2104,7 +2116,10 @@
       "number": "번호"
     },
     "sidebar": {
+      "allArchived": "모든 채팅이 보관되었습니다",
+      "allCaughtUp": "모두 정리했어요",
       "allChats": "모든 채팅",
+      "archive": "채팅 보관",
       "chatsWith": "{{agentName}}와의 채팅",
       "chatThreads": "채팅 스레드",
       "delete": "채팅 삭제",
@@ -2123,7 +2138,10 @@
       "pinned": "고정됨",
       "rename": "채팅 이름 바꾸기",
       "renameDescription": "이 채팅 스레드의 새 이름을 입력하세요.",
+      "showArchived": "보관된 채팅 표시",
+      "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",
+      "unarchive": "보관 해제",
       "unpin": "채팅 고정 해제",
       "unread": "읽지 않음",
       "unreadOnly": "읽지 않은 항목만"
@@ -2835,6 +2853,7 @@
       "ariaLabel": "채팅 스레드",
       "changeIcon": "아이콘 변경",
       "emoji": {
+        "archive": "보관",
         "done": "완료",
         "idea": "아이디어",
         "no": "아니요",
@@ -3548,6 +3567,7 @@
           "sourceUnavailable": "소스 사용 불가",
           "stale": "오래됨",
           "unchanged": "변경 없음",
+          "unsupportedProtocol": "지원되지 않는 프로토콜",
           "unsupportedSchema": "지원되지 않는 스키마"
         }
       },
@@ -5464,7 +5484,7 @@
         "usage": {
           "balanceDescription": "팀이 사용할 수 있는 잔액입니다.",
           "balanceTitle": "크레딧 잔액",
-          "usageDescription": "채팅, 자동화, 채널에서의 크레딧 사용량입니다.",
+          "usageDescription": "스레드별로 그룹화된 크레딧 사용량입니다.",
           "usageTitle": "크레딧 사용량"
         }
       },
@@ -5628,9 +5648,12 @@
         "codexDescription": "Codex 지원 모델 경로를 위한 Codex 기기 로그인 연결",
         "codexTitle": "ChatGPT (Codex)",
         "description": "본인의 자격 증명으로 실행 시에만 사용됩니다.",
+        "disconnectAccount": "계정 연결 해제",
+        "disconnectDescription": "Okou에서 계정을 제거합니다. 공급자 구독은 취소되지 않습니다.",
+        "disconnecting": "연결 해제 중…",
+        "disconnectTitle": "{{account}}의 연결을 해제할까요?",
         "noAccounts": "연결된 계정이 없습니다.",
         "reconnectAccount": "다시 연결",
-        "removeAccount": "삭제",
         "sectionTitle": "개인",
         "status": {
           "connected": "연결됨",
@@ -5756,7 +5779,7 @@
         "codexTitle": "ChatGPT 세션 재연결 필요"
       },
       "toasts": {
-        "accountRemoved": "계정이 삭제되었습니다",
+        "accountDisconnected": "계정 연결이 해제되었습니다",
         "accountSwitched": "활성 계정이 변경되었습니다",
         "disconnected": "{{provider}} 연결 해제됨",
         "policiesUpdated": "모델 공급자 설정이 업데이트되었습니다.",
@@ -6370,36 +6393,26 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "이 청구 기간에 사용 내역이 없습니다",
-        "description": "채팅, 자동화, 채널에서 사용한 크레딧이 여기에 표시됩니다.",
+        "description": "스레드에서 사용한 크레딧이 여기에 표시됩니다.",
         "noBillingPeriodDescription": "청구 기간이 시작되면 팀 사용량이 표시됩니다.",
         "noBillingPeriodTitle": "활성 청구 기간이 없습니다",
         "rangeTitle": "이 기간에 사용 내역이 없습니다",
-        "teamDescription": "팀이 채팅, 자동화, 채널에서 사용한 크레딧이 여기에 표시됩니다."
+        "teamDescription": "팀이 스레드에서 사용한 크레딧이 여기에 표시됩니다."
       },
       "loadError": "사용량을 불러올 수 없습니다.",
       "loadMore": "더 불러오기",
       "myUsage": "내 사용량",
       "teamLoadError": "팀 사용량을 불러올 수 없습니다.",
       "teamUsage": "팀 사용량",
+      "thread": "스레드",
+      "unavailableThread": "사용할 수 없는 스레드",
       "untitled": "(제목 없음)"
     },
-    "sources": {
-      "agent": "에이전트",
-      "automation": "자동화",
-      "chat": "채팅",
-      "email": "이메일",
-      "github": "GitHub",
-      "other": "기타",
-      "phone": "전화",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}}개 채팅",
-      "chat_other": "{{value}}개 채팅",
       "credit_one": "{{value}} 크레딧",
-      "credit_other": "{{value}} 크레딧"
+      "credit_other": "{{value}} 크레딧",
+      "thread_one": "{{value}}개 스레드",
+      "thread_other": "{{value}}개 스레드"
     }
   },
   "workflows": {

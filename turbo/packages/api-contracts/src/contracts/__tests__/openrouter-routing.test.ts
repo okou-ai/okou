@@ -13,6 +13,7 @@ const verified: readonly (readonly [OpenRouterApi, string])[] = [
   ["messages", "anthropic/claude-opus-4.8"],
   ["messages", "anthropic/claude-sonnet-5"],
   ["messages", "anthropic/claude-sonnet-4.6"],
+  ["responses", "deepseek/deepseek-v4.1-flash"],
   ["responses", "deepseek/deepseek-v4-flash"],
   ["responses", "deepseek/deepseek-v4-pro"],
   ["responses", "openai/gpt-6-astra"],
@@ -48,7 +49,6 @@ describe("platform OpenRouter regional selection", () => {
 
   it.each([
     ["messages", "anthropic/claude-fable-5.1"],
-    ["responses", "deepseek/deepseek-v4.1-flash"],
     ["chat/completions", "openai/gpt-5.6-terra"],
     ["responses", "google/gemini-3.6-flash"],
     ["chat/completions", "google/gemini-3.8-flash"],

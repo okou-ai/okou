@@ -48,6 +48,8 @@ const collect$ = command(async ({ get, set }, signal: AbortSignal) => {
       clerk: get(clerk$),
       owner: { orgId: auth.orgId, userId: auth.userId },
       anchor: new Date(body.data.scheduledFor),
+      // One source: the collector's own admission freezes its account choice.
+      authority: null,
     },
     signal,
   );

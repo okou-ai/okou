@@ -28,14 +28,15 @@ inside the two-date admission window below. The complete batch commits
 atomically and returns the existing `{ success: true }` acknowledgement.
 Mixed batches retain legacy quantities and the existing BYOK model filter;
 legacy-only batches retain their quantities and source behavior, sharing the
-same bounded write admission after activation. No producer capability is
-advertised by this change. A rejected resource batch must never be downgraded
-to legacy count billing.
+same bounded write admission after activation. Runner claims advertise the
+optional `xResourceBilling: { protocol: "x-resource-v1", startDate }` capability
+when the setting is configured, including a future activation date. A rejected
+resource batch must never be downgraded to legacy count billing.
 
 Each event carries:
 
 - `protocol: "x-resource-v1"`, a stable source UUID `idempotencyKey`,
-  `kind: "connector"`, `provider: "x"`, and category `tweet.read` or `user.read`.
+  `kind: "connector"`, `provider: "x"`, and category `posts.read` or `user.read`.
 - Original nonnegative safe-integer `quantity` Q and millisecond UTC
   `observedAt` (ISO timestamp ending in Z).
 - Distinct `resources: [{ id, occurrences }]`, with exact ASCII decimal IDs
@@ -48,7 +49,11 @@ resource IDs over the whole batch. The webhook counts actual streamed bytes
 and rejects bodies over 256 KiB with 413 even without an accurate Content-Length.
 Source UUIDs in a resource/mixed batch must be distinct, including UUID spelling
 that differs only in case. Resource type is derived from the category: post or user.
-There is no caller-supplied billing scope, binding or net quantity.
+There is no caller-supplied billing scope, binding or net quantity. `posts.read`
+is the existing X billing category; `tweet.read` is an OAuth permission and is
+not accepted as a resource billing category. This corrects the dormant contract
+before the first resource producer is activated; no category alias or price
+change is introduced.
 
 Let K be the sum of identified occurrences. Require Q = K + R, computing
 transient unidentified remainder R before collapsing repeated IDs. Bill N + R,
@@ -179,6 +184,53 @@ cleanup's ledger/allowance/Run lock order.
 [#34612](https://github.com/vm0-ai/okou/issues/34612) preserves exact IDs,
 occurrences, Q and transient reasons through extraction, bounded chunks,
 cross-language copies, serialization and retries. There is no bindingId.
+
+The API adds the capability when claiming a run, not when persisting a queued
+context. Rust carries it into its private proxy registry; Python validates it
+and snapshots it onto each matched request. Missing capability selects the
+existing count-only producer. A malformed advertised capability is rejected,
+never interpreted as permission to downgrade. Existing Runner versions ignore
+the additive claim field, so capability advertisement alone does not prove a
+fleet-wide switch. #34615 owns removal of the absent-capability compatibility
+path after older APIs/queued contexts and unsupported rollback targets leave
+the supported serving window.
+
+The existing selective parser remains the authoritative count validator. An
+additional identity copy retains at most 256 KiB of a JSON document. Only a
+completely validated document or NDJSON row can contribute IDs. Exact returned
+IDs are extracted from supported post lookup/search/timeline and profile lookup
+paths plus `includes.tweets` and `includes.users`. Requested-but-absent objects,
+bare references, polls, places and unsupported primary paths never claim a post
+or user identity. Count endpoints retain only their authoritative total; incidental
+`data` or `includes` objects cannot claim identities. Repeated IDs retain occurrence counts. Each group and final
+observation retain at most 1,000 distinct IDs. A larger body or ID set preserves
+the authoritative count and records the unidentified portion as `identity_limit`;
+malformed bodies keep only the existing trusted count fallback as `parse_fallback`.
+This can leave large legitimate responses count-priced rather than deduplicated.
+
+Capable NDJSON flows report one complete validated row at a time while the
+connection remains open. The row ordinal, flow, run and category form its stable
+source UUID. Observation time is the row's validation time; each row therefore
+belongs to one UTC date. A row completed before the configured start date uses
+legacy counts; a later row uses v1. Complete trailing rows report once on normal
+completion or interruption; malformed rows remain unbilled. Terminal hooks do
+not repeat previously emitted rows, including when a later decoder failure ends
+the stream. Ordinary JSON uses document validation time and a flow-local terminal
+guard, so another response/error notification cannot create a new observation.
+
+Resource observations bypass quantity aggregation. The existing buffer copies
+their nested fields and partitions requests by run, protocol and UTC date, with
+the same 100-event, 1,000-ID and actual 256 KiB serialized-byte limits as the API.
+Retries retain the same UUID, timestamp and payload. Before every HTTP attempt,
+including retries after queue waits, the producer permanently rejects dates
+older than yesterday; the API remains authoritative for future/run-clock bounds.
+This reuses existing delivery ownership, retry caps and shutdown drain; it adds
+no durable queue or new guarantee against loss during sustained saturation or
+process death. Existing buffer limits trigger flushing rather than imposing a
+new hard admission/memory ceiling.
+
+Transient per-category/reason totals remain on the current flow for the result
+annotation slice. They are not financial metadata and never enter ledger rows.
 [#34614](https://github.com/vm0-ai/okou/issues/34614) displays
 **Cannot deduplicate** / **无法去重** with the current operation when R is
 positive, including funded or zero-credit outcomes. A webhook acknowledgement

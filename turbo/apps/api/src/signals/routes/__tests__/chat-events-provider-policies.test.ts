@@ -33,8 +33,12 @@ import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
 import {
+  deleteBuiltInCandidateCooldownFixture,
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
+  resolveBuiltInModelRouteFixture,
+  seedBuiltInModelCandidateKeys,
+  setBuiltInCandidateCooldownFixture,
 } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
@@ -1816,6 +1820,190 @@ describe("CHAT-02: model-first provider policies", () => {
     await expectNoThreadModelUpdateEvent(actor, first.threadId, "gpt-5.6-luna");
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);
+
+  it.each(
+    (
+      ["deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-pro"] as const
+    ).flatMap((model) => {
+      return [false, true].map((enabled) => {
+        return { model, enabled };
+      });
+    }),
+  )(
+    "selects built-in $model through OpenRouter US only when the switch is $enabled",
+    async ({ model, enabled }) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      if (model === "deepseek-v4.1-flash") {
+        configureNativeCliArtifact();
+      }
+      await seedBuiltInModelCandidateKeys(context, model);
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model,
+          isDefault: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PiLoop]: false,
+        [FeatureSwitchKey.OpenRouterUsRouting]: enabled,
+      });
+
+      const run = await sendChatRun(actor, {
+        agentId,
+        model,
+        prompt: "capture the managed DeepSeek route",
+      });
+      const { claim } = await claimChatRun(runnerGroup, run.runId);
+      const environment = claimEnvironment(claim);
+      const expectedProvider = enabled ? "openrouter-codex" : "deepseek";
+      const expectedModel = enabled
+        ? `deepseek/${model}`
+        : model === "deepseek-v4.1-flash"
+          ? "deepseek-flash"
+          : model;
+      expect(environment.OPENAI_BASE_URL).toBe(
+        enabled
+          ? "https://us.openrouter.ai/api/v1"
+          : "https://api.deepseek.com/",
+      );
+      expect(environment.OPENAI_MODEL).toBe(expectedModel);
+      expect(claim.codexRuntimeConfig).toMatchObject({
+        providerId: expectedProvider,
+        modelCatalog: {
+          models: expect.arrayContaining([
+            expect.objectContaining({ slug: expectedModel }),
+          ]),
+        },
+      });
+      expect(claim.billableFirewalls).toContain(
+        `model-provider:${expectedProvider}`,
+      );
+      if (enabled) {
+        expect(claim.firewalls).toContainEqual(
+          expect.objectContaining({
+            kind: "inline",
+            firewall: expect.objectContaining({
+              name: "model-provider:openrouter-codex",
+              apis: expect.arrayContaining([
+                expect.objectContaining({
+                  base: "https://us.openrouter.ai/api/v1/responses",
+                }),
+              ]),
+            }),
+          }),
+        );
+      }
+      await cancelChatRun(actor, run.runId);
+    },
+    90_000,
+  );
+
+  it.each([
+    "deepseek-v4.1-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+  ] as const)(
+    "fails closed for built-in $model when only the direct key is available",
+    async (model) => {
+      const { actor, agentId } = await entitledChatActor();
+      if (model === "deepseek-v4.1-flash") {
+        configureNativeCliArtifact();
+      }
+      await seedBuiltInModelKey(model);
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model,
+          isDefault: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PiLoop]: false,
+        [FeatureSwitchKey.OpenRouterUsRouting]: true,
+      });
+
+      const prompt = "do not fall back to the managed DeepSeek direct key";
+      const response = await requestSendEventRaw(actor, {
+        agentId,
+        prompt,
+        userMessage: {
+          version: 1,
+          parts: [{ type: "text", text: prompt }],
+        },
+        model,
+        hasTextContent: true,
+      });
+      expect(response.status).toBe(503);
+      expectApiError(response.body);
+      expect(response.body.error.message).toBe(
+        "Every built-in model route for this model is temporarily unavailable",
+      );
+    },
+  );
+
+  it("fails closed when the DeepSeek OpenRouter US candidate is cooling", async () => {
+    const model = "deepseek-v4-flash";
+    const { actor, agentId } = await entitledChatActor();
+    await seedBuiltInModelCandidateKeys(context, model);
+    const direct = await resolveBuiltInModelRouteFixture(context, model);
+    expect(direct).toMatchObject({ provider_type: "deepseek" });
+    if (!direct) {
+      throw new Error("Expected a DeepSeek direct route");
+    }
+    await setBuiltInCandidateCooldownFixture(
+      context,
+      model,
+      direct,
+      new Date(now() + 10 * 60 * 1000),
+    );
+    const openRouter = await resolveBuiltInModelRouteFixture(context, model);
+    expect(openRouter).toMatchObject({ provider_type: "openrouter-codex" });
+    if (!openRouter) {
+      throw new Error("Expected an OpenRouter fallback route");
+    }
+    await setBuiltInCandidateCooldownFixture(
+      context,
+      model,
+      openRouter,
+      new Date(now() + 10 * 60 * 1000),
+    );
+    await deleteBuiltInCandidateCooldownFixture(context, model, direct);
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    await authDeviceSupport.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PiLoop]: false,
+      [FeatureSwitchKey.OpenRouterUsRouting]: true,
+    });
+
+    const prompt = "do not fall back while OpenRouter US is cooling";
+    const response = await requestSendEventRaw(actor, {
+      agentId,
+      prompt,
+      userMessage: {
+        version: 1,
+        parts: [{ type: "text", text: prompt }],
+      },
+      model,
+      hasTextContent: true,
+    });
+    expect(response.status).toBe(503);
+    expectApiError(response.body);
+    expect(response.body.error.message).toBe(
+      "Every built-in model route for this model is temporarily unavailable",
+    );
+  });
 
   it.each(
     (

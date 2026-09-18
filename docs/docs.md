@@ -36,6 +36,11 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [External MCP server](./mcp-server.md): OAuth resource setup, organization
+  authority, Streamable HTTP behavior and hosted-client acceptance gates.
+
+- [VNC owner configuration](./vnc-access.md): encrypted credentials, saved
+  hosts, TLS trust, membership fences, and the disabled rollout boundary.
 - [Social download discovery](./social-download-discovery.md): bounded task
   listing, scoped recovery hints, pagination, and CLI/API compatibility.
 - [Social errors and download recovery](./social-errors.md): stable error
@@ -54,6 +59,8 @@ surface; the index does not replace their detailed rules.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
+- [Connector catalog v4 consumption](./connector-catalog-v4.md): v4 sync, the
+  temporary accepted-v3 read bridge, capability filtering and rollback boundaries.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the

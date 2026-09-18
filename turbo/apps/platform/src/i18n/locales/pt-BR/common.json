@@ -685,6 +685,7 @@
       "renameImportedTemplate": "Renomear modelo",
       "searchConnector": "Buscar modelos",
       "searchConnectors": "Buscar modelos",
+      "selected": "Selecionado",
       "selectStyle": "Selecionar estilo {{style}}",
       "selectTemplate": "Selecionar modelo {{title}}",
       "selectVideo": "Selecionar modelo de vídeo {{title}}",
@@ -1924,6 +1925,7 @@
         "heading": "Escolha um avatar",
         "label": "Avatar",
         "none": "Sem avatar",
+        "noneDetail": "Somente estilo",
         "previewLook": "Prévia da aparência {{name}}"
       },
       "catalog": {
@@ -1936,17 +1938,30 @@
         "cancel": "Cancelar"
       },
       "picker": {
-        "autoVoiceDescription": "Encontre uma voz que combine com seu conteúdo.",
+        "allPresenters": "Todos os apresentadores",
+        "allPresentersCount": "Todos os apresentadores ({{total}})",
+        "allVoices": "Todas as vozes",
+        "allVoicesCount": "Todas as vozes ({{total}})",
+        "autoVoiceDescription": "Uma voz que combina com seu estilo",
         "avatarVoice": "Voz do avatar",
         "back": "Voltar",
-        "chooseStyle": "Escolha um estilo",
         "closeOptions": "Fechar opções",
+        "done": "Concluir",
         "moreOptions": "Mais opções",
         "noMatches": "Nenhum resultado.",
+        "optionsNote": "Você pode alterar isso a qualquer momento pelo chip no chat.",
+        "pickStyle": "Escolha um estilo",
+        "reset": "Redefinir",
+        "searchPresenters": "Buscar apresentadores",
         "searchStyles": "Pesquisar estilos",
-        "selectionSummary": "Voz: {{voice}} · Avatar: {{avatar}}",
+        "searchVoices": "Buscar vozes",
+        "selectedStyle": "Selecionado: {{name}}",
         "settings": "Configurações do vídeo de introdução",
-        "useSelection": "Usar seleção"
+        "styleCount_one": "{{count}} estilo",
+        "styleCount_many": "{{count}} estilos",
+        "styleCount_other": "{{count}} estilos",
+        "styleCountOf": "{{shown}} de {{total}}",
+        "useStyle": "Usar {{name}}"
       },
       "style": {
         "auto": "Deixar o Okou escolher",
@@ -1965,10 +1980,9 @@
       "voice": {
         "auto": "Deixar o Okou escolher",
         "defaultDescription": "Usar a voz padrão do avatar escolhido",
-        "heading": "Escolha uma voz",
         "label": "Voz",
         "none": "Sem narração",
-        "noneDescription": "Não adicionar narração; manter o áudio original, a menos que você peça para silenciá-lo."
+        "noneShortDescription": "Manter o áudio original"
       }
     },
     "mail": {
@@ -2160,7 +2174,10 @@
       "number": "número"
     },
     "sidebar": {
+      "allArchived": "Todas as suas conversas estão arquivadas",
+      "allCaughtUp": "Tudo em dia",
       "allChats": "Todas as conversas",
+      "archive": "Arquivar conversa",
       "chatsWith": "Conversas com {{agentName}}",
       "chatThreads": "Conversas",
       "delete": "Excluir",
@@ -2179,7 +2196,10 @@
       "pinned": "Fixada",
       "rename": "Renomear conversa",
       "renameDescription": "Escolha um novo nome para esta conversa.",
+      "showArchived": "Mostrar arquivadas",
+      "showArchivedChats": "Mostrar conversas arquivadas",
       "titlePlaceholder": "Título da conversa",
+      "unarchive": "Desarquivar conversa",
       "unpin": "Desafixar conversa",
       "unread": "Não lida",
       "unreadOnly": "Somente não lidas"
@@ -2891,6 +2911,7 @@
       "ariaLabel": "Conversa",
       "changeIcon": "Alterar ícone",
       "emoji": {
+        "archive": "Arquivar",
         "done": "Concluído",
         "idea": "Ideia",
         "no": "Não",
@@ -3616,6 +3637,7 @@
           "sourceUnavailable": "Origem indisponível",
           "stale": "Desatualizado",
           "unchanged": "Sem alterações",
+          "unsupportedProtocol": "Protocolo não compatível",
           "unsupportedSchema": "Schema não compatível"
         }
       },
@@ -5536,7 +5558,7 @@
         "usage": {
           "balanceDescription": "O que resta para a sua equipe gastar.",
           "balanceTitle": "Saldo de créditos",
-          "usageDescription": "Seu uso de créditos em conversas, automações e canais.",
+          "usageDescription": "Seu uso de créditos, agrupado por conversa.",
           "usageTitle": "Uso de créditos"
         }
       },
@@ -5700,9 +5722,12 @@
         "codexDescription": "Conecte o login do dispositivo do Codex para usar rotas de modelos baseadas no Codex.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Usados somente nas suas execuções, com suas próprias credenciais.",
+        "disconnectAccount": "Desconectar conta",
+        "disconnectDescription": "Isso remove a conta do Okou. Sua assinatura com o provedor não será cancelada.",
+        "disconnecting": "Desconectando…",
+        "disconnectTitle": "Desconectar {{account}}?",
         "noAccounts": "Nenhuma conta conectada.",
         "reconnectAccount": "Reconectar",
-        "removeAccount": "Remover",
         "sectionTitle": "Pessoal",
         "status": {
           "connected": "Conectado",
@@ -5831,7 +5856,7 @@
         "codexTitle": "A sessão do ChatGPT precisa ser reconectada"
       },
       "toasts": {
-        "accountRemoved": "Conta removida",
+        "accountDisconnected": "Conta desconectada",
         "accountSwitched": "Conta ativa alterada",
         "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configurações dos provedores de modelo atualizadas",
@@ -6461,38 +6486,28 @@
     "records": {
       "empty": {
         "billingPeriodTitle": "Nenhum uso neste período de cobrança",
-        "description": "Os créditos que você gasta em chats, automações e canais aparecem aqui.",
+        "description": "Os créditos que você gasta em conversas aparecem aqui.",
         "noBillingPeriodDescription": "O uso da equipe aparece assim que um período de cobrança começa.",
         "noBillingPeriodTitle": "Nenhum período de cobrança ativo",
         "rangeTitle": "Nenhum uso neste período",
-        "teamDescription": "Os créditos que sua equipe gasta em chats, automações e canais aparecem aqui."
+        "teamDescription": "Os créditos que sua equipe gasta em conversas aparecem aqui."
       },
       "loadError": "Não foi possível carregar seu uso.",
       "loadMore": "Carregar mais",
       "myUsage": "Meu uso",
       "teamLoadError": "Não foi possível carregar o uso da equipe.",
       "teamUsage": "Uso da equipe",
+      "thread": "Conversa",
+      "unavailableThread": "Conversa indisponível",
       "untitled": "(sem título)"
     },
-    "sources": {
-      "agent": "Agente",
-      "automation": "Automação",
-      "chat": "Conversa",
-      "email": "E-mail",
-      "github": "GitHub",
-      "other": "Outro",
-      "phone": "Telefone",
-      "slack": "Slack",
-      "teams": "Microsoft Teams",
-      "telegram": "Telegram"
-    },
     "units": {
-      "chat_one": "{{value}} conversa",
-      "chat_many": "{{value}} conversas",
-      "chat_other": "{{value}} conversas",
       "credit_one": "{{value}} crédito",
       "credit_many": "{{value}} créditos",
-      "credit_other": "{{value}} créditos"
+      "credit_other": "{{value}} créditos",
+      "thread_one": "{{value}} conversa",
+      "thread_many": "{{value}} conversas",
+      "thread_other": "{{value}} conversas"
     }
   },
   "workflows": {

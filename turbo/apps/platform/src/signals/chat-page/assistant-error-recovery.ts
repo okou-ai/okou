@@ -465,7 +465,7 @@ function providerSubscriptionReset(
 }
 
 function runSourceFramework(
-  source: GetRunResponse["source"],
+  source: GetRunResponse["source"] | undefined,
 ): ModelProviderFramework | null {
   const provider = source?.runtimeProviderType ?? source?.providerType;
   if (!provider) {
@@ -482,7 +482,7 @@ function runSourceFramework(
 function historicalSubscriptionError(
   event: EnrichedChatEvent,
   error: string,
-  source: GetRunResponse["source"],
+  source: GetRunResponse["source"] | undefined,
 ): ClassifiedAssistantError | null {
   const subscriptionFailureReasons = [
     "reconnect_required",
