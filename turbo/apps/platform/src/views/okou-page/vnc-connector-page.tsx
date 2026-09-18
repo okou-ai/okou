@@ -50,7 +50,7 @@ function VncHostCard({
           : connection.host}
         :{connection.port}
       </p>
-      <p className="text-sm text-muted-foreground">
+      <p className="break-all text-sm text-muted-foreground">
         {connection.credentialName}
       </p>
       <p className="text-sm text-muted-foreground">

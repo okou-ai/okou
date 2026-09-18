@@ -1,11 +1,11 @@
 import { useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
-import { invalidateVnc$ } from "../../signals/vnc.ts";
+import { retryVnc$ } from "../../signals/vnc.ts";
 
 export function VncLoadError() {
   const { t } = useTranslation();
-  const refresh = useSet(invalidateVnc$);
+  const retry = useSet(retryVnc$);
   return (
     <div
       role="alert"
@@ -21,7 +21,7 @@ export function VncLoadError() {
         type="button"
         size="sm"
         onClick={() => {
-          refresh();
+          retry();
         }}
       >
         {t(($) => {

@@ -304,17 +304,21 @@ export function VncCredentialSelection({
           onValueChange={choose}
           disabled={disabled}
         >
-          <SelectTrigger id="vnc-credential">
+          <SelectTrigger id="vnc-credential" className="min-w-0">
             <SelectValue
               placeholder={t(($) => {
                 return $.vnc.credential.select;
               })}
             />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="w-(--anchor-width)">
             {credentials.data.map((credential) => {
               return (
-                <SelectItem key={credential.id} value={credential.id}>
+                <SelectItem
+                  key={credential.id}
+                  value={credential.id}
+                  className="break-all"
+                >
                   {credential.name}
                 </SelectItem>
               );
@@ -357,7 +361,11 @@ export function VncCredentialImpact({
       {credential.hosts.length > 0 && (
         <ul className="list-inside list-disc">
           {credential.hosts.map((host) => {
-            return <li key={host.id}>{host.displayName}</li>;
+            return (
+              <li key={host.id} className="break-all">
+                {host.displayName}
+              </li>
+            );
           })}
         </ul>
       )}

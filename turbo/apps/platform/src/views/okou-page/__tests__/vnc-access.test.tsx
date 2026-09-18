@@ -2,7 +2,10 @@ import { agentVncAccessContract } from "@okouai/api-contracts/contracts/vnc-acce
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
+import {
+  agentsByIdContract,
+  agentsMainContract,
+} from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -92,6 +95,46 @@ test("An unavailable grant cannot classify VNC as unshared and can be retried", 
   await expect(
     findFastControl("link", "Manage VNC"),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Could not load VNC configuration.")).toBeNull();
+});
+
+test("VNC access can retry a failed Agent inventory", async () => {
+  mockCatalog();
+  let failed = true;
+  context.mocks.api(agentsMainContract.list, ({ respond }) => {
+    return failed
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Agent inventory unavailable",
+          },
+        })
+      : respond(200, [listAgent(agentId, "Research")]);
+  });
+  context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 1 });
+  });
+  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
+    return respond(200, { enabled: false });
+  });
+  await setupPage({
+    context,
+    path: "/connectors?keywords=vnc",
+    featureSwitches: {
+      [FeatureSwitchKey.VncAccess]: true,
+      [FeatureSwitchKey.ConnectorDirectory]: true,
+    },
+  });
+  const error = await screen.findByText("Could not load VNC configuration.");
+  const alert = error.closest('[role="alert"]');
+  if (!(alert instanceof HTMLElement)) {
+    throw new Error("Missing VNC error alert");
+  }
+  failed = false;
+  click(await findFastControl("button", "Retry", alert));
+  await waitFor(() => {
+    expect(queryFastControl("button", "Manage VNC access")).toBeEnabled();
+  });
   expect(screen.queryByText("Could not load VNC configuration.")).toBeNull();
 });
 
