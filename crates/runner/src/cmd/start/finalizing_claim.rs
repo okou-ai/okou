@@ -796,7 +796,7 @@ async fn receive_finalizing_handoff(
     info!(
         run_id = %run_id,
         predecessor_run_id = %predecessor_run_id,
-        "finalizing successor received direct parked sandbox handoff"
+        "finalizing successor received direct sandbox handoff"
     );
     FinalizingWaitOutcome::Handoff(candidate)
 }

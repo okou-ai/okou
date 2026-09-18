@@ -390,13 +390,14 @@ impl IdleParkRequest {
     }
 }
 
-/// Perform the shared active-to-parked transition.
+/// Transition active execution to physical park or fenced running handoff.
 ///
 /// This function validates promotion identity before invoking the sandbox,
-/// then validates the reuse-preparation report only after the sandbox confirms
-/// that it parked. That ordering determines whether a failure returns
-/// [`IdleParkFailureParts::Active`] or [`IdleParkFailureParts::Parked`]. The
-/// handoff argument is supplied by the finalization caller for an exact
+/// then validates the reuse-preparation report after the sandbox confirms park
+/// or running handoff. Failures retain [`IdleParkFailureParts::Active`],
+/// [`IdleParkFailureParts::Parked`], or [`IdleParkFailureParts::RunningHandoff`]
+/// ownership according to the completed boundary. The handoff argument is
+/// supplied by the finalization caller for an exact
 /// predecessor; this function does not infer that relationship from the
 /// metadata.
 async fn park_idle_transition(
