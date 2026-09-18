@@ -260,6 +260,113 @@ expected subjects. Preparation prechecks cannot expose those intermediate
 missing/mismatched pairs through an endpoint; these cases use the existing
 real-database admission exception rather than mocking the query or locks.
 
+### Isolation check with the first subject lock (#35235)
+
+The first sorted subject lock now also checks the transaction's isolation level.
+A SQL `CASE` evaluates the advisory-lock scalar subquery only for READ COMMITTED
+and returns the isolation text through the existing schema-column decoder.
+Unsupported isolation neither acquires an uncontended lock nor waits for a held
+one. Every subsequent subject is still locked in its own awaited statement;
+the closure lookup is still a separate statement after **all** subject locks.
+A closure committed while the first or a later lock waits therefore remains
+visible. Both shared admission and exclusive erasure mutations use this helper.
+
+The full subject list is validated before locking. Invalid subject inputs now
+fail before the isolation query; if both inputs and isolation are invalid, the
+subject error takes precedence. The lock namespace, domain-separated identities,
+hash seed, sorting, modes and transaction lifetime are unchanged. Old and new
+participants continue to exclude each other. Resource KEY SHARE rereads, final
+session validation, ownership retries, private maintenance and failed-launch
+persistence retain their existing contracts. No schema, protocol or stored proof
+changes are required; rollback restores the standalone isolation query.
+
+For `S` distinct subjects, the lock stage changes from `1 + S` statements to
+`S`. Ordinary new-run admission, with either a new or existing session, changes
+from `4 + S` to `3 + S`: **6 to 5** for one user and one organization. These
+counts exclude checkout, BEGIN/COMMIT, optional catalog admission and later
+organization/thread/session/provider work. They are not whole-request counts.
+
+Real PostgreSQL regressions cover repeatable-read and serializable rejection
+for both lock modes, including a conflicting held lock and inspection before
+rollback. Closure-commit races cover both the first organization lock and the
+later user lock. Existing B1 and actual compute tests retain writer-first,
+closure rollback, shared writers, ownership transfer, missing resources,
+new/existing sessions, queued retries, failure persistence and maintenance.
+
+#### Finite local attribution
+
+On 2026-09-18, PostgreSQL 18.6 and Node 24.21.0 on loopback compared main
+`5db7365a036798df6f7d7b9ea0ee7ee2e0cd5921` with this change. The experiment
+replayed the unchanged ownership SELECT and resource KEY SHARE reread around
+the actual baseline/candidate `assertErasureSubjectWritable` implementations.
+It did not invoke an HTTP endpoint or the full compute service. Each variant
+and session shape had ten warmups and 100 samples, alternating order per pair,
+with one pool connection, 64 rotating synthetic Agent/session pairs and 2,000
+unrelated closure rows. There was no injected network delay or concurrent load.
+
+All values below are p50/p90 milliseconds, calculated from complete per-replay
+samples. The replay interval starts after BEGIN and ends after the resource
+reread. The last column sums checkout, BEGIN and admission durations within each
+replay before calculating percentiles; it is not a separately timed continuous
+interval or a sum of percentile columns.
+
+| Session  | Variant   | Statements | Checkout    | BEGIN       | Admission replay | Per-replay component sum |
+| -------- | --------- | ---------: | ----------- | ----------- | ---------------- | ------------------------ |
+| New      | Baseline  |          6 | 0.020/0.026 | 0.067/0.217 | 1.233/3.009      | 1.322/3.086              |
+| New      | Candidate |          5 | 0.019/0.026 | 0.067/0.151 | 1.172/2.771      | 1.262/3.088              |
+| Existing | Baseline  |          6 | 0.019/0.025 | 0.065/0.189 | 1.475/3.398      | 1.583/3.545              |
+| Existing | Candidate |          5 | 0.019/0.024 | 0.065/0.155 | 1.451/3.540      | 1.556/3.653              |
+
+For existing sessions, non-overlapping client SQL stages were:
+
+| Stage                                                | Baseline p50/p90 ms | Candidate p50/p90 ms |
+| ---------------------------------------------------- | ------------------- | -------------------- |
+| Ownership observation                                | 0.280/0.534         | 0.289/0.580          |
+| Standalone isolation probe                           | 0.131/0.397         | Absent               |
+| Isolation plus first lock                            | Absent              | 0.203/0.571          |
+| Remaining subject-lock statements, summed per replay | 0.189/0.495 (two)   | 0.103/0.333 (one)    |
+| Post-lock closure lookup                             | 0.183/0.464         | 0.189/0.492          |
+| Resource KEY SHARE reread                            | 0.150/0.386         | 0.146/0.366          |
+| COMMIT, after the replay interval                    | 0.314/0.573         | 0.315/0.630          |
+
+These stage timings include driver/transport and event-loop overhead; they are
+not pure SQL execution or isolated lock waits. Optional catalog work is absent
+in both ordinary paths. Contended wait correctness is established by the
+database-synchronized races above, not by these uncontended latency samples.
+Local JavaScript/query construction is included in the enclosing replay and is
+not an additional SQL stage. COMMIT follows the replay immediately here; real
+launch transactions do substantially more work after organization admission.
+
+Separate `EXPLAIN (ANALYZE, BUFFERS)` runs used each captured SQL/binding pair
+ten times in fresh rolled-back transactions. The combined statement adds one
+scalar InitPlan with one Function Scan: median server planning/execution was
+0.015/0.006 ms, versus 0.005/0.002 ms for the old isolation probe and
+0.004/0.002 ms for its separate first lock. All three touch zero data buffers.
+The candidate Function Scan executes once under READ COMMITTED and zero times
+under REPEATABLE READ. Bound lock keys and subsequent SQL are unchanged.
+Ownership keeps the Agent owner index and, for existing sessions, the session
+primary-key index (three/six shared hits). Closure uses BitmapOr over the
+subject-generation index (four hits); the resource reread retains LockRows
+over the Agent owner index (four hits). These cached fixture plans had no
+physical buffer reads.
+
+The deterministic result is one fewer statement, not a demonstrated latency
+gain: medians decrease slightly, but existing-session p90 increases by 0.142 ms
+in this finite run. Warm caches, local transport, fixture sizes and lack of
+contention limit extrapolation. A fixed-seed, 10,000-resample paired bootstrap
+of the existing observations gives median-delta 95% intervals of
+[-0.036, +0.019] ms (new) and [-0.065, +0.016] ms (existing), both spanning zero;
+this is descriptive within-run uncertainty, not a non-inferiority proof.
+No production API-to-queue candidate percentile
+is available before deployment. Independently, the
+[historical production investigation](https://github.com/vm0-ai/okou/issues/24203#issuecomment-5726341029)
+reported pre-org-lock p50/p90 **4.29/8.36 -> 24.61/55.48 ms** and API-to-queue
+**495/825 -> 769/1259 ms** for September 14/18 complete Web/direct cohorts.
+Each run had one unambiguous API identity and no preparation retry, but the
+daily cohorts mixed revisions/workloads. Neither interval is a causal savings
+estimate. The queue boundary remains the pre-CTE `runnerJobQueue.createdAt`;
+full transaction or lock-held spans must not be subtracted from it.
+
 ## Remaining boundaries and activation gates
 
 - Preparation may already write provider/storage artifacts before the guarded
