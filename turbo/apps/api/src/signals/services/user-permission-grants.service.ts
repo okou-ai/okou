@@ -12,7 +12,7 @@ import {
   type NetworkPolicies,
   type NetworkPolicy,
 } from "@okouai/connectors/firewall-types";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import {
   connectorCatalogActiveSnapshot,
@@ -774,16 +774,16 @@ async function invalidatePermissionStableContext(
       asc(userPermissionGrants.permission),
     );
   const connectorRows = await tx
-    .select({ connectorSlug: userConnectors.connectorSlug })
-    .from(userConnectors)
+    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+    .from(userBuiltinConnectors)
     .where(
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, agentId),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, agentId),
       ),
     )
-    .orderBy(asc(userConnectors.connectorSlug));
+    .orderBy(asc(userBuiltinConnectors.connectorSlug));
   const stored = permissionGrantsToFirewallPolicies(grants);
   const policies = await expandConnectorServerFirewallPolicies({
     catalog: serverFirewalls,
