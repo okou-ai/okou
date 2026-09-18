@@ -27,6 +27,7 @@ import { Decoration, DecorationSet, type NodeView } from "@tiptap/pm/view";
 import { createCompositionGate, type CompositionGate } from "@okouai/ui";
 import {
   generationTemplateRequestSchema,
+  type ChatFollowupOrigin,
   type GenerationTemplateRequest,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
@@ -99,6 +100,12 @@ import { createComposerWorkflows } from "./composer-workflows.ts";
 import type { OpenTemplatePickerDialogCommand } from "./chat-composer.ts";
 import { reloadWorkflowData$ } from "../workflows-page/workflow-reload.ts";
 import { i18n } from "../../i18n/index.ts";
+import {
+  clearComposerFollowupOrigins,
+  ComposerFollowupOrigins,
+  readComposerFollowupOrigins,
+  trackComposerFollowupOrigin,
+} from "./composer-followup-origins.ts";
 
 type AgentIdValue = string | null | Promise<string | null>;
 type WorkflowNamesSyncCommand = Command<
@@ -189,6 +196,7 @@ interface WorkflowHighlightStorage {
 export interface WorkflowComposerSubmissionSnapshot {
   readonly prompt: string;
   readonly editorDocument: EditorDocumentSnapshot;
+  readonly followupOrigins?: ChatFollowupOrigin[];
 }
 
 export interface WorkflowComposerSignals {
@@ -234,6 +242,10 @@ export interface WorkflowComposerSignals {
   readonly insertText$: Command<void, [string]>;
   readonly readVoiceContext$: Command<VoiceIoEditorContext, []>;
   readonly selectOrAppendText$: Command<void, [string]>;
+  readonly selectRecommendedFollowup$: Command<
+    void,
+    [string, ChatFollowupOrigin]
+  >;
   /** Rewrites the prompt this composer inserted last instead of stacking. */
   readonly replacePromptText$: Command<void, [string]>;
   readonly readInputForSubmission$: Command<
@@ -296,11 +308,17 @@ function createReadInputForSubmissionCommand(
   editor: Editor,
   compositionGate: CompositionGate,
 ) {
-  return command((_context, signal: AbortSignal) => {
+  return command(({ get }, signal: AbortSignal) => {
+    const personalizedFollowupsEnabled =
+      get(featureSwitch$)[FeatureSwitchKey.PersonalizedFollowups];
     return compositionGate.runWhenSettled(() => {
+      const followupOrigins = personalizedFollowupsEnabled
+        ? readComposerFollowupOrigins(editor)
+        : [];
       return {
         prompt: workflowComposerDocToString(editor),
         editorDocument: createEditorDocumentSnapshot(editor.state.doc),
+        ...(followupOrigins.length > 0 ? { followupOrigins } : {}),
       };
     }, signal);
   });
@@ -1748,6 +1766,7 @@ function createWorkflowEditor(
     element: null,
     extensions: [
       ...createWorkflowComposerBaseExtensions(),
+      ComposerFollowupOrigins,
       createTemplateAttachmentNode(runtime),
       createInlineTemplateNode(runtime),
       createFeedbackItemNode(runtime),
@@ -2195,6 +2214,7 @@ function createMountEditorCommand({
         set(draft.setInputSyncTarget$, null);
         set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, false);
+        clearComposerFollowupOrigins(editor);
         editor.unmount();
       });
       await Promise.all([
@@ -2348,6 +2368,47 @@ function createSuggestionInsertionCommands(
   };
 }
 
+function findComposerTextRange(
+  editor: Editor,
+  value: string,
+): { from: number; to: number } | null {
+  const text = value.trim();
+  if (!text) {
+    return null;
+  }
+
+  let textRun = "";
+  let textRunStart = -1;
+  let textRunEnd = -1;
+  let selection: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, position) => {
+    const nodeText = node.isText
+      ? node.text
+      : node.type.name === "hardBreak"
+        ? "\n"
+        : undefined;
+    if (selection || nodeText === undefined) {
+      return;
+    }
+    if (position === textRunEnd) {
+      textRun += nodeText;
+    } else {
+      textRun = nodeText;
+      textRunStart = position;
+    }
+    textRunEnd = position + node.nodeSize;
+
+    const matchIndex = textRun.indexOf(text);
+    if (matchIndex !== -1) {
+      selection = {
+        from: textRunStart + matchIndex,
+        to: textRunStart + matchIndex + text.length,
+      };
+    }
+  });
+  return selection;
+}
+
 function createInsertTextCommands(editor: Editor) {
   const readVoiceContext$ = command((): VoiceIoEditorContext => {
     const { doc, selection } = editor.state;
@@ -2397,41 +2458,8 @@ function createInsertTextCommands(editor: Editor) {
       .run();
   });
 
-  const findText = (value: string): { from: number; to: number } | null => {
-    const text = value.trim();
-    if (!text) {
-      return null;
-    }
-
-    let textRun = "";
-    let textRunStart = -1;
-    let textRunEnd = -1;
-    let selection: { from: number; to: number } | null = null;
-    editor.state.doc.descendants((node, position) => {
-      if (selection || !node.isText || !node.text) {
-        return;
-      }
-      if (position === textRunEnd) {
-        textRun += node.text;
-      } else {
-        textRun = node.text;
-        textRunStart = position;
-      }
-      textRunEnd = position + node.nodeSize;
-
-      const matchIndex = textRun.indexOf(text);
-      if (matchIndex !== -1) {
-        selection = {
-          from: textRunStart + matchIndex,
-          to: textRunStart + matchIndex + text.length,
-        };
-      }
-    });
-    return selection;
-  };
-
   const selectText = (value: string): boolean => {
-    const range = findText(value);
+    const range = findComposerTextRange(editor, value);
     if (!range) {
       return false;
     }
@@ -2447,7 +2475,20 @@ function createInsertTextCommands(editor: Editor) {
     }
     editor.commands.focus("end");
     const textblock = activeTextblock(editor);
-    const content = textblock?.value.trimEnd() ? `\n${text}` : text;
+    const content: JSONContent[] = [];
+    let needsBreak = Boolean(textblock?.value.trimEnd());
+    for (const line of text.split("\n")) {
+      if (needsBreak) {
+        content.push({ type: "hardBreak" });
+      }
+      if (line) {
+        content.push({ type: "text", text: line });
+      }
+      needsBreak = true;
+    }
+    // A literal newline in a text node is normalized into a hardBreak on the
+    // next DOM edit. Insert that native representation now so a local edit
+    // does not replace the whole appended span and erase its attribution.
     editor.commands.insertContent(content);
   };
 
@@ -2456,6 +2497,26 @@ function createInsertTextCommands(editor: Editor) {
       appendText(value);
     }
   });
+
+  const selectRecommendedFollowup$ = command(
+    ({ get }, value: string, origin: ChatFollowupOrigin) => {
+      // Selecting text the person already wrote does not make it AI-authored.
+      // A repeated click keeps the source already attached to its first insert.
+      if (selectText(value)) {
+        return;
+      }
+      appendText(value);
+      const range = findComposerTextRange(editor, value);
+      if (
+        range &&
+        origin.index >= 0 &&
+        origin.index <= 2 &&
+        get(featureSwitch$)[FeatureSwitchKey.PersonalizedFollowups]
+      ) {
+        trackComposerFollowupOrigin(editor, origin, range);
+      }
+    },
+  );
 
   /**
    * A suggestion row owns one prompt inside the draft, so the prompt it wrote
@@ -2469,7 +2530,7 @@ function createInsertTextCommands(editor: Editor) {
     if (!text) {
       return;
     }
-    const inserted = findText(get(insertedPrompt$));
+    const inserted = findComposerTextRange(editor, get(insertedPrompt$));
     if (inserted) {
       editor
         .chain()
@@ -2488,6 +2549,7 @@ function createInsertTextCommands(editor: Editor) {
     insertText$,
     insertPromptMarkdown$,
     selectOrAppendText$,
+    selectRecommendedFollowup$,
     replacePromptText$,
   };
 }

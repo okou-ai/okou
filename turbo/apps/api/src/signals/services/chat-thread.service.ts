@@ -1,4 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
+import { followupUserProfiles } from "@okouai/db/schema/followup-preference";
 import {
   type ChatThreadDraft,
   type ChatThreadArtifactRun,
@@ -935,6 +936,17 @@ export const deleteChatThread$ = command(
         kind: "thread",
         chatThreadId: ownedThread.id,
       });
+
+      // Discard derived preferences and the active claim before deleting source
+      // evidence. A refresh already in flight cannot restore the removed profile.
+      await tx
+        .delete(followupUserProfiles)
+        .where(
+          and(
+            eq(followupUserProfiles.orgId, args.orgId),
+            eq(followupUserProfiles.userId, args.userId),
+          ),
+        );
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.
       // Captured active runs lose their canonical chatThreadId, while any retained legacy

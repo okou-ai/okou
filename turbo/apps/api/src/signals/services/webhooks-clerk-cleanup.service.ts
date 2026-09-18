@@ -1,3 +1,7 @@
+import {
+  followupEvidence,
+  followupUserProfiles,
+} from "@okouai/db/schema/followup-preference";
 import { deletePiObjectOrphansForOwner } from "./pi-inference-object.service";
 import {
   assertPiInferenceScopeErasureReady,
@@ -894,6 +898,10 @@ async function deleteOrgData(
     .delete(userDisabledPaidTools)
     .where(eq(userDisabledPaidTools.orgId, orgId));
   await db.delete(orgCache).where(eq(orgCache.orgId, orgId));
+  await db.delete(followupEvidence).where(eq(followupEvidence.orgId, orgId));
+  await db
+    .delete(followupUserProfiles)
+    .where(eq(followupUserProfiles.orgId, orgId));
   await db
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.orgId, orgId));
@@ -971,6 +979,10 @@ async function deleteUserData(
     .delete(userDisabledPaidTools)
     .where(eq(userDisabledPaidTools.userId, userId));
   await db.delete(userCache).where(eq(userCache.userId, userId));
+  await db.delete(followupEvidence).where(eq(followupEvidence.userId, userId));
+  await db
+    .delete(followupUserProfiles)
+    .where(eq(followupUserProfiles.userId, userId));
   signal.throwIfAborted();
   await db.transaction(async (tx) => {
     await tx.execute(

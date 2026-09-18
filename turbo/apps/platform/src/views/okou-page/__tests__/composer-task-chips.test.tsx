@@ -720,11 +720,11 @@ test.each([
     await fill(editor, "Keep this context");
     click(button(first, ideas));
     await waitFor(() => {
-      expect(editor.textContent).toBe(`Keep this context\n${firstPrompt}`);
+      expect(editor.textContent).toBe(`Keep this context${firstPrompt}`);
     });
     click(button(second, ideas));
     await waitFor(() => {
-      expect(editor.textContent).toBe(`Keep this context\n${secondPrompt}`);
+      expect(editor.textContent).toBe(`Keep this context${secondPrompt}`);
     });
   },
 );

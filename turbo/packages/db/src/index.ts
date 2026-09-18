@@ -102,6 +102,7 @@ import * as builtInModelCooldownSchema from "./schema/built-in-model-cooldown";
 import * as workflowSchema from "./schema/workflow";
 import * as computerUseHostSchema from "./schema/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
+import * as followupPreferenceSchema from "./schema/followup-preference";
 import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
 import * as activeInputDeliverySchema from "./schema/active-input-delivery";
@@ -256,6 +257,7 @@ export const schema = {
   ...workflowSchema,
   ...computerUseHostSchema,
   ...userFeatureSwitchesSchema,
+  ...followupPreferenceSchema,
   ...userDisabledPaidToolsSchema,
   ...userBehaviorCountSchema,
   ...activeInputDeliverySchema,

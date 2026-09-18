@@ -5,6 +5,10 @@
   "installCommand": "cd ../.. && pnpm install",
   "crons": [
     {
+      "path": "/api/cron/refresh-followup-profiles",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/cleanup-sandboxes",
       "schedule": "* * * * *"
     },

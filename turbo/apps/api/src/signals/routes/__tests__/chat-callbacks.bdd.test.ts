@@ -1221,6 +1221,51 @@ describe("CHAT-02: completed chat callback", () => {
     }
   }, 90_000);
 
+  it("keeps the final decision and user constraint when recommending from long replies", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const constraint = "Only compare the two options; do not execute either.";
+    const decision = "Would you like to compare cost or delivery time next?";
+    const recommendation = "Compare delivery time";
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+    chatCallbacks.mockOpenRouterCompletions((body) => {
+      const systemContent = body.messages[0]?.content ?? "";
+      if (systemContent.includes("recommended follow-up messages")) {
+        const context = body.messages[1]?.content ?? "";
+        return JSON.stringify([
+          {
+            prompt:
+              context.includes(constraint) && context.includes(decision)
+                ? recommendation
+                : "Missing the latest decision",
+            kind: "talk",
+          },
+        ]);
+      }
+      return "Compare options";
+    });
+
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: `Review these options. ${"Background detail. ".repeat(250)}${constraint}`,
+    });
+    const headers = await claimChatRun(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([
+      assistantEvent(
+        0,
+        `Both options are viable. ${"Supporting analysis. ".repeat(350)}${decision}`,
+      ),
+    ]);
+    await completeChatRunOk(run.runId, headers, { lastEventSequence: 0 });
+    const after = await waitForThreadMessages(actor, run.threadId, (events) => {
+      return recommendedFollowupEvents(events, run.runId).length > 0;
+    });
+    const followups = recommendedFollowupEvents(after.events, run.runId);
+    expect(
+      followups.flatMap(resolveChatEventRecommendedFollowups),
+    ).toStrictEqual([{ prompt: recommendation, kind: "talk" }]);
+  });
+
   it("suppresses malformed recommended follow-up JSON instead of storing raw syntax lines", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();

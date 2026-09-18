@@ -18,6 +18,7 @@ import {
   chatEventsContract,
   resolveChatEventRecommendedFollowups,
   type ChatRunVideoOptionsRequest,
+  type ChatFollowupOrigin,
   type ChatThreadServiceTier,
   type CodexServiceTier,
   type GenerationTemplateRequest,
@@ -185,10 +186,15 @@ import {
 } from "../../lib/template-usage-log";
 import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
+import {
+  admitFollowupEvidence,
+  recordSubmittedFollowupEvidence,
+} from "./chat-followup-preferences.service";
 
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
 
 interface NormalSendBody {
+  readonly followupOrigins?: ChatFollowupOrigin[];
   readonly agentId: string;
   readonly prompt: string;
   readonly threadId?: string;
@@ -1906,6 +1912,7 @@ async function resolveThread(params: {
 }
 
 interface AppendUnassociatedUserMessageParams {
+  readonly followupOrigins?: readonly ChatFollowupOrigin[];
   readonly db: Db;
   readonly timing?: ApiDispatchTimingCollector;
   readonly threadId: string;
@@ -2013,10 +2020,44 @@ async function recordOfficialSourceThreadProvenance(
   });
 }
 
+async function recordSubmittedInputProvenance(
+  tx: ChatThreadEventTransaction,
+  params: AppendUnassociatedUserMessageParams,
+  input: { readonly inputEventId: string; readonly learnFromInput: boolean },
+): Promise<void> {
+  if (input.learnFromInput) {
+    await recordSubmittedFollowupEvidence(tx, {
+      orgId: params.orgId,
+      userId: params.userId,
+      threadId: params.threadId,
+      inputEventId: input.inputEventId,
+      text: projectUserMessage(params.userMessage).displayText,
+      origins: params.followupOrigins ?? [],
+    });
+  }
+  await recordOfficialSourceThreadProvenance(tx, params);
+  if (params.getStartedWorkflowId) {
+    await recordGetStartedWorkflow(tx, {
+      orgId: params.orgId,
+      userId: params.userId,
+      workflowId: params.getStartedWorkflowId,
+      sourceEventId: input.inputEventId,
+    });
+  }
+}
+
 async function appendUnassociatedUserMessageTransaction(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
 ): Promise<ClientEventIdResolution> {
+  const learnFromInput =
+    params.triggerSource === "web" &&
+    params.requiredOfficialWorkflowIds === undefined &&
+    params.getStartedWorkflowId === undefined &&
+    params.userMessage.parts.every((part) => {
+      return part.type === "text";
+    }) &&
+    (await admitFollowupEvidence(tx, params));
   await measureApiDispatchTiming(
     params.timing,
     "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
@@ -2085,15 +2126,10 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (inserted) {
-    await recordOfficialSourceThreadProvenance(tx, params);
-    if (params.getStartedWorkflowId) {
-      await recordGetStartedWorkflow(tx, {
-        orgId: params.orgId,
-        userId: params.userId,
-        workflowId: params.getStartedWorkflowId,
-        sourceEventId: inserted.id,
-      });
-    }
+    await recordSubmittedInputProvenance(tx, params, {
+      inputEventId: inserted.id,
+      learnFromInput,
+    });
 
     await measureApiDispatchTiming(
       params.timing,
@@ -3130,6 +3166,7 @@ async function queueUnassociatedNormalEvent(params: {
   readonly queuedEventId: string | undefined;
 }> {
   const resolution = await appendUnassociatedUserMessage({
+    followupOrigins: params.body.followupOrigins,
     db: params.prepared.db,
     timing: params.timing,
     threadId: params.prepared.thread.threadId,

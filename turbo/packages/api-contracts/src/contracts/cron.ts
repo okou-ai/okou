@@ -706,6 +706,22 @@ export const cronMaterializeMemorySummariesContract = c.router({
   },
 });
 
+export const cronRefreshFollowupProfilesContract = c.router({
+  refresh: {
+    method: "GET",
+    path: "/api/cron/refresh-followup-profiles",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        success: z.literal(true),
+        attempted: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Refresh bounded followup preference profiles",
+  },
+});
+
 export const cronMaterializePiResourceIndexesContract = c.router({
   materialize: {
     method: "GET",

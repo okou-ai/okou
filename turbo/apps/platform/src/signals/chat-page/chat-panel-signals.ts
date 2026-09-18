@@ -3,6 +3,7 @@ import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
 import type {
   ChatRecommendedFollowup,
+  ChatFollowupOrigin,
   ChatRunVideoOptionsRequest,
   GenerationTemplateRequest,
   ChatThreadArtifactRun,
@@ -112,6 +113,7 @@ export interface MessageListSignals {
 }
 
 export interface SendMessageOptions {
+  readonly followupOrigins?: ChatFollowupOrigin[];
   readonly revokesEventId?: string;
   readonly includeDraftAttachments?: boolean;
   readonly computerUseHostId?: string | null;
@@ -124,6 +126,7 @@ export interface SendMessageOptions {
 }
 
 export interface QueueMessageOptions {
+  readonly followupOrigins?: ChatFollowupOrigin[];
   readonly computerUseHostId: string | null | undefined;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly generationTemplate: GenerationTemplateRequest | undefined;

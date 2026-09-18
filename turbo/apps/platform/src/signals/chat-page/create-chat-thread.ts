@@ -3365,6 +3365,9 @@ function sendInputForRequest(args: {
     ...(request.options?.revokesEventId === undefined
       ? {}
       : { revokesEventId: request.options.revokesEventId }),
+    ...(request.options?.followupOrigins
+      ? { followupOrigins: request.options.followupOrigins }
+      : {}),
     ...(request.options?.forward ? { source: request.options.forward } : {}),
     ...(request.options?.onOptimisticSend
       ? { onOptimisticSend: request.options.onOptimisticSend }
@@ -3535,6 +3538,9 @@ function createQueueMessage(deps: SendMessageDeps) {
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,
+            ...(options.followupOrigins
+              ? { followupOrigins: options.followupOrigins }
+              : {}),
             selectedModel: modelSelection?.selectedModel ?? null,
             ...(runOptions === undefined ? {} : { runOptions }),
             ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
@@ -3866,6 +3872,9 @@ function createThreadSubmitMessageSignal(
                 cloudBrowserEnabled: explicit ? cloudBrowserEnabled : undefined,
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
+                ...(submission.followupOrigins
+                  ? { followupOrigins: submission.followupOrigins }
+                  : {}),
                 ...(submission.videoRunOptions === undefined
                   ? {}
                   : { videoRunOptions: submission.videoRunOptions }),
@@ -3884,6 +3893,9 @@ function createThreadSubmitMessageSignal(
                 ...(explicit ? { cloudBrowserEnabled } : {}),
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
+                ...(submission.followupOrigins
+                  ? { followupOrigins: submission.followupOrigins }
+                  : {}),
                 ...(submission.videoRunOptions === undefined
                   ? {}
                   : { videoRunOptions: submission.videoRunOptions }),

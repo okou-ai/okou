@@ -4021,8 +4021,8 @@ function RecommendedFollowupList({
   // composer auto-focus heuristic. A desktop window dragged narrow must still
   // render the flat list, so container width is not the deciding factor.
   const showFollowupCards = isMobileTextInputDevice();
-  const selectOrAppendComposerText = useSet(
-    thread.composer.editor.selectOrAppendText$,
+  const selectRecommendedFollowup = useSet(
+    thread.composer.editor.selectRecommendedFollowup$,
   );
   const handleRecommendedFollowupsRef = (element: HTMLDivElement | null) => {
     reportRecommendedFollowupsShown(element, source);
@@ -4038,7 +4038,10 @@ function RecommendedFollowupList({
       followupCount: source.followups.length,
       followup,
     });
-    selectOrAppendComposerText(followup.prompt);
+    selectRecommendedFollowup(followup.prompt, {
+      eventId: source.eventId,
+      index: followupIndex,
+    });
   };
 
   return (

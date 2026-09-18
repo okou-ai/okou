@@ -45,6 +45,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.PersonalizedFollowups]: {
+    maintainer: "yuma@vm0.ai",
+    description:
+      "Personalize follow-up suggestions using submitted chat preferences",
+    enabled: false,
+  },
   [FeatureSwitchKey.XResourceDeduplication]: {
     maintainer: "liangyou@okou.ai",
     description:

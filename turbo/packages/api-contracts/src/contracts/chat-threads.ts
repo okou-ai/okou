@@ -1230,9 +1230,19 @@ const chatNormalSendBodyShape = {
   captureNetworkBodies: z.boolean().optional(),
 } as const;
 
+export const chatFollowupOriginSchema = z
+  .object({
+    eventId: z.string().uuid(),
+    index: z.number().int().min(0).max(2),
+  })
+  .strict();
+
+export type ChatFollowupOrigin = z.infer<typeof chatFollowupOriginSchema>;
+
 const chatEventNormalSendBodySchema = z
   .object({
     ...chatNormalSendBodyShape,
+    followupOrigins: z.array(chatFollowupOriginSchema).max(3).optional(),
     // Client-generated UUID used as the user event's primary key.
     clientEventId: z.string().uuid().optional(),
     revokesEventId: z.string().min(1).optional(),

@@ -174,6 +174,10 @@ import {
 import { createQueueFirstAgentRun$ } from "./agent-runs-create.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  captureCompletedFollowupEvidence,
+  readFollowupPreferences,
+} from "./chat-followup-preferences.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import {
   onRejection,
@@ -1999,16 +2003,36 @@ async function insertRecommendedFollowupsEvent(args: {
 
 async function generateRecommendedFollowupsForCompletedRun(
   args: {
+    readonly db: Db;
     readonly followupContext: readonly ChatCompletionContextMessage[];
     readonly threadId: string;
+    readonly userId: string;
+    readonly orgId: string;
   },
   signal: AbortSignal,
 ): Promise<readonly ChatRecommendedFollowup[] | undefined> {
+  signal.throwIfAborted();
+  // Personalization is optional enrichment. A failed profile lookup must not
+  // suppress the ordinary context-aware suggestions, and cancellation remains
+  // owned by the completed callback.
+  const preferences = await tapError(
+    readFollowupPreferences(
+      { db: args.db, userId: args.userId, orgId: args.orgId },
+      signal,
+    ),
+    (error) => {
+      log.warn("Recommended follow-up preferences load failed", {
+        threadId: args.threadId,
+        error,
+      });
+    },
+  );
   signal.throwIfAborted();
   const suggestions = await generateChatThreadRecommendedFollowupsFromContext(
     {
       messages: args.followupContext,
       threadId: args.threadId,
+      preferences,
     },
     signal,
   );
@@ -2241,8 +2265,11 @@ async function runCompletedChatCallbackSideEffects(
     signal.throwIfAborted();
     const followups = await generateRecommendedFollowupsForCompletedRun(
       {
+        db: args.db,
         followupContext: args.followupContext,
         threadId: args.chatThread.chatThreadId,
+        userId: args.chatThread.userId,
+        orgId: args.chatThread.orgId,
       },
       signal,
     );
@@ -2257,6 +2284,17 @@ async function runCompletedChatCallbackSideEffects(
       });
     }
   })();
+
+  const followupEvidenceStep = captureCompletedFollowupEvidence(
+    {
+      db: args.db,
+      runId: args.runId,
+      threadId: args.chatThread.chatThreadId,
+      userId: args.chatThread.userId,
+      orgId: args.chatThread.orgId,
+    },
+    signal,
+  );
 
   const pushStep = (async () => {
     let summary: string | null = null;
@@ -2287,6 +2325,7 @@ async function runCompletedChatCallbackSideEffects(
     saveSummaryStep,
     chatRunFinishedStep,
     followupsStep,
+    followupEvidenceStep,
     pushStep,
   ]);
   const errors = results.flatMap((result) => {

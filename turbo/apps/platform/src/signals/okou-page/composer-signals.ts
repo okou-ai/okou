@@ -9,6 +9,7 @@ import {
 } from "./composer-voice-input.ts";
 import type {
   ChatRunVideoOptionsRequest,
+  ChatFollowupOrigin,
   GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
@@ -82,6 +83,7 @@ type ComposerEditorSignals = Pick<
   | "insertUserMessage$"
   | "insertText$"
   | "selectOrAppendText$"
+  | "selectRecommendedFollowup$"
   | "replacePromptText$"
 > & {
   readonly singleLineOnMobile: boolean;
@@ -121,6 +123,7 @@ type ComposerTemplateUiSignals = ComposerUiSignalGroups["template"];
 
 export interface ComposerSubmission {
   readonly prompt: string;
+  readonly followupOrigins?: ChatFollowupOrigin[];
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: WorkflowComposerSubmissionSnapshot["editorDocument"];
   /**
@@ -362,6 +365,7 @@ function composerEditorSignals(
     insertUserMessage$: composer.insertUserMessage$,
     insertText$: composer.insertText$,
     selectOrAppendText$: composer.selectOrAppendText$,
+    selectRecommendedFollowup$: composer.selectRecommendedFollowup$,
     replacePromptText$: composer.replacePromptText$,
   };
 }
@@ -948,6 +952,9 @@ function createSubmitCurrentInput({
         action,
         {
           prompt: visiblePrompt,
+          ...(submission.followupOrigins
+            ? { followupOrigins: submission.followupOrigins }
+            : {}),
           generationTemplate: get(draft.generationTemplate$),
           editorDocument,
           videoRunOptions: additionalInfo ? undefined : videoRunOptions,

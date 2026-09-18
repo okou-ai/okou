@@ -8,6 +8,7 @@ export enum FeatureSwitchKey {
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
+  PersonalizedFollowups = "personalizedFollowups",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",

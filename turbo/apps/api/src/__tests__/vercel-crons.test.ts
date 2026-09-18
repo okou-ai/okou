@@ -34,6 +34,7 @@ import {
   cronSyncSkillsContract,
   cronTelegramCleanupContract,
   cronPruneStoragePresignedUrlsContract,
+  cronRefreshFollowupProfilesContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { describe, expect, it } from "vitest";
 
@@ -57,6 +58,10 @@ function readVercelConfig(): VercelConfig {
 }
 
 const expectedVercelCrons = [
+  {
+    path: cronRefreshFollowupProfilesContract.refresh.path,
+    schedule: "*/15 * * * *",
+  },
   {
     path: cronCleanupSandboxesContract.cleanup.path,
     schedule: "* * * * *",

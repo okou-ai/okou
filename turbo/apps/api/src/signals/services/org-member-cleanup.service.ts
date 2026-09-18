@@ -1,3 +1,7 @@
+import {
+  followupEvidence,
+  followupUserProfiles,
+} from "@okouai/db/schema/followup-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
@@ -35,6 +39,22 @@ export async function cleanupOrgMemberResources(
   await revokeOrgMemberRunAuthority(db, args, signal);
   signal.throwIfAborted();
   const currentTime = nowDate();
+  await db
+    .delete(followupEvidence)
+    .where(
+      and(
+        eq(followupEvidence.orgId, args.orgId),
+        eq(followupEvidence.userId, args.userId),
+      ),
+    );
+  await db
+    .delete(followupUserProfiles)
+    .where(
+      and(
+        eq(followupUserProfiles.orgId, args.orgId),
+        eq(followupUserProfiles.userId, args.userId),
+      ),
+    );
   await db
     .insert(morningBriefEnrollments)
     .values({

@@ -20,6 +20,7 @@ import {
   chatThreadUnpinContract,
   chatThreadsContract,
   type ChatEvent,
+  type ChatFollowupOrigin,
   type ChatSearchResponse,
   type ChatThreadArtifactRun,
   type ChatThreadDetail,
@@ -113,6 +114,7 @@ interface AuthHeaders {
 
 type BddSendEventBody =
   | {
+      readonly followupOrigins?: readonly ChatFollowupOrigin[];
       readonly agentId: string;
       readonly prompt: string;
       readonly threadId?: string;
@@ -1578,6 +1580,9 @@ export function createChatFilesBddApi(context: TestContext) {
               const selectedModel = body.model ?? defaultModel;
               return {
                 agentId: body.agentId,
+                ...(body.followupOrigins === undefined
+                  ? {}
+                  : { followupOrigins: [...body.followupOrigins] }),
                 prompt: body.prompt,
                 ...(body.threadId === undefined
                   ? {}

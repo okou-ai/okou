@@ -14,6 +14,7 @@ import {
   chatThreadEventsContract,
   chatEventsContract,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
+  type ChatFollowupOrigin,
   type ChatRunOptionsRequest,
   type ChatThreadServiceTier,
   type CodexServiceTier,
@@ -372,6 +373,7 @@ export function mockChatLifecycle(
     }) => void;
     onSendRequest?: (body: {
       prompt: string;
+      followupOrigins?: ChatFollowupOrigin[];
       threadId?: string;
       clientThreadId?: string;
       userMessage?: UserMessageDocument;
@@ -868,6 +870,9 @@ export function mockChatLifecycle(
 
     options?.onSendRequest?.({
       prompt: body.prompt,
+      ...(body.followupOrigins
+        ? { followupOrigins: body.followupOrigins }
+        : {}),
       threadId: body.threadId,
       clientThreadId: body.clientThreadId,
       userMessage: body.userMessage,

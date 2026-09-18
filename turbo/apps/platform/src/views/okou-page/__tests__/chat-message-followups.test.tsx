@@ -314,7 +314,7 @@ test("A recommended follow-up edits the draft without sending it", async () => {
   await user.click(recommendation);
   await waitFor(() => {
     expect(composer.textContent).toBe(
-      `Keep the current launch context\n${PRESENTATION_PROMPT}`,
+      `Keep the current launch context${PRESENTATION_PROMPT}`,
     );
     expect(composer).toHaveFocus();
   });
@@ -326,7 +326,7 @@ test("A recommended follow-up edits the draft without sending it", async () => {
     expect(window.getSelection()?.toString()).toBe(PRESENTATION_PROMPT);
   });
   expect(composer.textContent).toBe(
-    `Keep the current launch context\n${PRESENTATION_PROMPT}`,
+    `Keep the current launch context${PRESENTATION_PROMPT}`,
   );
   expect(composer).toHaveFocus();
   expect(onSendRequest).not.toHaveBeenCalled();

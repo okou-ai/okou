@@ -1,6 +1,7 @@
 import { command, type Command, type Computed } from "ccstate";
 import type {
   ChatRunOptionsRequest,
+  ChatFollowupOrigin,
   UserMessageDocument,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
@@ -71,6 +72,7 @@ export interface SendInputChatEvent {
   readonly computerUseHostId?: string | null;
   readonly cloudBrowserEnabled?: boolean;
   readonly revokesEventId?: string;
+  readonly followupOrigins?: ChatFollowupOrigin[];
   readonly source?: ChatAgentRunSource;
   readonly onOptimisticSend?: () => void;
 }
@@ -190,6 +192,9 @@ function createSendInputChatEvent({
             ? { realAgentInPreview: true }
             : {}),
           userMessage,
+          ...(input.followupOrigins
+            ? { followupOrigins: input.followupOrigins }
+            : {}),
           ...(input.source ? { sourceRunId: input.source.runId } : {}),
           ...(input.computerUseHostId === undefined
             ? {}
