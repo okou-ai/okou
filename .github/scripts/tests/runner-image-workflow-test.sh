@@ -142,8 +142,7 @@ for index in "${!cache_env[@]}"; do
   value=${value//"\${{ secrets.R2_SECRET_ACCESS_KEY }}"/fixture-secret}
   value=${value//"\${{ vars.R2_ACCOUNT_ID }}"/fixture-account}
   value=${value//"\${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"/fixture-bucket}
-  value=${value//"\${{ github.repository }}"/fixture/repo}
-  value=${value//"\${{ matrix.target }}"/aarch64-unknown-linux-musl}
+  value=${value//"\${{ matrix.id }}"/arm64}
   cache_env[index]=$value
 done
 cache_dir="${test_root}/cache-startup"
@@ -157,7 +156,7 @@ set -euo pipefail
 [ "$SCCACHE_BUCKET" = fixture-bucket ]
 [ "$SCCACHE_ENDPOINT" = https://fixture-account.r2.cloudflarestorage.com ]
 [ "$SCCACHE_REGION" = auto ]
-[ "$SCCACHE_S3_KEY_PREFIX" = runner-sccache/v1/fixture/repo/aarch64-unknown-linux-musl/ ]
+[ "$SCCACHE_S3_KEY_PREFIX" = runner-sccache/arm64/ ]
 [ "$SCCACHE_GHA_ENABLED" = false ]
 [ "$SCCACHE_IDLE_TIMEOUT" = 0 ]
 [ -f "$SCCACHE_CONF" ]

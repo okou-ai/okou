@@ -329,7 +329,7 @@ jobs:
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           SCCACHE_BUCKET: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
           SCCACHE_REGION: auto
-          SCCACHE_S3_KEY_PREFIX: runner-sccache/v1/${{ github.repository }}/${{ matrix.target }}/
+          SCCACHE_S3_KEY_PREFIX: runner-sccache/${{ matrix.id }}/
           SCCACHE_GHA_ENABLED: "false"
           SCCACHE_IDLE_TIMEOUT: "0"
         run: |

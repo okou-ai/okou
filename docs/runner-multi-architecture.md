@@ -109,8 +109,12 @@ job. Its transfer step and compiler-cache startup step receive R2 credentials;
 credentials are not exported through `GITHUB_ENV` or added to the build step.
 
 The compile job uses sccache's S3 backend against the existing R2 bucket, under
-`runner-sccache/v1/<repository>/<target>/`. These compiler outputs are separate
-from runner binary objects and manifests. PR, merge-group, and main builds with
+`runner-sccache/arm64/` or `runner-sccache/x86_64/`. Within each prefix, sccache
+derives keys from the compiler and compilation inputs. Crate names and CI job
+names are not extra namespace layers, so compatible compilations in other jobs
+can reuse the same cache when configured with the same prefix.
+These compiler outputs are separate from runner binary objects and manifests.
+PR, merge-group, and main builds with
 the existing R2 access share this cache; forks without those secrets cannot
 populate it. The sccache server retains the startup step's credentials for its
 job-local lifetime. Missing R2 configuration fails cache startup explicitly.
