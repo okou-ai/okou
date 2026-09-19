@@ -141,11 +141,12 @@ export async function withComputerUseHostStartTransactionBarrierFixture<T>(
 }
 
 function targetDigest(target: ComputerUseHostStartTarget): string {
-  return createHash("md5")
+  return createHash("sha256")
     .update(
       `${target.orgId}|${target.userId}|${target.installationId ?? "legacy"}`,
     )
-    .digest("hex");
+    .digest("hex")
+    .slice(0, 32);
 }
 
 /** Inject one real PostgreSQL row-trigger fault into the exact target write. */
@@ -162,10 +163,16 @@ export async function failComputerUseHostStartWriteFixture(options: {
       CREATE FUNCTION ${sql.identifier(functionName)}() RETURNS trigger
       LANGUAGE plpgsql AS $$
       BEGIN
-        IF md5(
-          NEW.org_id || '|' || NEW.user_id || '|' ||
-          COALESCE(NEW.installation_id::text, 'legacy')
-        ) = split_part(TG_NAME, '_', 2) THEN
+        IF substring(
+             encode(
+               sha256(convert_to(
+                 NEW.org_id || '|' || NEW.user_id || '|' ||
+                   COALESCE(NEW.installation_id::text, 'legacy'),
+                 'UTF8'
+               )),
+               'hex'
+             ) from 1 for 32
+           ) = split_part(TG_NAME, '_', 2) THEN
           RAISE EXCEPTION 'test-scoped Computer Use host START write failure';
         END IF;
         RETURN NEW;
