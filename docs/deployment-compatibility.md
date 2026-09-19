@@ -2307,24 +2307,19 @@ A v1–v3-only application is below the rollback floor while v4 records remain.
 Do not shrink the CHECK or cascade away releasing leases. See the linked contract
 for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
 
-## API-first usage handoff (#34787)
+## API-first usage handoff readers (#34787)
 
-The API adds optional `apiUsage` metadata to the existing Pi ownership-transfer
-manifest and durable continuation. Deploy consumers that tolerate and capture
-the additive field before enabling a producer that emits it. The TypeScript
-handoff readers in this repository ignore unknown additive object fields while
-still validating versions, modes, identities, bounds and token quantities.
+The Pi ownership-transfer manifest and durable continuation readers accept
+optional `apiUsage` metadata. The TypeScript handoff readers ignore unknown
+additive object fields while still validating versions, modes, identities,
+bounds, token quantities and coverage invariants.
 
 Old payloads remain valid. A missing `apiUsage` field means unavailable, not
-zero. A new API paired with an already-running strict reader can reject the
-additive field, so the producer must not lead that reader rollout. A rollback to
-the preceding API simply stops emitting the field; no database contraction or
-backfill is required.
-
-Provider results already known at transfer are included. Pre-provider transfer
-is marked `no-inference`. A transfer made before a late provider result becomes
-known has no snapshot and stays explicitly unavailable in this initial
-handoff-only design. See [API-first run usage handoff](api-run-usage.md).
+zero. This consumer-only slice does not emit the field. The API producer in
+#35413 must not merge or deploy until these readers are deployed and older
+strict readers have drained. After enablement, roll back the producer before
+rolling back the consumer. No database contraction or backfill is required.
+See [API-first run usage handoff](api-run-usage.md).
 
 ## DeepSeek V4.1 Flash Pi coverage
 
