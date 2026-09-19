@@ -102,7 +102,7 @@ surface; the index does not replace their detailed rules.
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
 - [Connector catalog v4 consumption](./connector-catalog-v4.md): v4 sync, the
-  temporary accepted-v3 read bridge, capability filtering and rollback boundaries.
+  v4-only accepted-snapshot reader, capability filtering and rollback boundaries.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
