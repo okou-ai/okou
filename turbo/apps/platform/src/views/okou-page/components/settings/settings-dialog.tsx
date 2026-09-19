@@ -150,7 +150,6 @@ function SettingsDialog({
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
   const showChat = features[FeatureSwitchKey.ChatPreference] ?? false;
-  const showPaidTools = features[FeatureSwitchKey.PaidToolControls] ?? false;
 
   const sectionMeta = {
     preference: {
@@ -165,13 +164,9 @@ function SettingsDialog({
       title: t(($) => {
         return $.settings.preferences.chat.sectionTitle;
       }),
-      description: showChat
-        ? t(($) => {
-            return $.settings.preferences.chat.description;
-          })
-        : t(($) => {
-            return $.settings.paidTools.description;
-          }),
+      description: t(($) => {
+        return $.settings.preferences.chat.description;
+      }),
     },
     model: {
       title: t(($) => {
@@ -244,7 +239,7 @@ function SettingsDialog({
       label: sectionMeta.preference.title,
       icon: SlidersHorizontal,
     },
-    ...(showChat || showPaidTools
+    ...(showChat
       ? [
           {
             id: "chat" as const,
@@ -324,7 +319,6 @@ function SettingsDialog({
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
     chatPreferenceEnabled: showChat,
-    paidToolControlsEnabled: showPaidTools,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"

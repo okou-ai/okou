@@ -43,7 +43,7 @@ async function openPaidTools(path = "/?settings=chat") {
     },
     featureSwitches: {
       [FeatureSwitchKey.PaidToolControls]: true,
-      [FeatureSwitchKey.ChatPreference]: false,
+      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   return screen.findByRole("dialog", { name: "Settings" });
@@ -57,12 +57,12 @@ async function readySwitch(name: string) {
   return toggle;
 }
 
-test("Members manage Paid tools inside Chat independently of Chat preferences", async () => {
+test("Members manage Paid tools inside Chat when both rollouts are enabled", async () => {
   const dialog = await openPaidTools("/?settings=preference");
   click(button("Chat", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
-  expect(within(dialog).getAllByRole("switch")).toHaveLength(12);
+  expect(within(dialog).getAllByRole("switch")).toHaveLength(13);
   expect(
     within(dialog).getByText(
       "These settings apply only to you in Research team.",
@@ -79,11 +79,14 @@ test("Members manage Paid tools inside Chat independently of Chat preferences", 
   ).toBeFalsy();
 });
 
-test("Disabled rollout hides Chat and resolves direct links to Preferences", async () => {
+test("Chat rollout disabled hides Chat even when Paid tools rollout is enabled", async () => {
   await setupPage({
     context,
     path: "/?settings=chat",
-    featureSwitches: { [FeatureSwitchKey.PaidToolControls]: false },
+    featureSwitches: {
+      [FeatureSwitchKey.ChatPreference]: false,
+      [FeatureSwitchKey.PaidToolControls]: true,
+    },
   });
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   await within(dialog).findByRole("heading", { name: "Preference" });
@@ -96,6 +99,28 @@ test("Disabled rollout hides Chat and resolves direct links to Preferences", asy
     }),
   ).toBeFalsy();
   expect(window.location.search).toContain("settings=preference");
+});
+
+test("Paid tools rollout disabled leaves Chat visible without Paid tools", async () => {
+  await setupPage({
+    context,
+    path: "/?settings=chat",
+    featureSwitches: {
+      [FeatureSwitchKey.ChatPreference]: true,
+      [FeatureSwitchKey.PaidToolControls]: false,
+    },
+  });
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  await within(dialog).findByRole("heading", { name: "Chat" });
+  expect(
+    within(dialog).queryByRole("switch", { name: "Web search" }),
+  ).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button", dialog).some((element) => {
+      return element.textContent === "Chat";
+    }),
+  ).toBeTruthy();
+  expect(window.location.search).toContain("settings=chat");
 });
 
 test("Paid tools toggles save inverted enabled state and can re-enable a tool", async () => {
@@ -139,7 +164,9 @@ test("A failed load shows no assumed enabled tools and can be retried", async ()
   });
   const dialog = await openPaidTools();
   await within(dialog).findByText("Your tool settings could not be loaded.");
-  expect(within(dialog).queryByRole("switch")).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("switch", { name: "Web search" }),
+  ).not.toBeInTheDocument();
   available = true;
   click(button("Retry", dialog));
   await expect(readySwitch("Web search")).resolves.not.toBeChecked();

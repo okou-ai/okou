@@ -167,7 +167,9 @@ export function ChatSection() {
   const features = useGet(featureSwitch$);
   const showChatPreferences =
     features[FeatureSwitchKey.ChatPreference] ?? false;
-  const showPaidTools = features[FeatureSwitchKey.PaidToolControls] ?? false;
+  const showPaidTools =
+    showChatPreferences &&
+    (features[FeatureSwitchKey.PaidToolControls] ?? false);
 
   return (
     <div className="flex flex-col gap-8">
@@ -185,13 +187,9 @@ export function ChatSection() {
             title={t(($) => {
               return $.settings.paidTools.title;
             })}
-            {...(showChatPreferences
-              ? {
-                  description: t(($) => {
-                    return $.settings.paidTools.description;
-                  }),
-                }
-              : {})}
+            description={t(($) => {
+              return $.settings.paidTools.description;
+            })}
           />
           <PaidToolsSection />
         </section>

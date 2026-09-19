@@ -2,9 +2,9 @@
 
 Paid-tool controls are personal preferences within one workspace. They do not
 change connector authorization, organization permissions, or billing policy.
-The `paidToolControls` feature switch is disabled by default and controls the
-settings and creation-guidance UI. Saved preferences and enforcement are
-independent of it.
+The `paidToolControls` feature switch is disabled by default. The settings and
+creation-guidance UI require both `chatPreference` and `paidToolControls` to be
+enabled. Saved preferences and enforcement are independent of those switches.
 
 ## Storage and API
 
@@ -24,10 +24,10 @@ The shared catalog includes `web-search`, `people-search`, `scrape`, `finance`,
 ## Settings and run semantics
 
 Settings → Personal → Chat includes a Paid tools section that shows the
-current workspace and saves each switch immediately. `?settings=chat` opens the
-same page on desktop and mobile. A failed load shows a retry state rather than
-implying every tool is enabled; a failed write retains the last confirmed
-value.
+current workspace and saves each switch immediately when both UI switches are
+enabled. `?settings=chat` opens the same page on desktop and mobile. A failed
+load shows a retry state rather than implying every tool is enabled; a failed
+write retains the last confirmed value.
 
 Run preparation reads the actual run owner's preferences regardless of the UI
 feature switch, then captures a JSON string array in the trusted platform
