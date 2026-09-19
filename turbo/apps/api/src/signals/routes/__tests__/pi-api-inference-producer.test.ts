@@ -2366,6 +2366,18 @@ describe("durable Pi API producer", () => {
         continuation: {
           mode: "pending-tools",
           pendingToolIds: [expect.stringMatching(/^call_durable_pi_tool\|/u)],
+          apiUsage: {
+            schemaVersion: 1,
+            state: "observed",
+            sampledAt: expect.any(Number),
+            coverage: "complete",
+            tokens: {
+              input: 5,
+              cacheRead: 0,
+              cacheCreation: 0,
+              output: 3,
+            },
+          },
         },
       },
     });

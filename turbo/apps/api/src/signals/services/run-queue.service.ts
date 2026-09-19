@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import {
   consumeDeferredPiRun$,
   settleDeferredPiTerminal$,
@@ -65,7 +63,6 @@ import {
   COMPUTE_CLOSURE_ERROR,
   transitionAgentRunsToTerminal,
 } from "./agent-run-terminal-transition.service";
-import { closePiApiUsageRunsAsNoInference } from "./pi-api-usage-observation.service";
 import {
   prepareComputeRunAdmission,
   validateComputeRunAdmission,
@@ -80,22 +77,6 @@ const PENDING_RUN_TTL_MS = 15 * 60 * 1000;
 const QUEUED_RUN_EXPIRED_REASON = "Queued run expired (exceeded queue TTL)";
 const QUEUED_RUN_LAUNCH_ORPHAN_REASON =
   "Queued run timed out before queue entry was persisted";
-
-async function closeQueuedApiUsageBestEffort(
-  db: Db,
-  runIds: readonly string[],
-): Promise<void> {
-  if (runIds.length === 0) {
-    return;
-  }
-  const closed = await settle(closePiApiUsageRunsAsNoInference(db, runIds));
-  if (!closed.ok) {
-    L.warn("Failed to close queued API usage before provider ownership", {
-      runCount: runIds.length,
-      error: closed.error,
-    });
-  }
-}
 
 async function effectiveOrgConcurrencyState(
   db: Pick<Db, "select">,
@@ -533,7 +514,6 @@ async function promoteAdmittedQueuedRun(
             piApiFirstTurn: {
               executionMode: "legacy-sandbox-race",
               runId: args.row.runId,
-              providerAttemptId: randomUUID(),
               runnerGroup: payload.runnerGroup,
               userId: args.row.userId,
               orgId: args.orgId,
@@ -711,9 +691,6 @@ async function promoteQueuedCandidateWithSideEffects(
   },
 ): Promise<PromoteQueuedCandidateSideEffectResult> {
   const result = await promoteQueuedCandidate(db, args);
-  if (result.status === "failed") {
-    await closeQueuedApiUsageBestEffort(db, [args.row.runId]);
-  }
   if (
     result.status === "removed-stale" ||
     result.status === "failed" ||
@@ -865,9 +842,6 @@ export const cleanupExpiredQueueEntries$ = command(
     const writeDb = set(writeDb$);
     const currentTime = nowDate();
 
-    // The committed timeout owns this best-effort measurement closure even if
-    // the maintenance request was cancelled while the transaction completed.
-    // eslint-disable-next-line api/signal-check-await -- finish commit-owned cleanup below
     const result = await writeDb.transaction(async (tx) => {
       const expiredRunIds = tx
         .select({ runId: agentRunQueue.runId })
@@ -963,12 +937,6 @@ export const cleanupExpiredQueueEntries$ = command(
         timedOutRuns,
       };
     });
-    await closeQueuedApiUsageBestEffort(
-      writeDb,
-      result.timedOutRuns.map((run) => {
-        return run.runId;
-      }),
-    );
     signal.throwIfAborted();
 
     if (result.deletedCount > 0 || result.timedOutRuns.length > 0) {
@@ -991,9 +959,6 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
     const writeDb = set(writeDb$);
     const currentTime = nowDate();
 
-    // The committed timeout owns this best-effort measurement closure even if
-    // the maintenance request was cancelled while the transaction completed.
-    // eslint-disable-next-line api/signal-check-await -- finish commit-owned cleanup below
     const result = await writeDb.transaction(async (tx) => {
       const candidates = await tx
         .select({
@@ -1063,12 +1028,6 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
 
       return { deletedCount: 0, timedOutRuns };
     });
-    await closeQueuedApiUsageBestEffort(
-      writeDb,
-      result.timedOutRuns.map((run) => {
-        return run.runId;
-      }),
-    );
     signal.throwIfAborted();
 
     if (result.timedOutRuns.length > 0) {

@@ -2307,39 +2307,24 @@ A v1–v3-only application is below the rollback floor while v4 records remain.
 Do not shrink the CHECK or cascade away releasing leases. See the linked contract
 for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
 
-## API-owned Run usage projection (#34787)
+## API-first usage handoff (#34787)
 
-Migration 1170 adds the empty `agent_run_api_usage` table. Apply it before
-promoting the API writer and reader. Every new production admission from that
-API creates one run-owned row in the same transaction as `agent_runs`; deletion
-of the Run cascades to the projection. No historical rows are backfilled.
+The API adds optional `apiUsage` metadata to the existing Pi ownership-transfer
+manifest and durable continuation. Deploy consumers that tolerate and capture
+the additive field before enabling a producer that emits it. The TypeScript
+handoff readers in this repository ignore unknown additive object fields while
+still validating versions, modes, identities, bounds and token quantities.
 
-The mixed-version combinations are explicit:
+Old payloads remain valid. A missing `apiUsage` field means unavailable, not
+zero. A new API paired with an already-running strict reader can reject the
+additive field, so the producer must not lead that reader rollout. A rollback to
+the preceding API simply stops emitting the field; no database contraction or
+backfill is required.
 
-- **Old API after migration:** it never names the new table and continues to
-  admit runs without projection rows.
-- **New API before migration:** unsupported. Both admission owners insert into
-  the new table unconditionally, so promoting the API before migration 1170
-  would fail run creation with `42P01`.
-- **New reader with old-writer runs:** an exact Runner read returns the same
-  non-enumerating `unavailable` shape as a wrong, stale, unbound, or non-running
-  claim. Missing state never becomes complete zero. Remove this compatibility
-  behavior only after the preceding API is outside the rollback window and its
-  maximum two-hour Runner lifetime plus bounded finalization has drained;
-  #35385 owns the evidence and cleanup.
-- **Old Runner with new API:** it ignores the additive table and endpoint. The
-  API source remains observational and does not affect execution or billing.
-- **New Runner with old API:** the route is absent. #34577 owns bounded
-  capability handling and must report that source as unsupported/incomplete,
-  never zero.
-- **API rollback after new writes:** the older API ignores retained projection
-  rows. The additive table and cascade remain; no contraction is part of this
-  rollout.
-
-The strict H1 producer and guest handoff schemas are unchanged. Historical
-receipts without source evidence close a crossed attempt as unavailable only
-when no stronger evidence is already persisted. See
-[API-owned run usage](api-run-usage.md) for the source and read contract.
+Provider results already known at transfer are included. Pre-provider transfer
+is marked `no-inference`. A transfer made before a late provider result becomes
+known has no snapshot and stays explicitly unavailable in this initial
+handoff-only design. See [API-first run usage handoff](api-run-usage.md).
 
 ## DeepSeek V4.1 Flash Pi coverage
 

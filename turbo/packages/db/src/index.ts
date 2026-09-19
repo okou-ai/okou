@@ -10,7 +10,6 @@ import * as cliTokensSchema from "./schema/cli-tokens";
 import * as desktopAuthHandoffCodeSchema from "./schema/desktop-auth-handoff-code";
 import * as agentSchema from "./schema/agent";
 import * as agentRunInferenceSchema from "./schema/agent-run-inference";
-import * as agentRunApiUsageSchema from "./schema/agent-run-api-usage";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
@@ -166,7 +165,6 @@ export const schema = {
   ...agentSchema,
   ...agentRunSchema,
   ...agentRunInferenceSchema,
-  ...agentRunApiUsageSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
   ...checkpointSchema,

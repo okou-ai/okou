@@ -1,11 +1,37 @@
-# API-owned run usage
+# API-first run usage handoff
 
-API-first Pi inference does not traverse the Runner MITM addon, so its token evidence has a separate API-owned source. The source is observational: it never changes billing, execution ownership, sandbox demand, output publication, or retry behavior.
+API-first Pi inference does not traverse the Runner MITM addon. When API-first
+execution transfers ownership to a Sandbox, the API therefore includes the
+usage it has observed in the existing handoff payload:
 
-New Run admissions create one `agent_run_api_usage` row in the same transaction as `agent_runs`. The row starts as either authoritative `no-inference` or `pending`; missing rows therefore identify old writers and are never interpreted as zero. Provider ownership registers a stable attempt UUID before transport. Normal, failed, late, and recovered evidence for that UUID converges into one cumulative replacement projection.
+- legacy ownership transfer: `PiApiFirstTurnManifest.apiUsage`
+- durable ownership transfer: `PiSandboxContinuation.apiUsage`
 
-The projection retains at most eight attempt identities and 32 KiB. Identities are never evicted, because forgetting a deduplication key could count it again. Conflicts, missing categories, lost evidence, in-flight work, and overflow make coverage incomplete without discarding still-valid quantities. First-terminal evidence loss is sticky, while a later missing historical replay cannot downgrade evidence already recorded. Repeating identical evidence does not advance the revision.
+The snapshot is observational. It does not change billing, execution ownership,
+output publication, retry behavior, or whether a Sandbox is launched.
 
-Official Runners read the source with `POST /api/runners/runs/:runId/api-usage`. The request contains the Runner UUID and heartbeat generation. The API requires official Runner authentication and an exact current `running` claim; it does not consult SSH grants. Missing, stale, unbound, and old-writer cases all return the same `unavailable` result. Every response uses `Cache-Control: no-store`.
+`observed` carries the provider evidence available at the handoff boundary as
+disjoint ordinary input, cache-read, cache-creation, and output quantities.
+Each quantity is either a non-negative safe integer or `null` when the provider
+did not establish it. Coverage remains `complete`, `partial`, or `unavailable`;
+known zero is preserved as zero. `no-inference` is emitted only when ownership
+transfers before any provider attempt can start.
 
-This endpoint is one source for later Runner aggregation. It does not combine MITM observations or expose a CLI command.
+Absence of `apiUsage` means the producer has no handoff-time snapshot. Readers
+must treat absence as unavailable, never as zero. This includes payloads from an
+older API, reconstructed historical results without retained provider evidence,
+and transfers that occur while a provider result is still unknown. The initial
+feature does not backfill a result that arrives after ownership has already
+transferred.
+
+The handoff objects intentionally strip unknown additive fields instead of
+rejecting the payload. Semantic discriminants, versions, identities, bounds,
+and token quantities remain validated. This keeps old payloads readable and
+allows a newer producer to add optional metadata without breaking the current
+reader.
+
+There is no API usage table or Runner read endpoint in this source. A compatible
+Runner can capture the durable continuation from its assigned run and combine
+the API snapshot once with the independently sampled MITM source. The combined
+query must continue to expose source-level coverage and freshness; handoff
+metadata does not make the two sources atomic.

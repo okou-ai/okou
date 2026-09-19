@@ -193,8 +193,6 @@ import type {
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { conversations } from "@okouai/db/schema/conversation";
 import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
-import { agentRunApiUsage } from "@okouai/db/schema/agent-run-api-usage";
-import { initialAgentRunApiUsageProjection } from "@okouai/db/jsonb-contracts/agent-run-api-usage";
 import { blobs } from "@okouai/db/schema/blob";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
@@ -811,7 +809,6 @@ function runnerReuseKey(chatThreadId: string | undefined): string | null {
 
 interface RunRecord {
   readonly id: string;
-  readonly providerAttemptId: string;
   readonly createdAt: Date;
   readonly sessionId: string;
   readonly shouldCreateSession: boolean;
@@ -820,7 +817,6 @@ interface RunRecord {
 
 interface LaunchRunIdentity {
   readonly runId: string;
-  readonly providerAttemptId: string;
   readonly sessionId: string;
   readonly shouldCreateSession: boolean;
 }
@@ -6409,7 +6405,6 @@ function prepareLaunchRunIdentity(args: {
 }): LaunchRunIdentity {
   return {
     runId: randomUUID(),
-    providerAttemptId: randomUUID(),
     sessionId: args.resolved.agentSessionId ?? randomUUID(),
     shouldCreateSession: !args.resolved.agentSessionId,
   };
@@ -6422,7 +6417,6 @@ function runRecordFromLaunchIdentity(
 ): RunRecord {
   return {
     id: identity.runId,
-    providerAttemptId: identity.providerAttemptId,
     createdAt,
     sessionId: identity.sessionId,
     shouldCreateSession: identity.shouldCreateSession,
@@ -6511,7 +6505,6 @@ interface LaunchRunRowsArgs {
     | undefined;
   readonly error: string | undefined;
   readonly creditAdmitted: boolean;
-  readonly apiUsagePhase: "no-inference" | "pending";
 }
 
 interface LaunchSessionValues {
@@ -6653,12 +6646,6 @@ async function insertLaunchRunRows(
   const createdAt = nowDate();
   const metadata = launchRunMetadataValues(args);
   await tx.insert(agentRuns).values(launchRunValues(args, createdAt, metadata));
-  await tx.insert(agentRunApiUsage).values({
-    runId: args.identity.runId,
-    revision: 1,
-    projection: initialAgentRunApiUsageProjection(args.apiUsagePhase),
-    updatedAt: createdAt,
-  });
 
   if (args.callbackRows.length > 0) {
     await tx.insert(agentRunCallbacks).values([...args.callbackRows]);
@@ -8017,13 +8004,6 @@ function preparedLaunchRowsArgs(args: {
   readonly status: Extract<LaunchRunStatus, "pending" | "queued">;
   readonly runnerGroup: string;
 }): LaunchRunRowsArgs {
-  const executionContext = args.commit.launch.runnerJobPayload.executionContext;
-  const apiUsagePhase =
-    args.commit.context.body.triggerSource !== "goal" &&
-    executionContext.piLaunchConfig &&
-    !executionContext.piLaunchConfig.maintenance
-      ? "pending"
-      : "no-inference";
   return {
     userId: args.commit.createArgs.userId,
     orgId: args.commit.createArgs.orgId,
@@ -8050,7 +8030,6 @@ function preparedLaunchRowsArgs(args: {
       args.commit.context.officialWorkflowRun?.provenance,
     error: undefined,
     creditAdmitted: args.status === "pending" && args.commit.creditAdmitted,
-    apiUsagePhase,
   };
 }
 
@@ -8208,19 +8187,6 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
   );
   ctes.push(insertedRun);
 
-  const insertedApiUsage = args.tx.$with("inserted_launch_api_usage").as(
-    args.tx
-      .insert(agentRunApiUsage)
-      .values({
-        runId: returnedCteId(insertedRun),
-        revision: 1,
-        projection: initialAgentRunApiUsageProjection(rowsArgs.apiUsagePhase),
-        updatedAt: createdAt,
-      })
-      .returning({ id: agentRunApiUsage.runId }),
-  );
-  ctes.push(insertedApiUsage);
-
   const insertedDiagnosticRegistration = args.tx
     .$with("inserted_launch_connector_diagnostic_registration")
     .as(
@@ -8254,7 +8220,6 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
     createdAt,
     ctes,
     insertedRun,
-    insertedApiUsage,
     insertedDiagnosticRegistration,
     updatedThread,
   };
@@ -8328,10 +8293,6 @@ async function persistPendingAtomicLaunch(
     .innerJoin(
       context.insertedDiagnosticRegistration,
       eq(context.insertedDiagnosticRegistration.id, context.insertedRun.id),
-    )
-    .innerJoin(
-      context.insertedApiUsage,
-      eq(context.insertedApiUsage.id, context.insertedRun.id),
     );
   if (!row || (context.updatedThread && !row.boundThreadId)) {
     throw new Error("Atomic pending launch persistence returned no row");
@@ -8397,10 +8358,6 @@ async function persistQueuedAtomicLaunch(
     .innerJoin(
       context.insertedDiagnosticRegistration,
       eq(context.insertedDiagnosticRegistration.id, context.insertedRun.id),
-    )
-    .innerJoin(
-      context.insertedApiUsage,
-      eq(context.insertedApiUsage.id, context.insertedRun.id),
     )
     .crossJoin(visibleQueueDepth);
   if (!row || (context.updatedThread && !row.boundThreadId)) {
@@ -8661,7 +8618,6 @@ async function persistFailedLaunch(
     officialWorkflowProvenance: args.context.officialWorkflowRun?.provenance,
     error: message,
     creditAdmitted: false,
-    apiUsagePhase: "no-inference",
   });
   return {
     kind: "failed",
@@ -11281,7 +11237,6 @@ function committedAtomicLaunchResponse(args: {
           piApiFirstTurn: {
             executionMode: "legacy-sandbox-race",
             runId: args.committed.run.id,
-            providerAttemptId: args.committed.run.providerAttemptId,
             runnerGroup: args.committed.runnerJobPayload.runnerGroup,
             userId: args.createArgs.userId,
             orgId: args.createArgs.orgId,
@@ -12160,7 +12115,7 @@ function durablePiInferenceActivation(
     appendSystemPrompt: captured.appendSystemPrompt,
     inference: {
       ownerEpoch: 1,
-      providerAttemptId: captured.identity.providerAttemptId,
+      providerAttemptId: randomUUID(),
       configurationHash: published.configurationHash,
       contextHash: published.contextHash,
     },
@@ -12596,7 +12551,6 @@ async function persistDurablePiInference(
       model: prepared.configuration.runtimeModel,
     },
     validatedAccountIdentity: admission.capturedAccount,
-    apiUsagePhase: "pending",
   });
   await tx.insert(agentRunInference).values({
     runId: prepared.identity.runId,
@@ -12875,7 +12829,6 @@ const commitAndActivateAtomicLaunch$ = command(
             activation: {
               executionMode: "legacy-sandbox-race",
               runId: identity.runId,
-              providerAttemptId: identity.providerAttemptId,
               runnerGroup: launch.runnerJobPayload.runnerGroup,
               userId: input.args.userId,
               orgId: input.args.orgId,

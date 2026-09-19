@@ -1,5 +1,4 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
-import { runnerApiUsageContract } from "../contracts/runner-api-usage";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
 import {
@@ -37,11 +36,6 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
-  {
-    route: runnerApiUsageContract.read,
-    rustModulePath: ["runners", "runs", "by_run_id", "api_usage"],
-    rustConstName: "READ",
-  },
   ...(["resolve", "check"] as const).map((action) => {
     return {
       route: runnerVncContract[action],

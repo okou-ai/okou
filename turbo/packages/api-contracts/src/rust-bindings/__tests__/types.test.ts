@@ -124,16 +124,6 @@ const expectedBindings = [
     direction: "response",
   },
   {
-    rustModulePath: ["runners", "runs", "api_usage"],
-    rustTypeName: "Request",
-    direction: "request",
-  },
-  {
-    rustModulePath: ["runners", "runs", "api_usage"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
     rustModulePath: ["runners", "runs", "cancellation"],
     rustTypeName: "Response",
     direction: "response",

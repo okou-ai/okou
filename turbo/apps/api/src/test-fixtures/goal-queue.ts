@@ -286,7 +286,6 @@ export async function activateLegacyGoalPiFixture(
     {
       executionMode: "legacy-sandbox-race",
       runId,
-      providerAttemptId: randomUUID(),
       userId: row.run.userId,
       orgId: row.run.orgId,
       runnerGroup: row.job.runnerGroup,

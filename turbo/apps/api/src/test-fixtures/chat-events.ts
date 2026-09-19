@@ -10,9 +10,7 @@ import type {
 } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import type { ChatTeamsMessageFiles } from "@okouai/db/jsonb-contracts/chat-teams-context";
 import type { JsonObject } from "@okouai/db/jsonb-contracts/shared";
-import { agentRunApiUsageProjectionSchema } from "@okouai/db/jsonb-contracts/agent-run-api-usage";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentRunApiUsage } from "@okouai/db/schema/agent-run-api-usage";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
@@ -3059,27 +3057,6 @@ export async function readRunUsageEventsFixture(runId: string): Promise<
     .from(usageEvent)
     .where(eq(usageEvent.runId, runId))
     .orderBy(usageEvent.category);
-}
-
-/**
- * API-first measurement remains internal once a Run is terminal. This fixture
- * verifies lifecycle persistence independently from billing behavior.
- */
-export async function readRunApiUsageProjectionFixture(runId: string) {
-  const [row] = await db()
-    .select({
-      revision: agentRunApiUsage.revision,
-      projection: agentRunApiUsage.projection,
-    })
-    .from(agentRunApiUsage)
-    .where(eq(agentRunApiUsage.runId, runId));
-  if (!row) {
-    return null;
-  }
-  return {
-    revision: row.revision,
-    projection: agentRunApiUsageProjectionSchema.parse(row.projection),
-  };
 }
 
 /**

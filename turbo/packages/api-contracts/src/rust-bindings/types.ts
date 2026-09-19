@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { runnerApiUsageContract } from "../contracts/runner-api-usage";
 import {
   piApiFirstTurnConfigSchema,
   piDeferredHandoffChunkSchema,
@@ -61,12 +60,6 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
-  {
-    rustModulePath: ["runners", "runs", "api_usage"],
-    rustDoc: [
-      "Cumulative API-owned usage snapshots for an exact Runner claim.",
-    ],
-  },
   {
     rustModulePath: ["runners", "runs", "cancellation"],
     rustDoc: ["Authenticated Run cancellation reconciliation DTOs."],
@@ -156,91 +149,6 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
-  {
-    schema: runnerApiUsageContract.read.body,
-    rustModulePath: ["runners", "runs", "api_usage"],
-    rustTypeName: "Request",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "Request",
-        rustDoc: ["Exact current Runner identity for an API usage read."],
-        fields: {
-          runnerIdentity: ["Winning Runner claim bound to this read."],
-        },
-      },
-      {
-        rustTypeName: "RequestRunnerIdentity",
-        rustDoc: ["Winning Runner claim bound to this read."],
-        fields: {
-          runnerId: ["Exact Runner process UUID."],
-          heartbeatGeneration: ["Exact Runner heartbeat generation."],
-        },
-      },
-    ],
-  },
-  {
-    schema: runnerApiUsageContract.read.responses[200],
-    rustModulePath: ["runners", "runs", "api_usage"],
-    rustTypeName: "Response",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: ["Cumulative API-owned run usage or a non-enumerating miss."],
-        fields: {
-          runId: ["Requested Run UUID."],
-          revision: ["Monotonic cumulative source revision."],
-          sampledAtMs: ["API sampling time in Unix milliseconds."],
-          updatedAtMs: ["Last material source update in Unix milliseconds."],
-          inferenceState: ["API inference lifecycle state."],
-          observedAttempts: ["Retained attempts with terminal evidence."],
-          outstandingAttempts: ["Retained attempts still in flight."],
-          complete: ["Whether no coverage reason remains."],
-          reasons: ["Sorted unique incomplete-coverage reasons."],
-          totals: ["Safe disjoint cumulative token totals."],
-        },
-        variants: {
-          unavailable: ["No exact authorized source row is visible."],
-          available: ["A cumulative API-owned source snapshot is available."],
-        },
-      },
-      {
-        rustTypeName: "ResponseAvailableTotals",
-        rustDoc: ["Safe disjoint token totals."],
-        fields: {
-          input: ["Ordinary input tokens excluding cache partitions."],
-          cacheRead: ["Cache-read input tokens."],
-          cacheCreation: ["Cache-creation input tokens."],
-          output: ["Output tokens."],
-          total: ["Sum of the four disjoint categories."],
-        },
-      },
-      {
-        rustTypeName: "ResponseAvailableInferenceState",
-        rustDoc: ["API-owned inference lifecycle state."],
-        variants: {
-          no_inference: ["No API provider request can occur."],
-          pending: [
-            "API inference remains eligible before provider ownership.",
-          ],
-          attempted: ["At least one provider attempt crossed ownership."],
-        },
-      },
-      {
-        rustTypeName: "ResponseAvailableReason",
-        rustDoc: ["Reason the API usage snapshot is incomplete."],
-        variants: {
-          missing_usage: ["A terminal attempt has no usable provider usage."],
-          missing_categories: ["Some token categories are unknown."],
-          overflow: ["Retention or safe arithmetic bounds were exceeded."],
-          in_flight: ["A retained provider attempt remains outstanding."],
-          ambiguous_attempt: ["Conflicting evidence exists for an attempt."],
-          pending_inference: ["Provider ownership has not yet been decided."],
-        },
-      },
-    ],
-  },
   {
     schema: runnerCancellationResponseSchema,
     rustModulePath: ["runners", "runs", "cancellation"],

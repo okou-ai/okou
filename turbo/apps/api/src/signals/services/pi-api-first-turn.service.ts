@@ -15,7 +15,10 @@ import {
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { modelProviderTypeSchema } from "@okouai/api-contracts/contracts/model-providers";
-import type { PiSandboxContinuation } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
+import type {
+  PiApiHandoffUsage,
+  PiSandboxContinuation,
+} from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
 import { activeInputDeliveries } from "@okouai/db/schema/active-input-delivery";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
@@ -117,11 +120,6 @@ import {
   gunzipSessionHistoryBufferWithMaxBytes,
   unzstdSessionHistoryBufferWithMaxBytes,
 } from "./session-history-decompression";
-import {
-  closePiApiUsageAsNoInference,
-  recordPiApiUsageObservation,
-  registerPiApiUsageAttempt,
-} from "./pi-api-usage-observation.service";
 import {
   normalizeSessionHistoryBlobEncoding,
   resumeSessionHistoryBlobKey,
@@ -1245,7 +1243,6 @@ async function recordApiFirstTurnUsage(
   turn: PiApiFirstTurnResult,
 ): Promise<void> {
   const { activation } = context;
-  await tryRecordApiUsageObservation(context, turn.usageObservation);
   await recordPiApiFirstTurnUsage(context.db, {
     runId: activation.runId,
     orgId: activation.orgId,
@@ -1277,62 +1274,6 @@ async function recordApiFirstTurnUsage(
           ne(agentRunInference.providerAttemptState, "not-started"),
         ),
       );
-  }
-}
-
-function apiUsageAttemptId(activation: PiApiFirstTurnActivation): string {
-  return isDurablePiApiFirstTurnActivation(activation)
-    ? activation.inference.providerAttemptId
-    : activation.providerAttemptId;
-}
-
-async function tryRegisterApiUsageAttempt(
-  context: ApiFirstTurnContext,
-): Promise<void> {
-  const registered = await settle(
-    registerPiApiUsageAttempt(context.db, {
-      runId: context.activation.runId,
-      attemptId: apiUsageAttemptId(context.activation),
-    }),
-  );
-  if (!registered.ok) {
-    L.warn("Failed to register Pi API usage attempt", {
-      runId: context.activation.runId,
-      error: registered.error,
-    });
-  }
-}
-
-async function tryRecordApiUsageObservation(
-  context: ApiFirstTurnContext,
-  observation: PiApiFirstTurnResult["usageObservation"],
-): Promise<void> {
-  const recorded = await settle(
-    recordPiApiUsageObservation(context.db, {
-      runId: context.activation.runId,
-      attemptId: apiUsageAttemptId(context.activation),
-      observation,
-    }),
-  );
-  if (!recorded.ok) {
-    L.warn("Failed to record Pi API usage observation", {
-      runId: context.activation.runId,
-      error: recorded.error,
-    });
-  }
-}
-
-async function tryCloseApiUsageAsNoInference(
-  context: ApiFirstTurnContext,
-): Promise<void> {
-  const closed = await settle(
-    closePiApiUsageAsNoInference(context.db, context.activation.runId),
-  );
-  if (!closed.ok) {
-    L.warn("Failed to close Pi API usage before provider ownership", {
-      runId: context.activation.runId,
-      error: closed.error,
-    });
   }
 }
 
@@ -1498,13 +1439,6 @@ async function observeDiscardedProviderResult(
       ownershipStage: ownership.stage,
     });
     await recordApiFirstTurnUsage(args, late.value.result);
-  } else if (ownership.stage === "provider-may-have-started") {
-    await tryRecordApiUsageObservation(
-      args,
-      late.error instanceof PiApiModelRequestError
-        ? late.error.usageObservation
-        : undefined,
-    );
   }
 }
 
@@ -1634,7 +1568,6 @@ async function acquireApiProviderOwnership(
   signal.throwIfAborted();
   // Resolving the lifecycle transaction commits the durable uncertainty fence.
   // Only then may the runtime adapter cross its actual HTTP boundary.
-  await tryRegisterApiUsageAttempt(args.context);
   markProviderRequestMayHaveStarted();
   finish("success");
 }
@@ -1776,17 +1709,6 @@ async function executeApiModelTurn(
       );
     }
     if (
-      !modelSignal.aborted &&
-      args.ownership.stage === "provider-may-have-started"
-    ) {
-      await tryRecordApiUsageObservation(
-        args.context,
-        executed.error instanceof PiApiModelRequestError
-          ? executed.error.usageObservation
-          : undefined,
-      );
-    }
-    if (
       executed.error instanceof PiApiFirstTurnError ||
       executed.error instanceof PiApiFirstTurnActiveInputBeforeProviderError ||
       executed.error instanceof PiApiFirstTurnCanonicalCancellationError
@@ -1880,6 +1802,7 @@ function ownershipTransferManifest(args: {
   };
   readonly sandboxEventSequenceStart: number;
   readonly langfuseParent?: PiLangfuseParent;
+  readonly apiUsage?: PiApiHandoffUsage;
 }): PiApiFirstTurnManifest {
   return {
     schemaVersion: 3,
@@ -1889,7 +1812,26 @@ function ownershipTransferManifest(args: {
     session: args.session,
     sandboxEventSequenceStart: args.sandboxEventSequenceStart,
     ...(args.langfuseParent ? { langfuseParent: args.langfuseParent } : {}),
+    ...(args.apiUsage ? { apiUsage: args.apiUsage } : {}),
   };
+}
+
+function noInferenceApiHandoffUsage(): PiApiHandoffUsage {
+  return { schemaVersion: 1, state: "no-inference", sampledAt: now() };
+}
+
+function observedApiHandoffUsage(
+  turn: PiApiFirstTurnResult,
+): PiApiHandoffUsage | undefined {
+  return turn.usageObservation
+    ? {
+        schemaVersion: 1,
+        state: "observed",
+        sampledAt: now(),
+        coverage: turn.usageObservation.coverage,
+        tokens: turn.usageObservation.tokens,
+      }
+    : undefined;
 }
 
 function validateSandboxFallbackSession(
@@ -1945,6 +1887,7 @@ const publishDurableSandboxFallback$ = command(
     _accessors,
     args: ApiFirstTurnContext,
     reason: PiSandboxFirstReason,
+    apiUsage: PiApiHandoffUsage | undefined,
     signal: AbortSignal,
   ): Promise<void> => {
     if (!isDurablePiApiFirstTurnActivation(args.activation)) {
@@ -1982,7 +1925,10 @@ const publishDurableSandboxFallback$ = command(
         ownerEpoch: args.activation.inference.ownerEpoch,
         generation: 1,
       },
-      { mode: "untouched-h0" },
+      {
+        mode: "untouched-h0",
+        ...(apiUsage ? { apiUsage } : {}),
+      },
     );
     signal.throwIfAborted();
     if (!accepted) {
@@ -2002,6 +1948,7 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
   { get, set },
   args: ApiFirstTurnContext,
   reason: PiSandboxFirstReason,
+  apiUsage: PiApiHandoffUsage | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   const { executionContext, launchConfig, sessionId } =
@@ -2009,7 +1956,7 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
   const commitIdentity = apiFirstTurnCommitIdentity(args);
   signal.throwIfAborted();
   if (isDurablePiApiFirstTurnActivation(args.activation)) {
-    await set(publishDurableSandboxFallback$, args, reason, signal);
+    await set(publishDurableSandboxFallback$, args, reason, apiUsage, signal);
     return;
   }
   await withApiFirstTurnLifecycle(args, async (tx) => {
@@ -2094,6 +2041,7 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
         rawSize: session.bytes.length,
       },
       sandboxEventSequenceStart: launchConfig.sandboxEventSequenceStart,
+      ...(apiUsage ? { apiUsage } : {}),
     });
     await set(
       writeManifest$,
@@ -2584,6 +2532,7 @@ function durableContinuation(
   receipt: DurablePiPublicationReceipt,
 ): PiSandboxContinuation {
   const inspection = inspectPiSessionJsonl(prepared.turn.sessionJsonl);
+  const apiUsage = observedApiHandoffUsage(prepared.turn);
   return prepared.turn.handoffRequired
     ? {
         mode: "pending-tools",
@@ -2591,12 +2540,14 @@ function durableContinuation(
         manifestGeneration: receipt.manifestGeneration,
         pendingToolIds: [...inspection.pendingToolIds],
         lastEventSequence: receipt.lastEventSequence,
+        ...(apiUsage ? { apiUsage } : {}),
       }
     : {
         mode: "settled-session",
         h1Hash: receipt.h1Hash,
         manifestGeneration: receipt.manifestGeneration,
         lastEventSequence: receipt.lastEventSequence,
+        ...(apiUsage ? { apiUsage } : {}),
       };
 }
 
@@ -2740,13 +2691,6 @@ const commitDurableApiFirstTurn$ = command(
         args.activation.executionContext.piModelConfig,
       ),
     };
-    // Persist source evidence before H1 can become the durable recovery owner.
-    // Historical H1 receipts intentionally remain strict and may omit it.
-    await tryRecordApiUsageObservation(
-      modelContext,
-      prepared.turn.usageObservation,
-    );
-    signal.throwIfAborted();
     const receipt = await onRejection(
       set(
         persistDurableApiFirstTurnResult$,
@@ -3027,6 +2971,7 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
       await set(publishEvents$, { auth: prepared.auth, events }, signal);
       if (transition.outcome === "transfer") {
         const publicationStartedAt = nowDate();
+        const apiUsage = observedApiHandoffUsage(prepared.turn);
         const manifest = ownershipTransferManifest({
           mode: transition.mode,
           baseSession: prepared.baseSession,
@@ -3036,6 +2981,7 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
             rawSize: prepared.sessionBytes.length,
           },
           sandboxEventSequenceStart: nextSequenceNumber,
+          ...(apiUsage ? { apiUsage } : {}),
           langfuseParent: piLangfuseSandboxParent({
             enabled: isPiLangfuseDebugRunEnvironment(
               args.activation.executionContext.platformEnvironment,
@@ -3177,6 +3123,7 @@ const publishLargeHistoryTransfer$ = command(
               encodedSize: metadata.encodedSize,
             },
             sandboxEventSequenceStart: launchConfig.sandboxEventSequenceStart,
+            apiUsage: noInferenceApiHandoffUsage(),
           },
         },
         signal,
@@ -3217,7 +3164,6 @@ const executeApiFirstTurn$ = command(async function executeApiFirstTurn(
       executionSignal,
     );
     executionSignal.throwIfAborted();
-    await tryCloseApiUsageAsNoInference(args);
     return { outcome: "transferred" };
   }
   const prepared = await set(
@@ -3574,14 +3520,19 @@ const runPiApiFirstTurnCore$ = command(
       }
       const handoffSignal = piApiFirstTurnHandoffSignal(activation, signal);
       const fallback = await settleApiFirstTurnExecution(
-        set(publishSandboxFallback$, context, decision.reason, handoffSignal),
+        set(
+          publishSandboxFallback$,
+          context,
+          decision.reason,
+          ownership.stage === "pre-provider"
+            ? noInferenceApiHandoffUsage()
+            : undefined,
+          handoffSignal,
+        ),
         handoffSignal,
         signal,
       );
       if (fallback.ok) {
-        if (ownership.stage === "pre-provider") {
-          await tryCloseApiUsageAsNoInference(context);
-        }
         logSandboxFirstPublication(
           activation,
           ownership,
@@ -3596,9 +3547,6 @@ const runPiApiFirstTurnCore$ = command(
       );
     }
     if (await canonicalApiFirstTurnCancellationWon(context)) {
-      if (ownership.stage === "pre-provider") {
-        await tryCloseApiUsageAsNoInference(context);
-      }
       logCanonicalApiFirstTurnCancellation(context, ownership, executed.error);
       return undefined;
     }
@@ -3611,9 +3559,6 @@ const runPiApiFirstTurnCore$ = command(
         error: executed.error,
       });
       return undefined;
-    }
-    if (ownership.stage === "pre-provider") {
-      await tryCloseApiUsageAsNoInference(context);
     }
     return set(failApiFirstTurn$, context, failure, ownership);
   },

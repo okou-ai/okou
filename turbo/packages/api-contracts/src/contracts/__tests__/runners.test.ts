@@ -54,6 +54,10 @@ import {
 import { runRunnerContract } from "../run-routes";
 import { MAX_EVENT_SEQUENCE_NUMBER } from "../runs";
 import {
+  piApiHandoffUsageSchema,
+  piSandboxContinuationSchema,
+} from "../pi-inference-lifecycle";
+import {
   sandboxReuseResultSchema as webhookSandboxReuseResultSchema,
   workspaceReuseResultSchema as webhookWorkspaceReuseResultSchema,
 } from "../webhooks";
@@ -614,7 +618,7 @@ describe("Pi sandbox execution contract", () => {
     "sandbox-first",
     "pending-tool-continuation",
     "settled-session-continuation",
-  ] as const)("represents %s as one strict ownership-transfer mode", (mode) => {
+  ] as const)("represents %s as one ownership-transfer mode", (mode) => {
     const manifest = piApiFirstTurnManifestSchema.parse({
       schemaVersion: 3,
       outcome: "ownership-transfer",
@@ -630,6 +634,66 @@ describe("Pi sandbox execution contract", () => {
       mode,
       sandboxEventSequenceStart: 4,
     });
+  });
+
+  it("carries additive handoff usage without requiring strict readers", () => {
+    const apiUsage = {
+      schemaVersion: 1,
+      state: "observed",
+      sampledAt: 1_000,
+      coverage: "partial",
+      tokens: { input: 3, cacheRead: 0, cacheCreation: null, output: 2 },
+      futureField: true,
+    } as const;
+    const manifest = piApiFirstTurnManifestSchema.parse({
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode: "pending-tool-continuation",
+      baseSession: { sessionId: piSessionId, sha256: null },
+      session: handoffSession,
+      sandboxEventSequenceStart: 4,
+      apiUsage,
+      futureManifestField: true,
+    });
+
+    expect(manifest.apiUsage).toStrictEqual({
+      schemaVersion: 1,
+      state: "observed",
+      sampledAt: 1_000,
+      coverage: "partial",
+      tokens: { input: 3, cacheRead: 0, cacheCreation: null, output: 2 },
+    });
+    expect(manifest).not.toHaveProperty("futureManifestField");
+    expect(
+      piSandboxContinuationSchema.parse({
+        mode: "untouched-h0",
+        apiUsage: {
+          schemaVersion: 1,
+          state: "no-inference",
+          sampledAt: 1_001,
+        },
+        futureContinuationField: true,
+      }),
+    ).toStrictEqual({
+      mode: "untouched-h0",
+      apiUsage: {
+        schemaVersion: 1,
+        state: "no-inference",
+        sampledAt: 1_001,
+      },
+    });
+
+    for (const invalidTokens of [
+      { ...apiUsage.tokens, input: -1 },
+      { ...apiUsage.tokens, output: Number.MAX_SAFE_INTEGER + 1 },
+    ]) {
+      expect(
+        piApiHandoffUsageSchema.safeParse({
+          ...apiUsage,
+          tokens: invalidTokens,
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("accepts one strict sampled Langfuse handoff parent", () => {
@@ -727,10 +791,6 @@ describe("Pi sandbox execution contract", () => {
       overrides: { mode: "ambiguous-continuation" },
     },
     {
-      name: "mode-specific prompt replay field",
-      overrides: { prompt: "must not be encoded in the transfer" },
-    },
-    {
       name: "future manifest version",
       overrides: { schemaVersion: 5 },
     },
@@ -746,6 +806,20 @@ describe("Pi sandbox execution contract", () => {
         ...overrides,
       }).success,
     ).toBe(false);
+  });
+
+  it("ignores unknown additive manifest fields", () => {
+    const manifest = piApiFirstTurnManifestSchema.parse({
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode: "sandbox-first",
+      baseSession: { sessionId: piSessionId, sha256: null },
+      session: handoffSession,
+      sandboxEventSequenceStart: 1,
+      prompt: "ignored by this reader",
+    });
+
+    expect(manifest).not.toHaveProperty("prompt");
   });
 
   it.each([0, -1, 1.5, MAX_EVENT_SEQUENCE_NUMBER + 1])(

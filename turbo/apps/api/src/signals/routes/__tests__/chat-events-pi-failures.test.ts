@@ -10,7 +10,6 @@ import { testContext } from "../../../__tests__/test-context";
 import { env, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
-  readRunApiUsageProjectionFixture,
   holdPiApiFirstTurnLifecycleLockFixture,
   readRunUsageEventsFixture,
 } from "../../../test-fixtures/chat-events";
@@ -207,16 +206,6 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(readRunUsageEventsFixture(run.runId)).resolves.toStrictEqual(
       [],
     );
-    await expect(
-      readRunApiUsageProjectionFixture(run.runId),
-    ).resolves.toMatchObject({
-      revision: 2,
-      projection: {
-        phase: "no-inference",
-        attempts: [],
-        overflow: false,
-      },
-    });
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       status: "cancelled",
     });
@@ -441,27 +430,6 @@ describe("CHAT-02: model-first provider policies", () => {
           cacheCreation: 2,
         },
       );
-      await expect(
-        readRunApiUsageProjectionFixture(run.runId),
-      ).resolves.toMatchObject({
-        revision: 3,
-        projection: {
-          phase: "attempted",
-          attempts: [
-            {
-              terminal: true,
-              coverage: "complete",
-              evidenceLost: false,
-              tokens: {
-                input: expectedInput,
-                output: 3,
-                cacheRead: 3,
-                cacheCreation: 2,
-              },
-            },
-          ],
-        },
-      });
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "cancelled",
       });

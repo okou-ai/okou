@@ -13,7 +13,7 @@ import {
 import { logger } from "../../lib/log";
 import { notFound, runNotCancellable } from "../../lib/error";
 import { now } from "../../lib/time";
-import { settle, tapError } from "../utils";
+import { tapError } from "../utils";
 import {
   chatCallbackIdForRun,
   dispatchFailedRunCallbacks,
@@ -28,7 +28,6 @@ import {
 } from "./pi-api-first-turn-lifecycle.service";
 import { cancelLockedRun } from "./agent-run-cancellation-transition.service";
 import { lockPiMemoryPhase2MaintenanceCleanupProtection } from "./pi-memory-phase2-maintenance.service";
-import { closePiApiUsageAsNoInference } from "./pi-api-usage-observation.service";
 
 const L = logger("RunCancel");
 
@@ -71,30 +70,6 @@ type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
 
 function isActiveStatus(status: string): status is ActiveStatus {
   return (ACTIVE_STATUSES as readonly string[]).includes(status);
-}
-
-async function finalizeCancellationApiUsage(
-  db: Db,
-  transition: Promise<
-    CancelRunResult | NotFoundResponse | RunNotCancellableResponse
-  >,
-): Promise<CancelRunResult | NotFoundResponse | RunNotCancellableResponse> {
-  const result = await abortAfterCanonicalCancellation(transition);
-  if (
-    !("previousStatus" in result) ||
-    result.previousStatus !== "queued" ||
-    result.alreadyCancelled
-  ) {
-    return result;
-  }
-  const closed = await settle(closePiApiUsageAsNoInference(db, result.runId));
-  if (!closed.ok) {
-    L.warn("Failed to close cancelled queued API usage", {
-      runId: result.runId,
-      error: closed.error,
-    });
-  }
-  return result;
 }
 
 /**
@@ -236,7 +211,7 @@ export const cancelRun$ = command(
         alreadyCancelled: false,
       };
     });
-    const result = await finalizeCancellationApiUsage(writeDb, transition);
+    const result = await abortAfterCanonicalCancellation(transition);
     signal.throwIfAborted();
 
     return result;

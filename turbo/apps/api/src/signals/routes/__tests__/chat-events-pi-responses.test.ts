@@ -17,7 +17,6 @@ import {
   deletePiApiFirstTurnUsageEventsFixture,
   insertPiApiFirstTurnUsageEventsFixture,
   readRunUsageEventsFixture,
-  readRunApiUsageProjectionFixture,
   replacePiSessionHistoryJsonlFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -368,28 +367,6 @@ describe("CHAT-02: model-first provider policies", () => {
         output: 3,
         cacheRead: 3,
         cacheCreation: 2,
-      });
-      await expect(
-        readRunApiUsageProjectionFixture(run.runId),
-      ).resolves.toMatchObject({
-        revision: 3,
-        projection: {
-          phase: "attempted",
-          overflow: false,
-          attempts: [
-            {
-              terminal: true,
-              coverage: "complete",
-              evidenceLost: false,
-              tokens: {
-                input: 5,
-                output: 3,
-                cacheRead: 3,
-                cacheCreation: 2,
-              },
-            },
-          ],
-        },
       });
     },
     90_000,
@@ -1409,27 +1386,6 @@ describe("CHAT-02: model-first provider policies", () => {
         "previous_response_id",
       );
       await expectNoBuiltInModelUsage(first.runId);
-      await expect(
-        readRunApiUsageProjectionFixture(first.runId),
-      ).resolves.toMatchObject({
-        revision: 3,
-        projection: {
-          phase: "attempted",
-          attempts: [
-            {
-              terminal: true,
-              coverage: "partial",
-              evidenceLost: false,
-              tokens: {
-                input: null,
-                output: 3,
-                cacheRead: null,
-                cacheCreation: null,
-              },
-            },
-          ],
-        },
-      });
 
       await api.heartbeatRunner(runnerGroup);
       const claim = await claimGptPiSandbox(actor, first.runId, route.tier);
@@ -1474,6 +1430,18 @@ describe("CHAT-02: model-first provider policies", () => {
       const manifest = piApiFirstTurnManifestSchema.parse(
         JSON.parse(manifestBytes.toString("utf8")),
       );
+      expect(manifest.apiUsage).toMatchObject({
+        schemaVersion: 1,
+        state: "observed",
+        sampledAt: expect.any(Number),
+        coverage: "complete",
+        tokens: {
+          input: 5,
+          cacheRead: 0,
+          cacheCreation: 0,
+          output: 3,
+        },
+      });
       const h2Session = MemoryPiSession.fromJsonl(h1Bytes.toString("utf8"));
       const pendingAssistant = [...h2Session.buildSessionContext().messages]
         .reverse()
@@ -1781,16 +1749,6 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       expect(providerRequests).toStrictEqual([]);
       await expectNoBuiltInModelUsage(run.runId);
-      await expect(
-        readRunApiUsageProjectionFixture(run.runId),
-      ).resolves.toMatchObject({
-        revision: 2,
-        projection: {
-          phase: "no-inference",
-          attempts: [],
-          overflow: false,
-        },
-      });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.requestClaimRunnerJob(true, run.runId, [404], {
         capabilities: { piModelConfigGenerations: [1, 2, 3] },
