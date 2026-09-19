@@ -30,7 +30,7 @@ import {
 import { ConnectorCatalogRelationshipError } from "./relationship-error";
 import {
   AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
-  AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
 } from "./mcp-auth";
 
 const MODEL_PROVIDER_FIREWALL_PREFIX = "model-provider:";
@@ -378,11 +378,7 @@ function validateGenericMcpFirewall(
   const authIsAllowed =
     Object.keys(api.auth).length === 0 ||
     (allowAutomaticAuth &&
-      isDeepStrictEqual(api.auth, {
-        headers: {
-          Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
-        },
-      }));
+      isDeepStrictEqual(api.auth, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH));
   if (
     !authIsAllowed ||
     (api.permissions?.length ?? 0) !== 0 ||

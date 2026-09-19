@@ -46,7 +46,7 @@ import {
 } from "@okouai/connectors/firewall-types";
 import {
   AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
-  AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
 } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import {
@@ -152,9 +152,6 @@ type SecretType = StorageSecretSource;
 const NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_LEASE_SECONDS = 5;
 const BUILTIN_MCP_AUTH_LEASE_SECONDS = 30;
-const AUTOMATIC_MCP_RUNTIME_AUTH = {
-  headers: { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
-} as const;
 const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
@@ -5879,8 +5876,10 @@ function requestsCurrentCatalogAutomaticMcpAuth(args: {
       : { awsSigv4: args.body.authAwsSigv4 }),
   };
   return (
-    isDeepStrictEqual(currentCatalogApi?.auth, AUTOMATIC_MCP_RUNTIME_AUTH) &&
-    isDeepStrictEqual(requestedAuth, AUTOMATIC_MCP_RUNTIME_AUTH)
+    isDeepStrictEqual(
+      currentCatalogApi?.auth,
+      AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+    ) && isDeepStrictEqual(requestedAuth, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH)
   );
 }
 

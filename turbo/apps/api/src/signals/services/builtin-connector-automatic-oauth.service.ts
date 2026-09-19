@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   IssuerMismatchError,
   type OAuthClientMetadata,
@@ -12,6 +13,7 @@ import {
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
+import { AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
@@ -30,6 +32,7 @@ import {
   getConnectorRuntimeMethod,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
+  type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import {
   replaceConnectorConnection,
@@ -169,12 +172,11 @@ function contractFromMethod(
   };
 }
 
-async function currentContract(
-  db: Db,
+function currentContractFromSnapshot(
+  snapshot: ConnectorRuntimeSnapshot,
   connectorSlug: string,
   authMethodId: string,
-): Promise<BuiltinAutomaticContract | null> {
-  const snapshot = await loadConnectorRuntimeSnapshot(db);
+): BuiltinAutomaticContract | null {
   const runtime = getConnectorRuntimeMethod({
     snapshot,
     connectorSlug,
@@ -187,6 +189,18 @@ async function currentContract(
         snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint,
       )
     : null;
+}
+
+async function currentContract(
+  db: Db,
+  connectorSlug: string,
+  authMethodId: string,
+): Promise<BuiltinAutomaticContract | null> {
+  return currentContractFromSnapshot(
+    await loadConnectorRuntimeSnapshot(db),
+    connectorSlug,
+    authMethodId,
+  );
 }
 
 async function assertCurrentContract(
@@ -1012,13 +1026,25 @@ async function credentialDestinationMatches(
   if (expectedEndpoint !== contract.endpoint) {
     return false;
   }
-  const current = await currentContract(
-    db,
+  const snapshot = await loadConnectorRuntimeSnapshot(db);
+  const current = currentContractFromSnapshot(
+    snapshot,
     contract.connectorSlug,
     contract.authMethodId,
   );
+  const currentCatalogApi = snapshot.serverFirewalls
+    .getRuntimeFirewall(contract.connectorSlug)
+    ?.apis.find((api) => {
+      return api.base === expectedEndpoint;
+    });
   signal.throwIfAborted();
-  return current?.contractHash === contract.contractHash;
+  return (
+    current?.contractHash === contract.contractHash &&
+    isDeepStrictEqual(
+      currentCatalogApi?.auth,
+      AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+    )
+  );
 }
 
 async function resolveLockedAutomatic(
@@ -1052,8 +1078,8 @@ async function resolveLockedAutomatic(
     return { kind: "none" };
   }
   // Catalog propagation is best-effort: a request matched by a stale runner
-  // catalog must never receive credentials for an endpoint that the API no longer
-  // accepts for this account connection.
+  // catalog must never receive credentials for an endpoint or auth contract that
+  // the API no longer accepts for this account connection.
   if (
     !(await credentialDestinationMatches(
       tx,
