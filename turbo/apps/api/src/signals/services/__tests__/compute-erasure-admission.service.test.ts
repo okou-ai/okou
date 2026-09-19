@@ -627,6 +627,9 @@ describe("actual compute transactions versus the B1 projector", () => {
     if (!runId) {
       throw new Error("Missing synthetic run");
     }
+    // Driver-level exception: the production HTTP boundary cannot expose SQL
+    // statement count. Enter through the real claim endpoint and retain its
+    // successful response while measuring this explicit latency contract.
     const selectedStatements: string[] = [];
     await withDatabaseTransactionBarrierFixture(
       {

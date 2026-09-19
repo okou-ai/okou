@@ -66,17 +66,17 @@ interface ComputeRunAdmissionObservation {
 }
 
 const agentClaimAdmissionLockRowSchema = z.object({
-  resourceId: z.string().nullable(),
+  resourceId: z.string().uuid().nullable(),
   resourceUserId: z.string().nullable(),
   resourceOrgId: z.string().nullable(),
-  runId: z.string().nullable(),
+  runId: z.string().uuid().nullable(),
   runUserId: z.string().nullable(),
   runOrgId: z.string().nullable(),
-  runSessionId: z.string().nullable(),
-  sessionId: z.string().nullable(),
+  runSessionId: z.string().uuid().nullable(),
+  sessionId: z.string().uuid().nullable(),
   sessionUserId: z.string().nullable(),
   sessionOrgId: z.string().nullable(),
-  sessionAgentId: z.string().nullable(),
+  sessionAgentId: z.string().uuid().nullable(),
 });
 
 class ComputeOwnershipChangedError extends Error {
