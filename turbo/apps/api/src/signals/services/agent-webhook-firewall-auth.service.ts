@@ -5853,6 +5853,11 @@ function requestedAutomaticMcpCatalogAuth(args: {
   if (connectorSlug === undefined || matchedBase === undefined) {
     return null;
   }
+  const mcpEndpoint = getConnectorRuntimeConnector(args.snapshot, connectorSlug)
+    ?.catalogConnector.mcp?.endpoint;
+  if (matchedBase !== mcpEndpoint) {
+    return null;
+  }
   const currentCatalogApi = args.snapshot.serverFirewalls
     .getRuntimeFirewall(connectorSlug)
     ?.apis.find((api) => {
