@@ -219,26 +219,17 @@ describe("CHAT-02: model-first provider policies", () => {
       context.signal,
       usagePricingResolution,
     );
+    const observed = observePendingSend(send);
 
     await Promise.all([
       preparation.arrival("post-authorization-context"),
       preparation.arrival("thread-session"),
     ]);
-    let requestSettled = false;
-    void send.then(
-      () => {
-        requestSettled = true;
-      },
-      () => {
-        requestSettled = true;
-      },
-    );
     preparation.reject(
       "thread-session",
       jsonHttpException(422, "session preparation failed"),
     );
-    await preparation.departure("thread-session");
-    expect(requestSettled).toBeFalsy();
+    await observed.beforeSettlement(preparation.departure("thread-session"));
     preparation.reject(
       "post-authorization-context",
       jsonHttpException(409, "authorization preparation failed"),
@@ -249,6 +240,7 @@ describe("CHAT-02: model-first provider policies", () => {
       status: 409,
       body: { error: { message: "authorization preparation failed" } },
     });
+    await observed.joinPhases();
     await preparation.departure("post-authorization-context");
     preparation.releaseAll();
     const events = await chat.listThreadEvents(actor, thread.id);
@@ -295,28 +287,20 @@ describe("CHAT-02: model-first provider policies", () => {
       requestSignal,
       usagePricingResolution,
     );
+    const observed = observePendingSend(send);
 
     await Promise.all([
       preparation.arrival("post-authorization-context"),
       preparation.arrival("thread-session"),
     ]);
-    let requestSettled = false;
-    void send.then(
-      () => {
-        requestSettled = true;
-      },
-      () => {
-        requestSettled = true;
-      },
-    );
     controller.abort(new DOMException("cancelled by route test", "AbortError"));
     preparation.release("thread-session");
-    await preparation.departure("thread-session");
-    expect(requestSettled).toBeFalsy();
+    await observed.beforeSettlement(preparation.departure("thread-session"));
     preparation.release("post-authorization-context");
 
     const response = await send;
     expect(response.status).toBe(500);
+    await observed.joinPhases();
     await preparation.departure("post-authorization-context");
     preparation.releaseAll();
     const events = await chat.listThreadEvents(actor, thread.id);
