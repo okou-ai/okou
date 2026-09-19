@@ -61,6 +61,15 @@ async function register(runId: string, attemptId: string) {
   );
 }
 
+async function corrupt(runId: string) {
+  await accept(
+    usageStateClient().action({
+      body: { action: "corrupt-projection", runId },
+    }),
+    [200],
+  );
+}
+
 async function observe(
   runId: string,
   attemptId: string,
@@ -346,6 +355,20 @@ describe("Runner API usage", () => {
       body: { runnerIdentity: f.runnerIdentity },
     });
     expect(result.status).toBe(401);
+    expect(result.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("surfaces corrupt source state instead of returning unavailable", async () => {
+    const f = await runtime();
+    await initialize(f.runId, "pending");
+    await corrupt(f.runId);
+
+    const result = await client().read({
+      headers: runnerHeaders,
+      params: { runId: f.runId },
+      body: { runnerIdentity: f.runnerIdentity },
+    });
+    expect(result.status).toBe(500);
     expect(result.headers.get("cache-control")).toBe("no-store");
   });
 });

@@ -41,6 +41,12 @@ export const testApiUsageStateActionBodySchema = z.discriminatedUnion(
       .strict(),
     z
       .object({
+        action: z.literal("corrupt-projection"),
+        runId: z.uuid(),
+      })
+      .strict(),
+    z
+      .object({
         action: z.literal("observe"),
         runId: z.uuid(),
         attemptId: z.uuid(),

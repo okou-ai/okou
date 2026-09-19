@@ -5,6 +5,7 @@ import {
 import { initialAgentRunApiUsageProjection } from "@okouai/db/jsonb-contracts/agent-run-api-usage";
 import { agentRunApiUsage } from "@okouai/db/schema/agent-run-api-usage";
 import { command } from "ccstate";
+import { eq, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
@@ -58,6 +59,18 @@ const mutateApiUsageState$ = command(
       }
       case "register": {
         await registerPiApiUsageAttempt(db, bodyResult.data);
+        signal.throwIfAborted();
+        return { status: 200 as const, body: { ok: true as const } };
+      }
+      case "corrupt-projection": {
+        // Narrow test-only seam: the production route must surface a strict
+        // stored-contract violation that the normal writer cannot create.
+        await db
+          .update(agentRunApiUsage)
+          .set({
+            projection: sql`'{"schemaVersion":1,"phase":"corrupt","attempts":[],"overflow":false}'::jsonb`,
+          })
+          .where(eq(agentRunApiUsage.runId, bodyResult.data.runId));
         signal.throwIfAborted();
         return { status: 200 as const, body: { ok: true as const } };
       }
