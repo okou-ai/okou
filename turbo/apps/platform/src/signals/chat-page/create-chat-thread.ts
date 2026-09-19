@@ -24,7 +24,7 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import { i18n } from "../../i18n/index.ts";
-import { composeOnRef, onRejection, resetSignal, settle } from "../utils.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
 import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 import {
@@ -4157,11 +4157,13 @@ export function createChatPanelSignals(
     threadDraft$,
     threadMeta$,
     ...threadTitle,
-    // The transcript and the locator both own this element; one composed ref
-    // keeps React attaching it once.
-    scrollContainerOnRef$: composeOnRef(
-      messages.scroll.scrollContainerOnRef$,
-      locatorViewport.containerOnRef$,
+    // The transcript and the locator both bind this element, so it gets one
+    // ref and one lifetime rather than a ref each.
+    scrollContainerOnRef$: onRef(
+      command(({ set }, container: HTMLElement, signal: AbortSignal) => {
+        set(messages.scroll.attachScrollContainer$, container, signal);
+        set(locatorViewport.attachContainer$, container, signal);
+      }),
     ),
     scrollContentOnRef$: messages.scroll.scrollContentOnRef$,
     composerLayoutOnRef$: createChatComposerLayoutOnRef(

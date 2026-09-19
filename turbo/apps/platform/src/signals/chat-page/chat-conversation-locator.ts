@@ -26,7 +26,7 @@ import { debounceCommand, throttleCommand } from "../command-scheduling.ts";
 import { logger } from "../log.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
-import { detach, onRef, Reason, resetSignal } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ScrollToEventOptions } from "./chat-thread-scroll.ts";
 
@@ -132,11 +132,11 @@ const EMPTY_READING: LocatorViewportReading = {
  * can build it before the signals whose commands need to request a reading.
  */
 export interface LocatorViewportSignals {
-  /** Attach to the scroll container; the locator reads only through this. */
-  readonly containerOnRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
+  /**
+   * Binds the scroll container the reading is taken from. Unwrapped so the
+   * thread factory gives the element one `onRef` lifetime for both owners.
+   */
+  readonly attachContainer$: Command<void, [HTMLElement, AbortSignal]>;
   readonly reading$: Computed<LocatorViewportReading>;
   /** Leading-edge read for scrolling, so the band tracks the thumb. */
   readonly measure$: Command<void, [AbortSignal]>;
@@ -149,10 +149,6 @@ export interface LocatorViewportSignals {
 }
 
 export interface ChatConversationLocatorSignals {
-  readonly containerOnRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
   readonly layout$: Computed<LocatorLayout>;
   readonly preview$: Computed<LocatorPreview | null>;
   /** True while the pointer is over the rail. */
@@ -368,8 +364,8 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     );
   });
 
-  const containerOnRef$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+  const attachContainer$ = command(
+    ({ set }, element: HTMLElement, signal: AbortSignal) => {
       set(internalContainer$, element);
       // The reading only exists while the container does, so the window
       // listener is that element's resource and shares its lifetime.
@@ -389,11 +385,11 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
         },
         { once: true },
       );
-    }),
+    },
   );
 
   return {
-    containerOnRef$,
+    attachContainer$,
     container$,
     reading$,
     measure$,
@@ -623,7 +619,6 @@ export function createChatConversationLocatorSignals({
   });
 
   return {
-    containerOnRef$: viewport.containerOnRef$,
     layout$,
     preview$,
     engaged$: computed((get) => {

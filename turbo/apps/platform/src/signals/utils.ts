@@ -421,25 +421,6 @@ export function onDomEventFn<T>(callback: (e: T) => void | Promise<void>) {
   };
 }
 
-/**
- * One element, several owners. The composed command has a stable identity, so
- * React attaches it once instead of tearing every owner down per render.
- */
-export function composeOnRef<T extends HTMLElement | SVGSVGElement>(
-  ...refs: readonly Command<(() => void) | undefined, [T | null]>[]
-) {
-  return command(({ set }, el: T | null) => {
-    const cleanups = refs.map((ref) => {
-      return set(ref, el);
-    });
-    return () => {
-      for (const cleanup of cleanups) {
-        cleanup?.();
-      }
-    };
-  });
-}
-
 export function onRef<T extends HTMLElement | SVGSVGElement>(
   command$: Command<void | Promise<void>, [T, AbortSignal]>,
 ) {
