@@ -30,7 +30,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
 import type { Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
-import { joinAll, safeSync, settle } from "../utils";
+import { joinAll, settle } from "../utils";
 import {
   READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
   readOnlyStoragePresignedUrlCacheKey,
@@ -2881,10 +2881,9 @@ function assertUniquePersistedMountPaths(
   }
 }
 
-function validatedPersistedStorageMountRequests(
+function persistedStorageMountRequests(
   mounts: readonly PersistedStorageMount[],
 ): readonly StorageRequest[] {
-  assertUniquePersistedMountPaths(mounts);
   return mounts.map((mount) => {
     return {
       lookup: {
@@ -2981,7 +2980,8 @@ function resolveEntriesFromPersistedStorageMounts(args: {
   readonly stats?: StorageManifestBuildStats;
 }): Computed<Promise<ResolvedStorageEntries>> {
   return computed(async () => {
-    const requests = validatedPersistedStorageMountRequests(args.mounts);
+    assertUniquePersistedMountPaths(args.mounts);
+    const requests = persistedStorageMountRequests(args.mounts);
     const storageIndex = await loadTimedStorageIndex({
       db: args.db,
       requests,
@@ -3039,6 +3039,18 @@ async function resolveValidatedPersistedStorageMounts(args: {
     phaseTimings.additional.flushResolve();
     phaseTimings.artifact.flushResolve();
   });
+}
+
+async function resolveSessionWritebackStorageMounts(args: {
+  readonly db: Db;
+  readonly bucket: string;
+  readonly storageIndex: StorageIndex;
+  readonly mounts: readonly PersistedStorageMount[];
+  readonly timing?: ApiDispatchTimingCollector;
+  readonly stats?: StorageManifestBuildStats;
+}): Promise<ResolvedStorageEntries> {
+  assertUniquePersistedMountPaths(args.mounts);
+  return await resolveValidatedPersistedStorageMounts(args);
 }
 
 function combinePreparedStorageEntries<
@@ -3226,7 +3238,7 @@ function resolveStorageWithSessionOverlay(
       composeVolumes,
       remainingArtifacts,
     );
-    const requestArtifactResultPromise = get(
+    await get(
       ensureStorageManifestArtifacts({
         db: args.db,
         runtimeOrgId: args.runtimeOrgId,
@@ -3236,20 +3248,13 @@ function resolveStorageWithSessionOverlay(
         stats: args.stats,
       }),
     );
-    const sessionRequestsResult = safeSync(() => {
-      return validatedPersistedStorageMountRequests(canonicalWritebackMounts);
-    });
-    const requestArtifactResult = await settle(requestArtifactResultPromise);
-    if (!requestArtifactResult.ok) {
-      throw requestArtifactResult.error;
-    }
-    if ("error" in sessionRequestsResult) {
-      throw sessionRequestsResult.error;
-    }
 
     const storageIndex = await loadTimedStorageIndex({
       db: args.db,
-      requests: [...request.requests, ...sessionRequestsResult.ok],
+      requests: [
+        ...request.requests,
+        ...persistedStorageMountRequests(canonicalWritebackMounts),
+      ],
       timing: args.timing,
     });
     const requestedEntriesPromise = resolveStorageEntries({
@@ -3259,7 +3264,7 @@ function resolveStorageWithSessionOverlay(
     const sessionWritebackEntriesPromise =
       canonicalWritebackMounts.length === 0
         ? Promise.resolve(undefined)
-        : resolveValidatedPersistedStorageMounts({
+        : resolveSessionWritebackStorageMounts({
             db: args.db,
             bucket,
             storageIndex,
