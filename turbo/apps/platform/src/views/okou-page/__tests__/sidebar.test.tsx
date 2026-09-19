@@ -1933,18 +1933,20 @@ test("Mark all of an agent’s chats read", async () => {
   expect(menuItemByText("Unpin")).toBeInTheDocument();
 });
 
-test("Mark conversations read and unread from the sidebar", async () => {
+async function setupReadUnreadSidebar() {
   prepareDefaultAgent();
   const unreadSnapshotRefreshed = context.mocks.deferred<void>();
   const markReadDeferred = context.mocks.deferred<void>();
   const markReadStarted = context.mocks.deferred<void>();
   const markReadCompleted = context.mocks.deferred<void>();
   const unreadThreadIds = new Set<string>();
-  let unreadAt = "2026-03-10T00:05:00Z";
-  let holdReleaseRead = false;
+  const state = {
+    holdReleaseRead: false,
+    unreadAt: "2026-03-10T00:05:00Z",
+  };
   const serverUnreads = () => {
     return [...unreadThreadIds].map((threadId) => {
-      return { threadId, unreadAt };
+      return { threadId, unreadAt: state.unreadAt };
     });
   };
   mockSidebarThreadStory([
@@ -1980,7 +1982,7 @@ test("Mark conversations read and unread from the sidebar", async () => {
     chatThreadMarkReadContract.markRead,
     async ({ params, respond }) => {
       unreadThreadIds.delete(params.id);
-      if (params.id === EXISTING_THREAD_ID && holdReleaseRead) {
+      if (params.id === EXISTING_THREAD_ID && state.holdReleaseRead) {
         markReadStarted.resolve();
         await markReadDeferred.promise;
         markReadCompleted.resolve();
@@ -2021,49 +2023,81 @@ test("Mark conversations read and unread from the sidebar", async () => {
     },
   );
   await setupSidebarPage({ context, path: `/chats/${EXISTING_THREAD_ID}` });
-
   await waitFor(() => {
     expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
     expect(within(sidebar()).getByText("Incident notes")).toBeInTheDocument();
   });
+  return {
+    markReadCompleted,
+    markReadDeferred,
+    markReadStarted,
+    state,
+    unreadSnapshotRefreshed,
+    unreadThreadIds,
+  };
+}
 
+async function markReleasePlanUnread(
+  scenario: Awaited<ReturnType<typeof setupReadUnreadSidebar>>,
+) {
   openThreadMenu("Release plan");
   click(menuItemByText("Mark unread"));
-  await unreadSnapshotRefreshed.promise;
+  await scenario.unreadSnapshotRefreshed.promise;
   expect(
     within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
   ).not.toBeInTheDocument();
-
   click(threadLinkByTitle("Incident notes"));
-
   await waitFor(() => {
     expect(
       within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
     ).toBeInTheDocument();
   });
+}
 
-  holdReleaseRead = true;
+async function completeHeldReleaseRead(
+  scenario: Awaited<ReturnType<typeof setupReadUnreadSidebar>>,
+) {
+  scenario.state.holdReleaseRead = true;
   click(threadLinkByTitle("Release plan"));
-  await markReadStarted.promise;
+  await scenario.markReadStarted.promise;
   click(threadLinkByTitle("Incident notes"));
-
   await waitFor(() => {
     expect(
       within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
     ).not.toBeInTheDocument();
   });
+  scenario.markReadDeferred.resolve();
+  await scenario.markReadCompleted.promise;
+}
 
-  markReadDeferred.resolve();
-  await markReadCompleted.promise;
+test("Mark the current conversation unread after navigating away", async () => {
+  const scenario = await setupReadUnreadSidebar();
+  await markReleasePlanUnread(scenario);
+  expect(
+    within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
+  ).toBeInTheDocument();
+});
 
-  unreadAt = "2026-03-10T00:06:00Z";
-  unreadThreadIds.add(EXISTING_THREAD_ID);
+test("Clear an unread conversation while its read request is pending", async () => {
+  const scenario = await setupReadUnreadSidebar();
+  await markReleasePlanUnread(scenario);
+  await completeHeldReleaseRead(scenario);
+  expect(
+    within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
+  ).not.toBeInTheDocument();
+});
+
+test("Restore a conversation when a later realtime unread arrives", async () => {
+  const scenario = await setupReadUnreadSidebar();
+  await markReleasePlanUnread(scenario);
+  await completeHeldReleaseRead(scenario);
+  scenario.state.unreadAt = "2026-03-10T00:06:00Z";
+  scenario.unreadThreadIds.add(EXISTING_THREAD_ID);
   context.mocks.ably.trigger("chatThreadReadCursorUpdated", {
     threadId: EXISTING_THREAD_ID,
     agentId: AGENT_ID,
     lastReadAt: null,
   });
-
   await waitFor(() => {
     expect(
       within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
@@ -3174,7 +3208,7 @@ test("Search, pin, and open an agent from the pin manager", async () => {
   });
 });
 
-test("Search workspace chats and messages", async () => {
+async function setupWorkspaceSearch() {
   prepareAgents();
   mockSidebarThreadStory([
     createThread(RESEARCH_THREAD_ID, "Deployment notes", {
@@ -3226,6 +3260,11 @@ test("Search workspace chats and messages", async () => {
     "deploy",
   );
 
+  return dialog;
+}
+
+test("Show matching workspace chats and messages", async () => {
+  const dialog = await setupWorkspaceSearch();
   await waitFor(() => {
     expect(within(dialog).getByText("2 results")).toBeInTheDocument();
     expect(within(dialog).getByText("Deployment notes")).toBeInTheDocument();
@@ -3234,13 +3273,22 @@ test("Search workspace chats and messages", async () => {
       within(dialog).queryByText("Research Agent"),
     ).not.toBeInTheDocument();
   });
+});
 
+test("Filter workspace search to matching messages", async () => {
+  const dialog = await setupWorkspaceSearch();
+  await waitFor(() => {
+    expect(within(dialog).getByText("2 results")).toBeInTheDocument();
+  });
   click(buttonByText("Messages", dialog));
   expect(
     within(dialog).queryByText("Deployment notes"),
   ).not.toBeInTheDocument();
   expect(within(dialog).getByText("Incident response")).toBeInTheDocument();
+});
 
+test("Show an empty workspace-search result", async () => {
+  const dialog = await setupWorkspaceSearch();
   await fill(
     within(dialog).getByPlaceholderText("Search workspace..."),
     "missing",
@@ -3249,11 +3297,10 @@ test("Search workspace chats and messages", async () => {
     expect(within(dialog).getByText("No results found")).toBeInTheDocument();
     expect(within(dialog).getByText("0 results")).toBeInTheDocument();
   });
+});
 
-  await fill(
-    within(dialog).getByPlaceholderText("Search workspace..."),
-    "deploy",
-  );
+test("Filter workspace search to chats and navigate", async () => {
+  const dialog = await setupWorkspaceSearch();
   click(buttonByText("Chats", dialog));
   await waitFor(() => {
     expect(within(dialog).getByText("Deployment notes")).toBeInTheDocument();
@@ -3261,7 +3308,6 @@ test("Search workspace chats and messages", async () => {
       within(dialog).queryByText("Incident response"),
     ).not.toBeInTheDocument();
   });
-
   click(within(dialog).getByText("Deployment notes"));
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${RESEARCH_THREAD_ID}`);

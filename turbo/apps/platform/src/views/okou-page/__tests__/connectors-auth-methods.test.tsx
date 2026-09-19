@@ -1606,17 +1606,29 @@ test("Retry external-code startup after an account-count lookup fails", async ()
   ).resolves.toBeInTheDocument();
 });
 
-test("Recover from external-code connection errors", async () => {
-  let completes = 0;
+test("Recover from an invalid external code", async () => {
   context.mocks.api(
     builtinConnectorExternalCodeSessionContract.complete,
     ({ respond }) => {
-      completes += 1;
-      if (completes === 1) {
-        return respond(400, {
-          error: { message: "Invalid AWS code", code: "BAD_REQUEST" },
-        });
-      }
+      return respond(400, {
+        error: { message: "Invalid AWS code", code: "BAD_REQUEST" },
+      });
+    },
+  );
+  const { dialog, complete } = await openAwsWithCode("INVALID-CODE");
+  click(complete);
+  await expect(
+    within(dialog).findByText("Invalid AWS code"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    return expect(complete).toBeEnabled();
+  });
+});
+
+test("Recover when external-code authorization is unavailable", async () => {
+  context.mocks.api(
+    builtinConnectorExternalCodeSessionContract.complete,
+    ({ respond }) => {
       return respond(500, {
         error: {
           message: "AWS authorization is unavailable",
@@ -1625,32 +1637,24 @@ test("Recover from external-code connection errors", async () => {
       });
     },
   );
-  const { dialog, complete } = await openAwsWithCode("INVALID-CODE");
-
+  const { complete } = await openAwsWithCode("INVALID-CODE");
   click(complete);
-
-  await expect(
-    within(dialog).findByText("Invalid AWS code"),
-  ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    return expect(complete).toBeEnabled();
-  });
-
-  click(complete);
-
   await expect(
     screen.findByText("AWS authorization is unavailable"),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     return expect(complete).toBeEnabled();
   });
+});
 
+test("Recover from an external-code transport error", async () => {
   context.mocks.http.post(
     "*/api/connectors/aws/external-code/sessions/:sessionId/complete",
     () => {
       return HttpResponse.error();
     },
   );
+  const { complete } = await openAwsWithCode("INVALID-CODE");
   click(complete);
   await waitFor(() => {
     return expect(complete).toBeEnabled();

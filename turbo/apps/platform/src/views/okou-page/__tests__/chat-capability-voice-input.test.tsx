@@ -108,7 +108,7 @@ function placeCaret(
   composer.focus();
 }
 
-test("Toggle voice input from the focused composer shortcut", async () => {
+async function setupShortcutTranscription() {
   const requested = context.mocks.deferred<void>();
   const response = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
@@ -123,12 +123,7 @@ test("Toggle voice input from the focused composer shortcut", async () => {
     });
   });
   installRunChat();
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
+  await setupPage({ context, path: RUN_PATH });
   const voiceInput = await readyVoiceInput();
   expect(voiceInput).toHaveAttribute(
     "aria-keyshortcuts",
@@ -136,7 +131,6 @@ test("Toggle voice input from the focused composer shortcut", async () => {
   );
   const composer = currentComposer();
   composer.focus();
-
   const startEvent = new KeyboardEvent("keydown", {
     key: "e",
     code: "KeyE",
@@ -146,37 +140,51 @@ test("Toggle voice input from the focused composer shortcut", async () => {
     cancelable: true,
   });
   composer.dispatchEvent(startEvent);
-
   expect(startEvent.defaultPrevented).toBeTruthy();
   const stopRecording = await activeVoiceDraftStopButton();
   expect(stopRecording).toHaveAttribute(
     "aria-keyshortcuts",
     "Meta+Shift+E Control+Shift+E",
   );
-
   fireEvent.keyDown(currentComposer(), {
     key: "e",
     code: "KeyE",
     ctrlKey: true,
     shiftKey: true,
   });
-
   await requested.promise;
   expect(screen.getByRole("status")).toHaveTextContent("Transcribing");
   expect(screen.getByText("Text is taking shape")).toBeVisible();
   expect(queryButton("Stop recording")).toBeNull();
-  fireEvent.keyDown(currentComposer(), {
-    key: "e",
-    code: "KeyE",
-    ctrlKey: true,
-    shiftKey: true,
-  });
-  expect(screen.getByRole("status")).toHaveTextContent("Transcribing");
+  return response;
+}
+
+async function finishShortcutTranscription(
+  response: Awaited<ReturnType<typeof setupShortcutTranscription>>,
+) {
   response.resolve();
   await waitFor(() => {
     expect(normalizedComposerText()).toBe("Shortcut voice note");
   });
   await findEnabledButton("Voice input");
+}
+
+test("Start and stop voice input from the focused composer shortcut", async () => {
+  const response = await setupShortcutTranscription();
+  await finishShortcutTranscription(response);
+  expect(normalizedComposerText()).toBe("Shortcut voice note");
+});
+
+test("Ignore the voice shortcut while transcription is pending", async () => {
+  const response = await setupShortcutTranscription();
+  fireEvent.keyDown(currentComposer(), {
+    key: "e",
+    code: "KeyE",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  expect(screen.getByRole("status")).toHaveTextContent("Transcribing");
+  await finishShortcutTranscription(response);
 });
 
 test("Transcribe a voice draft using the latest assistant reference", async () => {
@@ -830,7 +838,7 @@ test("Keep a saved voice recording isolated from another signed-in user", async 
   expect(normalizedComposerText()).toBe("");
 });
 
-test("Discard a failed recording without removing typed notes", async () => {
+async function removeFailedRecordingWithTypedNotes() {
   const resetInitialPage$ = resetSignal();
   const initialPageSignal = context.store.set(
     resetInitialPage$,
@@ -865,8 +873,16 @@ test("Discard a failed recording without removing typed notes", async () => {
     expect(status).toHaveTextContent("Returning to composer");
   });
   await findEnabledButton("Voice input");
-  expect(normalizedComposerText()).toBe("Keep typed notes");
+  return resetInitialPage$;
+}
 
+test("Discard a failed recording without removing typed notes", async () => {
+  await removeFailedRecordingWithTypedNotes();
+  expect(normalizedComposerText()).toBe("Keep typed notes");
+});
+
+test("A discarded failed recording stays removed after reload", async () => {
+  const resetInitialPage$ = await removeFailedRecordingWithTypedNotes();
   click(await findLink("Agents"));
   await screen.findByRole("heading", { name: "Agents" });
   context.store.set(resetInitialPage$);

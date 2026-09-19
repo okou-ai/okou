@@ -244,7 +244,7 @@ function startPermissionPage(
   });
 }
 
-test("A user can apply connector policies and later restore their saved baseline", async () => {
+async function setupAppliedAxiomPermission() {
   const requests: ApplyUserPermissionGrantsRequest[] = [];
   const connector = catalogConnectorFixture("axiom", "Axiom");
   const metadata = permissionMetadataFixture(
@@ -262,7 +262,6 @@ test("A user can apply connector policies and later restore their saved baseline
       requests.push(request);
     },
   });
-
   await openPermissions("Axiom");
   const annotation = permissionRow("annotations|create");
   click(policyButton(annotation, "Allow"));
@@ -274,6 +273,11 @@ test("A user can apply connector policies and later restore their saved baseline
       screen.queryByRole("heading", { name: /^Axiom permissions\b/u }),
     ).not.toBeInTheDocument();
   });
+  return requests;
+}
+
+test("A user can apply a temporary connector policy", async () => {
+  const requests = await setupAppliedAxiomPermission();
   expect(requests[0]?.grants).toStrictEqual([
     {
       permission: "annotations|create",
@@ -281,7 +285,10 @@ test("A user can apply connector policies and later restore their saved baseline
       expiresIn: "24h",
     },
   ]);
+});
 
+test("A user can restore the saved connector-policy baseline", async () => {
+  const requests = await setupAppliedAxiomPermission();
   click(labelledButton("Manage Axiom permissions"));
   await screen.findByRole("heading", { name: /^Axiom permissions\b/u });
   click(policyButton(permissionRow("annotations|create"), "Deny"));
@@ -422,7 +429,7 @@ test("An expired allow grant falls back to the connector's current default", asy
   expect(exactButton("Restore")).toBeDisabled();
 });
 
-test("Group and individual connector policies stay understandable while editing", async () => {
+async function setupGroupedSlackPermissions() {
   const requests: ApplyUserPermissionGrantsRequest[] = [];
   const connector = catalogConnectorFixture("slack", "Slack", {
     permissionCount: 5,
@@ -457,23 +464,26 @@ test("Group and individual connector policies stay understandable while editing"
       requests.push(request);
     },
   });
-
   await openPermissions("Slack");
+  return requests;
+}
+
+function editReadCategory() {
   const readCategory = categoryRow("Read");
   click(policyButton(readCategory, "Allow"));
   chooseDuration("Read", "Allow for 7d");
   expect(readCategory).toHaveTextContent("Allow");
   expect(readCategory).toHaveTextContent("7d");
-
   click(exactButton("Read (2)"));
   chooseDuration("bookmarks:read", "Allow for 1h");
   expect(readCategory).toHaveTextContent("Mixed");
   expect(readCategory).not.toHaveTextContent("7d");
-
   chooseDuration("bookmarks:read", "Allow for 7d");
   expect(readCategory).toHaveTextContent("Allow");
   expect(readCategory).toHaveTextContent("7d");
+}
 
+function editMiscPermission() {
   click(exactButton("Misc (2)"));
   const channelsJoin = permissionRow("channels:join");
   click(policyButton(channelsJoin, "Allow"));
@@ -485,7 +495,24 @@ test("Group and individual connector policies stay understandable while editing"
   chooseDuration("channels:join", "Allow always");
   expect(channelsJoin).toHaveTextContent("Always");
   expect(channelsJoin).not.toHaveTextContent("7d");
+}
 
+test("A permission category reflects individual duration edits", async () => {
+  await setupGroupedSlackPermissions();
+  editReadCategory();
+  expect(categoryRow("Read")).toHaveTextContent("Allow");
+});
+
+test("An individual permission clears and replaces its duration", async () => {
+  await setupGroupedSlackPermissions();
+  editMiscPermission();
+  expect(permissionRow("channels:join")).toHaveTextContent("Always");
+});
+
+test("Grouped and individual connector policies submit together", async () => {
+  const requests = await setupGroupedSlackPermissions();
+  editReadCategory();
+  editMiscPermission();
   const other = otherEndpointsRow();
   click(policyButton(other, "Allow"));
   chooseDuration(UNKNOWN_PERMISSION_GRANT, "Allow for 1h");
