@@ -637,11 +637,11 @@ on a root auth route continues through `clerk.redirectWithAuth()`. Pending
 session tasks, factor routes and explicit authentication or account-selection
 intents remain with Clerk's forms.
 
-In the development Clerk Dashboard **Paths**, point sign-in and sign-up to the
-local App (`https://app.vm7.ai:8443/sign-in` and
-`https://app.vm7.ai:8443/sign-up`) and set **OAuth consent** to
-`/oauth-consent`; Clerk resolves that path on the configured local development
-host. The Marketing service does not host these pages. Production uses
+In the development Clerk Dashboard **Paths**, keep sign-in and sign-up on the
+local auth host (`https://www.vm7.ai:8443/sign-in` and
+`https://www.vm7.ai:8443/sign-up`) and set **OAuth consent** to
+`/oauth-consent`; Clerk resolves that path on the same local development host.
+Production keeps all three routes on the App origin and uses
 `https://app.okou.ai/sign-in`, `https://app.okou.ai/sign-up` and
 `https://app.okou.ai/oauth-consent`. Deploy the App route before changing either
 Clerk instance's path, then verify one allow and one deny flow in that environment.
