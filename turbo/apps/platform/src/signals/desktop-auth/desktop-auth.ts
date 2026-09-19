@@ -12,7 +12,7 @@ import { clerk$, clerkUser$, resolveAppAuthUrl } from "../auth.ts";
 import { updatePage$ } from "../react-router.ts";
 import { replaceState } from "../location.ts";
 import { searchParams$ } from "../route.ts";
-import { setDaemon, waitLoopUntil, settle } from "../utils.ts";
+import { detach, Reason, waitLoopUntil, settle } from "../utils.ts";
 import {
   callbackScheme,
   completeDesktopSession$,
@@ -390,21 +390,25 @@ function createDesktopAuthSignals(
 
   const initialize$ = command(({ set }, signal: AbortSignal): void => {
     // The page is ready while the cancellable native sign-in flow is pending.
-    setDaemon(async (ownerSignal) => {
-      const attempt = AbortSignal.any([
-        ownerSignal,
-        AbortSignal.timeout(mode === "callback" ? 120_000 : 25_000),
-      ]);
-      const result = await settle(
-        waitForDesktopOperation(set(run$, attempt), attempt),
-        ownerSignal,
-      );
-      if (!result.ok) {
-        // Deliberately discard API/Clerk errors: their text can contain secrets.
-        set(callbackUrl$, null);
-        set(phase$, "failed");
-      }
-    }, signal);
+    detach(
+      (async (ownerSignal: AbortSignal): Promise<void> => {
+        const attempt = AbortSignal.any([
+          ownerSignal,
+          AbortSignal.timeout(mode === "callback" ? 120_000 : 25_000),
+        ]);
+        const result = await settle(
+          waitForDesktopOperation(set(run$, attempt), attempt),
+          ownerSignal,
+        );
+        if (!result.ok) {
+          // Deliberately discard API/Clerk errors: their text can contain secrets.
+          set(callbackUrl$, null);
+          set(phase$, "failed");
+        }
+      })(signal),
+      Reason.Daemon,
+      "desktop auth initialize",
+    );
   });
 
   const selectOrganization$ = createDesktopSelection(

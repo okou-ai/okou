@@ -53,15 +53,6 @@ export function detach<T>(
   }
 }
 
-/** Start background work synchronously under the supplied owner. */
-export function setDaemon(
-  operation: (signal: AbortSignal) => Promise<unknown>,
-  signal: AbortSignal,
-): void {
-  signal.throwIfAborted();
-  detach(operation(signal), Reason.Daemon);
-}
-
 /** Shared test setup drains detached work after testContext aborts its lifetimes. */
 export async function clearAllDetached(): Promise<void> {
   for (const [promise, { reason, description }] of tracker.collected) {
@@ -334,9 +325,11 @@ export function setLoop(
   signal: AbortSignal,
   options: LoopOptions = {},
 ): void {
-  setDaemon((ownerSignal) => {
-    return internalSetLoop(loopBody, interval, ownerSignal, options);
-  }, signal);
+  detach(
+    internalSetLoop(loopBody, interval, signal, options),
+    Reason.Daemon,
+    "loop",
+  );
 }
 
 /** Wait until the body returns true; propagate failures and cancellation. */

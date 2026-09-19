@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
-import { onRef, resetSignal, setDaemon } from "./utils.ts";
+import { detach, onRef, Reason, resetSignal } from "./utils.ts";
 import {
   flushClientTelemetry,
   recordClientTelemetry,
@@ -56,23 +56,27 @@ export const initBootstrapSkeleton$ = command(
       ).toISOString(),
       startedAtMonotonic: measurement.startedAtMonotonic - elapsedBeforeSetup,
     };
-    setDaemon(async (ownerSignal) => {
-      const remaining = Math.ceil(SKELETON_TIMEOUT_MS - elapsedBeforeSetup);
-      if (remaining > 0) {
-        await delay(remaining, { signal: ownerSignal });
-      }
-      ownerSignal.throwIfAborted();
-      recordClientTelemetry(
-        skeletonMeasurement,
-        {
-          event_name: "app.skeleton.timeout",
-          threshold_ms: SKELETON_TIMEOUT_MS,
-          visibility_state: document.visibilityState,
-        },
-        "error",
-      );
-      await flushClientTelemetry();
-    }, timeoutSignal);
+    detach(
+      (async (ownerSignal: AbortSignal): Promise<void> => {
+        const remaining = Math.ceil(SKELETON_TIMEOUT_MS - elapsedBeforeSetup);
+        if (remaining > 0) {
+          await delay(remaining, { signal: ownerSignal });
+        }
+        ownerSignal.throwIfAborted();
+        recordClientTelemetry(
+          skeletonMeasurement,
+          {
+            event_name: "app.skeleton.timeout",
+            threshold_ms: SKELETON_TIMEOUT_MS,
+            visibility_state: document.visibilityState,
+          },
+          "error",
+        );
+        await flushClientTelemetry();
+      })(timeoutSignal),
+      Reason.Daemon,
+      "app skeleton",
+    );
   },
 );
 

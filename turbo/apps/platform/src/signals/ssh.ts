@@ -33,10 +33,11 @@ import { currentAgent$, agents$ } from "./agent.ts";
 import { accept } from "../lib/accept.ts";
 import {
   createDeferredPromise,
+  detach,
   onRef,
+  Reason,
   resetSignal,
   settle,
-  setDaemon,
   waitForOperation,
   withCleanup,
 } from "./utils.ts";
@@ -608,9 +609,11 @@ export const openSshDialog$ = command(
       config: null,
     });
     // Render immediately; an optional Access list must not hold up page entry.
-    setDaemon((ownerSignal) => {
-      return set(initializeSshSelections$, ownerSignal);
-    }, signal);
+    detach(
+      set(initializeSshSelections$, signal),
+      Reason.Daemon,
+      "ssh selections",
+    );
   },
 );
 

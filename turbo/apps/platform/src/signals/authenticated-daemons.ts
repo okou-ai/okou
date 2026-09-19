@@ -24,7 +24,7 @@ import {
 import { setupMorningBriefRealtime$ } from "./okou-page/settings/morning-brief-preference.ts";
 import { initializeUserTimezone$ } from "./okou-page/settings/user-preferences.ts";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
-import { setDaemon, waitForOperation } from "./utils.ts";
+import { detach, Reason, waitForOperation } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
   async (
@@ -92,20 +92,27 @@ const initializeAuthenticatedRealtime$ = command(
 /** Run user-scoped application realtime services for the root lifecycle. */
 export const setupAuthenticatedRealtime$ = command(
   ({ set }, signal: AbortSignal): void => {
-    setDaemon(async (ownerSignal) => {
-      const initialization = set(initializeAuthenticatedRealtime$, ownerSignal);
-      // Claim the catalog's readiness before authentication or bridge setup can
-      // settle, so startup failures remain visible to its consumers.
-      const templates = set(
-        subscribePresentationTemplatesChanged$,
-        initialization,
-        ownerSignal,
-      );
-      await Promise.all([
-        templates,
-        set(runAppRealtimeDaemons$, initialization, ownerSignal),
-      ]);
-    }, signal);
+    detach(
+      (async (ownerSignal: AbortSignal): Promise<void> => {
+        const initialization = set(
+          initializeAuthenticatedRealtime$,
+          ownerSignal,
+        );
+        // Claim the catalog's readiness before authentication or bridge setup can
+        // settle, so startup failures remain visible to its consumers.
+        const templates = set(
+          subscribePresentationTemplatesChanged$,
+          initialization,
+          ownerSignal,
+        );
+        await Promise.all([
+          templates,
+          set(runAppRealtimeDaemons$, initialization, ownerSignal),
+        ]);
+      })(signal),
+      Reason.Daemon,
+      "authenticated daemons",
+    );
   },
 );
 

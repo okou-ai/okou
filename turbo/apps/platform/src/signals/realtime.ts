@@ -27,8 +27,9 @@ import {
 } from "./connection-diagnostics.ts";
 import {
   createDeferredPromise,
-  setDaemon,
+  detach,
   onRejection,
+  Reason,
   settle,
   waitLoopUntil,
   throwIfAbort,
@@ -1372,13 +1373,15 @@ async function observeAblySubscription(
 /** Start a subscription owned by signal and return immediately. */
 export const setAblyLoop$ = command(
   ({ set }, args: SetAblyLoopArgs, signal: AbortSignal): void => {
-    setDaemon((ownerSignal) => {
-      return observeAblySubscription(
-        set(internalSetAblyLoop$, args, ownerSignal),
+    detach(
+      observeAblySubscription(
+        set(internalSetAblyLoop$, args, signal),
         args.options,
-        ownerSignal,
-      );
-    }, signal);
+        signal,
+      ),
+      Reason.Daemon,
+      "ably subscription",
+    );
   },
 );
 
@@ -1392,13 +1395,15 @@ export const waitAblyLoopUntil$ = command(
 /** Start a subscription owned by signal and return immediately. */
 export const setAblyInvalidationLoop$ = command(
   ({ set }, args: SetAblyInvalidationLoopArgs, signal: AbortSignal): void => {
-    setDaemon((ownerSignal) => {
-      return observeAblySubscription(
-        set(internalSetAblyInvalidationLoop$, args, ownerSignal),
+    detach(
+      observeAblySubscription(
+        set(internalSetAblyInvalidationLoop$, args, signal),
         args.options,
-        ownerSignal,
-      );
-    }, signal);
+        signal,
+      ),
+      Reason.Daemon,
+      "ably subscription",
+    );
   },
 );
 
@@ -1416,13 +1421,15 @@ export const waitAblyInvalidationLoopUntil$ = command(
 /** Start a subscription owned by signal and return immediately. */
 export const setAblyPayloadLoop$ = command(
   ({ set }, args: SetAblyPayloadLoopArgs, signal: AbortSignal): void => {
-    setDaemon((ownerSignal) => {
-      return observeAblySubscription(
-        set(internalSetAblyPayloadLoop$, args, ownerSignal),
+    detach(
+      observeAblySubscription(
+        set(internalSetAblyPayloadLoop$, args, signal),
         args.options,
-        ownerSignal,
-      );
-    }, signal);
+        signal,
+      ),
+      Reason.Daemon,
+      "ably subscription",
+    );
   },
 );
 

@@ -4,7 +4,7 @@ import {
   readVoiceDraftRecording,
   type VoiceDraftSegment,
 } from "../external/voice-draft-store.ts";
-import { resetSignal, setDaemon } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
 import { nextVoiceDraftSegment } from "./voice-draft-audio.ts";
 import { VOICE_DRAFT_PCM_SAMPLE_RATE } from "./voice-draft-pcm.ts";
 import {
@@ -85,22 +85,26 @@ function createTranscriptionState() {
         signal,
       );
       const entry = { segment, totalDurationSeconds, result };
-      setDaemon(async (ownerSignal) => {
-        // A failed segment stays available to the explicit Stop/Retry command.
-        // It must not reject the PCM writer or stop subsequent audio persistence.
-        const [outcome] = await Promise.allSettled([result]);
-        ownerSignal.throwIfAborted();
-        if (get(segments$).at(-1) !== entry) {
-          return;
-        }
-        if (outcome?.status === "fulfilled") {
-          if (outcome.value?.kind === "transcribed") {
-            set(refreshAudioInputQuota$);
-          } else if (!outcome.value) {
-            await set(openAudioInputQuotaRecovery$, ownerSignal);
+      detach(
+        (async (ownerSignal: AbortSignal): Promise<void> => {
+          // A failed segment stays available to the explicit Stop/Retry command.
+          // It must not reject the PCM writer or stop subsequent audio persistence.
+          const [outcome] = await Promise.allSettled([result]);
+          ownerSignal.throwIfAborted();
+          if (get(segments$).at(-1) !== entry) {
+            return;
           }
-        }
-      }, signal);
+          if (outcome?.status === "fulfilled") {
+            if (outcome.value?.kind === "transcribed") {
+              set(refreshAudioInputQuota$);
+            } else if (!outcome.value) {
+              await set(openAudioInputQuotaRecovery$, ownerSignal);
+            }
+          }
+        })(signal),
+        Reason.Daemon,
+        "voice draft transcription",
+      );
       return entry;
     },
   );
