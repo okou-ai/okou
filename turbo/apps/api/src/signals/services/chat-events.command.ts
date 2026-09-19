@@ -589,6 +589,7 @@ interface ExistingClientEventIdRow {
   readonly threadUserId: string;
   readonly eventType: ChatEventType;
   readonly content: string | null;
+  readonly userMessage: UserMessageDocument | null;
   readonly runId: string | null;
   readonly revokesEventId: string | null;
   readonly error: string | null;
@@ -637,6 +638,7 @@ function resolveExistingClientEventIdRow(
   if (
     row.revokesEventId !== null &&
     row.content === null &&
+    row.userMessage === null &&
     row.error === null
   ) {
     return { kind: "conflict" };
@@ -697,6 +699,7 @@ async function resolveClientEventId(
       threadUserId: chatThreads.userId,
       eventType: chatEvents.eventType,
       content: canonicalChatEventContent(),
+      userMessage: canonicalChatEventUserMessage(),
       runId: chatEvents.runId,
       revokesEventId: chatEvents.revokesEventId,
       error: canonicalChatEventError(),
@@ -1964,6 +1967,7 @@ async function resolveExistingUnassociatedClientEventId(
       threadUserId: chatThreads.userId,
       eventType: chatEvents.eventType,
       content: canonicalChatEventContent(),
+      userMessage: canonicalChatEventUserMessage(),
       runId: chatEvents.runId,
       revokesEventId: chatEvents.revokesEventId,
       error: canonicalChatEventError(),
