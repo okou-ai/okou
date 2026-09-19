@@ -2236,7 +2236,7 @@ mod tests {
             name: "automatic-mcp".to_string(),
             base_url_vars: None,
             source_id: Some(source_id.to_string()),
-            auth_override: Some(FirewallAuth {
+            auth_override: Some(Box::new(FirewallAuth {
                 headers: HashMap::from([(
                     "Authorization".to_string(),
                     "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}".to_string(),
@@ -2244,7 +2244,7 @@ mod tests {
                 base: None,
                 query: None,
                 aws_sigv4: None,
-            }),
+            })),
         };
         assert!(
             builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), Some(source_id))

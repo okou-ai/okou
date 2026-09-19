@@ -1661,12 +1661,12 @@ mod tests {
             name: slug.to_string(),
             base_url_vars: None,
             source_id: Some(source_id.to_string()),
-            auth_override: Some(FirewallAuth {
+            auth_override: Some(Box::new(FirewallAuth {
                 headers: HashMap::new(),
                 base: None,
                 query: None,
                 aws_sigv4: None,
-            }),
+            })),
         }];
         let runtime_targets = vec![ConnectorRuntimeTargetRegistration::Builtin {
             connector_slug: slug.to_string(),
@@ -1698,18 +1698,20 @@ mod tests {
         for oauth in [Some(true), Some(false), None, Some(true)] {
             let mut replacement = firewalls[0].clone();
             if let FirewallEntry::Builtin { auth_override, .. } = &mut replacement {
-                *auth_override = oauth.map(|oauth| FirewallAuth {
-                    headers: oauth
-                        .then(|| {
+                *auth_override = oauth.map(|oauth| {
+                    Box::new(FirewallAuth {
+                        headers: if oauth {
                             HashMap::from([(
                                 "Authorization".to_string(),
                                 "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}".to_string(),
                             )])
-                        })
-                        .unwrap_or_default(),
-                    base: None,
-                    query: None,
-                    aws_sigv4: None,
+                        } else {
+                            HashMap::new()
+                        },
+                        base: None,
+                        query: None,
+                        aws_sigv4: None,
+                    })
                 });
             }
             harness
