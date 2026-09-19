@@ -271,7 +271,18 @@ function ArtifactSidebarResolvedContent({
   toggleFullscreen,
 }: ArtifactSidebarResolvedContentProps) {
   return (
-    <FullscreenPanel fullscreen={fullscreen} data-testid="artifact-sidebar">
+    <FullscreenPanel
+      fullscreen={fullscreen}
+      data-testid="artifact-sidebar"
+      scrollAnchor={
+        display.kind === "markdown"
+          ? {
+              viewportSelector: '[data-slot="artifact-scroll-viewport"]',
+              anchorSelector: "h1, h2, h3, h4, h5, h6, p, pre, li, tr",
+            }
+          : undefined
+      }
+    >
       <ArtifactSidebarHeader
         shareUrl={shareUrl}
         title={display.filename}
@@ -821,6 +832,7 @@ function ArtifactStageShell({
         scrollable ? "overflow-auto" : "overflow-hidden",
       )}
       data-testid="artifact-sidebar-stage"
+      data-slot="artifact-scroll-viewport"
     >
       <div
         className={cn(

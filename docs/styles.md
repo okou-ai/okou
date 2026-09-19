@@ -685,6 +685,15 @@ Native `moveBefore` also preserves scroll, iframe and media state; browsers
 without it use `appendChild` with explicit scroll restoration, but embedded
 frames/media may reload.
 
+Reflowing Markdown previews opt into `FullscreenPanel`'s `scrollAnchor` contract.
+The primitive captures the first visible content block and its viewport offset
+before React changes the fullscreen styles, then restores that reading position
+after moving the portal. It temporarily disables native scroll anchoring during
+the commit so browser compensation cannot compete with restoration. Each toggle
+captures the current reading position, including scrolling done in fullscreen.
+Retaining a DOM node and its numeric `scrollTop` alone does not preserve a
+document's reading position when its line wrapping changes.
+
 Safe-area insets are the surface's own responsibility whenever it is `fixed`
 and meets a viewport edge. `#root` carries the top and horizontal insets as
 padding and delegates the bottom one, and a fixed box is laid out past that
