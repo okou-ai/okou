@@ -671,6 +671,20 @@ context. Establish the correct host before removing an existing portal.
 Swapping a subtree between a portal and its written position remounts it, which
 costs the scroll position and any DOM state it held.
 
+Artifact list and preview fullscreen surfaces use the shared `FullscreenPanel`
+primitive. It moves one stable portal container to `#root` in fullscreen and
+back into its inline slot on exit, escaping the workspace stacking context.
+The fullscreen surface participates in the isolated app root at `z-40`, above
+workspace and sidebar content and below body-level Base UI dialogs and menus.
+This also keeps it below the planned `z-50` primitives when root isolation is
+removed. Business components do not own this portal or its stacking utilities.
+
+Both modes render through the same portal container rather than switching
+between a portal and an in-place React subtree. This preserves React state.
+Native `moveBefore` also preserves scroll, iframe and media state; browsers
+without it use `appendChild` with explicit scroll restoration, but embedded
+frames/media may reload.
+
 Safe-area insets are the surface's own responsibility whenever it is `fixed`
 and meets a viewport edge. `#root` carries the top and horizontal insets as
 padding and delegates the bottom one, and a fixed box is laid out past that

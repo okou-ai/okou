@@ -21,6 +21,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  FullscreenPanel,
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -73,10 +74,6 @@ import { isOfficeFilePreview } from "./office-file-preview.ts";
 // previews inline, with a fullscreen toggle that swaps to a full-viewport
 // layout.
 // ---------------------------------------------------------------------------
-
-const ARTIFACT_FULLSCREEN_SHELL_CLASSNAME =
-  "fixed inset-0 flex min-h-0 flex-col bg-background pt-[var(--sat)] pb-[var(--sab)]";
-const ARTIFACT_FULLSCREEN_DEFAULT_LAYER_CLASSNAME = "z-[100]";
 
 type ArtifactSidebarFullscreenState = {
   readonly active: boolean;
@@ -274,7 +271,7 @@ function ArtifactSidebarResolvedContent({
   toggleFullscreen,
 }: ArtifactSidebarResolvedContentProps) {
   return (
-    <ArtifactSidebarSurface fullscreen={fullscreen}>
+    <FullscreenPanel fullscreen={fullscreen} data-testid="artifact-sidebar">
       <ArtifactSidebarHeader
         shareUrl={shareUrl}
         title={display.filename}
@@ -304,31 +301,7 @@ function ArtifactSidebarResolvedContent({
           text$={text$}
         />
       </div>
-    </ArtifactSidebarSurface>
-  );
-}
-
-function ArtifactSidebarSurface({
-  children,
-  fullscreen,
-}: {
-  children: ReactNode;
-  fullscreen: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        fullscreen
-          ? cn(
-              ARTIFACT_FULLSCREEN_SHELL_CLASSNAME,
-              ARTIFACT_FULLSCREEN_DEFAULT_LAYER_CLASSNAME,
-            )
-          : "flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0",
-      )}
-      data-testid="artifact-sidebar"
-    >
-      {children}
-    </div>
+    </FullscreenPanel>
   );
 }
 
