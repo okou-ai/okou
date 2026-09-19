@@ -10,7 +10,6 @@ import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "../connector-catalog/arti
 import {
   decodeAttestedConnectorCatalogSnapshot,
   decodeConnectorCatalogSnapshot,
-  decodeRetainedV3ConnectorCatalogSnapshot,
   encodeConnectorCatalogSnapshot,
   loadConnectorCatalogCandidate,
   parseConnectorCatalogActivePointer,
@@ -72,87 +71,6 @@ function filteredMethods(artifact: ConnectorCatalogArtifact) {
     }),
   });
 }
-
-describe("retained v3 catalog bootstrap", () => {
-  function retainedCatalog() {
-    const artifact = publishedCatalog();
-    return {
-      ...artifact,
-      artifactSchemaVersion: 3 as const,
-      connectors: artifact.connectors.filter((connector) => {
-        return connector.mcp === undefined;
-      }),
-    };
-  }
-
-  it("preserves the original v3 header and validates its original digest and identity", () => {
-    const artifact = retainedCatalog();
-    const args = snapshot(artifact);
-    expect(decodeRetainedV3ConnectorCatalogSnapshot(args).artifact).toEqual(
-      artifact,
-    );
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot({
-        ...args,
-        catalogDigest: `sha256:${"0".repeat(64)}`,
-      });
-    }).toThrow("digest-mismatch");
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot({
-        ...args,
-        catalogVersion: "another-release",
-      });
-    }).toThrow("invalid-reference");
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot(
-        snapshot({ ...artifact, artifactSchemaVersion: 4 }),
-      );
-    }).toThrow("unsupported-schema");
-  });
-
-  it("rejects v4 capabilities and invalid relationships in retained v3 bytes", () => {
-    const artifact = retainedCatalog();
-    const mcp = requiredConnector(publishedCatalog(), "plaud-mcp");
-    for (const connector of [
-      mcp,
-      { ...mcp, mcp: undefined, replaces: { connectorSlug: "plaud" } },
-      { ...mcp, mcp: undefined },
-    ]) {
-      expect(() => {
-        decodeRetainedV3ConnectorCatalogSnapshot(
-          snapshot({ ...artifact, connectors: [connector] }),
-        );
-      }).toThrow("invalid-artifact");
-    }
-    expect(() => {
-      decodeRetainedV3ConnectorCatalogSnapshot(
-        snapshot({
-          ...artifact,
-          connectors: [...artifact.connectors, ...artifact.connectors],
-        }),
-      );
-    }).toThrow("invalid-artifact");
-  });
-
-  it("does not accept newly fetched v3 bytes through the v4 candidate loader", async () => {
-    const artifact = retainedCatalog();
-    const rawBytes = Buffer.from(JSON.stringify(artifact));
-    await expect(
-      loadConnectorCatalogCandidate({
-        pointer: {
-          catalogVersion: artifact.catalogVersion,
-          catalogKey: `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`,
-          catalogDigest: snapshot(artifact).catalogDigest,
-        },
-        reader: {
-          readArtifact: async () => {
-            return rawBytes;
-          },
-        },
-      }),
-    ).rejects.toThrow("unsupported-schema");
-  });
-});
 
 describe("v4 connector catalog reader", () => {
   it("reads published v4 HTTP contracts and preserves Plaud metadata without a skill", () => {

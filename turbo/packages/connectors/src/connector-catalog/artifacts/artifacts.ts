@@ -296,33 +296,6 @@ export const connectorCatalogArtifactSchema =
     ),
   });
 
-// Read-only rollout bridge for already accepted v3 snapshots. Candidate loading
-// remains v4-only. Remove after the v4 bootstrap window closes (#34913).
-export const retainedV3ConnectorCatalogArtifactSchema =
-  connectorCatalogArtifactBaseSchema.safeExtend({
-    artifactSchemaVersion: z.literal(3),
-    connectors: z
-      .array(
-        connectorCatalogArtifactConnectorSchema.safeExtend({
-          mcp: z.never().optional(),
-          replaces: z.never().optional(),
-          authMethods: z
-            .array(
-              connectorCatalogAuthMethodSchema.refine((method) => {
-                return (
-                  method.grant.kind !== "none" &&
-                  method.grant.kind !== "automatic" &&
-                  method.access.kind !== "none" &&
-                  method.access.kind !== "automatic"
-                );
-              }, "V3 authentication cannot contain v4 capabilities"),
-            )
-            .min(1),
-        }),
-      )
-      .min(1),
-  });
-
 export type ConnectorCatalogArtifact = z.infer<
   typeof connectorCatalogArtifactBaseSchema
 >;

@@ -1200,8 +1200,8 @@ async function commitValidatedCandidate(
   },
   signal: AbortSignal,
 ): Promise<SyncAttemptResult> {
-  // The sync baseline is v4-only; retained v3 may still be serving before the
-  // first v4 acceptance. Compare permission bundles against the serving state.
+  // Compare permission bundles against the accepted v4 serving state. A cold
+  // catalog has no previous runtime snapshot.
   const previousSnapshotResult = await settle(
     loadConnectorRuntimeSnapshot(runtime.db),
     signal,
