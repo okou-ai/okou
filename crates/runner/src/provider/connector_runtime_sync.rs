@@ -994,13 +994,24 @@ impl ConnectorRuntimeSyncCore {
             let update = match (&target.target, &result.state) {
                 (
                     ConnectorRuntimeTarget::Builtin { connector_slug },
-                    ConnectorRuntimeSyncState::Available { network_policy, .. },
-                ) => validate_connector_runtime_network_policy(network_policy).map(|()| {
-                    ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
-                        connector_slug: connector_slug.clone(),
-                        network_policy: network_policy.clone(),
+                    ConnectorRuntimeSyncState::Available {
+                        network_policy,
+                        firewall,
+                    },
+                ) => {
+                    if firewall.is_some() {
+                        Err("builtin available result must not include an inline firewall")
+                    } else if let Err(error) =
+                        validate_connector_runtime_network_policy(network_policy)
+                    {
+                        Err(error)
+                    } else {
+                        Ok(ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                            connector_slug: connector_slug.clone(),
+                            network_policy: network_policy.clone(),
+                        })
                     }
-                }),
+                }
                 (
                     ConnectorRuntimeTarget::Custom {
                         custom_connector_id,
@@ -4877,6 +4888,77 @@ mod tests {
         assert_eq!(active.connectors[&target].consecutive_failures, 1);
         assert!(active.sync_tasks.contains_key(&target));
         drop(active_runs);
+        core.unregister_run(run_id).await;
+    }
+
+    #[tokio::test]
+    async fn builtin_response_with_inline_firewall_retains_last_known_good_and_retries() {
+        let server = MockServer::start();
+        let (core, mut requests) = core_without_worker(&server);
+        let run_id = RunId::nil();
+        let target = builtin_target("slack");
+        let invalid_firewall = custom_runtime_firewall("550e8400-e29b-41d4-a716-446655440000");
+        server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "results": [{
+                        "target": target.clone(),
+                        "state": "available",
+                        "firewall": invalid_firewall,
+                        "networkPolicy": {
+                            "allow": ["chat:write"],
+                            "deny": [],
+                            "ask": [],
+                            "unknownPolicy": "allow",
+                        },
+                    }],
+                }));
+        });
+        let initial_firewall = FirewallEntry::Builtin {
+            name: "slack".to_string(),
+            base_url_vars: None,
+            source_id: None,
+        };
+        let initial_policies = HashMap::from([(
+            "slack".to_string(),
+            NetworkPolicy {
+                allow: vec!["last-known-good".to_string()],
+                deny: vec![],
+                ask: vec![],
+                unknown_policy: "deny".to_string(),
+            },
+        )]);
+        let (_dir, registry, registry_path) = registered_runtime_registry(
+            run_id,
+            std::slice::from_ref(&initial_firewall),
+            &initial_policies,
+        )
+        .await;
+        let registry_before = tokio::fs::read(&registry_path).await.unwrap();
+
+        core.register_run(ConnectorRuntimeSyncRegistration {
+            run_id,
+            source_ip: "10.200.0.2",
+            registry,
+            targets: std::slice::from_ref(&builtin_runtime_target_registration("slack")),
+            refreshes: None,
+        })
+        .await;
+        let request = recv_sync_request(&mut requests).await;
+
+        assert!(
+            core.sync_connector_runtime_batch_now(run_id, &request.targets)
+                .await
+        );
+
+        assert_eq!(
+            tokio::fs::read(&registry_path).await.unwrap(),
+            registry_before
+        );
+        assert_retry_scheduled(&core, run_id, "slack", 1).await;
         core.unregister_run(run_id).await;
     }
 
