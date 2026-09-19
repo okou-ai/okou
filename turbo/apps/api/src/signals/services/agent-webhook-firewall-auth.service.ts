@@ -11,6 +11,7 @@ import {
 } from "../external/realtime";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   getSecretNameForType,
@@ -43,7 +44,10 @@ import {
   type BasicAuthTemplateArg,
   type BasicAuthTemplateMatch,
 } from "@okouai/connectors/firewall-types";
-import { AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import {
+  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+  AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+} from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import {
   refreshConnectorAuthProviderAccessTokenWithMethod,
@@ -148,6 +152,9 @@ type SecretType = StorageSecretSource;
 const NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS = 30;
 const LOW_BILLABLE_FIREWALL_LEASE_SECONDS = 5;
 const BUILTIN_MCP_AUTH_LEASE_SECONDS = 30;
+const AUTOMATIC_MCP_RUNTIME_AUTH = {
+  headers: { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
+} as const;
 const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
@@ -5839,6 +5846,44 @@ function applyCustomConnectorRoutingVariables(args: {
   return secrets;
 }
 
+function requestsCurrentCatalogAutomaticMcpAuth(args: {
+  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly body: FirewallAuthBody;
+  readonly referenced: ReferencedAuthKeys;
+}): boolean {
+  if (
+    !args.referenced.secrets.has(AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME)
+  ) {
+    return false;
+  }
+  const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+  const matchedBase = args.body.matchedFirewall?.base;
+  if (connectorSlug === undefined || matchedBase === undefined) {
+    return false;
+  }
+  const currentCatalogApi = args.snapshot.serverFirewalls
+    .getRuntimeFirewall(connectorSlug)
+    ?.apis.find((api) => {
+      return api.base === matchedBase;
+    });
+  const requestedAuth = {
+    ...(Object.keys(args.body.authHeaders).length === 0
+      ? {}
+      : { headers: args.body.authHeaders }),
+    ...(args.body.authBase === undefined ? {} : { base: args.body.authBase }),
+    ...(args.body.authQuery === undefined
+      ? {}
+      : { query: args.body.authQuery }),
+    ...(args.body.authAwsSigv4 === undefined
+      ? {}
+      : { awsSigv4: args.body.authAwsSigv4 }),
+  };
+  return (
+    isDeepStrictEqual(currentCatalogApi?.auth, AUTOMATIC_MCP_RUNTIME_AUTH) &&
+    isDeepStrictEqual(requestedAuth, AUTOMATIC_MCP_RUNTIME_AUTH)
+  );
+}
+
 async function prepareNonCustomFirewallAuth(args: {
   readonly db: Db;
   readonly auth: SandboxAuth;
@@ -5854,8 +5899,12 @@ async function prepareNonCustomFirewallAuth(args: {
 > {
   const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
-  const requiresAutomaticMcpCredential = args.referenced.secrets.has(
-    AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+  const requiresAutomaticMcpCredential = requestsCurrentCatalogAutomaticMcpAuth(
+    {
+      snapshot: connectorCatalogSnapshot,
+      body: args.body,
+      referenced: args.referenced,
+    },
   );
   // Account deletion or reconnect must end cached MCP credential authorization,
   // including static credentials whose provider token has no expiry. Start

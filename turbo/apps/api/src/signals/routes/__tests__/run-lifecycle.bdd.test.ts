@@ -47,6 +47,7 @@ import {
   type ExecutionFirewallEntry,
   type FirewallApi,
 } from "@okouai/connectors/firewall-types";
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -11001,6 +11002,29 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       outcome: "resolved",
       connector: { credentialResolution: "none" },
     });
+    const staleOAuth = await fw.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      {
+        encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+        authHeaders: {
+          Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+        },
+        forceRefresh: true,
+        matchedFirewall: {
+          name: catalog.slug,
+          apiId: `${catalog.slug}:0`,
+          base: catalog.endpoint,
+          connectorSlug: catalog.slug,
+          sourceId: connectionId,
+          routingVariables: {},
+        },
+      },
+      [424],
+    );
+    expect(staleOAuth.body).toMatchObject({
+      error: { code: "CONNECTOR_NOT_CONFIGURED" },
+    });
+    expect(provider.tokenBodies).toHaveLength(1);
     const resolved = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
       {
