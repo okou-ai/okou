@@ -694,6 +694,30 @@ describe("Pi sandbox execution contract", () => {
         }).success,
       ).toBe(false);
     }
+    for (const invalidCoverage of [
+      {
+        ...apiUsage,
+        coverage: "complete",
+      },
+      {
+        ...apiUsage,
+        coverage: "partial",
+        tokens: {
+          input: null,
+          cacheRead: null,
+          cacheCreation: null,
+          output: null,
+        },
+      },
+      {
+        ...apiUsage,
+        coverage: "unavailable",
+      },
+    ]) {
+      expect(piApiHandoffUsageSchema.safeParse(invalidCoverage).success).toBe(
+        false,
+      );
+    }
   });
 
   it("accepts one strict sampled Langfuse handoff parent", () => {

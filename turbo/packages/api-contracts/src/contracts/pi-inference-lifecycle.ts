@@ -15,25 +15,43 @@ const piApiHandoffTokenQuantitySchema = z
  * Objects intentionally ignore unknown additive fields so handoff metadata can
  * evolve without breaking an older reader.
  */
-export const piApiHandoffUsageSchema = z.discriminatedUnion("state", [
-  z.object({
-    schemaVersion: z.literal(1),
-    state: z.literal("no-inference"),
-    sampledAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  }),
-  z.object({
-    schemaVersion: z.literal(1),
-    state: z.literal("observed"),
-    sampledAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-    coverage: z.enum(["complete", "partial", "unavailable"]),
-    tokens: z.object({
-      input: piApiHandoffTokenQuantitySchema,
-      cacheRead: piApiHandoffTokenQuantitySchema,
-      cacheCreation: piApiHandoffTokenQuantitySchema,
-      output: piApiHandoffTokenQuantitySchema,
+export const piApiHandoffUsageSchema = z
+  .discriminatedUnion("state", [
+    z.object({
+      schemaVersion: z.literal(1),
+      state: z.literal("no-inference"),
+      sampledAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
     }),
-  }),
-]);
+    z.object({
+      schemaVersion: z.literal(1),
+      state: z.literal("observed"),
+      sampledAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      coverage: z.enum(["complete", "partial", "unavailable"]),
+      tokens: z.object({
+        input: piApiHandoffTokenQuantitySchema,
+        cacheRead: piApiHandoffTokenQuantitySchema,
+        cacheCreation: piApiHandoffTokenQuantitySchema,
+        output: piApiHandoffTokenQuantitySchema,
+      }),
+    }),
+  ])
+  .superRefine((usage, context) => {
+    if (usage.state === "no-inference") return;
+    const knownTokens = Object.values(usage.tokens).filter((token) => {
+      return token !== null;
+    }).length;
+    const validCoverage =
+      (usage.coverage === "complete" && knownTokens === 4) ||
+      (usage.coverage === "partial" && knownTokens > 0) ||
+      (usage.coverage === "unavailable" && knownTokens === 0);
+    if (!validCoverage) {
+      context.addIssue({
+        code: "custom",
+        path: ["coverage"],
+        message: "Coverage does not match the established token quantities",
+      });
+    }
+  });
 
 /** References are immutable, tenant-scoped objects, never signed URLs or secrets. */
 export const piInferenceInputSchema = z.strictObject({
