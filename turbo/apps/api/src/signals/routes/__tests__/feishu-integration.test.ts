@@ -253,13 +253,16 @@ interface FeishuMessageRequestBody {
   readonly uuid?: string;
 }
 
-interface FeishuRunFixture {
+interface FeishuInstallationFixture {
   readonly actor: ApiTestUser;
-  readonly runnerGroup: string;
   readonly appId: string;
   readonly callbackUrl: string;
   readonly installationId: string;
   readonly defaultAgentId: string;
+}
+
+interface FeishuRunFixture extends FeishuInstallationFixture {
+  readonly runnerGroup: string;
   readonly alternateAgentId: string;
 }
 
@@ -984,6 +987,95 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
+  async function configureTestInstallation(args: {
+    readonly appId: string;
+    readonly defaultAgentId: string;
+  }): Promise<
+    Pick<FeishuInstallationFixture, "callbackUrl" | "installationId">
+  > {
+    const client = setupApp({ context, routes: feishuConnectRoutes })(
+      connectContract,
+    );
+    const configured = await accept(
+      client.setup({
+        headers: { authorization: "Bearer clerk-session" },
+        extraHeaders: { origin: "https://app.okou.ai" },
+        body: {
+          appId: args.appId,
+          appSecret: APP_SECRET,
+          verificationToken: VERIFICATION_TOKEN,
+          encryptKey: ENCRYPT_KEY,
+          defaultAgentId: args.defaultAgentId,
+        },
+      }),
+      [200],
+    );
+    const callbackUrl = requireValue(
+      configured.body.callbackUrl,
+      "Expected Feishu setup to return a callback URL",
+    );
+    const installationId = requireValue(
+      configured.body.installationId,
+      "Expected Feishu setup to return an installation ID",
+    );
+    await accept(
+      client.updateInstallation({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { installationId },
+        body: {
+          defaultAgentId: args.defaultAgentId,
+          setupCompleted: true,
+        },
+      }),
+      [200],
+    );
+    await postEvent(
+      callbackUrl,
+      {
+        type: "url_verification",
+        challenge: "configured",
+        token: VERIFICATION_TOKEN,
+      },
+      { encrypted: true },
+    );
+    context.mocks.ably.publish.mockClear();
+    return { callbackUrl, installationId };
+  }
+
+  async function setupFeishuInstallationFixture(): Promise<FeishuInstallationFixture> {
+    const appId = `cli_${randomUUID()}`;
+    const actor = authOrgApi.user({
+      userId: `user_${randomUUID()}`,
+      orgId: `org_${randomUUID()}`,
+      orgRole: "org:admin",
+    });
+    await enableFeishuIntegration(platform, actor, {
+      [FeatureSwitchKey.OkouDebug]: true,
+    });
+    authOrgApi.acceptAgentStorageWrites();
+    const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
+      displayName: "Feishu default agent",
+    });
+    const defaultAgentId = bootstrap.body.agentId;
+    const defaultAgent = await authOrgApi.updateAgentMetadata(
+      actor,
+      defaultAgentId,
+      { visibility: "public" },
+    );
+    await runsApi.grantProEntitlement(actor);
+    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+    const configured = await configureTestInstallation({
+      appId,
+      defaultAgentId: defaultAgent.agentId,
+    });
+    return {
+      actor,
+      appId,
+      ...configured,
+      defaultAgentId: defaultAgent.agentId,
+    };
+  }
+
   async function setupFeishuRunFixture(
     options: {
       readonly useAlternateInstallationDefault?: boolean;
@@ -1033,52 +1125,10 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     await runsApi.grantProEntitlement(actor);
     await runsApi.ensureOrgModelProvider(actor);
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    const client = setupApp({ context, routes: feishuConnectRoutes })(
-      connectContract,
-    );
-    const configured = await accept(
-      client.setup({
-        headers: { authorization: "Bearer clerk-session" },
-        extraHeaders: { origin: "https://app.okou.ai" },
-        body: {
-          appId,
-          appSecret: APP_SECRET,
-          verificationToken: VERIFICATION_TOKEN,
-          encryptKey: ENCRYPT_KEY,
-          defaultAgentId: installationDefaultAgent.agentId,
-        },
-      }),
-      [200],
-    );
-    const callbackUrl = requireValue(
-      configured.body.callbackUrl,
-      "Expected Feishu setup to return a callback URL",
-    );
-    const installationId = requireValue(
-      configured.body.installationId,
-      "Expected Feishu setup to return an installation ID",
-    );
-    await accept(
-      client.updateInstallation({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { installationId },
-        body: {
-          defaultAgentId: installationDefaultAgent.agentId,
-          setupCompleted: true,
-        },
-      }),
-      [200],
-    );
-    await postEvent(
-      callbackUrl,
-      {
-        type: "url_verification",
-        challenge: "configured",
-        token: VERIFICATION_TOKEN,
-      },
-      { encrypted: true },
-    );
-    context.mocks.ably.publish.mockClear();
+    const { callbackUrl, installationId } = await configureTestInstallation({
+      appId,
+      defaultAgentId: installationDefaultAgent.agentId,
+    });
     return {
       actor,
       runnerGroup,
@@ -3168,7 +3218,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
   });
 
   it("retries a durably admitted Feishu event after dispatch fails", async () => {
-    const fixture = await setupFeishuRunFixture();
+    const fixture = await setupFeishuInstallationFixture();
     const { appId, callbackUrl } = fixture;
     const messageId = `om_${randomUUID()}`;
     const event = directMessage(appId, "retry this Feishu event", undefined, {

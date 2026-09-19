@@ -53,6 +53,7 @@ import {
 } from "../../../test-fixtures/morning-brief-chat-collection";
 import { agentsRoutes } from "../agents";
 import { morningBriefChatCollectionPreviewRoutes } from "../morning-brief-chat-collection-preview";
+import { joinAll, onRejection } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -996,65 +997,105 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
             return selectingStatement;
           },
           work: async (contentQuery) => {
-            const member = await briefMember();
-            const { threadId } = await seedUnreadThread(member, {
-              prompt: "prompt beyond the cumulative budget",
-              reply: "reply beyond the cumulative budget",
-            });
-            const discovery = await holdChatCandidateDiscoveryFixture(
-              context.signal,
+            const releases: (() => Promise<void>)[] = [];
+            const requests: Promise<unknown>[] = [];
+            const ownBarrier = <
+              T extends { readonly release: () => Promise<void> },
+            >(
+              barrier: T,
+            ): T => {
+              releases.push(() => {
+                return barrier.release();
+              });
+              return barrier;
+            };
+            await onRejection(
+              (async () => {
+                const member = await briefMember();
+                const { threadId } = await seedUnreadThread(member, {
+                  prompt: "prompt beyond the cumulative budget",
+                  reply: "reply beyond the cumulative budget",
+                });
+                const discovery = ownBarrier(
+                  await holdChatCandidateDiscoveryFixture(context.signal),
+                );
+                const agent = ownBarrier(
+                  await holdAgentRowFixture(member.agentId, context.signal),
+                );
+                const startedAt = freezeAttemptClock();
+
+                const pending = collectRequest(member);
+                requests.push(pending);
+                await discovery.waitForBlocked();
+                // Discovery consumed most of the candidate allowance while
+                // queued in PostgreSQL, but stayed within its individual cap.
+                mockNow(candidateDeadline(startedAt) - 500);
+                await discovery.release();
+                await agent.waitForBlocked();
+
+                // Acquire the final-query blocker only after discovery
+                // committed; candidate selection itself also reads agent_runs.
+                const activeRun = ownBarrier(
+                  await holdActiveRunReadFixture(context.signal),
+                );
+                await agent.release();
+                await activeRun.waitForBlocked();
+                mockNow(candidateDeadline(startedAt));
+                await activeRun.release();
+
+                const response = await accept(pending, [200]);
+                expect(response.body).toMatchObject({
+                  result: "no-eligible-content",
+                  coverage: "partial",
+                  items: [],
+                  skipped: [],
+                  truncations: ["deadline_exceeded"],
+                });
+                expect(JSON.stringify(response.body)).not.toContain(threadId);
+                expect(contentQuery.enteredYet()).toBeFalsy();
+
+                // Guard-removal control: a fresh healthy request reaches this
+                // exact content statement. The selected transaction exposes
+                // all three real server settings, including the
+                // whole-transaction bound.
+                const healthy = collectRequest(member);
+                requests.push(healthy);
+                const inspectHealthyQuery = onRejection(
+                  (async () => {
+                    const healthyContentQuery = await contentQuery.entered;
+                    expect(healthyContentQuery).toMatchObject({
+                      lockTimeout: "2s",
+                      statementTimeout: "5s",
+                    });
+                    // PostgreSQL renders the conservatively floored monotonic
+                    // remainder in milliseconds when fractional clock origins
+                    // leave it 1ms shy.
+                    expect(["11999ms", "12s"]).toContain(
+                      healthyContentQuery.transactionTimeout,
+                    );
+                    contentQuery.release();
+                  })(),
+                  () => {
+                    contentQuery.release();
+                  },
+                );
+                const [recovered] = await joinAll([
+                  accept(healthy, [200]),
+                  inspectHealthyQuery,
+                ]);
+                expect(recovered.body.result).toBe("collected");
+                expect(recovered.body.items).toHaveLength(1);
+              })(),
+              async () => {
+                contentQuery.release();
+                await Promise.allSettled(
+                  releases.map(async (release) => {
+                    await release();
+                  }),
+                );
+                await Promise.allSettled(requests);
+              },
             );
-            const agent = await holdAgentRowFixture(
-              member.agentId,
-              context.signal,
-            );
-            const startedAt = freezeAttemptClock();
-
-            const pending = collectRequest(member);
-            await discovery.waitForBlocked();
-            // Discovery consumed most of the candidate allowance while queued
-            // in PostgreSQL, but stayed within its individual cap.
-            mockNow(candidateDeadline(startedAt) - 500);
-            await discovery.release();
-            await agent.waitForBlocked();
-
-            // Acquire the final-query blocker only after discovery committed;
-            // candidate selection itself also reads agent_runs.
-            const activeRun = await holdActiveRunReadFixture(context.signal);
-            await agent.release();
-            await activeRun.waitForBlocked();
-            mockNow(candidateDeadline(startedAt));
-            await activeRun.release();
-
-            const response = await accept(pending, [200]);
-            expect(response.body).toMatchObject({
-              result: "no-eligible-content",
-              coverage: "partial",
-              items: [],
-              skipped: [],
-              truncations: ["deadline_exceeded"],
-            });
-            expect(JSON.stringify(response.body)).not.toContain(threadId);
-            expect(contentQuery.enteredYet()).toBeFalsy();
-
-            // Guard-removal control: a fresh healthy request reaches this exact
-            // content statement. The selected transaction exposes all three
-            // real server settings, including the whole-transaction bound.
-            const healthy = collectRequest(member);
-            const healthyContentQuery = await contentQuery.entered;
-            expect(healthyContentQuery).toMatchObject({
-              lockTimeout: "2s",
-              statementTimeout: "5s",
-            });
-            // PostgreSQL renders the conservatively floored monotonic remainder
-            // in milliseconds when fractional clock origins leave it 1ms shy.
-            expect(["11999ms", "12s"]).toContain(
-              healthyContentQuery.transactionTimeout,
-            );
-            contentQuery.release();
-            const recovered = await accept(healthy, [200]);
-            expect(recovered.body.result).toBe("collected");
-            expect(recovered.body.items).toHaveLength(1);
           },
         },
         context.signal,

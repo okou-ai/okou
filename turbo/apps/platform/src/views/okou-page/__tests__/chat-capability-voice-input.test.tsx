@@ -624,8 +624,15 @@ test.each(
   await findEnabledButton("Send");
 });
 
-test.each(retryFailures)(
-  "A recovered $code recording stays cleared after navigation and reload",
+test.each(
+  retryFailures.flatMap((failure) => {
+    return [
+      { ...failure, boundary: "navigation" },
+      { ...failure, boundary: "reload" },
+    ];
+  }),
+)(
+  "A recovered $code recording stays cleared after $boundary",
   async (failure) => {
     const resetInitialPage$ = resetSignal();
     const initialPageSignal = context.store.set(
@@ -674,15 +681,20 @@ test.each(retryFailures)(
     expect(transcriptionAttempts).toBe(3);
     await findEnabledButton("Send");
 
-    click(await findLink("Agents"));
-    await screen.findByRole("heading", { name: "Agents" });
-    context.store.set(resetInitialPage$);
-    releasePageDom();
-    await setupPage({
-      context: refreshedContext,
-      path: RUN_PATH,
-      locale: "en-US",
-    });
+    if (failure.boundary === "navigation") {
+      click(await findLink("Agents"));
+      await screen.findByRole("heading", { name: "Agents" });
+      window.history.back();
+      await screen.findByRole("textbox", { name: "Message" });
+    } else {
+      context.store.set(resetInitialPage$);
+      releasePageDom();
+      await setupPage({
+        context: refreshedContext,
+        path: RUN_PATH,
+        locale: "en-US",
+      });
+    }
     await findEnabledButton("Voice input");
     expect(queryButton("Retry")).toBeNull();
   },

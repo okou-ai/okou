@@ -1362,7 +1362,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).toBeDefined();
   });
 
-  it("overlaps runtime catalog and provider reads while preserving cancellation", async () => {
+  async function prepareOverlappingRuntimeContext() {
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
     mockEnv(
@@ -1389,6 +1389,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       accessToken: "runtime-context-x-access",
       refreshToken: "runtime-context-x-refresh",
     });
+    return { api, actor, agentId, runnerGroup };
+  }
+
+  it("overlaps runtime catalog and provider reads before claiming the run", async () => {
+    const { api, actor, agentId, runnerGroup } =
+      await prepareOverlappingRuntimeContext();
 
     const providerDecryptStarted = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
@@ -1434,17 +1440,16 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       expect.objectContaining({ kind: "builtin", connectorSlug: "x" }),
     );
     await api.requestCancelRun(actor, run.runId, [200]);
+  });
 
-    clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-runtime-context-cancel-${randomUUID()}`,
-      runtimeProjection: true,
-    });
+  it("cancels overlapping runtime catalog and provider reads without admitting a run", async () => {
+    const { api, actor, agentId } = await prepareOverlappingRuntimeContext();
     const cancelledDecryptStarted = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
       if (!cancelledDecryptStarted.settled()) {
         cancelledDecryptStarted.resolve(undefined);
       }
+      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
     });
     setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(async () => {
       await cancelledDecryptStarted.promise;

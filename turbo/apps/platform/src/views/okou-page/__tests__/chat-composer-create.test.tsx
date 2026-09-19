@@ -275,7 +275,7 @@ test.each(["presentation", "video", "image"] as const)(
   },
 );
 
-test("A queued Create message keeps its intent separate from user-authored text", async () => {
+async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
   setupModels();
   const queued: UserMessageDocument[] = [];
   const runId = crypto.randomUUID();
@@ -302,17 +302,25 @@ test("A queued Create message keeps its intent separate from user-authored text"
     featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
   });
   await screen.findByText("Review the launch brief");
+  return queued;
+}
 
-  const followupEditor = await findComposerEditor();
-  const prompt = "Create a presentation. Keep these words in my message.";
-  await chooseCommand(followupEditor, `${prompt} /`, "presentation");
+async function chooseSlideCount(name: "20–24 slides" | "4–8 slides") {
   click(screen.getByRole("combobox", { name: "Slide count" }));
-  click(await screen.findByRole("option", { name: "20–24 slides" }));
+  click(await screen.findByRole("option", { name }));
   await waitFor(() => {
     expect(
       screen.getByRole("combobox", { name: "Slide count" }),
-    ).toHaveTextContent("20–24 slides");
+    ).toHaveTextContent(name);
   });
+}
+
+test("A queued Create message keeps its intent separate from user-authored text", async () => {
+  const queued = await setupQueuedCreateConversation();
+  const followupEditor = await findComposerEditor();
+  const prompt = "Create a presentation. Keep these words in my message.";
+  await chooseCommand(followupEditor, `${prompt} /`, "presentation");
+  await chooseSlideCount("20–24 slides");
   await waitFor(() => {
     expect(button("Send")).toBeEnabled();
   });
@@ -340,13 +348,31 @@ test("A queued Create message keeps its intent separate from user-authored text"
       .trim(),
   ).toBe(prompt);
   await expect(screen.findByText(prompt)).resolves.toBeVisible();
-  click(screen.getByRole("combobox", { name: "Slide count" }));
-  click(await screen.findByRole("option", { name: "4–8 slides" }));
+});
+
+test("Queued Create messages retain their own slide counts", async () => {
+  const queued = await setupQueuedCreateConversation();
+  const prompt = "A longer presentation";
+  await chooseCommand(
+    await findComposerEditor(),
+    `${prompt} /`,
+    "presentation",
+  );
+  await chooseSlideCount("20–24 slides");
   await waitFor(() => {
-    expect(
-      screen.getByRole("combobox", { name: "Slide count" }),
-    ).toHaveTextContent("4–8 slides");
+    expect(button("Send")).toBeEnabled();
   });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(queued).toHaveLength(1);
+  });
+  expect(queued[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("- Slide count: 20-24"),
+  });
+  await expect(screen.findByText(prompt)).resolves.toBeVisible();
+
+  await chooseSlideCount("4–8 slides");
   await fill(await findComposerEditor(), "A shorter follow-up");
   click(button("Send"));
   await waitFor(() => {
@@ -592,7 +618,7 @@ test.each(createTemplateScenarios)(
   },
 );
 
-test("Multiple templates keep a generic toolbar label and all references survive sending", async () => {
+async function setupMultipleTemplatePresentation() {
   setupModels();
   const submissions: UserMessageDocument[] = [];
   mockChatLifecycle(context, {
@@ -618,7 +644,17 @@ test("Multiple templates keep a generic toolbar label and all references survive
   await waitFor(() => {
     expect(button("Add template")).toBeInTheDocument();
   });
+  return { first, second, submissions };
+}
+
+test("Multiple templates keep a generic toolbar label", async () => {
+  await setupMultipleTemplatePresentation();
   expect(composerInlineTemplates()).toHaveLength(2);
+});
+
+test("All selected template references survive sending", async () => {
+  const { first, second, submissions } =
+    await setupMultipleTemplatePresentation();
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);
