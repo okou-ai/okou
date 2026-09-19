@@ -722,10 +722,9 @@ export function GetStartedEntry() {
   if (summary.total === 0) {
     return null;
   }
-  const checkinReward =
-    questsLoadable.data.find((quest) => {
-      return quest.key === "checkin";
-    })?.rewardAmount ?? 0;
+  const checkinQuest = questsLoadable.data.find((quest) => {
+    return quest.key === "checkin";
+  });
 
   return (
     <>
@@ -768,7 +767,11 @@ export function GetStartedEntry() {
           handoffs[key]();
         }}
       />
-      <GetStartedCheckinDialog reward={checkinReward} />
+      {/* The quest the dialog reports on is the one the panel just checked in,
+          so the dialog exists exactly when that quest does. */}
+      {checkinQuest && (
+        <GetStartedCheckinDialog reward={checkinQuest.rewardAmount} />
+      )}
     </>
   );
 }
