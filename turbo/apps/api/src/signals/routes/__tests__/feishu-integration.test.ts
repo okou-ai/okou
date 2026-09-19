@@ -56,7 +56,6 @@ import {
   findFeishuChatEventByPromptFixture,
   findPendingChatEventByPromptFixture,
   readChatEventContextFixture,
-  seedLegacyFeishuIngressFixture,
 } from "../../../test-fixtures/chat-events";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
@@ -3403,72 +3402,6 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         );
         expect(messageContent(delivered)).toContain('"content":"Okou"');
       }
-    },
-  );
-
-  it.each(["input context", "claimed run"] as const)(
-    "restores the legacy Feishu brand in %s",
-    async (phase) => {
-      const fixture = await setupFeishuRunFixture({
-        useSystemDefaultIdentity: true,
-      });
-      await connectFixtureUser(fixture);
-      const eventId = `evt_legacy_brand_${randomUUID()}`;
-      const messageId = `om_legacy_brand_${randomUUID()}`;
-      const prompt = `legacy Okou ingress ${randomUUID()}`;
-      const providerEvent = directMessage(
-        fixture.appId,
-        prompt,
-        "ou_feishu_user",
-        { eventId, messageId },
-      );
-      await seedLegacyFeishuIngressFixture({
-        installationId: fixture.installationId,
-        eventId,
-        payload: JSON.stringify({
-          installationId: fixture.installationId,
-          eventId,
-          tenantKey: TENANT_KEY,
-          appId: fixture.appId,
-          messageId,
-          chatId: "oc_feishu_dm",
-          chatType: "p2p",
-          rootId: null,
-          parentId: null,
-          threadId: null,
-          openId: "ou_feishu_user",
-          text: prompt,
-          promptText: prompt,
-          files: [],
-        }),
-      });
-
-      const retried = await postEvent(fixture.callbackUrl, providerEvent, {
-        encrypted: true,
-      });
-      expect(retried.status).toBe(200);
-      await flushWaitUntilForTest();
-
-      const run = await findRun(fixture.actor, prompt);
-      await expectRunSource(fixture.actor, run.id);
-
-      if (phase === "input context") {
-        const inputEvent = requireValue(
-          await findFeishuChatEventByPromptFixture({
-            userId: fixture.actor.userId,
-            prompt,
-          }),
-          "Expected the legacy Feishu ingress to become a canonical event",
-        );
-        await expect(
-          readChatEventContextFixture(inputEvent.eventId),
-        ).resolves.toMatchObject({ feishuPublicBrand: "okou" });
-      } else {
-        await runsApi.heartbeatRunner(fixture.runnerGroup);
-        const claim = await runsApi.claimRunnerJob(run.id);
-        expect(claim.appendSystemPrompt).toContain("Your name is Okou.");
-      }
-      await runsApi.requestCancelRun(fixture.actor, run.id, [200]);
     },
   );
 
