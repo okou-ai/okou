@@ -2744,10 +2744,10 @@ The claim and proxy registry no longer carry `xResourceBilling` or its fixed
 `startDate`; date-based and absent-capability count producers are retired.
 The API retains its existing generic count-event and resource-event contracts.
 X writes, other connector counts, model and image events keep their shapes.
-The deduplication feature switch still chooses Q or N+R, and neither direction
-changes the producer protocol or the two-UTC-date retention window.
+Resource events always use N+R billing. This does not change the producer
+protocol or the two-UTC-date retention window.
 
-New Runners work with the preceding switch-based API: they ignore the old claim
+New Runners work with the preceding gated API: they ignore the old claim
 capability and that API accepts resource uploads. During normal API-before-Runner
 promotion, old Runners receiving the new claim select count-only reads. The
 unchanged generic ingestion path accepts those events and bills their full
@@ -2755,13 +2755,13 @@ quantity, so this overlap does not discard usage. Runs that already captured the
 preceding capability continue reporting resources.
 
 Count events carry no resource identities: reads from an old Runner in this
-overlap cannot populate the daily resource table or receive deduplication, even
-if the feature switch is enabled. Full producer coverage requires old Runner
+overlap cannot populate the daily resource table or receive deduplication. Full producer coverage requires old Runner
 processes, Runs, streams and retained uploads to finish draining. If uninterrupted
 deduplication is required during the cutover, predeploy the unconditional Runner
 against the preceding API and verify that drain before promoting the API.
-The preceding switch-based API remains a compatible rollback target; rolling
-back the Runner can reduce resource coverage again.
+The preceding gated API remains a compatible rollback target, but it can restore
+full-count billing for accounts without an enabled override. Rolling back the
+Runner can reduce resource coverage again.
 
 This is a requested protocol retirement, not a database migration. No stored
 execution context contains the claim-only capability, and no historical usage

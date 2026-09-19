@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import type { z } from "zod";
 
@@ -32,7 +31,6 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {
   generatedStripeCustomerId,
@@ -68,19 +66,11 @@ beforeEach(() => {
 
 async function createRun(
   actor = bdd.user(),
-  deduplicationEnabled = true,
   modelProvider: "anthropic-api-key" | "built-in" = "anthropic-api-key",
 ): Promise<RunFixture> {
   if (!actor.orgId) {
     throw new Error("X resource test requires an organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.XResourceDeduplication]: deduplicationEnabled,
-    },
-  );
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
@@ -192,7 +182,7 @@ describe("X daily resource usage webhook", () => {
       // Built-in credentials are operator configuration with no product write
       // endpoint. The fixture owns its key and scopes selection to this test.
       await seedBuiltInDefaultModelKey(context);
-      const fixture = await createRun(bdd.user(), false, "built-in");
+      const fixture = await createRun(bdd.user(), "built-in");
       const zeroEvents = (
         [
           { kind: "connector", provider: "x", category: "posts.read" },
@@ -705,89 +695,6 @@ describe("X daily resource usage webhook", () => {
     }
     expect(completed.value.status).toBe(400);
     // The original UUID and resource must both be reusable after rollback.
-    await accept(submit(fixture, [event]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
-  });
-
-  it("records resources with deduplication off and charges full quantities in mixed batches", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun(bdd.user(), false);
-    const id = resourceId();
-    const resource = observation([], {
-      quantity: 5,
-      resources: [{ id, occurrences: 3 }],
-      remainder: [{ reason: "missing_id", quantity: 2 }],
-    });
-    const countEvent: UsageEvent = {
-      idempotencyKey: randomUUID(),
-      kind: "connector",
-      provider: "x",
-      category: "posts.read",
-      quantity: 1,
-    };
-    await accept(submit(fixture, [countEvent, resource]), [200]);
-    await accept(submit(fixture, [resource]), [200]);
-    await accept(submit(fixture, [observation([id])]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(7);
-
-    // An enabled owner sees the global history recorded by a disabled owner.
-    const enabled = await createRun();
-    await accept(submit(enabled, [observation([id])]), [200]);
-    await expect(chargedUnits(enabled, configuredPricing)).resolves.toBe(0);
-  });
-
-  it("re-evaluates discarded zero usage after switch changes and preserves charged retries", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun(bdd.user(), false);
-    if (!fixture.actor.orgId) {
-      throw new Error("X resource test requires an organization");
-    }
-    const actor = { ...fixture.actor, orgId: fixture.actor.orgId };
-    const id = resourceId();
-    const whileOff = observation([], {
-      quantity: 4,
-      resources: [{ id, occurrences: 3 }],
-      remainder: [{ reason: "missing_id", quantity: 1 }],
-    });
-    await accept(submit(fixture, [whileOff]), [200]);
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.XResourceDeduplication]: true,
-    });
-    const whileOn = observation([id]);
-    await accept(submit(fixture, [whileOff, whileOn]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(4);
-
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.XResourceDeduplication]: false,
-    });
-    const disabledAgain = observation([], {
-      quantity: 3,
-      resources: [{ id, occurrences: 2 }],
-      remainder: [{ reason: "missing_id", quantity: 1 }],
-    });
-    await accept(submit(fixture, [whileOff, whileOn, disabledAgain]), [200]);
-    await accept(submit(fixture, [whileOff, whileOn, disabledAgain]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(8);
-  });
-
-  it("keeps time admission and atomic validation while deduplication is off", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun(bdd.user(), false);
-    const id = resourceId();
-    const event = observation([id]);
-    await accept(
-      submit(fixture, [
-        event,
-        observation([resourceId()], {
-          observedAt: new Date(now() - 2 * DAY_MS).toISOString(),
-        }),
-      ]),
-      [400],
-    );
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(0);
-    const enabled = await createRun();
-    await accept(submit(enabled, [observation([id])]), [200]);
-    await expect(chargedUnits(enabled, configuredPricing)).resolves.toBe(1);
     await accept(submit(fixture, [event]), [200]);
     await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
   });
