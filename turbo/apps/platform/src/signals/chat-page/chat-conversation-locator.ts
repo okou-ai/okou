@@ -25,7 +25,7 @@ import { timeout } from "signal-timers";
 import { throttleCommand } from "../command-scheduling.ts";
 import { logger } from "../log.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
-import { onDomEventFn, resetSignal, setDaemon } from "../utils.ts";
+import { detach, onDomEventFn, Reason, resetSignal } from "../utils.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ScrollToEventOptions } from "./chat-thread-scroll.ts";
 
@@ -366,9 +366,7 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
   const measure$ = throttleCommand(readNow$, MEASURE_INTERVAL_MS);
 
   const requestMeasure$ = command(({ set }, signal: AbortSignal): void => {
-    setDaemon(async (daemonSignal) => {
-      await set(measure$, daemonSignal);
-    }, signal);
+    detach(set(measure$, signal), Reason.Deferred, "locator measure");
   });
 
   const attachContainer$ = command(

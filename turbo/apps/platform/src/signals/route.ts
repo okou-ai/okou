@@ -279,7 +279,6 @@ export const detachedNavigateTo$ = command(
       replace?: boolean;
     },
   ) => {
-    // eslint-disable-next-line ccstate/no-detach-in-signals -- rootSignal$ owns navigation after its event callback returns
     detach(
       set(
         navigate$,
