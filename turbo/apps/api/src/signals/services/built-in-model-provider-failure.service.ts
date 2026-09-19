@@ -31,6 +31,7 @@ interface BuiltInModelRouteIdentity {
   readonly selectedModel: string;
   readonly providerType: string;
   readonly upstreamModel: string;
+  readonly modelProvider: string;
 }
 
 interface LockedBuiltInModelRoute extends BuiltInModelRouteIdentity {
@@ -107,6 +108,7 @@ async function loadBuiltInModelRoute(
     selectedModel: run.selectedModel,
     providerType: run.modelRuntimeProvider,
     upstreamModel: run.modelRuntimeModel,
+    modelProvider: run.modelProvider,
   };
 }
 
@@ -122,11 +124,8 @@ async function materializeAndLockRoute(
     })
     .onConflictDoNothing();
 
-  const [lockedRoute] = await tx
+  const [lockedState] = await tx
     .select({
-      selectedModel: builtInModelCandidateCooldown.selectedModel,
-      providerType: builtInModelCandidateCooldown.providerType,
-      upstreamModel: builtInModelCandidateCooldown.upstreamModel,
       unavailableUntil: builtInModelCandidateCooldown.unavailableUntil,
       connectionObservationStartedAt:
         builtInModelCandidateCooldown.connectionObservationStartedAt,
@@ -137,10 +136,10 @@ async function materializeAndLockRoute(
     .where(routeCondition(route))
     .for("update")
     .limit(1);
-  if (!lockedRoute) {
+  if (!lockedState) {
     throw new Error("Expected built-in model candidate cooldown route");
   }
-  return lockedRoute;
+  return { ...route, ...lockedState };
 }
 
 function observationInterval(route: LockedBuiltInModelRoute): {
@@ -195,6 +194,7 @@ async function activateCooldown(
           selectedModel: route.selectedModel,
           providerType: route.providerType,
           upstreamModel: route.upstreamModel,
+          modelProvider: route.modelProvider,
           failureKind: args.failureKind,
           source: args.connectionSource ?? "unspecified",
           reason: args.reason,

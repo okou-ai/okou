@@ -163,6 +163,12 @@ async function assertCanonicalSchema(client: Client): Promise<void> {
       dataType: "timestamp without time zone",
       isNullable: "YES",
     },
+    {
+      characterMaximumLength: 100,
+      columnName: "model_provider",
+      dataType: "character varying",
+      isNullable: "NO",
+    },
   ]);
 
   const primaryKey = await client.query<{ columnName: string }>(`

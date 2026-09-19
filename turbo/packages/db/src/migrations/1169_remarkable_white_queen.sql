@@ -1,0 +1,1 @@
+ALTER TABLE "built_in_model_candidate_cooldown" ADD COLUMN "model_provider" varchar(100) DEFAULT 'built-in' NOT NULL;

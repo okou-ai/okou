@@ -18,6 +18,12 @@ export const builtInModelCandidateCooldown = pgTable(
       "connection_observation_started_at",
     ),
     connectionObservationUntil: timestamp("connection_observation_until"),
+    // Logical provider for the cooled-down route. Always "built-in" for this
+    // table; stored so cooldown reports expose the same four model concepts as
+    // run/activity views.
+    modelProvider: varchar("model_provider", { length: 100 })
+      .notNull()
+      .default("built-in"),
   },
   (table) => {
     return [
