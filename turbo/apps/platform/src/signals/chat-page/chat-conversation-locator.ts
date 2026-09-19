@@ -141,8 +141,8 @@ export interface LocatorViewportSignals {
   /** Leading-edge read for scrolling, so the band tracks the thumb. */
   readonly measure$: Command<void, [AbortSignal]>;
   /**
-   * Trailing-edge read for content growth and resizes. Fire and forget: a
-   * superseded call is the scheduler doing its job, not a failure.
+   * Trailing-edge read for content growth and resizes. Fire and forget; a
+   * superseded call aborts, which `detach` already treats as normal.
    */
   readonly requestSettledMeasure$: Command<void, []>;
   readonly container$: Computed<HTMLElement | null>;
@@ -276,17 +276,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-/** A scheduler that drops an older call is working, so only that is ignored. */
-async function ignoreSupersession(work: Promise<void>): Promise<void> {
-  try {
-    await work;
-  } catch (error) {
-    if (!(error instanceof Error) || error.name !== "AbortError") {
-      throw error;
-    }
-  }
-}
-
 /**
  * The event id nearest the reading focus. This is the one place the locator
  * walks the DOM, and it leaves with a single id rather than a table of
@@ -373,7 +362,7 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
 
   const requestSettledMeasure$ = command(({ get, set }): void => {
     detach(
-      ignoreSupersession(set(measureSettled$, get(pageSignal$))),
+      set(measureSettled$, get(pageSignal$)),
       Reason.Deferred,
       "locator settled measure",
     );
@@ -627,7 +616,7 @@ export function createChatConversationLocatorSignals({
   // Scroll arrives from React, which has no lifetime to lend; the page does.
   const requestMeasure$ = command(({ get, set }): void => {
     detach(
-      ignoreSupersession(set(viewport.measure$, get(pageSignal$))),
+      set(viewport.measure$, get(pageSignal$)),
       Reason.Deferred,
       "locator scroll measure",
     );
