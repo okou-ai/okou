@@ -7266,6 +7266,32 @@ function CustomConnectorCatalogCard({
   );
 }
 
+function AddConnectorSshLoadStatus({
+  matches,
+  state,
+}: {
+  readonly matches: boolean;
+  readonly state: Loadable<unknown>["state"];
+}) {
+  const { t } = useTranslation();
+  if (!matches) {
+    return null;
+  }
+  if (state === "hasError") {
+    return <SshLoadError />;
+  }
+  if (state !== "loading") {
+    return null;
+  }
+  return (
+    <p role="status" className="text-sm text-muted-foreground">
+      {t(($) => {
+        return $.ssh.loading;
+      })}
+    </p>
+  );
+}
+
 function AddConnectorsDialog({
   signals,
   unconnected,
@@ -7312,10 +7338,11 @@ function AddConnectorsDialog({
     vncSummary.state === "hasData" &&
     vncSummary.data?.configuredCount === 0 &&
     matchesVnc;
+  const matchesSsh = "ssh".includes(search.trim().toLowerCase());
   const showSsh =
     sshSummary.state === "hasData" &&
     sshSummary.data?.configuredCount === 0 &&
-    "ssh".includes(search.trim().toLowerCase());
+    matchesSsh;
   const visibleConnectorCount =
     filtered.length + filteredCustom.length + Number(showSsh) + Number(showVnc);
 
@@ -7379,6 +7406,10 @@ function AddConnectorsDialog({
           />
         </div>
         <div className="overflow-y-auto -mx-6 px-6">
+          <AddConnectorSshLoadStatus
+            matches={matchesSsh}
+            state={sshSummary.state}
+          />
           {matchesVnc && vncSummary.state === "hasError" && <VncLoadError />}
           {matchesVnc && vncSummary.state === "loading" && (
             <p role="status" className="text-sm text-muted-foreground">

@@ -360,6 +360,60 @@ test.each([
   },
 );
 
+test.each([false, true])(
+  "Chat SSH discovery can retry a failed summary inside directory layout %s",
+  async (directory) => {
+    installComposerConnectorFixture();
+    let failed = true;
+    const recovery = context.mocks.deferred<void>();
+    context.mocks.api(sshConnectionsContract.summary, async ({ respond }) => {
+      if (failed) {
+        return respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "private SSH error" },
+        });
+      }
+      await recovery.promise;
+      return respond(200, { configuredCount: 0 });
+    });
+    await setupPage({
+      context,
+      path: `/agents/${SCOUT_AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ConnectorDirectory]: directory,
+      },
+    });
+    click(await findFastControl("button", "Connectors"));
+    click(await findFastControl("button", "Add connectors"));
+    const search = await screen.findByPlaceholderText("Find connectors...");
+    const dialog = search.closest('[role="dialog"]');
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Missing connector dialog");
+    }
+    await fill(search, "ssh");
+    await expect(
+      within(dialog).findByText("Could not load SSH settings. Try again."),
+    ).resolves.toBeInTheDocument();
+    expect(within(dialog).queryByText("No connector matches “ssh”")).toBeNull();
+    expect(dialog.textContent).not.toContain("private SSH error");
+    expect(search).toHaveValue("ssh");
+    failed = false;
+    click(await findFastControl("button", "Retry", dialog));
+    await expect(
+      within(dialog).findByText("Loading SSH hosts…"),
+    ).resolves.toBeInTheDocument();
+    expect(within(dialog).queryByText("No connector matches “ssh”")).toBeNull();
+    expect(search).toHaveValue("ssh");
+    recovery.resolve();
+    await expect(
+      findFastControl("link", "Manage SSH hosts", dialog),
+    ).resolves.toHaveAttribute("href", "/connectors/ssh?add=1");
+    expect(
+      within(dialog).queryByText("Could not load SSH settings. Try again."),
+    ).toBeNull();
+    expect(search).toHaveValue("ssh");
+  },
+);
+
 test("Directory SSH setup follows shelves and categories and supports keyboard navigation", async () => {
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({
