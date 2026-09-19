@@ -7097,7 +7097,7 @@ function ConnectorTriggerIcons({
     return <Plug size={18} />;
   }
   return (
-    <span className="flex items-center sm:-space-x-1.5">
+    <span className="flex items-center composer-wide:-space-x-1.5">
       {enabled.map((item, index) => {
         const key =
           item.kind === "ssh"
@@ -7110,12 +7110,12 @@ function ConnectorTriggerIcons({
             key={key}
             className={cn(
               "relative shrink-0",
-              (index > 0 || hasComputerAccess) && "hidden sm:block",
+              (index > 0 || hasComputerAccess) && "hidden composer-wide:block",
             )}
           >
             <span
               className={cn(
-                "flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background sm:h-7 sm:w-7",
+                "flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background composer-wide:h-7 composer-wide:w-7",
                 item.kind === "ssh" && "text-brand-text",
               )}
             >
@@ -7142,14 +7142,14 @@ function ConnectorTriggerIcons({
       })}
       {hasComputerUse && (
         <span className="relative shrink-0">
-          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text sm:h-7 sm:w-7">
+          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text composer-wide:h-7 composer-wide:w-7">
             <Monitor size={16} />
           </span>
         </span>
       )}
       {hasCloudBrowser && (
         <span className="relative shrink-0">
-          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text sm:h-7 sm:w-7">
+          <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-gray-400 bg-background text-brand-text composer-wide:h-7 composer-wide:w-7">
             <Globe size={16} />
           </span>
         </span>
@@ -8424,7 +8424,7 @@ function ConnectorsPopoverButton({
               <button
                 type="button"
                 className={cn(
-                  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover sm:min-w-9 sm:px-1.5",
+                  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
                   COMPOSER_CONTROL_FOCUS_CLASS,
                 )}
                 aria-label={t(($) => {
@@ -9405,8 +9405,8 @@ function composerLayoutHeightClassNames(
   if (hasTemplateAttachment) {
     return singleLineOnMobile
       ? {
-          input: "min-h-[86px] md:min-h-[114px]",
-          shell: "min-h-[158px] md:min-h-[186px]",
+          input: "min-h-[86px] composer-wide:min-h-[114px]",
+          shell: "min-h-[158px] composer-wide:min-h-[186px]",
         }
       : {
           input: "min-h-[114px]",
@@ -9415,8 +9415,8 @@ function composerLayoutHeightClassNames(
   }
   return singleLineOnMobile
     ? {
-        input: "min-h-12 md:min-h-[76px]",
-        shell: "min-h-[120px] md:min-h-[148px]",
+        input: "min-h-12 composer-wide:min-h-[76px]",
+        shell: "min-h-[120px] composer-wide:min-h-[148px]",
       }
     : {
         input: "min-h-[76px]",
@@ -9687,7 +9687,9 @@ function ModelConfigurationWarning({
             className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
           >
             <AlertTriangle size={15} />
-            <span className="hidden sm:inline">{blocker.actionLabel}</span>
+            <span className="hidden composer-wide:inline">
+              {blocker.actionLabel}
+            </span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
@@ -9753,9 +9755,9 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-2",
-    "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center sm:[&>[data-slot=select-value]]:justify-start",
-    "[&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:block",
+    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:gap-1 composer-wide:px-2",
+    "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center composer-wide:[&>[data-slot=select-value]]:justify-start",
+    "[&>[data-slot=select-icon]]:hidden composer-wide:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
     COMPOSER_CONTROL_FOCUS_CLASS,
   );
@@ -9779,7 +9781,10 @@ function ComposerRunModelPickerControl({
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
   return (
-    <div ref={setLifecycleRef} className="contents sm:relative sm:flex">
+    <div
+      ref={setLifecycleRef}
+      className="contents composer-wide:relative composer-wide:flex"
+    >
       <ModelProviderPicker
         value={value}
         onChange={onChange}
@@ -9957,7 +9962,7 @@ function ComposerModelPickerControls({
           mediaModelPanel={mediaModelPanel}
         />
       </div>
-      <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
+      <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
     </>
   );
 }
@@ -10194,7 +10199,7 @@ function ComposerModelScopeCard({
       {/* Both ends sit 20px in, matching the text column of the card above:
           the ghost action already carries 12px of its own padding. */}
       <div
-        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs sm:flex-nowrap"
+        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs composer-wide:flex-nowrap"
         role="group"
         aria-label={label}
         aria-live="polite"
@@ -10949,10 +10954,6 @@ function ComposerFooter({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const creativeVideo = useGet(signals.create.creativeVideo$);
-  const narrowVideoGap = creativeVideo
-    ? "@max-[344px]/composer:gap-0"
-    : undefined;
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
   const status =
@@ -10977,13 +10978,11 @@ function ComposerFooter({
   return withChatScrollLayout(
     <div
       className={cn(
-        "shrink-0 items-center justify-between gap-1 sm:gap-2",
-        creativeVideo && !activeVoiceDraftStatus
-          ? "grid grid-cols-[minmax(0,1fr)_auto] @min-[640px]/composer:flex"
-          : "flex",
+        // One row that wraps. A control that does not fit takes the next line
+        // instead of pressing on the one beside it, so the footer has no width
+        // at which it has to be told to squeeze its gaps and padding shut.
+        "flex shrink-0 flex-wrap items-center gap-1 composer-wide:gap-2",
         activeVoiceDraftStatus ? "px-2 pb-3 pt-3" : "px-4 pb-4 pt-1",
-        narrowVideoGap,
-        creativeVideo && "@max-[344px]/composer:px-3",
       )}
     >
       {activeVoiceDraftStatus ? (
@@ -10996,42 +10995,29 @@ function ComposerFooter({
         />
       ) : (
         <>
-          <div className="contents @min-[640px]/composer:flex @min-[640px]/composer:min-w-0 @min-[640px]/composer:items-center @min-[640px]/composer:gap-1.5">
-            <div
-              className={cn(
-                "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
-                narrowVideoGap,
-              )}
-            >
-              <ComposerAddSlot signals={signals} />
-              <ComposerTemplatePickerSlot signals={signals} />
-              <ComposerWorkflowPromptSlot signals={signals} />
-              <ComposerConnectorsSlot
-                signals={signals}
-                actions={connectorActions}
-              />
-              <ComposerTaskControls signals={signals} />
-            </div>
-            {/*
-              The video spec follows the type it describes, among the controls
-              that act on the run rather than on the message, and on the same
-              line as the model it is resolved against.
-
-              It is a sibling of the icon row rather than a member of it: below
-              640px this group is `display: contents`, so the chip reaches the
-              footer grid directly and its own `col-span-2 row-start-1 w-full`
-              gives it a full-width first row instead of competing with four
-              icons for a 344px line. Nested inside the row, those placements
-              would resolve against a flex box and do nothing.
-            */}
-            <ComposerVideoOptionsChip signals={signals} />
+          <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
+            <ComposerAddSlot signals={signals} />
+            <ComposerTemplatePickerSlot signals={signals} />
+            <ComposerWorkflowPromptSlot signals={signals} />
+            <ComposerConnectorsSlot
+              signals={signals}
+              actions={connectorActions}
+            />
+            <ComposerTaskControls signals={signals} />
           </div>
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 sm:gap-2",
-              narrowVideoGap,
-            )}
-          >
+          {/*
+            The video spec follows the type it describes, among the controls
+            that act on the run rather than on the message, and on the same line
+            as the model it is resolved against.
+
+            It is a sibling of the icon row rather than a member of it: as a
+            footer item of its own it takes `basis-full` and claims the first
+            line below the composer's width rule, instead of competing with four
+            icons for one. Nested inside the row, that basis would resolve
+            against the row and take a line the row cannot spare.
+          */}
+          <ComposerVideoOptionsChip signals={signals} />
+          <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
             <ComposerModelPickerSlot signals={signals} />
             <MicButton signals={signals} actions={actions} />
             <ComposerSendControl signals={signals} actions={actions} />
@@ -11061,7 +11047,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
       data-slot="chat-composer-card"
       surface="composer"
       className={cn(
-        "@container/composer z-10",
+        "z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
@@ -11121,9 +11107,13 @@ export function ChatComposer({
   return (
     <>
       <ComposerFileInput signals={signals} />
+      {/* The composer group's width, named once. The card is not the container
+          itself: the model-scope notice and the pending-items strip are its
+          siblings at exactly this width, and a control that reads a width it is
+          not inside reads the window instead. */}
       <div
         ref={setImageAnnotationLifecycleRef}
-        className="relative flex w-full min-w-0 flex-col"
+        className="@container/composer relative flex w-full min-w-0 flex-col"
       >
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         <ComposerCard signals={signals} />

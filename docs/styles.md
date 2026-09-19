@@ -337,8 +337,27 @@ call site.
 the two surfaces that sit in its place: the service-status notice and the shared
 thread's claim prompt. The variant carries the fill, radius, border, shadow, the
 focus border transition and the `after` veil layer; callers keep layout,
-stacking and container context, which is why the composer still spells
-`@container/composer z-10` itself.
+stacking and container context, which is why the composer still spells `z-10`
+itself and names `@container/composer` on the group around the card.
+
+### The composer's width
+
+Every width-dependent utility inside the composer reads the composer, through
+`composer-wide` — `@container composer (width >= 600px)` — and nothing else. A
+chat panel beside the Cloud Browser is about 550px wide inside a 1600px window,
+so a viewport breakpoint there keeps the full-width layout in a box that cannot
+hold it, and controls that belong to the same row stop expanding at different
+widths.
+
+The variant is mobile-first and has no `max-` counterpart: compact is the base
+style and a wider composer adds to it. Where a control simply runs out of room,
+the footer wraps rather than taking a second breakpoint to squeeze it.
+
+`@container/composer` sits on the group around the card, not on the card, so
+the surfaces rendered beside it at the same width — the model-scope notice, the
+pending-items strip — are inside it. Content portalled out of that subtree, such
+as the template picker dialog and the model picker popover, is a different box
+sized against the window and keeps viewport breakpoints.
 
 It is a `cva` variant on the component rather than an exported class string,
 because a class constant is not a component API: a caller can reorder it against
