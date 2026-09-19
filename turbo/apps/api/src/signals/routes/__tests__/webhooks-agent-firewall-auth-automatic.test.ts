@@ -26,9 +26,14 @@ const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 
 describe("builtin Automatic firewall credential destinations", () => {
-  it.each(["before auth", "while auth waits", "during refresh"] as const)(
-    "rejects a stale catalog endpoint when the catalog changes %s without runtime sync",
-    async (timing) => {
+  it.each([
+    ["endpoint", "before auth"],
+    ["endpoint", "while auth waits"],
+    ["endpoint", "during refresh"],
+    ["auth", "during refresh"],
+  ] as const)(
+    "rejects a stale catalog %s when the catalog changes %s without runtime sync",
+    async (changedContract, timing) => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -168,7 +173,9 @@ describe("builtin Automatic firewall credential destinations", () => {
           async function updateCatalog() {
             await installAutomaticMcpCatalog({
               ...catalog,
-              endpoint: nextEndpoint,
+              endpoint:
+                changedContract === "endpoint" ? nextEndpoint : originalBase,
+              firewallAuth: changedContract === "auth" ? "none" : "oauth",
               isolateSource: false,
             });
           }
@@ -229,6 +236,14 @@ describe("builtin Automatic firewall credential destinations", () => {
             });
           } else {
             await updateCatalog();
+          }
+          if (changedContract === "auth") {
+            await installAutomaticMcpCatalog({
+              ...catalog,
+              endpoint: nextEndpoint,
+              firewallAuth: "oauth",
+              isolateSource: false,
+            });
           }
           if (timing !== "before auth") {
             const retained = await accept(
