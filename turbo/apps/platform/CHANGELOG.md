@@ -11,6 +11,34 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.923.0](https://github.com/vm0-ai/okou/compare/app-v0.922.0...app-v0.923.0) (2026-09-19)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-sol run model ([#35391](https://github.com/vm0-ai/okou/issues/35391)) ([a1f2db4](https://github.com/vm0-ai/okou/commit/a1f2db4d50af3a79a6212f478c447b3d8ac6c6f9))
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+
+
+### Bug Fixes
+
+* **platform:** align vnc credential creation with ssh ([#35404](https://github.com/vm0-ai/okou/issues/35404)) ([e4607ee](https://github.com/vm0-ai/okou/commit/e4607ee6c49ee9bb74976f277e669097c666e575))
+* **platform:** expose ssh discovery load recovery ([#35405](https://github.com/vm0-ai/okou/issues/35405)) ([ab6b3ff](https://github.com/vm0-ai/okou/commit/ab6b3ffb9dd82fd9e0b1dba81d58b08b859fe50d))
+* **platform:** filter shared SSH access ([#35399](https://github.com/vm0-ai/okou/issues/35399)) ([c937583](https://github.com/vm0-ai/okou/commit/c9375839102071d35458e069412b22cc515d612b))
+* **platform:** host oauth consent in the app ([#35410](https://github.com/vm0-ai/okou/issues/35410)) ([5035dc2](https://github.com/vm0-ai/okou/commit/5035dc21ac39e9def104119894bef7e6a5bee029))
+* **platform:** recover ssh access after agent failures ([#35406](https://github.com/vm0-ai/okou/issues/35406)) ([9c08326](https://github.com/vm0-ai/okou/commit/9c08326ab0db46d3c33ed7cb54f7e052a5ca8807))
+* **platform:** wait for the error recovery classification before offering it ([#35390](https://github.com/vm0-ai/okou/issues/35390)) ([47adc45](https://github.com/vm0-ai/okou/commit/47adc4557a6eb53fc10492a1fc4239c9666a7026))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.0
+    * @okouai/connectors bumped to 3.14.0
+    * @okouai/core bumped to 8.684.0
+    * @okouai/ui bumped to 1.10.1
+
 ## [0.922.0](https://github.com/vm0-ai/okou/compare/app-v0.921.0...app-v0.922.0) (2026-09-19)
 
 

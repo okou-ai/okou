@@ -8,6 +8,44 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.639.0](https://github.com/vm0-ai/okou/compare/api-v1.638.0...api-v1.639.0) (2026-09-19)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-sol run model ([#35391](https://github.com/vm0-ai/okou/issues/35391)) ([a1f2db4](https://github.com/vm0-ai/okou/commit/a1f2db4d50af3a79a6212f478c447b3d8ac6c6f9))
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+
+
+### Bug Fixes
+
+* **api:** canonicalize cancellation run ids ([#35401](https://github.com/vm0-ai/okou/issues/35401)) ([da7503c](https://github.com/vm0-ai/okou/commit/da7503c3210438153fa61f8bd2ae43842af55779))
+* **api:** recover structured revoked client events ([#35412](https://github.com/vm0-ai/okou/issues/35412)) ([e99bae1](https://github.com/vm0-ai/okou/commit/e99bae14769cee36cbea0daf7be161fd559d195a))
+* **api:** stabilize morning brief deadline cleanup ([#35416](https://github.com/vm0-ai/okou/issues/35416)) ([e0694e5](https://github.com/vm0-ai/okou/commit/e0694e5e3948c5e05bff14687877461a0cc09335))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#35431](https://github.com/vm0-ai/okou/issues/35431)) ([e9ebe0a](https://github.com/vm0-ai/okou/commit/e9ebe0ad11c0a422282c882896d12e5258663fce))
+* remove x-resource-deduplication feature switch ([#35417](https://github.com/vm0-ai/okou/issues/35417)) ([1540115](https://github.com/vm0-ai/okou/commit/1540115106d6dca6031dbdc83fdcf7a7189f50d4))
+
+
+### Performance Improvements
+
+* **api:** reduce runner claim admission round trips ([#35424](https://github.com/vm0-ai/okou/issues/35424)) ([1798793](https://github.com/vm0-ai/okou/commit/17987934818387c5ce54b160741a23d4859d3abf))
+* **api:** share storage index across manifest branches ([#35422](https://github.com/vm0-ai/okou/issues/35422)) ([88b43ce](https://github.com/vm0-ai/okou/commit/88b43cec6786e1934b717de1e986069a4c224004))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.0
+    * @okouai/connectors bumped to 3.14.0
+    * @okouai/core bumped to 8.684.0
+    * @okouai/db bumped to 1.279.0
+    * @okouai/pi-agent-runtime bumped to 1.33.24
+
 ## [1.638.0](https://github.com/vm0-ai/okou/compare/api-v1.637.0...api-v1.638.0) (2026-09-19)
 
 

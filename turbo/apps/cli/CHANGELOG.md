@@ -1,5 +1,23 @@
 # Changelog
 
+## [9.345.0](https://github.com/vm0-ai/okou/compare/cli-v9.344.0...cli-v9.345.0) (2026-09-19)
+
+
+### Features
+
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+* **contracts:** prepare handoff readers for api usage ([#35384](https://github.com/vm0-ai/okou/issues/35384)) ([f105098](https://github.com/vm0-ai/okou/commit/f105098d105126215ef209cd43ba487242f8a28d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.476.0
+    * @okouai/connectors bumped to 3.14.0
+    * @okouai/core bumped to 8.684.0
+    * @okouai/pi-agent-runtime bumped to 1.33.24
+
 ## [9.344.0](https://github.com/vm0-ai/okou/compare/cli-v9.343.3...cli-v9.344.0) (2026-09-19)
 
 
