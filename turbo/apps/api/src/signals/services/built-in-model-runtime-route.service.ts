@@ -185,8 +185,14 @@ export async function resolveBuiltInModelRuntimeRoute(
       .where(
         and(
           eq(builtInModelCandidateCooldown.selectedModel, target.selectedModel),
-          eq(builtInModelCandidateCooldown.providerType, target.providerType),
-          eq(builtInModelCandidateCooldown.upstreamModel, target.upstreamModel),
+          eq(
+            builtInModelCandidateCooldown.modelRuntimeProvider,
+            target.providerType,
+          ),
+          eq(
+            builtInModelCandidateCooldown.modelRuntimeModel,
+            target.upstreamModel,
+          ),
           gt(builtInModelCandidateCooldown.unavailableUntil, timestamp),
         ),
       )

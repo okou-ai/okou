@@ -10450,6 +10450,67 @@ describe("Official Workflow Run admission", () => {
     expect(ordinaryWorkflowId).not.toBe(firstInstallation.body.workflow.id);
   });
 
+  it("rejects a multi-workflow Run when one exact revision changes after observation", async () => {
+    installCatalogStorageFixture();
+    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+    const firstName = `api-test-batch-race-a-${suffix}`;
+    const secondName = `api-test-batch-race-b-${suffix}`;
+    await syncCatalog(
+      catalog([
+        activeDefinition(firstName, [], "batch race first revision"),
+        activeDefinition(secondName, [], "batch race second revision"),
+      ]),
+    );
+    const setup = await workflowBdd.setupWorkflowOrg();
+    const { actor } = setup;
+    const { agentId } = await workflowBdd.createAgent(actor);
+    const headers = authHeaders(actor);
+    await setOfficialWorkflowsEnabled(actor, true);
+    const firstInstallation = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName: firstName },
+        body: { agentId, blueprints: [] },
+      }),
+      [201],
+    );
+    await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName: secondName },
+        body: { agentId, blueprints: [] },
+      }),
+      [201],
+    );
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await cleanupCatalog();
+      await bdd.deleteAgent(actor, agentId);
+    });
+    runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    const before = await readAgentRunFamilyCountsFixture(context, agentId);
+    const gate = await installOfficialWorkflowRunGateFixture(
+      context,
+      "observation",
+    );
+    const request = workflowClient().run({
+      headers,
+      params: { workflowId: firstInstallation.body.workflow.id },
+    });
+    await expect
+      .poll(async () => {
+        return (await gate.read()).arrivals;
+      })
+      .toBe(1);
+    await corruptOfficialWorkflowRevisionPayloadFixture(context, secondName);
+    await gate.release();
+    await expect(request).rejects.toThrow("Unknown response status 500");
+    await expect(
+      readAgentRunFamilyCountsFixture(context, agentId),
+    ).resolves.toStrictEqual(before);
+  });
+
   describe.each(["explicit and scheduled", "once", "webhook"])(
     "routes enabled result email through %s Official admission",
     (producerKind) => {

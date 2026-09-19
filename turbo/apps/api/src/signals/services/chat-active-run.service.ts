@@ -165,6 +165,16 @@ function chatThreadOpenDeliveryExists(
   );
 }
 
+export function chatThreadAdmissionBlockerCondition(
+  db: Pick<Db, "select">,
+  args: ChatThreadAdmissionConditionArgs,
+): SQL {
+  return sql`${chatThreadRunAdmissionBlockerExists(
+    db,
+    args,
+  )} OR ${chatThreadOpenDeliveryExists(db, args.threadId)}`;
+}
+
 async function chatThreadAdmissionBlockerExists(
   db: Pick<Db, "select">,
   args: ChatThreadAdmissionConditionArgs,
@@ -175,10 +185,7 @@ async function chatThreadAdmissionBlockerExists(
     .where(
       and(
         eq(chatThreads.id, args.threadId),
-        or(
-          chatThreadRunAdmissionBlockerExists(db, args),
-          chatThreadOpenDeliveryExists(db, args.threadId),
-        ),
+        chatThreadAdmissionBlockerCondition(db, args),
       ),
     )
     .limit(1);
