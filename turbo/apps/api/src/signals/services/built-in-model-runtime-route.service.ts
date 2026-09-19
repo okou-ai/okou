@@ -5,15 +5,6 @@ import {
   type BuiltInModelRouteProviderType,
   type BuiltInModelRouteTarget,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  getOpenRouterBaseUrl,
-  OPENROUTER_US_ORIGIN,
-} from "@okouai/api-contracts/contracts/openrouter-routing";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { and, eq, gt } from "drizzle-orm";
@@ -111,60 +102,25 @@ function routeFromTarget(
   };
 }
 
-function eligibleBuiltInModelRouteCandidates(
-  selectedModel: string,
-  featureSwitchContext?: FeatureSwitchContext,
-): readonly BuiltInModelRouteTarget[] {
-  const candidates = getBuiltInModelRouteCandidates(selectedModel);
-  const requireOpenRouterUs =
-    featureSwitchContext !== undefined &&
-    isFeatureEnabled(
-      FeatureSwitchKey.OpenRouterUsRouting,
-      featureSwitchContext,
-    ) &&
-    candidates.some((candidate) => {
-      return candidate.providerType === "deepseek";
-    });
-  if (!requireOpenRouterUs) {
-    return candidates;
-  }
-  return candidates.filter((candidate) => {
-    return (
-      candidate.providerType === "openrouter-codex" &&
-      getOpenRouterBaseUrl("responses", {
-        credentialOwner: "builtin",
-        model: candidate.upstreamModel,
-        usRoutingEnabled: true,
-      }).startsWith(`${OPENROUTER_US_ORIGIN}/`)
-    );
-  });
-}
-
 export function isBuiltInModelRuntimeRoutePermitted(
   route: BuiltInModelRuntimeRoute,
-  featureSwitchContext: FeatureSwitchContext,
 ): boolean {
-  return eligibleBuiltInModelRouteCandidates(
-    route.selectedModel,
-    featureSwitchContext,
-  ).some((candidate) => {
-    return (
-      candidate.providerType === route.providerType &&
-      candidate.upstreamModel === route.upstreamModel
-    );
-  });
+  return getBuiltInModelRouteCandidates(route.selectedModel).some(
+    (candidate) => {
+      return (
+        candidate.providerType === route.providerType &&
+        candidate.upstreamModel === route.upstreamModel
+      );
+    },
+  );
 }
 
 export async function resolveBuiltInModelRuntimeRoute(
   db: Db,
   selectedModel: string,
-  featureSwitchContext?: FeatureSwitchContext,
 ): Promise<BuiltInModelRuntimeRoute | null> {
   const timestamp = nowDate();
-  for (const target of eligibleBuiltInModelRouteCandidates(
-    selectedModel,
-    featureSwitchContext,
-  )) {
+  for (const target of getBuiltInModelRouteCandidates(selectedModel)) {
     if (runtimeRouteUnavailableForTest(target)) {
       continue;
     }

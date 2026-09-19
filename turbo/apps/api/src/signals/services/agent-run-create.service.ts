@@ -2669,16 +2669,8 @@ async function builtInModelProviderEnvironment(
     return null;
   }
   const route =
-    resolvedRoute ??
-    (await resolveBuiltInModelRuntimeRoute(
-      db,
-      selectedModel,
-      featureSwitchContext,
-    ));
-  if (
-    !route ||
-    !isBuiltInModelRuntimeRoutePermitted(route, featureSwitchContext)
-  ) {
+    resolvedRoute ?? (await resolveBuiltInModelRuntimeRoute(db, selectedModel));
+  if (!route || !isBuiltInModelRuntimeRoutePermitted(route)) {
     return null;
   }
   const [key] = await db

@@ -1037,7 +1037,6 @@ function emptyModelFirstThreadPin(): ThreadModelPin {
 async function withBuiltInModelRuntimeRoute(
   db: Db,
   configuration: ResolvedRunConfiguration,
-  featureSwitchContext: FeatureSwitchContext,
 ): Promise<ResolvedRunConfiguration | NormalSendFailure> {
   if (
     configuration.providerAdmission.error ||
@@ -1056,7 +1055,6 @@ async function withBuiltInModelRuntimeRoute(
   const builtInModelRuntimeRoute = await resolveBuiltInModelRuntimeRoute(
     db,
     selectedModel,
-    featureSwitchContext,
   );
   return builtInModelRuntimeRoute
     ? { ...configuration, builtInModelRuntimeRoute }
@@ -1070,7 +1068,6 @@ async function resolveExplicitRunConfiguration(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly body: NormalSendBody;
-  readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedRunConfiguration | NormalSendFailure | undefined> {
   const modelSelection = params.body.modelSelection;
@@ -1137,20 +1134,16 @@ async function resolveExplicitRunConfiguration(params: {
   if (codexServiceTierError) {
     return codexServiceTierError;
   }
-  return await withBuiltInModelRuntimeRoute(
-    params.db,
-    {
+  return await withBuiltInModelRuntimeRoute(params.db, {
+    modelPin,
+    providerAdmission,
+    reasoningEffort: effort.reasoningEffort,
+    modelSettings: effort.modelSettings,
+    codexServiceTier: codexServiceTierForRun({
+      body: params.body,
       modelPin,
-      providerAdmission,
-      reasoningEffort: effort.reasoningEffort,
-      modelSettings: effort.modelSettings,
-      codexServiceTier: codexServiceTierForRun({
-        body: params.body,
-        modelPin,
-      }),
-    },
-    params.featureSwitchContext,
-  );
+    }),
+  });
 }
 
 async function resolveNormalSendFeatureSwitches(
@@ -1889,7 +1882,6 @@ async function resolveThread(params: {
         reasoningEffort: persisted.reasoningEffort,
         modelSettings: persisted.modelSettings,
       },
-      params.featureSwitches.featureSwitchContext,
     );
     if ("status" in resolvedRunConfiguration) {
       return resolvedRunConfiguration;
@@ -2759,7 +2751,6 @@ function loadTimedAuthorizedAgent(
 function resolveTimedExplicitRunConfiguration(
   args: NormalSendArgs,
   db: Db,
-  featureSwitches: NormalSendFeatureSwitches,
 ): ReturnType<typeof resolveExplicitRunConfiguration> {
   return measureApiDispatchTiming(
     args.timing,
@@ -2771,7 +2762,6 @@ function resolveTimedExplicitRunConfiguration(
         orgId: args.orgId,
         userId: args.userId,
         body: args.body,
-        featureSwitchContext: featureSwitches.featureSwitchContext,
         timing: args.timing,
       });
     },
@@ -3113,7 +3103,6 @@ const prepareNormalSend$ = command(
     const explicitRunConfiguration = await resolveTimedExplicitRunConfiguration(
       args,
       db,
-      featureSwitches,
     );
     signal.throwIfAborted();
     if (explicitRunConfiguration && "status" in explicitRunConfiguration) {
