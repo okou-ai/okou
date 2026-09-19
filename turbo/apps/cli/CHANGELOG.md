@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.344.0](https://github.com/vm0-ai/okou/compare/cli-v9.343.3...cli-v9.344.0) (2026-09-19)
+
+
+### Features
+
+* move paid tools into chat settings ([#35381](https://github.com/vm0-ai/okou/issues/35381)) ([3ac2ba5](https://github.com/vm0-ai/okou/commit/3ac2ba574a056d26870db201d0d88dceccba6028))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.475.0
+    * @okouai/core bumped to 8.683.0
+    * @okouai/pi-agent-runtime bumped to 1.33.23
+
 ## [9.343.3](https://github.com/vm0-ai/okou/compare/cli-v9.343.2...cli-v9.343.3) (2026-09-18)
 
 

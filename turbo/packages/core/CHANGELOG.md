@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.683.0](https://github.com/vm0-ai/okou/compare/core-v8.682.0...core-v8.683.0) (2026-09-19)
+
+
+### Features
+
+* **platform:** explain a get started quest before handing it off ([#35259](https://github.com/vm0-ai/okou/issues/35259)) ([0fe450b](https://github.com/vm0-ai/okou/commit/0fe450b6a61c244996b23573209f43c119bda89b))
+* **platform:** spin beside user messages the server has not confirmed ([#35367](https://github.com/vm0-ai/okou/issues/35367)) ([0bb026f](https://github.com/vm0-ai/okou/commit/0bb026f1dbbb2cf76c39b4db38e2b2e750525826))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.475.0
+
 ## [8.682.0](https://github.com/vm0-ai/okou/compare/core-v8.681.4...core-v8.682.0) (2026-09-18)
 
 
