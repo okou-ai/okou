@@ -325,7 +325,11 @@ describe("CHAT-02: model-first provider policies", () => {
           threadId: run.threadId,
         });
       }
-      await expect.poll(() => providerAborted.settled()).toBeTruthy();
+      await expect
+        .poll(() => {
+          return providerAborted.settled();
+        })
+        .toBeTruthy();
       await providerAborted.promise;
       expect(modelCalls).toBe(1);
       releaseProvider.resolve(undefined);
