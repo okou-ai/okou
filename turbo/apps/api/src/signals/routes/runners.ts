@@ -3163,8 +3163,6 @@ const modelProviderFailureInner$ = command(
           type: "built_in_model_provider_cooldown",
           runId,
           ...cooldown,
-          modelRuntimeProvider: cooldown.providerType,
-          modelRuntimeModel: cooldown.upstreamModel,
           unavailableUntil: cooldown.unavailableUntil.toISOString(),
         },
       );

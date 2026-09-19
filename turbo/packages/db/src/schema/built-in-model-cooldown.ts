@@ -18,12 +18,11 @@ export const builtInModelCandidateCooldown = pgTable(
       "connection_observation_started_at",
     ),
     connectionObservationUntil: timestamp("connection_observation_until"),
-    // Logical provider for the cooled-down route. Always "built-in" for this
-    // table; stored so cooldown reports expose the same four model concepts as
-    // run/activity views.
-    modelProvider: varchar("model_provider", { length: 100 })
-      .notNull()
-      .default("built-in"),
+    // Canonical route identity mirroring agent_runs/activity context naming.
+    // The legacy provider_type/upstream_model columns stay for the expand
+    // window and can be contracted once every API instance writes these.
+    modelRuntimeProvider: varchar("model_runtime_provider", { length: 100 }),
+    modelRuntimeModel: varchar("model_runtime_model", { length: 255 }),
   },
   (table) => {
     return [

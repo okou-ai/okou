@@ -591,6 +591,8 @@ async function setBuiltInCandidateCooldown(
       selectedModel: body.selected_model,
       providerType: body.provider_type,
       upstreamModel: body.upstream_model,
+      modelRuntimeProvider: body.provider_type,
+      modelRuntimeModel: body.upstream_model,
       unavailableUntil,
     })
     .onConflictDoUpdate({
@@ -599,7 +601,11 @@ async function setBuiltInCandidateCooldown(
         builtInModelCandidateCooldown.providerType,
         builtInModelCandidateCooldown.upstreamModel,
       ],
-      set: { unavailableUntil },
+      set: {
+        modelRuntimeProvider: body.provider_type,
+        modelRuntimeModel: body.upstream_model,
+        unavailableUntil,
+      },
     });
 }
 

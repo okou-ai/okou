@@ -29,9 +29,8 @@ type BuiltInModelProviderConnectionSource = Extract<
 
 interface BuiltInModelRouteIdentity {
   readonly selectedModel: string;
-  readonly providerType: string;
-  readonly upstreamModel: string;
-  readonly modelProvider: string;
+  readonly modelRuntimeProvider: string;
+  readonly modelRuntimeModel: string;
 }
 
 interface LockedBuiltInModelRoute extends BuiltInModelRouteIdentity {
@@ -74,8 +73,8 @@ type BuiltInModelProviderFailureReport = BuiltInModelProviderFailureMetadata &
 function routeCondition(route: BuiltInModelRouteIdentity) {
   return and(
     eq(builtInModelCandidateCooldown.selectedModel, route.selectedModel),
-    eq(builtInModelCandidateCooldown.providerType, route.providerType),
-    eq(builtInModelCandidateCooldown.upstreamModel, route.upstreamModel),
+    eq(builtInModelCandidateCooldown.providerType, route.modelRuntimeProvider),
+    eq(builtInModelCandidateCooldown.upstreamModel, route.modelRuntimeModel),
   );
 }
 
@@ -106,9 +105,8 @@ async function loadBuiltInModelRoute(
   }
   return {
     selectedModel: run.selectedModel,
-    providerType: run.modelRuntimeProvider,
-    upstreamModel: run.modelRuntimeModel,
-    modelProvider: run.modelProvider,
+    modelRuntimeProvider: run.modelRuntimeProvider,
+    modelRuntimeModel: run.modelRuntimeModel,
   };
 }
 
@@ -119,7 +117,13 @@ async function materializeAndLockRoute(
   await tx
     .insert(builtInModelCandidateCooldown)
     .values({
-      ...route,
+      selectedModel: route.selectedModel,
+      // Dual-write the legacy identity columns until every API instance reads
+      // the canonical model_runtime_* columns.
+      providerType: route.modelRuntimeProvider,
+      upstreamModel: route.modelRuntimeModel,
+      modelRuntimeProvider: route.modelRuntimeProvider,
+      modelRuntimeModel: route.modelRuntimeModel,
       unavailableUntil: new Date(INACTIVE_COOLDOWN_DEADLINE_MS),
     })
     .onConflictDoNothing();
@@ -192,9 +196,8 @@ async function activateCooldown(
     cooldown: deadlineChanged
       ? {
           selectedModel: route.selectedModel,
-          providerType: route.providerType,
-          upstreamModel: route.upstreamModel,
-          modelProvider: route.modelProvider,
+          modelRuntimeProvider: route.modelRuntimeProvider,
+          modelRuntimeModel: route.modelRuntimeModel,
           failureKind: args.failureKind,
           source: args.connectionSource ?? "unspecified",
           reason: args.reason,

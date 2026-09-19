@@ -165,9 +165,15 @@ async function assertCanonicalSchema(client: Client): Promise<void> {
     },
     {
       characterMaximumLength: 100,
-      columnName: "model_provider",
+      columnName: "model_runtime_provider",
       dataType: "character varying",
-      isNullable: "NO",
+      isNullable: "YES",
+    },
+    {
+      characterMaximumLength: 255,
+      columnName: "model_runtime_model",
+      dataType: "character varying",
+      isNullable: "YES",
     },
   ]);
 
