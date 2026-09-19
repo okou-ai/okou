@@ -107,14 +107,17 @@ import { now, nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
 import {
+  prepareAgentClaimAdmission,
   prepareComputeRunAdmission,
   validateComputeRunAdmission,
   stopClosedComputeCandidate,
   withComputeOwnershipRetry,
+  type ComputeRunAdmission,
   type ComputeRunOwner,
 } from "../services/compute-erasure-admission.service";
 import { logger } from "../../lib/log";
 import { executeRawRows } from "../../lib/db-raw-rows";
+import type { Tx } from "../../lib/db-types";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
@@ -1408,6 +1411,73 @@ async function deleteStaleClaimJob(
   );
 }
 
+async function prepareClaimTransitionAdmission(
+  tx: Tx,
+  args: {
+    readonly runId: string;
+    readonly owner: ComputeRunOwner;
+    readonly deferred?: PiDeferredSandboxConfig;
+    readonly deferredAdmission?: DeferredPiMaterializationAdmission;
+  },
+): Promise<ComputeRunAdmission | undefined> {
+  const { runId, owner } = args;
+  const ordinaryAgentClaim =
+    args.deferred === undefined && owner.agentId !== null;
+  const agentClaimAdmission = ordinaryAgentClaim
+    ? await prepareAgentClaimAdmission(tx, runId, {
+        ...owner,
+        agentId: owner.agentId,
+      })
+    : undefined;
+  const admission = ordinaryAgentClaim
+    ? agentClaimAdmission?.admission
+    : await prepareComputeRunAdmission(tx, runId, owner);
+  if (args.deferred && admission) {
+    if (!args.deferredAdmission) {
+      return undefined;
+    }
+    await lockDeferredPiCatalog(tx, args.deferredAdmission);
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${owner.orgId}))`,
+    );
+    await tx
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
+        inArray(
+          chatThreads.id,
+          tx
+            .select({ id: agentRuns.chatThreadId })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, runId)),
+        ),
+      )
+      .orderBy(chatThreads.id)
+      .for("update");
+  }
+  if (!admission) {
+    return undefined;
+  }
+  const valid = ordinaryAgentClaim
+    ? agentClaimAdmission?.valid === true
+    : await validateComputeRunAdmission(tx, admission, "pending");
+  if (!valid) {
+    if (!args.deferred && !admission.closed) {
+      await deleteStaleClaimJob(tx, {
+        runId,
+        owner,
+        sessionId: admission.sessionId,
+      });
+    }
+    return undefined;
+  }
+  if (admission.closed) {
+    await stopClosedComputeCandidate(tx, admission);
+    return undefined;
+  }
+  return admission;
+}
+
 async function transitionClaimedJobToRunning(
   db: Db,
   args: {
@@ -1430,45 +1500,8 @@ async function transitionClaimedJobToRunning(
   );
   return await withComputeOwnershipRetry(() => {
     return db.transaction(async (tx) => {
-      const admission = await prepareComputeRunAdmission(tx, runId, owner);
-      if (args.deferred && admission) {
-        if (!args.deferredAdmission) {
-          return { status: "run-not-found" as const };
-        }
-        await lockDeferredPiCatalog(tx, args.deferredAdmission);
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${owner.orgId}))`,
-        );
-        await tx
-          .select({ id: chatThreads.id })
-          .from(chatThreads)
-          .where(
-            inArray(
-              chatThreads.id,
-              tx
-                .select({ id: agentRuns.chatThreadId })
-                .from(agentRuns)
-                .where(eq(agentRuns.id, runId)),
-            ),
-          )
-          .orderBy(chatThreads.id)
-          .for("update");
-      }
+      const admission = await prepareClaimTransitionAdmission(tx, args);
       if (!admission) {
-        return { status: "run-not-found" as const };
-      }
-      if (!(await validateComputeRunAdmission(tx, admission, "pending"))) {
-        if (!args.deferred && !admission.closed) {
-          await deleteStaleClaimJob(tx, {
-            runId,
-            owner,
-            sessionId: admission.sessionId,
-          });
-        }
-        return { status: "run-not-found" as const };
-      }
-      if (admission.closed) {
-        await stopClosedComputeCandidate(tx, admission);
         return { status: "run-not-found" as const };
       }
       if (args.deferred) {
