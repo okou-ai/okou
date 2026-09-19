@@ -73,8 +73,14 @@ type BuiltInModelProviderFailureReport = BuiltInModelProviderFailureMetadata &
 function routeCondition(route: BuiltInModelRouteIdentity) {
   return and(
     eq(builtInModelCandidateCooldown.selectedModel, route.selectedModel),
-    eq(builtInModelCandidateCooldown.providerType, route.modelRuntimeProvider),
-    eq(builtInModelCandidateCooldown.upstreamModel, route.modelRuntimeModel),
+    eq(
+      builtInModelCandidateCooldown.modelRuntimeProvider,
+      route.modelRuntimeProvider,
+    ),
+    eq(
+      builtInModelCandidateCooldown.modelRuntimeModel,
+      route.modelRuntimeModel,
+    ),
   );
 }
 
@@ -118,10 +124,6 @@ async function materializeAndLockRoute(
     .insert(builtInModelCandidateCooldown)
     .values({
       selectedModel: route.selectedModel,
-      // Dual-write the legacy identity columns until every API instance reads
-      // the canonical model_runtime_* columns.
-      providerType: route.modelRuntimeProvider,
-      upstreamModel: route.modelRuntimeModel,
       modelRuntimeProvider: route.modelRuntimeProvider,
       modelRuntimeModel: route.modelRuntimeModel,
       unavailableUntil: new Date(INACTIVE_COOLDOWN_DEADLINE_MS),

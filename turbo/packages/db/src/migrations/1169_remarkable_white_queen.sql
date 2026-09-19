@@ -1,2 +1,0 @@
-ALTER TABLE "built_in_model_candidate_cooldown" ADD COLUMN "model_runtime_provider" varchar(100);--> statement-breakpoint
-ALTER TABLE "built_in_model_candidate_cooldown" ADD COLUMN "model_runtime_model" varchar(255);

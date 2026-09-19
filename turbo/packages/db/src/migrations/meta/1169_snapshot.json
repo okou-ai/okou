@@ -6954,14 +6954,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "provider_type": {
-          "name": "provider_type",
+        "model_runtime_provider": {
+          "name": "model_runtime_provider",
           "type": "varchar(100)",
           "primaryKey": false,
           "notNull": true
         },
-        "upstream_model": {
-          "name": "upstream_model",
+        "model_runtime_model": {
+          "name": "model_runtime_model",
           "type": "varchar(255)",
           "primaryKey": false,
           "notNull": true
@@ -6983,29 +6983,17 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
-        },
-        "model_runtime_provider": {
-          "name": "model_runtime_provider",
-          "type": "varchar(100)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model_runtime_model": {
-          "name": "model_runtime_model",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "built_in_model_candidate_cooldown_selected_model_provider_type_upstream_model_pk": {
-          "name": "built_in_model_candidate_cooldown_selected_model_provider_type_upstream_model_pk",
+        "built_in_model_candidate_cooldown_selected_model_model_runtime_provider_model_runtime_model_pk": {
+          "name": "built_in_model_candidate_cooldown_selected_model_model_runtime_provider_model_runtime_model_pk",
           "columns": [
             "selected_model",
-            "provider_type",
-            "upstream_model"
+            "model_runtime_provider",
+            "model_runtime_model"
           ]
         }
       },

@@ -589,8 +589,6 @@ async function setBuiltInCandidateCooldown(
     .insert(builtInModelCandidateCooldown)
     .values({
       selectedModel: body.selected_model,
-      providerType: body.provider_type,
-      upstreamModel: body.upstream_model,
       modelRuntimeProvider: body.provider_type,
       modelRuntimeModel: body.upstream_model,
       unavailableUntil,
@@ -598,12 +596,10 @@ async function setBuiltInCandidateCooldown(
     .onConflictDoUpdate({
       target: [
         builtInModelCandidateCooldown.selectedModel,
-        builtInModelCandidateCooldown.providerType,
-        builtInModelCandidateCooldown.upstreamModel,
+        builtInModelCandidateCooldown.modelRuntimeProvider,
+        builtInModelCandidateCooldown.modelRuntimeModel,
       ],
       set: {
-        modelRuntimeProvider: body.provider_type,
-        modelRuntimeModel: body.upstream_model,
         unavailableUntil,
       },
     });
@@ -623,8 +619,14 @@ async function deleteBuiltInCandidateCooldown(
     .where(
       and(
         eq(builtInModelCandidateCooldown.selectedModel, body.selected_model),
-        eq(builtInModelCandidateCooldown.providerType, body.provider_type),
-        eq(builtInModelCandidateCooldown.upstreamModel, body.upstream_model),
+        eq(
+          builtInModelCandidateCooldown.modelRuntimeProvider,
+          body.provider_type,
+        ),
+        eq(
+          builtInModelCandidateCooldown.modelRuntimeModel,
+          body.upstream_model,
+        ),
       ),
     );
 }
