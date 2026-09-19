@@ -91,6 +91,7 @@ export const appendOptimisticSessionOutput$ = command(
           eventType: "output.message",
           content: chunk.delta,
           createdAt: chunk.createdAt,
+          optimistic: true,
         },
       },
     ]);

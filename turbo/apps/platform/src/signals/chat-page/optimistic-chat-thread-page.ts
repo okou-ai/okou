@@ -173,6 +173,7 @@ function createNewThreadOptimisticEventEntry({
       content: null,
       userMessage,
       createdAt: nowDate().toISOString(),
+      optimistic: true,
     },
   };
 }

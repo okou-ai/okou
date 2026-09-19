@@ -25,6 +25,10 @@ import {
 const RUN_A = "a0000000-0000-4000-a000-000000000101";
 const RUN_B = "a0000000-0000-4000-a000-000000000102";
 
+function optimisticUserMessageSpinners(): readonly Element[] {
+  return [...document.querySelectorAll("[data-optimistic-user-message]")];
+}
+
 function requiredButton(name: string, container: ParentNode): HTMLElement {
   const button = queryButton(name, container);
   if (!button) {
@@ -409,4 +413,24 @@ test("Show thinking while a newly accepted prompt starts", async () => {
   ).resolves.toBeVisible();
   await expect(findButton("Send")).resolves.toBeVisible();
   expect(queryButton("Stop")).toBeNull();
+});
+
+test("Spin beside a user message the server has not confirmed", async () => {
+  const runAccepted = context.mocks.deferred<void>();
+  installRunChat({ sendGate: runAccepted.promise });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await sendText("Draft the launch checklist");
+  await expect(
+    screen.findByText("Draft the launch checklist"),
+  ).resolves.toBeVisible();
+  expect(optimisticUserMessageSpinners()).toHaveLength(1);
+
+  runAccepted.resolve(undefined);
+  await waitFor(() => {
+    expect(optimisticUserMessageSpinners()).toHaveLength(0);
+  });
+  expect(screen.getAllByText("Draft the launch checklist")).toHaveLength(1);
 });

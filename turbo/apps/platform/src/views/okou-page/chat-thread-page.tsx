@@ -238,9 +238,10 @@ import {
   type UserMessageRenderDocument,
   type UserMessageRenderPart,
 } from "../../signals/chat-page/chat-event.ts";
-import type {
-  ChatInputEvent,
-  ChatEvent,
+import {
+  isOptimisticChatEvent,
+  type ChatInputEvent,
+  type ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
@@ -5611,7 +5612,7 @@ function PagedGroupRow({
 function shareableEventFromChatEvent(
   event: EnrichedChatEvent,
 ): { readonly id: string; readonly text: string } | null {
-  if (event.seqId === undefined) {
+  if (isOptimisticChatEvent(event)) {
     return null;
   }
   if (event.eventType === "output.message") {
@@ -7055,6 +7056,45 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
     : undefined;
 }
 
+/**
+ * A message the page projected locally has not come back from the server yet,
+ * so the spinner sits in the free gutter left of the bubble until the
+ * persistent event replaces it.
+ */
+function PagedUserMessageBody({
+  pending,
+  document,
+  attachments,
+  onImageClick,
+}: {
+  pending: boolean;
+  document: UserMessageRenderDocument;
+  attachments: ReturnType<typeof userMessageRenderAttachments>;
+  onImageClick: OpenMessageImagePreview;
+}) {
+  const content = (
+    <UserMessageContent
+      document={document}
+      attachments={attachments}
+      onImageClick={onImageClick}
+    />
+  );
+  if (!pending) {
+    return content;
+  }
+  return (
+    <div className="flex w-full items-center justify-end gap-2">
+      <Loader2
+        size={14}
+        aria-hidden
+        data-optimistic-user-message
+        className="shrink-0 animate-spin text-muted-foreground"
+      />
+      <div className="flex min-w-0 flex-1 flex-col items-end">{content}</div>
+    </div>
+  );
+}
+
 function PagedUserMessage({
   event,
   thread,
@@ -7144,7 +7184,8 @@ function PagedUserMessage({
           ) : null}
           {renderDocument ? (
             <>
-              <UserMessageContent
+              <PagedUserMessageBody
+                pending={isOptimisticChatEvent(event)}
                 document={renderDocument}
                 attachments={allAttachments}
                 onImageClick={openLightbox}
