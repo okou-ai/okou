@@ -82,6 +82,7 @@ function assertCommandCreateStatements(args: {
 }
 
 interface ComputerUseCommandCreateBarrier extends TransactionBarrier {
+  readonly startedTransactionCount: () => number;
   readonly statements: () => readonly string[];
 }
 
@@ -102,6 +103,7 @@ export async function withComputerUseCommandCreateBarrierFixture<T>(
   const path = args.path ?? "created";
   let selectedReceiver: unknown;
   let selectedStatements: readonly string[] = [];
+  let startedTransactionCount = 0;
   const statementsByReceiver = new Map<unknown, string[]>();
 
   return await withDatabaseTransactionBarrierFixture(
@@ -109,6 +111,7 @@ export async function withComputerUseCommandCreateBarrierFixture<T>(
       observe: (queryArgs, receiver) => {
         const text = barrierQueryText(queryArgs).replaceAll(/\s+/g, " ").trim();
         if (BEGIN.test(text)) {
+          startedTransactionCount += 1;
           statementsByReceiver.set(receiver, [text]);
         } else {
           statementsByReceiver.get(receiver)?.push(text);
@@ -152,6 +155,9 @@ export async function withComputerUseCommandCreateBarrierFixture<T>(
       work: async (barrier) => {
         return await args.work({
           ...barrier,
+          startedTransactionCount: () => {
+            return startedTransactionCount;
+          },
           statements: () => {
             return selectedStatements;
           },

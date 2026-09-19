@@ -1004,6 +1004,34 @@ describe("Computer Use command creation account-erasure admission", () => {
           stopAt: "insert",
           work: async (barrier) => {
             await withOperationOwnership(barrier.release, async (owner) => {
+              const preAbortedController = new AbortController();
+              preAbortedController.abort(
+                new DOMException("pre-entry abort", "AbortError"),
+              );
+              owner.abortOnExit(preAbortedController);
+
+              const preAborted = owner.start(
+                requestCreate(
+                  "read",
+                  actor,
+                  [200],
+                  preAbortedController.signal,
+                ),
+              );
+              await preAborted.acceptFailureAfter((error) => {
+                expect(String(error)).toContain(
+                  "Unknown response status 500 for POST /api/computer-use/commands",
+                );
+              });
+              expect(barrier.enteredYet()).toBeFalsy();
+              expect(barrier.startedTransactionCount()).toBe(0);
+              await expect(
+                computerUse.claimNextComputerUseCommand(
+                  host.hostToken,
+                  HOST_CAPABILITIES,
+                ),
+              ).resolves.toStrictEqual({ status: "idle" });
+
               const unauthenticated = owner.start(
                 requestCreate("read", null, [401]),
               );
@@ -1023,32 +1051,6 @@ describe("Computer Use command creation account-erasure admission", () => {
                 "Computer Use creation operation completed before barrier entry",
               );
               expect(valueOf(await unboundAgent.settled).status).toBe(403);
-
-              const preAbortedController = new AbortController();
-              preAbortedController.abort(
-                new DOMException("pre-entry abort", "AbortError"),
-              );
-              owner.abortOnExit(preAbortedController);
-              const preAborted = owner.start(
-                requestCreate(
-                  "read",
-                  actor,
-                  [200],
-                  preAbortedController.signal,
-                ),
-              );
-              await preAborted.acceptFailureAfter((error) => {
-                expect(String(error)).toContain(
-                  "Unknown response status 500 for POST /api/computer-use/commands",
-                );
-              });
-              expect(barrier.enteredYet()).toBeFalsy();
-              await expect(
-                computerUse.claimNextComputerUseCommand(
-                  host.hostToken,
-                  HOST_CAPABILITIES,
-                ),
-              ).resolves.toStrictEqual({ status: "idle" });
 
               const valid = owner.start(requestCreate("read", actor, [200]));
               const entry = await waitForBarrierEntry(barrier.entered, valid);

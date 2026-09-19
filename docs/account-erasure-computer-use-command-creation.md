@@ -110,7 +110,11 @@ The successful response remains exactly `{ commandId, status: "queued" }`.
 ## Evidence
 
 `turbo/apps/api/src/signals/routes/__tests__/computer-use-command-create-erasure.test.ts`
-uses the real routes, PostgreSQL and dormant B1 projection. It covers:
+uses the real routes, PostgreSQL and dormant B1 projection. The narrow
+`turbo/apps/api/src/signals/services/__tests__/computer-use-command-create-cancellation.service.test.ts`
+exception invokes the production command only to mutation-test the pre-`BEGIN`
+guard that an already-aborted request cannot reach past authentication. Together
+they cover:
 
 - session, PAT and bound Agent credentials, including exact host, payload,
   timeout and run attribution through public read/claim/audit surfaces;
@@ -135,7 +139,10 @@ uses the real routes, PostgreSQL and dormant B1 projection. It covers:
 - actual admission-wait cancellation, the real one-second lock timeout,
   pre-entry authentication and bound-host exits, plus a valid pre-aborted
   request that enters no creation transaction, queues no command and leaves the
-  deterministic gate reusable;
+  deterministic gate reusable; the driver observation records zero `BEGIN`
+  statements, while one narrow direct invocation of the production command
+  covers its pre-transaction guard because authentication necessarily observes
+  an already-aborted public request first;
 - three owner hosts returned by one uncapped query, with SQL text proving exact
   owner/revocation predicates, ordering, absence of `LIMIT` and absence of row
   locks; and
