@@ -22,6 +22,7 @@ Building something:
 | Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
 | Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
 | Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
+| Adding an overlay, fullscreen panel or action bar         | [Floating layers and portal ownership](#floating-layers-and-portal-ownership)                                                                                                   |
 | Building the composer, or a surface that stands in for it | [The composer card surface](#the-composer-card-surface)                                                                                                                         |
 | Adding a scroll area                                      | [Chat scrollbars](#chat-scrollbars)                                                                                                                                             |
 | Adding motion, or handling reduced motion                 | [Animated layers](#animated-layers)                                                                                                                                             |
@@ -643,6 +644,41 @@ would change its appearance substantially.
 
 These apply wherever the situation comes up, not only to the surface that first
 met it.
+
+### Floating layers and portal ownership
+
+Portals belong to the shared primitives. Business components must not import
+`createPortal` from `react-dom`. `DialogContent`, `SheetContent`,
+`PopoverContent`, `SelectContent`, `DropdownMenuContent` and `TooltipContent`
+already own that relocation through Base UI's own `Portal`, together with the
+focus, outside-press, scroll-lock and `aria` ownership that arrives with it.
+The portal there is not a rendering convenience: it is what lets a layer escape
+an ancestor's `overflow` clip or `transform` containing block, which is a DOM
+constraint rather than a state-location one. The toaster is the one surface
+that portals to `document.body` on purpose, because a toast outranks a dialog;
+it lives in the primitive layer for the same reason.
+
+An app-local surface — a fullscreen panel, an action bar, a cover — renders
+where it is written and positions itself with `fixed`, `absolute` or `sticky`.
+Reaching past a scrolling ancestor is `sticky`'s job: it pins to the scrollport
+without leaving the flow, so it needs no container element and cannot silently
+render nowhere the way an id lookup can. Swapping a subtree between a portal
+and its written position also remounts it, which costs the scroll position and
+any DOM state it held.
+
+Layering follows shadcn's convention: the floating primitives carry `z-50` and
+App content stays below that. `#root` currently also sets
+`isolation: isolate`, which made DOM order decide priority instead and left App
+z-index values unconstrained; that divergence is being removed, so a value at
+or above 50 in App code is a defect to fix rather than a pattern to copy. See
+[#35387](https://github.com/vm0-ai/okou/issues/35387).
+
+Safe-area insets are the surface's own responsibility whenever it is `fixed`
+and meets a viewport edge. `#root` carries the insets as padding, and a fixed
+box is laid out past that padding box whether or not it was portalled, so
+"is it portalled" is the wrong question and "is it fixed against an edge" is
+the right one. [Page layouts](#page-layouts) registers the `p-safe` utility and
+the viewport height tokens these surfaces take.
 
 ### Horizontal hairline rules
 
