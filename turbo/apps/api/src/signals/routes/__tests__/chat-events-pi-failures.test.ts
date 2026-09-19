@@ -287,6 +287,8 @@ describe("CHAT-02: model-first provider policies", () => {
 
       await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
       await providerEntered.promise;
+      // No public API holds this transaction open. The scoped fixture proves
+      // that both UUID spellings select the same production advisory-lock key.
       const lifecycleLock = await holdPiApiFirstTurnLifecycleLockFixture({
         runId: run.runId,
         signal: context.signal,
@@ -323,6 +325,7 @@ describe("CHAT-02: model-first provider policies", () => {
           threadId: run.threadId,
         });
       }
+      await expect.poll(() => providerAborted.settled()).toBeTruthy();
       await providerAborted.promise;
       expect(modelCalls).toBe(1);
       releaseProvider.resolve(undefined);
