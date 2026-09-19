@@ -118,19 +118,21 @@ EOF
         # Network telemetry is uploaded after completion. Collect both public
         # diagnostic surfaces before preserving the original probe assertion.
         run runner_api_curl "/api/runs/${first_run_id}/context"
-        echo "$output"
-        public_surfaces+="$output"$'\n'
+        local first_context_diagnostics="$output"
+        public_surfaces+="$first_context_diagnostics"$'\n'
         run runner_e2e_wait_for_firewall_log \
             "$first_run_id" \
             bentoml \
             bentoml.com \
             '["BENTO_CLOUD_API_KEY"]'
-        echo "$output"
-        public_surfaces+="$output"$'\n'
+        local first_network_diagnostics="$output"
+        public_surfaces+="$first_network_diagnostics"$'\n'
         assert_no_connector_refresh_raw_secrets \
             "$public_surfaces" \
             "$initial_secret" \
             "$updated_secret"
+        echo "$first_context_diagnostics"
+        echo "$first_network_diagnostics"
         output="$first_agent_text"
     fi
     assert_output --partial "${first_output_prefix}SENT"
@@ -218,19 +220,21 @@ EOF
         # Preserve the continued Run's completed public diagnostics before the
         # phase-specific probe assertion reports its original failure.
         run runner_api_curl "/api/runs/${RUN_ID}/context"
-        echo "$output"
-        public_surfaces+="$output"$'\n'
+        local updated_context_diagnostics="$output"
+        public_surfaces+="$updated_context_diagnostics"$'\n'
         run runner_e2e_wait_for_firewall_log \
             "$RUN_ID" \
             bentoml \
             cloud.bentoml.com \
             '["BENTO_CLOUD_API_KEY"]'
-        echo "$output"
-        public_surfaces+="$output"$'\n'
+        local updated_network_diagnostics="$output"
+        public_surfaces+="$updated_network_diagnostics"$'\n'
         assert_no_connector_refresh_raw_secrets \
             "$public_surfaces" \
             "$initial_secret" \
             "$updated_secret"
+        echo "$updated_context_diagnostics"
+        echo "$updated_network_diagnostics"
         output="$updated_agent_text"
     fi
     assert_output --partial "${updated_output_prefix}SENT"
