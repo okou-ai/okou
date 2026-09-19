@@ -25,7 +25,7 @@ function button(name: string, container: ParentNode = document.body) {
   return element;
 }
 
-async function openPaidTools(path = "/?settings=paid-tools") {
+async function openPaidTools(path = "/?settings=chat") {
   context.mocks.data.org({
     id: "org_default",
     name: "Research team",
@@ -57,9 +57,9 @@ async function readySwitch(name: string) {
   return toggle;
 }
 
-test("Members open Paid tools independently of Chat preferences and see their workspace scope", async () => {
+test("Members manage Paid tools inside Chat independently of Chat preferences", async () => {
   const dialog = await openPaidTools("/?settings=preference");
-  click(button("Paid tools", dialog));
+  click(button("Chat", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
   expect(within(dialog).getAllByRole("switch")).toHaveLength(12);
@@ -71,18 +71,18 @@ test("Members open Paid tools independently of Chat preferences and see their wo
   expect(
     within(dialog).getByText(/Running tasks and tasks already prepared/),
   ).toBeInTheDocument();
-  expect(window.location.search).toContain("settings=paid-tools");
+  expect(window.location.search).toContain("settings=chat");
   expect(
     queryAllByRoleFast("button", dialog).some((element) => {
-      return element.textContent === "Chat";
+      return element.textContent === "Paid tools";
     }),
   ).toBeFalsy();
 });
 
-test("Disabled rollout hides Paid tools and resolves direct links to Preferences", async () => {
+test("Disabled rollout hides Chat and resolves direct links to Preferences", async () => {
   await setupPage({
     context,
-    path: "/?settings=paid-tools",
+    path: "/?settings=chat",
     featureSwitches: { [FeatureSwitchKey.PaidToolControls]: false },
   });
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
@@ -92,7 +92,7 @@ test("Disabled rollout hides Paid tools and resolves direct links to Preferences
   ).not.toBeInTheDocument();
   expect(
     queryAllByRoleFast("button", dialog).some((element) => {
-      return element.textContent === "Paid tools";
+      return element.textContent === "Chat";
     }),
   ).toBeFalsy();
   expect(window.location.search).toContain("settings=preference");
@@ -266,7 +266,7 @@ test("Dismissing Settings cancels an in-flight save and reopening reads current 
   const menu = await screen.findByRole("menu");
   click(within(menu).getByText("Settings"));
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  click(button("Paid tools", dialog));
+  click(button("Chat", dialog));
   await expect(readySwitch("Web search")).resolves.toBeChecked();
   await expect(readySwitch("People search")).resolves.not.toBeChecked();
 });

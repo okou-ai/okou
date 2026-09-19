@@ -73,10 +73,7 @@ function PaidToolNoticeContent({
             variant="ghost"
             size="sm"
             onClick={() => {
-              return detach(
-                openSettings("paid-tools", signal),
-                Reason.DomCallback,
-              );
+              return detach(openSettings("chat", signal), Reason.DomCallback);
             }}
           >
             {t(($) => {

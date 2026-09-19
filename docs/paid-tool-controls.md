@@ -23,10 +23,11 @@ The shared catalog includes `web-search`, `people-search`, `scrape`, `finance`,
 
 ## Settings and run semantics
 
-Settings → Personal → Paid tools shows the current workspace and saves each
-switch immediately. `?settings=paid-tools` opens the same page on desktop and
-mobile. A failed load shows a retry state rather than implying every tool is
-enabled; a failed write retains the last confirmed value.
+Settings → Personal → Chat includes a Paid tools section that shows the
+current workspace and saves each switch immediately. `?settings=chat` opens the
+same page on desktop and mobile. A failed load shows a retry state rather than
+implying every tool is enabled; a failed write retains the last confirmed
+value.
 
 Run preparation reads the actual run owner's preferences regardless of the UI
 feature switch, then captures a JSON string array in the trusted platform
@@ -44,7 +45,7 @@ platform environment. Social capabilities, status, download listing, and
 work. Collection `social resume` can fetch additional paid pages and is blocked.
 
 Prompt injection is unchanged. A disabled paid invocation exits with status 1
-and identifies the disabled tool, links to Settings → Personal → Paid tools,
+and identifies the disabled tool, links to Settings → Personal → Chat,
 and explains that re-enabling applies to later runs.
 
 ## Media execution

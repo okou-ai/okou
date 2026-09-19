@@ -35,7 +35,6 @@ import {
 export const SETTINGS_SECTIONS = [
   "preference",
   "chat",
-  "paid-tools",
   "model",
   "debug",
   "general",
@@ -73,8 +72,9 @@ export function resolveAvailableSettingsSection(
 ): SettingsSection {
   if (
     (!options.isAdmin && isAdminOnlySettingsSection(section)) ||
-    (!options.chatPreferenceEnabled && section === "chat") ||
-    (!options.paidToolControlsEnabled && section === "paid-tools")
+    (!options.chatPreferenceEnabled &&
+      !options.paidToolControlsEnabled &&
+      section === "chat")
   ) {
     return "preference";
   }

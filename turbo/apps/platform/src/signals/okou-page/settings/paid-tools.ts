@@ -83,7 +83,7 @@ const paidToolsAvailable$ = computed((get) => {
 });
 
 const paidToolsActive$ = computed((get) => {
-  return get(settingsActiveSection$) === "paid-tools";
+  return get(settingsActiveSection$) === "chat";
 });
 
 /** One current identity and settings visit; same-identity refreshes retain it. */
