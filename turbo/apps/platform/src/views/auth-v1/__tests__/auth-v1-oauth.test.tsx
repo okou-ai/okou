@@ -6,7 +6,7 @@ import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const previewAuthOrigin = "https://www.vm7.ai";
+const previewApp = "https://app.vm7.ai";
 function clerkEnvironment() {
   return {
     VITE_CLERK_PUBLISHABLE_KEY_PREVIEW: buildPublishableKey(
@@ -16,17 +16,17 @@ function clerkEnvironment() {
   };
 }
 
-function consentUrl(origin = previewAuthOrigin): string {
+function consentUrl(origin = previewApp): string {
   return `${origin}/oauth-consent?client_id=https%3A%2F%2Fclient.example%2Fmetadata.json&state=a%2Bb&code_challenge=challenge&code_challenge_method=S256&scope=user%3Aorg%3Aread+okou%3Achat%3Aread&resource=https%3A%2F%2Fapi.example%2Fmcp&resource=https%3A%2F%2Fapi.example%2Fsecond`;
 }
 
 test.each([
-  ["www.vm7.ai", previewAuthOrigin],
+  ["app.vm7.ai", previewApp],
   ["app.okou.ai", "https://app.okou.ai"],
 ])(
-  "%s preserves its own auth-host consent return in both validation layers",
-  async (host, authOrigin) => {
-    const target = consentUrl(authOrigin);
+  "%s preserves its own app consent return in both validation layers",
+  async (host, appOrigin) => {
+    const target = consentUrl(appOrigin);
     await setupPage({
       context,
       host,
@@ -41,7 +41,7 @@ test.each([
     );
     expect(screen.getByTestId("clerk-provider-config")).toHaveAttribute(
       "data-clerk-allowed-redirect-origins",
-      expect.stringContaining(authOrigin),
+      expect.stringContaining(appOrigin),
     );
     expect(screen.getByTestId("clerk-google-one-tap")).toHaveAttribute(
       "data-sign-in-force-redirect-url",
@@ -61,7 +61,7 @@ test.each(["sign-in", "sign-up"])(
     const target = consentUrl();
     await setupPage({
       context,
-      host: "www.vm7.ai",
+      host: "app.vm7.ai",
       path: `/${mode}#/?redirect_url=${encodeURIComponent(target)}`,
       auth: null,
       env: clerkEnvironment(),
@@ -86,38 +86,37 @@ test.each([
   "https://another.accounts.dev/oauth-consent",
   "https://accounts.okou.ai/oauth-consent",
   "https://app.okou.ai/oauth-consent",
-  "https://app.vm7.ai/oauth-consent",
   "https://oauth-test.accounts.dev.evil.example/oauth-consent",
   "https://oauth-test.accounts.dev@evil.example/oauth-consent",
-  "https://user:secret@www.vm7.ai/oauth-consent",
-  "http://www.vm7.ai/oauth-consent",
-  "https://www.vm7.ai:444/oauth-consent",
+  "https://user:secret@app.vm7.ai/oauth-consent",
+  "http://app.vm7.ai/oauth-consent",
+  "https://app.vm7.ai:444/oauth-consent",
   "javascript:alert(1)",
 ])(
   "An untrusted consent destination cannot control login: %s",
   async (target) => {
     await setupPage({
       context,
-      host: "www.vm7.ai",
+      host: "app.vm7.ai",
       path: `/sign-in?redirect_url=${encodeURIComponent(target)}`,
       env: clerkEnvironment(),
     });
 
     expect(screen.getByTestId("clerk-sign-in")).toHaveAttribute(
       "data-clerk-force-redirect-url",
-      previewAuthOrigin,
+      previewApp,
     );
     expect(mockedClerk.redirectWithAuth).not.toHaveBeenCalled();
   },
 );
 
 test.each([
-  "https://www.vm7.ai/oauth-consent/other",
-  "https://www.vm7.ai/oauth-consent#untrusted-route",
+  "https://app.vm7.ai/oauth-consent/other",
+  "https://app.vm7.ai/oauth-consent#untrusted-route",
 ])("A non-consent app return cannot bypass login: %s", async (target) => {
   await setupPage({
     context,
-    host: "www.vm7.ai",
+    host: "app.vm7.ai",
     path: `/sign-in?redirect_url=${encodeURIComponent(target)}`,
     env: clerkEnvironment(),
   });
@@ -138,7 +137,7 @@ test.each(["sign-in", "sign-up"])(
     mockedClerk.buildUrlWithAuth.mockReturnValueOnce(decorated);
     await startPage({
       context,
-      host: "www.vm7.ai",
+      host: "app.vm7.ai",
       path: `/${mode}?redirect_url=${encodeURIComponent(target)}`,
       env: clerkEnvironment(),
     });
@@ -165,7 +164,7 @@ test.each([
   async (path, query, hash) => {
     await setupPage({
       context,
-      host: "www.vm7.ai",
+      host: "app.vm7.ai",
       path: `${path}?redirect_url=${encodeURIComponent(consentUrl())}${query}${hash}`,
       env: clerkEnvironment(),
     });
@@ -185,7 +184,7 @@ test.each([
   async (intent) => {
     await setupPage({
       context,
-      host: "www.vm7.ai",
+      host: "app.vm7.ai",
       path: `/sign-in?redirect_url=${encodeURIComponent(`${consentUrl()}&${intent}`)}`,
       env: clerkEnvironment(),
     });
@@ -197,7 +196,7 @@ test.each([
 test("An incomplete Clerk session finishes its task before OAuth consent", async () => {
   await setupPage({
     context,
-    host: "www.vm7.ai",
+    host: "app.vm7.ai",
     path: `/sign-in?redirect_url=${encodeURIComponent(consentUrl())}`,
     env: clerkEnvironment(),
     auth: {
@@ -232,7 +231,7 @@ test("A failed OAuth continuation offers visible recovery", async () => {
   );
   await setupPage({
     context,
-    host: "www.vm7.ai",
+    host: "app.vm7.ai",
     path: `/sign-in?redirect_url=${encodeURIComponent(consentUrl())}`,
     env: clerkEnvironment(),
   });
