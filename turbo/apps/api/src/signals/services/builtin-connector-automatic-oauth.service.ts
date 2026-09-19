@@ -977,7 +977,18 @@ async function refreshLockedAutomatic(
     }
     throw refreshed.error;
   }
-  await assertCurrentContract(tx, contract);
+  if (
+    !(await credentialDestinationMatches(
+      tx,
+      contract,
+      args.expectedEndpoint,
+      signal,
+    ))
+  ) {
+    throw new StaleBuiltinAutomaticContractError(
+      "Builtin MCP credential destination changed during refresh",
+    );
+  }
   await writeTokens(
     tx,
     {
