@@ -956,7 +956,7 @@ function hasCatalogScopeMismatch(args: {
 function connectionMethodForCatalogStatus(args: {
   readonly effective: EffectiveConnector;
   readonly featureStates: ConnectorFeatureStates;
-  readonly response: ConnectorResponse | null;
+  readonly response: BuiltinConnectorResponse | null;
 }): ConnectorCatalogAuthMethod | undefined {
   if (!args.response) {
     return undefined;

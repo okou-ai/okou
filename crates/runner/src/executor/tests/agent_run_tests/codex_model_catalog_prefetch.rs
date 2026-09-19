@@ -30,6 +30,7 @@ fn codex_oauth_context() -> ExecutionContext {
         name: "model-provider:codex-oauth-token".into(),
         base_url_vars: None,
         source_id: None,
+        auth_override: None,
     }]);
     context
 }
@@ -642,6 +643,7 @@ async fn codex_catalog_prefetch_skips_ineligible_runs() {
         name: "zendesk".into(),
         base_url_vars: None,
         source_id: None,
+        auth_override: None,
     }]);
 
     let mut matching_inline_firewall = codex_oauth_context();

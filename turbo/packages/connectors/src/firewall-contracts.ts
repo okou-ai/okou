@@ -305,6 +305,10 @@ export const executionFirewallBuiltinEntrySchema = z.object({
   name: z.string().min(1),
   baseUrlVars: z.record(z.string(), z.string()).optional(),
   sourceId: z.uuid().optional(),
+  // Account authentication is projected independently from the catalog-owned
+  // firewall definition. The runner applies this override only after resolving
+  // the named builtin firewall from its catalog cache.
+  authOverride: firewallAuthSchema.optional(),
 });
 
 const executionFirewallSchema = firewallSchema.extend({

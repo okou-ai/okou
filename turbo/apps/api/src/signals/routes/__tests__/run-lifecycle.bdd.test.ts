@@ -489,6 +489,17 @@ function inlineFirewallApis(
   return entry.firewall.apis;
 }
 
+function builtinFirewallEntry(
+  entries: readonly ExecutionFirewallEntry[] | undefined,
+  name: string,
+): Extract<ExecutionFirewallEntry, { readonly kind: "builtin" }> {
+  const entry = findFirewallEntry(entries, name);
+  if (!entry || entry.kind !== "builtin") {
+    throw new Error(`Expected builtin firewall entry: ${name}`);
+  }
+  return entry;
+}
+
 type AvailableCustomConnectorRuntime = Extract<
   ConnectorRuntimeSyncResult,
   { readonly state: "available"; readonly target: { readonly kind: "custom" } }
@@ -10820,10 +10831,20 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(connectionId);
-      const firewallApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
-      if (!firewallApi) {
-        throw new Error("Expected builtin Automatic firewall");
-      }
+      const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
+      expect(firewall).toMatchObject({
+        kind: "builtin",
+        name: catalog.slug,
+        sourceId: connectionId,
+        authOverride:
+          resolution === "oauth"
+            ? {
+                headers: {
+                  Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
+                },
+              }
+            : {},
+      });
       expect(JSON.stringify(claim)).not.toContain(
         "automatic-initial-access-token",
       );
@@ -10860,11 +10881,11 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }
       const authBody = {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: firewallApi.auth.headers ?? {},
+        authHeaders: firewall.authOverride?.headers ?? {},
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
-          base: firewallApi.base,
+          base: catalog.endpoint,
           connectorSlug: catalog.slug,
           sourceId: connectionId,
           routingVariables: {},
@@ -10903,8 +10924,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           target: { kind: "builtin", connectorSlug: catalog.slug },
           state: "available",
           firewall: {
+            kind: "builtin",
+            name: catalog.slug,
             sourceId: connectionId,
-            firewall: { apis: [{ auth: {} }] },
+            authOverride: {},
           },
         });
         const anonymous = await fw.requestFirewallAuth(
@@ -10964,7 +10987,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(
-        inlineFirewallApis(claim.firewalls, catalog.slug)[0]?.auth,
+        builtinFirewallEntry(claim.firewalls, catalog.slug).authOverride,
       ).toStrictEqual({
         headers: {
           Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
@@ -11004,26 +11027,42 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       expect(updated).toMatchObject({
         state: "available",
         firewall: {
+          kind: "builtin",
+          name: catalog.slug,
           sourceId: connectionId,
-          firewall: {
-            apis: [
-              {
-                auth:
-                  authMode === "none"
-                    ? {}
-                    : {
-                        headers: {
-                          Authorization: `Bearer \${{ secrets.MCP_API_KEY }}`,
-                        },
-                      },
-              },
-            ],
-          },
         },
       });
       if (updated?.state !== "available" || !updated.firewall) {
         throw new Error("Expected the reconnected MCP runtime firewall");
       }
+      const endpoint =
+        authMode === "none"
+          ? catalog.endpoint
+          : "https://manual-mcp.example.test/server";
+      const checkClient = setupApp({ context, routes: connectorCheckRoutes })(
+        connectorCheckContract,
+      );
+      const check = await accept(
+        checkClient.check({
+          headers: {
+            authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+          },
+          body: {
+            mode: "url",
+            method: "POST",
+            url: endpoint,
+            connectorSlug: catalog.slug,
+          },
+        }),
+        [200],
+      );
+      expect(check.body).toMatchObject({
+        outcome: "resolved",
+        connector: {
+          credentialResolution:
+            authMode === "none" ? "none" : "network-boundary",
+        },
+      });
       const auth = await fw.requestFirewallAuth(
         {
           authorization: `Bearer ${claim.sandboxToken}`,
@@ -11031,10 +11070,16 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         {
           encryptedSecrets:
             claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-          authHeaders: updated.firewall.firewall.apis[0]?.auth.headers ?? {},
+          authHeaders:
+            authMode === "none"
+              ? {}
+              : {
+                  Authorization: `Bearer \${{ secrets.MCP_API_KEY }}`,
+                },
           matchedFirewall: {
             name: catalog.slug,
             apiId: `${catalog.slug}:0`,
+            base: endpoint,
             connectorSlug: catalog.slug,
             sourceId: connectionId,
             routingVariables: {},
@@ -11092,18 +11137,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
-    const apiEntry = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
-    if (!apiEntry) {
-      throw new Error("Expected builtin Automatic firewall");
-    }
+    const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: apiEntry.auth.headers ?? {},
+      authHeaders: firewall.authOverride?.headers ?? {},
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
-        base: apiEntry.base,
+        base: catalog.endpoint,
         connectorSlug: catalog.slug,
         sourceId: connectionId,
         routingVariables: {},
@@ -11179,7 +11221,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(runtime).toMatchObject({
       state: "available",
       firewall: {
-        firewall: { apis: [{ auth: apiEntry.auth }] },
+        authOverride: firewall.authOverride,
       },
     });
     clearMockNow();
@@ -11265,10 +11307,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(refreshConnectionId);
-      const apiEntry = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
-      if (!apiEntry) {
-        throw new Error("Expected builtin Automatic firewall");
-      }
+      const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
       const held = await holdConnectorAccountFixture(
         {
           orgId: actor.orgId,
@@ -11286,11 +11325,11 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
               forceRefresh: true,
               encryptedSecrets:
                 claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-              authHeaders: apiEntry.auth.headers ?? {},
+              authHeaders: firewall.authOverride?.headers ?? {},
               matchedFirewall: {
                 name: catalog.slug,
                 apiId: `${catalog.slug}:0`,
-                base: apiEntry.base,
+                base: catalog.endpoint,
                 connectorSlug: catalog.slug,
                 sourceId: refreshConnectionId,
                 routingVariables: {},
@@ -11420,17 +11459,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
-    const apiEntry = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
-    if (!apiEntry) {
-      throw new Error("Expected builtin Automatic firewall");
-    }
+    const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: apiEntry.auth.headers ?? {},
+      authHeaders: firewall.authOverride?.headers ?? {},
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
-        base: apiEntry.base,
+        base: catalog.endpoint,
         connectorSlug: catalog.slug,
         sourceId: connectionId,
         routingVariables: {},

@@ -101,6 +101,7 @@ async fn proxy_registration_accepts_canonical_targets() {
         name: "zendesk".to_string(),
         base_url_vars: Some(canonical_routing_variables.clone()),
         source_id: None,
+        auth_override: None,
     }]);
     canonical_context.connector_runtime_targets =
         vec![ConnectorRuntimeTargetRegistration::Builtin {

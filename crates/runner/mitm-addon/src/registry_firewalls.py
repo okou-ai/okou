@@ -1,6 +1,7 @@
 """Registry sandbox firewall entry resolution."""
 
 import copy
+import json
 import uuid
 from dataclasses import dataclass
 
@@ -8,6 +9,7 @@ import builtin_base_url
 import builtin_firewall_cache
 import builtin_host_policy
 import connector_runtime_metadata
+import matching
 
 BuiltinFirewallCatalogFileKey = builtin_firewall_cache.CatalogFileKey
 BuiltinFirewallCatalogIdentity = builtin_firewall_cache.CatalogIdentity
@@ -17,6 +19,7 @@ BuiltinFirewallCoreCacheKey = tuple[
     BuiltinFirewallCatalogIdentity,
     tuple[tuple[str, str], ...],
     tuple[str, ...],
+    str | None,
 ]
 
 
@@ -108,32 +111,6 @@ def _connector_runtime_target_ids(sandbox: dict) -> tuple[set[str], set[str]]:
     return builtin_slugs, custom_connector_ids
 
 
-def _registered_inline_builtin_name(entry: dict, builtin_slugs: set[str]) -> str | None:
-    if entry.get("kind") != "inline" or entry.get("customConnectorId") is not None:
-        return None
-    firewall = entry.get("firewall")
-    if not isinstance(firewall, dict):
-        return None
-    name = firewall.get("name")
-    return name if isinstance(name, str) and name in builtin_slugs else None
-
-
-def has_builtin_catalog_dependency(sandbox: dict) -> bool:
-    """Include account-dependent inline builtins in catalog snapshot ownership."""
-    entries = sandbox.get("firewalls")
-    if not isinstance(entries, list):
-        return False
-    builtin_slugs, _ = _connector_runtime_target_ids(sandbox)
-    return any(
-        isinstance(entry, dict)
-        and (
-            entry.get("kind") == "builtin"
-            or _registered_inline_builtin_name(entry, builtin_slugs) is not None
-        )
-        for entry in entries
-    )
-
-
 @dataclass(frozen=True)
 class ResolvedFirewallEntries:
     """Resolved registry firewall configs and aligned builtin cache keys.
@@ -146,7 +123,7 @@ class ResolvedFirewallEntries:
     with them: `builtin_cache_keys[i]` describes `firewalls[i]`. A per-entry
     cache key of `None` means that firewall came from an inline entry and must
     bypass builtin compiled-core cache reuse. `omitted_builtin_names` records
-    named or registered inline builtins absent from the valid current catalog.
+    compact builtin references absent from the otherwise valid current catalog.
     """
 
     firewalls: list[dict] | None
@@ -267,6 +244,37 @@ def _resolve_builtin_firewall_entry(
         catalog_firewall=catalog_firewall,
     )
 
+    auth_override: dict | None = None
+    auth_override_cache_identity: str | None = None
+    if "authOverride" in entry:
+        raw_auth_override = entry["authOverride"]
+        if not isinstance(raw_auth_override, dict) or set(raw_auth_override) - {
+            "headers",
+            "base",
+            "query",
+            "awsSigv4",
+        }:
+            raise FirewallEntryResolutionError(
+                f'builtin firewall "{raw_name}" authOverride must match the auth schema'
+            )
+        if len(raw_apis) != 1:
+            raise FirewallEntryResolutionError(
+                f'builtin firewall "{raw_name}" authOverride requires exactly one api'
+            )
+        auth_override = copy.deepcopy(raw_auth_override)
+        raw_apis[0]["auth"] = auth_override
+        if not matching.firewall_api_auth_config_is_valid(raw_apis[0]):
+            raise FirewallEntryResolutionError(
+                f'builtin firewall "{raw_name}" authOverride is invalid'
+            )
+        auth_override_cache_identity = json.dumps(
+            auth_override,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
     try:
         vars_map = builtin_base_url.base_url_vars_for_entry(entry)
     except builtin_base_url.BuiltinBaseUrlResolutionError as e:
@@ -310,6 +318,7 @@ def _resolve_builtin_firewall_entry(
             catalog_identity,
             tuple(sorted(vars_map.items())),
             tuple(resolved_bases),
+            auth_override_cache_identity,
         ),
     )
 
@@ -343,9 +352,7 @@ def resolve_firewall_entries(
     registry pass cannot mix catalog versions.
 
     Inline firewalls are deep-copied, must contain a list-valued `apis` field,
-    and receive per-entry `None` builtin cache keys. Registered builtin inline
-    entries retain their account-specific auth but require catalog membership.
-    Builtin catalog API IDs are
+    and receive per-entry `None` builtin cache keys. Builtin catalog API IDs are
     discarded during expansion, so builtin APIs receive generated run-scoped
     IDs. Inline APIs preserve an existing non-empty string ID; absent, empty, or
     non-string IDs are generated. Generated IDs use `<runId>:<index>`, where the
@@ -363,10 +370,9 @@ def resolve_firewall_entries(
 
     Runtime ownership metadata is assigned by the registry rather than trusted
     from source firewall data. Resolution clears any source-provided
-    `_connectorRuntimeKind` marker, marks a resolved builtin or inline entry without
-    a custom connector ID as `builtin` only when its name is registered in
-    `connectorRuntimeTargets`, and marks an inline custom firewall as `custom`
-    only when its UUID is registered there. Unregistered
+    `_connectorRuntimeKind` marker, marks a resolved builtin as `builtin` only
+    when its name is registered in `connectorRuntimeTargets`, and marks an inline
+    custom firewall as `custom` only when its UUID is registered there. Unregistered
     or absent connector identities remain unclassified.
 
     Optional entry `sourceId` values must be UUID strings and are copied to the
@@ -452,18 +458,6 @@ def resolve_firewall_entries(
                 for api in raw_apis:
                     if isinstance(api, dict):
                         api["customConnectorId"] = custom_connector_id
-            elif builtin_name := _registered_inline_builtin_name(entry, builtin_target_slugs):
-                if builtin_firewall_catalog_snapshot is None:
-                    builtin_firewall_catalog_snapshot = load_catalog_snapshot(
-                        builtin_firewall_catalog_cache_path
-                    )
-                if (
-                    _catalog_source_for_name(builtin_name, builtin_firewall_catalog_snapshot)
-                    is None
-                ):
-                    omitted_builtin_names.add(builtin_name)
-                    continue
-                connector_runtime_metadata.mark_connector_runtime_kind(resolved_firewall, "builtin")
             resolved.append(resolved_firewall)
             builtin_cache_keys.append(None)
             continue

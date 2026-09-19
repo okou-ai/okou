@@ -383,14 +383,16 @@ def _classify_registry_sandboxes(
             )
             continue
 
+        raw_firewalls = sandbox.get("firewalls")
+        sandbox_uses_builtin_catalog_dependency = isinstance(raw_firewalls, list) and any(
+            isinstance(entry, dict) and entry.get("kind") == "builtin" for entry in raw_firewalls
+        )
+        if sandbox_uses_builtin_catalog_dependency and builtin_catalog_snapshot is None:
+            builtin_catalog_snapshot = registry_firewalls.load_catalog_snapshot(
+                builtin_firewall_catalog_cache_path
+            )
+
         try:
-            if (
-                builtin_catalog_snapshot is None
-                and registry_firewalls.has_builtin_catalog_dependency(sandbox)
-            ):
-                builtin_catalog_snapshot = registry_firewalls.load_catalog_snapshot(
-                    builtin_firewall_catalog_cache_path
-                )
             resolved_firewalls = registry_firewalls.resolve_firewall_entries(
                 sandbox,
                 builtin_firewall_catalog_cache_path=builtin_firewall_catalog_cache_path,

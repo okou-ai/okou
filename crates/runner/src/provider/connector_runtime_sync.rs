@@ -1965,20 +1965,17 @@ fn builtin_connector_runtime_firewall(
     let Some(entry) = firewall else {
         return Ok(None);
     };
-    let FirewallEntry::Inline {
-        firewall,
-        custom_connector_id: None,
+    let FirewallEntry::Builtin {
+        name,
         source_id: Some(source_id),
+        ..
     } = entry
     else {
-        return Err("builtin available result must use a builtin account inline firewall");
+        return Err("builtin available result must use a builtin account firewall");
     };
-    if firewall.name != connector_slug || Some(source_id.as_str()) != expected_source_id {
+    if name != connector_slug || Some(source_id.as_str()) != expected_source_id {
         return Err("builtin available result has a mismatched connector source");
     }
-    firewall
-        .validate_for_connector_runtime()
-        .map_err(|_| "builtin available result has an invalid inline firewall")?;
     Ok(Some(Box::new(entry.clone())))
 }
 
@@ -2235,16 +2232,20 @@ mod tests {
     #[test]
     fn builtin_automatic_runtime_firewall_requires_exact_registered_source() {
         let source_id = "550e8400-e29b-41d4-a716-446655440001";
-        let mut entry = custom_runtime_firewall_with_source(source_id, Some(source_id));
-        if let FirewallEntry::Inline {
-            firewall,
-            custom_connector_id,
-            ..
-        } = &mut entry
-        {
-            firewall.name = "automatic-mcp".to_string();
-            *custom_connector_id = None;
-        }
+        let mut entry = FirewallEntry::Builtin {
+            name: "automatic-mcp".to_string(),
+            base_url_vars: None,
+            source_id: Some(source_id.to_string()),
+            auth_override: Some(FirewallAuth {
+                headers: HashMap::from([(
+                    "Authorization".to_string(),
+                    "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}".to_string(),
+                )]),
+                base: None,
+                query: None,
+                aws_sigv4: None,
+            }),
+        };
         assert!(
             builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), Some(source_id))
                 .is_ok()
@@ -2261,12 +2262,8 @@ mod tests {
             )
             .is_err()
         );
-        if let FirewallEntry::Inline {
-            custom_connector_id,
-            ..
-        } = &mut entry
-        {
-            *custom_connector_id = Some(source_id.to_string());
+        if let FirewallEntry::Builtin { source_id, .. } = &mut entry {
+            *source_id = None;
         }
         assert!(
             builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), Some(source_id))
@@ -2456,6 +2453,7 @@ mod tests {
                     name: connector_slug.clone(),
                     base_url_vars: None,
                     source_id: None,
+                    auth_override: None,
                 })
                 .collect::<Vec<_>>();
             let network_policies = connector_slugs
@@ -2831,6 +2829,7 @@ mod tests {
             name: "slack".to_string(),
             base_url_vars: None,
             source_id: None,
+            auth_override: None,
         }];
         let mut network_policies = HashMap::new();
         network_policies.insert(
@@ -2888,6 +2887,7 @@ mod tests {
                     name,
                     base_url_vars,
                     source_id,
+                    ..
                 } => Some(ConnectorRuntimeTargetRegistration::Builtin {
                     connector_slug: name.clone(),
                     base_url_vars: base_url_vars.clone(),
@@ -2998,6 +2998,7 @@ mod tests {
                 name: (*connector_slug).to_string(),
                 base_url_vars: None,
                 source_id: None,
+                auth_override: None,
             })
             .collect::<Vec<_>>();
         let policies = connector_slugs
@@ -4052,6 +4053,7 @@ mod tests {
                 "acme".to_string(),
             )])),
             source_id: Some(source_id.to_string()),
+            auth_override: None,
         }];
         let policies = HashMap::from([(
             "slack".to_string(),
@@ -4982,6 +4984,7 @@ mod tests {
             name: "slack".to_string(),
             base_url_vars: None,
             source_id: None,
+            auth_override: None,
         }];
         let policies = HashMap::from([(
             "slack".to_string(),
@@ -5683,11 +5686,13 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
+                auth_override: None,
             },
             FirewallEntry::Builtin {
                 name: "github".to_string(),
                 base_url_vars: None,
                 source_id: None,
+                auth_override: None,
             },
             custom_firewall,
         ];

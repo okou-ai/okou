@@ -27,7 +27,7 @@ const headers = { authorization: "Bearer clerk-session" } as const;
 
 describe("builtin Automatic firewall credential destinations", () => {
   it.each(["before auth", "while auth waits", "during refresh"] as const)(
-    "rejects a stale inline endpoint when the catalog changes %s without runtime sync",
+    "rejects a stale catalog endpoint when the catalog changes %s without runtime sync",
     async (timing) => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
@@ -136,15 +136,14 @@ describe("builtin Automatic firewall credential destinations", () => {
         (async () => {
           await runs.heartbeatRunner(runnerGroup);
           const claim = await runs.claimRunnerJob(run.runId);
-          const inline = claim.firewalls?.find((entry) => {
-            return (
-              entry.kind === "inline" && entry.firewall.name === catalog.slug
-            );
+          const builtin = claim.firewalls?.find((entry) => {
+            return entry.kind === "builtin" && entry.name === catalog.slug;
           });
-          if (inline?.kind !== "inline" || !inline.firewall.apis[0]) {
-            throw new Error("Expected the builtin Automatic inline firewall");
+          if (builtin?.kind !== "builtin") {
+            throw new Error("Expected the builtin Automatic firewall");
           }
-          const originalApi = inline.firewall.apis[0];
+          const authOverride = builtin.authOverride;
+          const originalBase = catalog.endpoint;
           const nextEndpoint = "https://replacement-mcp.example.test/server";
           const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
           function request(base: string | undefined, forceRefresh = false) {
@@ -153,11 +152,11 @@ describe("builtin Automatic firewall credential destinations", () => {
               {
                 encryptedSecrets:
                   claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-                authHeaders: originalApi.auth.headers ?? {},
+                authHeaders: authOverride?.headers ?? {},
                 forceRefresh,
                 matchedFirewall: {
                   name: catalog.slug,
-                  apiId: originalApi.id ?? `${catalog.slug}:0`,
+                  apiId: `${catalog.slug}:0`,
                   connectorSlug: catalog.slug,
                   sourceId: connectionId,
                   routingVariables: {},
@@ -188,7 +187,7 @@ describe("builtin Automatic firewall credential destinations", () => {
               },
               context.signal,
             );
-            const pending = settleIncludingAbort(request(originalApi.base));
+            const pending = settleIncludingAbort(request(originalBase));
             const updating = await settleIncludingAbort(
               (async () => {
                 await held.waitForBlocked();
@@ -208,9 +207,7 @@ describe("builtin Automatic firewall credential destinations", () => {
               },
             });
           } else if (refreshGate) {
-            const pending = settleIncludingAbort(
-              request(originalApi.base, true),
-            );
+            const pending = settleIncludingAbort(request(originalBase, true));
             const updating = await settleIncludingAbort(
               (async () => {
                 await refreshGate.entered.promise;
@@ -255,14 +252,14 @@ describe("builtin Automatic firewall credential destinations", () => {
             initialExpiresIn: 3600,
           });
           // The account commits even when notification delivery fails. Keep using
-          // the original Run's inline entry without calling runtime sync.
+          // the original Run's auth override without calling runtime sync.
           context.mocks.ably.batchPublish.mockRejectedValue(
             new Error("Wakeup unavailable"),
           );
           await expect(connect(replacement.issuer, connectionId)).resolves.toBe(
             connectionId,
           );
-          for (const staleBase of [originalApi.base, undefined]) {
+          for (const staleBase of [originalBase, undefined]) {
             const denied = await request(staleBase);
             expect(denied.body).toMatchObject({
               error: { code: "CONNECTOR_NOT_CONFIGURED" },
@@ -413,27 +410,24 @@ describe("builtin Automatic firewall credential destinations", () => {
       (async () => {
         await runs.heartbeatRunner(runnerGroup);
         const claim = await runs.claimRunnerJob(run.runId);
-        const inline = claim.firewalls?.find((entry) => {
-          return (
-            entry.kind === "inline" && entry.firewall.name === catalog.slug
-          );
+        const builtin = claim.firewalls?.find((entry) => {
+          return entry.kind === "builtin" && entry.name === catalog.slug;
         });
-        if (inline?.kind !== "inline" || !inline.firewall.apis[0]) {
-          throw new Error("Expected the builtin Automatic inline firewall");
+        if (builtin?.kind !== "builtin") {
+          throw new Error("Expected the builtin Automatic firewall");
         }
-        const api = inline.firewall.apis[0];
         const authHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
         };
         const body = {
           encryptedSecrets:
             claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-          authHeaders: api.auth.headers ?? {},
+          authHeaders: builtin.authOverride?.headers ?? {},
           forceRefresh: true,
           matchedFirewall: {
             name: catalog.slug,
-            apiId: api.id ?? `${catalog.slug}:0`,
-            base: api.base,
+            apiId: `${catalog.slug}:0`,
+            base: catalog.endpoint,
             connectorSlug: catalog.slug,
             sourceId: connectionId,
             routingVariables: {},

@@ -230,21 +230,17 @@ describe.each([false, true])(
           expect(runtime).toMatchObject({
             state: "available",
             firewall: {
+              kind: "builtin",
+              name: catalog.slug,
               sourceId: connectionId,
-              firewall: {
-                apis: [
-                  {
-                    auth:
-                      targetAuthentication === "none"
-                        ? {}
-                        : {
-                            headers: {
-                              Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
-                            },
-                          },
-                  },
-                ],
-              },
+              authOverride:
+                targetAuthentication === "none"
+                  ? {}
+                  : {
+                      headers: {
+                        Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
+                      },
+                    },
             },
           });
           expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({

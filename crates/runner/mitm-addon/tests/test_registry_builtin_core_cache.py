@@ -88,6 +88,55 @@ class TestRegistryBuiltinCoreCache:
         assert first_result.api_entry["sourceId"] == first_source_id
         assert second_result.api_entry["sourceId"] == second_source_id
 
+    def test_builtin_auth_override_partitions_compiled_core_cache(self, tmp_path, mitm_ctx):
+        inherited = builtin_sandbox("run-inherited-auth", "automatic-mcp")
+        overridden = builtin_sandbox("run-overridden-auth", "automatic-mcp")
+        overridden["firewalls"][0]["authOverride"] = {}
+        path, cache_path = write_registry_with_cache(
+            tmp_path,
+            {
+                "10.200.0.1": inherited,
+                "10.200.0.2": overridden,
+            },
+            {"automatic-mcp": cache_firewall("automatic-mcp", "https://api.example.com")},
+        )
+
+        with mitm_ctx(
+            registry_path=str(path),
+            builtin_firewall_catalog_cache_path=str(cache_path),
+        ):
+            inherited_context = registry.get_sandbox_context("10.200.0.1", str(path))
+            overridden_context = registry.get_sandbox_context("10.200.0.2", str(path))
+
+        assert inherited_context is not None
+        assert overridden_context is not None
+        inherited_info, inherited_compiled, inherited_policies = inherited_context
+        overridden_info, overridden_compiled, overridden_policies = overridden_context
+        assert inherited_compiled is not None
+        assert overridden_compiled is not None
+        assert first_firewall_core(inherited_compiled) is not first_firewall_core(
+            overridden_compiled
+        )
+
+        inherited_result = matching.match_compiled_firewall_request(
+            "https://api.example.com/items",
+            "GET",
+            inherited_compiled,
+            inherited_policies,
+        )
+        overridden_result = matching.match_compiled_firewall_request(
+            "https://api.example.com/items",
+            "GET",
+            overridden_compiled,
+            overridden_policies,
+        )
+        assert isinstance(inherited_result, matching.FirewallAllow)
+        assert isinstance(overridden_result, matching.FirewallAllow)
+        assert inherited_result.api_entry is inherited_info["firewalls"][0]["apis"][0]
+        assert overridden_result.api_entry is overridden_info["firewalls"][0]["apis"][0]
+        assert inherited_result.api_entry["auth"]["awsSigv4"]
+        assert overridden_result.api_entry["auth"] == {}
+
     @pytest.mark.parametrize("builtin_index", [0, 1], ids=["builtin-first", "inline-first"])
     def test_mixed_builtin_and_inline_firewalls_preserve_order_and_cache_semantics(
         self, tmp_path, mitm_ctx, builtin_index: int

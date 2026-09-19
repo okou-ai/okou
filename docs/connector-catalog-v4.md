@@ -114,15 +114,16 @@ before the account row; retirement takes each linked owner's target lock before
 their rows so ordinary account deletion and default changes cannot invert that order.
 Providers without refresh tokens work until the access token expires. A no-auth
 account bypasses credential validity, storage-version and refresh checks. Each
-Run receives an account-specific inline firewall; runtime sync updates it when
-the same account is reconnected between OAuth and no-auth. Switching to an
-explicit no-auth or manual method also replaces the previous Automatic firewall
-with the current catalog configuration, preserving the exact account binding.
-Accepted catalog changes wake affected builtin MCP Runs to refresh their endpoint
-and auth template. The proxy also treats builtin-owned inline firewalls as catalog
-consumers: removing their catalog entry removes that owner from request matching,
+Run receives the same compact builtin firewall reference used by builtin HTTP
+connectors. The runner resolves its firewall definition from the accepted catalog
+and then applies the account-specific Automatic auth override. Runtime sync updates
+that override when the same account is reconnected between OAuth and no-auth.
+Switching to an explicit no-auth or manual method removes the previous override,
+while preserving the exact account binding. Accepted catalog changes wake affected
+builtin MCP Runs so the runner resolves the current endpoint and firewall policy.
+Removing a connector from the catalog removes that owner from request matching,
 without selecting another connector's credentials at the same destination.
-OAuth auth requests carry the matched inline endpoint. The API checks it against
+OAuth auth requests carry the matched catalog endpoint. The API checks it against
 the accepted catalog and account binding before returning credentials, including
 after waiting for account locks. A stale or missing destination is rejected without
 invalidating a newly reconnected account. This check does not depend on successful

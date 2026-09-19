@@ -1,4 +1,4 @@
-"""Builtin account inline firewalls retain live catalog ownership."""
+"""Builtin firewalls retain catalog ownership with account auth overrides."""
 
 import pytest
 
@@ -25,7 +25,7 @@ def _firewall(name: str, *, oauth: bool, base: str = _BASE) -> dict:
                 "id": f"{name}:0",
                 "base": base,
                 "auth": (
-                    {"headers": {"Authorization": "Bearer ${{ secrets.MCP_TOKEN }}"}}
+                    {"headers": {"Authorization": "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}"}}
                     if oauth
                     else {}
                 ),
@@ -55,13 +55,13 @@ def _replace_catalog(cache_path, *, present: bool, base: str = _BASE) -> None:
 
 @pytest.mark.parametrize("oauth", [False, True])
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-async def test_inline_builtin_catalog_removal_and_reinsertion_keep_selected_owner(
+async def test_builtin_auth_override_catalog_removal_and_reinsertion_keep_selected_owner(
     tmp_path, real_flow, mitm_ctx, oauth, requestheaders_first
 ):
     registry_path = tmp_path / "registry.json"
     cache_path = tmp_path / "catalog.json"
     sandbox = {
-        "runId": "inline-builtin-catalog",
+        "runId": "builtin-auth-override-catalog",
         "cliAgentType": "codex",
         "sandboxToken": "sandbox-token",
         "encryptedSecrets": "iv:tag:data",
@@ -71,9 +71,10 @@ async def test_inline_builtin_catalog_removal_and_reinsertion_keep_selected_owne
         "billableFirewalls": [],
         "firewalls": [
             {
-                "kind": "inline",
+                "kind": "builtin",
+                "name": _BUILTIN,
                 "sourceId": _SOURCE_ID,
-                "firewall": _firewall(_BUILTIN, oauth=oauth),
+                "authOverride": _firewall(_BUILTIN, oauth=oauth)["apis"][0]["auth"],
             },
             {
                 "kind": "inline",
@@ -158,13 +159,13 @@ async def test_inline_builtin_catalog_removal_and_reinsertion_keep_selected_owne
 
 
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-async def test_stale_inline_builtin_auth_reports_actual_destination_without_runtime_sync(
+async def test_builtin_auth_override_uses_current_catalog_destination(
     tmp_path, real_flow, mitm_ctx, requestheaders_first
 ):
     registry_path = tmp_path / "registry.json"
     cache_path = tmp_path / "catalog.json"
     sandbox = {
-        "runId": "stale-inline-builtin-destination",
+        "runId": "builtin-auth-override-destination",
         "cliAgentType": "codex",
         "sandboxToken": "sandbox-token",
         "encryptedSecrets": "iv:tag:data",
@@ -173,9 +174,10 @@ async def test_stale_inline_builtin_auth_reports_actual_destination_without_runt
         "billableFirewalls": [],
         "firewalls": [
             {
-                "kind": "inline",
+                "kind": "builtin",
+                "name": _BUILTIN,
                 "sourceId": _SOURCE_ID,
-                "firewall": _firewall(_BUILTIN, oauth=True),
+                "authOverride": _firewall(_BUILTIN, oauth=True)["apis"][0]["auth"],
             }
         ],
         "connectorRuntimeTargets": [{"kind": "builtin", "connectorSlug": _BUILTIN}],
@@ -202,7 +204,7 @@ async def test_stale_inline_builtin_auth_reports_actual_destination_without_runt
         flow = real_flow(
             with_response=False,
             client_ip=_CLIENT_IP,
-            host="shared.example.com",
+            host="replacement.example.com",
             path="/server",
             method="POST",
         )
@@ -219,5 +221,5 @@ async def test_stale_inline_builtin_auth_reports_actual_destination_without_runt
     assert endpoint.request_count == 1
     matched = endpoint.requests[0].json_body()["matchedFirewall"]
     assert isinstance(matched, dict)
-    assert matched["base"] == _BASE
+    assert matched["base"] == "https://replacement.example.com/server"
     assert matched["sourceId"] == _SOURCE_ID

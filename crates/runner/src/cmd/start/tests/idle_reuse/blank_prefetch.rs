@@ -51,6 +51,7 @@ async fn blank_prefetch_recovery_preserves_history_identity_budget_and_one_compl
             name: "model-provider:codex-oauth-token".into(),
             base_url_vars: None,
             source_id: None,
+            auth_override: None,
         }]);
         overrides.push_start_process_error(SandboxError::OperationTimeout {
             operation: SandboxOperation::StartProcess,

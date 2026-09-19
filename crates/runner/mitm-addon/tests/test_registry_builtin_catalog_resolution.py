@@ -11,6 +11,7 @@ import connector_runtime_metadata
 import matching
 import registry
 import registry_firewalls
+from firewall_auth_config import auth_config_injects_credentials
 from tests.registry_builtin_helpers import (
     cache_firewall,
     github_cache_firewall,
@@ -188,6 +189,103 @@ class TestRegistryBuiltinCatalogResolution:
         assert sandbox_info["firewalls"][0]["apis"][0]["id"] == "run-github:0"
         assert sandbox_info["firewalls"][0]["sourceId"] == source_id
         assert sandbox_info["firewalls"][0]["apis"][0]["sourceId"] == source_id
+
+    @pytest.mark.parametrize("oauth", [False, True])
+    def test_builtin_auth_override_preserves_catalog_firewall_and_account(
+        self, tmp_path, mitm_ctx, oauth
+    ):
+        path = tmp_path / "registry.json"
+        cache_path = tmp_path / "catalog.json"
+        source_id = "550e8400-e29b-41d4-a716-446655440001"
+        sandbox = builtin_sandbox("run-automatic", "automatic-mcp")
+        entry = sandbox["firewalls"][0]
+        entry["sourceId"] = source_id
+        entry["authOverride"] = (
+            {"headers": {"Authorization": "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}"}}
+            if oauth
+            else {}
+        )
+        sandbox["connectorRuntimeTargets"] = [{"kind": "builtin", "connectorSlug": "automatic-mcp"}]
+        sandbox["connectorRoutingVariables"] = {"builtin:automatic-mcp": {}}
+        write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
+        write_catalog_cache(
+            cache_path,
+            digest="sha256:" + "a" * 64,
+            version="catalog-a",
+            firewalls={"automatic-mcp": cache_firewall("automatic-mcp", "https://api.example.com")},
+        )
+
+        with mitm_ctx(builtin_firewall_catalog_cache_path=str(cache_path)):
+            context = registry.get_sandbox_context("10.200.0.1", str(path))
+
+        assert context is not None
+        sandbox_info, compiled_firewalls, policies = context
+        assert compiled_firewalls is not None
+        resolved = sandbox_info["firewalls"][0]
+        assert connector_runtime_metadata.connector_runtime_kind(resolved) == "builtin"
+        result = matching.match_compiled_firewall_request(
+            "https://api.example.com/items", "GET", compiled_firewalls, policies
+        )
+        assert isinstance(result, matching.FirewallAllow)
+        assert result.api_entry["sourceId"] == source_id
+        assert auth_config_injects_credentials(result.api_entry["auth"]) is oauth
+
+    @pytest.mark.parametrize(
+        ("auth_override", "message"),
+        [
+            ("oauth", "authOverride must match the auth schema"),
+            ({"unsupported": "value"}, "authOverride must match the auth schema"),
+            ({"headers": []}, "authOverride is invalid"),
+        ],
+        ids=["non-object", "unknown-field", "invalid-auth"],
+    )
+    def test_builtin_auth_override_rejects_malformed_values(self, tmp_path, auth_override, message):
+        sandbox = builtin_sandbox("run-invalid-auth-override", "automatic-mcp")
+        sandbox["firewalls"][0]["authOverride"] = auth_override
+        _registry_path, cache_path = write_registry_with_cache(
+            tmp_path,
+            {},
+            {"automatic-mcp": cache_firewall("automatic-mcp", "https://api.example.com")},
+        )
+
+        with pytest.raises(
+            registry_firewalls.FirewallEntryResolutionError,
+            match=message,
+        ):
+            registry_firewalls.resolve_firewall_entries(
+                sandbox,
+                builtin_firewall_catalog_snapshot=registry_firewalls.load_catalog_snapshot(
+                    str(cache_path)
+                ),
+            )
+
+    def test_builtin_auth_override_requires_single_catalog_api(self, tmp_path):
+        sandbox = builtin_sandbox("run-multi-api-auth-override", "multi-api")
+        sandbox["firewalls"][0]["authOverride"] = {}
+        firewall = cache_firewall("multi-api", "https://api.example.com")
+        firewall["apis"].append(
+            {
+                "base": "https://upload.example.com",
+                "auth": {},
+                "permissions": [],
+            }
+        )
+        _registry_path, cache_path = write_registry_with_cache(
+            tmp_path,
+            {},
+            {"multi-api": firewall},
+        )
+
+        with pytest.raises(
+            registry_firewalls.FirewallEntryResolutionError,
+            match="authOverride requires exactly one api",
+        ):
+            registry_firewalls.resolve_firewall_entries(
+                sandbox,
+                builtin_firewall_catalog_snapshot=registry_firewalls.load_catalog_snapshot(
+                    str(cache_path)
+                ),
+            )
 
     def test_registered_custom_candidate_shadows_only_matching_builtin_api(
         self, tmp_path, mitm_ctx

@@ -4,10 +4,8 @@ import os
 
 import pytest
 
-import connector_runtime_metadata
 import matching
 import registry
-from firewall_auth_config import auth_config_injects_credentials
 from tests.registry_builtin_helpers import (
     cache_firewall,
     first_firewall_core,
@@ -17,48 +15,6 @@ from tests.registry_helpers import inline_sandbox, write_multi_sandbox_registry
 
 
 class TestRegistryInlineFirewalls:
-    @pytest.mark.parametrize("oauth", [False, True])
-    def test_registered_inline_builtin_preserves_account_and_auth_type(
-        self, tmp_path, mitm_ctx, oauth
-    ):
-        path = tmp_path / "registry.json"
-        cache_path = tmp_path / "catalog.json"
-        source_id = "550e8400-e29b-41d4-a716-446655440001"
-        sandbox = inline_sandbox("run-automatic")
-        entry = sandbox["firewalls"][0]
-        entry["sourceId"] = source_id
-        entry["firewall"]["name"] = "automatic-mcp"
-        api = entry["firewall"]["apis"][0]
-        api["auth"] = (
-            {"headers": {"Authorization": "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}"}}
-            if oauth
-            else {}
-        )
-        sandbox["connectorRuntimeTargets"] = [{"kind": "builtin", "connectorSlug": "automatic-mcp"}]
-        sandbox["connectorRoutingVariables"] = {"builtin:automatic-mcp": {}}
-        write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
-        write_catalog_cache(
-            cache_path,
-            digest="sha256:" + "a" * 64,
-            version="catalog-a",
-            firewalls={"automatic-mcp": cache_firewall("automatic-mcp", "https://api.example.com")},
-        )
-
-        with mitm_ctx(builtin_firewall_catalog_cache_path=str(cache_path)):
-            context = registry.get_sandbox_context("10.200.0.1", str(path))
-
-        assert context is not None
-        sandbox_info, compiled_firewalls, policies = context
-        assert compiled_firewalls is not None
-        resolved = sandbox_info["firewalls"][0]
-        assert connector_runtime_metadata.connector_runtime_kind(resolved) == "builtin"
-        result = matching.match_compiled_firewall_request(
-            "https://api.example.com/items", "GET", compiled_firewalls, policies
-        )
-        assert isinstance(result, matching.FirewallAllow)
-        assert result.api_entry["sourceId"] == source_id
-        assert auth_config_injects_credentials(result.api_entry["auth"]) is oauth
-
     def test_inline_firewalls_do_not_share_compiled_core(self, tmp_path):
         path = tmp_path / "registry.json"
         write_multi_sandbox_registry(

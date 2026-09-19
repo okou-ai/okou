@@ -1051,7 +1051,7 @@ async function resolveLockedAutomatic(
   if (account.automaticAuthType === "none") {
     return { kind: "none" };
   }
-  // Runtime sync is best-effort: a stale inline firewall must never receive
+  // Runtime sync is best-effort: a stale builtin auth override must never receive
   // credentials for the endpoint accepted by a newer account connection.
   if (
     !(await credentialDestinationMatches(

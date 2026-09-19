@@ -351,7 +351,10 @@ import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { resolveBuiltinConnectorMcpRuntimeFirewall } from "./builtin-connector-mcp-firewall.service";
+import {
+  resolveBuiltinConnectorMcpRuntimeAuth,
+  type BuiltinConnectorMcpRuntimeAuth,
+} from "./builtin-connector-mcp-runtime-auth.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
   resolveBuiltinConnectorCredentialAccess,
@@ -5618,7 +5621,7 @@ function modelProviderPermissionManifest(
 }
 
 interface BuiltinConnectorManifestSource {
-  readonly automaticFirewall?: ExecutionFirewallEntry;
+  readonly mcpRuntimeAuth?: BuiltinConnectorMcpRuntimeAuth;
   readonly metadata: ConnectorServerFirewallExecutionMetadata;
   readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
   readonly isMcp: boolean;
@@ -5692,10 +5695,12 @@ function applyBuiltinConnectorMetadataPolicies(
     if (sourceId === undefined) {
       throw new Error("Missing built-in connector source identity");
     }
-    firewalls.push(
-      source.automaticFirewall ??
-        builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
+    const firewall = builtinFirewallEntryForMetadata(
+      source.metadata,
+      vars,
+      sourceId,
     );
+    firewalls.push({ ...firewall, ...source.mcpRuntimeAuth });
     if (!source.isMcp) {
       Object.assign(
         environmentSecretPlaceholders,
@@ -5724,15 +5729,6 @@ function applyBuiltinConnectorMetadataPolicies(
 function builtinRuntimeTargetRegistration(
   firewall: ExecutionFirewallEntry,
 ): BuiltinRuntimeTargetRegistration {
-  if (firewall.kind === "inline" && firewall.customConnectorId === undefined) {
-    return {
-      kind: "builtin",
-      connectorSlug: connectorSlugSchema.parse(firewall.firewall.name),
-      ...(firewall.sourceId === undefined
-        ? {}
-        : { sourceId: firewall.sourceId }),
-    };
-  }
   if (firewall.kind !== "builtin") {
     throw new Error("Builtin connector manifest contains an inline firewall");
   }
@@ -5856,12 +5852,11 @@ async function buildPermissionManifest(
           });
           const automaticAccount = args.automaticMcpAccounts?.[connectorSlug];
           const sourceId = args.connectorSourceIdBySlug?.[connectorSlug];
-          const automaticFirewall =
+          const mcpRuntimeAuth =
             automaticAccount && sourceId
-              ? resolveBuiltinConnectorMcpRuntimeFirewall({
+              ? resolveBuiltinConnectorMcpRuntimeAuth({
                   snapshot,
                   connectorSlug,
-                  sourceId,
                   ...automaticAccount,
                 })
               : null;
@@ -5869,7 +5864,7 @@ async function buildPermissionManifest(
             metadata,
             permissionIndex,
             isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
-            ...(automaticFirewall === null ? {} : { automaticFirewall }),
+            ...(mcpRuntimeAuth === null ? {} : { mcpRuntimeAuth }),
           };
         }),
       );

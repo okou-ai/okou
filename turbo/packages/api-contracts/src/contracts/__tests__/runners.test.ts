@@ -1009,23 +1009,15 @@ describe("connector runtime synchronization contract", () => {
     expect(execution.connectorRuntimeTargets).toEqual([target]);
   });
 
-  it("keeps builtin inline firewalls bound to a builtin account source", () => {
+  it("keeps builtin auth overrides bound to a builtin account source", () => {
     const result = {
       target: { kind: "builtin", connectorSlug: "plaud-mcp" },
       state: "available",
       firewall: {
-        kind: "inline",
+        kind: "builtin",
+        name: "plaud-mcp",
         sourceId: "10000000-0000-4000-8000-000000000001",
-        firewall: {
-          name: "plaud-mcp",
-          apis: [
-            {
-              id: "plaud-mcp:0",
-              base: "https://mcp.example.com",
-              auth: {},
-            },
-          ],
-        },
+        authOverride: {},
       },
       networkPolicy: { allow: [], deny: [], ask: [], unknownPolicy: "deny" },
     };
@@ -1039,7 +1031,7 @@ describe("connector runtime synchronization contract", () => {
     ).toBe(true);
     for (const firewall of [
       { ...result.firewall, sourceId: undefined },
-      { ...result.firewall, customConnectorId },
+      { ...result.firewall, kind: "inline" },
     ]) {
       expect(
         connectorRuntimeSyncResultSchema.safeParse({ ...result, firewall })
