@@ -30,9 +30,13 @@ import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   currentOfficialWorkflowCatalogAuthority,
+  currentOfficialWorkflowCatalogDefinitionKey,
+  currentOfficialWorkflowCatalogReleaseKey,
   currentOfficialWorkflowCatalogStoragePrefix,
   currentOfficialWorkflowDefinitionStorageName,
+  officialWorkflowCatalogDefinitionName,
   officialWorkflowCatalogIsTestScoped,
+  officialWorkflowCatalogReleaseId,
 } from "../services/official-workflow-catalog-authority";
 import {
   readAcceptedOfficialWorkflowCatalog,
@@ -55,7 +59,6 @@ import {
 const actionBody$ = bodyResultOf(
   testOfficialWorkflowCatalogStateContract.action,
 );
-const PREVIOUS_SCHEMA_RELEASE_ID = "f".repeat(64);
 const PREVIOUS_SCHEMA_DEFINITION_NAME = "api-test-legacy";
 const PREVIOUS_SCHEMA_REVISION = "e".repeat(64);
 const PREVIOUS_SCHEMA_BLUEPRINT_FINGERPRINT = "c".repeat(64);
@@ -63,6 +66,16 @@ const PREVIOUS_SCHEMA_BLUEPRINT_FINGERPRINT = "c".repeat(64);
 interface DormantMaterializationPause {
   readonly reached: ReturnType<typeof createDeferredPromise<void>>;
   readonly resume: ReturnType<typeof createDeferredPromise<void>>;
+}
+
+function previousSchemaHash(
+  authority: string,
+  kind: "release" | "storage-version",
+): string {
+  return createHash("sha256")
+    .update(authority)
+    .update(`\0previous-schema-${kind}`)
+    .digest("hex");
 }
 
 const dormantMaterializationPause = testOverride<
@@ -201,15 +214,17 @@ async function seedPreviousSchemaRelease(
     throw new Error("Official Workflow catalog has no previous schema version");
   }
   const authority = currentOfficialWorkflowCatalogAuthority();
+  const definitionKey = currentOfficialWorkflowCatalogDefinitionKey(
+    PREVIOUS_SCHEMA_DEFINITION_NAME,
+  );
+  const releaseId = previousSchemaHash(authority, "release");
+  const releaseKey = currentOfficialWorkflowCatalogReleaseKey(releaseId);
   const storageName = currentOfficialWorkflowDefinitionStorageName(
     PREVIOUS_SCHEMA_DEFINITION_NAME,
   );
   const storageId = randomUUID();
   const storagePrefix = `api-test/${storageId}`;
-  const storageVersion = createHash("sha256")
-    .update(authority)
-    .update("\0previous-schema-storage-version")
-    .digest("hex");
+  const storageVersion = previousSchemaHash(authority, "storage-version");
   const blueprint = {
     key: "daily-delivery",
     parameters: [
@@ -297,7 +312,7 @@ async function seedPreviousSchemaRelease(
         storage_version
       ) VALUES (
         ${authority},
-        ${PREVIOUS_SCHEMA_DEFINITION_NAME},
+        ${definitionKey},
         ${PREVIOUS_SCHEMA_REVISION},
         ${revisionPayload}::jsonb,
         ${storageName},
@@ -307,11 +322,11 @@ async function seedPreviousSchemaRelease(
     `);
     await tx.execute(sql`
       INSERT INTO ${officialWorkflowCatalogReleases} (authority, id, payload)
-      VALUES (${authority}, ${PREVIOUS_SCHEMA_RELEASE_ID}, ${releasePayload}::jsonb)
+      VALUES (${authority}, ${releaseKey}, ${releasePayload}::jsonb)
     `);
     await tx.insert(officialWorkflowCatalogState).values({
       authority,
-      acceptedReleaseId: PREVIOUS_SCHEMA_RELEASE_ID,
+      acceptedReleaseId: releaseKey,
     });
   });
   signal.throwIfAborted();
@@ -440,11 +455,13 @@ async function stateResponse(
           signal,
         )
       : null;
-  const [reconciliationWork, identities] = await Promise.all([
+  const authority = currentOfficialWorkflowCatalogAuthority();
+  const [reconciliationWorkRows, identities] = await Promise.all([
     db
       .select({
-        definitionName: officialWorkflowReconciliationWork.definitionName,
-        requestedReleaseId:
+        authority: officialWorkflowReconciliationWork.authority,
+        definitionKey: officialWorkflowReconciliationWork.definitionName,
+        requestedReleaseKey:
           officialWorkflowReconciliationWork.requestedReleaseId,
         cursorWorkflowId: officialWorkflowReconciliationWork.cursorWorkflowId,
         state: officialWorkflowReconciliationWork.state,
@@ -453,12 +470,7 @@ async function stateResponse(
         lastError: officialWorkflowReconciliationWork.lastError,
       })
       .from(officialWorkflowReconciliationWork)
-      .where(
-        eq(
-          officialWorkflowReconciliationWork.authority,
-          currentOfficialWorkflowCatalogAuthority(),
-        ),
-      )
+      .where(eq(officialWorkflowReconciliationWork.authority, authority))
       .orderBy(asc(officialWorkflowReconciliationWork.definitionName)),
     body?.workflowId === undefined
       ? Promise.resolve([])
@@ -486,6 +498,25 @@ async function stateResponse(
           .orderBy(asc(officialWorkflowAutomationIdentities.blueprintKey)),
   ]);
   signal.throwIfAborted();
+  const reconciliationWork = reconciliationWorkRows.map((work) => {
+    const {
+      authority: workAuthority,
+      definitionKey,
+      requestedReleaseKey,
+      ...rest
+    } = work;
+    return {
+      ...rest,
+      definitionName: officialWorkflowCatalogDefinitionName(
+        workAuthority,
+        definitionKey,
+      ),
+      requestedReleaseId: officialWorkflowCatalogReleaseId(
+        workAuthority,
+        requestedReleaseKey,
+      ),
+    };
+  });
   return {
     status: 200 as const,
     body: {
@@ -505,17 +536,19 @@ async function stateResponse(
 async function upsertExpiredReconciliationWork(
   db: Db,
   definitionName: string,
-  requestedReleaseId: string,
+  requestedReleaseKey: string,
   currentTime: Date,
   leaseId: string,
 ): Promise<void> {
   const authority = currentOfficialWorkflowCatalogAuthority();
+  const definitionKey =
+    currentOfficialWorkflowCatalogDefinitionKey(definitionName);
   await db
     .insert(officialWorkflowReconciliationWork)
     .values({
       authority,
-      definitionName,
-      requestedReleaseId,
+      definitionName: definitionKey,
+      requestedReleaseId: requestedReleaseKey,
       state: "running",
       leaseId,
       leaseExpiresAt: new Date(currentTime.getTime() - 1),
@@ -525,12 +558,9 @@ async function upsertExpiredReconciliationWork(
       updatedAt: currentTime,
     })
     .onConflictDoUpdate({
-      target: [
-        officialWorkflowReconciliationWork.authority,
-        officialWorkflowReconciliationWork.definitionName,
-      ],
+      target: officialWorkflowReconciliationWork.definitionName,
       set: {
-        requestedReleaseId,
+        requestedReleaseId: requestedReleaseKey,
         cursorWorkflowId: null,
         state: "running",
         leaseId,
@@ -771,7 +801,10 @@ async function simulateReconciliationWorkerCrash(
           officialWorkflowReconciliationWork.authority,
           currentOfficialWorkflowCatalogAuthority(),
         ),
-        eq(officialWorkflowReconciliationWork.definitionName, definitionName),
+        eq(
+          officialWorkflowReconciliationWork.definitionName,
+          currentOfficialWorkflowCatalogDefinitionKey(definitionName),
+        ),
       ),
     );
   signal.throwIfAborted();
@@ -891,7 +924,10 @@ async function makeReconciliationWorkDue(
           officialWorkflowReconciliationWork.authority,
           currentOfficialWorkflowCatalogAuthority(),
         ),
-        eq(officialWorkflowReconciliationWork.definitionName, definitionName),
+        eq(
+          officialWorkflowReconciliationWork.definitionName,
+          currentOfficialWorkflowCatalogDefinitionKey(definitionName),
+        ),
       ),
     );
   signal.throwIfAborted();

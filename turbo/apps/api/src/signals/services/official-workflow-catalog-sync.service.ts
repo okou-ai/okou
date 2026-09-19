@@ -23,6 +23,8 @@ import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   currentOfficialWorkflowCatalogAuthority,
+  currentOfficialWorkflowCatalogDefinitionKey,
+  currentOfficialWorkflowCatalogReleaseKey,
   currentOfficialWorkflowDefinitionStorageName,
   lockOfficialWorkflowCatalogActivation,
 } from "./official-workflow-catalog-authority";
@@ -212,6 +214,7 @@ async function recordBlueprintReconciliationWork(
   signal: AbortSignal,
 ): Promise<void> {
   const authority = currentOfficialWorkflowCatalogAuthority();
+  const releaseKey = currentOfficialWorkflowCatalogReleaseKey(args.releaseId);
   const previousByName = new Map(
     args.previous?.payload.definitions.map((definition) => {
       return [definition.name, definition] as const;
@@ -224,6 +227,9 @@ async function recordBlueprintReconciliationWork(
     );
   });
   for (const definition of args.payload.definitions) {
+    const definitionKey = currentOfficialWorkflowCatalogDefinitionKey(
+      definition.name,
+    );
     if (definition.lifecycle !== "active") {
       await db
         .delete(officialWorkflowReconciliationWork)
@@ -232,7 +238,7 @@ async function recordBlueprintReconciliationWork(
             eq(officialWorkflowReconciliationWork.authority, authority),
             eq(
               officialWorkflowReconciliationWork.definitionName,
-              definition.name,
+              definitionKey,
             ),
           ),
         );
@@ -241,12 +247,15 @@ async function recordBlueprintReconciliationWork(
   }
   const currentTime = nowDate();
   for (const definition of changed) {
+    const definitionKey = currentOfficialWorkflowCatalogDefinitionKey(
+      definition.name,
+    );
     await db
       .insert(officialWorkflowReconciliationWork)
       .values({
         authority,
-        definitionName: definition.name,
-        requestedReleaseId: args.releaseId,
+        definitionName: definitionKey,
+        requestedReleaseId: releaseKey,
         cursorWorkflowId: null,
         state: "pending",
         leaseId: null,
@@ -258,12 +267,9 @@ async function recordBlueprintReconciliationWork(
         updatedAt: currentTime,
       })
       .onConflictDoUpdate({
-        target: [
-          officialWorkflowReconciliationWork.authority,
-          officialWorkflowReconciliationWork.definitionName,
-        ],
+        target: officialWorkflowReconciliationWork.definitionName,
         set: {
-          requestedReleaseId: args.releaseId,
+          requestedReleaseId: releaseKey,
           cursorWorkflowId: null,
           state: "pending",
           leaseId: null,
@@ -590,11 +596,14 @@ async function persistDefinitionRevision(
   signal: AbortSignal,
 ): Promise<void> {
   const authority = currentOfficialWorkflowCatalogAuthority();
+  const definitionKey = currentOfficialWorkflowCatalogDefinitionKey(
+    prepared.definition.name,
+  );
   await db
     .insert(officialWorkflowDefinitionRevisions)
     .values({
       authority,
-      definitionName: prepared.definition.name,
+      definitionName: definitionKey,
       revision: prepared.definition.revision,
       payload: prepared.definition,
       storageName: prepared.artifact.storageName,
@@ -614,10 +623,7 @@ async function persistDefinitionRevision(
     .where(
       and(
         eq(officialWorkflowDefinitionRevisions.authority, authority),
-        eq(
-          officialWorkflowDefinitionRevisions.definitionName,
-          prepared.definition.name,
-        ),
+        eq(officialWorkflowDefinitionRevisions.definitionName, definitionKey),
         eq(
           officialWorkflowDefinitionRevisions.revision,
           prepared.definition.revision,
@@ -647,9 +653,10 @@ async function persistCatalogRelease(
   signal: AbortSignal,
 ): Promise<void> {
   const authority = currentOfficialWorkflowCatalogAuthority();
+  const releaseKey = currentOfficialWorkflowCatalogReleaseKey(args.releaseId);
   await db
     .insert(officialWorkflowCatalogReleases)
-    .values({ authority, id: args.releaseId, payload: args.payload })
+    .values({ authority, id: releaseKey, payload: args.payload })
     .onConflictDoNothing();
   signal.throwIfAborted();
   const [stored] = await db
@@ -658,7 +665,7 @@ async function persistCatalogRelease(
     .where(
       and(
         eq(officialWorkflowCatalogReleases.authority, authority),
-        eq(officialWorkflowCatalogReleases.id, args.releaseId),
+        eq(officialWorkflowCatalogReleases.id, releaseKey),
       ),
     )
     .limit(1);
@@ -703,6 +710,7 @@ async function activateCandidate(
       };
     }
     const releaseId = officialWorkflowFingerprint(candidate.payload);
+    const releaseKey = currentOfficialWorkflowCatalogReleaseKey(releaseId);
     if (stale) {
       return currentReleaseId === releaseId
         ? {
@@ -764,12 +772,12 @@ async function activateCandidate(
       .insert(officialWorkflowCatalogState)
       .values({
         authority,
-        acceptedReleaseId: releaseId,
+        acceptedReleaseId: releaseKey,
         updatedAt: nowDate(),
       })
       .onConflictDoUpdate({
         target: officialWorkflowCatalogState.authority,
-        set: { acceptedReleaseId: releaseId, updatedAt: nowDate() },
+        set: { acceptedReleaseId: releaseKey, updatedAt: nowDate() },
       });
     signal.throwIfAborted();
     await recordBlueprintReconciliationWork(

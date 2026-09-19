@@ -11,6 +11,8 @@ import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   currentOfficialWorkflowCatalogAuthority,
+  officialWorkflowCatalogDefinitionName,
+  officialWorkflowCatalogReleaseId,
   officialWorkflowCatalogIsTestScoped,
 } from "./official-workflow-catalog-authority";
 import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
@@ -28,7 +30,9 @@ const MAX_RETRY_DELAY_MS = 15 * 60 * 1000;
 
 interface ClaimedWork {
   readonly authority: string;
+  readonly definitionKey: string;
   readonly definitionName: string;
+  readonly requestedReleaseKey: string;
   readonly requestedReleaseId: string;
   readonly cursorWorkflowId: string | null;
   readonly leaseId: string;
@@ -102,13 +106,25 @@ async function claimReconciliationWork(
         )
         .returning({
           authority: officialWorkflowReconciliationWork.authority,
-          definitionName: officialWorkflowReconciliationWork.definitionName,
-          requestedReleaseId:
+          definitionKey: officialWorkflowReconciliationWork.definitionName,
+          requestedReleaseKey:
             officialWorkflowReconciliationWork.requestedReleaseId,
           cursorWorkflowId: officialWorkflowReconciliationWork.cursorWorkflowId,
         });
       if (updated) {
-        claimed.push({ ...updated, leaseId, attemptCount });
+        claimed.push({
+          ...updated,
+          definitionName: officialWorkflowCatalogDefinitionName(
+            updated.authority,
+            updated.definitionKey,
+          ),
+          requestedReleaseId: officialWorkflowCatalogReleaseId(
+            updated.authority,
+            updated.requestedReleaseKey,
+          ),
+          leaseId,
+          attemptCount,
+        });
       }
     }
     return claimed;
@@ -183,11 +199,11 @@ async function retryWork(
         eq(officialWorkflowReconciliationWork.authority, args.work.authority),
         eq(
           officialWorkflowReconciliationWork.definitionName,
-          args.work.definitionName,
+          args.work.definitionKey,
         ),
         eq(
           officialWorkflowReconciliationWork.requestedReleaseId,
-          args.work.requestedReleaseId,
+          args.work.requestedReleaseKey,
         ),
         eq(officialWorkflowReconciliationWork.state, "running"),
         eq(officialWorkflowReconciliationWork.leaseId, args.work.leaseId),
@@ -207,11 +223,11 @@ async function advanceOrCompleteWork(
     eq(officialWorkflowReconciliationWork.authority, args.work.authority),
     eq(
       officialWorkflowReconciliationWork.definitionName,
-      args.work.definitionName,
+      args.work.definitionKey,
     ),
     eq(
       officialWorkflowReconciliationWork.requestedReleaseId,
-      args.work.requestedReleaseId,
+      args.work.requestedReleaseKey,
     ),
     eq(officialWorkflowReconciliationWork.state, "running"),
     eq(officialWorkflowReconciliationWork.leaseId, args.work.leaseId),

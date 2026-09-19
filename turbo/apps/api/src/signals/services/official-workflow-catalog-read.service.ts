@@ -19,6 +19,9 @@ import { and, asc, eq, or } from "drizzle-orm";
 import type { ReadonlyDb } from "../external/db";
 import {
   currentOfficialWorkflowCatalogAuthority,
+  officialWorkflowCatalogDefinitionKey,
+  officialWorkflowCatalogDefinitionName,
+  officialWorkflowCatalogReleaseId,
   OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
 } from "./official-workflow-catalog-authority";
 
@@ -30,6 +33,7 @@ export interface AcceptedOfficialWorkflowCatalog {
 }
 
 interface OfficialWorkflowRevisionRow {
+  readonly authority: string;
   readonly definitionName: string;
   readonly revision: string;
   readonly payload: unknown;
@@ -60,7 +64,11 @@ function acceptedRevisionFromRow(
     row.payload,
   );
   if (
-    definition.name !== row.definitionName ||
+    definition.name !==
+      officialWorkflowCatalogDefinitionName(
+        row.authority,
+        row.definitionName,
+      ) ||
     definition.revision !== row.revision
   ) {
     throw new Error("Official Workflow revision row identity is inconsistent");
@@ -82,7 +90,8 @@ export async function readAcceptedOfficialWorkflowCatalog(
   const authority = currentOfficialWorkflowCatalogAuthority();
   const [row] = await db
     .select({
-      releaseId: officialWorkflowCatalogState.acceptedReleaseId,
+      authority: officialWorkflowCatalogState.authority,
+      releaseKey: officialWorkflowCatalogState.acceptedReleaseId,
       payload: officialWorkflowCatalogReleases.payload,
     })
     .from(officialWorkflowCatalogState)
@@ -112,7 +121,7 @@ export async function readAcceptedOfficialWorkflowCatalog(
     return null;
   }
   return {
-    releaseId: row.releaseId,
+    releaseId: officialWorkflowCatalogReleaseId(row.authority, row.releaseKey),
     payload: officialWorkflowCatalogReleasePayloadSchema.parse(row.payload),
   };
 }
@@ -157,6 +166,7 @@ export async function readAcceptedOfficialWorkflowRevisions(
   }
   const rows = await db
     .select({
+      authority: officialWorkflowDefinitionRevisions.authority,
       definitionName: officialWorkflowDefinitionRevisions.definitionName,
       revision: officialWorkflowDefinitionRevisions.revision,
       payload: officialWorkflowDefinitionRevisions.payload,
@@ -198,7 +208,10 @@ export async function readAcceptedOfficialWorkflowRevisions(
             return and(
               eq(
                 officialWorkflowDefinitionRevisions.definitionName,
-                identity.name,
+                officialWorkflowCatalogDefinitionKey(
+                  currentOfficialWorkflowCatalogAuthority(),
+                  identity.name,
+                ),
               ),
               eq(
                 officialWorkflowDefinitionRevisions.revision,
@@ -219,7 +232,7 @@ export async function readAcceptedOfficialWorkflowRevisions(
       const revision = acceptedRevisionFromRow(row);
       return [
         officialWorkflowRevisionIdentityKey({
-          name: row.definitionName,
+          name: revision.definition.name,
           revision: row.revision,
         }),
         revision,
@@ -253,6 +266,7 @@ export async function readAllCurrentSchemaOfficialWorkflowRevisions(
 ): Promise<readonly OfficialWorkflowAcceptedRevision[]> {
   const rows = await db
     .select({
+      authority: officialWorkflowDefinitionRevisions.authority,
       definitionName: officialWorkflowDefinitionRevisions.definitionName,
       revision: officialWorkflowDefinitionRevisions.revision,
       payload: officialWorkflowDefinitionRevisions.payload,

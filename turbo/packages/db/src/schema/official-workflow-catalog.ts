@@ -9,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -25,7 +26,7 @@ export const officialWorkflowDefinitionRevisions = pgTable(
     authority: varchar("authority", { length: 64 })
       .notNull()
       .default("official"),
-    definitionName: varchar("definition_name", { length: 64 }).notNull(),
+    definitionName: varchar("definition_name", { length: 128 }).notNull(),
     revision: varchar("revision", { length: 64 }).notNull(),
     payload: jsonb("payload")
       .$type<OfficialWorkflowDefinitionRevisionPayload>()
@@ -47,7 +48,7 @@ export const officialWorkflowDefinitionRevisions = pgTable(
     return [
       primaryKey({
         name: "official_workflow_definition_revisions_pk",
-        columns: [table.authority, table.definitionName, table.revision],
+        columns: [table.definitionName, table.revision],
       }),
       check(
         "official_workflow_definition_revision_authority",
@@ -67,7 +68,7 @@ export const officialWorkflowCatalogReleases = pgTable(
     authority: varchar("authority", { length: 64 })
       .notNull()
       .default("official"),
-    id: varchar("id", { length: 64 }).notNull(),
+    id: varchar("id", { length: 128 }).primaryKey(),
     payload: jsonb("payload")
       .$type<OfficialWorkflowCatalogReleasePayload>()
       .notNull(),
@@ -75,17 +76,24 @@ export const officialWorkflowCatalogReleases = pgTable(
   },
   (table) => {
     return [
-      primaryKey({
-        name: "official_workflow_catalog_releases_pk",
-        columns: [table.authority, table.id],
-      }),
+      unique("official_workflow_catalog_releases_authority_id_unique").on(
+        table.authority,
+        table.id,
+      ),
       check(
         "official_workflow_catalog_release_authority",
         sql`${table.authority} = 'official' OR ${table.authority} ~ '^test:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'`,
       ),
       check(
         "official_workflow_catalog_release_hash_format",
-        sql`${table.id} ~ '^[0-9a-f]{64}$'`,
+        sql`(
+          ${table.authority} = 'official'
+          AND ${table.id} ~ '^[0-9a-f]{64}$'
+        ) OR (
+          ${table.authority} <> 'official'
+          AND ${table.id} = ${table.authority} || '@' || right(${table.id}, 64)
+          AND right(${table.id}, 64) ~ '^[0-9a-f]{64}$'
+        )`,
       ),
     ];
   },
@@ -97,7 +105,9 @@ export const officialWorkflowCatalogState = pgTable(
     authority: varchar("authority", { length: 64 })
       .primaryKey()
       .default("official"),
-    acceptedReleaseId: varchar("accepted_release_id", { length: 64 }).notNull(),
+    acceptedReleaseId: varchar("accepted_release_id", {
+      length: 128,
+    }).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
@@ -132,9 +142,9 @@ export const officialWorkflowReconciliationWork = pgTable(
     authority: varchar("authority", { length: 64 })
       .notNull()
       .default("official"),
-    definitionName: varchar("definition_name", { length: 64 }).notNull(),
+    definitionName: varchar("definition_name", { length: 128 }).primaryKey(),
     requestedReleaseId: varchar("requested_release_id", {
-      length: 64,
+      length: 128,
     }).notNull(),
     cursorWorkflowId: uuid("cursor_workflow_id"),
     state: varchar("state", { length: 16 })
@@ -151,10 +161,6 @@ export const officialWorkflowReconciliationWork = pgTable(
   },
   (table) => {
     return [
-      primaryKey({
-        name: "official_workflow_reconciliation_work_pk",
-        columns: [table.authority, table.definitionName],
-      }),
       foreignKey({
         name: "official_workflow_reconciliation_work_release_fk",
         columns: [table.authority, table.requestedReleaseId],
@@ -164,6 +170,10 @@ export const officialWorkflowReconciliationWork = pgTable(
         ],
       }),
       index("idx_official_workflow_reconciliation_work_due").on(
+        table.availableAt,
+        table.definitionName,
+      ),
+      index("idx_official_workflow_reconciliation_work_authority_due").on(
         table.authority,
         table.availableAt,
         table.definitionName,

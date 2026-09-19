@@ -65,6 +65,75 @@ export function currentOfficialWorkflowDefinitionStorageName(
     : `${currentOfficialWorkflowCatalogStoragePrefix()}${definitionName}`;
 }
 
+export function officialWorkflowCatalogDefinitionKey(
+  authority: string,
+  definitionName: string,
+): string {
+  return authority === OFFICIAL_WORKFLOW_CATALOG_AUTHORITY
+    ? definitionName
+    : `${authority}@${definitionName}`;
+}
+
+export function currentOfficialWorkflowCatalogDefinitionKey(
+  definitionName: string,
+): string {
+  return officialWorkflowCatalogDefinitionKey(
+    currentOfficialWorkflowCatalogAuthority(),
+    definitionName,
+  );
+}
+
+export function officialWorkflowCatalogDefinitionName(
+  authority: string,
+  definitionKey: string,
+): string {
+  if (authority === OFFICIAL_WORKFLOW_CATALOG_AUTHORITY) {
+    return definitionKey;
+  }
+  const prefix = `${authority}@`;
+  const definitionName = definitionKey.startsWith(prefix)
+    ? definitionKey.slice(prefix.length)
+    : "";
+  if (definitionName.length === 0 || definitionName.length > 64) {
+    throw new Error("Official Workflow catalog definition key is invalid");
+  }
+  return definitionName;
+}
+
+export function officialWorkflowCatalogReleaseKey(
+  authority: string,
+  releaseId: string,
+): string {
+  return authority === OFFICIAL_WORKFLOW_CATALOG_AUTHORITY
+    ? releaseId
+    : `${authority}@${releaseId}`;
+}
+
+export function currentOfficialWorkflowCatalogReleaseKey(
+  releaseId: string,
+): string {
+  return officialWorkflowCatalogReleaseKey(
+    currentOfficialWorkflowCatalogAuthority(),
+    releaseId,
+  );
+}
+
+export function officialWorkflowCatalogReleaseId(
+  authority: string,
+  releaseKey: string,
+): string {
+  const releaseId =
+    authority === OFFICIAL_WORKFLOW_CATALOG_AUTHORITY
+      ? releaseKey
+      : releaseKey.startsWith(`${authority}@`)
+        ? releaseKey.slice(authority.length + 1)
+        : "";
+  if (!/^[0-9a-f]{64}$/.test(releaseId)) {
+    throw new Error("Official Workflow catalog release key is invalid");
+  }
+  return releaseId;
+}
+
 export function currentOfficialWorkflowCatalogActivationLock(): string {
   const authority = currentOfficialWorkflowCatalogAuthority();
   return authority === OFFICIAL_WORKFLOW_CATALOG_AUTHORITY

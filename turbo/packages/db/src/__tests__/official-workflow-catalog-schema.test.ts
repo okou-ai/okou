@@ -20,18 +20,30 @@ function primaryKeyColumns(
 }
 
 describe("Official Workflow catalog schema", () => {
-  it("keys every durable catalog identity by authority", () => {
-    expect(primaryKeyColumns(officialWorkflowCatalogReleases)).toStrictEqual([
-      "authority",
-      "id",
-    ]);
+  it("preserves production conflict targets while scoping test identities", () => {
+    expect(officialWorkflowCatalogReleases.id.primary).toBe(true);
     expect(
       primaryKeyColumns(officialWorkflowDefinitionRevisions),
-    ).toStrictEqual(["authority", "definition_name", "revision"]);
-    expect(primaryKeyColumns(officialWorkflowReconciliationWork)).toStrictEqual(
-      ["authority", "definition_name"],
+    ).toStrictEqual(["definition_name", "revision"]);
+    expect(officialWorkflowReconciliationWork.definitionName.primary).toBe(
+      true,
     );
     expect(officialWorkflowCatalogState.authority.primary).toBe(true);
+    expect(
+      getTableConfig(officialWorkflowCatalogReleases).uniqueConstraints.map(
+        (constraint) => {
+          return {
+            name: constraint.name,
+            columns: constraint.columns.map((column) => {
+              return column.name;
+            }),
+          };
+        },
+      ),
+    ).toContainEqual({
+      name: "official_workflow_catalog_releases_authority_id_unique",
+      columns: ["authority", "id"],
+    });
   });
 
   it("keeps release references inside the same authority", () => {
