@@ -1,5 +1,5 @@
 # Stage 1: Base toolchain for CI/CD and minimal development
-FROM ubuntu:24.04 AS toolchain
+FROM ubuntu:25.10 AS toolchain
 
 # Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
