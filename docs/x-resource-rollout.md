@@ -2,11 +2,11 @@
 
 [#35156](https://github.com/vm0-ai/okou/issues/35156) qualifies the producer and
 consumer against shared examples. [#34615](https://github.com/vm0-ai/okou/issues/34615)
-remains responsible for deployed verification and separately authorized
-deduplication rollout. [#35197](https://github.com/vm0-ai/okou/issues/35197)
-replaced date-based activation with a staged rollout. The protocol cleanup removed
-the claim capability and fixed activation date. Deduplication is now unconditional
-for resource observations, but repository qualification alone is not production
+remains responsible for deployed verification and evidence.
+[#35197](https://github.com/vm0-ai/okou/issues/35197) replaced date-based
+activation with a staged rollout. The protocol cleanup removed the claim
+capability and fixed activation date. Deduplication is now unconditional for
+resource observations, but repository qualification alone is not production
 acceptance.
 The [ingestion contract](./x-resource-observations.md) remains authoritative:
 one upstream billing account, global daily resource identity, today and yesterday
