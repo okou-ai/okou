@@ -666,19 +666,21 @@ render nowhere the way an id lookup can. Swapping a subtree between a portal
 and its written position also remounts it, which costs the scroll position and
 any DOM state it held.
 
-Layering follows shadcn's convention: the floating primitives carry `z-50` and
-App content stays below that. `#root` currently also sets
-`isolation: isolate`, which made DOM order decide priority instead and left App
-z-index values unconstrained; that divergence is being removed, so a value at
-or above 50 in App code is a defect to fix rather than a pattern to copy. See
-[#35387](https://github.com/vm0-ai/okou/issues/35387).
+Layering follows shadcn's convention: floating primitives carry `z-50` and App
+content stays below it. Neither half is in place yet — the primitives carry no
+z-index at all, and `#root` sets `isolation: isolate`, which makes DOM order
+decide priority instead and leaves App z-index values unconstrained. Both are
+tracked in [#35387](https://github.com/vm0-ai/okou/issues/35387); until they
+land, a value at or above 50 in App code is a defect to fix rather than a
+pattern to copy.
 
 Safe-area insets are the surface's own responsibility whenever it is `fixed`
-and meets a viewport edge. `#root` carries the insets as padding, and a fixed
-box is laid out past that padding box whether or not it was portalled, so
-"is it portalled" is the wrong question and "is it fixed against an edge" is
-the right one. [Page layouts](#page-layouts) registers the `p-safe` utility and
-the viewport height tokens these surfaces take.
+and meets a viewport edge. `#root` carries the top and horizontal insets as
+padding and delegates the bottom one, and a fixed box is laid out past that
+padding box whether or not it was portalled, so "is it portalled" is the wrong
+question and "is it fixed against an edge" is the right one.
+[Page layouts](#page-layouts) registers the `p-safe` utility and the viewport
+height tokens these surfaces take.
 
 ### Horizontal hairline rules
 
