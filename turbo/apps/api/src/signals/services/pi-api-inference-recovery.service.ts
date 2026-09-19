@@ -32,6 +32,7 @@ import {
   type PiDeferredConfiguration,
 } from "./pi-deferred-sandbox-contract";
 import { readPiInferenceObject } from "./pi-inference-object.service";
+import { recordPiApiUsageObservation } from "./pi-api-usage-observation.service";
 
 const L = logger("PiApiInferenceRecovery");
 const RECOVERY_BATCH_SIZE = 20;
@@ -404,6 +405,20 @@ const recoverClaim$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (claim.kind === "uncertain") {
+      const observed = await settle(
+        recordPiApiUsageObservation(db, {
+          runId: claim.run.id,
+          attemptId: claim.providerAttemptId,
+          observation: undefined,
+        }),
+      );
+      signal.throwIfAborted();
+      if (!observed.ok) {
+        L.warn("Failed to record uncertain Pi API usage", {
+          runId: claim.run.id,
+          error: observed.error,
+        });
+      }
       await set(
         failRecoveredInference$,
         claim,

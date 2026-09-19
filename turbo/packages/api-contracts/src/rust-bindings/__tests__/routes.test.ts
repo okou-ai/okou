@@ -2,6 +2,12 @@ import { normalizeRouteBindings, renderRustRoutes } from "../generate";
 import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
+  {
+    method: "POST",
+    path: "/api/runners/runs/:runId/api-usage",
+    rustModulePath: ["runners", "runs", "by_run_id", "api_usage"],
+    rustConstName: "READ",
+  },
   ...(["resolve", "check"] as const).map((action) => {
     return {
       method: "POST",

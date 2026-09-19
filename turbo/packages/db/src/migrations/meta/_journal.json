@@ -645,6 +645,13 @@
       "when": 1789796443637,
       "tag": "1169_rename_built_in_model_cooldown_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1170,
+      "version": "7",
+      "when": 1789808331560,
+      "tag": "1170_wide_owl",
+      "breakpoints": true
     }
   ]
 }

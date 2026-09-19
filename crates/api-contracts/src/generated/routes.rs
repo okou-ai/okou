@@ -247,6 +247,39 @@ pub mod runners {
                 }
             }
 
+            /// Generated route bindings under `runners::runs::by_run_id::api_usage`.
+            pub mod api_usage {
+                /// Read cumulative API-owned usage for the winning official Runner.
+                /// Route contract: `POST /api/runners/runs/:runId/api-usage`.
+                pub const READ: crate::RouteTemplate = crate::RouteTemplate {
+                    method: crate::Method::Post,
+                    path: "/api/runners/runs/:runId/api-usage",
+                };
+
+                /// Path parameters for `POST /api/runners/runs/:runId/api-usage`.
+                #[derive(Debug, Clone, Copy)]
+                pub struct Params<'a> {
+                    /// Value for the `:runId` path parameter.
+                    pub run_id: &'a str,
+                }
+
+                /// Build the concrete path for `POST /api/runners/runs/:runId/api-usage`.
+                /// Percent-encodes each path parameter as a URL path segment.
+                #[must_use]
+                pub fn path(params: Params<'_>) -> String {
+                    format!(
+                        "/api/runners/runs/{}/api-usage",
+                        crate::route::encode_path_segment(params.run_id),
+                    )
+                }
+
+                /// Build a resolved route for `POST /api/runners/runs/:runId/api-usage`.
+                #[must_use]
+                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                    crate::ResolvedRoute::new(READ.method, path(params))
+                }
+            }
+
             /// Generated route bindings under `runners::runs::by_run_id::cancellation`.
             pub mod cancellation {
                 /// Read the stop intent or confirmed absence of a claimed Run.

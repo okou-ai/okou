@@ -54,6 +54,7 @@ export type PiApiFirstTurnActivation = PiApiFirstTurnActivationBase &
   (
     | {
         readonly executionMode: "legacy-sandbox-race";
+        readonly providerAttemptId: string;
         readonly runnerGroup: string;
       }
     | {

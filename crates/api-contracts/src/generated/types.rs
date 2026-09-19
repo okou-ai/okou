@@ -1161,6 +1161,116 @@ pub mod runners {
             }
         }
 
+        /// Cumulative API-owned usage snapshots for an exact Runner claim.
+        pub mod api_usage {
+            /// Winning Runner claim bound to this read.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct RequestRunnerIdentity {
+                /// Exact Runner process UUID.
+                pub runner_id: String,
+                /// Exact Runner heartbeat generation.
+                pub heartbeat_generation: i64,
+            }
+
+            /// Exact current Runner identity for an API usage read.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct Request {
+                /// Winning Runner claim bound to this read.
+                pub runner_identity: RequestRunnerIdentity,
+            }
+
+            /// API-owned inference lifecycle state.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum ResponseAvailableInferenceState {
+                /// No API provider request can occur.
+                #[serde(rename = "no_inference")]
+                NoInference,
+                /// API inference remains eligible before provider ownership.
+                #[serde(rename = "pending")]
+                Pending,
+                /// At least one provider attempt crossed ownership.
+                #[serde(rename = "attempted")]
+                Attempted,
+            }
+
+            /// Reason the API usage snapshot is incomplete.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum ResponseAvailableReason {
+                /// A terminal attempt has no usable provider usage.
+                #[serde(rename = "missing_usage")]
+                MissingUsage,
+                /// Some token categories are unknown.
+                #[serde(rename = "missing_categories")]
+                MissingCategories,
+                /// Retention or safe arithmetic bounds were exceeded.
+                #[serde(rename = "overflow")]
+                Overflow,
+                /// A retained provider attempt remains outstanding.
+                #[serde(rename = "in_flight")]
+                InFlight,
+                /// Conflicting evidence exists for an attempt.
+                #[serde(rename = "ambiguous_attempt")]
+                AmbiguousAttempt,
+                /// Provider ownership has not yet been decided.
+                #[serde(rename = "pending_inference")]
+                PendingInference,
+            }
+
+            /// Safe disjoint token totals.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct ResponseAvailableTotals {
+                /// Ordinary input tokens excluding cache partitions.
+                pub input: u64,
+                /// Cache-read input tokens.
+                pub cache_read: u64,
+                /// Cache-creation input tokens.
+                pub cache_creation: u64,
+                /// Output tokens.
+                pub output: u64,
+                /// Sum of the four disjoint categories.
+                pub total: u64,
+            }
+
+            /// Cumulative API-owned run usage or a non-enumerating miss.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(tag = "state", rename_all_fields = "camelCase")]
+            pub enum Response {
+                /// No exact authorized source row is visible.
+                #[serde(rename = "unavailable")]
+                Unavailable {
+                    /// Requested Run UUID.
+                    run_id: String,
+                },
+                /// A cumulative API-owned source snapshot is available.
+                #[serde(rename = "available")]
+                Available {
+                    /// Requested Run UUID.
+                    run_id: String,
+                    /// Monotonic cumulative source revision.
+                    revision: i64,
+                    /// API sampling time in Unix milliseconds.
+                    sampled_at_ms: i64,
+                    /// Last material source update in Unix milliseconds.
+                    updated_at_ms: i64,
+                    /// API inference lifecycle state.
+                    inference_state: ResponseAvailableInferenceState,
+                    /// Retained attempts with terminal evidence.
+                    observed_attempts: u64,
+                    /// Retained attempts still in flight.
+                    outstanding_attempts: u64,
+                    /// Whether no coverage reason remains.
+                    complete: bool,
+                    /// Sorted unique incomplete-coverage reasons.
+                    reasons: Vec<ResponseAvailableReason>,
+                    /// Safe disjoint cumulative token totals.
+                    totals: ResponseAvailableTotals,
+                },
+            }
+        }
+
         /// Authenticated Run cancellation reconciliation DTOs.
         pub mod cancellation {
             /// Effective mode persisted by the API's canonical stop decision.

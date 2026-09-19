@@ -1,4 +1,5 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
+import { runnerApiUsageContract } from "../contracts/runner-api-usage";
 import {
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
@@ -39,6 +40,11 @@ export interface RuntimeApiRouteBinding {
 }
 
 export const runtimeApiRouteBindings = [
+  {
+    id: "runners.runs.apiUsage",
+    owner: "runner",
+    route: runnerApiUsageContract.read,
+  },
   {
     id: "runners.jobs.handoff",
     owner: "runner",

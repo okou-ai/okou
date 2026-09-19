@@ -17,6 +17,7 @@ import {
   deletePiApiFirstTurnUsageEventsFixture,
   insertPiApiFirstTurnUsageEventsFixture,
   readRunUsageEventsFixture,
+  readRunApiUsageProjectionFixture,
   replacePiSessionHistoryJsonlFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -367,6 +368,28 @@ describe("CHAT-02: model-first provider policies", () => {
         output: 3,
         cacheRead: 3,
         cacheCreation: 2,
+      });
+      await expect(
+        readRunApiUsageProjectionFixture(run.runId),
+      ).resolves.toMatchObject({
+        revision: 3,
+        projection: {
+          phase: "attempted",
+          overflow: false,
+          attempts: [
+            {
+              terminal: true,
+              coverage: "complete",
+              evidenceLost: false,
+              tokens: {
+                input: 5,
+                output: 3,
+                cacheRead: 3,
+                cacheCreation: 2,
+              },
+            },
+          ],
+        },
       });
     },
     90_000,
@@ -1386,6 +1409,27 @@ describe("CHAT-02: model-first provider policies", () => {
         "previous_response_id",
       );
       await expectNoBuiltInModelUsage(first.runId);
+      await expect(
+        readRunApiUsageProjectionFixture(first.runId),
+      ).resolves.toMatchObject({
+        revision: 3,
+        projection: {
+          phase: "attempted",
+          attempts: [
+            {
+              terminal: true,
+              coverage: "complete",
+              evidenceLost: false,
+              tokens: {
+                input: 5,
+                output: 3,
+                cacheRead: 0,
+                cacheCreation: 0,
+              },
+            },
+          ],
+        },
+      });
 
       await api.heartbeatRunner(runnerGroup);
       const claim = await claimGptPiSandbox(actor, first.runId, route.tier);
@@ -1737,6 +1781,16 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       expect(providerRequests).toStrictEqual([]);
       await expectNoBuiltInModelUsage(run.runId);
+      await expect(
+        readRunApiUsageProjectionFixture(run.runId),
+      ).resolves.toMatchObject({
+        revision: 2,
+        projection: {
+          phase: "no-inference",
+          attempts: [],
+          overflow: false,
+        },
+      });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.requestClaimRunnerJob(true, run.runId, [404], {
         capabilities: { piModelConfigGenerations: [1, 2, 3] },

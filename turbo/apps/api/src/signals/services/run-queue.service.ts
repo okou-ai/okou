@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   consumeDeferredPiRun$,
   settleDeferredPiTerminal$,
@@ -514,6 +516,7 @@ async function promoteAdmittedQueuedRun(
             piApiFirstTurn: {
               executionMode: "legacy-sandbox-race",
               runId: args.row.runId,
+              providerAttemptId: randomUUID(),
               runnerGroup: payload.runnerGroup,
               userId: args.row.userId,
               orgId: args.orgId,
