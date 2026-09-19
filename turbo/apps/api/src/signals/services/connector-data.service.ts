@@ -8,6 +8,7 @@ import {
   type ConnectorResponse,
   type ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
+import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
@@ -2429,11 +2430,7 @@ async function commitConnectorTokenConnection(
     },
     signal,
   );
-  if (
-    ["auth-code", "external-code", "device-auth"].includes(
-      args.runtimeMethod.method.grant.kind,
-    )
-  ) {
+  if (isOneClickConnectorGrantKind(args.runtimeMethod.method.grant.kind)) {
     await awardCompletedGetStartedQuest(args.db, {
       orgId: args.orgId,
       userId: args.userId,

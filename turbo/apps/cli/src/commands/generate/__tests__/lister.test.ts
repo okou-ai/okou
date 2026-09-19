@@ -390,7 +390,8 @@ describe("okou generate lister", () => {
       expect(output()).toContain(
         `Paid tool "${tool}" is disabled for this run.`,
       );
-      expect(output()).toContain("http://localhost:3000/?settings=paid-tools");
+      expect(output()).toContain("Settings > Personal > Chat");
+      expect(output()).toContain("http://localhost:3000/?settings=chat");
       expect(output()).toContain(`@${provider}-user`);
       expect(output()).not.toContain("Available on the current plan");
       expect(mockConsoleError).not.toHaveBeenCalled();

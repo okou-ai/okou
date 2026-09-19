@@ -377,11 +377,7 @@ async function resolveModelContext(
   const selectedModel = pin.selectedModel;
   const builtInModelRuntimeRoute =
     isBuiltInModelProviderType(effectiveModelProvider) && selectedModel
-      ? await resolveBuiltInModelRuntimeRoute(
-          args.db,
-          selectedModel,
-          threadModelContext.featureSwitchContext,
-        )
+      ? await resolveBuiltInModelRuntimeRoute(args.db, selectedModel)
       : undefined;
   signal.throwIfAborted();
   if (

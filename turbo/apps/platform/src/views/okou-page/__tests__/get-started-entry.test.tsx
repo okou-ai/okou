@@ -5,6 +5,11 @@ import {
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  connectorCatalogContract,
+  type PublicConnectorCatalogStatusItem,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -12,7 +17,7 @@ import {
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   click,
@@ -61,6 +66,65 @@ function slackInstalled(): SlackOrgStatus {
       missingVars: [],
     },
   };
+}
+
+/**
+ * One connector of each half of the catalog: Gmail finishes in the browser and
+ * earns the reward, OpenAI wants a key pasted in from another site and does
+ * not.
+ */
+function catalogItem(
+  slug: ConnectorSlug,
+  label: string,
+  grantKind: "auth-code" | "manual",
+): PublicConnectorCatalogStatusItem {
+  return {
+    slug,
+    label,
+    description: `${label} test connector`,
+    icon: {
+      url: `https://icons.example.test/${slug}.svg`,
+      invertInDarkMode: false,
+    },
+    category: "test",
+    generation: [],
+    tags: [],
+    authMethods: [
+      {
+        id: grantKind === "auth-code" ? "oauth" : "key",
+        label,
+        description: null,
+        grantKind,
+        manualFields: [],
+        startOptions: [],
+      },
+    ],
+    permissionSummary: {
+      hasPermissions: false,
+      permissionCount: 0,
+      hasCategories: false,
+      hasDefaultPolicyOverrides: false,
+    },
+    connection: null,
+    connected: false,
+    connectionStatus: "not-connected",
+    scopeMismatch: false,
+    authMethodSupportsRefresh: true,
+    tokenExpiresAt: null,
+    singleAuthCodeAuthMethodId: grantKind === "auth-code" ? "oauth" : null,
+    connectNotice: null,
+  };
+}
+
+function mockQuestCatalog(): void {
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, {
+      connectors: [
+        catalogItem("gmail", "Gmail", "auth-code"),
+        catalogItem("openai", "OpenAI", "manual"),
+      ],
+    });
+  });
 }
 
 function configureQuestPage(
@@ -640,4 +704,170 @@ test("A pending check-in disables the action and a failed request leaves it avai
   });
   expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
   expect(within(panel).getByText("300")).toBeInTheDocument();
+});
+
+test("The connector step says what it costs the user before it hands them off", async () => {
+  configureQuestPage(context, "admin");
+  mockQuestCatalog();
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Okou works inside the tools you already use",
+  });
+  // The dialog says what the step is, and the list does the rest.
+  expect(
+    within(dialog).getByText(
+      "Connect one of your tools so Okou can work in it.",
+    ),
+  ).toBeInTheDocument();
+  // Explaining is all it does: the destination is still the connector list.
+  expect(pathname()).toBe(questChatPath());
+
+  // The reward only pays on connectors that finish in the browser, so those
+  // are the ones the dialog offers; the key-pasting half of the catalog would
+  // earn nothing and is not shown here.
+  const picker = await within(dialog).findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(within(picker).queryByText("OpenAI")).not.toBeInTheDocument();
+
+  // The whole catalog is still one press away for anyone who wants it.
+  click(buttonNamed("Browse all connectors", dialog));
+  await waitFor(() => {
+    expect(pathname()).toBe("/connectors");
+  });
+});
+
+test("Picking a connector in the dialog starts its authorization", async () => {
+  configureQuestPage(context, "admin");
+  mockQuestCatalog();
+  const opened: string[] = [];
+  vi.stubGlobal("open", (url: string) => {
+    opened.push(url);
+    return null;
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  await screen.findByTestId("quest-connector-picker");
+
+  click(await screen.findByTestId("quest-connector-gmail"));
+
+  // Authorization begins in place: no second dialog repeating the connector's
+  // name, and no page the reader would have to find the same connector on.
+  await waitFor(() => {
+    expect(opened.join(" ")).toContain("gmail");
+  });
+  expect(pathname()).toBe(questChatPath());
+});
+
+test("Declining an introduced step costs the user nothing", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-invite"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "What one person knows, everyone can run",
+  });
+  expect(
+    within(dialog).getByText("Invite your teammates to this workspace."),
+  ).toBeInTheDocument();
+
+  click(buttonNamed("Later", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(pathname()).toBe(questChatPath());
+});
+
+test("The workflow step ends by handing over the prompt itself", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-workflow"));
+
+  const steps = await screen.findByRole("dialog", {
+    name: "One good run becomes something the team keeps",
+  });
+  expect(within(steps).getByText("Start from a template")).toBeInTheDocument();
+  expect(within(steps).getByText("Run it once")).toBeInTheDocument();
+  expect(
+    within(steps).getByText("Save it, then give it a schedule"),
+  ).toBeInTheDocument();
+
+  click(buttonNamed("Give me one to try", steps));
+
+  const handover = await screen.findByRole("dialog", {
+    name: "Ask the way you would ask a colleague",
+  });
+  // The prompt is readable before it is sent, not hidden behind the button.
+  expect(
+    within(handover).getByText(
+      "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
+    ),
+  ).toBeInTheDocument();
+
+  // The way out of the handover is still the template list.
+  click(buttonNamed("Browse templates", handover));
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+  });
+});
+
+test("Checking in confirms the reward instead of closing silently", async () => {
+  configureQuestPage(context, "admin", { claimedToday: false });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+
+  const dialog = await screen.findByRole("dialog", {
+    name: "That is today done",
+  });
+  // The reward, what it buys, and where the checklist now stands.
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(
+      "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
+    ),
+  ).toBeInTheDocument();
 });

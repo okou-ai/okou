@@ -459,6 +459,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.GetStartedQuestIntro]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Explain what a Get started quest is worth in an illustrated dialog before it hands the user off, instead of navigating straight to the destination.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerTemplateChipCover]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -489,6 +496,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // against hand-built decks; the template corpus has not been checked yet.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.OptimisticMessageSpinner]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Show a spinner beside a user message the server has not confirmed yet",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
 };
 

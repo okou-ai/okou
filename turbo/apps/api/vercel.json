@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/cron/cleanup-x-resource-reads",
-      "schedule": "* * * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/monitor-chat-event-queue",

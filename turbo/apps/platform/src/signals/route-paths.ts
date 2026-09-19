@@ -26,6 +26,7 @@ export const ROUTES = {
   ideas: "/ideas",
   connectors: "/connectors",
   connectorSsh: "/connectors/ssh",
+  connectorVnc: "/connectors/vnc",
   computerUseAuthorize: "/computer-use/authorize/:requestToken",
   bankingConnectReturn: "/banking/connect/return",
   bankingConnectReturnResult: "/banking/connect/return/:bankingConnectStatus",

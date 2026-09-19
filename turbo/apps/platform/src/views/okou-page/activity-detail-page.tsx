@@ -602,32 +602,31 @@ function ActivityStepsContent({
 function ActivityContextTab({ detail }: { detail: LogDetail }) {
   const { t } = useTranslation();
   const contextLoadable = useLastLoadable(activityContext$);
-  const modelRoute =
-    detail.modelRuntimeProvider && detail.modelRuntimeModel ? (
-      <section className="mb-6">
-        <SectionHeader
-          title={t(($) => {
-            return $.activity.context.modelRoute;
-          })}
-        />
-        <KeyValueTable
-          data={{
-            [t(($) => {
-              return $.activity.context.selectedModel;
-            })]: detail.selectedModel ?? "—",
-            [t(($) => {
-              return $.activity.context.modelProvider;
-            })]: detail.modelProvider ?? "—",
-            [t(($) => {
-              return $.activity.context.runtimeProvider;
-            })]: detail.modelRuntimeProvider,
-            [t(($) => {
-              return $.activity.context.runtimeModel;
-            })]: detail.modelRuntimeModel,
-          }}
-        />
-      </section>
-    ) : null;
+  const modelRoute = (
+    <section className="mb-6">
+      <SectionHeader
+        title={t(($) => {
+          return $.activity.context.modelRoute;
+        })}
+      />
+      <KeyValueTable
+        data={{
+          [t(($) => {
+            return $.activity.context.selectedModel;
+          })]: detail.selectedModel ?? "null",
+          [t(($) => {
+            return $.activity.context.modelProvider;
+          })]: detail.modelProvider ?? "null",
+          [t(($) => {
+            return $.activity.context.runtimeProvider;
+          })]: detail.modelRuntimeProvider ?? "null",
+          [t(($) => {
+            return $.activity.context.runtimeModel;
+          })]: detail.modelRuntimeModel ?? "null",
+        }}
+      />
+    </section>
+  );
 
   let contextContent: ReactNode;
   if (

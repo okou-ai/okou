@@ -182,6 +182,73 @@ test.each(["page", "shared-worker"] as const)(
   },
 );
 
+const WEBAUTHN_SERVICE_MESSAGE =
+  "NotSupportedError: Error connecting to Web Authentication service.";
+const WEBAUTHN_UNSUPPORTED_MESSAGE =
+  "NotSupportedError: The user agent does not support public key credentials.";
+
+function unhandledRejectionEvent(
+  value: string,
+  overrides: {
+    readonly handled?: boolean;
+    readonly mechanismType?: string;
+  } = {},
+): ErrorEvent {
+  return {
+    type: undefined,
+    exception: {
+      values: [
+        {
+          type: "Error",
+          value,
+          mechanism: {
+            handled: overrides.handled ?? false,
+            type:
+              overrides.mechanismType ??
+              "auto.browser.global_handlers.onunhandledrejection",
+          },
+        },
+      ],
+    },
+  };
+}
+
+test("discards known Clerk WebAuthn rejections on the page", async () => {
+  const beforeSend = startSentry("page");
+  for (const message of [
+    WEBAUTHN_SERVICE_MESSAGE,
+    WEBAUTHN_UNSUPPORTED_MESSAGE,
+  ]) {
+    await expect(
+      Promise.resolve(beforeSend(unhandledRejectionEvent(message), {})),
+    ).resolves.toBeNull();
+  }
+});
+
+test("reports neighboring WebAuthn failures on the page", async () => {
+  const beforeSend = startSentry("page");
+  for (const event of [
+    unhandledRejectionEvent(
+      "NotSupportedError: Web Authentication service failed unexpectedly.",
+    ),
+    unhandledRejectionEvent(WEBAUTHN_SERVICE_MESSAGE, {
+      handled: true,
+      mechanismType: "generic",
+    }),
+    unhandledRejectionEvent(WEBAUTHN_SERVICE_MESSAGE, {
+      mechanismType: "auto.browser.global_handlers.onerror",
+    }),
+  ]) {
+    await expect(Promise.resolve(beforeSend(event, {}))).resolves.toBe(event);
+  }
+});
+
+test("reports known WebAuthn messages in the shared worker", async () => {
+  const beforeSend = startSentry("shared-worker");
+  const event = unhandledRejectionEvent(WEBAUTHN_SERVICE_MESSAGE);
+  await expect(Promise.resolve(beforeSend(event, {}))).resolves.toBe(event);
+});
+
 // WebKit's own <video> controls script escapes to window.onerror with no
 // application frame, so thirdPartyErrorFilterIntegration tags it before
 // delivery. Only that exact combination may be discarded.

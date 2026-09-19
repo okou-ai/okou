@@ -3453,7 +3453,7 @@ test("Create a filtered GitHub workflow-run automation", async () => {
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
-  pickAutomation("Integrations", /^GitHub workflow completed/);
+  pickAutomation("GitHub", /^GitHub workflow completed/);
 
   const form = await screen.findByRole("form", {
     name: "Add GitHub workflow automation",
@@ -3503,7 +3503,7 @@ test("Offer GitHub App installation when GitHub is unavailable", async () => {
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
-  pickAutomation("Integrations", /^GitHub workflow completed/);
+  pickAutomation("GitHub", /^GitHub workflow completed/);
 
   const form = await screen.findByRole("form", {
     name: "Add GitHub workflow automation",
@@ -3541,7 +3541,7 @@ test("Ask an administrator to install GitHub when self-service is unavailable", 
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
-  pickAutomation("Integrations", /^GitHub workflow completed/);
+  pickAutomation("GitHub", /^GitHub workflow completed/);
 
   const form = await screen.findByRole("form", {
     name: "Add GitHub workflow automation",
@@ -3571,7 +3571,7 @@ test("Create a filtered GitHub issue-comment automation", async () => {
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
-  pickAutomation("Integrations", /^GitHub issue comment created/);
+  pickAutomation("GitHub", /^GitHub issue comment created/);
 
   const form = await screen.findByRole("form", {
     name: "Add GitHub issue comment created automation",

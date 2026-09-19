@@ -56,7 +56,10 @@ import {
   type ConnectorCatalogValidationAuthority,
 } from "./connector-catalog-validator-authority";
 import type { ApiDispatchTimingActionType } from "./api-dispatch-timing.service";
-import { connectorAuthMethodFeatureSwitch } from "./connector-auth-method-feature-switches";
+import {
+  connectorAuthMethodFeatureSwitch,
+  connectorAuthMethodHiddenFeatureSwitch,
+} from "./connector-auth-method-feature-switches";
 import {
   CONNECTOR_DISCOVERY_PER_CATEGORY,
   CONNECTOR_SEARCH_LIMIT,
@@ -651,6 +654,18 @@ function featureSwitchEnabled(
   return featureSwitch === undefined || featureStates?.[featureSwitch] === true;
 }
 
+function featureSwitchHidesAuthMethod(
+  connectorSlug: string,
+  authMethodId: string,
+  featureStates: ConnectorFeatureStates,
+): boolean {
+  const featureSwitch = connectorAuthMethodHiddenFeatureSwitch(
+    connectorSlug,
+    authMethodId,
+  );
+  return featureSwitch !== undefined && featureStates?.[featureSwitch] === true;
+}
+
 function effectiveConnectors(args: {
   readonly catalog: AcceptedConnectorCatalogSnapshot;
   readonly featureStates: ConnectorFeatureStates;
@@ -669,6 +684,15 @@ function effectiveConnectors(args: {
       }
       if (
         !featureSwitchEnabled(connector.slug, method.id, args.featureStates)
+      ) {
+        return false;
+      }
+      if (
+        featureSwitchHidesAuthMethod(
+          connector.slug,
+          method.id,
+          args.featureStates,
+        )
       ) {
         return false;
       }
@@ -929,26 +953,58 @@ function hasCatalogScopeMismatch(args: {
   );
 }
 
+function connectionMethodForCatalogStatus(args: {
+  readonly effective: EffectiveConnector;
+  readonly featureStates: ConnectorFeatureStates;
+  readonly response: ConnectorResponse | null;
+}): ConnectorCatalogAuthMethod | undefined {
+  if (!args.response) {
+    return undefined;
+  }
+  const authMethodId = args.response.authMethod;
+  const effectiveMethod = args.effective.authMethods.find((method) => {
+    return method.id === authMethodId;
+  });
+  if (effectiveMethod) {
+    return effectiveMethod;
+  }
+  if (
+    !featureSwitchHidesAuthMethod(
+      args.effective.connector.slug,
+      authMethodId,
+      args.featureStates,
+    )
+  ) {
+    return undefined;
+  }
+  // Rollout replacements are unavailable for new connections, but existing
+  // connections still need to remain visible and manageable.
+  return args.effective.connector.authMethods.find((method) => {
+    return method.id === authMethodId;
+  });
+}
+
 function connectorCatalogStatusItem(args: {
   readonly catalog: AcceptedConnectorCatalogSnapshot;
   readonly effective: EffectiveConnector;
+  readonly featureStates: ConnectorFeatureStates;
   readonly connection: ConnectorCatalogConnection | null;
   readonly popularityIndex: ReadonlyMap<string, number>;
 }): PublicConnectorCatalogStatusItem {
   const detail = connectorCatalogDetail(args.effective, args.popularityIndex);
   const response = args.connection?.response ?? null;
-  const effectiveMethod = response
-    ? args.effective.authMethods.find((method) => {
-        return method.id === response.authMethod;
-      })
-    : undefined;
-  const connector = effectiveMethod ? response : null;
-  const facts = effectiveMethod
+  const connectionMethod = connectionMethodForCatalogStatus({
+    effective: args.effective,
+    featureStates: args.featureStates,
+    response,
+  });
+  const connector = connectionMethod ? response : null;
+  const facts = connectionMethod
     ? args.catalog.privateMethodFacts.get(
-        authMethodKey(args.effective.connector.slug, effectiveMethod.id),
+        authMethodKey(args.effective.connector.slug, connectionMethod.id),
       )
     : undefined;
-  if (effectiveMethod && !facts) {
+  if (connectionMethod && !facts) {
     throw new Error("Connector catalog private method facts are missing");
   }
   const scopeMismatch = hasCatalogScopeMismatch({
@@ -1227,6 +1283,7 @@ export async function getExternalPublicConnectorCatalogStatus(
   return connectorCatalogStatusItem({
     catalog,
     effective: entry,
+    featureStates: args.featureStates,
     connection: connection ?? null,
     popularityIndex: createConnectorPopularityIndex(),
   });
@@ -1243,6 +1300,7 @@ export async function listExternalPublicConnectorCatalogStatus(
   return connectorCatalogStatusRead({
     catalog,
     effective,
+    featureStates: args.featureStates,
     connections: args.connections,
     referenceConnectorSlugs: args.referenceConnectorSlugs,
   });
@@ -1259,6 +1317,7 @@ export async function discoverExternalPublicConnectorCatalogStatus(
   const read = connectorCatalogStatusRead({
     catalog,
     effective: discoveryEffectiveConnectors(effective, args),
+    featureStates: args.featureStates,
     // The category list and the category counts describe the same thing, so
     // they are computed from the same set: the whole catalog minus the
     // connectors Okou runs for itself, not the slice that came back for a
@@ -1281,6 +1340,7 @@ export async function discoverExternalPublicConnectorCatalogStatus(
 function connectorCatalogStatusRead(args: {
   readonly catalog: AcceptedConnectorCatalogSnapshot;
   readonly effective: readonly EffectiveConnector[];
+  readonly featureStates: ConnectorFeatureStates;
   /**
    * The connectors the category list describes, when that is wider than the
    * ones being returned. Discovery answers a named category with only that
@@ -1301,6 +1361,7 @@ function connectorCatalogStatusRead(args: {
     return connectorCatalogStatusItem({
       catalog: args.catalog,
       effective: entry,
+      featureStates: args.featureStates,
       connection: connectionsBySlug.get(entry.connector.slug) ?? null,
       popularityIndex,
     });

@@ -40,7 +40,30 @@ test("The connector redirect page explains the secure provider handoff", async (
   expect(
     screen.getByLabelText("Connector icon unavailable"),
   ).toBeInTheDocument();
+  expect(screen.queryByLabelText("Mercury banking disclosure")).toBeNull();
   expect(getBackLink()).toHaveAttribute("href", "/");
+});
+
+test("The Mercury redirect page shows its required disclosure", async () => {
+  await setupPage({
+    context,
+    path: "/connectors/mercury/redirecting?label=Mercury",
+    auth: null,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: "Redirecting to Mercury…" }),
+  ).resolves.toBeInTheDocument();
+  const disclosure = screen.getByLabelText("Mercury banking disclosure");
+  expect(
+    screen.getByText(
+      "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
+    ),
+  ).toBeInTheDocument();
+  const attribution = queryAllByRoleFast("link", disclosure).find((link) => {
+    return link.textContent?.trim() === "Powered by Mercury";
+  });
+  expect(attribution).toHaveAttribute("href", "https://mercury.com");
 });
 
 test("A stalled mobile provider handoff shows guidance", async () => {

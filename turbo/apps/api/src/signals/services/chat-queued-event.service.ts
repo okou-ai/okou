@@ -22,7 +22,10 @@ import {
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
-import { pgNullDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgNullDecoder,
+} from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -35,7 +38,7 @@ import {
   canonicalChatEventUserMessage,
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
-import { chatThreadAdmissionBlocked } from "./chat-active-run.service";
+import { chatThreadAdmissionBlockerCondition } from "./chat-active-run.service";
 import {
   chatQueueEventPriority,
   listPendingChatQueueEvents,
@@ -173,9 +176,17 @@ export type QueueFirstRunClaimResult =
     }
   | { readonly kind: "lost" };
 
+const queueFirstAdmissionTransaction = Symbol("queueFirstAdmissionTransaction");
+
 export type QueueFirstRunAdmission =
   | { readonly kind: "blocked" }
-  | { readonly kind: "idle" };
+  | {
+      readonly kind: "idle";
+      readonly [queueFirstAdmissionTransaction]?: {
+        readonly transaction: DbTransaction;
+        readonly head: QueueFirstClaimHead;
+      };
+    };
 
 export type QueueFirstRunSessionSnapshotState =
   | "binding_changed"
@@ -420,65 +431,13 @@ function replacementTargetFromQueueHead(
   };
 }
 
-async function resolveUserQueueFirstClaimSnapshot(
-  db: DbTransaction,
-  args: Extract<QueueFirstClaimArgs, { readonly kind: "user_message" }>,
-): Promise<QueueFirstClaimSnapshot | null> {
-  const [head] = await db
-    .select({
-      ...queueFirstReplacementTargetFields,
-      userMessage: canonicalChatEventUserMessage(),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, args.threadId),
-        pendingChatQueueEventCondition(db),
-      ),
-    )
-    .orderBy(
-      chatQueueEventPriority(),
-      asc(chatEvents.createdAt),
-      asc(chatEvents.id),
-    )
-    .for("update", { of: chatEvents })
-    .limit(1);
-  if (!head || head.eventType !== "input.prompt" || head.id !== args.eventId) {
-    return null;
-  }
-  if (!head.userMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  const contextType = requiredQueuedUserMessageContextType(head.contextType);
-  return {
-    target: replacementTargetFromQueueHead(head),
-    routingContextType: contextType,
-    replacement: {
-      chatThreadId: args.threadId,
-      eventType: "input.prompt",
-      userMessage:
-        args.selectedModel === null
-          ? head.userMessage
-          : withRunModelAnnotation(
-              head.userMessage,
-              args.selectedModel,
-              args.serviceTier,
-            ),
-      runId: args.runId,
-    },
-  };
-}
-
-async function resolveAutomationEventQueueFirstClaimSnapshot(
-  db: DbTransaction,
-  args: Extract<QueueFirstClaimArgs, { readonly kind: "automation_event" }>,
-): Promise<QueueFirstClaimSnapshot | null> {
-  const [head] = await db
+function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
+  return db
     .select({
       ...queueFirstReplacementTargetFields,
       automationId: chatAutomationContext.automationId,
       automationKind: workflowAutomations.kind,
-      userMessage: canonicalChatEventUserMessage(),
+      userMessage: canonicalChatEventUserMessage().as("user_message"),
     })
     .from(chatEvents)
     .leftJoin(
@@ -494,7 +453,7 @@ async function resolveAutomationEventQueueFirstClaimSnapshot(
     )
     .where(
       and(
-        eq(chatEvents.chatThreadId, args.threadId),
+        eq(chatEvents.chatThreadId, threadId),
         pendingChatQueueEventCondition(db),
       ),
     )
@@ -505,59 +464,128 @@ async function resolveAutomationEventQueueFirstClaimSnapshot(
     )
     .for("update", { of: chatEvents })
     .limit(1);
-  if (
-    !head ||
-    head.eventType !== "input.automation" ||
-    head.id !== args.eventId ||
-    head.automationId !== args.automationId ||
-    head.automationKind === null
-  ) {
-    return null;
+}
+
+async function loadQueueFirstClaimHead(db: DbTransaction, threadId: string) {
+  const [head] = await queueFirstClaimHeadQuery(db, threadId);
+  return head ?? null;
+}
+
+type QueueFirstClaimHead = Awaited<ReturnType<typeof loadQueueFirstClaimHead>>;
+
+function queueFirstClaimSnapshotFromHead(
+  head: QueueFirstClaimHead,
+  args: QueueFirstClaimArgs,
+): QueueFirstClaimSnapshot | null {
+  if (args.kind === "user_message") {
+    if (
+      !head ||
+      head.eventType !== "input.prompt" ||
+      head.id !== args.eventId
+    ) {
+      return null;
+    }
+    if (!head.userMessage) {
+      throw new Error("Queued input event is missing userMessage");
+    }
+    const contextType = requiredQueuedUserMessageContextType(head.contextType);
+    return {
+      target: replacementTargetFromQueueHead(head),
+      routingContextType: contextType,
+      replacement: {
+        chatThreadId: args.threadId,
+        eventType: "input.prompt",
+        userMessage:
+          args.selectedModel === null
+            ? head.userMessage
+            : withRunModelAnnotation(
+                head.userMessage,
+                args.selectedModel,
+                args.serviceTier,
+              ),
+        runId: args.runId,
+      },
+    };
   }
-  if (!head.userMessage) {
-    throw new Error("Workflow queue event is missing its user message");
+  if (args.kind === "automation_event") {
+    if (
+      !head ||
+      head.eventType !== "input.automation" ||
+      head.id !== args.eventId ||
+      head.automationId !== args.automationId ||
+      head.automationKind === null
+    ) {
+      return null;
+    }
+    if (!head.userMessage) {
+      throw new Error("Workflow queue event is missing its user message");
+    }
+    return {
+      target: replacementTargetFromQueueHead(head),
+      routingContextType: "automation",
+      replacement: {
+        chatThreadId: args.threadId,
+        eventType: "input.prompt",
+        userMessage:
+          args.selectedModel === null
+            ? head.userMessage
+            : withRunModelAnnotation(
+                head.userMessage,
+                args.selectedModel,
+                args.serviceTier,
+              ),
+        runId: args.runId,
+      },
+    };
   }
-  return {
-    target: replacementTargetFromQueueHead(head),
-    routingContextType: "automation",
-    replacement: {
-      chatThreadId: args.threadId,
-      eventType: "input.prompt",
-      userMessage:
-        args.selectedModel === null
-          ? head.userMessage
-          : withRunModelAnnotation(
-              head.userMessage,
-              args.selectedModel,
-              args.serviceTier,
-            ),
-      runId: args.runId,
-    },
-  };
+  // Retained association shape cannot grant launch authority after retirement.
+  return null;
 }
 
 async function resolveQueueFirstClaimSnapshot(
   db: DbTransaction,
   args: QueueFirstClaimArgs,
 ): Promise<QueueFirstClaimSnapshot | null> {
-  if (args.kind === "user_message") {
-    return await resolveUserQueueFirstClaimSnapshot(db, args);
-  }
-  if (args.kind === "automation_event") {
-    return await resolveAutomationEventQueueFirstClaimSnapshot(db, args);
-  }
-  // Retained association shape cannot grant launch authority after retirement.
-  return null;
+  return queueFirstClaimSnapshotFromHead(
+    await loadQueueFirstClaimHead(db, args.threadId),
+    args,
+  );
 }
 
-function queueFirstRunAdmissionBlocked(
+async function loadQueueFirstAdmissionProjection(
   db: DbTransaction,
   args: { readonly admissionTime: number; readonly threadId: string },
-): Promise<boolean> {
-  return chatThreadAdmissionBlocked(db, {
-    threadId: args.threadId,
-    apiStartTime: args.admissionTime,
-  });
+): Promise<{
+  readonly admissionBlocked: boolean;
+  readonly head: QueueFirstClaimHead;
+} | null> {
+  const head = db
+    .$with("queue_first_admission_head")
+    .as(queueFirstClaimHeadQuery(db, args.threadId));
+  const [projection] = await db
+    .with(head)
+    .select({
+      admissionBlocked: sql`${chatThreadAdmissionBlockerCondition(db, {
+        threadId: args.threadId,
+        apiStartTime: args.admissionTime,
+      })}`.mapWith(pgBooleanDecoder),
+      head: {
+        id: head.id,
+        chatThreadId: head.chatThreadId,
+        createdAt: head.createdAt,
+        eventType: head.eventType,
+        contextType: head.contextType,
+        contextId: head.contextId,
+        automationId: head.automationId,
+        automationKind: head.automationKind,
+        userMessage: head.userMessage,
+      },
+    })
+    .from(chatThreads)
+    .leftJoin(head, sql`true`)
+    .where(eq(chatThreads.id, args.threadId))
+    .limit(1);
+  return projection ?? null;
 }
 
 /**
@@ -594,13 +622,26 @@ export async function resolveQueueFirstRunAdmission(
         return { kind: "blocked" };
       }
 
-      if (await queueFirstRunAdmissionBlocked(db, args)) {
+      const projection = await args.timing.measure(
+        "api_dispatch_queue_first_admission_projection",
+        "nested",
+        async () => {
+          return await loadQueueFirstAdmissionProjection(db, args);
+        },
+      );
+      if (!projection || projection.admissionBlocked) {
         outcome = "blocked";
         return { kind: "blocked" };
       }
 
       outcome = "idle";
-      return { kind: "idle" };
+      return Object.freeze({
+        kind: "idle",
+        [queueFirstAdmissionTransaction]: {
+          transaction: db,
+          head: projection.head,
+        },
+      });
     },
     () => {
       return {
@@ -628,11 +669,15 @@ export async function claimQueueFirstRunAssociation(
         return { kind: "lost" };
       }
 
+      const admissionProjection =
+        args.admission[queueFirstAdmissionTransaction];
       const snapshot = await args.timing.measure(
         "api_dispatch_resolve_queue_first_claim_snapshot",
         "nested",
         async () => {
-          return await resolveQueueFirstClaimSnapshot(db, args);
+          return admissionProjection?.transaction === db
+            ? queueFirstClaimSnapshotFromHead(admissionProjection.head, args)
+            : await resolveQueueFirstClaimSnapshot(db, args);
         },
         claimDimensions,
       );

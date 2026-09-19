@@ -18,6 +18,7 @@ import {
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { mcpCreateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
@@ -287,6 +288,12 @@ async function createThread(token: string, args: Record<string, unknown>) {
   const result = await callTool(token, "create_chat_thread", args);
   expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
   return mcpCreateChatThreadOutputSchema.parse(result.structuredContent);
+}
+
+async function updateThread(token: string, args: Record<string, unknown>) {
+  const result = await callTool(token, "update_chat_thread", args);
+  expect(result.isError, JSON.stringify(result.content)).not.toBeTruthy();
+  return mcpUpdateChatThreadOutputSchema.parse(result.structuredContent);
 }
 
 async function sendMessage(token: string, args: Record<string, unknown>) {
@@ -780,6 +787,259 @@ describe("MCP chat discovery and creation", () => {
       f.chat.readThreadMetadata(f.actor, args.requestId),
     ).resolves.toStrictEqual(before);
     expect((await listThreads(token)).threads).toHaveLength(1);
+  });
+
+  it("atomically updates sparse metadata and replays without reverting newer state", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Original metadata",
+      model: "claude-sonnet-5",
+    });
+    const firstId = randomUUID();
+    const first = await updateThread(token, {
+      requestId: firstId,
+      threadId: created.threadId,
+      patch: { title: "Manual MCP title" },
+    });
+    expect(first).toMatchObject({
+      requestId: firstId,
+      threadId: created.threadId,
+      title: "Manual MCP title",
+      titleTruncated: false,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
+      replayed: false,
+    });
+    expect(Date.parse(first.retryUntil) - Date.parse(first.acceptedAt)).toBe(
+      24 * 60 * 60 * 1000,
+    );
+
+    const second = await updateThread(token, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: {
+        title: "Newer combined state",
+        model: "claude-sonnet-4-6",
+      },
+    });
+    expect(second).toMatchObject({
+      title: "Newer combined state",
+      model: {
+        selectedModel: "claude-sonnet-4-6",
+        effectiveModel: "claude-sonnet-4-6",
+      },
+      replayed: false,
+    });
+
+    await expect(
+      updateThread(token, {
+        requestId: firstId,
+        threadId: created.threadId,
+        patch: { title: "Manual MCP title" },
+      }),
+    ).resolves.toMatchObject({
+      acceptedAt: first.acceptedAt,
+      title: "Newer combined state",
+      model: { selectedModel: "claude-sonnet-4-6" },
+      replayed: true,
+    });
+    expect(
+      (
+        await callTool(token, "update_chat_thread", {
+          requestId: firstId,
+          threadId: created.threadId,
+          patch: { title: "Conflicting reuse" },
+        })
+      ).isError,
+    ).toBeTruthy();
+
+    const cleared = await updateThread(token, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { model: null },
+    });
+    expect(cleared).toMatchObject({
+      title: "Newer combined state",
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+      },
+    });
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "Newer combined state",
+        model: { selectedModel: null, effectiveModel: "claude-sonnet-5" },
+      },
+    });
+  });
+
+  it("preserves Fast, reasoning, media and browser settings", async () => {
+    const f = await threadFixture();
+    const model = await f.chat.getDefaultCreateThreadModel(f.actor);
+    const created = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: "Preserve settings",
+      model,
+    });
+    await f.chat.updateThreadModelSelection(f.actor, created.id, model, {
+      reasoningEffort: "high",
+      codexServiceTier: "fast",
+    });
+    await f.chat.updateThreadImageModel(f.actor, created.id, "gpt-image-2");
+    await f.chat.updateThreadVideoModel(f.actor, created.id, "MiniMax-H3");
+    const before = await f.chat.readThreadMetadata(f.actor, created.id);
+    expect(before).toMatchObject({
+      modelSettings: { [model]: { effort: "high" } },
+      serviceTier: "priority",
+      selectedVideoModel: "MiniMax-H3",
+      selectedImageModel: "gpt-image-2",
+    });
+
+    await updateThread(f.auth.token({ scope: defaultScopes }), {
+      requestId: randomUUID(),
+      threadId: created.id,
+      patch: { title: "Still preserved", model },
+    });
+
+    await expect(
+      f.chat.readThreadMetadata(f.actor, created.id),
+    ).resolves.toMatchObject({
+      modelSettings: before.modelSettings,
+      serviceTier: before.serviceTier,
+      computerUseHostId: before.computerUseHostId,
+      cloudBrowserEnabled: before.cloudBrowserEnabled,
+      selectedVideoModel: before.selectedVideoModel,
+      selectedImageModel: before.selectedImageModel,
+    });
+  });
+
+  it("rejects update replay after its 24-hour window without reapplying intent", async () => {
+    const f = await creationFixture();
+    const currentToken = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(currentToken, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Before expiry",
+      model: "claude-sonnet-5",
+    });
+    const requestId = randomUUID();
+    const first = await updateThread(currentToken, {
+      requestId,
+      threadId: created.threadId,
+      patch: { title: "Accepted title" },
+    });
+    await updateThread(currentToken, {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { title: "Later title" },
+    });
+    const futureToken = f.auth.token({
+      scope: defaultScopes,
+      exp: Math.floor((Date.parse(first.retryUntil) + 60_000) / 1000),
+    });
+
+    await withMockNowForTest(Date.parse(first.retryUntil) + 1, async () => {
+      const replay = await callTool(futureToken, "update_chat_thread", {
+        requestId,
+        threadId: created.threadId,
+        patch: { title: "Accepted title" },
+      });
+      expect(replay.isError).toBeTruthy();
+      expect(replay.structuredContent).toBeUndefined();
+    });
+    await expect(
+      getThread(currentToken, created.threadId),
+    ).resolves.toMatchObject({ thread: { title: "Later title" } });
+  });
+
+  it("validates thread update patches before changing metadata", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Unchanged metadata",
+      model: "claude-sonnet-5",
+    });
+    const eventsBefore = (await f.chat.requestThreadEvents(f.actor, {}, [200]))
+      .body;
+    for (const patch of [
+      {},
+      { title: " " },
+      { title: "x".repeat(201) },
+      { model: "not-a-supported-model" },
+      { title: "Must roll back", model: "not-a-supported-model" },
+      { title: "Must roll back denied model", model: "claude-opus-4-8" },
+      { title: "Unknown field", extra: true },
+    ]) {
+      expect(
+        (
+          await callTool(token, "update_chat_thread", {
+            requestId: randomUUID(),
+            threadId: created.threadId,
+            patch,
+          })
+        ).isError,
+      ).toBeTruthy();
+    }
+    expect(
+      (
+        await callTool(token, "update_chat_thread", {
+          requestId: created.threadId,
+          threadId: created.threadId,
+          patch: { title: "Event collision must roll back" },
+        })
+      ).isError,
+    ).toBeTruthy();
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "Unchanged metadata",
+        model: { selectedModel: "claude-sonnet-5" },
+      },
+    });
+    await expect(
+      f.chat.requestThreadEvents(f.actor, {}, [200]),
+    ).resolves.toMatchObject({ body: eventsBefore });
+  });
+
+  it("deduplicates simultaneous identical thread updates", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Concurrent metadata",
+      model: "claude-sonnet-5",
+    });
+    const args = {
+      requestId: randomUUID(),
+      threadId: created.threadId,
+      patch: { title: "One accepted update", model: "claude-sonnet-4-6" },
+    };
+    const results = await Promise.all([
+      updateThread(token, args),
+      updateThread(token, args),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.replayed;
+        })
+        .sort(),
+    ).toStrictEqual([false, true]);
+    await expect(getThread(token, created.threadId)).resolves.toMatchObject({
+      thread: {
+        title: "One accepted update",
+        model: { selectedModel: "claude-sonnet-4-6" },
+      },
+    });
   });
 
   it("expires creation retries after 24 hours and does not recreate deleted conversations", async () => {
@@ -2141,6 +2401,15 @@ describe("MCP chat mutations", () => {
         agentId: randomUUID(),
         title: "Scope check",
         model: "claude-sonnet-5",
+      },
+    },
+    {
+      name: "update_chat_thread",
+      scope: "okou:chat:manage",
+      args: {
+        requestId: randomUUID(),
+        threadId: randomUUID(),
+        patch: { title: "Scope check" },
       },
     },
     {
@@ -4759,6 +5028,10 @@ describe("external MCP entry", () => {
                     annotations: { readOnlyHint: false, idempotentHint: true },
                   },
                   {
+                    name: "update_chat_thread",
+                    annotations: { readOnlyHint: false, idempotentHint: true },
+                  },
+                  {
                     name: "send_chat_message",
                     annotations: { readOnlyHint: false, idempotentHint: true },
                   },
@@ -4859,6 +5132,7 @@ describe("external MCP entry", () => {
         "list_chat_threads",
         "get_chat_thread",
         "create_chat_thread",
+        "update_chat_thread",
         "send_chat_message",
         "revoke_queued_message",
         "cancel_run",

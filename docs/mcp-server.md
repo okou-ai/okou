@@ -4,7 +4,7 @@ The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
 official MCP SDK and serves `list_agents`, `list_models`, `create_chat_thread`,
 `list_chat_threads`, `get_chat_thread`,
 `get_chat_messages`, `search_chat_messages`, `get_chat_status`, `send_chat_message`,
-`revoke_queued_message` and `cancel_run`. The read tools query current
+`revoke_queued_message`, `cancel_run` and `update_chat_thread`. The read tools query current
 user/organization-owned conversations; mutations reuse the existing input queue
 and run lifecycle. The OAuth
 foundation shipped in #34931; discovery and current context are tracked by
@@ -80,6 +80,50 @@ transaction, including the Agent owner's account. It uses the existing creation
 event and publishes thread-list changes after commit. Once admitted, finite
 mutation work retains server ownership if the HTTP client disconnects; the
 client must use the same retry identity when the result was not received.
+
+## Updating conversation metadata
+
+`update_chat_thread` requires `okou:chat:manage` and accepts one explicit sparse
+patch:
+
+```json
+{
+  "requestId": "<new UUID for this intended update>",
+  "threadId": "<owned conversation UUID>",
+  "patch": {
+    "title": "Quarterly plan review",
+    "model": "<selectable model id, or null>"
+  }
+}
+```
+
+The patch must contain `title` and/or `model`. Omitted fields remain unchanged;
+`model: null` clears the thread model pin so later runs use the current member or
+organization default. A title is nonblank and at most 200 UTF-16 units. The patch
+never implicitly changes service tier, per-model reasoning settings, image/video
+models, computer-use or browser settings. A preserved setting that is incompatible
+with the requested model makes the whole update fail.
+
+Title and model validation, metadata changes and durable sidebar events commit in
+one transaction. Failure leaves both fields and their events unchanged. A title
+patch is a manual rename: it records rename precedence, so a title generation that
+finishes later cannot overwrite it. A model patch changes only later run creation.
+An existing run retains its run-scoped model, and a message steered into that run
+continues with the existing model.
+
+The result contains the current bounded title, selected/effective model and source,
+current service tier, update timestamp, authenticated App URL and retry metadata.
+Generate one UUID `requestId` for each intended patch. Retry an uncertain response
+with the identical request ID, thread ID, exact field presence and exact values
+within 24 hours. Concurrent identical requests converge. Exact replay does not
+reapply old intent: it returns current state, so retrying update A after update B
+cannot restore A. Reusing the key with a different patch conflicts.
+
+After the retry window, inspect `get_chat_thread` before making a new intended
+change. Do not automatically retry an uncertain old request. Deduplication is not
+promised beyond retained mutation identity. As with other MCP mutations, admitted
+finite work remains server-owned after HTTP disconnection, and thread-list
+invalidation is published only after a new commit.
 
 ## Conversation discovery
 

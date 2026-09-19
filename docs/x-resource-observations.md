@@ -92,7 +92,7 @@ cascade into shared reads. The migration creates one empty table and changes
 no existing table or count writer.
 
 The table is used by the transactional consumer and the independent authenticated
-`GET /api/cron/cleanup-x-resource-reads` job, scheduled once per minute. No
+`GET /api/cron/cleanup-x-resource-reads` job, scheduled once per hour. No
 additional schema or index is required by the consumer.
 
 ## Consumer transaction and retries

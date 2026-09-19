@@ -148,7 +148,7 @@ flush and retry limits do not replace this evidence or guarantee durable deliver
 
 Measure representative request sizes, resource counts, upload backlog/latency,
 database contention and clock alignment. Cleanup deletes at most 1,000 rows per
-minute: 1.44 million rows per day is a nominal upper bound if every scheduled
+hour: 24,000 rows per day is a nominal upper bound if every scheduled
 call succeeds, not measured capacity. Compare actual expired-row volume and
 backlog with observed cleanup throughput. Delayed cleanup retains extra rows but
 must never extend the today/yesterday admission window.

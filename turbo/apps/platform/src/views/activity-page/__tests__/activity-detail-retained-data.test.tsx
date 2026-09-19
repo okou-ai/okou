@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
@@ -21,6 +21,7 @@ const context = testContext();
 
 const RUN_ID = "a0000000-0000-4000-a000-000000000399";
 const SELECTED_MODEL = "gpt-5.6-luna";
+const DIRECT_PROVIDER = "codex-oauth-token";
 const RUNTIME_PROVIDER = "openrouter-codex";
 const RUNTIME_MODEL = "openai/gpt-5.6-luna";
 
@@ -52,6 +53,14 @@ function managedLogDetail(): LogDetail {
     selectedModel: SELECTED_MODEL,
     modelRuntimeProvider: RUNTIME_PROVIDER,
     modelRuntimeModel: RUNTIME_MODEL,
+  };
+}
+
+function directProviderLogDetail(): LogDetail {
+  return {
+    ...logDetail(),
+    modelProvider: DIRECT_PROVIDER,
+    selectedModel: SELECTED_MODEL,
   };
 }
 
@@ -171,6 +180,43 @@ test("A user can download all retained diagnostics for an older activity", async
   });
   expect(downloaded.context).toMatchObject({ runId: RUN_ID });
   expect(downloaded.networkLogs).toStrictEqual([networkLog()]);
+});
+
+test("Activity context lists model route fields without runtime metadata", async () => {
+  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
+    return respond(200, directProviderLogDetail());
+  });
+  context.mocks.api(runContextContract.getContext, ({ respond }) => {
+    return respond(200, runContext());
+  });
+
+  await setupPage({
+    context,
+    path: `/activities/${RUN_ID}?tab=context`,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+
+  const modelRouteHeading = await screen.findByRole("heading", {
+    name: "Model Route",
+  });
+  const modelRouteSection = modelRouteHeading.closest("section");
+  if (!modelRouteSection) {
+    throw new Error("Model route section was not rendered");
+  }
+  const modelRoute = within(modelRouteSection);
+  const expectedRows = [
+    ["Selected Model", SELECTED_MODEL],
+    ["Model Provider", DIRECT_PROVIDER],
+    ["Runtime Provider", "null"],
+    ["Runtime Model", "null"],
+  ] as const;
+  for (const [label, value] of expectedRows) {
+    const row = modelRoute.getByText(label).closest("tr");
+    if (!row) {
+      throw new Error(`Model route row was not rendered: ${label}`);
+    }
+    expect(within(row).getByText(value)).toBeInTheDocument();
+  }
 });
 
 test("Diagnostic export remains available when run context was not retained", async () => {

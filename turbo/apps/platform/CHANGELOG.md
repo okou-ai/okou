@@ -11,6 +11,33 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.922.0](https://github.com/vm0-ai/okou/compare/app-v0.921.0...app-v0.922.0) (2026-09-19)
+
+
+### Features
+
+* move paid tools into chat settings ([#35381](https://github.com/vm0-ai/okou/issues/35381)) ([3ac2ba5](https://github.com/vm0-ai/okou/commit/3ac2ba574a056d26870db201d0d88dceccba6028))
+* **platform:** add vnc settings and agent authorization ([#35310](https://github.com/vm0-ai/okou/issues/35310)) ([edf492a](https://github.com/vm0-ai/okou/commit/edf492aca6f667d87070511c1837ee3dc5c72145))
+* **platform:** explain a get started quest before handing it off ([#35259](https://github.com/vm0-ai/okou/issues/35259)) ([0fe450b](https://github.com/vm0-ai/okou/commit/0fe450b6a61c244996b23573209f43c119bda89b))
+* **platform:** spin beside user messages the server has not confirmed ([#35367](https://github.com/vm0-ai/okou/issues/35367)) ([0bb026f](https://github.com/vm0-ai/okou/commit/0bb026f1dbbb2cf76c39b4db38e2b2e750525826))
+* **platform:** split github automations into their own picker category ([#35376](https://github.com/vm0-ai/okou/issues/35376)) ([0b960b4](https://github.com/vm0-ai/okou/commit/0b960b4d1b41a26c27516061eb0393ef850afff2))
+
+
+### Bug Fixes
+
+* **app:** size the composer's controls against the composer, not the window ([#35354](https://github.com/vm0-ai/okou/issues/35354)) ([0f2aaf0](https://github.com/vm0-ai/okou/commit/0f2aaf097d5d33b3bcc9dfe791de57c0c150aca9))
+* **connectors:** complete mercury oauth compliance flow ([#35346](https://github.com/vm0-ai/okou/issues/35346)) ([ebbffbf](https://github.com/vm0-ai/okou/commit/ebbffbfad2da6af02b2ead54a0ff00a7f1ebda49))
+* **platform:** filter expected Clerk WebAuthn rejections ([#35351](https://github.com/vm0-ai/okou/issues/35351)) ([fc6e4f2](https://github.com/vm0-ai/okou/commit/fc6e4f2d391687ca81f3c54d03d2c33fe489bcf9))
+* **platform:** show every activity model route field ([#35379](https://github.com/vm0-ai/okou/issues/35379)) ([0da9f46](https://github.com/vm0-ai/okou/commit/0da9f463cc49d19db1e07f86ef2d7dfb7e8b5e21))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.475.0
+    * @okouai/core bumped to 8.683.0
+
 ## [0.921.0](https://github.com/vm0-ai/okou/compare/app-v0.920.2...app-v0.921.0) (2026-09-18)
 
 
