@@ -17,8 +17,12 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, asc, eq, or } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
+import {
+  currentOfficialWorkflowCatalogAuthority,
+  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+} from "./official-workflow-catalog-authority";
 
-export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
+export { OFFICIAL_WORKFLOW_CATALOG_AUTHORITY };
 
 export interface AcceptedOfficialWorkflowCatalog {
   readonly releaseId: string;
@@ -75,6 +79,7 @@ export async function readAcceptedOfficialWorkflowCatalog(
   db: ReadonlyDb,
   signal?: AbortSignal,
 ): Promise<AcceptedOfficialWorkflowCatalog | null> {
+  const authority = currentOfficialWorkflowCatalogAuthority();
   const [row] = await db
     .select({
       releaseId: officialWorkflowCatalogState.acceptedReleaseId,
@@ -83,17 +88,18 @@ export async function readAcceptedOfficialWorkflowCatalog(
     .from(officialWorkflowCatalogState)
     .innerJoin(
       officialWorkflowCatalogReleases,
-      eq(
-        officialWorkflowCatalogReleases.id,
-        officialWorkflowCatalogState.acceptedReleaseId,
+      and(
+        eq(
+          officialWorkflowCatalogReleases.authority,
+          officialWorkflowCatalogState.authority,
+        ),
+        eq(
+          officialWorkflowCatalogReleases.id,
+          officialWorkflowCatalogState.acceptedReleaseId,
+        ),
       ),
     )
-    .where(
-      eq(
-        officialWorkflowCatalogState.authority,
-        OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
-      ),
-    )
+    .where(eq(officialWorkflowCatalogState.authority, authority))
     .limit(1);
   signal?.throwIfAborted();
   if (!row) {
@@ -182,16 +188,25 @@ export async function readAcceptedOfficialWorkflowRevisions(
       ),
     )
     .where(
-      or(
-        ...identities.map((identity) => {
-          return and(
-            eq(
-              officialWorkflowDefinitionRevisions.definitionName,
-              identity.name,
-            ),
-            eq(officialWorkflowDefinitionRevisions.revision, identity.revision),
-          );
-        }),
+      and(
+        eq(
+          officialWorkflowDefinitionRevisions.authority,
+          currentOfficialWorkflowCatalogAuthority(),
+        ),
+        or(
+          ...identities.map((identity) => {
+            return and(
+              eq(
+                officialWorkflowDefinitionRevisions.definitionName,
+                identity.name,
+              ),
+              eq(
+                officialWorkflowDefinitionRevisions.revision,
+                identity.revision,
+              ),
+            );
+          }),
+        ),
       ),
     )
     .orderBy(
@@ -268,6 +283,12 @@ export async function readAllCurrentSchemaOfficialWorkflowRevisions(
           storageVersions.storageId,
           officialWorkflowDefinitionRevisions.storageId,
         ),
+      ),
+    )
+    .where(
+      eq(
+        officialWorkflowDefinitionRevisions.authority,
+        currentOfficialWorkflowCatalogAuthority(),
       ),
     )
     .orderBy(

@@ -9,7 +9,6 @@ import {
   getCustomConnectorSkillName,
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
-  getOfficialWorkflowDefinitionStorageName,
   SYSTEM_ORG_ID,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
@@ -46,6 +45,7 @@ import {
   userFeatureSwitchOverridesFromRows,
 } from "./feature-switch-scope";
 import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
+import { currentOfficialWorkflowDefinitionStorageName } from "./official-workflow-catalog-authority";
 import { piStableContextVariantDigest } from "./pi-stable-context-digest.service";
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import {
@@ -590,7 +590,7 @@ function dynamicStorageIdentities(
     } else {
       add(
         SYSTEM_ORG_ID,
-        getOfficialWorkflowDefinitionStorageName(
+        currentOfficialWorkflowDefinitionStorageName(
           workflow.officialDefinitionName,
         ),
       );

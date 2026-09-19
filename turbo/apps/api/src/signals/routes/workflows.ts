@@ -101,10 +101,8 @@ import {
 import type { RouteEntry } from "../route-entry";
 import { sendNormalEvent$ } from "../services/chat-events.command";
 import type { Tx } from "../../lib/db-types";
-import {
-  OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK,
-  OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE,
-} from "../services/official-workflow-constants";
+import { OFFICIAL_WORKFLOW_READ_ONLY_MESSAGE } from "../services/official-workflow-constants";
+import { lockOfficialWorkflowCatalogActivation } from "../services/official-workflow-catalog-authority";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -1251,9 +1249,7 @@ async function lockWorkflowCopyInputs(
   prepared?: WorkflowCopySource,
 ): Promise<boolean> {
   if (args.sourceWorkflow.officialDefinitionName !== null) {
-    await tx.execute(
-      sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-    );
+    await lockOfficialWorkflowCatalogActivation(tx, "shared");
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
     );

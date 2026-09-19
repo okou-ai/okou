@@ -36,7 +36,10 @@ import {
 } from "./automation-event-watch-lifecycle.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { notionConfigWithConnectorId } from "./notion-automation-account.service";
-import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
+import {
+  currentOfficialWorkflowCatalogAuthority,
+  lockOfficialWorkflowCatalogActivation,
+} from "./official-workflow-catalog-authority";
 import {
   readAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowRevision,
@@ -113,51 +116,63 @@ type ReconfigurationPersistedHook = (args: {
 }) => Promise<void>;
 
 const dormantMaterializationReservedHookForTest = testOverride<
-  DormantMaterializationReservedHook | undefined
+  Map<string, DormantMaterializationReservedHook>
 >(() => {
-  return undefined;
+  return new Map();
 });
 
 const automationStructureTransitionPreparedHookForTest = testOverride<
-  AutomationStructureTransitionPreparedHook | undefined
+  Map<string, AutomationStructureTransitionPreparedHook>
 >(() => {
-  return undefined;
+  return new Map();
 });
 
 const reconfigurationPersistedHookForTest = testOverride<
-  ReconfigurationPersistedHook | undefined
+  Map<string, ReconfigurationPersistedHook>
 >(() => {
-  return undefined;
+  return new Map();
 });
 
 export function setDormantMaterializationReservedHookForTest(
   hook: DormantMaterializationReservedHook,
 ): void {
-  dormantMaterializationReservedHookForTest.set(hook);
+  dormantMaterializationReservedHookForTest
+    .get()
+    .set(currentOfficialWorkflowCatalogAuthority(), hook);
 }
 
 export function clearDormantMaterializationReservedHookForTest(): void {
-  dormantMaterializationReservedHookForTest.clear();
+  dormantMaterializationReservedHookForTest
+    .get()
+    .delete(currentOfficialWorkflowCatalogAuthority());
 }
 
 export function setAutomationStructureTransitionPreparedHookForTest(
   hook: AutomationStructureTransitionPreparedHook,
 ): void {
-  automationStructureTransitionPreparedHookForTest.set(hook);
+  automationStructureTransitionPreparedHookForTest
+    .get()
+    .set(currentOfficialWorkflowCatalogAuthority(), hook);
 }
 
 export function clearAutomationStructureTransitionPreparedHookForTest(): void {
-  automationStructureTransitionPreparedHookForTest.clear();
+  automationStructureTransitionPreparedHookForTest
+    .get()
+    .delete(currentOfficialWorkflowCatalogAuthority());
 }
 
 export function setReconfigurationPersistedHookForTest(
   hook: ReconfigurationPersistedHook,
 ): void {
-  reconfigurationPersistedHookForTest.set(hook);
+  reconfigurationPersistedHookForTest
+    .get()
+    .set(currentOfficialWorkflowCatalogAuthority(), hook);
 }
 
 export function clearReconfigurationPersistedHookForTest(): void {
-  reconfigurationPersistedHookForTest.clear();
+  reconfigurationPersistedHookForTest
+    .get()
+    .delete(currentOfficialWorkflowCatalogAuthority());
 }
 
 export type ReconcileOfficialWorkflowInstallationArgs =
@@ -394,9 +409,7 @@ async function acquireReconciliationLocks(
   db: Db,
   orgId: string,
 ): Promise<void> {
-  await db.execute(
-    sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-  );
+  await lockOfficialWorkflowCatalogActivation(db, "shared");
   await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
 }
 
@@ -1736,7 +1749,9 @@ async function reconcileAutomationStructureTransition(
       message: watchFailure,
     };
   }
-  await automationStructureTransitionPreparedHookForTest.get()?.({
+  await automationStructureTransitionPreparedHookForTest
+    .get()
+    .get(currentOfficialWorkflowCatalogAuthority())?.({
     definitionName: args.definitionName,
     workflowId: args.automation.workflowId,
     automationId: args.automation.id,
@@ -1849,7 +1864,9 @@ async function reconcileExistingAutomation(
       message: "Official Workflow reconciliation was superseded",
     };
   }
-  await reconfigurationPersistedHookForTest.get()?.({
+  await reconfigurationPersistedHookForTest
+    .get()
+    .get(currentOfficialWorkflowCatalogAuthority())?.({
     definitionName: args.definitionName,
     workflowId: args.automation.workflowId,
     automationId: args.automation.id,
@@ -3070,7 +3087,9 @@ async function reconcileDormantBlueprint(
       message: "Official Workflow Automation creation recovery is busy",
     };
   }
-  await dormantMaterializationReservedHookForTest.get()?.({
+  await dormantMaterializationReservedHookForTest
+    .get()
+    .get(currentOfficialWorkflowCatalogAuthority())?.({
     definitionName: args.definitionName,
     workflowId: args.workflowId,
     automationId: reservation.id,

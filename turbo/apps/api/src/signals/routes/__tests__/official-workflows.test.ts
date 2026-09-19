@@ -74,6 +74,10 @@ import {
   readOfficialWorkflowQueueInputFixture,
   readOfficialWorkflowQueueRunFixture,
 } from "../../../test-fixtures/official-workflow-queue";
+import {
+  currentOfficialWorkflowCatalogFixtureOrganizationIds,
+  registerOfficialWorkflowCatalogFixtureOrganization,
+} from "../../../test-fixtures/official-workflow-catalog";
 import { verifyOkouToken } from "../../auth/tokens";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
@@ -176,7 +180,20 @@ import {
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const workflowBdd = createWorkflowsBddApi(context);
+const baseWorkflowBdd = createWorkflowsBddApi(context);
+const workflowBdd = Object.freeze({
+  ...baseWorkflowBdd,
+  async setupWorkflowOrg(
+    ...args: Parameters<typeof baseWorkflowBdd.setupWorkflowOrg>
+  ): ReturnType<typeof baseWorkflowBdd.setupWorkflowOrg> {
+    const setup = await baseWorkflowBdd.setupWorkflowOrg(...args);
+    if (setup.actor.orgId === null) {
+      throw new Error("Official Workflow test organization is missing");
+    }
+    registerOfficialWorkflowCatalogFixtureOrganization(setup.actor.orgId);
+    return setup;
+  },
+});
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
@@ -1150,7 +1167,10 @@ function stateClient() {
 async function runOfficialWorkflowReconciliationWorker() {
   const response = await accept(
     stateClient().action({
-      body: { action: "run-reconciliation-worker" },
+      body: {
+        action: "run-reconciliation-worker",
+        organizationIds: currentOfficialWorkflowCatalogFixtureOrganizationIds(),
+      },
     }),
     [200],
   );

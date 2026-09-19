@@ -129,6 +129,7 @@ describe("workflow schema physical identity", () => {
         indexes: ["idx_official_workflow_reconciliation_work_due"],
         checks: [
           "official_workflow_reconciliation_work_attempt_count_check",
+          "official_workflow_reconciliation_work_authority",
           "official_workflow_reconciliation_work_state_check",
         ],
       },

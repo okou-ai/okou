@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -21,6 +22,9 @@ import { storages, storageVersions } from "./storage";
 export const officialWorkflowDefinitionRevisions = pgTable(
   "official_workflow_definition_revisions",
   {
+    authority: varchar("authority", { length: 64 })
+      .notNull()
+      .default("official"),
     definitionName: varchar("definition_name", { length: 64 }).notNull(),
     revision: varchar("revision", { length: 64 }).notNull(),
     payload: jsonb("payload")
@@ -43,8 +47,12 @@ export const officialWorkflowDefinitionRevisions = pgTable(
     return [
       primaryKey({
         name: "official_workflow_definition_revisions_pk",
-        columns: [table.definitionName, table.revision],
+        columns: [table.authority, table.definitionName, table.revision],
       }),
+      check(
+        "official_workflow_definition_revision_authority",
+        sql`${table.authority} = 'official' OR ${table.authority} ~ '^test:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'`,
+      ),
       check(
         "official_workflow_definition_revision_hash_format",
         sql`${table.revision} ~ '^[0-9a-f]{64}$'`,
@@ -56,7 +64,10 @@ export const officialWorkflowDefinitionRevisions = pgTable(
 export const officialWorkflowCatalogReleases = pgTable(
   "official_workflow_catalog_releases",
   {
-    id: varchar("id", { length: 64 }).primaryKey(),
+    authority: varchar("authority", { length: 64 })
+      .notNull()
+      .default("official"),
+    id: varchar("id", { length: 64 }).notNull(),
     payload: jsonb("payload")
       .$type<OfficialWorkflowCatalogReleasePayload>()
       .notNull(),
@@ -64,6 +75,14 @@ export const officialWorkflowCatalogReleases = pgTable(
   },
   (table) => {
     return [
+      primaryKey({
+        name: "official_workflow_catalog_releases_pk",
+        columns: [table.authority, table.id],
+      }),
+      check(
+        "official_workflow_catalog_release_authority",
+        sql`${table.authority} = 'official' OR ${table.authority} ~ '^test:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'`,
+      ),
       check(
         "official_workflow_catalog_release_hash_format",
         sql`${table.id} ~ '^[0-9a-f]{64}$'`,
@@ -75,20 +94,26 @@ export const officialWorkflowCatalogReleases = pgTable(
 export const officialWorkflowCatalogState = pgTable(
   "official_workflow_catalog_state",
   {
-    authority: varchar("authority", { length: 32 }).primaryKey(),
-    acceptedReleaseId: varchar("accepted_release_id", { length: 64 })
-      .notNull()
-      .references(() => {
-        return officialWorkflowCatalogReleases.id;
-      }),
+    authority: varchar("authority", { length: 64 })
+      .primaryKey()
+      .default("official"),
+    acceptedReleaseId: varchar("accepted_release_id", { length: 64 }).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
     return [
       check(
         "official_workflow_catalog_state_authority",
-        sql`${table.authority} = 'official'`,
+        sql`${table.authority} = 'official' OR ${table.authority} ~ '^test:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'`,
       ),
+      foreignKey({
+        name: "official_workflow_catalog_state_release_fk",
+        columns: [table.authority, table.acceptedReleaseId],
+        foreignColumns: [
+          officialWorkflowCatalogReleases.authority,
+          officialWorkflowCatalogReleases.id,
+        ],
+      }),
     ];
   },
 );
@@ -104,12 +129,13 @@ export type OfficialWorkflowReconciliationWorkState = "pending" | "running";
 export const officialWorkflowReconciliationWork = pgTable(
   "official_workflow_reconciliation_work",
   {
-    definitionName: varchar("definition_name", { length: 64 }).primaryKey(),
-    requestedReleaseId: varchar("requested_release_id", { length: 64 })
+    authority: varchar("authority", { length: 64 })
       .notNull()
-      .references(() => {
-        return officialWorkflowCatalogReleases.id;
-      }),
+      .default("official"),
+    definitionName: varchar("definition_name", { length: 64 }).notNull(),
+    requestedReleaseId: varchar("requested_release_id", {
+      length: 64,
+    }).notNull(),
     cursorWorkflowId: uuid("cursor_workflow_id"),
     state: varchar("state", { length: 16 })
       .$type<OfficialWorkflowReconciliationWorkState>()
@@ -125,9 +151,26 @@ export const officialWorkflowReconciliationWork = pgTable(
   },
   (table) => {
     return [
+      primaryKey({
+        name: "official_workflow_reconciliation_work_pk",
+        columns: [table.authority, table.definitionName],
+      }),
+      foreignKey({
+        name: "official_workflow_reconciliation_work_release_fk",
+        columns: [table.authority, table.requestedReleaseId],
+        foreignColumns: [
+          officialWorkflowCatalogReleases.authority,
+          officialWorkflowCatalogReleases.id,
+        ],
+      }),
       index("idx_official_workflow_reconciliation_work_due").on(
+        table.authority,
         table.availableAt,
         table.definitionName,
+      ),
+      check(
+        "official_workflow_reconciliation_work_authority",
+        sql`${table.authority} = 'official' OR ${table.authority} ~ '^test:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'`,
       ),
       check(
         "official_workflow_reconciliation_work_state_check",

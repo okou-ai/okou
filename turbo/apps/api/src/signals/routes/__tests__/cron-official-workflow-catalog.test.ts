@@ -13,11 +13,15 @@ import {
   type TestOfficialWorkflowCatalogStateActionBody,
 } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
+import {
+  holdOfficialWorkflowCatalogActivationLockFixture,
+  withOfficialWorkflowCatalogFixture,
+} from "../../../test-fixtures/official-workflow-catalog";
 import { mockEnv } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -349,13 +353,79 @@ beforeEach(async () => {
     "R2_USER_STORAGES_BUCKET_NAME",
     `official-workflow-catalog-test-${randomUUID()}`,
   );
-  // The accepted catalog is one infrastructure-owned singleton with no reset
-  // endpoint. This test-only external route is the narrow exception needed to
-  // construct independent initial-release scenarios without importing DB state.
+  // Clear only this test's authority-owned catalog and physical artifacts.
   await stateAction({ action: "cleanup" });
 });
 
 describe("Official Workflow catalog release boundary", () => {
+  it("isolates overlapping catalog authorities while one activation lock is held", async () => {
+    installVolumeS3Fixture();
+    const definitionName = `api-test-isolated-${TEST_SUFFIX}`;
+    const first = await syncCatalog(
+      catalog([
+        activeDefinition(definitionName, { instruction: "Authority A" }),
+      ]),
+    );
+    const firstState = await readState(definitionName);
+    expect(first.body.outcome).toBe("accepted");
+    expect(firstState.body.definition?.artifact.storageName).toContain(
+      definitionName,
+    );
+
+    const held = await holdOfficialWorkflowCatalogActivationLockFixture(
+      context.signal,
+    );
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+    await withOfficialWorkflowCatalogFixture(randomUUID(), async () => {
+      await stateAction({ action: "cleanup" });
+      const second = await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, { instruction: "Authority B" }),
+        ]),
+      );
+      const secondState = await readState(definitionName);
+      expect(second.body.outcome).toBe("accepted");
+      expect(second.body.releaseId).not.toBe(first.body.releaseId);
+      expect(secondState.body.definition?.artifact.storageName).not.toBe(
+        firstState.body.definition?.artifact.storageName,
+      );
+      expect(secondState.body.definition?.artifact.storageName).toContain(
+        definitionName,
+      );
+      expect(secondState.body.counts).toStrictEqual({
+        releases: 1,
+        revisions: 1,
+        storages: 1,
+        storageVersions: 1,
+      });
+
+      await stateAction({ action: "cleanup" });
+      const cleaned = await readState(definitionName);
+      expect(cleaned.body).toMatchObject({
+        catalog: null,
+        definition: null,
+        storage: null,
+        counts: {
+          releases: 0,
+          revisions: 0,
+          storages: 0,
+          storageVersions: 0,
+        },
+        reconciliationWork: [],
+      });
+    });
+    held.release();
+    await held.done;
+
+    const unchanged = await readState(definitionName);
+    expect(unchanged.body.catalog?.releaseId).toBe(first.body.releaseId);
+    expect(unchanged.body.definition).toStrictEqual(firstState.body.definition);
+    expect(unchanged.body.storage).toStrictEqual(firstState.body.storage);
+  });
+
   it("replaces a previous schema release with retained historical revisions", async () => {
     const seeded = await stateAction({
       action: "seed-previous-schema-release",
@@ -526,14 +596,14 @@ describe("Official Workflow catalog release boundary", () => {
       releasedConnectorDoctor.releasedBlueprintKeys,
     );
     expect(morningBriefState.body.storage).toMatchObject({
-      storageName: "official-workflow@morning-brief",
+      storageName: morningBriefDefinition.artifact.storageName,
       orgId: SYSTEM_ORG_ID,
       userId: VOLUME_ORG_USER_ID,
       headVersionId: morningBriefDefinition.artifact.storageVersion,
       versionCount: 1,
     });
     expect(connectorDoctorState.body.storage).toMatchObject({
-      storageName: "official-workflow@connector-doctor",
+      storageName: connectorDoctorDefinition.artifact.storageName,
       orgId: SYSTEM_ORG_ID,
       userId: VOLUME_ORG_USER_ID,
       headVersionId: releasedConnectorDoctor.artifact.storageVersion,
@@ -669,7 +739,7 @@ describe("Official Workflow catalog release boundary", () => {
     expect(alphaState.body.definition?.blueprints).toStrictEqual([]);
     expect(betaDefinition?.blueprints).toHaveLength(1);
     expect(alphaState.body.storage).toMatchObject({
-      storageName: `official-workflow@${alpha}`,
+      storageName: alphaState.body.definition?.artifact.storageName,
       orgId: SYSTEM_ORG_ID,
       userId: VOLUME_ORG_USER_ID,
       headVersionId: alphaState.body.definition?.artifact.storageVersion,

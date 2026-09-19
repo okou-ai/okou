@@ -44,6 +44,7 @@ export const testOfficialWorkflowCatalogStateActionBodySchema =
     z
       .object({
         action: z.literal("run-reconciliation-worker"),
+        organizationIds: z.array(z.string().min(1).max(255)).min(1).max(64),
       })
       .strict(),
     z

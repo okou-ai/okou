@@ -43,6 +43,7 @@ import { executeRawRows } from "../../lib/db-raw-rows";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
+import { currentOfficialWorkflowCatalogAuthority } from "../services/official-workflow-catalog-authority";
 import { nowDate } from "../../lib/time";
 import { testOverride } from "../../lib/singleton";
 import type { RouteEntry } from "../route-entry";
@@ -2208,9 +2209,15 @@ async function corruptOfficialWorkflowRevisionPayloadActionResponse(
     .update(officialWorkflowDefinitionRevisions)
     .set({ payload: sql`'{}'::jsonb` })
     .where(
-      eq(
-        officialWorkflowDefinitionRevisions.definitionName,
-        body.definition_name,
+      and(
+        eq(
+          officialWorkflowDefinitionRevisions.authority,
+          currentOfficialWorkflowCatalogAuthority(),
+        ),
+        eq(
+          officialWorkflowDefinitionRevisions.definitionName,
+          body.definition_name,
+        ),
       ),
     )
     .returning({ revision: officialWorkflowDefinitionRevisions.revision });

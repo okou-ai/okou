@@ -15,6 +15,7 @@ import { server } from "../mocks/server";
 import { clearAllDetached } from "../signals/utils";
 import { withUsageEventCompactionScopeFixture } from "../test-fixtures/usage-event-compaction";
 import { withXResourceAdmissionScopeFixture } from "../test-fixtures/x-resource-admission";
+import { withOfficialWorkflowCatalogFixture } from "../test-fixtures/official-workflow-catalog";
 import {
   installApiTestConnectorCatalog,
   mockApiTestConnectorProviderConfiguration,
@@ -43,9 +44,11 @@ function createApiTestKmsClient(): SecretKmsClient {
 }
 
 aroundEach(async (runTest) => {
-  await withUsageEventCompactionScopeFixture(randomUUID(), async () => {
-    await withXResourceAdmissionScopeFixture(randomUUID(), async () => {
-      await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
+  await withOfficialWorkflowCatalogFixture(randomUUID(), async () => {
+    await withUsageEventCompactionScopeFixture(randomUUID(), async () => {
+      await withXResourceAdmissionScopeFixture(randomUUID(), async () => {
+        await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
+      });
     });
   });
 });
