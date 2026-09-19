@@ -7063,16 +7063,18 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
  */
 function OptimisticSpinner({ eventId }: { eventId: string }) {
   const optimisticEventIds = useGet(optimisticEventIds$);
-  if (!optimisticEventIds.has(eventId)) {
-    return null;
-  }
+  // The slot stays reserved whether or not the message is pending, so the
+  // bubble keeps one wrap width and never reflows when confirmation lands.
   return (
-    <Loader2
-      size={14}
-      aria-hidden
-      data-optimistic-user-message
-      className="shrink-0 animate-spin text-muted-foreground"
-    />
+    <div className="size-3.5 shrink-0" aria-hidden>
+      {optimisticEventIds.has(eventId) ? (
+        <Loader2
+          size={14}
+          data-optimistic-user-message
+          className="animate-spin text-muted-foreground"
+        />
+      ) : null}
+    </div>
   );
 }
 
