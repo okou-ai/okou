@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { connectorCatalogArtifactSchema } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 
 import { env, mockEnv } from "../../../../lib/env";
 import {
@@ -52,7 +53,7 @@ export async function installAutomaticMcpCatalog(
   const firewallAuthHeaders: Record<string, string> =
     args.firewallAuth === "none"
       ? {}
-      : { Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}` };
+      : { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE };
   const catalog = connectorCatalogArtifactSchema.parse({
     ...API_TEST_CONNECTOR_CATALOG,
     catalogVersion: `automatic-${randomUUID()}`,

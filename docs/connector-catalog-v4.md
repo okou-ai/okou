@@ -119,6 +119,8 @@ The runner resolves its firewall definition from the accepted catalog without
 replacing or overriding its authentication policy from account state. Automatic
 discovery records whether the selected account resolved to OAuth or no-auth, but
 the catalog remains authoritative because that requirement is fixed for a service.
+An OAuth catalog firewall uses `Bearer ${{ secrets.MCP_ACCESS_TOKEN }}`; the API
+resolves that proxy-only token outside the sandbox for the exact selected account.
 If a no-auth account is paired with an OAuth firewall, resolving the firewall's
 required secret fails closed. If an OAuth account is paired with a no-auth firewall,
 the proxy sends no credential and the upstream rejects the unauthenticated request.

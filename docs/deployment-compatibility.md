@@ -2248,6 +2248,8 @@ exact account and attempt. Stored catalog method IDs remain unchanged.
 Automatic accounts receive the same compact builtin firewall reference used by
 builtin HTTP connectors. The Runner resolves its definition, including auth, from
 the accepted catalog; account state does not replace or override that firewall.
+An OAuth catalog firewall uses the proxy-only
+`Bearer ${{ secrets.MCP_ACCESS_TOKEN }}` template, resolved outside the sandbox.
 Automatic discovery still records whether the selected account resolved to OAuth
 or no-auth. A mismatch fails at its natural boundary: an OAuth catalog firewall
 cannot resolve its required secret from a no-auth account, while a no-auth catalog

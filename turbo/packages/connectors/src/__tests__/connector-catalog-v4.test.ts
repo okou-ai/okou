@@ -6,6 +6,7 @@ import {
   type ConnectorCatalogArtifact,
   type ConnectorCatalogArtifactConnector,
 } from "../connector-catalog/artifacts/artifacts";
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "../connector-catalog/artifacts/mcp-auth";
 import {
   decodeAttestedConnectorCatalogSnapshot,
   decodeConnectorCatalogSnapshot,
@@ -396,5 +397,55 @@ describe("v4 connector catalog reader", () => {
     expect(() => {
       decode(artifact);
     }).toThrow("relationship-mismatch");
+  });
+
+  it("accepts catalog-owned OAuth bearer auth for Automatic MCP", () => {
+    const artifact = publishedCatalog();
+    const plaud = requiredConnector(artifact, "plaud-mcp");
+    if (plaud.firewall.kind !== "generated") {
+      throw new Error("Expected generated MCP firewall fixture");
+    }
+    const api = plaud.firewall.config.apis[0];
+    if (!api) {
+      throw new Error("Expected MCP endpoint API fixture");
+    }
+    api.auth = {
+      headers: { Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE },
+    };
+
+    expect(requiredConnector(decode(artifact), "plaud-mcp").firewall).toEqual(
+      plaud.firewall,
+    );
+  });
+
+  it("rejects noncanonical catalog auth for Automatic MCP", () => {
+    const invalidAuth = [
+      {
+        headers: {
+          Authorization: "Bearer ${{ secrets.PLAUD_MCP_ACCESS_TOKEN }}",
+        },
+      },
+      {
+        headers: {
+          Authorization: "Basic ${{ secrets.MCP_ACCESS_TOKEN }}",
+        },
+      },
+      { query: { access_token: "${{ secrets.MCP_ACCESS_TOKEN }}" } },
+    ];
+    for (const auth of invalidAuth) {
+      const artifact = publishedCatalog();
+      const plaud = requiredConnector(artifact, "plaud-mcp");
+      if (plaud.firewall.kind !== "generated") {
+        throw new Error("Expected generated MCP firewall fixture");
+      }
+      const api = plaud.firewall.config.apis[0];
+      if (!api) {
+        throw new Error("Expected MCP endpoint API fixture");
+      }
+      api.auth = auth;
+      expect(() => {
+        decode(artifact);
+      }).toThrow("relationship-mismatch");
+    }
   });
 });

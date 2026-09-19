@@ -43,6 +43,7 @@ import {
   type BasicAuthTemplateArg,
   type BasicAuthTemplateMatch,
 } from "@okouai/connectors/firewall-types";
+import { AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import {
   refreshConnectorAuthProviderAccessTokenWithMethod,
@@ -6145,7 +6146,10 @@ async function resolveFirewallAuthMaterial(args: {
       material: {
         secrets:
           credential.kind === "oauth"
-            ? { MCP_ACCESS_TOKEN: credential.accessToken }
+            ? {
+                [AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME]:
+                  credential.accessToken,
+              }
             : {},
         vars: {},
         expiresAt:
