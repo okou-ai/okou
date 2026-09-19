@@ -225,6 +225,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { env, optionalEnv } from "../../lib/env";
+import { testOverride } from "../../lib/singleton";
 import {
   nullableDriverValueDecoder,
   pgInt8ToBigIntDecoder,
@@ -259,7 +260,14 @@ import {
   resolvePiLangfuseDebugConfig,
 } from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
-import { joinAll, onRejection, safeSync, settle, tapError } from "../utils";
+import {
+  joinAll,
+  joinAllInOrder,
+  onRejection,
+  safeSync,
+  settle,
+  tapError,
+} from "../utils";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -1113,6 +1121,16 @@ export type DispatchFailedRunCallbacks = (
   error: string,
 ) => Promise<void>;
 
+interface PiStableContextCacheIdentity {
+  readonly owner: PiStableContextOwner;
+  readonly variantDigest: string;
+  readonly semantic: PiStableContextSemanticInput;
+  readonly source: Omit<
+    PiStableContextSourceVector,
+    "agentGeneration" | "userGeneration" | "extractorVersion"
+  >;
+}
+
 export interface CreateAgentRunArgs {
   readonly retainedRunId?: string;
   readonly userId: string;
@@ -1121,17 +1139,12 @@ export interface CreateAgentRunArgs {
   readonly apiStartTime: number;
   /** Stable, nonsecret source bindings captured by the product entry point. */
   readonly piStableContext?: {
-    readonly owner: PiStableContextOwner;
-    readonly variantDigest: string;
     /** Built only for a miss/dynamic path; ready artifacts supply this text. */
     readonly buildPrompt: () => PiStableContextPromptProjection;
+    /** Built only by the durable stable-context consumer from captured input. */
+    readonly buildCacheIdentity: () => PiStableContextCacheIdentity;
     /** Dynamic profile/channel text and explicit caller appendage, bound later. */
     readonly dynamicAppendSystemPrompt: string;
-    readonly semantic: PiStableContextSemanticInput;
-    readonly source: Omit<
-      PiStableContextSourceVector,
-      "agentGeneration" | "userGeneration" | "extractorVersion"
-    >;
   };
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
@@ -9566,6 +9579,7 @@ async function resolvePreparedUserTimezone(input: {
   readonly timing: ApiDispatchTimingCollector;
   readonly preloadedUserTimezone: string | null | undefined;
 }): Promise<string | undefined> {
+  await observeRunContextParallelStage("user-timezone", input.args);
   return await input.timing.measure(
     "api_dispatch_prepare_context_load_user_timezone",
     "nested",
@@ -9981,6 +9995,45 @@ function agentRunResolutionOptions(
   };
 }
 
+export type RunContextParallelStage =
+  | "connector-contexts"
+  | "model-provider"
+  | "user-timezone"
+  | "media-models"
+  | "official-workflow";
+
+type RunContextParallelHook = (args: {
+  readonly stage: RunContextParallelStage;
+  readonly userId: string;
+  readonly orgId: string;
+}) => Promise<void>;
+
+const runContextParallelHook = testOverride<RunContextParallelHook | undefined>(
+  () => {
+    return undefined;
+  },
+);
+
+export function setRunContextParallelHookForTest(
+  hook: RunContextParallelHook,
+): void {
+  runContextParallelHook.set(hook);
+}
+
+export function clearRunContextParallelHookForTest(): void {
+  runContextParallelHook.clear();
+}
+
+async function observeRunContextParallelStage(
+  stage: RunContextParallelStage,
+  args: Pick<CreateAgentRunArgs, "userId" | "orgId">,
+): Promise<void> {
+  const hook = runContextParallelHook.get();
+  if (hook) {
+    await hook({ stage, userId: args.userId, orgId: args.orgId });
+  }
+}
+
 function prepareRunBodyContext(
   args: {
     readonly db: Db;
@@ -10117,6 +10170,7 @@ async function prepareRunConnectorContexts(
 ): Promise<
   Awaited<ReturnType<typeof loadRunConnectorContexts>> | CreateRunErrorResult
 > {
+  await observeRunContextParallelStage("connector-contexts", args.createArgs);
   const result = await settle(
     args.timing.measure(
       "api_dispatch_prepare_context_load_connector_contexts",
@@ -10204,6 +10258,7 @@ async function resolvePreparedRunModelProvider(
 ): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const { resolved, requestedFramework, featureSwitchContext } =
     args.bodyContext;
+  await observeRunContextParallelStage("model-provider", args.createArgs);
   return await args.timing.measure(
     "api_dispatch_prepare_context_resolve_model_provider",
     "nested",
@@ -10289,6 +10344,109 @@ async function materializeResolvedPiProvider(
   return materializedProvider.value;
 }
 
+type SettledPreparedModelProvider = PromiseSettledResult<
+  Awaited<ReturnType<typeof resolvePreparedRunModelProvider>>
+>;
+
+async function settlePreparedRunModelProvider(
+  args: Parameters<typeof resolvePreparedRunModelProvider>[0],
+  signal: AbortSignal,
+): Promise<SettledPreparedModelProvider> {
+  const [result] = await Promise.allSettled([
+    resolvePreparedRunModelProvider(args, signal),
+  ]);
+  return result;
+}
+
+async function resolvePreparedConnectorSelections(
+  args: {
+    readonly db: Db;
+    readonly createArgs: CreateAgentRunArgs;
+    readonly connectorScope: EffectiveConnectorScope;
+    readonly preloadedConnectorCatalogSnapshot?: ConnectorRuntimeSelection;
+    readonly timing: ApiDispatchTimingCollector;
+  },
+  modelProviderResolution: Promise<SettledPreparedModelProvider>,
+  signal: AbortSignal,
+): Promise<
+  | CreateRunErrorResult
+  | {
+      readonly connectorCatalogSelection: RunConnectorCatalogSelection;
+      readonly threadConnectorSelectionIds:
+        | ThreadConnectorSelectionIds
+        | undefined;
+    }
+> {
+  const [connectorCatalogSelectionResult, threadConnectorSelectionIdsResult] =
+    await Promise.allSettled([
+      connectorCatalogSelectionForRun({
+        ...args,
+        orgId: args.createArgs.orgId,
+      }),
+      args.timing.measure(
+        "api_dispatch_prepare_context_resolve_thread_connector_selections",
+        "nested",
+        () => {
+          return resolvePreparedThreadConnectorSelections(
+            {
+              db: args.db,
+              createArgs: args.createArgs,
+              connectorScope: args.connectorScope,
+            },
+            signal,
+          );
+        },
+      ),
+    ]);
+  if (connectorCatalogSelectionResult.status === "rejected") {
+    await modelProviderResolution;
+    throw connectorCatalogSelectionResult.reason;
+  }
+  if (signal.aborted) {
+    await modelProviderResolution;
+    signal.throwIfAborted();
+  }
+  if (threadConnectorSelectionIdsResult.status === "rejected") {
+    await modelProviderResolution;
+    throw threadConnectorSelectionIdsResult.reason;
+  }
+  const threadConnectorSelectionIds = threadConnectorSelectionIdsResult.value;
+  if (isRouteError(threadConnectorSelectionIds)) {
+    await modelProviderResolution;
+    return threadConnectorSelectionIds;
+  }
+  return {
+    connectorCatalogSelection: connectorCatalogSelectionResult.value,
+    threadConnectorSelectionIds,
+  };
+}
+
+async function joinPreparedRunRuntimeBranches(
+  modelProviderPromise: ReturnType<typeof materializeResolvedPiProvider>,
+  connectorContextsPromise: ReturnType<typeof prepareRunConnectorContexts>,
+  signal: AbortSignal,
+): Promise<
+  | CreateRunErrorResult
+  | {
+      readonly modelProvider: ResolvedModelProviderEnvironment | null;
+      readonly connectorContexts: Awaited<
+        ReturnType<typeof loadRunConnectorContexts>
+      >;
+    }
+> {
+  const [modelProvider, connectorContexts] = await joinAllInOrder(
+    [modelProviderPromise, connectorContextsPromise],
+    signal,
+  );
+  if (isRouteError(modelProvider)) {
+    return modelProvider;
+  }
+  if (isRouteError(connectorContexts)) {
+    return connectorContexts;
+  }
+  return { modelProvider, connectorContexts };
+}
+
 async function prepareRunRuntimeContext(
   args: {
     readonly db: Db;
@@ -10302,43 +10460,17 @@ async function prepareRunRuntimeContext(
 ): Promise<PreparedRuntimeContext | CreateRunErrorResult> {
   const { body, resolved, requestedFramework, featureSwitchContext } =
     args.bodyContext;
-  const [
-    connectorCatalogSelectionResult,
-    threadConnectorSelectionIdsResult,
-    modelProviderResult,
-  ] = await Promise.allSettled([
-    connectorCatalogSelectionForRun({
-      ...args,
-      orgId: args.createArgs.orgId,
-    }),
-    args.timing.measure(
-      "api_dispatch_prepare_context_resolve_thread_connector_selections",
-      "nested",
-      () => {
-        return resolvePreparedThreadConnectorSelections(
-          {
-            db: args.db,
-            createArgs: args.createArgs,
-            connectorScope: args.connectorScope,
-          },
-          signal,
-        );
-      },
-    ),
-    resolvePreparedRunModelProvider(args, signal),
-  ]);
-  if (connectorCatalogSelectionResult.status === "rejected") {
-    throw connectorCatalogSelectionResult.reason;
+  const modelProviderResolution = settlePreparedRunModelProvider(args, signal);
+  const connectorSelections = await resolvePreparedConnectorSelections(
+    args,
+    modelProviderResolution,
+    signal,
+  );
+  if (isRouteError(connectorSelections)) {
+    return connectorSelections;
   }
-  const connectorCatalogSelection = connectorCatalogSelectionResult.value;
-  signal.throwIfAborted();
-  if (threadConnectorSelectionIdsResult.status === "rejected") {
-    throw threadConnectorSelectionIdsResult.reason;
-  }
-  const threadConnectorSelectionIds = threadConnectorSelectionIdsResult.value;
-  if (isRouteError(threadConnectorSelectionIds)) {
-    return threadConnectorSelectionIds;
-  }
+  const { connectorCatalogSelection, threadConnectorSelectionIds } =
+    connectorSelections;
   const connectorScope =
     connectorCatalogSelection.kind === "scoped"
       ? connectorScopeForRuntimeSnapshot(
@@ -10346,18 +10478,7 @@ async function prepareRunRuntimeContext(
           connectorCatalogSelection.selection,
         )
       : args.connectorScope;
-  const modelProvider = await materializeResolvedPiProvider(
-    args.createArgs,
-    modelProviderResult,
-    signal,
-  );
-  if (isRouteError(modelProvider)) {
-    return modelProvider;
-  }
-  const framework = modelProvider
-    ? modelProviderFramework(modelProvider)
-    : requestedFramework;
-  const connectorContexts = await prepareRunConnectorContexts(
+  const connectorContextsPromise = prepareRunConnectorContexts(
     {
       ...args,
       connectorScope,
@@ -10367,15 +10488,34 @@ async function prepareRunRuntimeContext(
     },
     signal,
   );
-  if (isRouteError(connectorContexts)) {
-    return connectorContexts;
+  const modelProviderPromise = (async () => {
+    const modelProviderResult = await modelProviderResolution;
+    return await materializeResolvedPiProvider(
+      args.createArgs,
+      modelProviderResult,
+      signal,
+    );
+  })();
+  // Provider resolution keeps its historical error precedence, while connector
+  // metadata is independently owned and always settled before either result is
+  // surfaced.
+  const runtimeBranches = await joinPreparedRunRuntimeBranches(
+    modelProviderPromise,
+    connectorContextsPromise,
+    signal,
+  );
+  if (isRouteError(runtimeBranches)) {
+    return runtimeBranches;
   }
+  const { modelProvider, connectorContexts } = runtimeBranches;
+  const framework = modelProvider
+    ? modelProviderFramework(modelProvider)
+    : requestedFramework;
   const {
     storedConnectorSnapshot,
     storedConnectorMetadataContext,
     customConnectorContext,
   } = connectorContexts;
-  signal.throwIfAborted();
   const preparedConnectorContext = await materializePreparedConnectorContext({
     db: args.db,
     connectorScope,
@@ -10681,18 +10821,13 @@ function finalizeDurablePiRunContext(
         cliAgentType: "pi",
       },
     });
-    const [userTimezone, mediaModels, officialWorkflowRun] = await Promise.all([
-      resolvePreparedUserTimezone(input),
-      resolvePreparedMediaModels(input.db, input.args, signal),
-      resolvePreparedOfficialWorkflowRun(
-        input.db,
-        input.args,
+    const { userTimezone, mediaModels, officialWorkflowRun } =
+      await prepareRunIndependentObservations(
+        input,
         framework,
         piSandbox,
         signal,
-      ),
-    ]);
-    signal.throwIfAborted();
+      );
     if (isRouteError(officialWorkflowRun)) {
       return officialWorkflowRun;
     }
@@ -10911,6 +11046,7 @@ async function resolvePreparedOfficialWorkflowRun(
   piSandbox: PiModelConfig | undefined,
   signal: AbortSignal,
 ): Promise<OfficialWorkflowRunObservation | CreateRunErrorResult | undefined> {
+  await observeRunContextParallelStage("official-workflow", args);
   const candidates = safeSync(() => {
     return officialWorkflowRunCandidates(
       args.injectSkillVolumes?.workflows ?? [],
@@ -10944,6 +11080,7 @@ async function resolvePreparedMediaModels(
   args: CreateAgentRunArgs,
   signal: AbortSignal,
 ) {
+  await observeRunContextParallelStage("media-models", args);
   const models = await resolveMediaModelsForRun({
     db,
     orgId: args.orgId,
@@ -10954,11 +11091,74 @@ async function resolvePreparedMediaModels(
   return models;
 }
 
+async function prepareRunIndependentObservations(
+  input: PrepareRunContextInput,
+  framework: SupportedFramework,
+  piSandbox: PiModelConfig | undefined,
+  signal: AbortSignal,
+) {
+  // Preserve the historical timezone -> cancellation -> media -> workflow
+  // precedence while settling every branch started under this request owner.
+  const [userTimezoneResult, mediaModelsResult, officialWorkflowRunResult] =
+    await Promise.allSettled([
+      resolvePreparedUserTimezone(input),
+      resolvePreparedMediaModels(input.db, input.args, signal),
+      resolvePreparedOfficialWorkflowRun(
+        input.db,
+        input.args,
+        framework,
+        piSandbox,
+        signal,
+      ),
+    ]);
+  if (userTimezoneResult.status === "rejected") {
+    throw userTimezoneResult.reason;
+  }
+  signal.throwIfAborted();
+  if (mediaModelsResult.status === "rejected") {
+    throw mediaModelsResult.reason;
+  }
+  if (officialWorkflowRunResult.status === "rejected") {
+    throw officialWorkflowRunResult.reason;
+  }
+  signal.throwIfAborted();
+  return {
+    userTimezone: userTimezoneResult.value,
+    mediaModels: mediaModelsResult.value,
+    officialWorkflowRun: officialWorkflowRunResult.value,
+  };
+}
+
+async function joinRunValidationAndObservations(
+  validationPromise: Promise<CreateRunErrorResult | null | undefined>,
+  observationsPromise: ReturnType<typeof prepareRunIndependentObservations>,
+  signal: AbortSignal,
+): Promise<
+  | CreateRunErrorResult
+  | Awaited<ReturnType<typeof prepareRunIndependentObservations>>
+> {
+  const [validationResult, observationsResult] = await Promise.allSettled([
+    validationPromise,
+    observationsPromise,
+  ]);
+  if (validationResult.status === "rejected") {
+    throw validationResult.reason;
+  }
+  if (validationResult.value) {
+    return validationResult.value;
+  }
+  if (observationsResult.status === "rejected") {
+    throw observationsResult.reason;
+  }
+  signal.throwIfAborted();
+  return observationsResult.value;
+}
+
 function prepareRunContext(
   input: PrepareRunContextInput,
   signal: AbortSignal,
 ): Computed<Promise<PreparedRunContext | CreateRunErrorResult>> {
-  const { db, args, timing } = input;
+  const { args, timing } = input;
   return computed(
     async (get): Promise<PreparedRunContext | CreateRunErrorResult> => {
       const initialBody = initialRunBody(args);
@@ -10990,41 +11190,40 @@ function prepareRunContext(
         },
       });
 
-      const validation = await timing.measure(
-        "api_dispatch_prepare_context_validate_environment",
-        "nested",
-        async () => {
-          return await Promise.resolve(
-            validateRunEnvironmentReferences({
-              resolved,
-              body,
-              modelProvider: runtimeContext.modelProvider,
-              connectorContext: runtimeContext.connectorContext,
-              customConnectorContext: runtimeContext.customConnectorContext,
-              permissionManifest: runtimeContext.permissionManifest,
-              validateEnvironmentReferences: args.validateEnvironmentReferences,
-            }),
-          );
-        },
-      );
-      if (validation) {
-        return validation;
-      }
-
-      const userTimezone = await resolvePreparedUserTimezone(input);
-      signal.throwIfAborted();
-
-      const { selectedVideoModel, selectedImageModel } =
-        await resolvePreparedMediaModels(db, args, signal);
-
-      const officialWorkflowRun = await resolvePreparedOfficialWorkflowRun(
-        db,
-        args,
+      const observationsPromise = prepareRunIndependentObservations(
+        input,
         runtimeContext.framework,
         piSandbox,
         signal,
       );
-      signal.throwIfAborted();
+      const validationAndObservations = await joinRunValidationAndObservations(
+        timing.measure(
+          "api_dispatch_prepare_context_validate_environment",
+          "nested",
+          async () => {
+            return await Promise.resolve(
+              validateRunEnvironmentReferences({
+                resolved,
+                body,
+                modelProvider: runtimeContext.modelProvider,
+                connectorContext: runtimeContext.connectorContext,
+                customConnectorContext: runtimeContext.customConnectorContext,
+                permissionManifest: runtimeContext.permissionManifest,
+                validateEnvironmentReferences:
+                  args.validateEnvironmentReferences,
+              }),
+            );
+          },
+        ),
+        observationsPromise,
+        signal,
+      );
+      if (isRouteError(validationAndObservations)) {
+        return validationAndObservations;
+      }
+      const { userTimezone, mediaModels, officialWorkflowRun } =
+        validationAndObservations;
+      const { selectedVideoModel, selectedImageModel } = mediaModels;
       if (isRouteError(officialWorkflowRun)) {
         return officialWorkflowRun;
       }
@@ -11719,33 +11918,35 @@ function prepareDurablePiResource(
         return mount.writeback === true;
       },
     );
-  return stableContext
-    ? preparePiStableContext(
-        {
-          db: args.input.db,
-          owner: stableContext.owner,
-          variantDigest: stableContext.variantDigest,
-          buildPrompt: stableContext.buildPrompt,
-          semantic: stableContext.semantic,
-          source: stableContext.source,
-          mounts: args.storagePlan.metadata.storageMounts,
-          persistedStorageMounts: args.persistedStorageMounts,
-          ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
-          eligible: stableContextEligible,
-          checkedAt: new Date(args.input.args.apiStartTime),
-          runId: args.runId,
-        },
-        signal,
-      )
-    : preparePiResourceSnapshot(
-        {
-          db: args.input.db,
-          mounts: args.storagePlan.metadata.storageMounts,
-          ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
-          runId: args.runId,
-        },
-        signal,
-      );
+  if (!stableContext) {
+    return preparePiResourceSnapshot(
+      {
+        db: args.input.db,
+        mounts: args.storagePlan.metadata.storageMounts,
+        ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
+        runId: args.runId,
+      },
+      signal,
+    );
+  }
+  const cacheIdentity = stableContext.buildCacheIdentity();
+  return preparePiStableContext(
+    {
+      db: args.input.db,
+      owner: cacheIdentity.owner,
+      variantDigest: cacheIdentity.variantDigest,
+      buildPrompt: stableContext.buildPrompt,
+      semantic: cacheIdentity.semantic,
+      source: cacheIdentity.source,
+      mounts: args.storagePlan.metadata.storageMounts,
+      persistedStorageMounts: args.persistedStorageMounts,
+      ...(args.memoryRecall ? { memoryRecall: args.memoryRecall } : {}),
+      eligible: stableContextEligible,
+      checkedAt: new Date(args.input.args.apiStartTime),
+      runId: args.runId,
+    },
+    signal,
+  );
 }
 
 async function captureDurablePiMemoryRecall(
