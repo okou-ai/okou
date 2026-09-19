@@ -5,6 +5,13 @@
 
 @custom-variant pointer-coarse (@media (pointer: coarse));
 
+/* The composer's controls fit against the composer, not the window. A chat
+   panel beside the Cloud Browser is ~550px wide inside a 1600px window, so a
+   viewport breakpoint keeps the full-width layout in a box that cannot hold
+   it. This is the composer's only width rule: below it every control is an
+   icon, above it the controls that have a label show one. */
+@custom-variant composer-wide (@container composer (width >= 600px));
+
 /* Include @okouai/ui class recipes in Tailwind's content scanning. */
 @source "../../../../../packages/ui/src/**/*.{ts,tsx}";
 
