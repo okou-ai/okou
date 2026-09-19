@@ -413,22 +413,22 @@ test("The image viewer keeps its zoom level across a fullscreen round trip", asy
   // moved the level and that the fullscreen toggle preserves whatever the
   // viewer is currently showing.
   const zoomLevel = screen.getByTestId("artifact-dialog-image-zoom-level");
-  expect(zoomLevel).toHaveTextContent("100%");
+  expect(zoomLevel.textContent).toBe("100%");
   click(getButtonByName("Zoom in"));
   await waitFor(() => {
-    expect(zoomLevel).not.toHaveTextContent("100%");
+    expect(zoomLevel.textContent).not.toBe("100%");
   });
   const zoomedLevel = zoomLevel.textContent;
 
   click(getButtonByName("Enter fullscreen"));
-  const exitFullscreen = await waitFor(() => {
+  await waitFor(() => {
     return getButtonByName("Exit fullscreen");
   });
-  expect(zoomLevel).toHaveTextContent(String(zoomedLevel));
+  expect(zoomLevel.textContent).toBe(zoomedLevel);
 
-  click(exitFullscreen);
+  click(getButtonByName("Exit fullscreen"));
   await waitFor(() => {
     return getButtonByName("Enter fullscreen");
   });
-  expect(zoomLevel).toHaveTextContent(String(zoomedLevel));
+  expect(zoomLevel.textContent).toBe(zoomedLevel);
 });
