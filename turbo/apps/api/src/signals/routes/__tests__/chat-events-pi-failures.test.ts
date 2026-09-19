@@ -1152,16 +1152,27 @@ describe("CHAT-02: model-first provider policies", () => {
           schemaVersion: 1,
           state: "observed",
           sampledAt: expect.any(Number),
-          coverage: "complete",
+          coverage: "partial",
           tokens: {
-            input: 5,
-            cacheRead: 0,
-            cacheCreation: 0,
+            input: null,
+            cacheRead: null,
+            cacheCreation: null,
             output: 3,
           },
         });
       } else {
-        expect(manifest.apiUsage).toBeUndefined();
+        expect(manifest.apiUsage).toMatchObject({
+          schemaVersion: 1,
+          state: "observed",
+          sampledAt: expect.any(Number),
+          coverage: "unavailable",
+          tokens: {
+            input: null,
+            cacheRead: null,
+            cacheCreation: null,
+            output: null,
+          },
+        });
       }
       const h0 = checkpointObjects.get(`${prefix}session.jsonl`);
       if (!h0) {
