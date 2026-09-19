@@ -638,6 +638,13 @@
       "when": 1789736027656,
       "tag": "1168_unique_skrulls",
       "breakpoints": true
+    },
+    {
+      "idx": 1169,
+      "version": "7",
+      "when": 1789796443637,
+      "tag": "1169_rename_built_in_model_cooldown_columns",
+      "breakpoints": true
     }
   ]
 }

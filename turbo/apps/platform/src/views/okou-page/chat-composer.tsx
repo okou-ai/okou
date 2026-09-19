@@ -284,6 +284,17 @@ import {
   invalidateSsh$,
   sshSummary$,
 } from "../../signals/ssh.ts";
+import {
+  vncAgentAccessSnapshot$,
+  updateAgentVncAccess$,
+} from "../../signals/vnc-access.ts";
+import {
+  vncIdentity$,
+  invalidateVnc$,
+  vncSummary$,
+} from "../../signals/vnc.ts";
+import { VncLoadError } from "./vnc-load-error.tsx";
+import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -7067,12 +7078,14 @@ function ConnectorTriggerIcons({
   hasComputerUse,
   hasCloudBrowser,
   hasSsh,
+  hasVnc,
 }: {
   connectors: ComposerConnectorItem[];
   customConnectors: ComposerCustomConnectorItem[];
   hasComputerUse: boolean;
   hasCloudBrowser: boolean;
   hasSsh: boolean;
+  hasVnc: boolean;
 }) {
   const { t } = useTranslation();
   const enabledConnectors = connectors.filter((connector) => {
@@ -7088,6 +7101,7 @@ function ConnectorTriggerIcons({
       return { kind: "builtin" as const, connector };
     }),
     ...(hasSsh ? [{ kind: "ssh" as const }] : []),
+    ...(hasVnc ? [{ kind: "vnc" as const }] : []),
     ...enabledCustomConnectors.map((connector) => {
       return { kind: "custom" as const, connector };
     }),
@@ -7100,8 +7114,8 @@ function ConnectorTriggerIcons({
     <span className="flex items-center composer-wide:-space-x-1.5">
       {enabled.map((item, index) => {
         const key =
-          item.kind === "ssh"
-            ? "ssh"
+          item.kind === "ssh" || item.kind === "vnc"
+            ? item.kind
             : item.kind === "builtin"
               ? item.connector.slug
               : item.connector.id;
@@ -7125,6 +7139,14 @@ function ConnectorTriggerIcons({
                   role="img"
                   aria-label={t(($) => {
                     return $.ssh.label;
+                  })}
+                />
+              ) : item.kind === "vnc" ? (
+                <Monitor
+                  size={16}
+                  role="img"
+                  aria-label={t(($) => {
+                    return $.vnc.label;
                   })}
                 />
               ) : item.kind === "builtin" ? (
@@ -7280,12 +7302,22 @@ function AddConnectorsDialog({
     return matchesCustomConnectorSearch(search, item);
   });
   const sshSummary = useLoadable(sshSummary$);
+  const vncSummary = useLoadable(vncSummary$);
+  const matchesVnc = `vnc ${t(($) => {
+    return $.vnc.description;
+  })}`
+    .toLowerCase()
+    .includes(search.trim().toLowerCase());
+  const showVnc =
+    vncSummary.state === "hasData" &&
+    vncSummary.data?.configuredCount === 0 &&
+    matchesVnc;
   const showSsh =
     sshSummary.state === "hasData" &&
     sshSummary.data?.configuredCount === 0 &&
     "ssh".includes(search.trim().toLowerCase());
   const visibleConnectorCount =
-    filtered.length + filteredCustom.length + Number(showSsh);
+    filtered.length + filteredCustom.length + Number(showSsh) + Number(showVnc);
 
   return (
     <Dialog
@@ -7347,7 +7379,16 @@ function AddConnectorsDialog({
           />
         </div>
         <div className="overflow-y-auto -mx-6 px-6">
+          {matchesVnc && vncSummary.state === "hasError" && <VncLoadError />}
+          {matchesVnc && vncSummary.state === "loading" && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.vnc.loading;
+              })}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
+            {showVnc && <VncConnectorCard configuredCount={0} />}
             {showSsh && sshSummary.state === "hasData" && sshSummary.data && (
               <SshConnectorCard
                 configuredCount={sshSummary.data.configuredCount}
@@ -7621,6 +7662,14 @@ type ComposerPopoverConnectorItem =
       };
     }
   | {
+      readonly kind: "vnc";
+      readonly connector: {
+        readonly id: "vnc";
+        readonly label: string;
+        readonly authorized: boolean;
+      };
+    }
+  | {
       readonly kind: "builtin";
       readonly connector: ComposerConnectorItem;
     }
@@ -7636,7 +7685,7 @@ function composerPopoverConnectorId(
 }
 
 function composerPopoverConnectorTarget(
-  item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" }>,
+  item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" | "vnc" }>,
 ): ConnectorAccountTarget {
   return item.kind === "builtin"
     ? { kind: "builtin", connectorSlug: item.connector.slug }
@@ -7647,7 +7696,7 @@ function matchesComposerPopoverConnectorSearch(
   search: string,
   item: ComposerPopoverConnectorItem,
 ): boolean {
-  if (item.kind === "ssh") {
+  if (item.kind === "ssh" || item.kind === "vnc") {
     return item.connector.label
       .toLowerCase()
       .includes(search.trim().toLowerCase());
@@ -8208,7 +8257,7 @@ function deriveComposerConnectorPopoverState(args: {
 }) {
   const sorted = args.sortOrder
     ? [...args.connectorItems].sort((a, b) => {
-        const order = { builtin: 0, ssh: 1, custom: 2 };
+        const order = { builtin: 0, ssh: 1, vnc: 2, custom: 3 };
         const kindOrder = order[a.kind] - order[b.kind];
         if (kindOrder !== 0) {
           return kindOrder;
@@ -8248,7 +8297,7 @@ function ComposerConnectorAccountAction({
 }: {
   readonly signals: ComposerSignals;
   readonly actions: ComposerConnectorActions;
-  readonly item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" }>;
+  readonly item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" | "vnc" }>;
 }) {
   const preference = useLastResolved(
     signals.connector.accounts.preferenceState$,
@@ -8306,6 +8355,47 @@ function useComposerSshAccess(agentId: string | null) {
   return { rows, access };
 }
 
+function useComposerVncAccess(agentId: string | null) {
+  const identity = useLoadable(vncIdentity$);
+  const rows = useLoadable(vncAgentAccessSnapshot$);
+  const retained = useLastLoadable(vncAgentAccessSnapshot$);
+  const access =
+    identity.state === "hasData" &&
+    identity.data !== null &&
+    retained.state === "hasData" &&
+    retained.data.identity === identity.data
+      ? retained.data.rows?.find((row) => {
+          return row.agent.agentId === agentId;
+        })
+      : undefined;
+  return { rows, access };
+}
+
+function ComposerConnectorTriggerIcons({
+  connectors,
+  customConnectors,
+  computerUse,
+  sshAccess,
+  vncAccess,
+}: {
+  readonly connectors: ComposerConnectorItem[];
+  readonly customConnectors: ComposerCustomConnectorItem[];
+  readonly computerUse: ComposerComputerUse | undefined;
+  readonly sshAccess: { readonly enabled: boolean } | undefined;
+  readonly vncAccess: { readonly enabled: boolean } | undefined;
+}) {
+  return (
+    <ConnectorTriggerIcons
+      connectors={connectors}
+      customConnectors={customConnectors}
+      hasComputerUse={Boolean(computerUse?.selectedHostId)}
+      hasCloudBrowser={Boolean(computerUse?.cloudBrowserEnabled)}
+      hasSsh={sshAccess?.enabled ?? false}
+      hasVnc={vncAccess?.enabled ?? false}
+    />
+  );
+}
+
 function ConnectorsPopoverButton({
   signals,
   agentId,
@@ -8354,9 +8444,12 @@ function ConnectorsPopoverButton({
   const permissionConnectorSlug = connectorUi.permissionConnectorSlug;
   const { rows: sshRows, access: sshAccess } = useComposerSshAccess(agentId);
   const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
+  const { rows: vncRows, access: vncAccess } = useComposerVncAccess(agentId);
+  const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
+  const reloadVnc = useSet(invalidateVnc$);
   const pageSignal = useGet(pageSignal$);
   const reloadSsh = useSet(invalidateSsh$);
-  const waitingForConnectors = connectorsLoading && !sshAccess;
+  const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;
   const connectorItems: ComposerPopoverConnectorItem[] = [
     ...agentConnectors.map((connector) => {
       return { kind: "builtin" as const, connector };
@@ -8371,6 +8464,20 @@ function ConnectorsPopoverButton({
                 return $.ssh.label;
               }),
               authorized: sshAccess.enabled,
+            },
+          },
+        ]
+      : []),
+    ...(vncAccess
+      ? [
+          {
+            kind: "vnc" as const,
+            connector: {
+              id: "vnc" as const,
+              label: t(($) => {
+                return $.vnc.label;
+              }),
+              authorized: vncAccess.enabled,
             },
           },
         ]
@@ -8396,6 +8503,7 @@ function ConnectorsPopoverButton({
       updateConnectorUi({ popoverSortOrder: freshSort });
       openAccountsPopover();
       reloadSsh();
+      reloadVnc();
     } else {
       updateConnectorUi({ popoverSortOrder: null, popoverSearch: "" });
       closeAccountMenu();
@@ -8432,12 +8540,12 @@ function ConnectorsPopoverButton({
                 })}
               >
                 {!waitingForConnectors && (
-                  <ConnectorTriggerIcons
+                  <ComposerConnectorTriggerIcons
                     connectors={agentConnectors}
                     customConnectors={agentCustomConnectors}
-                    hasComputerUse={Boolean(computerUse?.selectedHostId)}
-                    hasCloudBrowser={Boolean(computerUse?.cloudBrowserEnabled)}
-                    hasSsh={sshAccess?.enabled ?? false}
+                    computerUse={computerUse}
+                    sshAccess={sshAccess}
+                    vncAccess={vncAccess}
                   />
                 )}
               </button>
@@ -8515,6 +8623,44 @@ function ConnectorsPopoverButton({
                         onCheckedChange={onDomEventFn(async (checked) => {
                           if (agentId) {
                             await updateSshAccess(agentId, checked, pageSignal);
+                          }
+                        })}
+                        ariaLabel={
+                          item.connector.authorized
+                            ? t(
+                                ($) => {
+                                  return $.chat.connectors.remove;
+                                },
+                                {
+                                  connectorName: item.connector.label,
+                                },
+                              )
+                            : t(
+                                ($) => {
+                                  return $.chat.connectors.add;
+                                },
+                                {
+                                  connectorName: item.connector.label,
+                                },
+                              )
+                        }
+                      />
+                    );
+                  }
+                  if (item.kind === "vnc") {
+                    return (
+                      <ComposerConnectorAccessRow
+                        key={item.connector.id}
+                        icon={<Monitor size={16} />}
+                        connectorLabel={item.connector.label}
+                        checked={item.connector.authorized}
+                        loading={
+                          vncSaving.state === "loading" ||
+                          vncRows.state === "loading"
+                        }
+                        onCheckedChange={onDomEventFn(async (checked) => {
+                          if (agentId) {
+                            await updateVncAccess(agentId, checked, pageSignal);
                           }
                         })}
                         ariaLabel={
@@ -8664,6 +8810,11 @@ function ConnectorsPopoverButton({
                 })}
               </div>
             )}
+          </div>
+        )}
+        {vncRows.state === "hasError" && (
+          <div className="px-3 py-2">
+            <VncLoadError />
           </div>
         )}
         {sshRows.state === "hasError" && (

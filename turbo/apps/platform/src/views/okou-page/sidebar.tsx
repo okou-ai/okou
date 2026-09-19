@@ -98,7 +98,7 @@ const MANAGE_NAV: readonly ManageNavItem[] = [
   },
   {
     id: "connectors",
-    activeKeys: ["connectors", "connectorSsh"],
+    activeKeys: ["connectors", "connectorSsh", "connectorVnc"],
     pathname: "/connectors",
     icon: Plug as NavIcon,
   },

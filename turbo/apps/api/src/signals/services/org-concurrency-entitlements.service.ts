@@ -7,6 +7,7 @@ import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { earlierDeferredDemandTotals } from "./pi-deferred-demand.service";
 import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 
 export const CONCURRENCY_SUBSCRIPTION_PURPOSE = "concurrency_subscription";
@@ -109,14 +110,14 @@ export async function activePaidConcurrencySlots(
   return row?.slots ?? 0;
 }
 
-export async function loadOrgConcurrencyState(
+function orgConcurrencyStateTotals(
   db: ReadDb,
   args: {
     readonly orgId: string;
     readonly at: Date;
     readonly activePendingAfter: Date;
   },
-): Promise<OrgConcurrencyState> {
+) {
   const paidSlotTotals = db
     .select({
       slots: sql`COALESCE(${sum(orgConcurrencySubscriptions.slots)}, 0)::int`
@@ -138,7 +139,21 @@ export async function loadOrgConcurrencyState(
       ),
     )
     .as("active_concurrency_run_totals");
+  return { paidSlotTotals, activeRunTotals };
+}
 
+export async function loadOrgConcurrencyState(
+  db: ReadDb,
+  args: {
+    readonly orgId: string;
+    readonly at: Date;
+    readonly activePendingAfter: Date;
+  },
+): Promise<OrgConcurrencyState> {
+  const { paidSlotTotals, activeRunTotals } = orgConcurrencyStateTotals(
+    db,
+    args,
+  );
   const [row] = await db
     .select({
       entitlementOrgId: orgPlanEntitlements.orgId,
@@ -162,6 +177,51 @@ export async function loadOrgConcurrencyState(
     baseConcurrencyLimit: row.baseConcurrencyLimit ?? 0,
     paidSlots: row.paidSlots,
     activeRunCount: row.activeRunCount,
+  };
+}
+
+export async function loadOrgConcurrencyAdmissionState(
+  db: ReadDb,
+  args: {
+    readonly orgId: string;
+    readonly at: Date;
+    readonly activePendingAfter: Date;
+  },
+): Promise<OrgConcurrencyState & { readonly earlierDeferredDemand: number }> {
+  const { paidSlotTotals, activeRunTotals } = orgConcurrencyStateTotals(
+    db,
+    args,
+  );
+  const deferredDemandTotals = earlierDeferredDemandTotals(
+    db,
+    args.orgId,
+    args.at,
+  );
+  const [row] = await db
+    .select({
+      entitlementOrgId: orgPlanEntitlements.orgId,
+      metadataOrgId: orgMetadata.orgId,
+      baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
+      paidSlots: paidSlotTotals.slots,
+      activeRunCount: activeRunTotals.count,
+      earlierDeferredDemand: deferredDemandTotals.count,
+    })
+    .from(paidSlotTotals)
+    .crossJoin(activeRunTotals)
+    .crossJoin(deferredDemandTotals)
+    .leftJoin(orgPlanEntitlements, eq(orgPlanEntitlements.orgId, args.orgId))
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId));
+  if (!row) {
+    throw new Error("Concurrency admission aggregate returned no row");
+  }
+  if (row.entitlementOrgId === null && row.metadataOrgId !== null) {
+    throw new Error(`Missing org plan entitlement for ${args.orgId}`);
+  }
+  return {
+    baseConcurrencyLimit: row.baseConcurrencyLimit ?? 0,
+    paidSlots: row.paidSlots,
+    activeRunCount: row.activeRunCount,
+    earlierDeferredDemand: row.earlierDeferredDemand,
   };
 }
 

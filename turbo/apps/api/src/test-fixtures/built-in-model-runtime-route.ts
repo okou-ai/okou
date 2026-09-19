@@ -52,8 +52,8 @@ export function withBuiltInModelRuntimeRouteCandidateUnavailableForTest<T>(
 function routeCondition(route: BuiltInModelRuntimeRouteFixtureIdentity) {
   return and(
     eq(builtInModelCandidateCooldown.selectedModel, route.selectedModel),
-    eq(builtInModelCandidateCooldown.providerType, route.providerType),
-    eq(builtInModelCandidateCooldown.upstreamModel, route.upstreamModel),
+    eq(builtInModelCandidateCooldown.modelRuntimeProvider, route.providerType),
+    eq(builtInModelCandidateCooldown.modelRuntimeModel, route.upstreamModel),
   );
 }
 

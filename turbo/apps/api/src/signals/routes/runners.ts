@@ -3148,6 +3148,7 @@ const modelProviderFailureInner$ = command(
     });
     signal.throwIfAborted();
     if (transition.outcome === "recorded" && transition.cooldown) {
+      const cooldown = transition.cooldown;
       const logLevels = {
         authentication: "warn",
         billing: "warn",
@@ -3155,17 +3156,14 @@ const modelProviderFailureInner$ = command(
         provider_unavailable: "info",
         timeout: "info",
         connection: "info",
-      } as const satisfies Record<
-        typeof transition.cooldown.failureKind,
-        "info" | "warn"
-      >;
-      L[logLevels[transition.cooldown.failureKind]](
+      } as const satisfies Record<typeof cooldown.failureKind, "info" | "warn">;
+      L[logLevels[cooldown.failureKind]](
         "Built-in model provider failure report recorded",
         {
           type: "built_in_model_provider_cooldown",
           runId,
-          ...transition.cooldown,
-          unavailableUntil: transition.cooldown.unavailableUntil.toISOString(),
+          ...cooldown,
+          unavailableUntil: cooldown.unavailableUntil.toISOString(),
         },
       );
     }

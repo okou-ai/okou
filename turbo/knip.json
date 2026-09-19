@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     "apps/cli": {
       "entry": [
@@ -8,6 +8,7 @@
       ],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["@types/tar", "yaml"],
+      "ignoreBinaries": ["agent-browser", "ffmpeg", "ffprobe"],
       "tsup": {
         "config": ["tsup.config.ts"]
       }
@@ -26,7 +27,8 @@
         "scripts/erasure-bridge/{acceptance,child}.ts"
       ],
       "project": ["src/**/*.ts", "scripts/erasure-bridge/*.ts"],
-      "ignoreDependencies": ["@hono/node-server-v1", "clerk"]
+      "ignoreDependencies": ["@hono/node-server-v1", "clerk"],
+      "ignoreBinaries": ["openssl"]
     },
     "apps/platform": {
       "entry": [
@@ -97,7 +99,8 @@
         "src/**/__tests__/**/*.{test,spec}.ts",
         "src/**/*.{test,spec}.ts"
       ],
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "ignoreBinaries": ["rustfmt"]
     },
     "packages/db": {
       "entry": [
@@ -107,7 +110,7 @@
         "scripts/**/*.ts"
       ],
       "project": ["src/**/*.ts", "scripts/**/*.ts", "drizzle.config.ts"],
-      "ignoreBinaries": ["drizzle-kit"]
+      "ignoreBinaries": ["drizzle-kit", "psql"]
     },
     "packages/ui": {
       "entry": [
@@ -170,5 +173,6 @@
   ],
   "ignoreBinaries": ["oxlint", "vite"],
   "ignoreWorkspaces": [],
-  "ignoreUnresolved": ["\\.generated$"]
+  "ignoreUnresolved": ["\\.generated$"],
+  "ignoreExportsUsedInFile": true
 }
