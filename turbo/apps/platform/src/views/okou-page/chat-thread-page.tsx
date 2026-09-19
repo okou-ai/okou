@@ -6941,7 +6941,7 @@ function UserMessageContent({
         // The bubble gets its own full-width row so `leading` can sit against
         // its left edge while the bubble's `max-w-[85%]` still resolves against
         // the whole message width.
-        <div className="flex w-full items-center justify-end gap-2">
+        <div className="flex w-full items-start justify-end gap-2">
           {leading}
           <ChatUserMessageBubble>
             <div className="px-4 py-3">
@@ -7072,17 +7072,24 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
  */
 function OptimisticSpinner({ eventId }: { eventId: string }) {
   const optimisticEventIds = useGet(optimisticEventIds$);
-  // The slot stays reserved whether or not the message is pending, so the
-  // bubble keeps one wrap width and never reflows when confirmation lands.
+  // The slot repeats the bubble's own padding and line metrics so the spinner
+  // centers on the first line of text however many lines the message wraps to.
+  // It stays reserved when the message is confirmed, so the bubble never
+  // reflows.
   return (
-    <div className="size-3.5 shrink-0" aria-hidden>
-      {optimisticEventIds.has(eventId) ? (
-        <Loader2
-          size={14}
-          data-optimistic-user-message
-          className="animate-spin text-muted-foreground"
-        />
-      ) : null}
+    <div
+      aria-hidden
+      className="flex shrink-0 py-3 text-[0.9375rem] leading-[1.7]"
+    >
+      <span className="flex h-[1.7em] w-3.5 items-center">
+        {optimisticEventIds.has(eventId) ? (
+          <Loader2
+            size={14}
+            data-optimistic-user-message
+            className="animate-spin text-muted-foreground"
+          />
+        ) : null}
+      </span>
     </div>
   );
 }
