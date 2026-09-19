@@ -251,6 +251,8 @@ compositing layers can cause nearby content to flicker in Safari. Preserve their
 layout, focus visibility, touch behavior, and pointer-event rules. When other
 properties still animate, name those properties instead of using
 `transition-all`. This does not remove loading or popup lifecycle animations.
+The shared scrollbars follow Base UI's official fade behavior, documented under
+[Chat scrollbars](#chat-scrollbars).
 
 ## Token and variant governance
 
@@ -538,6 +540,14 @@ by the chat sidebar and message pane. Compose it with Base UI's
 `ScrollArea.Root`, `ScrollArea.Viewport`, and `ScrollArea.Content`. The vertical
 track is 10px wide with 1px padding, a transparent left border, and a flexible
 rounded `bg-border` thumb. Base UI hides it when content does not overflow.
+
+Visibility follows [Base UI's official Tailwind example](https://github.com/mui/base-ui/blob/v1.7.0/docs/src/app/%28docs%29/react/components/scroll-area/demos/hero/tailwind/index.tsx):
+idle scrollbars are transparent and ignore pointer events; `data-hovering` or
+`data-scrolling` makes them visible and interactive. `transition-opacity` fades
+them out, while `data-scrolling:duration-0` reveals them immediately on scroll.
+Base UI owns the interaction state and scroll timeout; the shared component
+owns these visibility utilities alongside the shadcn geometry and colors.
+
 Callers retain their viewport refs, scroll handlers, content layout, and
 scroll-position ownership; they do not add scrollbar width, color, or offset
 overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
