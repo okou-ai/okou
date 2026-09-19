@@ -260,14 +260,7 @@ import {
   resolvePiLangfuseDebugConfig,
 } from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
-import {
-  joinAll,
-  joinAllInOrder,
-  onRejection,
-  safeSync,
-  settle,
-  tapError,
-} from "../utils";
+import { joinAll, onRejection, safeSync, settle, tapError } from "../utils";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -9579,7 +9572,10 @@ async function resolvePreparedUserTimezone(input: {
   readonly timing: ApiDispatchTimingCollector;
   readonly preloadedUserTimezone: string | null | undefined;
 }): Promise<string | undefined> {
-  await observeRunContextParallelStage("user-timezone", input.args);
+  const testHold = observeRunContextParallelStage("user-timezone", input.args);
+  if (testHold) {
+    await testHold;
+  }
   return await input.timing.measure(
     "api_dispatch_prepare_context_load_user_timezone",
     "nested",
@@ -10024,14 +10020,15 @@ export function clearRunContextParallelHookForTest(): void {
   runContextParallelHook.clear();
 }
 
-async function observeRunContextParallelStage(
+function observeRunContextParallelStage(
   stage: RunContextParallelStage,
   args: Pick<CreateAgentRunArgs, "userId" | "orgId">,
-): Promise<void> {
-  const hook = runContextParallelHook.get();
-  if (hook) {
-    await hook({ stage, userId: args.userId, orgId: args.orgId });
-  }
+): Promise<void> | undefined {
+  return runContextParallelHook.get()?.({
+    stage,
+    userId: args.userId,
+    orgId: args.orgId,
+  });
 }
 
 function prepareRunBodyContext(
@@ -10170,7 +10167,13 @@ async function prepareRunConnectorContexts(
 ): Promise<
   Awaited<ReturnType<typeof loadRunConnectorContexts>> | CreateRunErrorResult
 > {
-  await observeRunContextParallelStage("connector-contexts", args.createArgs);
+  const testHold = observeRunContextParallelStage(
+    "connector-contexts",
+    args.createArgs,
+  );
+  if (testHold) {
+    await testHold;
+  }
   const result = await settle(
     args.timing.measure(
       "api_dispatch_prepare_context_load_connector_contexts",
@@ -10258,7 +10261,13 @@ async function resolvePreparedRunModelProvider(
 ): Promise<ResolvedModelProviderEnvironment | null | CreateRunErrorResult> {
   const { resolved, requestedFramework, featureSwitchContext } =
     args.bodyContext;
-  await observeRunContextParallelStage("model-provider", args.createArgs);
+  const testHold = observeRunContextParallelStage(
+    "model-provider",
+    args.createArgs,
+  );
+  if (testHold) {
+    await testHold;
+  }
   return await args.timing.measure(
     "api_dispatch_prepare_context_resolve_model_provider",
     "nested",
@@ -10434,16 +10443,23 @@ async function joinPreparedRunRuntimeBranches(
       >;
     }
 > {
-  const [modelProvider, connectorContexts] = await joinAllInOrder(
-    [modelProviderPromise, connectorContextsPromise],
-    signal,
-  );
+  const [modelProviderResult, connectorContextsResult] =
+    await Promise.allSettled([modelProviderPromise, connectorContextsPromise]);
+  if (modelProviderResult.status === "rejected") {
+    throw modelProviderResult.reason;
+  }
+  const modelProvider = modelProviderResult.value;
   if (isRouteError(modelProvider)) {
     return modelProvider;
   }
+  if (connectorContextsResult.status === "rejected") {
+    throw connectorContextsResult.reason;
+  }
+  const connectorContexts = connectorContextsResult.value;
   if (isRouteError(connectorContexts)) {
     return connectorContexts;
   }
+  signal.throwIfAborted();
   return { modelProvider, connectorContexts };
 }
 
@@ -10821,13 +10837,18 @@ function finalizeDurablePiRunContext(
         cliAgentType: "pi",
       },
     });
-    const { userTimezone, mediaModels, officialWorkflowRun } =
-      await prepareRunIndependentObservations(
-        input,
+    const [userTimezone, mediaModels, officialWorkflowRun] = await Promise.all([
+      resolvePreparedUserTimezone(input),
+      resolvePreparedMediaModels(input.db, input.args, signal),
+      resolvePreparedOfficialWorkflowRun(
+        input.db,
+        input.args,
         framework,
         piSandbox,
         signal,
-      );
+      ),
+    ]);
+    signal.throwIfAborted();
     if (isRouteError(officialWorkflowRun)) {
       return officialWorkflowRun;
     }
@@ -11046,7 +11067,10 @@ async function resolvePreparedOfficialWorkflowRun(
   piSandbox: PiModelConfig | undefined,
   signal: AbortSignal,
 ): Promise<OfficialWorkflowRunObservation | CreateRunErrorResult | undefined> {
-  await observeRunContextParallelStage("official-workflow", args);
+  const testHold = observeRunContextParallelStage("official-workflow", args);
+  if (testHold) {
+    await testHold;
+  }
   const candidates = safeSync(() => {
     return officialWorkflowRunCandidates(
       args.injectSkillVolumes?.workflows ?? [],
@@ -11080,7 +11104,10 @@ async function resolvePreparedMediaModels(
   args: CreateAgentRunArgs,
   signal: AbortSignal,
 ) {
-  await observeRunContextParallelStage("media-models", args);
+  const testHold = observeRunContextParallelStage("media-models", args);
+  if (testHold) {
+    await testHold;
+  }
   const models = await resolveMediaModelsForRun({
     db,
     orgId: args.orgId,

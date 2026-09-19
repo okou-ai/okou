@@ -709,18 +709,15 @@ export function clearAgentRunPreCreateParallelHookForTest(): void {
   agentRunPreCreateParallelHook.clear();
 }
 
-async function observeAgentRunPreCreateParallelStage(
+function observeAgentRunPreCreateParallelStage(
   stage: AgentRunPreCreateParallelStage,
   input: Pick<AgentRunAfterBootstrap, "command">,
-): Promise<void> {
-  const hook = agentRunPreCreateParallelHook.get();
-  if (hook) {
-    await hook({
-      stage,
-      userId: input.command.auth.userId,
-      orgId: input.command.auth.orgId,
-    });
-  }
+): Promise<void> | undefined {
+  return agentRunPreCreateParallelHook.get()?.({
+    stage,
+    userId: input.command.auth.userId,
+    orgId: input.command.auth.orgId,
+  });
 }
 
 interface AgentRunAfterBootstrap extends RunBootstrapContext {
@@ -795,10 +792,13 @@ async function completeAgentRunPostAuthorizationContext(
   input: AgentRunAfterBootstrap,
   signal: AbortSignal,
 ): Promise<AgentRunAfterPreCreate> {
-  await observeAgentRunPreCreateParallelStage(
+  const testHold = observeAgentRunPreCreateParallelStage(
     "post-authorization-context",
     input,
   );
+  if (testHold) {
+    await testHold;
+  }
   const connectorCatalogSelection: RunConnectorCatalogSelection =
     isEmptyRunConnectorScope(input)
       ? { kind: "empty" }
@@ -1136,7 +1136,13 @@ async function resolveThreadSessionForAgentRun(
       cloudBrowserEnabled: input.cloudBrowserEnabled,
     };
   }
-  await observeAgentRunPreCreateParallelStage("thread-session", input);
+  const testHold = observeAgentRunPreCreateParallelStage(
+    "thread-session",
+    input,
+  );
+  if (testHold) {
+    await testHold;
+  }
   const threadSessionRoute = input.command.threadSessionRoute;
   if (!threadSessionRoute) {
     throw new Error("Thread-bound agent run is missing its model route");
