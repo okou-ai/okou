@@ -204,13 +204,19 @@ test("Activity context lists model route fields without runtime metadata", async
     throw new Error("Model route section was not rendered");
   }
   const modelRoute = within(modelRouteSection);
-  expect(modelRoute.getByText("Selected Model")).toBeInTheDocument();
-  expect(modelRoute.getByText(SELECTED_MODEL)).toBeInTheDocument();
-  expect(modelRoute.getByText("Model Provider")).toBeInTheDocument();
-  expect(modelRoute.getByText(DIRECT_PROVIDER)).toBeInTheDocument();
-  expect(modelRoute.getByText("Runtime Provider")).toBeInTheDocument();
-  expect(modelRoute.getByText("Runtime Model")).toBeInTheDocument();
-  expect(modelRoute.getAllByText("null")).toHaveLength(2);
+  const expectedRows = [
+    ["Selected Model", SELECTED_MODEL],
+    ["Model Provider", DIRECT_PROVIDER],
+    ["Runtime Provider", "null"],
+    ["Runtime Model", "null"],
+  ] as const;
+  for (const [label, value] of expectedRows) {
+    const row = modelRoute.getByText(label).closest("tr");
+    if (!row) {
+      throw new Error(`Model route row was not rendered: ${label}`);
+    }
+    expect(within(row).getByText(value)).toBeInTheDocument();
+  }
 });
 
 test("Diagnostic export remains available when run context was not retained", async () => {
