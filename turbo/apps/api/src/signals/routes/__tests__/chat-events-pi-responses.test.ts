@@ -1418,13 +1418,13 @@ describe("CHAT-02: model-first provider policies", () => {
           attempts: [
             {
               terminal: true,
-              coverage: "complete",
+              coverage: "partial",
               evidenceLost: false,
               tokens: {
-                input: 5,
+                input: null,
                 output: 3,
-                cacheRead: 0,
-                cacheCreation: 0,
+                cacheRead: null,
+                cacheCreation: null,
               },
             },
           ],
