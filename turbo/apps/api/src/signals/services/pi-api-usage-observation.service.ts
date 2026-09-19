@@ -309,6 +309,10 @@ export async function readRunnerApiUsage(
   input: RunnerApiUsageRequest & { readonly runId: string },
   signal: AbortSignal,
 ): Promise<RunnerApiUsageResponse> {
+  // A preceding API can admit a Run without the additive source row while it
+  // remains a rollout or rollback target. Keep that old-writer miss
+  // indistinguishable from every unauthorized claim until the API rollback
+  // window and two-hour Runner drain close; #35385 owns strictification.
   const [row] = await db
     .select({
       revision: agentRunApiUsage.revision,

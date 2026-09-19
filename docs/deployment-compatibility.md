@@ -2307,6 +2307,40 @@ A v1–v3-only application is below the rollback floor while v4 records remain.
 Do not shrink the CHECK or cascade away releasing leases. See the linked contract
 for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
 
+## API-owned Run usage projection (#34787)
+
+Migration 1170 adds the empty `agent_run_api_usage` table. Apply it before
+promoting the API writer and reader. Every new production admission from that
+API creates one run-owned row in the same transaction as `agent_runs`; deletion
+of the Run cascades to the projection. No historical rows are backfilled.
+
+The mixed-version combinations are explicit:
+
+- **Old API after migration:** it never names the new table and continues to
+  admit runs without projection rows.
+- **New API before migration:** unsupported. Both admission owners insert into
+  the new table unconditionally, so promoting the API before migration 1170
+  would fail run creation with `42P01`.
+- **New reader with old-writer runs:** an exact Runner read returns the same
+  non-enumerating `unavailable` shape as a wrong, stale, unbound, or non-running
+  claim. Missing state never becomes complete zero. Remove this compatibility
+  behavior only after the preceding API is outside the rollback window and its
+  maximum two-hour Runner lifetime plus bounded finalization has drained;
+  #35385 owns the evidence and cleanup.
+- **Old Runner with new API:** it ignores the additive table and endpoint. The
+  API source remains observational and does not affect execution or billing.
+- **New Runner with old API:** the route is absent. #34577 owns bounded
+  capability handling and must report that source as unsupported/incomplete,
+  never zero.
+- **API rollback after new writes:** the older API ignores retained projection
+  rows. The additive table and cascade remain; no contraction is part of this
+  rollout.
+
+The strict H1 producer and guest handoff schemas are unchanged. Historical
+receipts without source evidence close a crossed attempt as unavailable only
+when no stronger evidence is already persisted. See
+[API-owned run usage](api-run-usage.md) for the source and read contract.
+
 ## DeepSeek V4.1 Flash Pi coverage
 
 The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
