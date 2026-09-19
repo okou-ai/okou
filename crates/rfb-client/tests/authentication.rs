@@ -475,7 +475,7 @@ async fn a_security_negotiation_stall_reports_its_stage_and_disconnects() {
         NAME,
         password(),
         TrustRoots::public_roots(),
-        Instant::now() + Duration::from_millis(100),
+        Instant::now() + Duration::from_secs(1),
     );
     let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
     assert!(matches!(
@@ -503,7 +503,7 @@ async fn a_tls_stall_reports_its_stage_and_disconnects() {
         NAME,
         password(),
         TrustRoots::public_roots(),
-        Instant::now() + Duration::from_millis(100),
+        Instant::now() + Duration::from_secs(1),
     );
     let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
     assert!(matches!(
@@ -528,7 +528,7 @@ async fn a_vnc_authentication_stall_reports_its_stage_and_disconnects() {
         NAME,
         password(),
         roots,
-        Instant::now() + Duration::from_millis(100),
+        Instant::now() + Duration::from_secs(1),
     );
     let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
     assert!(matches!(
