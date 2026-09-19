@@ -143,9 +143,15 @@ test("Inline password creation preserves spaces and sends the selected custom ce
   await page("/connectors/vnc?add=1");
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
-  await choose(dialog, "Credential", "Create new credential");
-  await fill(within(dialog).getByLabelText("Credential name"), "New login");
-  const secret = within(dialog).getByLabelText("VNC password");
+  const credentialFields = within(dialog).getByRole("group", {
+    name: "Credential",
+  });
+  await choose(credentialFields, "Credential", "Create new credential");
+  await fill(
+    within(credentialFields).getByLabelText("Credential name"),
+    "New login",
+  );
+  const secret = within(credentialFields).getByLabelText("VNC password");
   expect(secret).toHaveAttribute("type", "password");
   expect(secret).toHaveValue("");
   await fill(secret, " pwd  ");
