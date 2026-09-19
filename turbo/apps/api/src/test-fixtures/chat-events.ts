@@ -25,8 +25,6 @@ import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
-import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
-import { feishuOrgEvents } from "@okouai/db/schema/feishu-org-event";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
