@@ -739,7 +739,11 @@ describe("RUN-03: cancel through the run cancel route", () => {
       prompt: "cancel a running run",
     });
     await api.claimRunnerJob(c1.runId);
-    const cancelled = await api.requestCancelRun(actor, c1.runId, [200]);
+    const cancelled = await api.requestCancelRun(
+      actor,
+      c1.runId.toUpperCase(),
+      [200],
+    );
     expect(cancelled.body).toStrictEqual({
       id: c1.runId,
       status: "cancelled",
@@ -766,7 +770,11 @@ describe("RUN-03: cancel through the run cancel route", () => {
     expect(unknown.body.error.code).toBe("NOT_FOUND");
 
     const outsider = bdd.user();
-    const crossOrg = await api.requestCancelRun(outsider, c2.runId, [404]);
+    const crossOrg = await api.requestCancelRun(
+      outsider,
+      c2.runId.toUpperCase(),
+      [404],
+    );
     expectApiError(crossOrg.body);
     expect(crossOrg.body.error.code).toBe("NOT_FOUND");
 

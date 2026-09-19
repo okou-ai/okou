@@ -229,66 +229,133 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(claim.status).toBe(404);
   }, 90_000);
 
-  it("does not fabricate usage when cancellation aborts an in-flight provider response", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    mockPiResourceArchiveDownloads();
-    const providerEntered = createDeferredPromise<void>(context.signal);
-    const releaseProvider = createDeferredPromise<void>(context.signal);
-    let modelCalls = 0;
-    server.use(
-      http.post("https://api.openai.com/v1/responses", async () => {
-        modelCalls += 1;
-        if (!providerEntered.settled()) {
-          providerEntered.resolve(undefined);
+  it.each([
+    { name: "run cancel route", kind: "cancel" as const },
+    { name: "chat interrupt route", kind: "interrupt" as const },
+  ])(
+    "canonicalizes uppercase cancellation through the $name before lifecycle locking and provider abort",
+    async ({ kind }) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      mockPiResourceArchiveDownloads();
+      const providerEntered = createDeferredPromise<void>(context.signal);
+      const providerAborted = createDeferredPromise<void>(context.signal);
+      const releaseProvider = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!releaseProvider.settled()) {
+          releaseProvider.resolve(undefined);
         }
-        await releaseProvider.promise;
-        return new HttpResponse(
-          piResponsesTextSse("discard this late provider result", modelCalls),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
-      actor,
-      agentId,
-      runnerGroup,
-      prompt: "cancel one in-flight API-first request",
-    });
+      });
+      let modelCalls = 0;
+      server.use(
+        http.post(
+          "https://api.openai.com/v1/responses",
+          async ({ request }) => {
+            modelCalls += 1;
+            const markProviderAborted = () => {
+              if (!providerAborted.settled()) {
+                providerAborted.resolve(undefined);
+              }
+            };
+            if (request.signal.aborted) {
+              markProviderAborted();
+            } else {
+              request.signal.addEventListener("abort", markProviderAborted, {
+                once: true,
+              });
+            }
+            if (!providerEntered.settled()) {
+              providerEntered.resolve(undefined);
+            }
+            await releaseProvider.promise;
+            return new HttpResponse(
+              piResponsesTextSse(
+                "discard this late provider result",
+                modelCalls,
+              ),
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          },
+        ),
+      );
+      const checkpointObjects = mockPiCheckpointObjectStore();
+      const { anchor, anchorClaim, run } = await queueCapabilityProvenPiRun({
+        actor,
+        agentId,
+        runnerGroup,
+        prompt: "cancel one in-flight API-first request",
+      });
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
-    await providerEntered.promise;
-    await cancelChatRun(actor, run.runId);
-    expect(modelCalls).toBe(1);
-    releaseProvider.resolve(undefined);
-    await flushWaitUntilForTest();
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+      await providerEntered.promise;
+      const lifecycleLock = await holdPiApiFirstTurnLifecycleLockFixture({
+        runId: run.runId,
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        lifecycleLock.release();
+        await lifecycleLock.done;
+      });
+      const cancellation =
+        kind === "cancel"
+          ? api.requestCancelRun(actor, run.runId.toUpperCase(), [200])
+          : chat.requestSendEvent(
+              actor,
+              {
+                agentId,
+                threadId: run.threadId,
+                interruptsRunId: run.runId.toUpperCase(),
+                clientEventId: randomUUID(),
+              },
+              [201],
+            );
+      await expect.poll(lifecycleLock.waiterCount).toBe(1);
+      lifecycleLock.release();
+      await lifecycleLock.done;
+      const cancelled = await cancellation;
+      if (kind === "cancel") {
+        expect(cancelled.body).toMatchObject({
+          id: run.runId,
+          status: "cancelled",
+        });
+      } else {
+        expect(cancelled.body).toMatchObject({
+          runId: null,
+          threadId: run.threadId,
+        });
+      }
+      await providerAborted.promise;
+      expect(modelCalls).toBe(1);
+      releaseProvider.resolve(undefined);
+      await flushWaitUntilForTest();
 
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "cancelled",
-    });
-    expect(modelCalls).toBe(1);
-    await expect(readRunUsageEventsFixture(run.runId)).resolves.toStrictEqual(
-      [],
-    );
-    expect(
-      checkpointObjects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`,
-      ),
-    ).toBeFalsy();
-    expect(
-      checkpointObjects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-      ),
-    ).toBeFalsy();
-    expect(
-      eventBackedContents(
-        (await chat.listThreadEvents(actor, run.threadId)).events,
-        run.runId,
-      ),
-    ).toHaveLength(0);
-    const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-    expect(claim.status).toBe(404);
-  }, 90_000);
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "cancelled",
+      });
+      expect(modelCalls).toBe(1);
+      await expect(readRunUsageEventsFixture(run.runId)).resolves.toStrictEqual(
+        [],
+      );
+      expect(
+        checkpointObjects.has(
+          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`,
+        ),
+      ).toBeFalsy();
+      expect(
+        checkpointObjects.has(
+          `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
+        ),
+      ).toBeFalsy();
+      expect(
+        eventBackedContents(
+          (await chat.listThreadEvents(actor, run.threadId)).events,
+          run.runId,
+        ),
+      ).toHaveLength(0);
+      const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
+      expect(claim.status).toBe(404);
+    },
+    90_000,
+  );
 
   it.each([
     ...GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
