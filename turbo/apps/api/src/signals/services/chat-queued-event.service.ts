@@ -385,7 +385,7 @@ export async function loadNextUnclaimedQueuedUserMessage(
   };
 }
 
-export async function loadNextUnclaimedQueuedUserMessageId(
+async function loadNextUnclaimedQueuedUserMessageId(
   db: Db,
   threadId: string,
 ): Promise<string | null> {
