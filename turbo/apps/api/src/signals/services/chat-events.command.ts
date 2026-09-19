@@ -1087,6 +1087,7 @@ async function resolveExplicitRunConfiguration(params: {
         orgId: params.orgId,
         userId: params.userId,
         modelSelection,
+        featureSwitchContext: params.featureSwitchContext,
       });
     },
   );
@@ -1871,6 +1872,7 @@ async function resolveThread(params: {
           requestedCodexServiceTier: params.requestedCodexServiceTier,
           persistRequestedCodexServiceTier:
             params.persistRequestedCodexServiceTier,
+          featureSwitchContext: params.featureSwitches.featureSwitchContext,
         });
       },
     );

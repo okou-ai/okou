@@ -10,6 +10,7 @@ import { env, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
+import { withModelRoutingQueryReceipt } from "../../../test-fixtures/model-routing-query-receipt";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { expectApiError } from "./helpers/api-bdd";
@@ -35,6 +36,7 @@ const context = testContext();
 const {
   api,
   chat,
+  misc,
   webhooks,
   chatCallbacks,
   authDevice,
@@ -42,6 +44,7 @@ const {
   entitledChatActor,
   configureOrganizationGptModel,
   configureSubscriptionPiModel,
+  configureBuiltInPiModel,
   sendChatRun,
   expectThreadCreatedModelEvent,
   expectNoThreadModelUpdateEvent,
@@ -254,6 +257,79 @@ describe("CHAT-02: run-level model overrides", () => {
       "claude-opus-4-8",
     );
     await cancelChatRun(actor, third.runId);
+  }, 90_000);
+
+  it("loads a personal default after the persisted model becomes invalid", async () => {
+    const { actor, agentId, providerId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    await chatCallbacks.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-sonnet-5",
+    });
+
+    const { accountSourceId } = await configureSubscriptionPiModel(
+      actor,
+      { accountId: "personal-default-fallback-account" },
+      "gpt-5.6-terra",
+    );
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: false,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "gpt-5.6-terra",
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
+    await authDeviceSupport.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      [FeatureSwitchKey.PiLoop]: false,
+    });
+
+    const captured = await withModelRoutingQueryReceipt(() => {
+      return sendChatRun(actor, {
+        agentId,
+        threadId: thread.id,
+        prompt: "continue through the personal workspace default",
+      });
+    });
+    const followUp = captured.result;
+    // The optimistic read and transactional revalidation each load metadata
+    // once; selected-route failure and default fallback share it within both.
+    expect(captured.receipt.personalMetadataReads).toBe(2);
+    await expect(
+      readRunModelSourceFixture(followUp.runId),
+    ).resolves.toMatchObject({
+      modelProvider: "codex-oauth-token",
+      modelProviderCredentialScope: "member",
+      modelProviderId: accountSourceId,
+      selectedModel: "gpt-5.6-terra",
+      creditAdmitted: false,
+      builtInModelKeyId: null,
+    });
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "gpt-5.6-terra" });
+    await cancelChatRun(actor, followUp.runId);
   }, 90_000);
 
   it.each(

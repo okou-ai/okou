@@ -16,7 +16,10 @@ import {
   getModelProviderTypeForSurfaceProtocol,
   modelProviderSurfaceProtocolSchema,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
@@ -59,6 +62,31 @@ export interface MemberModelRouteContext {
   readonly subscriptions: readonly PersonalCandidate[];
 }
 
+interface LoadedPersonalModelRouteMetadata {
+  readonly kind: "loaded";
+  readonly subscriptions: readonly PersonalCandidate[];
+}
+
+/**
+ * One request's member observations. `not-applicable` is authoritative;
+ * `not-loaded` is the only state that may issue the scoped metadata read.
+ */
+export interface PreparedMemberModelRouteContext {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly priorityEnabled: boolean;
+  readonly personalMetadata:
+    | { readonly kind: "not-applicable" }
+    | {
+        readonly kind: "not-loaded";
+        readonly load: () => Promise<LoadedPersonalModelRouteMetadata>;
+      };
+}
+
+type ModelRouteMemberContext =
+  | MemberModelRouteContext
+  | PreparedMemberModelRouteContext;
+
 function personalSecretNames(type: PersonalType): readonly string[] {
   const authMethod = getDefaultAuthMethod(type);
   const name = getSecretNameForType(type);
@@ -73,23 +101,91 @@ function personalSecretNames(type: PersonalType): readonly string[] {
   return names;
 }
 
+function assertFeatureSwitchContextIdentity(
+  context: FeatureSwitchContext,
+  orgId: string,
+  userId: string,
+): void {
+  if (context.orgId !== orgId || context.userId !== userId) {
+    throw new Error("Captured feature-switch context has the wrong identity");
+  }
+}
+
+export async function prepareMemberModelRouteContext(
+  db: Db,
+  orgId: string,
+  userId: string,
+  capturedFeatureSwitchContext?: FeatureSwitchContext,
+): Promise<PreparedMemberModelRouteContext> {
+  if (userId === "__no_preference__" || userId === ORG_SENTINEL_USER_ID) {
+    return Object.freeze({
+      orgId,
+      userId,
+      priorityEnabled: false,
+      personalMetadata: Object.freeze({ kind: "not-applicable" as const }),
+    });
+  }
+  const featureSwitchContext =
+    capturedFeatureSwitchContext ??
+    (await loadUserFeatureSwitchContext(db, orgId, userId));
+  assertFeatureSwitchContextIdentity(featureSwitchContext, orgId, userId);
+  if (
+    !isFeatureEnabled(
+      FeatureSwitchKey.PersonalSubscriptionPriority,
+      featureSwitchContext,
+    )
+  ) {
+    return Object.freeze({
+      orgId,
+      userId,
+      priorityEnabled: false,
+      personalMetadata: Object.freeze({ kind: "not-applicable" as const }),
+    });
+  }
+
+  let loading: Promise<LoadedPersonalModelRouteMetadata> | undefined;
+  const personalMetadata = Object.freeze({
+    kind: "not-loaded" as const,
+    load: (): Promise<LoadedPersonalModelRouteMetadata> => {
+      loading ??= (async () => {
+        const subscriptions = await loadPersonalModelRouteSubscriptions(
+          db,
+          orgId,
+          userId,
+        );
+        return Object.freeze({
+          kind: "loaded" as const,
+          subscriptions: Object.freeze(
+            subscriptions.map((candidate) => {
+              return Object.freeze({ ...candidate });
+            }),
+          ),
+        });
+      })();
+      return loading;
+    },
+  });
+  return Object.freeze({
+    orgId,
+    userId,
+    priorityEnabled: true,
+    personalMetadata,
+  });
+}
+
 export async function loadMemberModelRouteContext(
   db: Db,
   orgId: string,
   userId: string,
 ): Promise<MemberModelRouteContext> {
-  if (userId === "__no_preference__" || userId === ORG_SENTINEL_USER_ID) {
+  const prepared = await prepareMemberModelRouteContext(db, orgId, userId);
+  if (prepared.personalMetadata.kind === "not-applicable") {
     return { priorityEnabled: false, subscriptions: [] };
   }
-  const context = await loadUserFeatureSwitchContext(db, orgId, userId);
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, context)
-  ) {
-    return { priorityEnabled: false, subscriptions: [] };
-  }
+  const loaded = await prepared.personalMetadata.load();
   return {
     priorityEnabled: true,
-    subscriptions: await loadPersonalModelRouteSubscriptions(db, orgId, userId),
+    subscriptions: loaded.subscriptions,
   };
 }
 
@@ -326,6 +422,40 @@ function parsePolicyRoute(policy: ModelRoutePolicy): {
   return { providerType, credentialScope };
 }
 
+function policyCanUsePersonalMetadata(args: {
+  readonly policy: ModelRoutePolicy;
+  readonly credentialScope: ModelProviderCredentialScope;
+}): boolean {
+  if (args.credentialScope === "member") {
+    return true;
+  }
+  return getProvidersForModel(args.policy.model).some((providerType) => {
+    return (
+      providerType === "claude-code-oauth-token" ||
+      providerType === "codex-oauth-token"
+    );
+  });
+}
+
+async function memberContextForPolicy(
+  member: ModelRouteMemberContext,
+  policy: ModelRoutePolicy,
+  credentialScope: ModelProviderCredentialScope,
+): Promise<MemberModelRouteContext> {
+  if (!("personalMetadata" in member)) {
+    return member;
+  }
+  if (
+    !member.priorityEnabled ||
+    !policyCanUsePersonalMetadata({ policy, credentialScope }) ||
+    member.personalMetadata.kind === "not-applicable"
+  ) {
+    return { priorityEnabled: member.priorityEnabled, subscriptions: [] };
+  }
+  const loaded = await member.personalMetadata.load();
+  return { priorityEnabled: true, subscriptions: loaded.subscriptions };
+}
+
 /** Shared by runtime model selection and the additive member response. */
 export async function resolveEffectivePolicyRoute(params: {
   readonly db: Db;
@@ -334,7 +464,7 @@ export async function resolveEffectivePolicyRoute(params: {
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >;
-  readonly member: MemberModelRouteContext;
+  readonly member: ModelRouteMemberContext;
   readonly policy: ModelRoutePolicy;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
   const { policy } = params;
@@ -348,11 +478,16 @@ export async function resolveEffectivePolicyRoute(params: {
     return null;
   }
   const { providerType, credentialScope } = parsePolicyRoute(policy);
+  const member = await memberContextForPolicy(
+    params.member,
+    policy,
+    credentialScope,
+  );
   // Organization Subscription policies keep their required member route under either switch state.
   // A missing nullable org FK is configuration loss, not malformed structure.
-  if (params.member.priorityEnabled && credentialScope === "org") {
+  if (member.priorityEnabled && credentialScope === "org") {
     const supported = getProvidersForModel(policy.model);
-    const personal = params.member.subscriptions.find((candidate) => {
+    const personal = member.subscriptions.find((candidate) => {
       return supported.includes(candidate.type);
     });
     if (personal) {
@@ -421,7 +556,7 @@ export async function resolveEffectivePolicyRoute(params: {
     }
   }
 
-  const legacyPersonal = params.member.subscriptions.find((candidate) => {
+  const legacyPersonal = member.subscriptions.find((candidate) => {
     return candidate.type === providerType;
   });
   return {
@@ -429,7 +564,7 @@ export async function resolveEffectivePolicyRoute(params: {
     modelProviderType: providerType,
     modelProviderCredentialScope: credentialScope,
     selectedModel: policy.model,
-    ...(credentialScope === "member" && params.member.priorityEnabled
+    ...(credentialScope === "member" && member.priorityEnabled
       ? {
           personalConnectionState: legacyPersonal
             ? legacyPersonal.needsReconnect
