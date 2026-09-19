@@ -8,6 +8,7 @@ import {
 } from "../services/agent-run-create.service";
 import { getSandboxAuthForRun } from "./agent-webhook-auth";
 import {
+  NATIVE_GPT_6_SOL_HEADER,
   PI_DEFERRED_SANDBOX_HEADER,
   type PiDeferredSandboxConfig,
   claimCompatibleStoredExecutionContextSchema,
@@ -883,6 +884,17 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (!deferredCapable) {
     whereConditions.push(sql`(${legacySandboxRunPredicate()})`);
+  }
+  if (get(request$).header(NATIVE_GPT_6_SOL_HEADER) !== "1") {
+    // Filter before the bounded candidate lookup so an unsupported Sol job
+    // cannot hide existing models behind it from an older Runner.
+    whereConditions.push(sql`(
+      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "codex")}
+      AND ${inArray(
+        sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
+        ["gpt-6-sol", "openai/gpt-6-sol"],
+      )}
+    ) IS NOT TRUE`);
   }
   if (auth.type === "official-runner") {
     if (!isOfficialRunnerGroup(group)) {
@@ -2823,6 +2835,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
+    readonly supportsNativeGpt6Sol: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2849,6 +2862,20 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
+    };
+  }
+  const storedContext = storedContextResult.data;
+  const nativeModel = storedContext.environment?.OPENAI_MODEL;
+  if (
+    !args.supportsNativeGpt6Sol &&
+    storedContext.cliAgentType === "codex" &&
+    (nativeModel === "gpt-6-sol" || nativeModel === "openai/gpt-6-sol")
+  ) {
+    // Old Runner artifacts bundle a Guest that rejects Sol's native effort.
+    // Keep the job queued for a capable claimant, including during rollback.
+    return {
+      compatible: false as const,
+      response: notFound("Job not found in queue"),
     };
   }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2912,6 +2939,7 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
+      readonly supportsNativeGpt6Sol: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2930,6 +2958,7 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
+        supportsNativeGpt6Sol: args.supportsNativeGpt6Sol,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs);
@@ -3108,6 +3137,8 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
+      supportsNativeGpt6Sol:
+        get(request$).header(NATIVE_GPT_6_SOL_HEADER) === "1",
       jobWithRun,
       telemetry: body.data.telemetry,
       claimRequestStartedAtMs,

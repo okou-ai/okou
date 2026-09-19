@@ -1563,6 +1563,7 @@ impl ApiClient {
             self.http
                 .request_route(routes::runners::poll::POLL, &self.token)
                 .deferred_pi_reader()
+                .native_gpt_6_sol_reader()
                 .json(&body),
             "poll",
         )
@@ -1622,7 +1623,7 @@ impl ApiClient {
         } else {
             request
         };
-        let request = request.json(&body);
+        let request = request.native_gpt_6_sol_reader().json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let resp = send_api(request, "claim").await?;
         let request_to_response_headers_elapsed = request_to_response_headers_started_at.elapsed();
@@ -4262,6 +4263,7 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(routes::runners::poll::POLL.path)
+                    .header("X-Native-Gpt-6-Sol", "1")
                     .json_body(serde_json::json!({
                         "runnerId": "550e8400-e29b-41d4-a716-446655440000",
                         "group": "default",
@@ -5415,7 +5417,9 @@ mod tests {
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let claim_mock = server
             .mock_async(|when, then| {
-                when.method(POST).path(claim_path.as_str());
+                when.method(POST)
+                    .path(claim_path.as_str())
+                    .header("X-Native-Gpt-6-Sol", "1");
                 then.status(200)
                     .header("content-type", "application/json")
                     .body(RUNNER_CLAIM_RESPONSE_FIXTURE);
@@ -5622,16 +5626,30 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(claim_path.as_str())
-                    .json_body_includes(
-                        serde_json::json!({
-                            "runnerIdentity": {
-                                "runnerId": TEST_RUNNER_ID,
-                                "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
-                            },
-                            "runnerHostname": "prod-1.aws.vm3.ai",
-                        })
-                        .to_string(),
-                    );
+                    // A previous API ignores the capability header and still
+                    // validates the unchanged strict claim body.
+                    .is_true(|request| {
+                        let Ok(mut body) =
+                            serde_json::from_slice::<serde_json::Value>(request.body_ref())
+                        else {
+                            return false;
+                        };
+                        let Some(telemetry) = body["telemetry"].as_object_mut() else {
+                            return false;
+                        };
+                        let elapsed = telemetry.remove("jobDiscoveredToClaimRequestMs");
+                        elapsed.as_ref().is_some_and(serde_json::Value::is_u64)
+                            && body
+                                == serde_json::json!({
+                                    "runnerIdentity": {
+                                        "runnerId": TEST_RUNNER_ID,
+                                        "heartbeatGeneration": TEST_HEARTBEAT_GENERATION,
+                                    },
+                                    "runnerHostname": "prod-1.aws.vm3.ai",
+                                    "capabilities": { "piModelConfigGenerations": [1, 2, 3, 4] },
+                                    "telemetry": {},
+                                })
+                    });
                 then.status(200).json_body(serde_json::json!({
                     "runId": run_id,
                     "prompt": "minimal response",

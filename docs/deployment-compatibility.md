@@ -914,6 +914,27 @@ protect late proxy usage. It remains unchanged, along with ordinary
 pending-usage/callback cleanup blockers, provider-result usage, lifecycle
 observation and private checkpoint validation.
 
+#### GPT 6 Sol native model readiness
+
+Poll and claim requests advertise `X-Native-Gpt-6-Sol: 1` only from Runner artifacts
+whose bundled Guest supports GPT 6 Sol and its reasoning efforts. The API checks
+this capability after authorizing and validating the stored context, before
+claiming native `gpt-6-sol` or `openai/gpt-6-sol` work. A claimant without the
+exact capability receives the existing claim `404`; the job stays pending for
+a capable Runner. This covers Built-in and BYOK routes without changing any
+organization default or stored selection.
+
+Poll excludes unsupported Sol jobs before applying its candidate limit, so old
+Runners can still discover existing models behind a Sol job. Claim repeats the
+capability check to cover direct notifications and previously discovered work.
+
+The header leaves the strict claim JSON unchanged, so a new Runner can still
+claim existing work from an old API, which ignores the extra header. During
+API-first promotion, or a Runner rollback, old Runners can continue executing
+existing models but cannot consume Sol jobs. Sol work waits until a supporting
+Runner is available. The capability remains necessary while an incompatible
+Runner is a supported rollback target; no database migration is involved.
+
 #### Runner process drain
 
 Runner deployment is draining, not instant. The production promote playbook

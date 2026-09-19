@@ -155,6 +155,9 @@ export const runnerClaimCapabilitiesSchema = z
   .strict()
   .readonly();
 
+/** Native model support is advertised in a header ignored by previous APIs. */
+export const NATIVE_GPT_6_SOL_HEADER = "X-Native-Gpt-6-Sol";
+
 export const builtInModelProviderConnectionSourceSchema = z.enum([
   "provider_response",
   "upstream_transport",

@@ -1342,10 +1342,14 @@ export function createRunsApi(
       );
     },
 
-    async pollRunner(group?: string) {
+    async pollRunner(
+      group?: string,
+      extraHeaders?: Readonly<Record<string, string>>,
+    ) {
       return await accept(
         runApp(context)(runnersPollContract).poll({
           headers: runnerHeaders(true),
+          ...(extraHeaders ? { extraHeaders } : {}),
           body: {
             group: group ?? "vm0/test",
             supportedProfiles: ["vm0/default"],
