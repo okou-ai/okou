@@ -18,7 +18,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import type { TFunction } from "i18next";
-import { equalArrays } from "../../lib/equality.ts";
+import { equalArrays, equalSets } from "../../lib/equality.ts";
 import { useTranslation } from "react-i18next";
 import { formatAppNumber, formatChatTimestamp } from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -7073,7 +7073,11 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
 function OptimisticSpinner({ eventId }: { eventId: string }) {
   const enabled =
     useGet(featureSwitch$)[FeatureSwitchKey.OptimisticMessageSpinner] === true;
-  const optimisticEventIds = useGet(optimisticEventIds$);
+  // Streaming deltas rebuild the optimistic buffer, so compare the ids instead
+  // of the set identity: a pending message keeps every other spinner idle.
+  const optimisticEventIds = useGet(optimisticEventIds$, {
+    equalityFn: equalSets,
+  });
   // Only the presentation is gated: the message still renders and reconciles
   // exactly as before, so a message keeps its layout while the switch is off.
   if (!enabled) {

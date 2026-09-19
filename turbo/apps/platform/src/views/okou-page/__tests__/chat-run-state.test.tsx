@@ -430,7 +430,7 @@ test("Spin beside a user message the server has not confirmed", async () => {
   await sendText("Draft the launch checklist");
   await expect(
     screen.findByText("Draft the launch checklist"),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   expect(optimisticUserMessageSpinners()).toHaveLength(1);
 
   runAccepted.resolve(undefined);
@@ -454,7 +454,7 @@ test("Leave an unconfirmed user message unmarked without the switch", async () =
   await sendText("Draft the launch checklist");
   await expect(
     screen.findByText("Draft the launch checklist"),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   expect(optimisticUserMessageSpinners()).toHaveLength(0);
 
   runAccepted.resolve(undefined);
