@@ -129,6 +129,21 @@ async function stored(f: Fixture) {
 }
 
 describe("canonical cancellation intent", () => {
+  it("rejects API usage projections without required top-level keys", async () => {
+    const f = await fixture({ apiUsagePhase: "pending" });
+    await expect(
+      db()
+        .update(agentRunApiUsage)
+        .set({ projection: sql`'{}'::jsonb` })
+        .where(eq(agentRunApiUsage.runId, f.auth.runId)),
+    ).rejects.toMatchObject({
+      cause: {
+        code: "23514",
+        constraint: "agent_run_api_usage_projection_check",
+      },
+    });
+  });
+
   it("closes queued API usage after cancellation commits", async () => {
     const f = await fixture({ status: "queued", apiUsagePhase: "pending" });
     await cancel(f, "hard");
