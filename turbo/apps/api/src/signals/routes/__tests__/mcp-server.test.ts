@@ -5982,7 +5982,6 @@ describe("external MCP entry", () => {
       exp: Math.floor((now() + 9 * 24 * 60 * 60 * 1000) / 1000),
     });
     await withMockNowForTest(now() + 8 * 24 * 60 * 60 * 1000, async () => {
-      expect((await f.chat.listIndicators(f.actor)).threads).toStrictEqual({});
       expect(
         (await listThreads(retainedToken, { unread: true })).threads.map(
           (thread) => {
@@ -6096,12 +6095,12 @@ describe("external MCP entry", () => {
       await runs.grantProEntitlement(actor);
       await runs.ensureOrgModelProvider(actor);
       const agent = await bdd.createAgent(actor, {
-        displayName: "MCP indicators",
+        displayName: "MCP organization activity",
         visibility: "private",
       });
       const sent = await chat.requestSendEvent(
         actor,
-        { agentId: agent.agentId, prompt: "Read my indicators" },
+        { agentId: agent.agentId, prompt: "Check organization activity" },
         [201],
       );
       if (sent.status !== 201) {
@@ -6117,11 +6116,6 @@ describe("external MCP entry", () => {
         }),
         [200],
       );
-      const projection = await chat.listIndicators(actor);
-      expect(projection).toStrictEqual({
-        agents: { [agent.agentId]: "active" },
-        threads: { [sent.body.threadId]: "active" },
-      });
       expected.push({ threadId: sent.body.threadId, agentId: agent.agentId });
     }
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({

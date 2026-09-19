@@ -180,8 +180,7 @@ archive-complete unread history. Missing activity does not prove a run succeeded
 `unread: false` does not prove every historical result was read.
 
 Listing and reading never mark a thread read, change recency or reconcile model
-settings. The MCP catalog replaces `get_indicators` with these two tools; the
-first-party indicators API and its existing sparse semantics remain unchanged.
+settings.
 
 ## Message history
 
@@ -677,16 +676,16 @@ metadata supports public cross-origin discovery.
 ## Acceptance evidence
 
 Automated route tests use real Hono routing, SDK transport, RSA signature checks,
-the membership service, feature overrides and the indicators projection. Only
-external provider/network boundaries are simulated. They cover both protocol
-eras, complete response consumption, invalid grants, scope/membership isolation,
-Origin checks and provider outages.
+the membership service and feature overrides. Only external provider/network
+boundaries are simulated. They cover both protocol eras, complete response
+consumption, invalid grants, scope/membership isolation, Origin checks and
+provider outages.
 
 Before enabling broader access, record a generic MCP client/Inspector check
 against a real hosted preview or staging endpoint, including complete JSON and
-SSE response delivery. Then record basic OAuth, discovery and indicators results
-for Claude, ChatGPT, Claude Code and Codex, with client version/account conditions.
-Local HTTP tests do not establish hosted-client reachability. OAuth foundation
-and discovery shipped separately in #34931 and #34932. The client matrix for the
-full tool set remains #34936; the new message-reader tests do not establish that
-broader hosted acceptance.
+SSE response delivery. Then record basic OAuth, discovery and current-tool
+workflow results for Claude, ChatGPT, Claude Code and Codex, with client
+version/account conditions. Local HTTP tests do not establish hosted-client
+reachability. OAuth foundation and discovery shipped separately in #34931 and
+#34932. The client matrix for the full tool set remains #34936; the new
+message-reader tests do not establish that broader hosted acceptance.
