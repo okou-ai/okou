@@ -1051,8 +1051,9 @@ async function resolveLockedAutomatic(
   if (account.automaticAuthType === "none") {
     return { kind: "none" };
   }
-  // Runtime sync is best-effort: a stale builtin auth override must never receive
-  // credentials for the endpoint accepted by a newer account connection.
+  // Catalog propagation is best-effort: a request matched by a stale runner
+  // catalog must never receive credentials for an endpoint that the API no longer
+  // accepts for this account connection.
   if (
     !(await credentialDestinationMatches(
       tx,

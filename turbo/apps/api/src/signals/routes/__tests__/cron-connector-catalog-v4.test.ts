@@ -514,12 +514,6 @@ describe("connector catalog v4 preparation", () => {
                 : {
                     target,
                     state: "available",
-                    firewall: {
-                      kind: "builtin",
-                      name: "catalog-mcp",
-                      sourceId: created.connectionId,
-                      ...(authKind === "automatic" ? { authOverride: {} } : {}),
-                    },
                   },
             );
           }

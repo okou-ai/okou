@@ -34,7 +34,6 @@ import {
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
 import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
-import { resolveBuiltinConnectorMcpRuntimeAuth } from "./builtin-connector-mcp-runtime-auth.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -58,12 +57,6 @@ type BuiltinRuntimeTargetRegistration = Extract<
   ConnectorRuntimeTargetRegistration,
   { readonly kind: "builtin" }
 >;
-
-interface BuiltinRuntimeAccount {
-  readonly authMethod: string;
-  readonly automaticAuthType: "none" | "oauth" | null;
-  readonly connectorId: string;
-}
 
 type ConnectorRuntimeCustomSyncResult = Extract<
   ConnectorRuntimeSyncResult,
@@ -187,52 +180,25 @@ function authResolvesAtNetworkBoundary(auth: FirewallApi["auth"]): boolean {
   );
 }
 
-function builtinMcpRuntimeDetails(args: {
+function builtinMcpCredentialResolution(args: {
   readonly snapshot: ConnectorRuntimeSelection | undefined;
   readonly registration: BuiltinRuntimeTargetRegistration;
-  readonly account: BuiltinRuntimeAccount | null;
   readonly credentialAvailable: boolean;
-}): {
-  readonly firewall?: NonNullable<
-    Extract<
-      ConnectorRuntimeBuiltinSyncResult,
-      { readonly state: "available" }
-    >["firewall"]
-  >;
-  readonly credentialResolution?: "network-boundary" | "none";
-} {
-  if (!args.snapshot || !args.account || !args.credentialAvailable) {
-    return {};
-  }
-  const runtimeAuth = resolveBuiltinConnectorMcpRuntimeAuth({
-    snapshot: args.snapshot,
-    connectorSlug: args.registration.connectorSlug,
-    authMethodId: args.account.authMethod,
-    automaticAuthType: args.account.automaticAuthType,
-  });
-  if (runtimeAuth === null) {
-    return {};
+}): "network-boundary" | "none" | undefined {
+  if (
+    !args.snapshot ||
+    !args.credentialAvailable ||
+    !args.snapshot.serverFirewalls.isMcp(args.registration.connectorSlug)
+  ) {
+    return undefined;
   }
   const credentialed =
-    runtimeAuth.authOverride === undefined
-      ? (args.snapshot.serverFirewalls
-          .getRuntimeFirewall(args.registration.connectorSlug)
-          ?.apis.some((api) => {
-            return authResolvesAtNetworkBoundary(api.auth);
-          }) ?? false)
-      : authResolvesAtNetworkBoundary(runtimeAuth.authOverride);
-  return {
-    credentialResolution: credentialed ? "network-boundary" : "none",
-    firewall: {
-      kind: "builtin",
-      name: args.registration.connectorSlug,
-      ...(args.registration.baseUrlVars === undefined
-        ? {}
-        : { baseUrlVars: { ...args.registration.baseUrlVars } }),
-      sourceId: args.account.connectorId,
-      ...runtimeAuth,
-    },
-  };
+    args.snapshot.serverFirewalls
+      .getRuntimeFirewall(args.registration.connectorSlug)
+      ?.apis.some((api) => {
+        return authResolvesAtNetworkBoundary(api.auth);
+      }) ?? false;
+  return credentialed ? "network-boundary" : "none";
 }
 
 async function loadCustomSnapshot(args: {
@@ -550,26 +516,20 @@ async function resolveConnectorRuntimeTargetStates(args: {
           })
         : undefined;
     const refresh = builtinByTarget.get(connectorRuntimeTargetKey(target));
-    const resolvedAccount =
-      accountResolution?.kind === "resolved" ? accountResolution.account : null;
-    const mcp = builtinMcpRuntimeDetails({
+    const credentialResolution = builtinMcpCredentialResolution({
       snapshot: builtinCatalogSelection,
       registration,
-      account: resolvedAccount,
       credentialAvailable: credentialAccess?.kind === "ok",
     });
     resolvedTargets.push({
       kind: "builtin",
-      ...(mcp.credentialResolution === undefined
-        ? {}
-        : { credentialResolution: mcp.credentialResolution }),
+      ...(credentialResolution === undefined ? {} : { credentialResolution }),
       result:
         refresh && credentialAccess?.kind === "ok"
           ? {
               target,
               state: "available",
               networkPolicy: refresh.networkPolicy,
-              ...(mcp.firewall === undefined ? {} : { firewall: mcp.firewall }),
               ...(refresh.nextRefreshAt
                 ? { nextSyncAt: refresh.nextRefreshAt }
                 : {}),

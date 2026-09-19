@@ -178,10 +178,6 @@ pub enum FirewallEntry {
         base_url_vars: Option<HashMap<String, String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_id: Option<String>,
-        /// Run-scoped authentication projected for an exact connector account.
-        /// The Python addon applies it after resolving the catalog-owned firewall.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        auth_override: Option<Box<FirewallAuth>>,
     },
     /// Run-scoped firewall body for org custom connectors.
     #[serde(rename = "inline", rename_all = "camelCase")]

@@ -994,34 +994,13 @@ impl ConnectorRuntimeSyncCore {
             let update = match (&target.target, &result.state) {
                 (
                     ConnectorRuntimeTarget::Builtin { connector_slug },
-                    ConnectorRuntimeSyncState::Available {
-                        network_policy,
-                        firewall,
-                    },
-                ) => {
-                    let Some(expected_source_id) = self
-                        .source_id_for_publication(run_id, target, registration_cancel)
-                        .await
-                    else {
-                        continue;
-                    };
-                    if let Err(error) = validate_connector_runtime_network_policy(network_policy) {
-                        Err(error)
-                    } else {
-                        builtin_connector_runtime_firewall(
-                            connector_slug,
-                            firewall.as_ref(),
-                            expected_source_id.as_deref(),
-                        )
-                        .map(|firewall| {
-                            ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
-                                connector_slug: connector_slug.clone(),
-                                network_policy: network_policy.clone(),
-                                firewall,
-                            }
-                        })
+                    ConnectorRuntimeSyncState::Available { network_policy, .. },
+                ) => validate_connector_runtime_network_policy(network_policy).map(|()| {
+                    ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+                        connector_slug: connector_slug.clone(),
+                        network_policy: network_policy.clone(),
                     }
-                }
+                }),
                 (
                     ConnectorRuntimeTarget::Custom {
                         custom_connector_id,
@@ -1957,28 +1936,6 @@ fn connector_runtime_unresolved_reason_is_valid(
     }
 }
 
-fn builtin_connector_runtime_firewall(
-    connector_slug: &str,
-    firewall: Option<&FirewallEntry>,
-    expected_source_id: Option<&str>,
-) -> Result<Option<Box<FirewallEntry>>, &'static str> {
-    let Some(entry) = firewall else {
-        return Ok(None);
-    };
-    let FirewallEntry::Builtin {
-        name,
-        source_id: Some(source_id),
-        ..
-    } = entry
-    else {
-        return Err("builtin available result must use a builtin account firewall");
-    };
-    if name != connector_slug || Some(source_id.as_str()) != expected_source_id {
-        return Err("builtin available result has a mismatched connector source");
-    }
-    Ok(Some(Box::new(entry.clone())))
-}
-
 fn custom_connector_runtime_registry_state(
     custom_connector_id: &str,
     state: &ConnectorRuntimeSyncState,
@@ -2230,48 +2187,6 @@ mod tests {
     }
 
     #[test]
-    fn builtin_automatic_runtime_firewall_requires_exact_registered_source() {
-        let source_id = "550e8400-e29b-41d4-a716-446655440001";
-        let mut entry = FirewallEntry::Builtin {
-            name: "automatic-mcp".to_string(),
-            base_url_vars: None,
-            source_id: Some(source_id.to_string()),
-            auth_override: Some(Box::new(FirewallAuth {
-                headers: HashMap::from([(
-                    "Authorization".to_string(),
-                    "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}".to_string(),
-                )]),
-                base: None,
-                query: None,
-                aws_sigv4: None,
-            })),
-        };
-        assert!(
-            builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), Some(source_id))
-                .is_ok()
-        );
-        assert!(builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), None).is_err());
-        assert!(
-            builtin_connector_runtime_firewall("other-mcp", Some(&entry), Some(source_id)).is_err()
-        );
-        assert!(
-            builtin_connector_runtime_firewall(
-                "automatic-mcp",
-                Some(&entry),
-                Some("other-account")
-            )
-            .is_err()
-        );
-        if let FirewallEntry::Builtin { source_id, .. } = &mut entry {
-            *source_id = None;
-        }
-        assert!(
-            builtin_connector_runtime_firewall("automatic-mcp", Some(&entry), Some(source_id))
-                .is_err()
-        );
-    }
-
-    #[test]
     fn custom_runtime_source_must_match_registration() {
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
         let expected_source_id = "550e8400-e29b-41d4-a716-446655440001";
@@ -2453,7 +2368,6 @@ mod tests {
                     name: connector_slug.clone(),
                     base_url_vars: None,
                     source_id: None,
-                    auth_override: None,
                 })
                 .collect::<Vec<_>>();
             let network_policies = connector_slugs
@@ -2829,7 +2743,6 @@ mod tests {
             name: "slack".to_string(),
             base_url_vars: None,
             source_id: None,
-            auth_override: None,
         }];
         let mut network_policies = HashMap::new();
         network_policies.insert(
@@ -2998,7 +2911,6 @@ mod tests {
                 name: (*connector_slug).to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             })
             .collect::<Vec<_>>();
         let policies = connector_slugs
@@ -4053,7 +3965,6 @@ mod tests {
                 "acme".to_string(),
             )])),
             source_id: Some(source_id.to_string()),
-            auth_override: None,
         }];
         let policies = HashMap::from([(
             "slack".to_string(),
@@ -4984,7 +4895,6 @@ mod tests {
             name: "slack".to_string(),
             base_url_vars: None,
             source_id: None,
-            auth_override: None,
         }];
         let policies = HashMap::from([(
             "slack".to_string(),
@@ -5686,13 +5596,11 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             FirewallEntry::Builtin {
                 name: "github".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             custom_firewall,
         ];

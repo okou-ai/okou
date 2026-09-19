@@ -352,10 +352,6 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import {
-  resolveBuiltinConnectorMcpRuntimeAuth,
-  type BuiltinConnectorMcpRuntimeAuth,
-} from "./builtin-connector-mcp-runtime-auth.service";
-import {
   builtinConnectorCredentialSecretReadCondition,
   resolveBuiltinConnectorCredentialAccess,
   type BuiltinConnectorCredentialAccess,
@@ -1210,15 +1206,7 @@ function assertThreadBoundRunHasQueueAssociation(
   }
 }
 
-interface AutomaticMcpAccountContext {
-  readonly authMethodId: string;
-  readonly automaticAuthType: "none" | "oauth" | null;
-}
-
 interface BuiltinConnectorRuntimeContext {
-  readonly automaticMcpAccounts?: Readonly<
-    Record<string, AutomaticMcpAccountContext>
-  >;
   readonly secrets: Record<string, string> | undefined;
   readonly vars: Record<string, string> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
@@ -3993,26 +3981,6 @@ function resolveStoredConnectorMetadata(
   };
 }
 
-function automaticMcpAccountContexts(
-  rows: readonly StoredConnectorRuntimeRow[],
-): Readonly<Record<string, AutomaticMcpAccountContext>> {
-  return Object.fromEntries(
-    rows.flatMap((row) => {
-      return row.runtimeMethod.method.grant.kind === "automatic"
-        ? [
-            [
-              row.connectorSlug,
-              {
-                authMethodId: row.authMethod,
-                automaticAuthType: row.automaticAuthType,
-              },
-            ],
-          ]
-        : [];
-    }),
-  );
-}
-
 function storedConnectorContextFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
 ): BuiltinConnectorRuntimeContext {
@@ -4020,9 +3988,6 @@ function storedConnectorContextFromSnapshot(
     return emptyBuiltinConnectorRuntimeContext();
   }
   return {
-    automaticMcpAccounts: automaticMcpAccountContexts(
-      snapshot.allowedConnectorRows,
-    ),
     secrets: undefined,
     vars: compactRecord(
       storedConnectorRuntimeVariables(
@@ -4107,9 +4072,6 @@ async function materializeStoredConnectorContext(
       // Secrets are decrypted and merged later, by
       // materializeEagerStoredConnectorSecrets.
       return Promise.resolve({
-        automaticMcpAccounts: automaticMcpAccountContexts(
-          snapshot.allowedConnectorRows,
-        ),
         secrets: undefined,
         vars: compactRecord(resolved.vars),
         secretConnectorMap: compactRecord(resolved.secretConnectorMap),
@@ -5621,7 +5583,6 @@ function modelProviderPermissionManifest(
 }
 
 interface BuiltinConnectorManifestSource {
-  readonly mcpRuntimeAuth?: BuiltinConnectorMcpRuntimeAuth;
   readonly metadata: ConnectorServerFirewallExecutionMetadata;
   readonly permissionIndex: ConnectorServerFirewallPermissionIndex;
   readonly isMcp: boolean;
@@ -5695,12 +5656,9 @@ function applyBuiltinConnectorMetadataPolicies(
     if (sourceId === undefined) {
       throw new Error("Missing built-in connector source identity");
     }
-    const firewall = builtinFirewallEntryForMetadata(
-      source.metadata,
-      vars,
-      sourceId,
+    firewalls.push(
+      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
     );
-    firewalls.push({ ...firewall, ...source.mcpRuntimeAuth });
     if (!source.isMcp) {
       Object.assign(
         environmentSecretPlaceholders,
@@ -5801,9 +5759,6 @@ function mergePermissionManifests(args: {
 }
 
 interface BuildPermissionManifestArgs {
-  readonly automaticMcpAccounts?: Readonly<
-    Record<string, AutomaticMcpAccountContext>
-  >;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissionPolicies: FirewallPolicies | undefined;
@@ -5850,21 +5805,10 @@ async function buildPermissionManifest(
             snapshot,
             connectorSlug,
           });
-          const automaticAccount = args.automaticMcpAccounts?.[connectorSlug];
-          const sourceId = args.connectorSourceIdBySlug?.[connectorSlug];
-          const mcpRuntimeAuth =
-            automaticAccount && sourceId
-              ? resolveBuiltinConnectorMcpRuntimeAuth({
-                  snapshot,
-                  connectorSlug,
-                  ...automaticAccount,
-                })
-              : null;
           return {
             metadata,
             permissionIndex,
             isMcp: snapshot.serverFirewalls.isMcp(connectorSlug),
-            ...(mcpRuntimeAuth === null ? {} : { mcpRuntimeAuth }),
           };
         }),
       );
@@ -9911,8 +9855,6 @@ async function buildPreparedPermissionManifest(args: {
 }): Promise<PermissionManifest | undefined | CreateRunErrorResult> {
   const result = await settle(
     buildPermissionManifest({
-      automaticMcpAccounts:
-        args.storedConnectorMetadataContext.automaticMcpAccounts,
       connectorCatalogSelection: args.connectorCatalogSelection,
       modelProvider: args.modelProvider,
       permissionPolicies: args.body.permissionPolicies,

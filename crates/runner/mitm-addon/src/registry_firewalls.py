@@ -1,7 +1,6 @@
 """Registry sandbox firewall entry resolution."""
 
 import copy
-import json
 import uuid
 from dataclasses import dataclass
 
@@ -9,7 +8,6 @@ import builtin_base_url
 import builtin_firewall_cache
 import builtin_host_policy
 import connector_runtime_metadata
-import matching
 
 BuiltinFirewallCatalogFileKey = builtin_firewall_cache.CatalogFileKey
 BuiltinFirewallCatalogIdentity = builtin_firewall_cache.CatalogIdentity
@@ -19,7 +17,6 @@ BuiltinFirewallCoreCacheKey = tuple[
     BuiltinFirewallCatalogIdentity,
     tuple[tuple[str, str], ...],
     tuple[str, ...],
-    str | None,
 ]
 
 
@@ -244,37 +241,6 @@ def _resolve_builtin_firewall_entry(
         catalog_firewall=catalog_firewall,
     )
 
-    auth_override: dict | None = None
-    auth_override_cache_identity: str | None = None
-    if "authOverride" in entry:
-        raw_auth_override = entry["authOverride"]
-        if not isinstance(raw_auth_override, dict) or set(raw_auth_override) - {
-            "headers",
-            "base",
-            "query",
-            "awsSigv4",
-        }:
-            raise FirewallEntryResolutionError(
-                f'builtin firewall "{raw_name}" authOverride must match the auth schema'
-            )
-        if len(raw_apis) != 1:
-            raise FirewallEntryResolutionError(
-                f'builtin firewall "{raw_name}" authOverride requires exactly one api'
-            )
-        auth_override = copy.deepcopy(raw_auth_override)
-        raw_apis[0]["auth"] = auth_override
-        if not matching.firewall_api_auth_config_is_valid(raw_apis[0]):
-            raise FirewallEntryResolutionError(
-                f'builtin firewall "{raw_name}" authOverride is invalid'
-            )
-        auth_override_cache_identity = json.dumps(
-            auth_override,
-            allow_nan=False,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-
     try:
         vars_map = builtin_base_url.base_url_vars_for_entry(entry)
     except builtin_base_url.BuiltinBaseUrlResolutionError as e:
@@ -318,7 +284,6 @@ def _resolve_builtin_firewall_entry(
             catalog_identity,
             tuple(sorted(vars_map.items())),
             tuple(resolved_bases),
-            auth_override_cache_identity,
         ),
     )
 

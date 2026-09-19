@@ -16,6 +16,7 @@ export async function installAutomaticMcpCatalog(
     readonly isolateSource?: boolean;
     readonly additionalAutomaticMethodId?: string;
     readonly additionalNoAuthMethodId?: string;
+    readonly firewallAuth?: "none" | "oauth";
   } = {},
 ) {
   const slug = args.slug ?? `builtin-${randomUUID().slice(0, 8)}`;
@@ -48,6 +49,10 @@ export async function installAutomaticMcpCatalog(
     access: { kind: "automatic", inputs: outputs, outputs },
     revoke: { kind: "none" },
   };
+  const firewallAuthHeaders: Record<string, string> =
+    args.firewallAuth === "none"
+      ? {}
+      : { Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}` };
   const catalog = connectorCatalogArtifactSchema.parse({
     ...API_TEST_CONNECTOR_CATALOG,
     catalogVersion: `automatic-${randomUUID()}`,
@@ -85,7 +90,16 @@ export async function installAutomaticMcpCatalog(
           billable: false,
           config: {
             description: "Automatic Tools",
-            apis: [{ base: endpoint, auth: {}, permissions: [] }],
+            apis: [
+              {
+                base: endpoint,
+                auth:
+                  args.firewallAuth === "none"
+                    ? {}
+                    : { headers: firewallAuthHeaders },
+                permissions: [],
+              },
+            ],
           },
           categories: null,
           defaultAllowed: null,
@@ -100,6 +114,7 @@ export async function installAutomaticMcpCatalog(
     slug,
     methodId,
     endpoint,
+    firewallAuthHeaders,
     target: { kind: "builtin" as const, connectorSlug: slug },
   };
 }

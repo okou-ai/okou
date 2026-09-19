@@ -86,7 +86,6 @@ fn codex_oauth_context() -> crate::types::ExecutionContext {
         name: "model-provider:codex-oauth-token".into(),
         base_url_vars: None,
         source_id: None,
-        auth_override: None,
     }]);
     context
 }

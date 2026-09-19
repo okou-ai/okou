@@ -1,4 +1,4 @@
-"""Builtin firewalls retain catalog ownership with account auth overrides."""
+"""Builtin MCP authentication follows the runner-owned catalog firewall."""
 
 import pytest
 
@@ -35,9 +35,9 @@ def _firewall(name: str, *, oauth: bool, base: str = _BASE) -> dict:
     }
 
 
-def _replace_catalog(cache_path, *, present: bool, base: str = _BASE) -> None:
+def _replace_catalog(cache_path, *, present: bool, oauth: bool, base: str = _BASE) -> None:
     next_path = cache_path.with_name("catalog.next.json")
-    builtin = _firewall(_BUILTIN, oauth=False, base=base)
+    builtin = _firewall(_BUILTIN, oauth=oauth, base=base)
     builtin["apis"][0].pop("id")
     other = _firewall("other-service", oauth=False)
     other["apis"][0].pop("id")
@@ -55,13 +55,13 @@ def _replace_catalog(cache_path, *, present: bool, base: str = _BASE) -> None:
 
 @pytest.mark.parametrize("oauth", [False, True])
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-async def test_builtin_auth_override_catalog_removal_and_reinsertion_keep_selected_owner(
+async def test_builtin_catalog_auth_removal_and_reinsertion_keep_selected_owner(
     tmp_path, real_flow, mitm_ctx, oauth, requestheaders_first
 ):
     registry_path = tmp_path / "registry.json"
     cache_path = tmp_path / "catalog.json"
     sandbox = {
-        "runId": "builtin-auth-override-catalog",
+        "runId": "builtin-catalog-auth",
         "cliAgentType": "codex",
         "sandboxToken": "sandbox-token",
         "encryptedSecrets": "iv:tag:data",
@@ -74,7 +74,6 @@ async def test_builtin_auth_override_catalog_removal_and_reinsertion_keep_select
                 "kind": "builtin",
                 "name": _BUILTIN,
                 "sourceId": _SOURCE_ID,
-                "authOverride": _firewall(_BUILTIN, oauth=oauth)["apis"][0]["auth"],
             },
             {
                 "kind": "inline",
@@ -94,7 +93,7 @@ async def test_builtin_auth_override_catalog_removal_and_reinsertion_keep_select
         },
     }
     write_multi_sandbox_registry(registry_path, {_CLIENT_IP: sandbox})
-    _replace_catalog(cache_path, present=True)
+    _replace_catalog(cache_path, present=True, oauth=oauth)
     endpoint = FakeAuthEndpoint()
     if oauth:
         endpoint.queue_json_response(
@@ -119,7 +118,7 @@ async def test_builtin_auth_override_catalog_removal_and_reinsertion_keep_select
             (False, _CUSTOM_ID),
             (True, _BUILTIN),
         ]:
-            _replace_catalog(cache_path, present=present)
+            _replace_catalog(cache_path, present=present, oauth=oauth)
             flow = real_flow(
                 with_response=False,
                 client_ip=_CLIENT_IP,
@@ -159,13 +158,13 @@ async def test_builtin_auth_override_catalog_removal_and_reinsertion_keep_select
 
 
 @pytest.mark.parametrize("requestheaders_first", [False, True])
-async def test_builtin_auth_override_uses_current_catalog_destination(
+async def test_builtin_catalog_auth_uses_current_catalog_destination(
     tmp_path, real_flow, mitm_ctx, requestheaders_first
 ):
     registry_path = tmp_path / "registry.json"
     cache_path = tmp_path / "catalog.json"
     sandbox = {
-        "runId": "builtin-auth-override-destination",
+        "runId": "builtin-catalog-auth-destination",
         "cliAgentType": "codex",
         "sandboxToken": "sandbox-token",
         "encryptedSecrets": "iv:tag:data",
@@ -177,7 +176,6 @@ async def test_builtin_auth_override_uses_current_catalog_destination(
                 "kind": "builtin",
                 "name": _BUILTIN,
                 "sourceId": _SOURCE_ID,
-                "authOverride": _firewall(_BUILTIN, oauth=True)["apis"][0]["auth"],
             }
         ],
         "connectorRuntimeTargets": [{"kind": "builtin", "connectorSlug": _BUILTIN}],
@@ -187,7 +185,12 @@ async def test_builtin_auth_override_uses_current_catalog_destination(
         },
     }
     write_multi_sandbox_registry(registry_path, {_CLIENT_IP: sandbox})
-    _replace_catalog(cache_path, present=True, base="https://replacement.example.com/server")
+    _replace_catalog(
+        cache_path,
+        present=True,
+        oauth=True,
+        base="https://replacement.example.com/server",
+    )
     endpoint = FakeAuthEndpoint()
     endpoint.queue_json_response(
         {"error": {"code": "CONNECTOR_NOT_CONFIGURED", "message": "Connector not configured"}},

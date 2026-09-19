@@ -5,7 +5,6 @@ import { piModelConfigV4Schema } from "./pi-native";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
-  executionFirewallBuiltinEntrySchema,
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
   firewallApiSchema,
@@ -345,12 +344,6 @@ export const connectorRuntimeBuiltinAvailableResultSchema =
     target: connectorRuntimeBuiltinTargetSchema,
     state: z.literal("available"),
     networkPolicy: networkPolicySchema,
-    firewall: executionFirewallBuiltinEntrySchema
-      .extend({
-        sourceId: z.uuid(),
-      })
-      .strict()
-      .optional(),
   });
 
 export const connectorRuntimeBuiltinUnresolvedResultSchema =

@@ -2246,16 +2246,15 @@ Builtin callbacks are owned by the API and completion receipts identify the
 exact account and attempt. Stored catalog method IDs remain unchanged.
 
 Automatic accounts receive the same compact builtin firewall reference used by
-builtin HTTP connectors. The Runner resolves its definition from the accepted
-catalog and applies the account-specific no-auth/OAuth override afterward.
-Builtin runtime-sync updates carry only that override, so same-account reconnect
-changes take effect without preserving obsolete auth headers or copying the
-catalog firewall into account state. Use the current API and Runner for OAuth
-overrides; a draining older Runner ignores the additive field and therefore uses
-the generic credentialless MCP catalog firewall. Keep Plaud Automatic disabled
-until the current Runner is promoted. There is no MCP-specific client or Runner
-capability negotiation. A rollback after Automatic accounts exist must retain
-their schema and credential readers.
+builtin HTTP connectors. The Runner resolves its definition, including auth, from
+the accepted catalog; account state does not replace or override that firewall.
+Automatic discovery still records whether the selected account resolved to OAuth
+or no-auth. A mismatch fails at its natural boundary: an OAuth catalog firewall
+cannot resolve its required secret from a no-auth account, while a no-auth catalog
+firewall sends an OAuth account's request without credentials and lets the upstream
+reject it. Builtin runtime-sync updates remain policy-only. There is no MCP-specific
+client or Runner capability negotiation. A rollback after Automatic accounts exist
+must retain their schema and credential readers.
 The addon sends `matchedFirewall.base` when resolving builtin credentials.
 Automatic OAuth resolution requires this destination to match the current
 catalog and the locked account binding. Missing or stale destinations fail closed;

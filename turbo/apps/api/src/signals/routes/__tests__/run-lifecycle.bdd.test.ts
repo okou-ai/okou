@@ -10798,7 +10798,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
   it.each(["none", "oauth"] as const)(
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
     async (resolution) => {
-      const catalog = await installAutomaticMcpCatalog();
+      const catalog = await installAutomaticMcpCatalog({
+        firewallAuth: resolution,
+      });
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "cimd",
         authentication: resolution,
@@ -10820,6 +10822,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           methodId: catalog.methodId,
           storageVersion: 2,
           isolateSource: false,
+          firewallAuth: resolution,
         });
       }
       const run = await api.createRun(actor, {
@@ -10836,14 +10839,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         kind: "builtin",
         name: catalog.slug,
         sourceId: connectionId,
-        authOverride:
-          resolution === "oauth"
-            ? {
-                headers: {
-                  Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
-                },
-              }
-            : {},
       });
       expect(JSON.stringify(claim)).not.toContain(
         "automatic-initial-access-token",
@@ -10881,7 +10876,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }
       const authBody = {
         encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-        authHeaders: firewall.authOverride?.headers ?? {},
+        authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
@@ -10923,29 +10918,23 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         expect(updated).toMatchObject({
           target: { kind: "builtin", connectorSlug: catalog.slug },
           state: "available",
-          firewall: {
-            kind: "builtin",
-            name: catalog.slug,
-            sourceId: connectionId,
-            authOverride: {},
-          },
         });
-        const anonymous = await fw.requestFirewallAuth(
+        expect(updated).not.toHaveProperty("firewall");
+        const mismatched = await fw.requestFirewallAuth(
           { authorization: `Bearer ${claim.sandboxToken}` },
-          { ...authBody, authHeaders: {} },
-          [200],
+          authBody,
+          [424],
         );
-        if (anonymous.status !== 200) {
-          throw new Error("Expected anonymous firewall auth to resolve");
-        }
-        expect(anonymous.body.headers).toStrictEqual({});
+        expect(mismatched.body).toMatchObject({
+          error: { code: "CONNECTOR_NOT_CONFIGURED" },
+        });
         const check = await accept(
           checkClient.check({ headers: checkHeaders, body: checkBody }),
           [200],
         );
         expect(check.body).toMatchObject({
           outcome: "resolved",
-          connector: { credentialResolution: "none" },
+          connector: { credentialResolution: "network-boundary" },
         });
       }
       await api.requestCancelRun(actor, run.runId, [200]);
@@ -10957,8 +10946,76 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     },
   );
 
+  it("keeps a no-auth catalog firewall when Automatic discovery resolves OAuth", async () => {
+    const catalog = await installAutomaticMcpCatalog({
+      firewallAuth: "none",
+    });
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "oauth",
+      initialExpiresIn: 3600,
+    });
+    const api = createRunsApi(context);
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const connectionId = await connectAutomaticRuntime({
+      actor,
+      agentId,
+      ...catalog,
+      issuer: provider.issuer,
+    });
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "use builtin Automatic OAuth through catalog no-auth",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
+    expect(builtinFirewallEntry(claim.firewalls, catalog.slug)).toStrictEqual({
+      kind: "builtin",
+      name: catalog.slug,
+      sourceId: connectionId,
+    });
+    expect(catalog.firewallAuthHeaders).toStrictEqual({});
+
+    const checkClient = setupApp({ context, routes: connectorCheckRoutes })(
+      connectorCheckContract,
+    );
+    const check = await accept(
+      checkClient.check({
+        headers: {
+          authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+        },
+        body: {
+          mode: "url",
+          method: "POST",
+          url: catalog.endpoint,
+          connectorSlug: catalog.slug,
+        },
+      }),
+      [200],
+    );
+    expect(check.body).toMatchObject({
+      outcome: "resolved",
+      connector: { credentialResolution: "none" },
+    });
+    const [runtime] = await api.syncConnectorRuntime(run.runId, {
+      targets: [target],
+    });
+    expect(runtime).toMatchObject({ state: "available" });
+    expect(runtime).not.toHaveProperty("firewall");
+
+    await api.requestCancelRun(actor, run.runId, [200]);
+    await connectors.deleteBuiltinConnectorAccount(
+      actor,
+      catalog.slug,
+      connectionId,
+    );
+  });
+
   it.each(["none", "manual"] as const)(
-    "replaces running builtin Automatic auth when reconnecting to %s",
+    "keeps catalog auth when reconnecting builtin Automatic to %s",
     async (authMode) => {
       const catalog = await installAutomaticMcpCatalog({
         slug: "manual-mcp",
@@ -10986,13 +11043,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
-      expect(
-        builtinFirewallEntry(claim.firewalls, catalog.slug).authOverride,
-      ).toStrictEqual({
-        headers: {
-          Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
+      expect(builtinFirewallEntry(claim.firewalls, catalog.slug)).toMatchObject(
+        {
+          kind: "builtin",
+          name: catalog.slug,
+          sourceId: connectionId,
         },
-      });
+      );
       if (authMode === "none") {
         const client = setupApp({ context, routes: builtinConnectorsRoutes })(
           builtinConnectorNoAuthGrantContract,
@@ -11026,15 +11083,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       });
       expect(updated).toMatchObject({
         state: "available",
-        firewall: {
-          kind: "builtin",
-          name: catalog.slug,
-          sourceId: connectionId,
-        },
       });
-      if (updated?.state !== "available" || !updated.firewall) {
-        throw new Error("Expected the reconnected MCP runtime firewall");
-      }
+      expect(updated).not.toHaveProperty("firewall");
       const endpoint =
         authMode === "none"
           ? catalog.endpoint
@@ -11059,10 +11109,15 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       expect(check.body).toMatchObject({
         outcome: "resolved",
         connector: {
-          credentialResolution:
-            authMode === "none" ? "none" : "network-boundary",
+          credentialResolution: "network-boundary",
         },
       });
+      const authHeaders =
+        authMode === "none"
+          ? catalog.firewallAuthHeaders
+          : {
+              Authorization: `Bearer \${{ secrets.MCP_API_KEY }}`,
+            };
       const auth = await fw.requestFirewallAuth(
         {
           authorization: `Bearer ${claim.sandboxToken}`,
@@ -11070,12 +11125,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         {
           encryptedSecrets:
             claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-          authHeaders:
-            authMode === "none"
-              ? {}
-              : {
-                  Authorization: `Bearer \${{ secrets.MCP_API_KEY }}`,
-                },
+          authHeaders,
           matchedFirewall: {
             name: catalog.slug,
             apiId: `${catalog.slug}:0`,
@@ -11085,14 +11135,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
             routingVariables: {},
           },
         },
-        [200],
+        authMode === "none" ? [424] : [200],
       );
-      expect(auth.body).toMatchObject({
-        headers:
-          authMode === "none"
-            ? {}
-            : { Authorization: "Bearer reconnected-manual-token" },
-      });
+      expect(auth.body).toMatchObject(
+        authMode === "none"
+          ? { error: { code: "CONNECTOR_NOT_CONFIGURED" } }
+          : { headers: { Authorization: "Bearer reconnected-manual-token" } },
+      );
       await api.requestCancelRun(actor, run.runId, [200]);
       await connectors.deleteBuiltinConnectorAccount(
         actor,
@@ -11137,11 +11186,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
-    const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: firewall.authOverride?.headers ?? {},
+      authHeaders: catalog.firewallAuthHeaders,
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
@@ -11220,10 +11268,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     expect(runtime).toMatchObject({
       state: "available",
-      firewall: {
-        authOverride: firewall.authOverride,
-      },
     });
+    expect(runtime).not.toHaveProperty("firewall");
     clearMockNow();
     await api.requestCancelRun(actor, run.runId, [200]);
     await connectors.deleteBuiltinConnectorAccount(
@@ -11307,7 +11353,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(refreshConnectionId);
-      const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
       const held = await holdConnectorAccountFixture(
         {
           orgId: actor.orgId,
@@ -11325,7 +11370,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
               forceRefresh: true,
               encryptedSecrets:
                 claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-              authHeaders: firewall.authOverride?.headers ?? {},
+              authHeaders: catalog.firewallAuthHeaders,
               matchedFirewall: {
                 name: catalog.slug,
                 apiId: `${catalog.slug}:0`,
@@ -11459,10 +11504,9 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
-    const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: firewall.authOverride?.headers ?? {},
+      authHeaders: catalog.firewallAuthHeaders,
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,

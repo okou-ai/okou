@@ -142,7 +142,6 @@ describe("builtin Automatic firewall credential destinations", () => {
           if (builtin?.kind !== "builtin") {
             throw new Error("Expected the builtin Automatic firewall");
           }
-          const authOverride = builtin.authOverride;
           const originalBase = catalog.endpoint;
           const nextEndpoint = "https://replacement-mcp.example.test/server";
           const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
@@ -152,7 +151,7 @@ describe("builtin Automatic firewall credential destinations", () => {
               {
                 encryptedSecrets:
                   claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-                authHeaders: authOverride?.headers ?? {},
+                authHeaders: catalog.firewallAuthHeaders,
                 forceRefresh,
                 matchedFirewall: {
                   name: catalog.slug,
@@ -252,7 +251,7 @@ describe("builtin Automatic firewall credential destinations", () => {
             initialExpiresIn: 3600,
           });
           // The account commits even when notification delivery fails. Keep using
-          // the original Run's auth override without calling runtime sync.
+          // the catalog firewall auth without calling runtime sync.
           context.mocks.ably.batchPublish.mockRejectedValue(
             new Error("Wakeup unavailable"),
           );
@@ -422,7 +421,7 @@ describe("builtin Automatic firewall credential destinations", () => {
         const body = {
           encryptedSecrets:
             claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-          authHeaders: builtin.authOverride?.headers ?? {},
+          authHeaders: catalog.firewallAuthHeaders,
           forceRefresh: true,
           matchedFirewall: {
             name: catalog.slug,

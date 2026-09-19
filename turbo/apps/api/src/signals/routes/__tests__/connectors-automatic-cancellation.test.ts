@@ -229,20 +229,8 @@ describe.each([false, true])(
           });
           expect(runtime).toMatchObject({
             state: "available",
-            firewall: {
-              kind: "builtin",
-              name: catalog.slug,
-              sourceId: connectionId,
-              authOverride:
-                targetAuthentication === "none"
-                  ? {}
-                  : {
-                      headers: {
-                        Authorization: `Bearer \${{ secrets.MCP_ACCESS_TOKEN }}`,
-                      },
-                    },
-            },
           });
+          expect(runtime).not.toHaveProperty("firewall");
           expect(context.mocks.ably.batchPublish).toHaveBeenCalledWith({
             channels: [`runner-group:${runnerGroup}`],
             messages: [

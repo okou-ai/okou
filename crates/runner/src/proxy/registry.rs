@@ -199,7 +199,6 @@ pub(crate) enum ConnectorRuntimeRegistryUpdate {
     BuiltinAvailable {
         connector_slug: String,
         network_policy: NetworkPolicy,
-        firewall: Option<Box<FirewallEntry>>,
     },
     Custom {
         custom_connector_id: String,
@@ -448,25 +447,9 @@ fn apply_connector_runtime_update(
         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
             connector_slug,
             network_policy,
-            firewall,
         } => {
             if !sandbox_has_connector_firewall(sandbox, connector_slug) {
                 return Ok(false);
-            }
-            if let Some(replacement) = firewall {
-                let firewalls = sandbox.firewalls.get_or_insert_with(Vec::new);
-                if firewalls.iter().any(|entry| {
-                    firewall_name(entry) == connector_slug
-                        && custom_connector_owner(entry).is_some()
-                }) {
-                    return Err(RunnerError::Internal(format!(
-                        "builtin connector {connector_slug} cannot replace a custom firewall"
-                    )));
-                }
-                replace_first_matching_firewall(firewalls, *replacement.clone(), |entry| {
-                    firewall_entry_matches(entry, connector_slug)
-                });
-                sandbox.omitted_builtin_firewalls.remove(connector_slug);
             }
             sandbox
                 .network_policies
@@ -784,7 +767,6 @@ impl ProxyRegistryHandle {
                 &[ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                     connector_slug: connector_slug.to_string(),
                     network_policy: policy,
-                    firewall: None,
                 }],
             )
             .await?;
@@ -1249,13 +1231,11 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             FirewallEntry::Builtin {
                 name: "github".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             FirewallEntry::Builtin {
                 name: "slack".to_string(),
@@ -1264,7 +1244,6 @@ mod tests {
                     "stale.example.test".to_string(),
                 )])),
                 source_id: None,
-                auth_override: None,
             },
         ];
 
@@ -1277,7 +1256,6 @@ mod tests {
                     "current.example.test".to_string(),
                 )])),
                 source_id: None,
-                auth_override: None,
             },
             |entry| matches!(entry, FirewallEntry::Builtin { name, .. } if name == "slack"),
         );
@@ -1524,13 +1502,11 @@ mod tests {
                     "xn--mnich-kva.example.test".to_string(),
                 )])),
                 source_id: None,
-                auth_override: None,
             },
             FirewallEntry::Builtin {
                 name: "model-provider:openai".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             custom_runtime_firewall(available_custom_id, "custom_connector_available"),
         ];
@@ -1620,7 +1596,6 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             custom_runtime_firewall(custom_connector_id, "slack"),
         ];
@@ -1653,89 +1628,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn builtin_automatic_runtime_updates_auth_without_changing_account() {
-        let harness = RegistryHarness::new().await;
-        let slug = "automatic-mcp";
-        let source_id = "550e8400-e29b-41d4-a716-446655440001";
-        let firewalls = vec![FirewallEntry::Builtin {
-            name: slug.to_string(),
-            base_url_vars: None,
-            source_id: Some(source_id.to_string()),
-            auth_override: Some(Box::new(FirewallAuth {
-                headers: HashMap::new(),
-                base: None,
-                query: None,
-                aws_sigv4: None,
-            })),
-        }];
-        let runtime_targets = vec![ConnectorRuntimeTargetRegistration::Builtin {
-            connector_slug: slug.to_string(),
-            base_url_vars: None,
-            source_id: Some(source_id.to_string()),
-        }];
-        harness
-            .handle
-            .register_sandbox(
-                "10.200.0.2",
-                &SandboxRegistration {
-                    firewalls: Some(&firewalls),
-                    connector_runtime_targets: Some(&runtime_targets),
-                    ..base_registration()
-                },
-            )
-            .await
-            .unwrap();
-        let initial = read_registry(harness.registry_path()).await.unwrap();
-        let sandbox = &initial.sandboxes["10.200.0.2"];
-        assert!(!sandbox.omitted_builtin_firewalls.contains(slug));
-        assert_eq!(
-            sandbox
-                .connector_routing_variables
-                .get("builtin:automatic-mcp"),
-            Some(&HashMap::new())
-        );
-
-        for oauth in [Some(true), Some(false), None, Some(true)] {
-            let mut replacement = firewalls[0].clone();
-            if let FirewallEntry::Builtin { auth_override, .. } = &mut replacement {
-                *auth_override = oauth.map(|oauth| {
-                    Box::new(FirewallAuth {
-                        headers: if oauth {
-                            HashMap::from([(
-                                "Authorization".to_string(),
-                                "Bearer ${{ secrets.MCP_ACCESS_TOKEN }}".to_string(),
-                            )])
-                        } else {
-                            HashMap::new()
-                        },
-                        base: None,
-                        query: None,
-                        aws_sigv4: None,
-                    })
-                });
-            }
-            harness
-                .handle
-                .apply_connector_runtime_updates_if_run_matches(
-                    "10.200.0.2",
-                    "run-test",
-                    &[ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
-                        connector_slug: slug.to_string(),
-                        network_policy: policy(&[], &[], &[], "allow"),
-                        firewall: Some(Box::new(replacement.clone())),
-                    }],
-                )
-                .await
-                .unwrap();
-            let updated = read_registry(harness.registry_path()).await.unwrap();
-            assert_eq!(
-                updated.sandboxes["10.200.0.2"].firewalls.as_ref().unwrap(),
-                &vec![replacement]
-            );
-        }
-    }
-
-    #[tokio::test]
     async fn idempotent_connector_runtime_updates_preserve_registry_file() {
         let harness = RegistryHarness::new().await;
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
@@ -1746,7 +1638,6 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             custom_runtime_firewall(custom_connector_id, original_custom_name),
         ];
@@ -1791,7 +1682,6 @@ mod tests {
             ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                 connector_slug: "slack".to_string(),
                 network_policy: policy(&[], &["chat:write"], &[], "deny"),
-                firewall: None,
             },
             ConnectorRuntimeRegistryUpdate::Custom {
                 custom_connector_id: custom_connector_id.to_string(),
@@ -1879,13 +1769,11 @@ mod tests {
                 name: "github".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
             FirewallEntry::Builtin {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
         ];
         let github_policy = policy(&["repos.read"], &[], &[], "ask");
@@ -1922,12 +1810,10 @@ mod tests {
                         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                             connector_slug: "github".to_string(),
                             network_policy: github_policy,
-                            firewall: None,
                         },
                         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                             connector_slug: "slack".to_string(),
                             network_policy: policy(&[], &["chat:write"], &[], "deny"),
-                            firewall: None,
                         },
                     ],
                 )
@@ -1960,7 +1846,6 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
         ];
         let network_policies = HashMap::from([
@@ -2009,7 +1894,6 @@ mod tests {
                     ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                         connector_slug: "slack".to_string(),
                         network_policy: policy(&[], &["chat:write"], &[], "deny"),
-                        firewall: None,
                     },
                     ConnectorRuntimeRegistryUpdate::Custom {
                         custom_connector_id: custom_connector_id.to_string(),
@@ -2048,7 +1932,6 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
         ];
         let network_policies = HashMap::from([
@@ -2100,7 +1983,6 @@ mod tests {
                         ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
                             connector_slug: "slack".to_string(),
                             network_policy: policy(&[], &["chat:write"], &[], "deny"),
-                            firewall: None,
                         },
                         ConnectorRuntimeRegistryUpdate::Custom {
                             custom_connector_id: custom_connector_id.to_string(),
@@ -2588,7 +2470,6 @@ mod tests {
                 name: "slack".to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             },
         ];
         let network_policies = HashMap::from([
@@ -2638,7 +2519,6 @@ mod tests {
                 name: custom_firewall_name.to_string(),
                 base_url_vars: None,
                 source_id: None,
-                auth_override: None,
             });
         write_registry(harness.registry_path(), &registry)
             .await
