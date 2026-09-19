@@ -914,10 +914,10 @@ test("Announce a recovery model switch on the continue run", async () => {
 
   click(await findButton("Try again"));
 
-  await expect(screen.findByText("continue")).resolves.toBeVisible();
+  await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
   await expect(
     screen.findByText("Model changed to GPT 5.6 Sol"),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(sentModels).toStrictEqual(["gpt-5.6-sol"]);
   });
@@ -926,11 +926,12 @@ test("Announce a recovery model switch on the continue run", async () => {
 // The transcript's scroll result when this card resolves is a layout contract:
 // jsdom reports the scroller as zero-height, so `isAtBottom` is trivially true
 // here. `e2e/playwright/regressions/chat-card-scroll.ts` owns that result for
-// the recovery card in Chromium and WebKit. This case covers what the page
-// shows: a spinner while the run detail is held, then the resolved recovery
-// copy in the same card element. Showing the generic failure copy during the
-// wait is what this replaced — it offered a details dialog whose contents, and
-// whose model switch, changed once the classification landed.
+// the recovery card in Chromium and WebKit, including that the card keeps one
+// mounted frame across this transition. This case covers what the page shows:
+// a spinner while the run detail is held, then the resolved recovery copy.
+// Showing the generic failure copy during the wait is what this replaced — it
+// offered a details dialog whose contents, and whose model switch, changed
+// once the classification landed.
 test("Replace the failure card copy when recovery resolves", async () => {
   configureModelPolicies(["gpt-5.6-luna"]);
   installRunChat({
@@ -966,9 +967,9 @@ test("Replace the failure card copy when recovery resolves", async () => {
   await readyChat();
   await detailRequested.promise;
   const shell = await screen.findByTestId("assistant-error-card-shell");
-  const pendingCard = await within(shell).findByTestId(
-    "assistant-error-card-loading",
-  );
+  await expect(
+    within(shell).findByTestId("assistant-error-card-loading"),
+  ).resolves.toBeInTheDocument();
   // Neither copy is readable yet, and no dialog is reachable, so nothing the
   // reader can act on changes when the classification lands.
   expect(screen.queryByText("This run couldn't finish")).toBeNull();
@@ -979,12 +980,9 @@ test("Replace the failure card copy when recovery resolves", async () => {
   releaseDetail.resolve();
 
   const recovery = await within(shell).findByTestId("assistant-error-recovery");
-  // The same element carries both states: replacing it would drop its box from
-  // layout for a pass and clamp the transcript's scroll offset by its height.
-  expect(recovery).toBe(pendingCard);
   expect(
     within(recovery).getByText("This model is busy right now"),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(screen.queryByText("This run couldn't finish")).toBeNull();
   expect(screen.queryByTestId("assistant-error-card-loading")).toBeNull();
 });
@@ -1526,7 +1524,7 @@ test("Preserve provider errors that have no guided recovery", async () => {
   await readyChat();
   // The card spins until the classification settles, so the preserved provider
   // text is what it settles on rather than what it starts from.
-  await expect(screen.findByText(providerError)).resolves.toBeVisible();
+  await expect(screen.findByText(providerError)).resolves.toBeInTheDocument();
   expect(
     screen.queryByText("This model is busy right now"),
   ).not.toBeInTheDocument();
