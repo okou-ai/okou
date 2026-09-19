@@ -93,10 +93,13 @@ function mockThreads(count: number): void {
   });
 }
 
-function mockViewportHeight(height: () => number, threadCount = 120): void {
+function mockViewportHeight(
+  height: (viewport: HTMLElement) => number,
+  threadCount = 120,
+): void {
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
     function (this: HTMLElement) {
-      return this.dataset.testid === "sidebar-scroll-area" ? height() : 0;
+      return this.dataset.testid === "sidebar-scroll-area" ? height(this) : 0;
     },
   );
   vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
@@ -327,7 +330,12 @@ test("Do not retain rows or show an empty state when the list query fails", asyn
 test("Coalesce sidebar resize bursts and cancel pending measurements when hidden", async () => {
   mockThreads(120);
   let viewportHeight = 612;
-  mockViewportHeight(() => {
+  let viewport: HTMLElement | undefined;
+  let heightReads = 0;
+  mockViewportHeight((element) => {
+    if (element === viewport) {
+      heightReads += 1;
+    }
     return viewportHeight;
   });
   await setupPage({
@@ -343,13 +351,9 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
     expect(rows()).toHaveLength(25);
   });
 
-  const viewport = within(sidebar).getByTestId("sidebar-scroll-area");
-  let heightReads = 0;
-  vi.spyOn(viewport, "clientHeight", "get").mockImplementation(() => {
-    heightReads += 1;
-    return viewportHeight;
-  });
-  vi.spyOn(viewport, "scrollHeight", "get").mockReturnValue(120 * ROW_HEIGHT);
+  // Count only this viewport through the existing prototype mock. Spying on
+  // its inherited getter again would also replace the mock for other elements.
+  viewport = within(sidebar).getByTestId("sidebar-scroll-area");
   const flushFrame = queueAnimationFrames();
 
   resizeWindow();
@@ -377,6 +381,27 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   resizeWindow();
   flushFrame();
   expect(heightReads).toBe(0);
+
+  click(screen.getByLabelText("Show chat list"));
+  const reopenedSidebar = await screen.findByTestId("chat-list-column");
+  const reopenedRows = () => {
+    return within(reopenedSidebar).getAllByTestId(
+      "sidebar-chat-thread-virtual-row",
+    );
+  };
+  await waitFor(() => {
+    expect(reopenedRows()).toHaveLength(33);
+  });
+  viewport = within(reopenedSidebar).getByTestId("sidebar-scroll-area");
+
+  viewportHeight = 360;
+  resizeWindow();
+  expect(heightReads).toBe(0);
+  flushFrame();
+  expect(heightReads).toBe(1);
+  await waitFor(() => {
+    expect(reopenedRows()).toHaveLength(18);
+  });
 });
 
 function mockPinnedGrid(): string {

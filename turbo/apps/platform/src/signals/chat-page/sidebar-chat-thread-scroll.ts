@@ -17,6 +17,7 @@ import {
 
 const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
+const SCROLL_VIEWPORT_LAYOUT_EVENT = "okou-sidebar-layout-change";
 
 export interface SidebarChatThreadWindow {
   readonly startIndex: number;
@@ -68,16 +69,13 @@ function emptyScrollMetrics(): SidebarChatThreadScrollMetrics {
 }
 
 function createSidebarChatThreadDomSignals() {
-  const internalViewportRuntime$ = state<{
-    readonly element: HTMLElement;
-    readonly signal: AbortSignal;
-    resizeScheduled: boolean;
-  } | null>(null);
+  const internalViewport$ = state<HTMLElement | null>(null);
+  const resizeScheduled$ = state(false);
   const internalScrollMetrics$ =
     state<SidebarChatThreadScrollMetrics>(emptyScrollMetrics());
 
   const scrollViewport$ = computed((get) => {
-    return get(internalViewportRuntime$)?.element ?? null;
+    return get(internalViewport$);
   });
   const scrollMetrics$ = computed((get) => {
     return get(internalScrollMetrics$);
@@ -102,43 +100,56 @@ function createSidebarChatThreadDomSignals() {
       set(internalScrollMetrics$, metrics);
     },
   );
-  const refreshScrollViewport$ = command(({ get, set }) => {
-    const runtime = get(internalViewportRuntime$);
-    if (!runtime || runtime.resizeScheduled) {
-      return;
-    }
-    runtime.resizeScheduled = true;
-    // Layout refs and window resize events share one pending measurement.
-    // Read after the DOM commit, using the latest layout in this frame.
-    animationFrame(
-      () => {
-        runtime.resizeScheduled = false;
-        set(measureScrollViewport$, runtime.element);
-      },
-      { signal: runtime.signal },
+  const scheduleViewportMeasurement$ = command(
+    ({ get, set }, viewport: HTMLElement, signal: AbortSignal) => {
+      if (get(resizeScheduled$)) {
+        return;
+      }
+      set(resizeScheduled$, true);
+      // Layout refs and window resize events share one pending measurement.
+      // Read after the DOM commit, using the latest layout in this frame.
+      animationFrame(
+        () => {
+          set(resizeScheduled$, false);
+          set(measureScrollViewport$, viewport);
+        },
+        { signal },
+      );
+    },
+  );
+  const refreshScrollViewport$ = command(({ get }) => {
+    // A layout change is only a notification. The mounted viewport supplies
+    // the lifetime for the measurement, including when a sibling unmounts.
+    get(internalViewport$)?.dispatchEvent(
+      new Event(SCROLL_VIEWPORT_LAYOUT_EVENT),
     );
   });
   const clearScrollViewport$ = command(
     ({ get, set }, viewport: HTMLElement) => {
-      if (get(internalViewportRuntime$)?.element !== viewport) {
+      if (get(internalViewport$) !== viewport) {
         return;
       }
-      set(internalViewportRuntime$, null);
+      set(internalViewport$, null);
+      set(resizeScheduled$, false);
       set(internalScrollMetrics$, emptyScrollMetrics());
     },
   );
   const setScrollViewport$ = onRef(
     command(({ set }, viewport: HTMLElement, signal: AbortSignal) => {
-      set(internalViewportRuntime$, {
-        element: viewport,
-        signal,
-        resizeScheduled: false,
-      });
+      set(internalViewport$, viewport);
+      set(resizeScheduled$, false);
       set(measureScrollViewport$, viewport);
       window.addEventListener(
         "resize",
         () => {
-          set(refreshScrollViewport$);
+          set(scheduleViewportMeasurement$, viewport, signal);
+        },
+        { signal },
+      );
+      viewport.addEventListener(
+        SCROLL_VIEWPORT_LAYOUT_EVENT,
+        () => {
+          set(scheduleViewportMeasurement$, viewport, signal);
         },
         { signal },
       );
