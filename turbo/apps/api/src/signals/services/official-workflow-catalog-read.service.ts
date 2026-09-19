@@ -22,10 +22,7 @@ import {
   officialWorkflowCatalogDefinitionKey,
   officialWorkflowCatalogDefinitionName,
   officialWorkflowCatalogReleaseId,
-  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
 } from "./official-workflow-catalog-authority";
-
-export { OFFICIAL_WORKFLOW_CATALOG_AUTHORITY };
 
 export interface AcceptedOfficialWorkflowCatalog {
   readonly releaseId: string;

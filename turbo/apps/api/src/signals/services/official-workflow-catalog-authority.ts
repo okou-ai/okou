@@ -7,7 +7,7 @@ import { singleton } from "../../lib/singleton";
 import type { Db } from "../external/db";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 
-export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
+const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
 
 const TEST_AUTHORITY_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
