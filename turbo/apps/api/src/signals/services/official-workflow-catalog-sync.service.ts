@@ -6,7 +6,11 @@ import type {
   OfficialWorkflowCatalogSyncResponse,
   OfficialWorkflowDefinitionRevisionPayload,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
+import {
+  getOfficialWorkflowDefinitionStorageName,
+  SYSTEM_ORG_ID,
+  VOLUME_ORG_USER_ID,
+} from "@okouai/core/storage-names";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import {
   officialWorkflowCatalogReleases,
@@ -16,19 +20,14 @@ import {
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
+import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
-  currentOfficialWorkflowCatalogAuthority,
-  currentOfficialWorkflowCatalogDefinitionKey,
-  currentOfficialWorkflowCatalogReleaseKey,
-  currentOfficialWorkflowDefinitionStorageName,
-  lockOfficialWorkflowCatalogActivation,
-} from "./official-workflow-catalog-authority";
-import {
+  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
   readAllCurrentSchemaOfficialWorkflowRevisions,
   readAcceptedOfficialWorkflowCatalog,
   type AcceptedOfficialWorkflowCatalog,
@@ -213,8 +212,6 @@ async function recordBlueprintReconciliationWork(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const authority = currentOfficialWorkflowCatalogAuthority();
-  const releaseKey = currentOfficialWorkflowCatalogReleaseKey(args.releaseId);
   const previousByName = new Map(
     args.previous?.payload.definitions.map((definition) => {
       return [definition.name, definition] as const;
@@ -227,19 +224,13 @@ async function recordBlueprintReconciliationWork(
     );
   });
   for (const definition of args.payload.definitions) {
-    const definitionKey = currentOfficialWorkflowCatalogDefinitionKey(
-      definition.name,
-    );
     if (definition.lifecycle !== "active") {
       await db
         .delete(officialWorkflowReconciliationWork)
         .where(
-          and(
-            eq(officialWorkflowReconciliationWork.authority, authority),
-            eq(
-              officialWorkflowReconciliationWork.definitionName,
-              definitionKey,
-            ),
+          eq(
+            officialWorkflowReconciliationWork.definitionName,
+            definition.name,
           ),
         );
       signal.throwIfAborted();
@@ -247,15 +238,11 @@ async function recordBlueprintReconciliationWork(
   }
   const currentTime = nowDate();
   for (const definition of changed) {
-    const definitionKey = currentOfficialWorkflowCatalogDefinitionKey(
-      definition.name,
-    );
     await db
       .insert(officialWorkflowReconciliationWork)
       .values({
-        authority,
-        definitionName: definitionKey,
-        requestedReleaseId: releaseKey,
+        definitionName: definition.name,
+        requestedReleaseId: args.releaseId,
         cursorWorkflowId: null,
         state: "pending",
         leaseId: null,
@@ -269,7 +256,7 @@ async function recordBlueprintReconciliationWork(
       .onConflictDoUpdate({
         target: officialWorkflowReconciliationWork.definitionName,
         set: {
-          requestedReleaseId: releaseKey,
+          requestedReleaseId: args.releaseId,
           cursorWorkflowId: null,
           state: "pending",
           leaseId: null,
@@ -338,7 +325,7 @@ const prepareDefinitionArtifact$ = command(
     path: readonly (string | number)[],
     signal: AbortSignal,
   ): Promise<DefinitionPreparationResult> => {
-    const storageName = currentOfficialWorkflowDefinitionStorageName(
+    const storageName = getOfficialWorkflowDefinitionStorageName(
       definition.name,
     );
     if (
@@ -595,15 +582,10 @@ async function persistDefinitionRevision(
   prepared: PreparedOfficialWorkflowDefinition,
   signal: AbortSignal,
 ): Promise<void> {
-  const authority = currentOfficialWorkflowCatalogAuthority();
-  const definitionKey = currentOfficialWorkflowCatalogDefinitionKey(
-    prepared.definition.name,
-  );
   await db
     .insert(officialWorkflowDefinitionRevisions)
     .values({
-      authority,
-      definitionName: definitionKey,
+      definitionName: prepared.definition.name,
       revision: prepared.definition.revision,
       payload: prepared.definition,
       storageName: prepared.artifact.storageName,
@@ -622,8 +604,10 @@ async function persistDefinitionRevision(
     .from(officialWorkflowDefinitionRevisions)
     .where(
       and(
-        eq(officialWorkflowDefinitionRevisions.authority, authority),
-        eq(officialWorkflowDefinitionRevisions.definitionName, definitionKey),
+        eq(
+          officialWorkflowDefinitionRevisions.definitionName,
+          prepared.definition.name,
+        ),
         eq(
           officialWorkflowDefinitionRevisions.revision,
           prepared.definition.revision,
@@ -652,22 +636,15 @@ async function persistCatalogRelease(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const authority = currentOfficialWorkflowCatalogAuthority();
-  const releaseKey = currentOfficialWorkflowCatalogReleaseKey(args.releaseId);
   await db
     .insert(officialWorkflowCatalogReleases)
-    .values({ authority, id: releaseKey, payload: args.payload })
+    .values({ id: args.releaseId, payload: args.payload })
     .onConflictDoNothing();
   signal.throwIfAborted();
   const [stored] = await db
     .select({ payload: officialWorkflowCatalogReleases.payload })
     .from(officialWorkflowCatalogReleases)
-    .where(
-      and(
-        eq(officialWorkflowCatalogReleases.authority, authority),
-        eq(officialWorkflowCatalogReleases.id, releaseKey),
-      ),
-    )
+    .where(eq(officialWorkflowCatalogReleases.id, args.releaseId))
     .limit(1);
   signal.throwIfAborted();
   if (
@@ -685,9 +662,10 @@ async function activateCandidate(
   observedReleaseId: string | null,
   signal: AbortSignal,
 ): Promise<OfficialWorkflowCatalogSyncResponse> {
-  const authority = currentOfficialWorkflowCatalogAuthority();
   return await db.transaction(async (tx) => {
-    await lockOfficialWorkflowCatalogActivation(tx);
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
+    );
     signal.throwIfAborted();
     const current = await readAcceptedOfficialWorkflowCatalog(tx, signal);
     const currentReleaseId = current?.releaseId ?? null;
@@ -710,7 +688,6 @@ async function activateCandidate(
       };
     }
     const releaseId = officialWorkflowFingerprint(candidate.payload);
-    const releaseKey = currentOfficialWorkflowCatalogReleaseKey(releaseId);
     if (stale) {
       return currentReleaseId === releaseId
         ? {
@@ -771,13 +748,13 @@ async function activateCandidate(
     await tx
       .insert(officialWorkflowCatalogState)
       .values({
-        authority,
-        acceptedReleaseId: releaseKey,
+        authority: OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+        acceptedReleaseId: releaseId,
         updatedAt: nowDate(),
       })
       .onConflictDoUpdate({
         target: officialWorkflowCatalogState.authority,
-        set: { acceptedReleaseId: releaseKey, updatedAt: nowDate() },
+        set: { acceptedReleaseId: releaseId, updatedAt: nowDate() },
       });
     signal.throwIfAborted();
     await recordBlueprintReconciliationWork(

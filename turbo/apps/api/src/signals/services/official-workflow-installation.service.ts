@@ -32,7 +32,7 @@ import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { onRejection, safeSync, settle } from "../utils";
 import { deleteWorkflow$ } from "./workflow-delete.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
-import { lockOfficialWorkflowCatalogActivation } from "./official-workflow-catalog-authority";
+import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
   readAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowRevision,
@@ -974,7 +974,9 @@ async function completeInstallation(
     ) {
       return "erased" as const;
     }
-    await lockOfficialWorkflowCatalogActivation(tx, "shared");
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
+    );
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtext(${args.installation.orgId}))`,
     );

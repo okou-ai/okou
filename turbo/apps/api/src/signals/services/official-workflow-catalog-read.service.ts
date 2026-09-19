@@ -17,12 +17,8 @@ import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, asc, eq, or } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
-import {
-  currentOfficialWorkflowCatalogAuthority,
-  officialWorkflowCatalogDefinitionKey,
-  officialWorkflowCatalogDefinitionName,
-  officialWorkflowCatalogReleaseId,
-} from "./official-workflow-catalog-authority";
+
+export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
 
 export interface AcceptedOfficialWorkflowCatalog {
   readonly releaseId: string;
@@ -30,7 +26,6 @@ export interface AcceptedOfficialWorkflowCatalog {
 }
 
 interface OfficialWorkflowRevisionRow {
-  readonly authority: string;
   readonly definitionName: string;
   readonly revision: string;
   readonly payload: unknown;
@@ -61,11 +56,7 @@ function acceptedRevisionFromRow(
     row.payload,
   );
   if (
-    definition.name !==
-      officialWorkflowCatalogDefinitionName(
-        row.authority,
-        row.definitionName,
-      ) ||
+    definition.name !== row.definitionName ||
     definition.revision !== row.revision
   ) {
     throw new Error("Official Workflow revision row identity is inconsistent");
@@ -84,28 +75,25 @@ export async function readAcceptedOfficialWorkflowCatalog(
   db: ReadonlyDb,
   signal?: AbortSignal,
 ): Promise<AcceptedOfficialWorkflowCatalog | null> {
-  const authority = currentOfficialWorkflowCatalogAuthority();
   const [row] = await db
     .select({
-      authority: officialWorkflowCatalogState.authority,
-      releaseKey: officialWorkflowCatalogState.acceptedReleaseId,
+      releaseId: officialWorkflowCatalogState.acceptedReleaseId,
       payload: officialWorkflowCatalogReleases.payload,
     })
     .from(officialWorkflowCatalogState)
     .innerJoin(
       officialWorkflowCatalogReleases,
-      and(
-        eq(
-          officialWorkflowCatalogReleases.authority,
-          officialWorkflowCatalogState.authority,
-        ),
-        eq(
-          officialWorkflowCatalogReleases.id,
-          officialWorkflowCatalogState.acceptedReleaseId,
-        ),
+      eq(
+        officialWorkflowCatalogReleases.id,
+        officialWorkflowCatalogState.acceptedReleaseId,
       ),
     )
-    .where(eq(officialWorkflowCatalogState.authority, authority))
+    .where(
+      eq(
+        officialWorkflowCatalogState.authority,
+        OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+      ),
+    )
     .limit(1);
   signal?.throwIfAborted();
   if (!row) {
@@ -118,7 +106,7 @@ export async function readAcceptedOfficialWorkflowCatalog(
     return null;
   }
   return {
-    releaseId: officialWorkflowCatalogReleaseId(row.authority, row.releaseKey),
+    releaseId: row.releaseId,
     payload: officialWorkflowCatalogReleasePayloadSchema.parse(row.payload),
   };
 }
@@ -163,7 +151,6 @@ export async function readAcceptedOfficialWorkflowRevisions(
   }
   const rows = await db
     .select({
-      authority: officialWorkflowDefinitionRevisions.authority,
       definitionName: officialWorkflowDefinitionRevisions.definitionName,
       revision: officialWorkflowDefinitionRevisions.revision,
       payload: officialWorkflowDefinitionRevisions.payload,
@@ -195,28 +182,16 @@ export async function readAcceptedOfficialWorkflowRevisions(
       ),
     )
     .where(
-      and(
-        eq(
-          officialWorkflowDefinitionRevisions.authority,
-          currentOfficialWorkflowCatalogAuthority(),
-        ),
-        or(
-          ...identities.map((identity) => {
-            return and(
-              eq(
-                officialWorkflowDefinitionRevisions.definitionName,
-                officialWorkflowCatalogDefinitionKey(
-                  currentOfficialWorkflowCatalogAuthority(),
-                  identity.name,
-                ),
-              ),
-              eq(
-                officialWorkflowDefinitionRevisions.revision,
-                identity.revision,
-              ),
-            );
-          }),
-        ),
+      or(
+        ...identities.map((identity) => {
+          return and(
+            eq(
+              officialWorkflowDefinitionRevisions.definitionName,
+              identity.name,
+            ),
+            eq(officialWorkflowDefinitionRevisions.revision, identity.revision),
+          );
+        }),
       ),
     )
     .orderBy(
@@ -229,7 +204,7 @@ export async function readAcceptedOfficialWorkflowRevisions(
       const revision = acceptedRevisionFromRow(row);
       return [
         officialWorkflowRevisionIdentityKey({
-          name: revision.definition.name,
+          name: row.definitionName,
           revision: row.revision,
         }),
         revision,
@@ -263,7 +238,6 @@ export async function readAllCurrentSchemaOfficialWorkflowRevisions(
 ): Promise<readonly OfficialWorkflowAcceptedRevision[]> {
   const rows = await db
     .select({
-      authority: officialWorkflowDefinitionRevisions.authority,
       definitionName: officialWorkflowDefinitionRevisions.definitionName,
       revision: officialWorkflowDefinitionRevisions.revision,
       payload: officialWorkflowDefinitionRevisions.payload,
@@ -294,12 +268,6 @@ export async function readAllCurrentSchemaOfficialWorkflowRevisions(
           storageVersions.storageId,
           officialWorkflowDefinitionRevisions.storageId,
         ),
-      ),
-    )
-    .where(
-      eq(
-        officialWorkflowDefinitionRevisions.authority,
-        currentOfficialWorkflowCatalogAuthority(),
       ),
     )
     .orderBy(

@@ -13,7 +13,7 @@ import { testOverride } from "../../lib/singleton";
 import { writeDb$ } from "../external/db";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
-import { lockOfficialWorkflowCatalogActivation } from "./official-workflow-catalog-authority";
+import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
@@ -242,7 +242,9 @@ export const deleteWorkflow$ = command(
       }
 
       if (args.serializeOfficialLifecycle === true) {
-        await lockOfficialWorkflowCatalogActivation(tx, "shared");
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
+        );
         await tx.execute(
           sql`SELECT pg_advisory_xact_lock(hashtext(${args.orgId}))`,
         );

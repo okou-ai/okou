@@ -45,7 +45,7 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
       });
     }
     const reconciliation = await settle(
-      set(executeOfficialWorkflowReconciliationWork$, undefined, signal),
+      set(executeOfficialWorkflowReconciliationWork$, signal),
       signal,
     );
     if (!reconciliation.ok) {

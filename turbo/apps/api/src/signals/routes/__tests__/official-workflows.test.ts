@@ -74,10 +74,7 @@ import {
   readOfficialWorkflowQueueInputFixture,
   readOfficialWorkflowQueueRunFixture,
 } from "../../../test-fixtures/official-workflow-queue";
-import {
-  currentOfficialWorkflowCatalogFixtureOrganizationIds,
-  registerOfficialWorkflowCatalogFixtureOrganization,
-} from "../../../test-fixtures/official-workflow-catalog";
+import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import { verifyOkouToken } from "../../auth/tokens";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
@@ -180,20 +177,7 @@ import {
 const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
-const baseWorkflowBdd = createWorkflowsBddApi(context);
-const workflowBdd = Object.freeze({
-  ...baseWorkflowBdd,
-  async setupWorkflowOrg(
-    ...args: Parameters<typeof baseWorkflowBdd.setupWorkflowOrg>
-  ): ReturnType<typeof baseWorkflowBdd.setupWorkflowOrg> {
-    const setup = await baseWorkflowBdd.setupWorkflowOrg(...args);
-    if (setup.actor.orgId === null) {
-      throw new Error("Official Workflow test organization is missing");
-    }
-    registerOfficialWorkflowCatalogFixtureOrganization(setup.actor.orgId);
-    return setup;
-  },
-});
+const workflowBdd = createWorkflowsBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
@@ -216,6 +200,7 @@ const NOTION_FIRST_PAGE_URL = `https://www.notion.so/First-${NOTION_FIRST_PAGE_I
 const NOTION_SECOND_PAGE_ID = "22222222-2222-4222-8222-222222222222";
 const NOTION_SECOND_PAGE_URL = `https://www.notion.so/Second-${NOTION_SECOND_PAGE_ID.replaceAll("-", "")}`;
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+serializeOfficialWorkflowCatalogTests();
 
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,
@@ -1167,10 +1152,7 @@ function stateClient() {
 async function runOfficialWorkflowReconciliationWorker() {
   const response = await accept(
     stateClient().action({
-      body: {
-        action: "run-reconciliation-worker",
-        organizationIds: currentOfficialWorkflowCatalogFixtureOrganizationIds(),
-      },
+      body: { action: "run-reconciliation-worker" },
     }),
     [200],
   );

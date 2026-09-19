@@ -3,18 +3,12 @@ import { randomUUID } from "node:crypto";
 import { officialWorkflowReconciliationWork } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, gt, inArray, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, lte, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import {
-  currentOfficialWorkflowCatalogAuthority,
-  officialWorkflowCatalogDefinitionName,
-  officialWorkflowCatalogReleaseId,
-  officialWorkflowCatalogIsTestScoped,
-} from "./official-workflow-catalog-authority";
 import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import {
   reconcileOfficialWorkflowInstallation$,
@@ -29,18 +23,11 @@ const WORK_LEASE_MS = 5 * 60 * 1000;
 const MAX_RETRY_DELAY_MS = 15 * 60 * 1000;
 
 interface ClaimedWork {
-  readonly authority: string;
-  readonly definitionKey: string;
   readonly definitionName: string;
-  readonly requestedReleaseKey: string;
   readonly requestedReleaseId: string;
   readonly cursorWorkflowId: string | null;
   readonly leaseId: string;
   readonly attemptCount: number;
-}
-
-export interface OfficialWorkflowReconciliationWorkerBounds {
-  readonly organizationIds?: readonly string[];
 }
 
 interface OfficialWorkflowReconciliationWorkerResult {
@@ -54,7 +41,6 @@ interface OfficialWorkflowReconciliationWorkerResult {
 async function claimReconciliationWork(
   db: Db,
 ): Promise<readonly ClaimedWork[]> {
-  const authority = currentOfficialWorkflowCatalogAuthority();
   return await db.transaction(async (tx) => {
     const currentTime = nowDate();
     const rows = await tx
@@ -62,7 +48,6 @@ async function claimReconciliationWork(
       .from(officialWorkflowReconciliationWork)
       .where(
         and(
-          eq(officialWorkflowReconciliationWork.authority, authority),
           lte(officialWorkflowReconciliationWork.availableAt, currentTime),
           or(
             eq(officialWorkflowReconciliationWork.state, "pending"),
@@ -96,35 +81,19 @@ async function claimReconciliationWork(
           updatedAt: currentTime,
         })
         .where(
-          and(
-            eq(officialWorkflowReconciliationWork.authority, authority),
-            eq(
-              officialWorkflowReconciliationWork.definitionName,
-              row.definitionName,
-            ),
+          eq(
+            officialWorkflowReconciliationWork.definitionName,
+            row.definitionName,
           ),
         )
         .returning({
-          authority: officialWorkflowReconciliationWork.authority,
-          definitionKey: officialWorkflowReconciliationWork.definitionName,
-          requestedReleaseKey:
+          definitionName: officialWorkflowReconciliationWork.definitionName,
+          requestedReleaseId:
             officialWorkflowReconciliationWork.requestedReleaseId,
           cursorWorkflowId: officialWorkflowReconciliationWork.cursorWorkflowId,
         });
       if (updated) {
-        claimed.push({
-          ...updated,
-          definitionName: officialWorkflowCatalogDefinitionName(
-            updated.authority,
-            updated.definitionKey,
-          ),
-          requestedReleaseId: officialWorkflowCatalogReleaseId(
-            updated.authority,
-            updated.requestedReleaseKey,
-          ),
-          leaseId,
-          attemptCount,
-        });
+        claimed.push({ ...updated, leaseId, attemptCount });
       }
     }
     return claimed;
@@ -134,7 +103,6 @@ async function claimReconciliationWork(
 async function loadInstallationPage(
   db: Db,
   work: ClaimedWork,
-  organizationIds: readonly string[] | undefined,
 ): Promise<
   readonly {
     readonly id: string;
@@ -153,9 +121,6 @@ async function loadInstallationPage(
       and(
         eq(workflows.officialDefinitionName, work.definitionName),
         eq(workflows.officialInstallationState, "installed"),
-        organizationIds === undefined
-          ? undefined
-          : inArray(workflows.orgId, organizationIds),
         work.cursorWorkflowId === null
           ? undefined
           : gt(workflows.id, work.cursorWorkflowId),
@@ -196,14 +161,13 @@ async function retryWork(
     })
     .where(
       and(
-        eq(officialWorkflowReconciliationWork.authority, args.work.authority),
         eq(
           officialWorkflowReconciliationWork.definitionName,
-          args.work.definitionKey,
+          args.work.definitionName,
         ),
         eq(
           officialWorkflowReconciliationWork.requestedReleaseId,
-          args.work.requestedReleaseKey,
+          args.work.requestedReleaseId,
         ),
         eq(officialWorkflowReconciliationWork.state, "running"),
         eq(officialWorkflowReconciliationWork.leaseId, args.work.leaseId),
@@ -220,14 +184,13 @@ async function advanceOrCompleteWork(
   },
 ): Promise<boolean> {
   const condition = and(
-    eq(officialWorkflowReconciliationWork.authority, args.work.authority),
     eq(
       officialWorkflowReconciliationWork.definitionName,
-      args.work.definitionKey,
+      args.work.definitionName,
     ),
     eq(
       officialWorkflowReconciliationWork.requestedReleaseId,
-      args.work.requestedReleaseKey,
+      args.work.requestedReleaseId,
     ),
     eq(officialWorkflowReconciliationWork.state, "running"),
     eq(officialWorkflowReconciliationWork.leaseId, args.work.leaseId),
@@ -267,7 +230,6 @@ async function processClaimedWork(
   reconcile: (
     args: ReconcileOfficialWorkflowInstallationArgs,
   ) => Promise<OfficialWorkflowReconciliationResult>,
-  organizationIds: readonly string[] | undefined,
   signal: AbortSignal,
 ): Promise<{
   readonly outcome: "completed" | "advanced" | "retried";
@@ -288,7 +250,7 @@ async function processClaimedWork(
       installations: 0,
     };
   }
-  const installations = await loadInstallationPage(db, work, organizationIds);
+  const installations = await loadInstallationPage(db, work);
   signal.throwIfAborted();
   let cursorWorkflowId = work.cursorWorkflowId;
   let processed = 0;
@@ -335,26 +297,8 @@ async function processClaimedWork(
 export const executeOfficialWorkflowReconciliationWork$ = command(
   async (
     { set },
-    bounds: OfficialWorkflowReconciliationWorkerBounds | undefined,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowReconciliationWorkerResult> => {
-    const organizationIds = bounds?.organizationIds;
-    if (
-      organizationIds !== undefined &&
-      (organizationIds.length === 0 ||
-        organizationIds.length > 64 ||
-        new Set(organizationIds).size !== organizationIds.length)
-    ) {
-      throw new Error("Official Workflow reconciliation bounds are invalid");
-    }
-    if (
-      officialWorkflowCatalogIsTestScoped() &&
-      organizationIds === undefined
-    ) {
-      throw new Error(
-        "Test-scoped Official Workflow reconciliation requires owned organizations",
-      );
-    }
     const db = set(writeDb$);
     const claimed = await claimReconciliationWork(db);
     signal.throwIfAborted();
@@ -374,7 +318,6 @@ export const executeOfficialWorkflowReconciliationWork$ = command(
               signal,
             );
           },
-          organizationIds,
           signal,
         ),
         signal,
