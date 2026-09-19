@@ -329,8 +329,10 @@ remain available without hovering.
 ## Component contracts
 
 A component owns its own utilities. Reach for the component rather than
-restating its treatment, and keep layout, stacking and container context at the
-call site.
+restating its treatment. Call sites own layout and container-query context;
+app-wide stacking belongs to the shell, and floating-layer stacking belongs to
+the shared primitives. Follow [stacking ownership](#stacking-ownership) for
+any local overlap rather than adding a z-index to a control.
 
 ### The composer card surface
 
@@ -338,8 +340,10 @@ call site.
 the two surfaces that sit in its place: the service-status notice and the shared
 thread's claim prompt. The variant carries the fill, radius, border, shadow, the
 focus border transition and the `after` veil layer; callers keep layout,
-stacking and container context, which is why the composer still spells `z-10`
-itself and names `@container/composer` on the group around the card.
+including `@container/composer` on the group around the card. The shell owns
+the composer's order relative to the transcript and app-wide layers; the card's
+internal paint layers follow the local-isolation rule below. An existing
+call-site `z-10` is not part of the surface contract or a pattern to copy.
 
 ### The composer's width
 
@@ -658,21 +662,14 @@ constraint rather than a state-location one. The toaster is the one surface
 that portals to `document.body` on purpose, because a toast outranks a dialog;
 it lives in the primitive layer for the same reason.
 
-An app-local surface — a fullscreen panel, an action bar, a cover — renders
-where it is written and positions itself with `fixed`, `absolute` or `sticky`.
-Reaching past a scrolling ancestor is `sticky`'s job: it pins to the scrollport
-without leaving the flow, so it needs no container element and cannot silently
-render nowhere the way an id lookup can. Swapping a subtree between a portal
-and its written position also remounts it, which costs the scroll position and
-any DOM state it held.
-
-Layering follows shadcn's convention: floating primitives carry `z-50` and App
-content stays below it. Neither half is in place yet — the primitives carry no
-z-index at all, and `#root` sets `isolation: isolate`, which makes DOM order
-decide priority instead and leaves App z-index values unconstrained. Both are
-tracked in [#35387](https://github.com/vm0-ai/okou/issues/35387); until they
-land, a value at or above 50 in App code is a defect to fix rather than a
-pattern to copy.
+An app-local surface renders in a stable host owned by the layout. An action
+bar can use `sticky` to remain visible within its scrollport; sticky positioning
+does not escape that scrollport's clipping or stacking context. A fullscreen
+panel or cover needs a shell-owned host that can paint over every region it
+covers. `fixed` changes positioning, but does not escape an ancestor's stacking
+context. Establish the correct host before removing an existing portal.
+Swapping a subtree between a portal and its written position remounts it, which
+costs the scroll position and any DOM state it held.
 
 Safe-area insets are the surface's own responsibility whenever it is `fixed`
 and meets a viewport edge. `#root` carries the top and horizontal insets as
@@ -681,6 +678,56 @@ padding box whether or not it was portalled, so "is it portalled" is the wrong
 question and "is it fixed against an edge" is the right one.
 [Page layouts](#page-layouts) registers the `p-safe` utility and the viewport
 height tokens these surfaces take.
+
+#### Stacking ownership
+
+Business controls do not declare z-index. Icon buttons, menu triggers, cards
+and other content must not choose their order against unrelated app regions.
+A row's background already paints behind its children; a button does not need
+`relative z-10` to sit above it. Event propagation is handled by event handlers,
+not by raising the button's paint order.
+
+- Shared floating primitives follow shadcn's flat `z-50` convention. Their
+  portals and stacking utilities stay inside `@okouai/ui`; callers do not
+  override them. Peer surfaces at the same stack level in the same stacking
+  context follow DOM order, so preserve the primitive's portal structure.
+- The shell owns app-wide non-portal layers such as drawers, scrims and
+  fullscreen panels. Keep a small fixed set of literal Tailwind z-index
+  utilities in shell-owned files, below the shared floating layer in the
+  stacking context where they compete. Document each layer's host, the context
+  it participates in and the siblings it must cover.
+- Necessary overlap _inside_ a component is a local exception. Establish an
+  explicit `isolate` host around the participating elements in the same change,
+  and document why their order is needed. Keep the z-index inside that host;
+  it must not rank the component against the shell. Prefer ordinary paint order
+  when it already produces the intended result.
+
+Use literal utilities at those owning layers. Do not introduce a parallel
+z-index token ladder or component-local `--layer-*` variables. This is the
+project's ownership convention, not a limitation of CSS custom properties:
+Tailwind can express a variable-backed z-index, but neither a variable nor a
+larger literal lets a descendant escape its ancestor's stacking context.
+
+Audit the context, not a numeric threshold. A positioned `z-0` creates a
+stacking context just as `isolate` does; transforms and opacity below 1 can
+also create one. Review those boundaries before adding isolation to a layout
+wrapper, especially when descendants need to cover other app regions.
+
+The artifact bug recorded in
+[#35387](https://github.com/vm0-ai/okou/issues/35387) illustrates the failure:
+`WorkspaceInset` had `relative z-0`, trapping the artifact detail's
+`fixed z-[100]` inside that context. The sidebar header's `relative z-10`
+buttons participated outside it and painted above the fullscreen surface.
+Lowering 100 below 50 or removing only `#root`'s isolation cannot repair that
+boundary. The artifact catalog's portal to `#root` escaped it, so removing that
+portal before correcting the host would expose the same bug on that path.
+
+The primitive `z-50` restoration, root-isolation removal, shell-host migration
+and z-index lint are tracked in #35387. Existing z-index declarations are
+migration debt to audit under these ownership rules, including zero, negative
+values and values below 50; passing today's lint does not establish correct
+stacking. Regression coverage must verify that fullscreen content paints above
+sidebar actions and that toggling fullscreen preserves the panel's DOM state.
 
 ### Horizontal hairline rules
 
@@ -1353,6 +1400,16 @@ returned before push. Both policy diagnostics and the full lint command's
 failure output direct contributors to `docs/styles.md` for the style guide. The
 full command keeps a failing exit status for policy, CSS, Tailwind, or test
 failures.
+
+Z-index ownership enforcement is planned in
+[#35387](https://github.com/vm0-ai/okou/issues/35387) and is not yet part of these
+checks. It must cover numeric, negative, arbitrary and variable-backed z-index
+utilities (including variants), arbitrary `z-index` properties and inline
+`zIndex`, rather than only values at or above 50. Each permitted declaration
+must identify its exact file, owner, rationale and stacking host; a local
+exception must name its `isolate` boundary. Static lint cannot prove the runtime
+ancestor chain or paint order, so it complements the fullscreen regression
+coverage described above. Do not assemble class names dynamically to evade it.
 
 When a style check fails, read this guide and replace business styling with the
 appropriate Tailwind utilities and registered tokens. When a change removes CSS
