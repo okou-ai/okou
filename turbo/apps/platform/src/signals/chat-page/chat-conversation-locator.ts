@@ -51,7 +51,9 @@ const JUMP_VIEWPORT_RATIO = 0.28;
 /** Falloff radius, as a multiple of the tick interval, so density feels equal. */
 const MAGNIFY_SIGMA_RATIO = 2.6;
 /** A tick this close to the cursor is the one being named. */
-const HIT_INTERVAL_RATIO = 0.5;
+const HIT_INTERVAL_RATIO = 1.1;
+/** Padding around the viewport band, relative to one tick interval. */
+const BAND_PADDING_INTERVAL_RATIO = 0.8;
 /** How long a jumped-to turn stays marked. */
 const LANDED_MARK_MS = 1200;
 /** Resting length and magnification of a tick. */
@@ -89,7 +91,7 @@ export interface LocatorLayout {
   /** False until the thread is long enough to be worth an instrument. */
   readonly visible: boolean;
   readonly ticks: readonly LocatorTick[];
-  /** Band marking the part of the thread inside the viewport, 0..1. */
+  /** Viewport band on the tick scale, including padding around its ends. */
   readonly bandStart: number;
   readonly bandSize: number;
   /** Band width in CSS pixels, grown to enclose its widest tick. */
@@ -102,6 +104,8 @@ export interface LocatorPreview {
   readonly text: string;
   /** ISO timestamp of the turn, or undefined when it carries none. */
   readonly createdAt: string | undefined;
+  /** Viewport x where the card fits beside the pointer. */
+  readonly left: number;
   /** Viewport y of the pointer, so the card can sit beside it. */
   readonly pointerClientY: number;
 }
@@ -151,8 +155,8 @@ export interface ChatConversationLocatorSignals {
   readonly engaged$: Computed<boolean>;
   /** The sampled turn sequence the ticks are drawn from. */
   readonly sampledTurns$: Computed<readonly LocatorTurn[]>;
-  /** Track the pointer as a rail fraction plus its viewport y. */
-  readonly trackPointer$: Command<void, [number, number]>;
+  /** Track the pointer fraction, preview left, and pointer viewport y. */
+  readonly trackPointer$: Command<void, [number, number, number]>;
   readonly leaveRail$: Command<void, []>;
   /** Takes the viewport reading synchronously, under the caller's signal. */
   readonly measure$: Command<void, [AbortSignal]>;
@@ -419,10 +423,12 @@ function createLayout(
     const pointer = get(pointerFraction$);
     const interval = tickFraction(1, turns.length);
     const sigma = Math.max(interval * MAGNIFY_SIGMA_RATIO, Number.EPSILON);
-    // The band spans the visible slice of the thread, positioned so a reader at
-    // the bottom sees it flush with the last tick rather than overhanging it.
-    const bandSize = clamp(reading.visibleRatio, 0, 1);
-    const bandStart = clamp(reading.startRatio * (1 - bandSize), 0, 1);
+    // Pad the visible slice so even a very long thread retains a readable
+    // frame around its ticks instead of collapsing to a hairline.
+    const visibleSize = clamp(reading.visibleRatio, 0, 1);
+    const bandPadding = interval * BAND_PADDING_INTERVAL_RATIO;
+    const bandSize = visibleSize + bandPadding * 2;
+    const bandStart = reading.startRatio * (1 - visibleSize) - bandPadding;
     const bandEnd = bandStart + bandSize;
     let bandWidth = BAND_BASE_WIDTH_PX;
     const ticks = turns.map((turn, index): LocatorTick => {
@@ -500,6 +506,7 @@ export function createChatConversationLocatorSignals({
   >;
 }): ChatConversationLocatorSignals {
   const pointerFraction$ = state<number | null>(null);
+  const previewLeft$ = state(0);
   const pointerClientY$ = state(0);
   const engaged$ = state(false);
   const resetLandedSignal$ = resetSignal();
@@ -524,14 +531,18 @@ export function createChatConversationLocatorSignals({
           turnIndex: turn.turnIndex,
           text: turn.text,
           createdAt: turn.createdAt,
+          left: get(previewLeft$),
           pointerClientY: get(pointerClientY$),
         };
   });
 
   const trackPointer$ = command(
-    ({ set }, fraction: number, clientY: number): void => {
+    ({ set }, fraction: number, previewLeft: number, clientY: number): void => {
       set(engaged$, true);
-      set(pointerFraction$, clamp(fraction, 0, 1));
+      // Keep coordinates outside the centered tick group so its surrounding
+      // whitespace does not become a shortcut to the first or last turn.
+      set(pointerFraction$, fraction);
+      set(previewLeft$, previewLeft);
       set(pointerClientY$, clientY);
     },
   );

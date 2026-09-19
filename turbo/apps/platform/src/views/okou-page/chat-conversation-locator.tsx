@@ -7,14 +7,21 @@ import { onDomEventFn } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { formatChatTimestamp } from "../../i18n/format.ts";
 
-/** How far the preview card sits from the rail. */
-const PREVIEW_OFFSET_X_PX = 40;
+const TICK_PITCH_PX = 10;
+const TICK_MIN_PITCH_PX = 3;
+const PREVIEW_WIDTH_PX = 340;
+const PREVIEW_OFFSET_X_PX = 26;
+const PREVIEW_EDGE_MARGIN_PX = 16;
 
-/** Track length expressed against the rail box, so no height reaches JS. */
-const TRACK = `(100% - ${String(RAIL_PADDING_PX * 2)}px)`;
+/** Keep the original compact, pixel-aligned scale without measuring it. */
+function trackLength(count: number): string {
+  const gaps = Math.max(count - 1, 1);
+  return `(${String(gaps)} * clamp(${String(TICK_MIN_PITCH_PX)}px, round(down, (100% - ${String(RAIL_PADDING_PX * 2)}px) / ${String(gaps)}, 1px), ${String(TICK_PITCH_PX)}px))`;
+}
 
-function trackTop(fraction: number): string {
-  return `calc(${String(RAIL_PADDING_PX)}px + ${TRACK} * ${fraction.toFixed(4)})`;
+function trackTop(fraction: number, count: number): string {
+  const track = trackLength(count);
+  return `calc(round(nearest, 50% - ${track} / 2, 1px) + round(nearest, ${track} * ${fraction.toFixed(4)}, 1px))`;
 }
 
 /**
@@ -22,13 +29,31 @@ function trackTop(fraction: number): string {
  * last. Reading the rail's own rect in its handler keeps the element out of
  * the signal graph: the command only ever receives numbers.
  */
-function pointerFraction(event: React.PointerEvent<HTMLElement>): number {
+function pointerFraction(
+  event: React.PointerEvent<HTMLElement>,
+  count: number,
+): number {
   const rect = event.currentTarget.getBoundingClientRect();
-  const track = rect.height - RAIL_PADDING_PX * 2;
-  if (track <= 0) {
-    return 0;
-  }
-  return (event.clientY - rect.top - RAIL_PADDING_PX) / track;
+  const gaps = Math.max(count - 1, 1);
+  const pitch = Math.max(
+    TICK_MIN_PITCH_PX,
+    Math.min(
+      TICK_PITCH_PX,
+      Math.floor((rect.height - RAIL_PADDING_PX * 2) / gaps),
+    ),
+  );
+  const track = pitch * gaps;
+  const origin = Math.round((rect.height - track) / 2);
+  return (event.clientY - rect.top - origin) / track;
+}
+
+function previewLeft(event: React.PointerEvent<HTMLElement>): number {
+  const viewportWidth =
+    event.currentTarget.ownerDocument.documentElement.clientWidth;
+  const right = event.clientX + PREVIEW_OFFSET_X_PX;
+  return right + PREVIEW_WIDTH_PX > viewportWidth - PREVIEW_EDGE_MARGIN_PX
+    ? event.clientX - PREVIEW_WIDTH_PX - PREVIEW_OFFSET_X_PX
+    : right;
 }
 
 function LocatorPreviewCard({ thread }: { thread: ChatPanelSignals }) {
@@ -48,7 +73,7 @@ function LocatorPreviewCard({ thread }: { thread: ChatPanelSignals }) {
         preview ? "opacity-100" : "opacity-0",
       )}
       style={{
-        transform: `translate3d(${String(PREVIEW_OFFSET_X_PX)}px, calc(${String(preview?.pointerClientY ?? 0)}px - 50%), 0)`,
+        transform: `translate3d(clamp(16px, ${String(preview?.left ?? 0)}px, calc(100vw - 100% - 16px)), clamp(16px, calc(${String(preview?.pointerClientY ?? 0)}px - 50%), calc(100vh - 100% - 16px)), 0)`,
       }}
     >
       <div className="mb-2 flex items-center gap-2 text-[11.5px] font-medium text-muted-foreground">
@@ -71,6 +96,7 @@ function LocatorPreviewCard({ thread }: { thread: ChatPanelSignals }) {
 function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
   const layout = useGet(thread.locator.layout$);
   const engaged = useGet(thread.locator.engaged$);
+  const preview = useGet(thread.locator.preview$);
   const trackPointer = useSet(thread.locator.trackPointer$);
   const leaveRail = useSet(thread.locator.leaveRail$);
   const jumpToPointer = useSet(thread.locator.jumpToPointer$);
@@ -85,7 +111,11 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
         // an unreachable control to it.
         aria-hidden="true"
         onPointerMove={(event) => {
-          trackPointer(pointerFraction(event), event.clientY);
+          trackPointer(
+            pointerFraction(event, layout.ticks.length),
+            previewLeft(event),
+            event.clientY,
+          );
         }}
         onPointerLeave={() => {
           leaveRail();
@@ -107,8 +137,8 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
             data-conversation-locator-band
             className="pointer-events-none absolute left-[7px] rounded-[5px] bg-primary opacity-[0.05]"
             style={{
-              top: trackTop(layout.bandStart),
-              height: `calc(${TRACK} * ${layout.bandSize.toFixed(4)})`,
+              top: trackTop(layout.bandStart, layout.ticks.length),
+              height: `calc(${trackLength(layout.ticks.length)} * ${layout.bandSize.toFixed(4)})`,
               width: layout.bandWidth,
             }}
           />
@@ -122,9 +152,16 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
               className={cn(
                 // Magnified ticks must not extend the rail's hit area.
                 "pointer-events-none absolute left-[14px] h-0.5 -translate-y-1/2 rounded-full transition-colors duration-150",
-                tick.current ? "bg-primary/60" : "bg-divider",
+                preview?.turnIndex === tick.turnIndex
+                  ? "bg-foreground"
+                  : tick.current
+                    ? "bg-primary/60"
+                    : "bg-divider",
               )}
-              style={{ top: trackTop(tick.fraction), width: tick.width }}
+              style={{
+                top: trackTop(tick.fraction, layout.ticks.length),
+                width: tick.width,
+              }}
             />
           );
         })}
