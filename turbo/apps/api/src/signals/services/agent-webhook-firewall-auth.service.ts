@@ -250,6 +250,7 @@ interface PreparedNonCustomFirewallAuth {
 
 interface PreparedBuiltinConnectorAutomaticFirewallAuth {
   readonly kind: "connector-automatic";
+  readonly catalogAuth: "none" | "oauth";
   readonly connectorSlug: string;
   readonly connectorId: string;
   readonly authMethodId: string;
@@ -5843,26 +5844,31 @@ function applyCustomConnectorRoutingVariables(args: {
   return secrets;
 }
 
-function requestsCurrentCatalogAutomaticMcpAuth(args: {
+function requestedAutomaticMcpCatalogAuth(args: {
   readonly snapshot: ConnectorRuntimeSnapshot;
   readonly body: FirewallAuthBody;
-  readonly referenced: ReferencedAuthKeys;
-}): boolean {
-  if (
-    !args.referenced.secrets.has(AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME)
-  ) {
-    return false;
-  }
+}): "none" | "oauth" | "mismatch" | null {
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
   const matchedBase = args.body.matchedFirewall?.base;
   if (connectorSlug === undefined || matchedBase === undefined) {
-    return false;
+    return null;
   }
   const currentCatalogApi = args.snapshot.serverFirewalls
     .getRuntimeFirewall(connectorSlug)
     ?.apis.find((api) => {
       return api.base === matchedBase;
     });
+  const catalogAuth = isDeepStrictEqual(
+    currentCatalogApi?.auth,
+    AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+  )
+    ? "oauth"
+    : isDeepStrictEqual(currentCatalogApi?.auth, {})
+      ? "none"
+      : null;
+  if (catalogAuth === null) {
+    return null;
+  }
   const requestedAuth = {
     ...(Object.keys(args.body.authHeaders).length === 0
       ? {}
@@ -5875,12 +5881,9 @@ function requestsCurrentCatalogAutomaticMcpAuth(args: {
       ? {}
       : { awsSigv4: args.body.authAwsSigv4 }),
   };
-  return (
-    isDeepStrictEqual(
-      currentCatalogApi?.auth,
-      AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
-    ) && isDeepStrictEqual(requestedAuth, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH)
-  );
+  return isDeepStrictEqual(requestedAuth, currentCatalogApi?.auth)
+    ? catalogAuth
+    : "mismatch";
 }
 
 async function prepareNonCustomFirewallAuth(args: {
@@ -5898,13 +5901,10 @@ async function prepareNonCustomFirewallAuth(args: {
 > {
   const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
-  const requiresAutomaticMcpCredential = requestsCurrentCatalogAutomaticMcpAuth(
-    {
-      snapshot: connectorCatalogSnapshot,
-      body: args.body,
-      referenced: args.referenced,
-    },
-  );
+  const requestedAutomaticMcpAuth = requestedAutomaticMcpCatalogAuth({
+    snapshot: connectorCatalogSnapshot,
+    body: args.body,
+  });
   // Account deletion or reconnect must end cached MCP credential authorization,
   // including static credentials whose provider token has no expiry. Start
   // the lease before reading the account so slow resolution cannot extend it.
@@ -5917,7 +5917,7 @@ async function prepareNonCustomFirewallAuth(args: {
   if (
     connectorSlug !== undefined &&
     builtinMcpExpiresAt !== null &&
-    requiresAutomaticMcpCredential
+    requestedAutomaticMcpAuth !== null
   ) {
     const sourceId = args.body.matchedFirewall?.sourceId;
     if (sourceId === undefined) {
@@ -5945,10 +5945,14 @@ async function prepareNonCustomFirewallAuth(args: {
         connectorSlug,
       )?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
     ) {
+      if (requestedAutomaticMcpAuth === "mismatch") {
+        return { ok: false, response: connectorNotConfigured() };
+      }
       return {
         ok: true,
         prepared: {
           kind: "connector-automatic",
+          catalogAuth: requestedAutomaticMcpAuth,
           connectorSlug,
           connectorId: account.id,
           authMethodId: account.authMethod,
@@ -6153,6 +6157,19 @@ async function resolveFirewallAuthMaterial(args: {
   readonly prepared: PreparedFirewallAuth;
 }): Promise<FirewallAuthMaterialResolution> {
   if (args.prepared.kind === "connector-automatic") {
+    if (args.prepared.catalogAuth === "none") {
+      return {
+        ok: true,
+        material: {
+          secrets: {},
+          vars: {},
+          expiresAt: null,
+          refreshedConnectors: [],
+          refreshedSecrets: [],
+          missingSecretFailure: { kind: "connector-not-configured" },
+        },
+      };
+    }
     const refreshSignal = firewallAuthRefreshTimeoutSignal();
     const resolved = await settleIncludingAbort(
       resolveBuiltinConnectorAutomaticMcpCredential(
