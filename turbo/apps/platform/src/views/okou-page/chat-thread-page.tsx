@@ -6905,10 +6905,13 @@ function UserMessageContent({
   document,
   attachments,
   onImageClick,
+  leading,
 }: {
   document: UserMessageRenderDocument;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
+  /** Sits directly left of the bubble, for example the pending spinner. */
+  leading?: ReactNode;
 }) {
   // Attachments read as their own object, so they all sit above the bubble
   // instead of interrupting the sentence they were dropped into. Attachments
@@ -6935,14 +6938,20 @@ function UserMessageContent({
         onImageClick={onImageClick}
       />
       {hasBody ? (
-        <ChatUserMessageBubble>
-          <div className="px-4 py-3">
-            <UserMessageView
-              document={document}
-              elevatedFileIds={elevatedFileIds}
-            />
-          </div>
-        </ChatUserMessageBubble>
+        // The bubble gets its own full-width row so `leading` can sit against
+        // its left edge while the bubble's `max-w-[85%]` still resolves against
+        // the whole message width.
+        <div className="flex w-full items-center justify-end gap-2">
+          {leading}
+          <ChatUserMessageBubble>
+            <div className="px-4 py-3">
+              <UserMessageView
+                document={document}
+                elevatedFileIds={elevatedFileIds}
+              />
+            </div>
+          </ChatUserMessageBubble>
+        </div>
       ) : null}
     </>
   );
@@ -7167,16 +7176,12 @@ function PagedUserMessage({
           ) : null}
           {renderDocument ? (
             <>
-              <div className="flex w-full items-center justify-end gap-2">
-                <OptimisticSpinner eventId={event.id} />
-                <div className="flex min-w-0 flex-1 flex-col items-end">
-                  <UserMessageContent
-                    document={renderDocument}
-                    attachments={allAttachments}
-                    onImageClick={openLightbox}
-                  />
-                </div>
-              </div>
+              <UserMessageContent
+                document={renderDocument}
+                attachments={allAttachments}
+                onImageClick={openLightbox}
+                leading={<OptimisticSpinner eventId={event.id} />}
+              />
               {/* The row belongs to the bubble, not to the button inside it.
                   Sharing hides the button and a message nobody can copy has
                   none, and in both cases the next message in the burst is
