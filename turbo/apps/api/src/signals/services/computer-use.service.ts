@@ -139,6 +139,7 @@ type CreateComputerUseCommandResult =
       readonly commandId: string;
       readonly commandStatus: "queued";
     }
+  | { readonly status: "subject_closed" }
   | { readonly status: "no_host" }
   | { readonly status: "host_ambiguous" }
   | { readonly status: "host_offline" }
@@ -1484,6 +1485,30 @@ export const listComputerUseHosts$ = command(
   },
 );
 
+const COMPUTER_USE_COMMAND_LOCK_TIMEOUT = "1s";
+const COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT = "5s";
+
+function computerUseCommandSubjects(params: {
+  readonly orgId: string;
+  readonly userId: string;
+}): readonly ErasureSubject[] {
+  return [
+    { subjectKind: "user", subjectId: params.userId },
+    { subjectKind: "organization", subjectId: params.orgId },
+  ];
+}
+
+async function setComputerUseCommandDeadlines(
+  tx: ComputerUseTx,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_COMMAND_LOCK_TIMEOUT}, true)`,
+  );
+  await tx.execute(
+    sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_COMMAND_STATEMENT_TIMEOUT}, true)`,
+  );
+}
+
 export const createComputerUseCommand$ = command(
   async (
     { set },
@@ -1498,95 +1523,101 @@ export const createComputerUseCommand$ = command(
     },
     signal: AbortSignal,
   ): Promise<CreateComputerUseCommandResult> => {
+    signal.throwIfAborted();
     if (!COMPUTER_USE_COMMANDS.includes(params.kind)) {
       return { status: "host_unsupported" };
     }
 
     const db = set(writeDb$);
-    const now = nowDate();
-    const hosts = await db
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.orgId, params.orgId),
-          eq(computerUseHosts.userId, params.userId),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .orderBy(desc(computerUseHosts.lastSeenAt));
+    const result = await db.transaction(
+      async (tx): Promise<CreateComputerUseCommandResult> => {
+        await setComputerUseCommandDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            signal.throwIfAborted();
+            return { status: "subject_closed" };
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
+
+        // Admission can wait behind an erasure mutation. One fresh clock after
+        // that wait owns host liveness and every persisted creation timestamp.
+        const now = nowDate();
+        const hosts = await tx
+          .select()
+          .from(computerUseHosts)
+          .where(
+            and(
+              eq(computerUseHosts.orgId, params.orgId),
+              eq(computerUseHosts.userId, params.userId),
+              isNull(computerUseHosts.revokedAt),
+            ),
+          )
+          .orderBy(desc(computerUseHosts.lastSeenAt));
+        signal.throwIfAborted();
+
+        if (hosts.length === 0) {
+          signal.throwIfAborted();
+          return { status: "no_host" };
+        }
+
+        const onlineHosts = hosts.filter((host) => {
+          return computerUseHostIsOnline(host, now);
+        });
+        const payload = commandPayload(params.payload);
+        const target = resolveComputerUseCommandTargets({
+          onlineHosts,
+          kind: params.kind,
+          payload,
+          targetHostId: params.targetHostId,
+        });
+        if (target.status !== "resolved") {
+          signal.throwIfAborted();
+          return target;
+        }
+
+        const [row] = await tx
+          .insert(computerUseCommands)
+          .values({
+            orgId: params.orgId,
+            userId: params.userId,
+            runId: params.runId ?? null,
+            hostId: target.targetHostId,
+            kind: params.kind,
+            status: "queued",
+            payload,
+            timeoutMs: params.timeoutMs,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+        signal.throwIfAborted();
+
+        if (!row) {
+          throw new Error("Failed to create computer-use command");
+        }
+
+        const created = {
+          status: "created" as const,
+          commandId: row.id,
+          commandStatus: "queued" as const,
+        };
+        signal.throwIfAborted();
+        return created;
+      },
+      { isolationLevel: "read committed" },
+    );
     signal.throwIfAborted();
-
-    if (hosts.length === 0) {
-      return { status: "no_host" };
-    }
-
-    const onlineHosts = hosts.filter((host) => {
-      return computerUseHostIsOnline(host, now);
-    });
-    const payload = commandPayload(params.payload);
-    const target = resolveComputerUseCommandTargets({
-      onlineHosts,
-      kind: params.kind,
-      payload,
-      targetHostId: params.targetHostId,
-    });
-    if (target.status !== "resolved") {
-      return target;
-    }
-
-    const [row] = await db
-      .insert(computerUseCommands)
-      .values({
-        orgId: params.orgId,
-        userId: params.userId,
-        runId: params.runId ?? null,
-        hostId: target.targetHostId,
-        kind: params.kind,
-        status: "queued",
-        payload,
-        timeoutMs: params.timeoutMs,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
-    signal.throwIfAborted();
-
-    if (!row) {
-      throw new Error("Failed to create computer-use command");
-    }
-
-    return {
-      status: "created",
-      commandId: row.id,
-      commandStatus: "queued",
-    };
+    return result;
   },
 );
-
-const COMPUTER_USE_COMMAND_READ_LOCK_TIMEOUT = "1s";
-const COMPUTER_USE_COMMAND_READ_STATEMENT_TIMEOUT = "5s";
-
-function computerUseCommandReadSubjects(params: {
-  readonly orgId: string;
-  readonly userId: string;
-}): readonly ErasureSubject[] {
-  return [
-    { subjectKind: "user", subjectId: params.userId },
-    { subjectKind: "organization", subjectId: params.orgId },
-  ];
-}
-
-async function setComputerUseCommandReadDeadlines(
-  tx: ComputerUseTx,
-): Promise<void> {
-  await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_COMMAND_READ_LOCK_TIMEOUT}, true)`,
-  );
-  await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_COMMAND_READ_STATEMENT_TIMEOUT}, true)`,
-  );
-}
 
 async function selectComputerUseCommandContent(
   tx: ComputerUseTx,
@@ -1632,12 +1663,9 @@ export const getComputerUseCommand$ = command(
     const db = set(writeDb$);
     const value = await db.transaction(
       async (tx) => {
-        await setComputerUseCommandReadDeadlines(tx);
+        await setComputerUseCommandDeadlines(tx);
         const admitted = await settle(
-          assertErasureSubjectWritable(
-            tx,
-            computerUseCommandReadSubjects(params),
-          ),
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
         );
         if (!admitted.ok) {
           if (
@@ -1710,12 +1738,9 @@ export const getComputerUseCommandScreenshot$ = command(
     const db = set(writeDb$);
     const value = await db.transaction(
       async (tx) => {
-        await setComputerUseCommandReadDeadlines(tx);
+        await setComputerUseCommandDeadlines(tx);
         const admitted = await settle(
-          assertErasureSubjectWritable(
-            tx,
-            computerUseCommandReadSubjects(params),
-          ),
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
         );
         if (!admitted.ok) {
           if (
@@ -1780,12 +1805,9 @@ export const getComputerUseCommandPluginContent$ = command(
     const db = set(writeDb$);
     const value = await db.transaction(
       async (tx) => {
-        await setComputerUseCommandReadDeadlines(tx);
+        await setComputerUseCommandDeadlines(tx);
         const admitted = await settle(
-          assertErasureSubjectWritable(
-            tx,
-            computerUseCommandReadSubjects(params),
-          ),
+          assertErasureSubjectWritable(tx, computerUseCommandSubjects(params)),
         );
         if (!admitted.ok) {
           if (

@@ -89,6 +89,9 @@ surface; the index does not replace their detailed rules.
 - [Computer Use command GET](./account-erasure-computer-use-command-get.md):
   canonical owner admission around the complete timeout-maintenance sweep,
   response/auth compatibility, abort boundaries and exact SQL sequences.
+- [Computer Use command creation](./account-erasure-computer-use-command-creation.md):
+  canonical owner admission around complete host selection and insertion,
+  fixed closed response, fresh liveness clock and exact SQL sequences.
 - [Computer Use binary content reads](./account-erasure-computer-use-content-read.md):
   canonical owner admission through complete screenshot/plugin byte acquisition,
   provider cancellation ownership and the SQL-versus-S3 duration boundary.
