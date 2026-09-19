@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentRunApiUsage } from "@okouai/db/schema/agent-run-api-usage";
+import { initialAgentRunApiUsageProjection } from "@okouai/db/jsonb-contracts/agent-run-api-usage";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { createStore } from "ccstate";
 import { eq, sql } from "drizzle-orm";
@@ -25,7 +27,8 @@ const context = testContext();
 // route suites cover authentication, cancellation, cleanup, completion and erasure.
 async function fixture(
   options: {
-    status?: "running" | "cancelled";
+    status?: "queued" | "running" | "cancelled";
+    apiUsagePhase?: "no-inference" | "pending";
     recovery?: boolean | null;
     mode?: RunnerCancellationMode | null;
     runnerId?: string | null;
@@ -66,6 +69,16 @@ async function fixture(
       runnerId: options.runnerId,
       runnerHeartbeatGeneration: options.heartbeatGeneration,
     });
+  if (options.apiUsagePhase) {
+    await db()
+      .insert(agentRunApiUsage)
+      .values({
+        runId: auth.runId,
+        revision: 1,
+        projection: initialAgentRunApiUsageProjection(options.apiUsagePhase),
+        updatedAt: nowDate(),
+      });
+  }
   return {
     auth,
     completedAt,
@@ -116,6 +129,22 @@ async function stored(f: Fixture) {
 }
 
 describe("canonical cancellation intent", () => {
+  it("closes queued API usage after cancellation commits", async () => {
+    const f = await fixture({ status: "queued", apiUsagePhase: "pending" });
+    await cancel(f, "hard");
+    const [usage] = await db()
+      .select({
+        revision: agentRunApiUsage.revision,
+        projection: agentRunApiUsage.projection,
+      })
+      .from(agentRunApiUsage)
+      .where(eq(agentRunApiUsage.runId, f.auth.runId));
+    expect(usage).toMatchObject({
+      revision: 2,
+      projection: { phase: "no-inference", attempts: [] },
+    });
+  });
+
   it("persists the historical effective hard mode before publication", async () => {
     const f = await fixture({ recovery: null });
     const result = await cancel(f, "cooperative");

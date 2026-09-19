@@ -13,7 +13,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunApiUsage } from "@okouai/db/schema/agent-run-api-usage";
 import type { PiApiUsageObservation } from "@okouai/pi-agent-runtime/api";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { now, nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
@@ -48,6 +48,52 @@ function sameProjection(
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+async function updateProjections(
+  db: Db,
+  runIds: readonly string[],
+  update: (
+    projection: AgentRunApiUsageProjection,
+    observedAtMs: number,
+  ) => AgentRunApiUsageProjection,
+): Promise<void> {
+  if (runIds.length === 0) {
+    return;
+  }
+  await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        runId: agentRunApiUsage.runId,
+        revision: agentRunApiUsage.revision,
+        projection: agentRunApiUsage.projection,
+      })
+      .from(agentRunApiUsage)
+      .where(inArray(agentRunApiUsage.runId, runIds))
+      .orderBy(agentRunApiUsage.runId)
+      .for("update");
+    for (const row of rows) {
+      const current = agentRunApiUsageProjectionSchema.parse(row.projection);
+      const next = agentRunApiUsageProjectionSchema.parse(
+        update(current, now()),
+      );
+      if (sameProjection(current, next)) {
+        continue;
+      }
+      const [updated] = await tx
+        .update(agentRunApiUsage)
+        .set({
+          revision: sql`${agentRunApiUsage.revision} + 1`,
+          projection: next,
+          updatedAt: nowDate(),
+        })
+        .where(eq(agentRunApiUsage.runId, row.runId))
+        .returning({ revision: agentRunApiUsage.revision });
+      if (!updated || updated.revision <= row.revision) {
+        throw new Error("API usage projection revision did not advance");
+      }
+    }
+  });
+}
+
 async function updateProjection(
   db: Db,
   runId: string,
@@ -56,36 +102,7 @@ async function updateProjection(
     observedAtMs: number,
   ) => AgentRunApiUsageProjection,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({
-        revision: agentRunApiUsage.revision,
-        projection: agentRunApiUsage.projection,
-      })
-      .from(agentRunApiUsage)
-      .where(eq(agentRunApiUsage.runId, runId))
-      .for("update");
-    if (!row) {
-      return;
-    }
-    const current = agentRunApiUsageProjectionSchema.parse(row.projection);
-    const next = agentRunApiUsageProjectionSchema.parse(update(current, now()));
-    if (sameProjection(current, next)) {
-      return;
-    }
-    const [updated] = await tx
-      .update(agentRunApiUsage)
-      .set({
-        revision: sql`${agentRunApiUsage.revision} + 1`,
-        projection: next,
-        updatedAt: nowDate(),
-      })
-      .where(eq(agentRunApiUsage.runId, runId))
-      .returning({ revision: agentRunApiUsage.revision });
-    if (!updated || updated.revision <= row.revision) {
-      throw new Error("API usage projection revision did not advance");
-    }
-  });
+  await updateProjections(db, [runId], update);
 }
 
 function ensureAttempt(
@@ -201,6 +218,17 @@ export async function closePiApiUsageAsNoInference(
   runId: string,
 ): Promise<void> {
   await updateProjection(db, runId, (projection) => {
+    return projection.phase === "pending" && projection.attempts.length === 0
+      ? { ...projection, phase: "no-inference" }
+      : projection;
+  });
+}
+
+export async function closePiApiUsageRunsAsNoInference(
+  db: Db,
+  runIds: readonly string[],
+): Promise<void> {
+  await updateProjections(db, runIds, (projection) => {
     return projection.phase === "pending" && projection.attempts.length === 0
       ? { ...projection, phase: "no-inference" }
       : projection;
