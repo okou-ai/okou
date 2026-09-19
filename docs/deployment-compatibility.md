@@ -2755,10 +2755,11 @@ quantity, so this overlap does not discard usage. Runs that already captured the
 preceding capability continue reporting resources.
 
 Count events carry no resource identities: reads from an old Runner in this
-overlap cannot populate the daily resource table or receive deduplication. Full producer coverage requires old Runner
-processes, Runs, streams and retained uploads to finish draining. If uninterrupted
-deduplication is required during the cutover, predeploy the unconditional Runner
-against the preceding API and verify that drain before promoting the API.
+overlap cannot populate the daily resource table or receive deduplication. Full
+producer coverage requires old Runner processes, Runs, streams and retained
+uploads to finish draining. If uninterrupted deduplication is required during
+the cutover, predeploy the unconditional Runner against the preceding API and
+verify that drain before promoting the API.
 The preceding gated API remains a compatible rollback target, but it can restore
 full-count billing for accounts without an enabled override. Rolling back the
 Runner can reduce resource coverage again.

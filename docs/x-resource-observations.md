@@ -4,8 +4,9 @@ This is the X resource ingestion contract for
 [#34713](https://github.com/vm0-ai/okou/issues/34713), using the schema prepared in
 [#34712](https://github.com/vm0-ai/okou/issues/34712), under backend
 [#34610](https://github.com/vm0-ai/okou/issues/34610) and overall delivery
-[#34532](https://github.com/vm0-ai/okou/issues/34532). [#35197](https://github.com/vm0-ai/okou/issues/35197)
-introduced the staged rollout that preceded unconditional deduplication.
+[#34532](https://github.com/vm0-ai/okou/issues/34532).
+[#35197](https://github.com/vm0-ai/okou/issues/35197) introduced the staged
+rollout that preceded unconditional deduplication.
 
 There is one X upstream billing account. Resource deduplication is site-wide
 across organizations, users, runs and processes. Retain only the current UTC
@@ -209,10 +210,10 @@ ignores the old capability field. An old Runner against the cleaned-up API can
 instead emit count-only reads. Those events continue through the existing generic
 ingestion path and bill their full quantity during the normal API-before-Runner
 overlap. They cannot record identities or participate in deduplication, even with
-an API that unconditionally deduplicates resource observations. Complete resource coverage requires draining old Runner
-processes, Runs, streams and retained uploads; see the
-[rollout guide](./x-resource-rollout.md). No production release or drain is
-performed by the cleanup PR itself.
+an API that unconditionally deduplicates resource observations. Complete resource
+coverage requires draining old Runner processes, Runs, streams and retained
+uploads; see the [rollout guide](./x-resource-rollout.md). No production release
+or drain is performed by the cleanup PR itself.
 
 The existing selective parser remains the authoritative count validator. An
 additional identity copy retains at most 256 KiB of a JSON document. Only a

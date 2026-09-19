@@ -145,7 +145,7 @@ must never extend the today/yesterday admission window.
 
 Rolling back to the preceding gated API does not require changing producer
 protocol or clearing resource records, but it can restore full-count billing for
-accounts without an enabled override. Never replay expired observations on a new date or downgrade a rejected
-v1 upload to a count-only event. Record operational verification and recovery
-decisions in #34615; passing the shared fixture does not prove deployed production
-acceptance or close that issue.
+accounts without an enabled override. Never replay expired observations on a new
+date or downgrade a rejected v1 upload to a count-only event. Record operational
+verification and recovery decisions in #34615; passing the shared fixture does
+not prove deployed production acceptance or close that issue.
