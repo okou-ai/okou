@@ -35,7 +35,16 @@ export function OnboardingIllustration({
   );
 }
 
-/** A product mark from the settings icon set. */
+/**
+ * A product mark from the settings icon set. `mark` is the size a mark takes
+ * inside a line of text, next to the words it belongs to.
+ */
+const PRODUCT_MARK_SIZES = {
+  poster: "h-20 w-20",
+  header: "h-7 w-7",
+  mark: "h-4 w-4",
+} as const;
+
 export function ProductMark({
   name,
   alt,
@@ -44,7 +53,7 @@ export function ProductMark({
 }: {
   readonly name: Parameters<typeof settingsIconAssetUrl>[0];
   readonly alt: string;
-  readonly size?: MarkSize;
+  readonly size?: keyof typeof PRODUCT_MARK_SIZES;
   readonly invertInDarkMode?: boolean;
 }) {
   return (
@@ -53,7 +62,7 @@ export function ProductMark({
       alt={alt}
       className={cn(
         "shrink-0 object-contain",
-        size === "poster" ? "h-20 w-20" : "h-7 w-7",
+        PRODUCT_MARK_SIZES[size],
         invertInDarkMode && "dark:invert",
       )}
     />

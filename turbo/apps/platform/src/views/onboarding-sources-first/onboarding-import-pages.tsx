@@ -21,10 +21,22 @@ import {
   ProductMark,
 } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
+import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 const SKILL_FILE_ACCEPT = ".md,text/markdown";
-const OKOU_APP_ICON_URL = "/icons/icon-192.png";
+/* The scene's faces: Okou's own avatar, and a photo for each teammate. */
+const OKOU_AVATAR_URL = platformStaticAssetUrl(
+  "views/onboarding/assets/okou-avatar-2df72642115f.webp",
+);
+const SLACK_SCENE_AVATARS = {
+  context: platformStaticAssetUrl(
+    "views/onboarding/assets/slack-scene-dan-e0fc67b12a69.jpg",
+  ),
+  ask: platformStaticAssetUrl(
+    "views/onboarding/assets/slack-scene-mia-379d5c026871.jpg",
+  ),
+} as const;
 const SKILL_FILE_INPUT_ID = "onboarding-skill-file";
 
 /** Confirms the chosen SKILL.md before it becomes a personal workflow. */
@@ -222,23 +234,13 @@ export function OnboardingSkillsPage() {
 }
 
 /** A teammate's mark: Slack draws a rounded square, not a circle. */
-function SlackAvatar({
-  initial,
-  className,
-}: {
-  readonly initial: string;
-  readonly className: string;
-}) {
+function SlackAvatar({ src }: { readonly src: string }) {
   return (
-    <span
-      className={cn(
-        "flex size-7 shrink-0 items-center justify-center rounded-[4px] text-xs font-bold text-[#ffffff]",
-        className,
-      )}
-      aria-hidden="true"
-    >
-      {initial}
-    </span>
+    <img
+      src={src}
+      alt=""
+      className="size-7 shrink-0 rounded-[4px] object-cover"
+    />
   );
 }
 
@@ -339,7 +341,7 @@ function SlackRail({
       </p>
       <p className="flex items-center gap-1.5 px-2 py-[3px] text-[13px] text-[#ffffff]/70">
         <img
-          src={OKOU_APP_ICON_URL}
+          src={OKOU_AVATAR_URL}
           alt=""
           className="size-4 shrink-0 rounded-[3px] object-cover"
         />
@@ -384,12 +386,7 @@ function SlackChannelPane({
       </div>
       <div className="flex flex-col gap-3 px-4 py-3">
         <SlackMessage
-          avatar={
-            <SlackAvatar
-              initial={contextAuthor.charAt(0)}
-              className="bg-[#2E7D6F]"
-            />
-          }
+          avatar={<SlackAvatar src={SLACK_SCENE_AVATARS.context} />}
           author={contextAuthor}
           time={t(($) => {
             return $.onboarding.sourcesFirst.slack.previewContextTime;
@@ -400,12 +397,7 @@ function SlackChannelPane({
           })}
         </SlackMessage>
         <SlackMessage
-          avatar={
-            <SlackAvatar
-              initial={askAuthor.charAt(0)}
-              className="bg-[#8B4A9C]"
-            />
-          }
+          avatar={<SlackAvatar src={SLACK_SCENE_AVATARS.ask} />}
           author={askAuthor}
           time={t(($) => {
             return $.onboarding.sourcesFirst.slack.previewTime;
@@ -428,7 +420,7 @@ function SlackChannelPane({
         <SlackMessage
           avatar={
             <img
-              src={OKOU_APP_ICON_URL}
+              src={OKOU_AVATAR_URL}
               alt=""
               className="size-7 shrink-0 rounded-[4px] object-cover"
             />
@@ -528,6 +520,15 @@ export function OnboardingSlackPage() {
       })}
       onSecondary={flow.goNext}
       onBack={flow.goBack}
+      footnote={
+        <span className="flex items-center gap-2">
+          <ProductMark name="telegram" alt="" size="mark" />
+          <ProductMark name="imessage" alt="" size="mark" />
+          {t(($) => {
+            return $.onboarding.sourcesFirst.slack.laterCopy;
+          })}
+        </span>
+      }
     >
       {/* One column on the step's own sheet: what it looks like in a channel,
           then the one way to add it. */}

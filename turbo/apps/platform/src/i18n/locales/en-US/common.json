@@ -4250,6 +4250,7 @@
         "connectedStatus": "Added to your workspace",
         "connectedTitle": "Slack is connected",
         "copy": "Add it once, then mention @Okou where the work already happens.",
+        "laterCopy": "Telegram and iMessage work the same way — add them whenever you like.",
         "previewAppBadge": "APP",
         "previewAsk": "pull last week’s signups by source, reconcile them with the ads account, and put the table in a sheet.",
         "previewAskAuthor": "Mia Chen",
