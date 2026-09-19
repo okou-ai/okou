@@ -1,9 +1,6 @@
 import { command, type Command } from "ccstate";
 import { createForwardAgentComposerSignals } from "../okou-page/agent-composer-signals.ts";
-import {
-  createChatEventSignals,
-  noEventsChangedHook$,
-} from "./chat-event-signals.ts";
+import { createChatEventSignals } from "./chat-event-signals.ts";
 import type {
   ChatForwardComposerState,
   ChatForwardContext,
@@ -37,7 +34,7 @@ export function createChatForwardComposerSignals(
     );
     return { prepare$ };
   }
-  const chatEvents = createChatEventSignals(target.id, noEventsChangedHook$);
+  const chatEvents = createChatEventSignals(target.id);
   const composer = createThreadComposerSignals(
     target.id,
     target.agentId,

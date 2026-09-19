@@ -11,6 +11,12 @@
  * two ratios plus the id of the turn they are looking at. Nothing else reads or
  * writes the DOM, and no element is held in a signal other than the scroll
  * container the reading is taken from.
+ *
+ * The reading is taken only when the reader moves the viewport: on scroll and
+ * on resize. Content arriving during a run does not take one, because a reader
+ * who is not scrolling has not changed where they are; the next scroll settles
+ * the band. That keeps one synchronous read per trigger, each under the signal
+ * of the scope that asked for it, with nothing queued between lifetimes.
  */
 
 import {
@@ -22,10 +28,9 @@ import {
   type State,
 } from "ccstate";
 import { timeout } from "signal-timers";
-import { throttleCommand } from "../command-scheduling.ts";
 import { logger } from "../log.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
-import { detach, onDomEventFn, Reason, resetSignal } from "../utils.ts";
+import { resetSignal } from "../utils.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ScrollToEventOptions } from "./chat-thread-scroll.ts";
 
@@ -49,13 +54,6 @@ const MAGNIFY_SIGMA_RATIO = 2.6;
 const HIT_INTERVAL_RATIO = 0.5;
 /** How long a jumped-to turn stays marked. */
 const LANDED_MARK_MS = 1200;
-/**
- * Reads run on a leading edge so the band tracks the thumb, and the throttle's
- * trailing call is what catches the layout React committed after the caller
- * that asked for the reading had already returned.
- */
-const MEASURE_INTERVAL_MS = 50;
-
 /** Resting length and magnification of a tick. */
 const TICK_BASE_WIDTH_PX = 7;
 const TICK_GROW_RATIO = 3.1;
@@ -141,18 +139,8 @@ export interface LocatorViewportSignals {
    */
   readonly attachContainer$: Command<void, [HTMLElement, AbortSignal]>;
   readonly reading$: Computed<LocatorViewportReading>;
-  /**
-   * Takes the viewport reading. Throttled: the leading call lands at once so
-   * the band tracks the thumb, and the trailing one catches the layout that
-   * React committed after the caller returned.
-   */
-  readonly measure$: Command<Promise<void>, [AbortSignal]>;
-  /**
-   * Starts a reading without waiting for it. Transcript mutations must not pay
-   * the throttle's interval to apply an event, so they hand the reading to the
-   * caller's lifetime and return.
-   */
-  readonly requestMeasure$: Command<void, [AbortSignal]>;
+  /** Takes the viewport reading synchronously, under the caller's signal. */
+  readonly measure$: Command<void, [AbortSignal]>;
   readonly container$: Computed<HTMLElement | null>;
 }
 
@@ -166,8 +154,8 @@ export interface ChatConversationLocatorSignals {
   /** Track the pointer as a rail fraction plus its viewport y. */
   readonly trackPointer$: Command<void, [number, number]>;
   readonly leaveRail$: Command<void, []>;
-  /** Request a scroll reading; the page lifetime owns the work. */
-  readonly measure$: Command<Promise<void>, [AbortSignal]>;
+  /** Takes the viewport reading synchronously, under the caller's signal. */
+  readonly measure$: Command<void, [AbortSignal]>;
   readonly jumpToPointer$: Command<Promise<void>, [AbortSignal]>;
   readonly jumpToTurn$: Command<Promise<void>, [number, AbortSignal]>;
 }
@@ -351,7 +339,7 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     return get(internalReading$);
   });
 
-  const readNow$ = command(({ get, set }, signal: AbortSignal): void => {
+  const measure$ = command(({ get, set }, signal: AbortSignal): void => {
     signal.throwIfAborted();
     const container = get(internalContainer$);
     if (!container) {
@@ -363,25 +351,21 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     }
   });
 
-  const measure$ = throttleCommand(readNow$, MEASURE_INTERVAL_MS);
-
-  const requestMeasure$ = command(({ set }, signal: AbortSignal): void => {
-    detach(set(measure$, signal), Reason.Deferred, "locator measure");
-  });
-
   const attachContainer$ = command(
     ({ set }, element: HTMLElement, signal: AbortSignal) => {
       set(internalContainer$, element);
       // The reading only exists while the container does, so the window
       // listener is that element's resource and shares its lifetime.
+      // A window listener owned by this element's lifetime, taking the same
+      // synchronous reading the scroll handler takes.
       globalThis.addEventListener(
         "resize",
-        onDomEventFn(async () => {
-          await set(measure$, signal);
-        }),
+        () => {
+          set(measure$, signal);
+        },
         { signal },
       );
-      set(readNow$, signal);
+      set(measure$, signal);
       signal.addEventListener(
         "abort",
         () => {
@@ -398,7 +382,6 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     container$,
     reading$,
     measure$,
-    requestMeasure$,
   };
 }
 

@@ -13,10 +13,7 @@ import {
   testContext,
   chatEventRowsResponse,
 } from "../../signals/__tests__/test-helpers.ts";
-import {
-  createChatEventSignals,
-  noEventsChangedHook$,
-} from "../../signals/chat-page/chat-event-signals.ts";
+import { createChatEventSignals } from "../../signals/chat-page/chat-event-signals.ts";
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
 import { resetSignal } from "../../signals/utils.ts";
 import {
@@ -229,7 +226,7 @@ test("Show cached chat data before catching up live", async () => {
 
   const resetOwner$ = resetSignal();
   const ownerSignal = context.store.set(resetOwner$, context.signal);
-  const signals = createChatEventSignals(threadId, noEventsChangedHook$);
+  const signals = createChatEventSignals(threadId);
   await context.store.set(signals.setup$, ownerSignal);
   expect(
     context.store.get(signals.chatEvents$).map((event) => {
@@ -343,10 +340,7 @@ test("Cache incoming chat messages before the conversation is opened", async () 
 
   const resetOwner$ = resetSignal();
   const ownerSignal = context.store.set(resetOwner$, context.signal);
-  const signals = createChatEventSignals(
-    unopenedThreadId,
-    noEventsChangedHook$,
-  );
+  const signals = createChatEventSignals(unopenedThreadId);
   await context.store.set(signals.setup$, ownerSignal);
 
   expect(
@@ -431,7 +425,7 @@ test("Preserve every message during a burst of realtime notifications", async ()
   });
   const resetOwner$ = resetSignal();
   const ownerSignal = context.store.set(resetOwner$, context.signal);
-  const signals = createChatEventSignals(threadId, noEventsChangedHook$);
+  const signals = createChatEventSignals(threadId);
   await context.store.set(signals.setup$, ownerSignal);
   expect(
     context.store.get(signals.chatEvents$).map((event) => {

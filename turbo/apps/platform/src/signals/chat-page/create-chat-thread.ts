@@ -4076,10 +4076,8 @@ export function createChatPanelSignals(
   agentId: string,
   draft: DraftSignals,
 ): ChatPanelSignals {
-  // Built before the event signals so their commands can request a viewport
-  // reading directly. It owns only its own state, so nothing else moves.
   const locatorViewport = createLocatorViewportSignals();
-  const chatEvents = createChatEventSignals(threadId, locatorViewport.measure$);
+  const chatEvents = createChatEventSignals(threadId);
   const artifact = createArtifacts(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
@@ -4087,7 +4085,6 @@ export function createChatPanelSignals(
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
     chatEvents.chatEvents$,
-    locatorViewport.requestMeasure$,
   );
   const activity = createThreadActivitySummarySignals(
     threadId,
