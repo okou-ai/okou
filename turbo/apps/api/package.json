@@ -87,7 +87,7 @@
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "^0.6.1",
     "clerk": "^3.0.1",
     "eslint": "^9.34.0",
     "msw": "^2.13.2",
