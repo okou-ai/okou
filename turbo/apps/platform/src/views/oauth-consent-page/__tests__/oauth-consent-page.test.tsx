@@ -30,7 +30,7 @@ function consentPath(): string {
   return `/oauth-consent?${params.toString()}`;
 }
 
-test.each(["app.vm7.ai:8443", "app.okou.ai"])(
+test.each(["app.vm7.ai", "app.okou.ai"])(
   "%s renders the app-hosted OAuth consent request",
   async (host) => {
     await setupPage({
@@ -57,7 +57,7 @@ test("A signed-out consent request returns through app sign-in", async () => {
     context,
     auth: null,
     env: clerkEnvironment(),
-    host: "app.vm7.ai:8443",
+    host: "app.vm7.ai",
     path,
   });
 
@@ -65,10 +65,10 @@ test("A signed-out consent request returns through app sign-in", async () => {
     expect(assigned.calls).toHaveLength(1);
   });
   const signIn = new URL(assigned.calls[0] ?? "");
-  expect(signIn.origin).toBe("https://app.vm7.ai:8443");
+  expect(signIn.origin).toBe("https://app.vm7.ai");
   expect(signIn.pathname).toBe("/sign-in");
   expect(new URLSearchParams(signIn.hash.slice(3)).get("redirect_url")).toBe(
-    `https://app.vm7.ai:8443${path}`,
+    `https://app.vm7.ai${path}`,
   );
   expect(screen.queryByTestId("clerk-oauth-consent")).not.toBeInTheDocument();
 });
