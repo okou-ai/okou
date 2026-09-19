@@ -188,7 +188,11 @@ export async function recordPiApiUsageObservation(
       input.observation,
       observedAtMs,
     );
-    return { ...registered, attempts };
+    return {
+      ...registered,
+      attempts,
+      overflow: registered.overflow || reduceKnownTokens(attempts).overflow,
+    };
   });
 }
 
@@ -212,6 +216,36 @@ const reasonOrder: readonly RunnerApiUsageCoverageReason[] = [
   "overflow",
 ];
 
+function reduceKnownTokens(attempts: readonly AgentRunApiUsageAttempt[]): {
+  readonly totals: Record<(typeof tokenFields)[number], number>;
+  readonly total: number;
+  readonly overflow: boolean;
+} {
+  const totals = { input: 0, cacheRead: 0, cacheCreation: 0, output: 0 };
+  let total = 0;
+  let overflow = false;
+  for (const attempt of attempts) {
+    for (const field of tokenFields) {
+      const value = attempt.tokens[field];
+      if (value === null || attempt.ambiguous.includes(field)) {
+        continue;
+      }
+      const fieldSum = totals[field] + value;
+      const aggregateSum = total + value;
+      if (
+        !Number.isSafeInteger(fieldSum) ||
+        !Number.isSafeInteger(aggregateSum)
+      ) {
+        overflow = true;
+        continue;
+      }
+      totals[field] = fieldSum;
+      total = aggregateSum;
+    }
+  }
+  return { totals, total, overflow };
+}
+
 function availableResponse(input: {
   readonly runId: string;
   readonly revision: number;
@@ -219,8 +253,6 @@ function availableResponse(input: {
   readonly projection: AgentRunApiUsageProjection;
 }): RunnerApiUsageResponse {
   const reasons = new Set<RunnerApiUsageCoverageReason>();
-  const totals = { input: 0, cacheRead: 0, cacheCreation: 0, output: 0 };
-  let overflow = input.projection.overflow;
   for (const attempt of input.projection.attempts) {
     if (!attempt.terminal) {
       reasons.add("in_flight");
@@ -246,33 +278,13 @@ function availableResponse(input: {
     ) {
       reasons.add("missing_categories");
     }
-    for (const field of tokenFields) {
-      const value = attempt.tokens[field];
-      if (value === null || attempt.ambiguous.includes(field)) {
-        continue;
-      }
-      const sum = totals[field] + value;
-      if (!Number.isSafeInteger(sum)) {
-        overflow = true;
-      } else {
-        totals[field] = sum;
-      }
-    }
   }
   if (input.projection.phase === "pending") {
     reasons.add("pending_inference");
   }
-  if (overflow) {
+  const reduced = reduceKnownTokens(input.projection.attempts);
+  if (input.projection.overflow || reduced.overflow) {
     reasons.add("overflow");
-  }
-  const total =
-    totals.input + totals.cacheRead + totals.cacheCreation + totals.output;
-  if (!Number.isSafeInteger(total)) {
-    reasons.add("overflow");
-    totals.input = 0;
-    totals.cacheRead = 0;
-    totals.cacheCreation = 0;
-    totals.output = 0;
   }
   const orderedReasons = reasonOrder.filter((reason) => {
     return reasons.has(reason);
@@ -297,9 +309,8 @@ function availableResponse(input: {
     complete: orderedReasons.length === 0,
     reasons: orderedReasons,
     totals: {
-      ...totals,
-      total:
-        totals.input + totals.cacheRead + totals.cacheCreation + totals.output,
+      ...reduced.totals,
+      total: reduced.total,
     },
   });
 }

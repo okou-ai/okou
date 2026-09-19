@@ -258,6 +258,52 @@ describe("Runner API usage", () => {
     });
   });
 
+  it("keeps aggregate overflow sticky and omits only the unsafe contribution", async () => {
+    const f = await runtime();
+    await initialize(f.runId, "pending");
+    const firstAttemptId = randomUUID();
+    const secondAttemptId = randomUUID();
+    await observe(f.runId, firstAttemptId, {
+      coverage: "complete",
+      tokens: {
+        input: Number.MAX_SAFE_INTEGER,
+        cacheRead: 0,
+        cacheCreation: 0,
+        output: 0,
+      },
+    });
+    await observe(f.runId, secondAttemptId, {
+      coverage: "complete",
+      tokens: { input: 0, cacheRead: 0, cacheCreation: 0, output: 1 },
+    });
+    expect((await read(f)).body).toMatchObject({
+      complete: false,
+      reasons: ["overflow"],
+      totals: {
+        input: Number.MAX_SAFE_INTEGER,
+        cacheRead: 0,
+        cacheCreation: 0,
+        output: 0,
+        total: Number.MAX_SAFE_INTEGER,
+      },
+    });
+
+    await observe(f.runId, firstAttemptId, {
+      coverage: "complete",
+      tokens: {
+        input: Number.MAX_SAFE_INTEGER - 1,
+        cacheRead: 0,
+        cacheCreation: 0,
+        output: 0,
+      },
+    });
+    expect((await read(f)).body).toMatchObject({
+      complete: false,
+      reasons: ["ambiguous_attempt", "overflow"],
+      totals: { input: 0, output: 1, total: 1 },
+    });
+  });
+
   it("distinguishes provider zero from partial category coverage", async () => {
     const zero = await runtime();
     await initialize(zero.runId, "pending");
