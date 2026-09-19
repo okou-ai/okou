@@ -127,7 +127,7 @@ impl Run {
             .await?
             .map_err(|_| Failure::Network)?;
         let authenticated = scope
-            .wait(rfb_client::authenticate(
+            .wait_deadline_aware(rfb_client::authenticate(
                 socket,
                 &credential.host,
                 credential.password,
