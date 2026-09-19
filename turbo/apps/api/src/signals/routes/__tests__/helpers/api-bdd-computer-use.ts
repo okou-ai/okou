@@ -58,6 +58,8 @@ interface ComputerUseHostStartOptions {
   };
   readonly installationId?: string;
   readonly hostName?: string;
+  readonly appVersion?: string;
+  readonly osVersion?: string;
   readonly supportedCapabilities?: readonly string[];
 }
 
@@ -267,8 +269,8 @@ function hostRuntimeBody(options: ComputerUseHostStartOptions = {}) {
       ? { installationId: options.installationId }
       : {}),
     hostName: options.hostName ?? "BDD Desktop",
-    appVersion: "0.1.0",
-    osVersion: "macOS 15",
+    appVersion: options.appVersion ?? "0.1.0",
+    osVersion: options.osVersion ?? "macOS 15",
     supportedCapabilities: [
       ...(options.supportedCapabilities ??
         DEFAULT_SUPPORTED_COMPUTER_USE_CAPABILITIES),
@@ -656,13 +658,15 @@ export function createComputerUseBddApi(context: TestContext) {
     },
 
     async requestStartComputerUseHost(
-      actor: ApiTestUser | null,
+      actor: ComputerUseAuth,
       statuses: readonly (200 | 401 | 403 | 409)[],
+      options: ComputerUseHostStartOptions = {},
+      signal?: AbortSignal,
     ) {
       return await accept(
-        hostsClient().start({
+        hostsClient(signal).start({
           headers: authenticate(actor),
-          body: hostRuntimeBody(),
+          body: hostRuntimeBody(options),
         }),
         statuses,
       );

@@ -115,6 +115,9 @@ const hostStartInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  if (result.status === "subject_closed") {
+    return forbidden("Account unavailable");
+  }
   return {
     status: 200 as const,
     body: { hostId: result.hostId, hostToken: result.hostToken },

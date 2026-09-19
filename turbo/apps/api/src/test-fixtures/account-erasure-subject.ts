@@ -80,6 +80,18 @@ export async function removeErasureSubjectsFixture(
     .where(inArray(accountErasureJobs.id, [...jobIds]));
 }
 
+/** Whether one exact test-owned erasure job still exists. */
+export async function erasureSubjectJobExistsFixture(
+  jobId: string,
+): Promise<boolean> {
+  const [job] = await db()
+    .select({ id: accountErasureJobs.id })
+    .from(accountErasureJobs)
+    .where(eq(accountErasureJobs.id, jobId))
+    .limit(1);
+  return job !== undefined;
+}
+
 /** Reassigns one Agent's owner, the change a future ownership transfer would
  * persist. No production writer updates this column today, and the unique
  * `(id, org_id, owner)` key makes it the key update a content writer's KEY
@@ -156,10 +168,9 @@ export interface TransactionBarrier {
     readonly statementTimeout: string;
     readonly transactionTimeout: string;
     /**
-     * Rows the chosen statement itself reported. It carries a number only in
-     * `pauseAfter` mode, where that statement has already run (and its
-     * transaction remains open when it has one), and is `null` when the barrier
-     * pauses before dispatch.
+     * Rows the chosen statement itself reported. In `pauseAfter` mode the
+     * statement has already run; commands such as COMMIT legitimately report
+     * `null`. It is also `null` when the barrier pauses before dispatch.
      */
     readonly rowCount: number | null;
   }>;
@@ -172,8 +183,10 @@ export interface TransactionBarrier {
 }
 
 /** The row count `pg` reports for an executed statement. */
-function pausedRowCount(executed: unknown): number {
-  const parsed = z.object({ rowCount: z.number() }).safeParse(executed);
+function pausedRowCount(executed: unknown): number | null {
+  const parsed = z
+    .object({ rowCount: z.number().nullable() })
+    .safeParse(executed);
   if (!parsed.success) {
     throw new Error(
       "Expected the paused statement result to carry a row count",
