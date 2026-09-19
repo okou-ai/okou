@@ -57,6 +57,16 @@ describe("runner API usage contract", () => {
       { ...base, revision: 0 },
       { ...base, sampledAtMs: 0 },
       { ...base, observedAttempts: 9 },
+      { ...base, observedAttempts: 1 },
+      {
+        ...base,
+        reasons: ["pending_inference", "missing_usage"],
+      },
+      {
+        ...base,
+        inferenceState: "attempted",
+        observedAttempts: 1,
+      },
       { ...base, totals: { ...base.totals, input: -1, total: -1 } },
     ]) {
       expect(runnerApiUsageResponseSchema.safeParse(value).success).toBe(false);

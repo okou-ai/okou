@@ -123,13 +123,24 @@ const availableSchema = z
         message: "No-inference snapshots must be complete zero",
       });
     }
-    if (
-      value.inferenceState === "pending" &&
-      !value.reasons.includes("pending_inference")
-    ) {
+    if (value.inferenceState === "pending") {
+      if (
+        value.observedAttempts !== 0 ||
+        value.outstandingAttempts !== 0 ||
+        value.totals.total !== 0 ||
+        value.reasons.length !== 1 ||
+        value.reasons[0] !== "pending_inference"
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Pending snapshots require zero usage and only pending inference coverage",
+        });
+      }
+    } else if (value.reasons.includes("pending_inference")) {
       context.addIssue({
         code: "custom",
-        message: "Pending snapshots require pending inference coverage",
+        message: "Only pending snapshots may report pending inference coverage",
       });
     }
     if (
