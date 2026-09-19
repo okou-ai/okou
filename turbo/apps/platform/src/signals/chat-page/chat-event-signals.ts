@@ -413,8 +413,17 @@ export interface ChatEventSignals {
   >;
 }
 
-export function createChatEventSignals(threadId: string): ChatEventSignals {
-  const events = createChatEventStorageSignals({ threadId });
+/** Surfaces without a locator rail have no viewport reading to refresh. */
+export const noEventsChangedHook$ = command((): void => {
+  // Intentionally empty: the forward composer draws no rail.
+});
+
+export function createChatEventSignals(
+  threadId: string,
+  /** Asked for a fresh viewport reading whenever the event list changes. */
+  onEventsChanged$: Command<void, []>,
+): ChatEventSignals {
+  const events = createChatEventStorageSignals({ threadId, onEventsChanged$ });
   const sendEvent$ = createSendChatEvent({
     threadId,
     appendOptimisticEvent$: events.appendOptimisticEvent$,

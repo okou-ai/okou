@@ -144,6 +144,7 @@ function createSharedDatabaseEventSignals({
         return mergePersistentEvents([previous, events]);
       });
       set(reconcileOptimisticChatEvents$, { threadId, events });
+      set(onEventsChanged$);
       await set(notifyChatEventsChanged$, chatEvents$, signal);
     },
   );
@@ -182,8 +183,11 @@ function createSharedDatabaseEventSignals({
 
 export function createChatEventStorageSignals({
   threadId,
+  onEventsChanged$,
 }: {
   threadId: string;
+  /** Requests a fresh viewport reading after the event list changes. */
+  onEventsChanged$: Command<void, []>;
 }) {
   const persistentChatEvents$ = state<PersistedChatEvent[]>([]);
   const optimisticEvents$ = createOptimisticChatEventsForThread(threadId);
@@ -203,6 +207,7 @@ export function createChatEventStorageSignals({
       signal: AbortSignal,
     ): Promise<void> => {
       set(appendOptimisticChatEvent$, createOptimisticChatEventEntry(input));
+      set(onEventsChanged$);
       await set(notifyChatEventsChanged$, chatEvents$, signal);
       signal.throwIfAborted();
     },
@@ -224,6 +229,7 @@ export function createChatEventStorageSignals({
         return mergePersistentEvents([previous, events]);
       });
       set(reconcileOptimisticChatEvents$, { threadId, events });
+      set(onEventsChanged$);
       await set(notifyChatEventsChanged$, chatEvents$, signal);
       signal.throwIfAborted();
     },

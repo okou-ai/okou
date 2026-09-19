@@ -1,4 +1,4 @@
-import { command, computed, type Computed } from "ccstate";
+import { command, computed, type Command, type Computed } from "ccstate";
 import { foldChatRunStates } from "@okouai/api-contracts/contracts/chat-events";
 import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
@@ -40,6 +40,8 @@ function createActiveRunId$(
 export function createSessionOutputStreamSignals(
   threadId: string,
   chatEvents$: Computed<ChatEvent[]>,
+  /** Requests a fresh viewport reading after a streamed delta lands. */
+  onEventsChanged$: Command<void, []>,
 ) {
   const activeRunId$ = createActiveRunId$(chatEvents$);
   const receive$ = command(
@@ -62,6 +64,7 @@ export function createSessionOutputStreamSignals(
         return event.seqId !== undefined;
       });
       if (set(appendOptimisticSessionOutput$, result.data, persisted)) {
+        set(onEventsChanged$);
         await set(notifyChatEventsChanged$, chatEvents$, signal);
       }
       return false;

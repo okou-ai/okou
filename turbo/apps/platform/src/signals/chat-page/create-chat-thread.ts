@@ -24,7 +24,7 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import { i18n } from "../../i18n/index.ts";
-import { onRejection, resetSignal, settle } from "../utils.ts";
+import { composeOnRef, onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
 import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 import {
@@ -234,7 +234,10 @@ import {
   createRunDetailSignalsRegistry,
   type RunDetailSignals,
 } from "./run-detail.ts";
-import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import {
+  createChatConversationLocatorSignals,
+  createLocatorViewportSignals,
+} from "./chat-conversation-locator.ts";
 import {
   createChatEventSignals,
   type ChatEventSignals,
@@ -4073,7 +4076,13 @@ export function createChatPanelSignals(
   agentId: string,
   draft: DraftSignals,
 ): ChatPanelSignals {
-  const chatEvents = createChatEventSignals(threadId);
+  // Built before the event signals so their commands can request a viewport
+  // reading directly. It owns only its own state, so nothing else moves.
+  const locatorViewport = createLocatorViewportSignals();
+  const chatEvents = createChatEventSignals(
+    threadId,
+    locatorViewport.requestSettledMeasure$,
+  );
   const artifact = createArtifacts(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
@@ -4081,6 +4090,7 @@ export function createChatPanelSignals(
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
     chatEvents.chatEvents$,
+    locatorViewport.requestSettledMeasure$,
   );
   const activity = createThreadActivitySummarySignals(
     threadId,
@@ -4123,10 +4133,9 @@ export function createChatPanelSignals(
   );
   const locator = createChatConversationLocatorSignals({
     threadId,
-    scrollContainer$: messages.scroll.scrollContainer$,
-    scrollToEvent$: messages.scroll.scrollToEvent$,
+    viewport: locatorViewport,
     allChatGroups$: messagePipeline.allChatGroups$,
-    threadScrollPosition$: messages.scroll.threadScrollPosition$,
+    scrollToEvent$: messages.scroll.scrollToEvent$,
   });
   const runTracking = createRunTracking({
     threadId,
@@ -4148,7 +4157,12 @@ export function createChatPanelSignals(
     threadDraft$,
     threadMeta$,
     ...threadTitle,
-    scrollContainerOnRef$: messages.scroll.scrollContainerOnRef$,
+    // The transcript and the locator both own this element; one composed ref
+    // keeps React attaching it once.
+    scrollContainerOnRef$: composeOnRef(
+      messages.scroll.scrollContainerOnRef$,
+      locatorViewport.containerOnRef$,
+    ),
     scrollContentOnRef$: messages.scroll.scrollContentOnRef$,
     composerLayoutOnRef$: createChatComposerLayoutOnRef(
       composer.editor.editor,
