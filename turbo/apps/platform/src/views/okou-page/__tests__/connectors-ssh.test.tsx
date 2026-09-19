@@ -536,20 +536,26 @@ test.each([false, true])(
   async (directory) => {
     mockCatalog();
     context.mocks.data.agents([listAgent(agentId, "Research")]);
-    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: 1 });
-    });
-    let failed = true;
+    let recovering = false;
     const retryStarted = context.mocks.deferred<void>();
     const recovery = context.mocks.deferred<void>();
-    context.mocks.api(agentSshAccessContract.get, async ({ respond }) => {
+    context.mocks.api(
+      sshConnectionsContract.summary,
+      async ({ respond, withSignal }) => {
+        if (recovering) {
+          retryStarted.resolve();
+          await withSignal(recovery.promise);
+        }
+        return respond(200, { configuredCount: 1 });
+      },
+    );
+    let failed = true;
+    context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
       if (failed) {
         return respond(500, {
           error: { code: "INTERNAL_ERROR", message: "private grant error" },
         });
       }
-      retryStarted.resolve();
-      await recovery.promise;
       return respond(200, { enabled: false });
     });
     await setupPage({
@@ -563,6 +569,7 @@ test.each([false, true])(
     expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
     expect(document.body.textContent).not.toContain("private grant error");
     failed = false;
+    recovering = true;
     click(getConnectorAction("button", "Retry"));
     await retryStarted.promise;
     expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
