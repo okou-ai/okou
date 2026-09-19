@@ -515,22 +515,10 @@ describe("connector catalog v4 preparation", () => {
                     target,
                     state: "available",
                     firewall: {
+                      kind: "builtin",
+                      name: "catalog-mcp",
                       sourceId: created.connectionId,
-                      firewall: {
-                        apis: [
-                          {
-                            base: nextEndpoint,
-                            auth:
-                              authKind === "manual"
-                                ? {
-                                    headers: {
-                                      "X-Api-Key": `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
-                                    },
-                                  }
-                                : {},
-                          },
-                        ],
-                      },
+                      ...(authKind === "automatic" ? { authOverride: {} } : {}),
                     },
                   },
             );
