@@ -4760,7 +4760,9 @@ const CHAT_NOTICE_DESCRIPTION_CLASS =
  * credits-available state replaces the whole body without one. Below the card's
  * 640px breakpoint the body is a column, so mounting that row late would add its
  * own height plus the container gap and resize the transcript. Every billing
- * state therefore keeps this slot, filled or empty, at the shared action height.
+ * state therefore keeps this slot, filled or empty, at the shared action height,
+ * and the error card's pending state reserves the same box for its own details
+ * trigger.
  */
 const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
 
@@ -5184,6 +5186,16 @@ interface AssistantErrorCardContent {
   readonly testId?: string;
 }
 
+/**
+ * The classification behind this card resolves over two chained requests, so
+ * `pending` is the state before either landed. It keeps the settled card's own
+ * frame and reserves the title, supporting-line, and action boxes at their
+ * settled heights: `docs/chat-cards.md` requires the resolution to swap what
+ * fills those boxes without moving the transcript. Withholding the details
+ * trigger is the point of the state — the settled card decides whether that
+ * dialog offers a model switch, and offering it early would show a dialog whose
+ * contents change under the reader.
+ */
 function AssistantErrorCard({
   icon: Icon,
   title,
@@ -5191,33 +5203,45 @@ function AssistantErrorCard({
   details,
   actions,
   testId,
-}: AssistantErrorCardContent) {
+  pending = false,
+}: AssistantErrorCardContent & { readonly pending?: boolean }) {
   return (
     <div
       role="status"
-      data-testid={testId}
+      data-testid={pending ? "assistant-error-card-loading" : testId}
       className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
-        <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        {pending ? (
+          <Loader2
+            size={16}
+            className="mt-1 shrink-0 animate-spin text-muted-foreground"
+          />
+        ) : (
+          <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        )}
         <div className="min-w-0">
-          <div className="truncate text-[0.9375rem] font-medium leading-6">
-            {title}
+          <div className="h-6 truncate text-[0.9375rem] font-medium leading-6">
+            {pending ? null : title}
           </div>
-          {description !== "" && (
+          {(pending || description !== "") && (
             <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-              {description}
+              {pending ? null : description}
             </div>
           )}
         </div>
       </div>
-      {(description !== "" ||
-        details !== undefined ||
-        actions !== undefined) && (
-        <ChatCardDetails title={title}>
-          {details ?? <p>{description}</p>}
-          {actions}
-        </ChatCardDetails>
+      {pending ? (
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
+      ) : (
+        (description !== "" ||
+          details !== undefined ||
+          actions !== undefined) && (
+          <ChatCardDetails title={title}>
+            {details ?? <p>{description}</p>}
+            {actions}
+          </ChatCardDetails>
+        )
       )}
     </div>
   );
@@ -5530,18 +5554,30 @@ function AssistantErrorState({
   thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  const resolved = useLastResolved(thread.assistantErrorRecovery$);
+  // `useLastLoadable` reports `loading` only for the first classification and
+  // keeps the settled value across later recomputations, so the spinner marks
+  // the one read the reader has to wait through instead of flashing on every
+  // appended event.
+  const loadable = useLastLoadable(thread.assistantErrorRecovery$);
+  const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
+  const fallback = assistantErrorFallbackContent(error, t);
+  if (fallback === null) {
+    return <InsufficientCreditsCard />;
+  }
+  const resolved = loadable.state === "hasData" ? loadable.data : null;
   const recovery = resolved?.sourceEventId === eventId ? resolved : null;
   // The classification resolves after the first paint and selects contents,
   // not a component: choosing between two card components here would remove
   // the mounted card and move the transcript by its height.
   const content = recovery
     ? assistantErrorRecoveryContent(recovery, thread, t)
-    : assistantErrorFallbackContent(error, t);
-  if (content === null) {
-    return <InsufficientCreditsCard />;
-  }
-  return <AssistantErrorCard {...content} />;
+    : fallback;
+  return (
+    <AssistantErrorCard
+      {...content}
+      pending={loadable.state === "loading" && pendingEventId === eventId}
+    />
+  );
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
