@@ -91,7 +91,6 @@ export const appendOptimisticSessionOutput$ = command(
           eventType: "output.message",
           content: chunk.delta,
           createdAt: chunk.createdAt,
-          optimistic: true,
         },
       },
     ]);
@@ -110,6 +109,19 @@ function pendingUserMessages(
       : [];
   });
 }
+
+/**
+ * Every event the page projected locally and no persistent event has replaced
+ * yet. Event ids are unique across threads, so a view can ask about one message
+ * without knowing which thread buffered it.
+ */
+export const optimisticEventIds$ = computed((get): ReadonlySet<string> => {
+  return new Set(
+    get(internalOptimisticChatEvents$).map((entry) => {
+      return entry.event.id;
+    }),
+  );
+});
 
 export function createOptimisticChatEventsForThread(threadId: string) {
   return computed((get): OptimisticChatEventEntry[] => {

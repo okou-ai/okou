@@ -238,11 +238,11 @@ import {
   type UserMessageRenderDocument,
   type UserMessageRenderPart,
 } from "../../signals/chat-page/chat-event.ts";
-import {
-  isOptimisticChatEvent,
-  type ChatInputEvent,
-  type ChatEvent,
+import type {
+  ChatInputEvent,
+  ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
+import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
@@ -5612,7 +5612,7 @@ function PagedGroupRow({
 function shareableEventFromChatEvent(
   event: EnrichedChatEvent,
 ): { readonly id: string; readonly text: string } | null {
-  if (isOptimisticChatEvent(event)) {
+  if (event.seqId === undefined) {
     return null;
   }
   if (event.eventType === "output.message") {
@@ -7057,41 +7057,22 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
 }
 
 /**
- * A message the page projected locally has not come back from the server yet,
- * so the spinner sits in the free gutter left of the bubble until the
- * persistent event replaces it.
+ * The message is still page-local until a persistent event with the same id
+ * replaces it, so the spinner subscribes on its own instead of making the whole
+ * message row re-render on every optimistic change.
  */
-function PagedUserMessageBody({
-  pending,
-  document,
-  attachments,
-  onImageClick,
-}: {
-  pending: boolean;
-  document: UserMessageRenderDocument;
-  attachments: ReturnType<typeof userMessageRenderAttachments>;
-  onImageClick: OpenMessageImagePreview;
-}) {
-  const content = (
-    <UserMessageContent
-      document={document}
-      attachments={attachments}
-      onImageClick={onImageClick}
-    />
-  );
-  if (!pending) {
-    return content;
+function OptimisticSpinner({ eventId }: { eventId: string }) {
+  const optimisticEventIds = useGet(optimisticEventIds$);
+  if (!optimisticEventIds.has(eventId)) {
+    return null;
   }
   return (
-    <div className="flex w-full items-center justify-end gap-2">
-      <Loader2
-        size={14}
-        aria-hidden
-        data-optimistic-user-message
-        className="shrink-0 animate-spin text-muted-foreground"
-      />
-      <div className="flex min-w-0 flex-1 flex-col items-end">{content}</div>
-    </div>
+    <Loader2
+      size={14}
+      aria-hidden
+      data-optimistic-user-message
+      className="shrink-0 animate-spin text-muted-foreground"
+    />
   );
 }
 
@@ -7184,12 +7165,16 @@ function PagedUserMessage({
           ) : null}
           {renderDocument ? (
             <>
-              <PagedUserMessageBody
-                pending={isOptimisticChatEvent(event)}
-                document={renderDocument}
-                attachments={allAttachments}
-                onImageClick={openLightbox}
-              />
+              <div className="flex w-full items-center justify-end gap-2">
+                <OptimisticSpinner eventId={event.id} />
+                <div className="flex min-w-0 flex-1 flex-col items-end">
+                  <UserMessageContent
+                    document={renderDocument}
+                    attachments={allAttachments}
+                    onImageClick={openLightbox}
+                  />
+                </div>
+              </div>
               {/* The row belongs to the bubble, not to the button inside it.
                   Sharing hides the button and a message nobody can copy has
                   none, and in both cases the next message in the burst is

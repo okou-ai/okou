@@ -52,11 +52,10 @@ import {
   collectSuccessfulAttachmentInfos,
   prepareUserMessageFromDraft$,
 } from "./resolve-draft-attachments.ts";
-import {
-  isOptimisticChatEvent,
-  type ChatEvent,
-  type OptimisticUserMessageAssociation,
-  type ProjectedOptimisticChatEvent,
+import type {
+  ChatEvent,
+  OptimisticChatEvent,
+  OptimisticUserMessageAssociation,
 } from "./chat-event-types.ts";
 import {
   chatEventDebugSummaries,
@@ -1253,7 +1252,7 @@ interface ServerChatEventProjectionEntry {
 }
 
 interface OptimisticChatEventProjectionEntry {
-  event: ProjectedOptimisticChatEvent;
+  event: OptimisticChatEvent;
   source: "optimistic";
   userMessageRenderDocument: UserMessageRenderDocument | undefined;
   optimisticUserMessageAssociation?: OptimisticUserMessageAssociation;
@@ -1263,22 +1262,26 @@ type ChatEventProjectionEntry =
   | ServerChatEventProjectionEntry
   | OptimisticChatEventProjectionEntry;
 
+function isPersistedChatEvent(event: ChatEvent): event is PersistedChatEvent {
+  return event.seqId !== undefined;
+}
+
 function createRawEventsComputed(
   registeredEvents$: State<RegisteredChatEvent[]>,
 ): Computed<ChatEventProjectionEntry[]> {
   return computed((get): ChatEventProjectionEntry[] => {
     return get(registeredEvents$).map((entry) => {
       const { event } = entry;
-      if (isOptimisticChatEvent(event)) {
-        return {
-          ...entry,
-          event,
-          source: "optimistic",
-          optimisticUserMessageAssociation:
-            event.optimisticUserMessageAssociation,
-        };
+      if (isPersistedChatEvent(event)) {
+        return { ...entry, event, source: "server" };
       }
-      return { ...entry, event, source: "server" };
+      return {
+        ...entry,
+        event,
+        source: "optimistic",
+        optimisticUserMessageAssociation:
+          event.optimisticUserMessageAssociation,
+      };
     });
   });
 }
