@@ -33,7 +33,7 @@ export const agentRunApiUsage = pgTable(
       check("agent_run_api_usage_revision_check", sql`${t.revision} >= 1`),
       check(
         "agent_run_api_usage_projection_check",
-        sql`jsonb_typeof(${t.projection}) = 'object' AND ${t.projection}->'schemaVersion' = '1'::jsonb AND jsonb_typeof(${t.projection}->'attempts') = 'array' AND jsonb_array_length(${t.projection}->'attempts') <= 8`,
+        sql`(jsonb_typeof(${t.projection}) = 'object' AND ${t.projection}->'schemaVersion' = '1'::jsonb AND jsonb_typeof(${t.projection}->'attempts') = 'array' AND jsonb_array_length(${t.projection}->'attempts') <= 8) IS TRUE`,
       ),
       check(
         "agent_run_api_usage_size_check",
