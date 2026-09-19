@@ -436,6 +436,148 @@ test("An empty SSH inventory matches Not connected but not Connected", async () 
   expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
 });
 
+test.each([
+  [false, false],
+  [false, true],
+  [true, false],
+  [true, true],
+] as const)(
+  "The unshared filter uses visible SSH grants (directory: %s, enabled: %s)",
+  async (directory, enabled) => {
+    mockCatalog();
+    context.mocks.data.agents([listAgent(agentId, "Research")]);
+    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+      return respond(200, { configuredCount: 1 });
+    });
+    context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
+      return respond(200, { enabled });
+    });
+    await setupPage({
+      context,
+      path: "/connectors?scope=connected&connection=unshared&keywords=ssh",
+      featureSwitches: {
+        [FeatureSwitchKey.ConnectorDirectory]: directory,
+      },
+    });
+    if (enabled) {
+      await screen.findByText(
+        directory
+          ? /Every connector is shared with an agent/u
+          : 'No connectors matching "ssh"',
+      );
+    } else {
+      await screen.findByText("1 host configured");
+    }
+    expect(queryConnectorAction("link", "Manage SSH hosts") !== null).toBe(
+      !enabled,
+    );
+  },
+);
+
+test("A changed SSH grant is reflected when switching directory filters", async () => {
+  mockCatalog();
+  context.mocks.data.agents([listAgent(agentId, "Research")]);
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 1 });
+  });
+  let enabled = false;
+  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
+    return respond(200, { enabled });
+  });
+  context.mocks.api(agentSshAccessContract.update, ({ body, respond }) => {
+    enabled = body.enabled;
+    return respond(200, { enabled });
+  });
+  await setupPage({
+    context,
+    path: "/connectors?scope=connected&keywords=ssh",
+    featureSwitches: {
+      [FeatureSwitchKey.ConnectorDirectory]: true,
+    },
+  });
+  await screen.findByText("1 host configured");
+  click(screen.getByTestId("connector-card-agent-access"));
+  const dialog = await screen.findByRole("dialog");
+  click(
+    await within(dialog).findByRole("switch", {
+      name: "Authorize SSH access for Research",
+    }),
+  );
+  await within(dialog).findByRole("switch", {
+    name: "Revoke SSH access for Research",
+  });
+  click(getConnectorAction("button", "Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  click(getConnectorAction("button", "Filter connectors"));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("menuitem", "Not shared with any agent");
+    }),
+  );
+  await screen.findByText(/Every connector is shared with an agent/u);
+  expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
+  click(getConnectorAction("button", "Filter connectors"));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("menuitem", "All agents");
+    }),
+  );
+  await expect(
+    waitFor(() => {
+      return getConnectorAction("link", "Manage SSH hosts");
+    }),
+  ).resolves.toBeInTheDocument();
+});
+
+test.each([false, true])(
+  "Unavailable SSH grants stay retryable under the unshared filter (directory: %s)",
+  async (directory) => {
+    mockCatalog();
+    context.mocks.data.agents([listAgent(agentId, "Research")]);
+    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+      return respond(200, { configuredCount: 1 });
+    });
+    let failed = true;
+    const retryStarted = context.mocks.deferred<void>();
+    const recovery = context.mocks.deferred<void>();
+    context.mocks.api(agentSshAccessContract.get, async ({ respond }) => {
+      if (failed) {
+        return respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "private grant error" },
+        });
+      }
+      retryStarted.resolve();
+      await recovery.promise;
+      return respond(200, { enabled: false });
+    });
+    await setupPage({
+      context,
+      path: "/connectors?scope=connected&connection=unshared&keywords=ssh",
+      featureSwitches: {
+        [FeatureSwitchKey.ConnectorDirectory]: directory,
+      },
+    });
+    await screen.findByText("Could not load SSH settings. Try again.");
+    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
+    expect(document.body.textContent).not.toContain("private grant error");
+    failed = false;
+    click(getConnectorAction("button", "Retry"));
+    await retryStarted.promise;
+    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
+    recovery.resolve();
+    await expect(
+      waitFor(() => {
+        return getConnectorAction("link", "Manage SSH hosts");
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.queryByText("Could not load SSH settings. Try again."),
+    ).toBeNull();
+  },
+);
+
 test.each([true, false])(
   "Agent filter uses its standalone SSH grant (%s), including no hosts",
   async (enabled) => {
