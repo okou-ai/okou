@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Check, FileText } from "lucide-react";
@@ -23,6 +24,7 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 const SKILL_FILE_ACCEPT = ".md,text/markdown";
+const OKOU_APP_ICON_URL = "/icons/icon-192.png";
 const SKILL_FILE_INPUT_ID = "onboarding-skill-file";
 
 /** Confirms the chosen SKILL.md before it becomes a personal workflow. */
@@ -219,26 +221,111 @@ export function OnboardingSkillsPage() {
   );
 }
 
-/** What the step is actually offering: Okou answering in a channel. */
+/** One message in the mocked channel: the author's mark, then what they said. */
+function SlackMessage({
+  avatar,
+  author,
+  badge,
+  time,
+  body,
+}: {
+  readonly avatar: ReactNode;
+  readonly author: string;
+  readonly badge?: string;
+  readonly time: string;
+  readonly body: string;
+}) {
+  return (
+    <div className="flex gap-2.5">
+      {avatar}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-sm font-semibold text-foreground">
+            {author}
+          </span>
+          {badge ? (
+            <span className="rounded-sm bg-muted px-1 py-px text-[10px] font-semibold uppercase leading-4 text-muted-foreground">
+              {badge}
+            </span>
+          ) : null}
+          <span className="text-[11px] text-muted-foreground">{time}</span>
+        </div>
+        <p className="mt-0.5 text-sm leading-6 text-foreground">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the step is actually offering, drawn as the channel it happens in: the
+ * teammate's ask, then Okou answering as an app in the same thread.
+ */
 function SlackPreview() {
   const { t } = useTranslation();
+  const askAuthor = t(($) => {
+    return $.onboarding.sourcesFirst.slack.previewAskAuthor;
+  });
 
   return (
-    <div>
-      <div className="rounded-xl bg-muted/40 p-4">
-        <p className="text-xs font-medium text-muted-foreground">
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
+      {/* The window's own bar, so the mock reads as Slack rather than Okou. */}
+      <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-4 py-2.5">
+        <span className="flex gap-1.5" aria-hidden="true">
+          <span className="size-2 rounded-full bg-foreground/15" />
+          <span className="size-2 rounded-full bg-foreground/15" />
+          <span className="size-2 rounded-full bg-foreground/15" />
+        </span>
+        <span className="ml-1 text-xs font-semibold text-foreground">
           {t(($) => {
             return $.onboarding.sourcesFirst.slack.previewChannel;
           })}
-        </p>
-        <p className="mt-3 text-sm text-foreground">
-          {t(($) => {
+        </span>
+      </div>
+      <div className="flex flex-col gap-4 px-4 py-4">
+        <SlackMessage
+          avatar={
+            <span
+              className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--gray-200))] text-xs font-semibold text-foreground"
+              aria-hidden="true"
+            >
+              {askAuthor.charAt(0)}
+            </span>
+          }
+          author={askAuthor}
+          time={t(($) => {
+            return $.onboarding.sourcesFirst.slack.previewTime;
+          })}
+          body={t(($) => {
             return $.onboarding.sourcesFirst.slack.previewAsk;
           })}
-        </p>
-        <p className="mt-3 rounded-lg bg-card p-3 text-sm text-foreground shadow-surface">
-          {t(($) => {
+        />
+        <SlackMessage
+          avatar={
+            <img
+              src={OKOU_APP_ICON_URL}
+              alt=""
+              className="size-8 shrink-0 rounded-md object-cover"
+            />
+          }
+          author={t(($) => {
+            return $.onboarding.sourcesFirst.slack.previewReplyAuthor;
+          })}
+          badge={t(($) => {
+            return $.onboarding.sourcesFirst.slack.previewAppBadge;
+          })}
+          time={t(($) => {
+            return $.onboarding.sourcesFirst.slack.previewReplyTime;
+          })}
+          body={t(($) => {
             return $.onboarding.sourcesFirst.slack.previewReply;
+          })}
+        />
+      </div>
+      {/* The composer: the line the next ask would be typed on. */}
+      <div className="border-t border-border/60 px-4 py-3">
+        <p className="rounded-lg border border-border/60 px-3 py-2 text-xs text-muted-foreground">
+          {t(($) => {
+            return $.onboarding.sourcesFirst.slack.previewComposer;
           })}
         </p>
       </div>
