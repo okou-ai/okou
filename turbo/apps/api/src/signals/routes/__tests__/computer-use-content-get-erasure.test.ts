@@ -906,6 +906,72 @@ describe("Computer Use binary content account-erasure fence", () => {
   );
 
   it.each(["screenshot", "plugin"] as const)(
+    "observes a %s GetObject failure before the reserved body barrier enters, joins closure, and recovers",
+    { timeout: CASE_TIMEOUT_MS },
+    async (kind) => {
+      const fake = computerUse.installComputerUseS3Fake();
+      const actor = orgScoped(bdd.user());
+      const fixture = await createStoredContent(kind, actor);
+      const bodyBarrier = fake.holdNextBody();
+      fake.failNextGetObject(
+        new Error(`${kind} pre-entry GetObject provider failure`),
+      );
+
+      await withComputerUseContentReadBarrierFixture(
+        {
+          orgId: actor.orgId,
+          userId: actor.userId,
+          commandId: fixture.commandId,
+          stopAt: "projection",
+          work: async (databaseBarrier) => {
+            await withOperationOwnership(
+              () => {
+                bodyBarrier.release();
+                databaseBarrier.release();
+              },
+              async (owner) => {
+                const reading = owner.start(
+                  requestContent(kind, actor, fixture.commandId, [200, 404]),
+                );
+                await waitForBarrierEntry(databaseBarrier.entered, reading);
+
+                const closing = startClosure(owner, {
+                  subjectKind: "user",
+                  subjectId: actor.userId,
+                });
+                await expect
+                  .poll(databaseBarrier.blockedWaiterCount, BLOCKED)
+                  .toBeGreaterThanOrEqual(1);
+                databaseBarrier.release();
+
+                await expect(
+                  waitForBarrierEntry(bodyBarrier.entered, reading),
+                ).rejects.toThrow(/Unknown response status 500/);
+                await reading.acceptFailureAfter((error) => {
+                  expect(String(error)).toMatch(/Unknown response status 500/);
+                });
+
+                const closed = valueOf(await closing.settled);
+                await removeErasureSubjectsFixture([closed.jobId]);
+                bodyBarrier.release();
+
+                const recovered = owner.start(downloadContent(fixture, actor));
+                const enteredBody = await waitForBarrierEntry(
+                  bodyBarrier.entered,
+                  recovered,
+                );
+                expect(enteredBody.signal).toBeDefined();
+                expectDownload(valueOf(await recovered.settled), fixture);
+              },
+            );
+          },
+        },
+        context.signal,
+      );
+    },
+  );
+
+  it.each(["screenshot", "plugin"] as const)(
     "rejects a pre-aborted %s read before S3 and retains healthy recovery",
     { timeout: CASE_TIMEOUT_MS },
     async (kind) => {

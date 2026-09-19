@@ -163,12 +163,22 @@ Coverage includes:
   actual `pg_blocking_pids`, unrelated-owner progress and compatible same-owner
   reads;
 - pre-abort, cancellation during provider request and body read, provider/body
-  failure, B1 lock timeout, early callback exit, final-check/COMMIT distinction
+  failure, a reserved body barrier whose preceding `GetObject` fails before
+  entry, B1 lock timeout, early callback exit, final-check/COMMIT distinction
   and healthy recovery;
 - immediate observation, release/abort and joining of every started reader,
   provider/body barrier and exact closure job; and
 - exact open/closed SQL/control sequences and response-size assertions that do
   not claim bounded provider duration or arbitrary content bytes.
+
+The pre-entry regression reserves the real external S3 fake's next body barrier,
+admits a public HTTP read against real PostgreSQL, and holds an exact closure
+behind that read. The preceding `GetObject` then fails, so the body barrier has
+not entered. The test observes the HTTP failure before entry, joins both the
+failed read and closure, removes only that closure job, releases the unentered
+reservation, and verifies a subsequent public HTTP read returns exact bytes for
+both endpoint forms. This demonstrated no production or test-helper lifetime
+defect, so the shared helper and runtime remain unchanged.
 
 ## Deployment compatibility
 
