@@ -1498,7 +1498,7 @@ async function observeDiscardedProviderResult(
       ownershipStage: ownership.stage,
     });
     await recordApiFirstTurnUsage(args, late.value.result);
-  } else {
+  } else if (ownership.stage === "provider-may-have-started") {
     await tryRecordApiUsageObservation(
       args,
       late.error instanceof PiApiModelRequestError
@@ -1775,7 +1775,10 @@ async function executeApiModelTurn(
         ),
       );
     }
-    if (!modelSignal.aborted) {
+    if (
+      !modelSignal.aborted &&
+      args.ownership.stage === "provider-may-have-started"
+    ) {
       await tryRecordApiUsageObservation(
         args.context,
         executed.error instanceof PiApiModelRequestError

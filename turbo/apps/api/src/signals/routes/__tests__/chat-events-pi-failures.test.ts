@@ -207,6 +207,16 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(readRunUsageEventsFixture(run.runId)).resolves.toStrictEqual(
       [],
     );
+    await expect(
+      readRunApiUsageProjectionFixture(run.runId),
+    ).resolves.toMatchObject({
+      revision: 2,
+      projection: {
+        phase: "no-inference",
+        attempts: [],
+        overflow: false,
+      },
+    });
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       status: "cancelled",
     });
