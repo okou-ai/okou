@@ -185,9 +185,13 @@ export function ChatSection() {
             title={t(($) => {
               return $.settings.paidTools.title;
             })}
-            description={t(($) => {
-              return $.settings.paidTools.description;
-            })}
+            {...(showChatPreferences
+              ? {
+                  description: t(($) => {
+                    return $.settings.paidTools.description;
+                  }),
+                }
+              : {})}
           />
           <PaidToolsSection />
         </section>
