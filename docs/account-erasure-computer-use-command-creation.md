@@ -121,7 +121,9 @@ uses the real routes, PostgreSQL and dormant B1 projection. It covers:
   ambiguous and unsupported precedence;
 - writer-first and closure-first B1 blocker edges, unrelated-owner progress and
   deliberate early callback exits whose owners observe, release, abort and join
-  every operation and remove the exact closure job;
+  every operation and remove the exact closure job; after writer-first commits,
+  the exact returned command remains publicly readable with its original host,
+  payload, status and timeout;
 - compatible same-owner creators while one real `INSERT ... RETURNING` result is
   paused;
 - a post-admission clock sample across a real lock wait at the 90-second host
@@ -131,7 +133,9 @@ uses the real routes, PostgreSQL and dormant B1 projection. It covers:
 - operation abort after an executed returned insert row, plus the documented
   post-final-check COMMIT boundary;
 - actual admission-wait cancellation, the real one-second lock timeout,
-  pre-entry authentication and bound-host exits, and deterministic-gate reuse;
+  pre-entry authentication and bound-host exits, plus a valid pre-aborted
+  request that enters no creation transaction, queues no command and leaves the
+  deterministic gate reusable;
 - three owner hosts returned by one uncapped query, with SQL text proving exact
   owner/revocation predicates, ordering, absence of `LIMIT` and absence of row
   locks; and

@@ -597,7 +597,7 @@ describe("Computer Use command creation account-erasure admission", () => {
     async (order) => {
       const actor = orgScoped(bdd.user());
       const unrelated = orgScoped(bdd.user());
-      await startCapableHost(actor);
+      const host = await startCapableHost(actor);
       let earlyCreation:
         | OwnedOperation<Awaited<ReturnType<typeof requestCreate>>>
         | undefined;
@@ -659,16 +659,33 @@ describe("Computer Use command creation account-erasure admission", () => {
       }
       const creation = valueOf(await earlyCreation.settled);
       expect(creation.status).toBe(order === "writer-first" ? 200 : 403);
-      if (order === "closure-first") {
-        expectClosedCreation(creation);
-      }
       const closed = valueOf(await earlyClosure.settled);
       await removeErasureSubjectsFixture([closed.jobId]);
 
-      const recovered = await createCommand("read", actor);
-      await expect(
-        computerUse.readComputerUseCommand(actor, recovered.commandId),
-      ).resolves.toMatchObject({ id: recovered.commandId, status: "queued" });
+      if (order === "writer-first") {
+        if (!("commandId" in creation.body)) {
+          throw new Error("Expected the writer-first command id");
+        }
+        await expect(
+          computerUse.readComputerUseCommand(actor, creation.body.commandId),
+        ).resolves.toMatchObject({
+          id: creation.body.commandId,
+          hostId: host.hostId,
+          kind: "apps.list",
+          payload: {},
+          status: "queued",
+          timeoutMs: 11_001,
+        });
+      } else {
+        expectClosedCreation(creation);
+        const recovered = await createCommand("read", actor);
+        await expect(
+          computerUse.readComputerUseCommand(actor, recovered.commandId),
+        ).resolves.toMatchObject({
+          id: recovered.commandId,
+          status: "queued",
+        });
+      }
     },
   );
 
@@ -973,12 +990,13 @@ describe("Computer Use command creation account-erasure admission", () => {
   );
 
   it(
-    "rejects pre-entry auth and bound-host exits, then reuses the deterministic gate for a valid creator",
+    "rejects pre-entry auth, bound-host and pre-aborted exits, then reuses the deterministic gate for a valid creator",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const actor = orgScoped(bdd.user());
-      await startCapableHost(actor);
+      const host = await startCapableHost(actor);
       const unbound = agentAuth({ actor });
+      let validCommandId: string | undefined;
 
       await withComputerUseCommandCreateBarrierFixture(
         {
@@ -1006,16 +1024,73 @@ describe("Computer Use command creation account-erasure admission", () => {
               );
               expect(valueOf(await unboundAgent.settled).status).toBe(403);
 
+              const preAbortedController = new AbortController();
+              preAbortedController.abort(
+                new DOMException("pre-entry abort", "AbortError"),
+              );
+              owner.abortOnExit(preAbortedController);
+              const preAborted = owner.start(
+                requestCreate(
+                  "read",
+                  actor,
+                  [200],
+                  preAbortedController.signal,
+                ),
+              );
+              await preAborted.acceptFailureAfter((error) => {
+                expect(String(error)).toContain(
+                  "Unknown response status 500 for POST /api/computer-use/commands",
+                );
+              });
+              expect(barrier.enteredYet()).toBeFalsy();
+              await expect(
+                computerUse.claimNextComputerUseCommand(
+                  host.hostToken,
+                  HOST_CAPABILITIES,
+                ),
+              ).resolves.toStrictEqual({ status: "idle" });
+
               const valid = owner.start(requestCreate("read", actor, [200]));
               const entry = await waitForBarrierEntry(barrier.entered, valid);
               expect(entry.rowCount).toBe(1);
               barrier.release();
-              expect(valueOf(await valid.settled).status).toBe(200);
+              const validResponse = valueOf(await valid.settled);
+              expect(validResponse.status).toBe(200);
+              if (!("commandId" in validResponse.body)) {
+                throw new Error("Expected the valid retry command id");
+              }
+              validCommandId = validResponse.body.commandId;
             });
           },
         },
         context.signal,
       );
+
+      if (!validCommandId) {
+        throw new Error("Expected the valid retry to create one command");
+      }
+      const claimed = await computerUse.claimNextComputerUseCommand(
+        host.hostToken,
+        HOST_CAPABILITIES,
+      );
+      expect(claimed).toMatchObject({
+        status: "command",
+        command: { id: validCommandId, status: "running" },
+      });
+      await computerUse.completeComputerUseCommandWith(
+        host.hostToken,
+        validCommandId,
+        {
+          status: "failed",
+          error: { code: "app_not_found", message: "R21 retry completion" },
+        },
+      );
+      await expect(
+        computerUse.claimNextComputerUseCommand(
+          host.hostToken,
+          HOST_CAPABILITIES,
+        ),
+      ).resolves.toStrictEqual({ status: "idle" });
     },
   );
 
