@@ -14,7 +14,9 @@ output publication, retry behavior, or whether a Sandbox is launched.
 disjoint ordinary input, cache-read, cache-creation, and output quantities.
 Each quantity is either a non-negative safe integer or `null` when the provider
 did not establish it. Coverage remains `complete`, `partial`, or `unavailable`;
-known zero is preserved as zero. `no-inference` is emitted only when ownership
+`complete` requires every quantity to be known, `partial` requires at least one
+known quantity, and `unavailable` requires every quantity to be `null`. Known
+zero is preserved as zero. `no-inference` is emitted only when ownership
 transfers before any provider attempt can start.
 
 Absence of `apiUsage` means the producer has no handoff-time snapshot. Readers

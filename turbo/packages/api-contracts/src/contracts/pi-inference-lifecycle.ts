@@ -37,13 +37,17 @@ export const piApiHandoffUsageSchema = z
   ])
   .superRefine((usage, context) => {
     if (usage.state === "no-inference") return;
-    const knownTokens = Object.values(usage.tokens).filter((token) => {
+    const tokens = Object.values(usage.tokens);
+    const hasKnownToken = tokens.some((token) => {
       return token !== null;
-    }).length;
+    });
+    const allTokensKnown = tokens.every((token) => {
+      return token !== null;
+    });
     const validCoverage =
-      (usage.coverage === "complete" && knownTokens === 4) ||
-      (usage.coverage === "partial" && knownTokens > 0) ||
-      (usage.coverage === "unavailable" && knownTokens === 0);
+      (usage.coverage === "complete" && allTokensKnown) ||
+      (usage.coverage === "partial" && hasKnownToken) ||
+      (usage.coverage === "unavailable" && !hasKnownToken);
     if (!validCoverage) {
       context.addIssue({
         code: "custom",
