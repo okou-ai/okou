@@ -4469,7 +4469,7 @@
             "text": "Look at my content results in {{source}} and suggest five posts to try next week. Ask me which sheet to use."
           },
           "operations_calendar": {
-            "outcome": "",
+            "outcome": "Your week, planned",
             "question": "Which calendar should we plan around?",
             "text": "Review this week’s meetings in {{source}} and make a prep list with deadlines and time I should keep free."
           },
@@ -4519,7 +4519,7 @@
             "text": "Review my research data in {{source}} and summarize patterns, missing information, and questions worth investigating."
           },
           "sales_calendar": {
-            "outcome": "",
+            "outcome": "Your sales meetings, prepared",
             "question": "Which sales meetings should we prepare for first?",
             "text": "Review my upcoming sales meetings in {{source}} and draft a prep checklist for each prospect."
           },

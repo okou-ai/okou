@@ -4150,480 +4150,490 @@
     },
     "sourcesFirst": {
       "common": {
-        "back": "",
-        "cancel": "",
-        "continue": "",
-        "finish": "",
-        "notNow": "",
-        "skip": ""
+        "back": "Kembali",
+        "cancel": "Batal",
+        "continue": "Lanjutkan",
+        "finish": "Selesaikan penyiapan",
+        "notNow": "Nanti saja",
+        "skip": "Lewati dulu"
       },
       "documentTitles": {
-        "experience": "",
-        "industry": "",
-        "ready": "",
-        "skills": "",
-        "slack": "",
-        "sources": "",
-        "subscription": "",
-        "team": ""
+        "experience": "Pengalaman AI Anda",
+        "industry": "Pilih bidang Anda",
+        "ready": "Okou sudah siap",
+        "skills": "Impor skill Anda",
+        "slack": "Tambahkan Okou ke Slack",
+        "sources": "Hubungkan pekerjaan Anda",
+        "subscription": "Hubungkan langganan Anda",
+        "team": "Undang rekan kerja"
       },
       "experience": {
-        "copy": "",
-        "no": "",
-        "noCopy": "",
-        "title": "",
-        "yes": "",
-        "yesCopy": ""
+        "copy": "Ini hanya mengubah apa yang kami siapkan berikutnya.",
+        "no": "Belum, ini yang pertama",
+        "noCopy": "Lewati penyiapan. Okou yang memilihkan tugas pertama untuk Anda.",
+        "title": "Pernah memakai Codex atau Claude Code?",
+        "yes": "Ya, pernah",
+        "yesCopy": "Hubungkan paket Anda dan bawa file SKILL.md sebagai workflow."
       },
       "industries": {
         "coaching": {
-          "name": "",
-          "summary": ""
+          "name": "Coaching & pelatihan",
+          "summary": "Coaching, kursus & pelatihan"
         },
         "consulting": {
-          "name": "",
-          "summary": ""
+          "name": "Konsultan independen",
+          "summary": "Penasihat bisnis, SDM & TI"
         },
         "design": {
-          "name": "",
-          "summary": ""
+          "name": "Desain & kreatif",
+          "summary": "Grafis, situs web & karya kreatif"
         },
         "finance": {
-          "name": "",
-          "summary": ""
+          "name": "Akuntansi & pembukuan",
+          "summary": "Pembukuan, laporan & rekonsiliasi"
         },
         "investing": {
-          "name": "",
-          "summary": ""
+          "name": "Investasi & riset pasar",
+          "summary": "Investasi, pasar & portofolio"
         },
         "marketing": {
-          "name": "",
-          "summary": ""
+          "name": "Marketing & konten",
+          "summary": "Media sosial, konten & brand"
         },
         "operations": {
-          "name": "",
-          "summary": ""
+          "name": "Bisnis & operasional",
+          "summary": "Pemilik bisnis, asisten & operasional"
         },
         "other": {
-          "name": "",
-          "summary": ""
+          "name": "Lainnya / masih menjajaki",
+          "summary": "Bidang lain, atau masih menjajaki"
         },
         "research": {
-          "name": "",
-          "summary": ""
+          "name": "Riset & pembelajaran",
+          "summary": "Riset, studi & pembelajaran"
         },
         "sales": {
-          "name": "",
-          "summary": ""
+          "name": "Sales & pengembangan pelanggan",
+          "summary": "Prospek, penjualan & pertumbuhan klien"
         },
         "software": {
-          "name": "",
-          "summary": ""
+          "name": "Software & aplikasi",
+          "summary": "Aplikasi, game & pengembangan"
         }
       },
       "industry": {
-        "copy": "",
-        "title": ""
+        "copy": "Okou memakai ini untuk memilih tugas pertama Anda dan sumber yang jadi titik awalnya.",
+        "title": "Pekerjaan Anda seperti apa?"
       },
       "skills": {
-        "confirm": "",
-        "copy": "",
-        "import": "",
-        "importedCopy": "",
-        "importedTitle": "",
-        "panelCopy": "",
-        "panelTitle": "",
-        "previewCopy": "",
-        "previewTitle": "",
-        "replace": "",
-        "title": ""
+        "confirm": "Impor dan lanjutkan",
+        "copy": "Impor sebuah SKILL.md dan ia menjadi workflow di Okou, siap dijalankan dengan /.",
+        "import": "Pilih file",
+        "importedCopy": "Diimpor sebagai workflow Okou.",
+        "importedTitle": "Workflow Anda siap",
+        "panelCopy": "Dari Codex, Claude Code, atau agent mana pun yang menulisnya.",
+        "panelTitle": "Letakkan SKILL.md di sini",
+        "previewCopy": "Diimpor sebagai workflow Okou. Hanya Anda yang bisa memakainya sampai dibagikan.",
+        "previewTitle": "Tinjau skill Anda",
+        "replace": "Pilih file lain",
+        "title": "Bawa skill yang sudah Anda tulis."
       },
       "slack": {
-        "add": "",
-        "connectedCopy": "",
-        "connectedStatus": "",
-        "connectedTitle": "",
-        "copy": "",
-        "otherAdded": "",
-        "otherImessage": "",
-        "othersLabel": "",
-        "otherTeams": "",
-        "otherTelegram": "",
-        "previewAppBadge": "",
-        "previewAsk": "",
-        "previewAskAuthor": "",
-        "previewChannel": "",
-        "previewChannelGeneral": "",
-        "previewChannelLaunch": "",
-        "previewChannelsLabel": "",
-        "previewChannelTopic": "",
-        "previewComposer": "",
-        "previewContext": "",
-        "previewContextAuthor": "",
-        "previewContextTime": "",
-        "previewDirectMessagesLabel": "",
-        "previewMention": "",
-        "previewReplies": "",
-        "previewReply": "",
-        "previewReplyAuthor": "",
-        "previewReplyTime": "",
-        "previewTime": "",
-        "previewWorkspace": "",
-        "rowCopy": "",
-        "rowTitle": "",
-        "title": ""
+        "add": "Tambahkan ke Slack",
+        "connectedCopy": "Buka Slack dan sebut @Okou untuk memberinya tugas.",
+        "connectedStatus": "Ditambahkan ke workspace Anda",
+        "connectedTitle": "Slack terhubung",
+        "copy": "Tambahkan sekali, lalu sebut @Okou di tempat pekerjaan sudah berjalan.",
+        "otherAdded": "Ditambahkan",
+        "otherImessage": "iMessage",
+        "othersLabel": "Tambahkan nanti, atau sekarang",
+        "otherTeams": "Teams",
+        "otherTelegram": "Telegram",
+        "previewAppBadge": "APP",
+        "previewAsk": "tarik pendaftaran minggu lalu per sumber, cocokkan dengan akun iklan, lalu taruh tabelnya di spreadsheet.",
+        "previewAskAuthor": "Mia Chen",
+        "previewChannel": "# growth",
+        "previewChannelGeneral": "# general",
+        "previewChannelLaunch": "# launch",
+        "previewChannelsLabel": "Kanal",
+        "previewChannelTopic": "Angka mingguan dan yang akan kami rilis",
+        "previewComposer": "Pesan ke #growth",
+        "previewContext": "Rapat dewan hari Kamis dan saya masih berutang angka minggu lalu.",
+        "previewContextAuthor": "Dan Rivera",
+        "previewContextTime": "9:06 AM",
+        "previewDirectMessagesLabel": "Pesan langsung",
+        "previewMention": "@Okou",
+        "previewReplies": "3 balasan",
+        "previewReply": "1.284 pendaftaran minggu lalu, naik 18% dari 1.088. Sheet-nya ada di thread.",
+        "previewReplyAuthor": "Okou",
+        "previewReplyTime": "9:16 AM",
+        "previewTime": "9:14 AM",
+        "previewWorkspace": "Northwind",
+        "rowCopy": "Bekerja di kanal mana pun tempat Anda menambahkannya.",
+        "rowTitle": "Okou for Slack",
+        "title": "Beri Okou pekerjaan tanpa meninggalkan Slack."
       },
       "sources": {
-        "copy": "",
-        "note": "",
-        "searchAction": "",
-        "searchCopy": "",
-        "searchEmpty": "",
-        "searchPlaceholder": "",
-        "searchTitle": "",
-        "title": ""
+        "copy": "Ia bekerja di cloud, dari alat yang sudah dipakai tim Anda. Hasil 10x lipat, hambatan operasional lebih sedikit, biaya lebih rendah. Hubungkan satu sumber untuk memulai.",
+        "note": "Anda yang memilih akun mana yang dihubungkan.",
+        "searchAction": "Cari sumber untuk pekerjaan Anda",
+        "searchCopy": "Telusuri seluruh katalog berdasarkan tugas atau nama aplikasi.",
+        "searchEmpty": "Tidak ada sumber yang cocok",
+        "searchPlaceholder": "Cari berdasarkan tugas atau nama aplikasi",
+        "searchTitle": "Cari sumber untuk pekerjaan Anda",
+        "title": "Okou untuk Anda, dan dipakai bersama seluruh tim."
       },
       "startingPrompt": {
         "exact": {
           "finance_quickbooks": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Gambaran tutup buku Anda",
+            "question": "Perusahaan dan bulan pelaporan mana yang dipakai?",
+            "text": "Ringkas pendapatan, pengeluaran, dan tagihan jatuh tempo bulan lalu di QuickBooks. Beri saya daftar singkat hal yang perlu dicek."
           },
           "finance_xero": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Gambaran tutup buku Anda",
+            "question": "Organisasi dan bulan pelaporan mana yang dipakai?",
+            "text": "Ringkas pendapatan, pengeluaran, dan tagihan jatuh tempo bulan lalu di Xero. Beri saya daftar singkat hal yang perlu dicek."
           },
           "marketing_google_ads": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tiga ide untuk uji kampanye berikutnya",
+            "question": "Akun, kampanye, dan tujuan mana yang jadi fokus?",
+            "text": "Tinjau hasil Google Ads minggu lalu dan sarankan tiga hal untuk diselidiki atau diuji berikutnya. Biarkan setiap perubahan sebagai rekomendasi."
           },
           "marketing_google_analytics": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tiga peluang di trafik Anda",
+            "question": "Properti dan sasaran konversi mana yang dipakai?",
+            "text": "Tinjau trafik minggu lalu di Google Analytics dan sarankan tiga peluang untuk memperbaiki konten atau landing page saya."
           },
           "marketing_google_search_console": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Lima perbaikan konten untuk dikerjakan",
+            "question": "Situs dan periode mana yang jadi fokus?",
+            "text": "Tinjau hasil Google Search Console terbaru saya dan sarankan lima perbaikan konten berdasarkan kueri pencarian dan halaman."
           },
           "marketing_meta_ads": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tiga ide untuk uji materi berikutnya",
+            "question": "Kampanye dan audiens mana yang jadi fokus?",
+            "text": "Tinjau hasil Meta Ads minggu lalu dan sarankan tiga ide materi untuk diuji berikutnya. Biarkan setiap perubahan sebagai rekomendasi."
           },
           "marketing_tiktok_ads": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tiga ide untuk uji materi berikutnya",
+            "question": "Kampanye dan audiens mana yang jadi fokus?",
+            "text": "Tinjau hasil TikTok Ads minggu lalu dan sarankan tiga ide materi untuk diuji berikutnya. Biarkan setiap perubahan sebagai rekomendasi."
           },
           "marketing_youtube": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Lima ide untuk video berikutnya",
+            "question": "Kanal dan video mana yang kita tinjau?",
+            "text": "Tinjau video YouTube terbaru saya dan sarankan lima topik lanjutan berdasarkan performa dan tanggapan audiens yang tersedia."
           },
           "sales_google_contacts": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Orang untuk dihubungi lagi",
+            "question": "Prospek seperti apa yang ingin Anda hubungi lagi?",
+            "text": "Tinjau Google Contacts saya dan bantu pilih orang untuk dihubungi lagi dalam pekerjaan sales saya. Tanyakan dulu seperti apa prospek yang baik."
           },
           "sales_hubspot": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Lima deal untuk didorong maju",
+            "question": "Pipeline atau pemilik deal mana yang jadi fokus?",
+            "text": "Tinjau deal HubSpot saya yang masih terbuka dan sarankan lima tindak lanjut untuk minggu ini, dengan alasan masing-masing."
           },
           "software_github": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Catatan rilis yang berguna bagi pelanggan",
+            "question": "Repositori dan rilis mana yang kita mulai?",
+            "text": "Ubah perubahan minggu lalu di GitHub menjadi catatan rilis yang jelas untuk pelanggan. Tanyakan repositori mana yang dipakai."
           },
           "software_linear": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Kemajuan proyek Anda, dalam satu tempat",
+            "question": "Proyek Linear mana yang jadi fokus?",
+            "text": "Ringkas pekerjaan saat ini di Linear menjadi item yang selesai, hambatan, dan prioritas berikutnya. Tanyakan proyek mana yang dipakai."
           }
         },
         "fallback": {
+          "calendar": {
+            "outcome": "Rapat Anda berikutnya, siap",
+            "question": "Kalender dan rapat mana yang kita siapkan?",
+            "text": "Tinjau rapat {{short}} saya berikutnya di {{source}} dan susun checklist persiapan singkat. Tanyakan kalender mana yang dipakai."
+          },
           "generic": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tugas pertama yang berguna dengan {{source}}",
+            "question": "Apa yang ingin Anda capai dengan sumber ini?",
+            "text": "Bantu saya memakai {{source}} untuk pekerjaan {{short}} saya. Tanyakan apa yang ingin saya capai, lalu sarankan satu tugas berguna dari informasi yang ada di sana."
           },
           "noSource": {
-            "question": ""
+            "question": "Apa yang ingin saya kerjakan lebih dulu?"
+          },
+          "projects": {
+            "outcome": "Prioritas proyek Anda berikutnya",
+            "question": "Proyek atau workspace mana yang kita mulai?",
+            "text": "Tinjau pekerjaan {{short}} saya di {{source}} dan ringkas tugas terbuka, hambatan, dan langkah berikutnya. Tanyakan proyek mana yang dipakai."
           }
         },
         "family": {
           "coaching_calendar": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Sesi Anda berikutnya, siap",
+            "question": "Kalender dan tujuan sesi mana yang dipakai?",
+            "text": "Lihat sesi coaching minggu ini di {{source}} dan bantu saya menyiapkan agenda untuk tiap sesi. Tanyakan tujuan sesinya."
           },
           "coaching_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Rencana aksi untuk klien Anda",
+            "question": "Catatan sesi mana yang jadi rencana aksi?",
+            "text": "Ubah catatan sesi di {{source}} menjadi rencana aksi klien dengan tiga latihan dan satu fokus untuk sesi berikutnya. Tanyakan catatan mana yang dipakai."
           },
           "coaching_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Agenda sesi Anda berikutnya",
+            "question": "Klien mana yang kita siapkan?",
+            "text": "Tinjau email {{source}} terbaru dari seorang klien coaching dan susun agenda sesi berikutnya seputar pertanyaan dan tujuan mereka."
           },
           "coaching_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Daftar peserta yang perlu ditemui",
+            "question": "Lembar kemajuan peserta mana yang dipakai?",
+            "text": "Tinjau lembar kemajuan peserta saya di {{source}} dan sarankan siapa yang perlu ditemui dan apa yang perlu dibahas. Tanyakan sheet mana yang dipakai."
           },
           "consulting_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Proposal dari brief klien Anda",
+            "question": "Brief klien mana yang jadi proposal?",
+            "text": "Ubah brief klien di {{source}} menjadi kerangka proposal dengan ruang lingkup, deliverable, dan pertanyaan terbuka. Tanyakan brief mana yang dipakai."
           },
           "consulting_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tindak lanjut klien Anda berikutnya",
+            "question": "Percakapan klien mana yang dipakai?",
+            "text": "Tinjau percakapan klien terbaru saya di {{source}} dan susun tindak lanjut berisi langkah yang disepakati dan pertanyaan yang perlu dijawab."
           },
           "consulting_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Update kemajuan untuk klien Anda",
+            "question": "Pelacak proyek klien mana yang kita mulai?",
+            "text": "Tinjau pelacak proyek klien di {{source}} dan susun update kemajuan singkat dengan risiko dan langkah berikutnya. Tanyakan sheet mana yang dipakai."
           },
           "design_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Arah kreatif yang jelas",
+            "question": "Folder proyek atau brief mana yang kita mulai?",
+            "text": "Pakai folder proyek atau brief di {{source}} untuk menyusun arah kreatif, checklist aset, dan langkah berikutnya. Tanyakan proyek mana yang dipakai."
           },
           "design_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Brief dari masukan klien",
+            "question": "Percakapan klien mana yang jadi brief?",
+            "text": "Ubah percakapan klien terbaru di {{source}} menjadi brief kreatif dengan tujuan, deliverable, dan pertanyaan terbuka."
           },
           "design_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Prioritas desain Anda berikutnya",
+            "question": "Pelacak proyek mana yang saya lihat?",
+            "text": "Ubah pelacak proyek saya di {{source}} menjadi daftar prioritas desain, tenggat, dan aset yang belum ada. Tanyakan sheet mana yang dipakai."
           },
           "finance_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Checklist tutup buku Anda",
+            "question": "Catatan tutup buku mana yang saya pakai?",
+            "text": "Ubah catatan tutup buku saya di {{source}} menjadi checklist berisi dokumen yang kurang, pertanyaan terbuka, dan tindak lanjut ke klien. Tanyakan catatan mana yang dipakai."
           },
           "finance_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Daftar tindak lanjut dokumen yang kurang",
+            "question": "Klien dan periode pelaporan mana yang jadi fokus?",
+            "text": "Cari email klien terbaru di {{source}} tentang faktur atau dokumen yang kurang dan susun daftar tindak lanjut pembukuan."
           },
           "finance_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Hasil tinjauan rekonsiliasi Anda",
+            "question": "Lembar rekonsiliasi dan periode mana yang dipakai?",
+            "text": "Tinjau lembar rekonsiliasi saya di {{source}} dan tandai catatan yang tidak cocok, selisih, dan hal yang perlu dicek. Tanyakan sheet mana yang dipakai."
           },
           "investing_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tesis investasi Anda, tertata",
+            "question": "Catatan perusahaan atau investasi mana yang kita tinjau?",
+            "text": "Ubah catatan investasi di {{source}} menjadi ringkasan berisi tesis, bukti pendukung, risiko, dan pertanyaan terbuka. Tanyakan catatan mana yang dipakai."
           },
           "investing_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Riset terbaru Anda, diringkas",
+            "question": "Pasar atau email riset mana yang jadi fokus?",
+            "text": "Ringkas email riset pasar terbaru di {{source}} menjadi tema utama, sumber bertanggal, dan pertanyaan untuk diselidiki."
           },
           "investing_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Yang perlu diriset berikutnya",
+            "question": "Watchlist dan periode tercatat mana yang dipakai?",
+            "text": "Tinjau watchlist saya di {{source}}. Tandai data yang hilang dan perubahan pada angka yang tercatat, lalu sarankan tiga hal untuk diriset berikutnya."
           },
           "marketing_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Lima posting dari brief brand Anda",
+            "question": "Brief brand dan audiens mana yang kita mulai?",
+            "text": "Ubah brief brand di {{source}} menjadi lima posting media sosial untuk minggu depan. Tanyakan brief dan audiens mana yang dipakai."
           },
           "marketing_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Lima ide posting dari pertanyaan pelanggan",
+            "question": "Percakapan produk atau pelanggan mana yang jadi fokus?",
+            "text": "Cari pertanyaan pelanggan yang berulang di email {{source}} saya sepekan terakhir dan ubah menjadi lima ide posting media sosial."
           },
           "marketing_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Lima ide untuk minggu depan",
+            "question": "Sheet mana yang berisi hasil konten?",
+            "text": "Lihat hasil konten saya di {{source}} dan sarankan lima posting untuk dicoba minggu depan. Tanyakan sheet mana yang dipakai."
           },
           "operations_calendar": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Minggu Anda, terencana",
+            "question": "Kalender mana yang jadi dasar perencanaan?",
+            "text": "Tinjau rapat minggu ini di {{source}} dan buat daftar persiapan dengan tenggat dan waktu yang perlu saya kosongkan."
           },
           "operations_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Proses yang bisa diikuti tim Anda",
+            "question": "Dokumen proses mana yang jadi checklist?",
+            "text": "Ubah dokumen proses di {{source}} menjadi checklist praktis dengan penanggung jawab, tenggat, dan langkah yang belum ada. Tanyakan proses mana yang dipakai."
           },
           "operations_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Yang perlu perhatian Anda hari ini",
+            "question": "Percakapan pelanggan atau pemasok mana yang diprioritaskan?",
+            "text": "Ringkas email pelanggan dan pemasok hari ini di {{source}}. Tarik permintaan mendesak, tenggat, dan balasan yang harus saya tangani lebih dulu."
           },
           "operations_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tiga prioritas Anda berikutnya",
+            "question": "Pelacak operasional mana yang kita tinjau?",
+            "text": "Tinjau pelacak operasional saya di {{source}} dan tandai pekerjaan yang terlambat, hambatan, dan tiga prioritas berikutnya. Tanyakan sheet mana yang dipakai."
           },
           "other_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Dokumen Anda, diringkas",
+            "question": "Dokumen mana yang kita mulai?",
+            "text": "Ubah sebuah dokumen di {{source}} menjadi ringkasan singkat dan tiga langkah lanjutan yang berguna. Tanyakan dokumen mana yang dipakai."
           },
           "other_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Prioritas kotak masuk Anda",
+            "question": "Percakapan mana yang jadi fokus?",
+            "text": "Ringkas email kerja saya hari ini di {{source}} dan beri tahu mana yang perlu balasan atau keputusan."
           },
           "other_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Kemajuan Anda sekilas",
+            "question": "Pelacak mana yang saya tinjau?",
+            "text": "Ubah sebuah pelacak di {{source}} menjadi update kemajuan singkat dan daftar hal yang perlu perhatian. Tanyakan sheet mana yang dipakai."
           },
           "research_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Riset Anda dalam satu halaman",
+            "question": "Catatan atau topik riset mana yang jadi fokus?",
+            "text": "Ubah catatan riset saya di {{source}} menjadi ringkasan satu halaman berisi temuan utama, sumber, dan pertanyaan yang belum terjawab. Tanyakan catatan mana yang dipakai."
           },
           "research_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Diskusi riset Anda, diringkas",
+            "question": "Percakapan riset mana yang kita ringkas?",
+            "text": "Ubah diskusi riset di {{source}} menjadi ringkasan temuan, referensi, dan pertanyaan terbuka. Tanyakan percakapan mana yang dipakai."
           },
           "research_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Pola dalam riset Anda",
+            "question": "Dataset dan pertanyaan riset mana yang kita mulai?",
+            "text": "Tinjau data riset saya di {{source}} dan ringkas pola, informasi yang hilang, dan pertanyaan yang layak diselidiki."
           },
           "sales_calendar": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Rapat sales Anda, siap",
+            "question": "Rapat sales mana yang kita siapkan lebih dulu?",
+            "text": "Tinjau rapat sales saya berikutnya di {{source}} dan susun checklist persiapan untuk tiap prospek."
           },
           "sales_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Panggilan sales Anda berikutnya, siap",
+            "question": "Prospek mana yang kita siapkan?",
+            "text": "Ubah brief prospek di {{source}} menjadi pertanyaan discovery dan pitch singkat untuk panggilan sales berikutnya. Tanyakan prospek mana yang dipakai."
           },
           "sales_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tiga tindak lanjut untuk mendorong deal",
+            "question": "Prospek atau thread email mana yang kita mulai?",
+            "text": "Tinjau percakapan prospek terbaru saya di {{source}} dan susun tiga tindak lanjut berdasarkan pertanyaan dan langkah berikutnya mereka."
           },
           "sales_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Lima prospek untuk ditindaklanjuti",
+            "question": "Daftar lead dan kriteria pelanggan mana yang dipakai?",
+            "text": "Tinjau daftar lead saya di {{source}} dan pilih lima prospek untuk ditindaklanjuti, memakai informasi yang sudah ada di sheet."
           },
           "software_documents": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Fitur Anda, dengan ruang lingkup jelas",
+            "question": "Brief fitur mana yang kita pakai?",
+            "text": "Ubah brief fitur di {{source}} menjadi ruang lingkup yang jelas, kriteria penerimaan, dan pertanyaan terbuka. Tanyakan brief mana yang dipakai."
           },
           "software_email": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Tiga tema masukan untuk diselidiki",
+            "question": "Thread masukan produk atau pelanggan mana yang dipakai?",
+            "text": "Kelompokkan masukan produk terbaru di {{source}} menjadi tema dan sarankan tiga isu untuk diselidiki lebih dulu."
           },
           "software_sheets": {
-            "outcome": "",
-            "question": "",
-            "text": ""
+            "outcome": "Penghambat rilis Anda, dalam satu tempat",
+            "question": "Pelacak bug atau rilis mana yang saya tinjau?",
+            "text": "Tinjau pelacak bug atau rilis di {{source}} dan ringkas hambatan, penanggung jawab, dan langkah berikutnya. Tanyakan sheet mana yang dipakai."
           }
         },
         "profile": {
           "coaching": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Susun kerangka sesi pelatihan praktis dengan tujuan belajar, aktivitas, dan latihan penutup. Tanyakan dulu siapa pesertanya dan topiknya.",
+            "firstTaskTitle": "Susun sesi pelatihan",
+            "short": "coaching & pelatihan"
           },
           "consulting": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Siapkan ringkasan bersumber tentang calon klien: bisnisnya, perkembangan terbaru, dan pertanyaan untuk pertemuan pertama. Tanyakan nama perusahaannya.",
+            "firstTaskTitle": "Riset calon klien",
+            "short": "konsultasi"
           },
           "design": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Bantu saya menulis brief kreatif berisi audiens, pesan, deliverable, dan arah visual. Tanyakan dulu tentang proyeknya.",
+            "firstTaskTitle": "Buat brief kreatif",
+            "short": "karya kreatif"
           },
           "finance": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Bantu saya menyusun checklist tutup buku bulanan untuk pekerjaan pembukuan saya. Tanyakan dulu tentang bisnis dan kebutuhan pelaporannya.",
+            "firstTaskTitle": "Siapkan checklist tutup buku",
+            "short": "akuntansi"
           },
           "investing": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Siapkan ringkasan riset perusahaan berisi model bisnis, laporan publik terbaru, risiko utama, dan sumber bertanggal. Tanyakan perusahaan mana yang diriset.",
+            "firstTaskTitle": "Riset sebuah perusahaan",
+            "short": "riset investasi"
           },
           "marketing": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Bandingkan konten publik tiga kompetitor dan sarankan tiga sudut pandang untuk brand saya. Tanyakan brand dan audiens mana yang jadi fokus.",
+            "firstTaskTitle": "Riset kompetitor saya",
+            "short": "marketing"
           },
           "operations": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Bantu saya merencanakan minggu ini seputar prioritas, tenggat, dan rapat. Tanyakan apa yang paling penting dan apa yang sudah terjadwal.",
+            "firstTaskTitle": "Rencanakan minggu kerja saya",
+            "short": "operasional"
           },
           "other": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Bantu saya mengubah satu tujuan kerja menjadi rencana praktis dengan prioritas dan langkah berikutnya. Tanyakan tujuan, tenggat, dan batasannya.",
+            "firstTaskTitle": "Ubah tujuan jadi rencana",
+            "short": "kerja"
           },
           "research": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Siapkan ringkasan riset dengan sumber tepercaya, temuan utama, dan pertanyaan terbuka. Tanyakan topik saya dan apa yang perlu saya pelajari.",
+            "firstTaskTitle": "Riset sebuah topik",
+            "short": "riset"
           },
           "sales": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Riset bisnis yang cocok dengan pelanggan ideal saya dan buat daftar pendek dengan sumber publik dan alasan kecocokannya. Tanyakan penawaran dan pasar sasaran saya.",
+            "firstTaskTitle": "Temukan calon pelanggan",
+            "short": "sales"
           },
           "software": {
-            "firstTaskPrompt": "",
-            "firstTaskTitle": "",
-            "short": ""
+            "firstTaskPrompt": "Bantu saya menulis brief fitur berisi masalah pengguna, perilaku yang diharapkan, kriteria penerimaan, dan pertanyaan terbuka. Tanyakan dulu tentang fiturnya.",
+            "firstTaskTitle": "Tulis brief fitur",
+            "short": "software"
           }
         }
       },
       "subscription": {
-        "claudeCode": "",
-        "codex": "",
-        "copy": "",
-        "rowCopy": "",
-        "title": ""
+        "claudeCode": "Claude Code",
+        "codex": "Codex",
+        "copy": "Secara bawaan Okou berjalan dengan kredit Okou. Hubungkan paket Anda sendiri dan ia berjalan di sana.",
+        "rowCopy": "Menjalankan pekerjaan Anda di paket ini, jadi tidak memakai kredit Okou.",
+        "title": "Hubungkan paket yang sudah Anda bayar."
       },
       "team": {
-        "copy": "",
-        "invite": "",
-        "invited": "",
-        "label": "",
-        "note": "",
-        "panelTitle": "",
-        "placeholder": "",
+        "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",
+        "invite": "Kirim undangan",
+        "invited": "Diundang",
+        "label": "Email rekan kerja",
+        "note": "Mereka bergabung ke workspace ini; akun mereka tetap milik mereka.",
+        "panelTitle": "Undang rekan kerja",
+        "placeholder": "teammate@company.com",
         "points": {
-          "accounts": "",
-          "workflows": "",
-          "workspace": ""
+          "accounts": "Akun yang mereka hubungkan tetap milik mereka — tidak ada yang dibagikan tanpa mereka.",
+          "workflows": "Siapa pun di sini bisa menjalankan workflow yang sudah ada di workspace ini.",
+          "workspace": "Mereka masuk ke workspace ini, dengan sumber yang baru Anda hubungkan."
         },
-        "title": ""
+        "title": "Bawa serta orang-orang yang mengerjakan ini bersama Anda."
       },
       "welcome": {
-        "copy": "",
-        "offerTitle": "",
-        "promptLabel": "",
-        "start": "",
-        "title": ""
+        "copy": "Mulai dengan tugas pertama, dipilih untuk pekerjaan yang baru Anda hubungkan.",
+        "offerTitle": "Satu jam pertama konsultasi gratis dari kami, plus hingga 100 kredit —",
+        "promptLabel": "Prompt awal Anda",
+        "start": "Mulai dengan Okou",
+        "title": "Okou siap untuk Anda"
       }
     },
     "templatePicker": {
