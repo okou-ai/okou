@@ -1988,7 +1988,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestClaimRunnerJob(true, failed.runId, [404]);
   });
 
-  it("overlaps request and session storage preparation while preserving request errors", async () => {
+  it("overlaps large request and session storage preparation while preserving request errors", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -2105,17 +2105,20 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     );
 
+    const requestMountPaths = Array.from({ length: 17 }, (_, index) => {
+      return `/request-overlap-${index}`;
+    });
     const continuationBody = {
       sessionId: initialRun.sessionId,
       prompt: "overlap request and canonical session storage",
       secrets: { OKOU_TOKEN: "bdd-okou-direct-token" },
-      additionalVolumes: [
-        {
+      additionalVolumes: requestMountPaths.map((mountPath) => {
+        return {
           name: requestStorageName,
           version: preparedRequest.versionId,
-          mountPath: "/request-overlap",
-        },
-      ],
+          mountPath,
+        };
+      }),
     };
     const continuedRunPromise = api.createDirectRun(actor, continuationBody);
     await Promise.all([
@@ -2141,6 +2144,47 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const sessionFailed = await api.createDirectRun(actor, continuationBody);
     expect(sessionFailed.status).toBe("failed");
     expect(sessionFailed.error).toBe(sessionError.message);
+
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
+    );
+    const largeRun = await api.createDirectRun(actor, continuationBody);
+    const largeClaim = await api.claimRunnerJob(largeRun.runId);
+    const largeManifest = expectCanonicalStorageManifest(
+      largeClaim.storageManifest,
+    );
+    if (!largeManifest) {
+      throw new Error("Expected a canonical large Storage manifest");
+    }
+    const requestMounts = largeManifest.storageMounts.filter((mount) => {
+      return mount.name === requestStorageName;
+    });
+    expect(
+      requestMounts.map((mount) => {
+        return mount.mountPath;
+      }),
+    ).toStrictEqual(requestMountPaths);
+    expect(requestMounts).toHaveLength(17);
+    for (const mount of requestMounts) {
+      expect(mount).toMatchObject({
+        storageId: expect.any(String),
+        versionId: preparedRequest.versionId,
+      });
+    }
+    expect(largeManifest.storageMounts).toContainEqual(
+      expect.objectContaining({
+        name: initialMemory.name,
+        storageId: initialMemory.storageId,
+        versionId: preparedMemory.versionId,
+        mountPath: initialMemory.mountPath,
+        writeback: true,
+      }),
+    );
+    for (const mount of largeManifest.storageMounts) {
+      expect(mount).not.toHaveProperty("orgId");
+      expect(mount).not.toHaveProperty("userId");
+    }
+    await api.requestCancelRun(actor, largeRun.runId, [200]);
   });
 
   it("prepares the storage manifest without uploading empty artifact objects", async () => {
