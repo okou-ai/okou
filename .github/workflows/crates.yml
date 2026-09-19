@@ -310,7 +310,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -428,7 +428,7 @@ jobs:
     env:
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -502,7 +502,7 @@ jobs:
     timeout-minutes: 10
     container:
       # Generation formats Rust output with the same toolchain as native checks.
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [detect]
     if: |
       needs.detect.outputs.ci-changed == 'true' ||
@@ -523,7 +523,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [detect]
     # Full coverage already runs this assertion; keep only the fixture-only path.
     if: |
@@ -614,7 +614,7 @@ jobs:
   nbd-cow-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' && (
@@ -694,7 +694,7 @@ jobs:
   runner-rootfs-process-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' && (
@@ -1050,7 +1050,7 @@ jobs:
   host-cpu-fairness-build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs:
       - detect
       - runner-host-groups
@@ -1106,7 +1106,7 @@ jobs:
   host-cpu-fairness-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs:
       - detect
       - runner-build
@@ -1164,7 +1164,7 @@ jobs:
   guest-rpc-firecracker-build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [detect, runner-host-groups]
     if: needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true'
     timeout-minutes: 15
@@ -1211,7 +1211,7 @@ jobs:
   guest-rpc-firecracker-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     needs: [runner-build, guest-rpc-firecracker-build]
     timeout-minutes: 15
     defaults:

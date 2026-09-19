@@ -38,7 +38,7 @@ export function assertSha256(value, label) {
 function validateConfigShape(config) {
   if (
     config.schemaVersion !== 1 ||
-    config.source?.repository !== "vm0-ai/Template-artifact" ||
+    config.source?.repository !== "maxandzoe/Template-artifact" ||
     config.source?.ref !== "main" ||
     config.source?.directory !== "Template-Presentation" ||
     !Array.isArray(config.templates) ||

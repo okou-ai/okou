@@ -291,7 +291,7 @@ jobs:
     name: Compile runner binary (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     permissions:
       contents: read
     needs: [prepare]
@@ -309,7 +309,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     steps:
       - uses: actions/checkout@v7.0.1
 

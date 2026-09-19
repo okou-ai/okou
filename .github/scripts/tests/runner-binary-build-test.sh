@@ -357,7 +357,10 @@ workflow_toolchain=$(awk '
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 [ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "2" ] \
   || fail "runner binary input schema must start generation 2"
-[ "$workflow_toolchain" = "$RUNNER_BINARY_TOOLCHAIN_IMAGE" ] \
-  || fail "Runner Image workflow toolchain must match the hashed build contract"
+[ "$workflow_toolchain" = 'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825' ] \
+  || fail "Runner Image workflow toolchain must derive its owner from GitHub context"
+expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-maxandzoe}/vm0-toolchain-rust:20260825"
+[ "$RUNNER_BINARY_TOOLCHAIN_IMAGE" = "$expected_runtime_toolchain" ] \
+  || fail "hashed build contract must derive the same runtime toolchain owner"
 
 echo "runner-binary-build-test: ok"
