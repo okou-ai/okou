@@ -25,7 +25,7 @@ import { timeout } from "signal-timers";
 import { throttleCommand } from "../command-scheduling.ts";
 import { logger } from "../log.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
-import { onDomEventFn, resetSignal } from "../utils.ts";
+import { onDomEventFn, resetSignal, setDaemon } from "../utils.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ScrollToEventOptions } from "./chat-thread-scroll.ts";
 
@@ -147,6 +147,12 @@ export interface LocatorViewportSignals {
    * React committed after the caller returned.
    */
   readonly measure$: Command<Promise<void>, [AbortSignal]>;
+  /**
+   * Starts a reading without waiting for it. Transcript mutations must not pay
+   * the throttle's interval to apply an event, so they hand the reading to the
+   * caller's lifetime and return.
+   */
+  readonly requestMeasure$: Command<void, [AbortSignal]>;
   readonly container$: Computed<HTMLElement | null>;
 }
 
@@ -359,6 +365,12 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
 
   const measure$ = throttleCommand(readNow$, MEASURE_INTERVAL_MS);
 
+  const requestMeasure$ = command(({ set }, signal: AbortSignal): void => {
+    setDaemon(async (daemonSignal) => {
+      await set(measure$, daemonSignal);
+    }, signal);
+  });
+
   const attachContainer$ = command(
     ({ set }, element: HTMLElement, signal: AbortSignal) => {
       set(internalContainer$, element);
@@ -388,6 +400,7 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     container$,
     reading$,
     measure$,
+    requestMeasure$,
   };
 }
 

@@ -4087,7 +4087,7 @@ export function createChatPanelSignals(
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
     chatEvents.chatEvents$,
-    locatorViewport.measure$,
+    locatorViewport.requestMeasure$,
   );
   const activity = createThreadActivitySummarySignals(
     threadId,
