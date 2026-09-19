@@ -1075,6 +1075,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
             return selectingStatement;
           },
           work: async (agentQuery) => {
+            const serverCancellationAllowanceMs = 1000;
             const member = await briefMember();
             targetAgentId = member.agentId;
             const { threadId } = await seedUnreadThread(member, {
@@ -1092,20 +1093,23 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
             const pending = collectRequest(member);
             await discovery.waitForBlocked();
-            // The per-thread transaction starts with only 100ms left. Pause its
-            // exact Agent read at the driver boundary, before dispatch, instead
-            // of racing a pg_stat_activity poll against that short server clock.
-            mockNow(candidateDeadline(startedAt) - 100);
+            // The per-thread transaction starts with less time than either
+            // statement cap. Pause its exact Agent read at the driver boundary,
+            // before dispatch, instead of racing a pg_stat_activity poll inside
+            // the server deadline window.
+            mockNow(
+              candidateDeadline(startedAt) - serverCancellationAllowanceMs,
+            );
             advanceAttemptIoClock?.(
               MORNING_BRIEF_CHAT_COLLECTION_BUDGET.deadlineMs -
                 MORNING_BRIEF_CHAT_COLLECTION_BUDGET.finalAuthorityReserveMs -
-                100,
+                serverCancellationAllowanceMs,
             );
             await discovery.release();
             await expect(agentQuery.entered).resolves.toMatchObject({
               lockTimeout: "2s",
               statementTimeout: "5s",
-              transactionTimeout: "100ms",
+              transactionTimeout: "1s",
             });
 
             // Move the application clock to the same absolute boundary before
@@ -1114,6 +1118,7 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
             mockNow(candidateDeadline(startedAt));
             agentQuery.release();
             const response = await accept(pending, [200]);
+            await agent.release();
 
             expect(response.body).toMatchObject({
               result: "no-eligible-content",
@@ -1123,7 +1128,6 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
               truncations: ["deadline_exceeded"],
             });
             expect(JSON.stringify(response.body)).not.toContain(threadId);
-            await agent.release();
 
             // The timed-out transaction was awaited and rolled back
             // (PostgreSQL may replace its terminated session); the same route
