@@ -15,6 +15,7 @@ import {
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
   updateSourcesFirstUi$,
+  type ChatChannelId,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import {
   OnboardingIllustration,
@@ -483,6 +484,81 @@ function SlackPreview() {
   );
 }
 
+/**
+ * The same mention works in Telegram, iMessage and Teams. They sit under
+ * Slack's own button, each with its mark beside the name.
+ */
+function OtherChatChannels({
+  picked,
+  onPick,
+}: {
+  readonly picked: readonly ChatChannelId[];
+  readonly onPick: (channel: ChatChannelId) => void;
+}) {
+  const { t } = useTranslation();
+  const channels = [
+    {
+      id: "telegram",
+      mark: "telegram",
+      label: t(($) => {
+        return $.onboarding.sourcesFirst.slack.otherTelegram;
+      }),
+    },
+    {
+      id: "imessage",
+      mark: "imessage",
+      label: t(($) => {
+        return $.onboarding.sourcesFirst.slack.otherImessage;
+      }),
+    },
+    {
+      id: "teams",
+      mark: "teams",
+      label: t(($) => {
+        return $.onboarding.sourcesFirst.slack.otherTeams;
+      }),
+    },
+  ] as const;
+
+  return (
+    <div>
+      <p className="mb-2 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.onboarding.sourcesFirst.slack.othersLabel;
+        })}
+      </p>
+      <div className="flex gap-2">
+        {channels.map((channel) => {
+          const added = picked.includes(channel.id);
+          return (
+            <Button
+              key={channel.id}
+              type="button"
+              variant="outline"
+              className="flex-1 gap-2"
+              aria-pressed={added}
+              onClick={() => {
+                onPick(channel.id);
+              }}
+            >
+              {added
+                ? t(($) => {
+                    return $.onboarding.sourcesFirst.slack.otherAdded;
+                  })
+                : channel.label}
+              {added ? (
+                <Check size={16} aria-hidden="true" />
+              ) : (
+                <ProductMark name={channel.mark} alt="" size="mark" />
+              )}
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function OnboardingSlackPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
@@ -520,15 +596,6 @@ export function OnboardingSlackPage() {
       })}
       onSecondary={flow.goNext}
       onBack={flow.goBack}
-      footnote={
-        <span className="flex items-center gap-2">
-          <ProductMark name="telegram" alt="" size="mark" />
-          <ProductMark name="imessage" alt="" size="mark" />
-          {t(($) => {
-            return $.onboarding.sourcesFirst.slack.laterCopy;
-          })}
-        </span>
-      }
     >
       {/* One column on the step's own sheet: what it looks like in a channel,
           then the one way to add it. */}
@@ -570,6 +637,20 @@ export function OnboardingSlackPage() {
                 return $.onboarding.sourcesFirst.slack.add;
               })}
         </Button>
+        <OtherChatChannels
+          picked={flow.draft.chatChannels}
+          onPick={(channel) => {
+            // Frontend pass, as with Slack above: each channel keeps its own
+            // install once those integrations are wired.
+            updateDraft({
+              chatChannels: flow.draft.chatChannels.includes(channel)
+                ? flow.draft.chatChannels.filter((picked) => {
+                    return picked !== channel;
+                  })
+                : [...flow.draft.chatChannels, channel],
+            });
+          }}
+        />
       </div>
     </OnboardingStepLayout>
   );

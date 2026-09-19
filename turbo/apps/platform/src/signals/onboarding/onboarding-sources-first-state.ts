@@ -23,6 +23,9 @@ export type SlackSetupStatus = "disconnected" | "installed" | "connected";
 
 export type SubscriptionProvider = "codex" | "claudeCode";
 
+/** The other places a mention works, offered beside Slack on the same step. */
+export type ChatChannelId = "telegram" | "imessage" | "teams";
+
 export interface SourcesFirstDraft {
   readonly industry: IndustryId | null;
   readonly invites: readonly string[];
@@ -33,6 +36,8 @@ export interface SourcesFirstDraft {
   readonly importedWorkflowName: string | null;
   readonly slackStatus: SlackSetupStatus;
   readonly slackWorkspace: string;
+  /** Channels picked beside Slack; each still waits for its own install. */
+  readonly chatChannels: readonly ChatChannelId[];
   /** Edited copy of the matched starting prompt, kept across step changes. */
   readonly startingPromptDraft: string;
   /** `industry:source` the draft was generated from, so a later change re-seeds it. */
@@ -49,6 +54,7 @@ function emptyDraft(): SourcesFirstDraft {
     importedWorkflowName: null,
     slackStatus: "disconnected",
     slackWorkspace: "",
+    chatChannels: [],
     startingPromptDraft: "",
     startingPromptKey: "",
   };
