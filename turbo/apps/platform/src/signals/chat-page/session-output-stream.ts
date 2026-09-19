@@ -41,7 +41,7 @@ export function createSessionOutputStreamSignals(
   threadId: string,
   chatEvents$: Computed<ChatEvent[]>,
   /** Requests a fresh viewport reading after a streamed delta lands. */
-  onEventsChanged$: Command<void, []>,
+  onEventsChanged$: Command<Promise<void>, [AbortSignal]>,
 ) {
   const activeRunId$ = createActiveRunId$(chatEvents$);
   const receive$ = command(
@@ -64,7 +64,7 @@ export function createSessionOutputStreamSignals(
         return event.seqId !== undefined;
       });
       if (set(appendOptimisticSessionOutput$, result.data, persisted)) {
-        set(onEventsChanged$);
+        await set(onEventsChanged$, signal);
         await set(notifyChatEventsChanged$, chatEvents$, signal);
       }
       return false;

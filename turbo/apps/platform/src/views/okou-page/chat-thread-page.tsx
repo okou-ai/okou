@@ -3712,10 +3712,10 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   const pageSignal = useGet(pageSignal$);
   const standalonePwa = isStandalonePwa();
 
-  const requestLocatorMeasure = useSet(thread.locator.requestMeasure$);
+  const measureLocator = useSet(thread.locator.measure$);
 
   const handleScroll = (event: ReactUIEvent<HTMLDivElement>) => {
-    requestLocatorMeasure();
+    detach(measureLocator(pageSignal), Reason.DomCallback);
     if (
       event.currentTarget.scrollTop > CHAT_RENDER_LOAD_MORE_TOP_THRESHOLD_PX
     ) {

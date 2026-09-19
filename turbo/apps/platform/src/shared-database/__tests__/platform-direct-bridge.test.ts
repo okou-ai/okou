@@ -343,7 +343,10 @@ test("Cache incoming chat messages before the conversation is opened", async () 
 
   const resetOwner$ = resetSignal();
   const ownerSignal = context.store.set(resetOwner$, context.signal);
-  const signals = createChatEventSignals(unopenedThreadId, noEventsChangedHook$);
+  const signals = createChatEventSignals(
+    unopenedThreadId,
+    noEventsChangedHook$,
+  );
   await context.store.set(signals.setup$, ownerSignal);
 
   expect(

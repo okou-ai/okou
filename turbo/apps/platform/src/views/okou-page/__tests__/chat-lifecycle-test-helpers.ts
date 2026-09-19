@@ -311,4 +311,3 @@ export function setScrollMetrics(
     clientHeight: { configurable: true, value: metrics.clientHeight },
   });
 }
-

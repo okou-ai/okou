@@ -4079,10 +4079,7 @@ export function createChatPanelSignals(
   // Built before the event signals so their commands can request a viewport
   // reading directly. It owns only its own state, so nothing else moves.
   const locatorViewport = createLocatorViewportSignals();
-  const chatEvents = createChatEventSignals(
-    threadId,
-    locatorViewport.requestSettledMeasure$,
-  );
+  const chatEvents = createChatEventSignals(threadId, locatorViewport.measure$);
   const artifact = createArtifacts(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
@@ -4090,7 +4087,7 @@ export function createChatPanelSignals(
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
     chatEvents.chatEvents$,
-    locatorViewport.requestSettledMeasure$,
+    locatorViewport.measure$,
   );
   const activity = createThreadActivitySummarySignals(
     threadId,

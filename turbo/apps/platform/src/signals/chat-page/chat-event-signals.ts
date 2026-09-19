@@ -414,14 +414,18 @@ export interface ChatEventSignals {
 }
 
 /** Surfaces without a locator rail have no viewport reading to refresh. */
-export const noEventsChangedHook$ = command((): void => {
-  // Intentionally empty: the forward composer draws no rail.
-});
+export const noEventsChangedHook$ = command(
+  async (_context, signal: AbortSignal): Promise<void> => {
+    // Intentionally empty: the forward composer draws no rail.
+    signal.throwIfAborted();
+    await Promise.resolve();
+  },
+);
 
 export function createChatEventSignals(
   threadId: string,
   /** Asked for a fresh viewport reading whenever the event list changes. */
-  onEventsChanged$: Command<void, []>,
+  onEventsChanged$: Command<Promise<void>, [AbortSignal]>,
 ): ChatEventSignals {
   const events = createChatEventStorageSignals({ threadId, onEventsChanged$ });
   const sendEvent$ = createSendChatEvent({

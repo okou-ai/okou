@@ -2,11 +2,9 @@ import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import {
-  BAND_BASE_WIDTH_PX,
-  RAIL_PADDING_PX,
-} from "../../signals/chat-page/chat-conversation-locator.ts";
+import { RAIL_PADDING_PX } from "../../signals/chat-page/chat-conversation-locator.ts";
 import { onDomEventFn } from "../../signals/utils.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import { formatChatTimestamp } from "../../i18n/format.ts";
 
 /** How far the preview card sits from the rail. */
@@ -76,6 +74,7 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
   const trackPointer = useSet(thread.locator.trackPointer$);
   const leaveRail = useSet(thread.locator.leaveRail$);
   const jumpToPointer = useSet(thread.locator.jumpToPointer$);
+  const pageSignal = useGet(pageSignal$);
 
   return (
     <>
@@ -92,7 +91,7 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
           leaveRail();
         }}
         onClick={onDomEventFn(async () => {
-          await jumpToPointer();
+          await jumpToPointer(pageSignal);
         })}
         className={cn(
           // Hidden on narrow viewports: the rail needs a gutter the phone

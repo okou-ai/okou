@@ -112,10 +112,12 @@ function createSharedDatabaseEventSignals({
   persistentChatEvents$,
   chatEvents$,
   mergePersistentEvents$,
+  onEventsChanged$,
 }: {
   readonly threadId: string;
   readonly persistentChatEvents$: PersistentChatEvents$;
   readonly chatEvents$: Computed<ChatEvent[]>;
+  readonly onEventsChanged$: Command<Promise<void>, [AbortSignal]>;
   readonly mergePersistentEvents$: Command<
     Promise<void>,
     [PersistedChatEvent[], AbortSignal]
@@ -144,7 +146,7 @@ function createSharedDatabaseEventSignals({
         return mergePersistentEvents([previous, events]);
       });
       set(reconcileOptimisticChatEvents$, { threadId, events });
-      set(onEventsChanged$);
+      await set(onEventsChanged$, signal);
       await set(notifyChatEventsChanged$, chatEvents$, signal);
     },
   );
@@ -187,7 +189,7 @@ export function createChatEventStorageSignals({
 }: {
   threadId: string;
   /** Requests a fresh viewport reading after the event list changes. */
-  onEventsChanged$: Command<void, []>;
+  onEventsChanged$: Command<Promise<void>, [AbortSignal]>;
 }) {
   const persistentChatEvents$ = state<PersistedChatEvent[]>([]);
   const optimisticEvents$ = createOptimisticChatEventsForThread(threadId);
@@ -207,7 +209,7 @@ export function createChatEventStorageSignals({
       signal: AbortSignal,
     ): Promise<void> => {
       set(appendOptimisticChatEvent$, createOptimisticChatEventEntry(input));
-      set(onEventsChanged$);
+      await set(onEventsChanged$, signal);
       await set(notifyChatEventsChanged$, chatEvents$, signal);
       signal.throwIfAborted();
     },
@@ -229,13 +231,14 @@ export function createChatEventStorageSignals({
         return mergePersistentEvents([previous, events]);
       });
       set(reconcileOptimisticChatEvents$, { threadId, events });
-      set(onEventsChanged$);
+      await set(onEventsChanged$, signal);
       await set(notifyChatEventsChanged$, chatEvents$, signal);
       signal.throwIfAborted();
     },
   );
   const sharedDatabase = createSharedDatabaseEventSignals({
     threadId,
+    onEventsChanged$,
     persistentChatEvents$,
     chatEvents$,
     mergePersistentEvents$,

@@ -22,11 +22,10 @@ import {
   type State,
 } from "ccstate";
 import { timeout } from "signal-timers";
-import { debounceCommand, throttleCommand } from "../command-scheduling.ts";
+import { throttleCommand } from "../command-scheduling.ts";
 import { logger } from "../log.ts";
-import { pageSignal$ } from "../page-signal.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
-import { detach, Reason, resetSignal } from "../utils.ts";
+import { onDomEventFn, resetSignal } from "../utils.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ScrollToEventOptions } from "./chat-thread-scroll.ts";
 
@@ -50,10 +49,12 @@ const MAGNIFY_SIGMA_RATIO = 2.6;
 const HIT_INTERVAL_RATIO = 0.5;
 /** How long a jumped-to turn stays marked. */
 const LANDED_MARK_MS = 1200;
-/** Scroll reads run on a leading edge so the band tracks the thumb. */
-const SCROLL_MEASURE_INTERVAL_MS = 50;
-/** Content and resize reads wait for the change to settle. */
-const SETTLED_MEASURE_DELAY_MS = 120;
+/**
+ * Reads run on a leading edge so the band tracks the thumb, and the throttle's
+ * trailing call is what catches the layout React committed after the caller
+ * that asked for the reading had already returned.
+ */
+const MEASURE_INTERVAL_MS = 50;
 
 /** Resting length and magnification of a tick. */
 const TICK_BASE_WIDTH_PX = 7;
@@ -64,7 +65,7 @@ const TICK_GROW_RATIO = 3.1;
  * widest tick it covers, so a magnified bar never spills out of the frame that
  * is supposed to contain it.
  */
-export const BAND_BASE_WIDTH_PX = 32;
+const BAND_BASE_WIDTH_PX = 32;
 
 const SCROLL_ANCHOR_SELECTOR = "[data-chat-scroll-anchor-event-id]";
 
@@ -119,12 +120,14 @@ interface LocatorViewportReading {
   readonly enoughScroll: boolean;
 }
 
-const EMPTY_READING: LocatorViewportReading = {
-  startRatio: 0,
-  visibleRatio: 1,
-  currentEventId: null,
-  enoughScroll: false,
-};
+function emptyReading(): LocatorViewportReading {
+  return {
+    startRatio: 0,
+    visibleRatio: 1,
+    currentEventId: null,
+    enoughScroll: false,
+  };
+}
 
 /**
  * The viewport half of the locator. It owns the scroll container reference and
@@ -138,13 +141,12 @@ export interface LocatorViewportSignals {
    */
   readonly attachContainer$: Command<void, [HTMLElement, AbortSignal]>;
   readonly reading$: Computed<LocatorViewportReading>;
-  /** Leading-edge read for scrolling, so the band tracks the thumb. */
-  readonly measure$: Command<void, [AbortSignal]>;
   /**
-   * Trailing-edge read for content growth and resizes. Fire and forget; a
-   * superseded call aborts, which `detach` already treats as normal.
+   * Takes the viewport reading. Throttled: the leading call lands at once so
+   * the band tracks the thumb, and the trailing one catches the layout that
+   * React committed after the caller returned.
    */
-  readonly requestSettledMeasure$: Command<void, []>;
+  readonly measure$: Command<Promise<void>, [AbortSignal]>;
   readonly container$: Computed<HTMLElement | null>;
 }
 
@@ -159,8 +161,8 @@ export interface ChatConversationLocatorSignals {
   readonly trackPointer$: Command<void, [number, number]>;
   readonly leaveRail$: Command<void, []>;
   /** Request a scroll reading; the page lifetime owns the work. */
-  readonly requestMeasure$: Command<void, []>;
-  readonly jumpToPointer$: Command<Promise<void>, []>;
+  readonly measure$: Command<Promise<void>, [AbortSignal]>;
+  readonly jumpToPointer$: Command<Promise<void>, [AbortSignal]>;
   readonly jumpToTurn$: Command<Promise<void>, [number, AbortSignal]>;
 }
 
@@ -245,9 +247,7 @@ function sampleTurns(turns: readonly LocatorTurn[]): readonly LocatorTurn[] {
   }
   const sampled: LocatorTurn[] = [];
   for (let index = 0; index < MAX_TICKS; index += 1) {
-    const source = Math.round(
-      (index * (turns.length - 1)) / (MAX_TICKS - 1),
-    );
+    const source = Math.round((index * (turns.length - 1)) / (MAX_TICKS - 1));
     const turn = turns[source];
     if (turn && sampled.at(-1)?.turnIndex !== turn.turnIndex) {
       sampled.push(turn);
@@ -277,7 +277,10 @@ function clamp(value: number, min: number, max: number): number {
  * walks the DOM, and it leaves with a single id rather than a table of
  * rectangles: turn geometry belongs to the transcript, not to the rail.
  */
-function currentEventIdAt(container: HTMLElement, focus: number): string | null {
+function currentEventIdAt(
+  container: HTMLElement,
+  focus: number,
+): string | null {
   const containerTop = container.getBoundingClientRect().top;
   const scrollTop = container.scrollTop;
   let best: string | null = null;
@@ -306,7 +309,7 @@ function currentEventIdAt(container: HTMLElement, focus: number): string | null 
 function readViewport(container: HTMLElement): LocatorViewportReading {
   const { scrollTop, scrollHeight, clientHeight } = container;
   if (clientHeight === 0) {
-    return EMPTY_READING;
+    return emptyReading();
   }
   const range = Math.max(scrollHeight - clientHeight, 0);
   return {
@@ -334,7 +337,7 @@ function sameReading(
 
 export function createLocatorViewportSignals(): LocatorViewportSignals {
   const internalContainer$ = state<HTMLElement | null>(null);
-  const internalReading$ = state<LocatorViewportReading>(EMPTY_READING);
+  const internalReading$ = state<LocatorViewportReading>(emptyReading());
   const container$ = computed((get) => {
     return get(internalContainer$);
   });
@@ -342,7 +345,8 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     return get(internalReading$);
   });
 
-  const readNow$ = command(({ get, set }): void => {
+  const readNow$ = command(({ get, set }, signal: AbortSignal): void => {
+    signal.throwIfAborted();
     const container = get(internalContainer$);
     if (!container) {
       return;
@@ -353,16 +357,7 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     }
   });
 
-  const measure$ = throttleCommand(readNow$, SCROLL_MEASURE_INTERVAL_MS);
-  const measureSettled$ = debounceCommand(readNow$, SETTLED_MEASURE_DELAY_MS);
-
-  const requestSettledMeasure$ = command(({ get, set }): void => {
-    detach(
-      set(measureSettled$, get(pageSignal$)),
-      Reason.Deferred,
-      "locator settled measure",
-    );
-  });
+  const measure$ = throttleCommand(readNow$, MEASURE_INTERVAL_MS);
 
   const attachContainer$ = command(
     ({ set }, element: HTMLElement, signal: AbortSignal) => {
@@ -371,17 +366,17 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
       // listener is that element's resource and shares its lifetime.
       globalThis.addEventListener(
         "resize",
-        () => {
-          set(requestSettledMeasure$);
-        },
+        onDomEventFn(async () => {
+          await set(measure$, signal);
+        }),
         { signal },
       );
-      set(requestSettledMeasure$);
+      set(readNow$, signal);
       signal.addEventListener(
         "abort",
         () => {
           set(internalContainer$, null);
-          set(internalReading$, EMPTY_READING);
+          set(internalReading$, emptyReading());
         },
         { once: true },
       );
@@ -393,7 +388,6 @@ export function createLocatorViewportSignals(): LocatorViewportSignals {
     container$,
     reading$,
     measure$,
-    requestSettledMeasure$,
   };
 }
 
@@ -601,22 +595,15 @@ export function createChatConversationLocatorSignals({
     },
   );
 
-  const jumpToPointer$ = command(async ({ get, set }): Promise<void> => {
-    const hit = get(hitIndex$);
-    const turn = hit === null ? undefined : get(sampledTurns$)[hit];
-    if (turn) {
-      await set(jumpToTurn$, turn.turnIndex, get(pageSignal$));
-    }
-  });
-
-  // Scroll arrives from React, which has no lifetime to lend; the page does.
-  const requestMeasure$ = command(({ get, set }): void => {
-    detach(
-      set(viewport.measure$, get(pageSignal$)),
-      Reason.Deferred,
-      "locator scroll measure",
-    );
-  });
+  const jumpToPointer$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const hit = get(hitIndex$);
+      const turn = hit === null ? undefined : get(sampledTurns$)[hit];
+      if (turn) {
+        await set(jumpToTurn$, turn.turnIndex, signal);
+      }
+    },
+  );
 
   return {
     layout$,
@@ -627,7 +614,7 @@ export function createChatConversationLocatorSignals({
     sampledTurns$,
     trackPointer$,
     leaveRail$,
-    requestMeasure$,
+    measure$: viewport.measure$,
     jumpToPointer$,
     jumpToTurn$,
   };
