@@ -1564,10 +1564,10 @@ export const createComputerUseCommand$ = command(
   },
 );
 
-const COMPUTER_USE_COMMAND_GET_LOCK_TIMEOUT = "1s";
-const COMPUTER_USE_COMMAND_GET_STATEMENT_TIMEOUT = "5s";
+const COMPUTER_USE_COMMAND_READ_LOCK_TIMEOUT = "1s";
+const COMPUTER_USE_COMMAND_READ_STATEMENT_TIMEOUT = "5s";
 
-function computerUseCommandGetSubjects(params: {
+function computerUseCommandReadSubjects(params: {
   readonly orgId: string;
   readonly userId: string;
 }): readonly ErasureSubject[] {
@@ -1577,15 +1577,44 @@ function computerUseCommandGetSubjects(params: {
   ];
 }
 
-async function setComputerUseCommandGetDeadlines(
+async function setComputerUseCommandReadDeadlines(
   tx: ComputerUseTx,
 ): Promise<void> {
   await tx.execute(
-    sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_COMMAND_GET_LOCK_TIMEOUT}, true)`,
+    sql`SELECT set_config('lock_timeout', ${COMPUTER_USE_COMMAND_READ_LOCK_TIMEOUT}, true)`,
   );
   await tx.execute(
-    sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_COMMAND_GET_STATEMENT_TIMEOUT}, true)`,
+    sql`SELECT set_config('statement_timeout', ${COMPUTER_USE_COMMAND_READ_STATEMENT_TIMEOUT}, true)`,
   );
+}
+
+async function selectComputerUseCommandContent(
+  tx: ComputerUseTx,
+  params: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly commandId: string;
+    readonly hostId?: string;
+  },
+): Promise<Pick<ComputerUseCommandRow, "status" | "result"> | undefined> {
+  const [row] = await tx
+    .select({
+      status: computerUseCommands.status,
+      result: computerUseCommands.result,
+    })
+    .from(computerUseCommands)
+    .where(
+      and(
+        eq(computerUseCommands.orgId, params.orgId),
+        eq(computerUseCommands.userId, params.userId),
+        eq(computerUseCommands.id, params.commandId),
+        ...(params.hostId
+          ? [eq(computerUseCommands.hostId, params.hostId)]
+          : []),
+      ),
+    )
+    .limit(1);
+  return row;
 }
 
 export const getComputerUseCommand$ = command(
@@ -1603,11 +1632,11 @@ export const getComputerUseCommand$ = command(
     const db = set(writeDb$);
     const value = await db.transaction(
       async (tx) => {
-        await setComputerUseCommandGetDeadlines(tx);
+        await setComputerUseCommandReadDeadlines(tx);
         const admitted = await settle(
           assertErasureSubjectWritable(
             tx,
-            computerUseCommandGetSubjects(params),
+            computerUseCommandReadSubjects(params),
           ),
         );
         if (!admitted.ok) {
@@ -1677,44 +1706,58 @@ export const getComputerUseCommandScreenshot$ = command(
     readonly buffer: Buffer;
     readonly contentType: string;
   } | null> => {
-    const db = set(writeDb$);
-    const [row] = await db
-      .select({
-        status: computerUseCommands.status,
-        result: computerUseCommands.result,
-      })
-      .from(computerUseCommands)
-      .where(
-        and(
-          eq(computerUseCommands.orgId, params.orgId),
-          eq(computerUseCommands.userId, params.userId),
-          eq(computerUseCommands.id, params.commandId),
-          ...(params.hostId
-            ? [eq(computerUseCommands.hostId, params.hostId)]
-            : []),
-        ),
-      )
-      .limit(1);
     signal.throwIfAborted();
-    if (!row || row.status !== "succeeded" || !row.result) {
-      return null;
-    }
+    const db = set(writeDb$);
+    const value = await db.transaction(
+      async (tx) => {
+        await setComputerUseCommandReadDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(
+            tx,
+            computerUseCommandReadSubjects(params),
+          ),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            return null;
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
 
-    const screenshot = row.result.screenshot;
-    if (isStoredScreenshotPointer(screenshot)) {
-      const buffer = await get(
-        downloadS3Buffer(screenshot.bucket, screenshot.key),
-      );
-      signal.throwIfAborted();
-      return { buffer, contentType: screenshot.mimeType };
-    }
-    if (typeof screenshot === "string") {
-      const parsed = parseScreenshotDataUrl(screenshot);
-      if (parsed) {
-        return { buffer: parsed.buffer, contentType: parsed.mimeType };
-      }
-    }
-    return null;
+        const row = await selectComputerUseCommandContent(tx, params);
+        signal.throwIfAborted();
+        let result: {
+          readonly buffer: Buffer;
+          readonly contentType: string;
+        } | null = null;
+        if (row?.status === "succeeded" && row.result) {
+          const screenshot = row.result.screenshot;
+          if (isStoredScreenshotPointer(screenshot)) {
+            const buffer = await get(
+              downloadS3Buffer(screenshot.bucket, screenshot.key, signal),
+            );
+            result = { buffer, contentType: screenshot.mimeType };
+          } else if (typeof screenshot === "string") {
+            const parsed = parseScreenshotDataUrl(screenshot);
+            if (parsed) {
+              result = {
+                buffer: parsed.buffer,
+                contentType: parsed.mimeType,
+              };
+            }
+          }
+        }
+        signal.throwIfAborted();
+        return result;
+      },
+      { isolationLevel: "read committed" },
+    );
+    signal.throwIfAborted();
+    return value;
   },
 );
 
@@ -1733,43 +1776,55 @@ export const getComputerUseCommandPluginContent$ = command(
     readonly contentType: string;
     readonly fileName: string;
   } | null> => {
-    const db = set(writeDb$);
-    const [row] = await db
-      .select({
-        status: computerUseCommands.status,
-        result: computerUseCommands.result,
-      })
-      .from(computerUseCommands)
-      .where(
-        and(
-          eq(computerUseCommands.orgId, params.orgId),
-          eq(computerUseCommands.userId, params.userId),
-          eq(computerUseCommands.id, params.commandId),
-          ...(params.hostId
-            ? [eq(computerUseCommands.hostId, params.hostId)]
-            : []),
-        ),
-      )
-      .limit(1);
     signal.throwIfAborted();
-    if (!row || row.status !== "succeeded" || !row.result) {
-      return null;
-    }
+    const db = set(writeDb$);
+    const value = await db.transaction(
+      async (tx) => {
+        await setComputerUseCommandReadDeadlines(tx);
+        const admitted = await settle(
+          assertErasureSubjectWritable(
+            tx,
+            computerUseCommandReadSubjects(params),
+          ),
+        );
+        if (!admitted.ok) {
+          if (
+            admitted.error instanceof Error &&
+            admitted.error.message === "account_erasure:subject_closed"
+          ) {
+            return null;
+          }
+          throw admitted.error;
+        }
+        signal.throwIfAborted();
 
-    const pluginContent = row.result.pluginContent;
-    if (!isStoredPluginContentPointer(pluginContent)) {
-      return null;
-    }
-
-    const buffer = await get(
-      downloadS3Buffer(pluginContent.bucket, pluginContent.key),
+        const row = await selectComputerUseCommandContent(tx, params);
+        signal.throwIfAborted();
+        let result: {
+          readonly buffer: Buffer;
+          readonly contentType: string;
+          readonly fileName: string;
+        } | null = null;
+        if (row?.status === "succeeded" && row.result) {
+          const pluginContent = row.result.pluginContent;
+          if (isStoredPluginContentPointer(pluginContent)) {
+            const buffer = await get(
+              downloadS3Buffer(pluginContent.bucket, pluginContent.key, signal),
+            );
+            result = {
+              buffer,
+              contentType: pluginContent.mimeType,
+              fileName: pluginContent.fileName,
+            };
+          }
+        }
+        signal.throwIfAborted();
+        return result;
+      },
+      { isolationLevel: "read committed" },
     );
     signal.throwIfAborted();
-    return {
-      buffer,
-      contentType: pluginContent.mimeType,
-      fileName: pluginContent.fileName,
-    };
+    return value;
   },
 );
 
