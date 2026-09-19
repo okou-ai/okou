@@ -22,6 +22,21 @@ export function useClerk(): BrowserClerk {
   return clerk;
 }
 
+export function Show({
+  children,
+  fallback = null,
+  when,
+}: {
+  readonly children: ReactNode;
+  readonly fallback?: ReactNode;
+  readonly when: "signed-in" | "signed-out";
+}) {
+  const clerk = useClerk();
+  const signedIn = Boolean(clerk.user);
+  const visible = when === "signed-in" ? signedIn : !signedIn;
+  return visible ? children : fallback;
+}
+
 const CLERK_AUTH_COMPONENT_MOUNT_EVENT = "okou:test-clerk-auth-component-mount";
 const getClerkAuthComponentMounted = vi.fn<() => boolean>(() => {
   return true;
@@ -174,6 +189,23 @@ export function SignUp(props: ClerkAuthComponentProps) {
     componentName: "SignUp",
     testId: "clerk-sign-up",
   });
+}
+
+export function OAuthConsent({ fallback }: { fallback?: ReactNode }) {
+  const mounted = useSyncExternalStore(
+    subscribeToClerkAuthComponent,
+    getClerkAuthComponentMounted,
+  );
+  return createElement(
+    Fragment,
+    null,
+    mounted ? null : fallback,
+    createElement("div", {
+      "data-client-id": new URLSearchParams(location.search).get("client_id"),
+      "data-testid": "clerk-oauth-consent",
+      hidden: !mounted,
+    }),
+  );
 }
 
 interface GoogleOneTapProps {

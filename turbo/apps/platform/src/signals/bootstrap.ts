@@ -89,6 +89,7 @@ import {
   setupSignInV1Page$,
   setupSignUpV1Page$,
 } from "./auth-v1-page-setup.ts";
+import { setupOAuthConsentPage$ } from "./oauth-consent-page-setup.ts";
 import { setupPermissionAllowPage$ } from "./permission-allow/permission-allow-page-setup.ts";
 import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
@@ -227,6 +228,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.signUpCatchAll,
     setup: setupPageWrapper(setupSignUpV1Page$),
+  },
+  {
+    path: ROUTES.oauthConsent,
+    setup: setupPageWrapper(setupOAuthConsentPage$),
   },
 
   // --- New routes ---

@@ -626,24 +626,26 @@ consent or token issuance. Do not treat their success as completing this gate.
 
 ### Login and consent return
 
-Keep Clerk's default Account Portal OAuth consent page. The App derives its
-trusted Account Portal origin from the active Clerk publishable key and preserves
-only that instance's HTTPS `/oauth-consent` return. This origin is shared with
-Clerk's redirect validation; client callback URLs are not App login destinations.
-The original consent query survives login, registration and switching between
-them. A fully active session on a root auth route continues through
-`clerk.redirectWithAuth()`, which carries development browser authentication
-across origins. Pending session tasks, factor routes and explicit authentication
-or account-selection intents remain with Clerk's forms. Consent and organization
-selection still happen on Clerk's hosted page.
+Host Clerk's prebuilt `<OAuthConsent />` on the App's `/oauth-consent` route.
+The component keeps Clerk's consent metadata, organization selection, scope
+rendering, allow/deny submission and redirect validation while avoiding the
+Account Portal's separately challenged static assets. The App accepts only its
+own exact HTTPS `/oauth-consent` URL as a completed-session consent continuation;
+client callback URLs are not App login destinations. The original consent query
+survives login, registration and switching between them. A fully active session
+on a root auth route continues through `clerk.redirectWithAuth()`. Pending
+session tasks, factor routes and explicit authentication or account-selection
+intents remain with Clerk's forms.
 
 In the development Clerk Dashboard **Paths**, point sign-in and sign-up to the
 local App (`https://app.vm7.ai:8443/sign-in` and
-`https://app.vm7.ai:8443/sign-up`). The Marketing service does not host these
-pages. Keep OAuth consent on the default Account Portal. Production uses
+`https://app.vm7.ai:8443/sign-up`) and set **OAuth consent** to
+`/oauth-consent`; Clerk resolves that path on the configured local development
+host. The Marketing service does not host these pages. Production uses
 `https://app.okou.ai/sign-in`, `https://app.okou.ai/sign-up` and
-`https://accounts.okou.ai/oauth-consent`. No additional App environment variable
-is needed for the default hosted consent page.
+`https://app.okou.ai/oauth-consent`. Deploy the App route before changing either
+Clerk instance's path, then verify one allow and one deny flow in that environment.
+No additional App environment variable is required.
 
 ## HTTP behavior
 

@@ -66,6 +66,7 @@ export const ROUTES = {
   signInCatchAll: "/sign-in{/*path}",
   signUp: "/sign-up",
   signUpCatchAll: "/sign-up{/*path}",
+  oauthConsent: "/oauth-consent",
   signInToken: "/sign-in-token",
   lab: "/_/lab",
   exportData: "/export",
