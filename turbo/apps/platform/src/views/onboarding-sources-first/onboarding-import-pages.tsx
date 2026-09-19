@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { Check, FileText } from "lucide-react";
 import {
   Button,
-  Card,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -18,7 +17,6 @@ import {
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
 import {
   OnboardingIllustration,
-  OnboardingPanel,
   ProductMark,
 } from "./onboarding-step-parts.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
@@ -121,14 +119,14 @@ function ImportedSkillRow({ name }: { readonly name: string }) {
 }
 
 /**
- * The drop target and the imported workflow share one card of the same height,
- * so importing a file does not resize the step.
+ * The drop target and the imported workflow read as one column on the step's
+ * own sheet, so importing a file only changes what the column says.
  */
 function SkillDropCard({ imported }: { readonly imported: string | null }) {
   const { t } = useTranslation();
 
   return (
-    <Card className="flex min-h-[300px] flex-col items-center justify-center gap-4 px-6 py-8 text-center">
+    <div className="flex flex-col items-center justify-center gap-4 text-center">
       {imported ? (
         <>
           <ImportedSkillRow name={imported} />
@@ -165,7 +163,7 @@ function SkillDropCard({ imported }: { readonly imported: string | null }) {
           </Button>
         </>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -226,7 +224,7 @@ function SlackPreview() {
   const { t } = useTranslation();
 
   return (
-    <div className="px-5 py-4">
+    <div>
       <div className="rounded-xl bg-muted/40 p-4">
         <p className="text-xs font-medium text-muted-foreground">
           {t(($) => {
@@ -286,42 +284,47 @@ export function OnboardingSlackPage() {
       onSecondary={flow.goNext}
       onBack={flow.goBack}
     >
-      <OnboardingPanel
-        title={t(($) => {
-          return $.onboarding.sourcesFirst.slack.rowTitle;
-        })}
-        description={t(($) => {
-          return $.onboarding.sourcesFirst.slack.rowCopy;
-        })}
-      >
-        <SlackPreview />
-        <div className="mt-auto px-5 pb-5">
-          <Button
-            type="button"
-            variant={connected ? "outline" : "neutral"}
-            disabled={connected}
-            className="w-full gap-2"
-            onClick={() => {
-              // Frontend pass: the Slack install round trip replaces this once
-              // the integration step is wired.
-              updateDraft({ slackStatus: "connected" });
-            }}
-          >
-            {connected ? (
-              <Check size={16} aria-hidden="true" />
-            ) : (
-              <ProductMark name="slack" alt="" />
-            )}
-            {connected
-              ? t(($) => {
-                  return $.onboarding.sourcesFirst.slack.connectedStatus;
-                })
-              : t(($) => {
-                  return $.onboarding.sourcesFirst.slack.add;
-                })}
-          </Button>
+      {/* One column on the step's own sheet: what it looks like in a channel,
+          then the one way to add it. */}
+      <div className="mx-auto flex w-full max-w-[420px] flex-col gap-5">
+        <div>
+          <p className="text-sm font-medium text-foreground">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.slack.rowTitle;
+            })}
+          </p>
+          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+            {t(($) => {
+              return $.onboarding.sourcesFirst.slack.rowCopy;
+            })}
+          </p>
         </div>
-      </OnboardingPanel>
+        <SlackPreview />
+        <Button
+          type="button"
+          variant={connected ? "outline" : "neutral"}
+          disabled={connected}
+          className="w-full gap-2"
+          onClick={() => {
+            // Frontend pass: the Slack install round trip replaces this once
+            // the integration step is wired.
+            updateDraft({ slackStatus: "connected" });
+          }}
+        >
+          {connected ? (
+            <Check size={16} aria-hidden="true" />
+          ) : (
+            <ProductMark name="slack" alt="" />
+          )}
+          {connected
+            ? t(($) => {
+                return $.onboarding.sourcesFirst.slack.connectedStatus;
+              })
+            : t(($) => {
+                return $.onboarding.sourcesFirst.slack.add;
+              })}
+        </Button>
+      </div>
     </OnboardingStepLayout>
   );
 }

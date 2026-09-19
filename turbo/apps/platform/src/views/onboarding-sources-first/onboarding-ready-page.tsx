@@ -1,6 +1,6 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Card, Textarea } from "@okouai/ui";
+import { Textarea } from "@okouai/ui";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { justConnectedSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { updateSourcesFirstDraft$ } from "../../signals/onboarding/onboarding-sources-first-state.ts";
@@ -97,15 +97,15 @@ export function OnboardingReadyPage() {
         </>
       }
     >
-      <Card className="flex flex-col overflow-hidden">
-        <div className="flex items-center justify-center bg-muted/40 px-6 py-6">
-          <img
-            src={CELEBRATION_URL}
-            alt=""
-            className="h-[104px] max-w-full object-contain"
-          />
-        </div>
-        <div className="border-t border-border/60 p-5">
+      {/* One column on the step's own sheet: the welcome, then the request it
+          starts with. */}
+      <div className="mx-auto flex w-full max-w-[520px] flex-col">
+        <img
+          src={CELEBRATION_URL}
+          alt=""
+          className="mx-auto h-[104px] max-w-full object-contain"
+        />
+        <div className="mt-8">
           <div className="flex items-baseline gap-2">
             <h2 className="min-w-0 flex-1 text-sm font-semibold text-foreground">
               {prompt.outcome}
@@ -135,7 +135,7 @@ export function OnboardingReadyPage() {
             }}
           />
         </div>
-      </Card>
+      </div>
     </OnboardingStepLayout>
   );
 }
