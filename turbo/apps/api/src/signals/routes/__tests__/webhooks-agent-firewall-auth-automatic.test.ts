@@ -305,7 +305,7 @@ describe("builtin Automatic firewall credential destinations", () => {
     },
   );
 
-  it("classifies Automatic refresh timeouts as upstream without marking reconnect", async () => {
+  it("classifies Automatic temporary refresh failures as upstream without marking reconnect", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("APP_URL", "https://app.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -320,12 +320,20 @@ describe("builtin Automatic firewall credential destinations", () => {
       refreshResponse: async (attempt) => {
         if (attempt === 1) {
           await delay(300, { signal: context.signal });
+          return HttpResponse.json({
+            access_token: "too-late-automatic-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          });
+        }
+        if (attempt === 2) {
+          return HttpResponse.json(
+            { error: "temporarily_unavailable" },
+            { status: 503 },
+          );
         }
         return HttpResponse.json({
-          access_token:
-            attempt === 1
-              ? "too-late-automatic-token"
-              : "recovered-automatic-token",
+          access_token: "recovered-automatic-token",
           token_type: "Bearer",
           expires_in: 3600,
         });
@@ -458,6 +466,32 @@ describe("builtin Automatic firewall credential destinations", () => {
         });
 
         mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
+        const providerFailed = await firewall.requestFirewallAuth(
+          authHeaders,
+          body,
+          [502],
+        );
+        if (providerFailed.status !== 502) {
+          throw new Error("Expected the provider refresh to fail with 502");
+        }
+        expect(providerFailed.body.error).toMatchObject({
+          code: "TOKEN_REFRESH_FAILED",
+          failureReason: "upstream_provider",
+          connectors: [catalog.slug],
+        });
+        const afterProviderFailure = await accept(
+          accounts.connection({
+            headers,
+            params: { connectionId },
+            query: catalog.target,
+          }),
+          [200],
+        );
+        expect(afterProviderFailure.body).toMatchObject({
+          connectionStatus: "connected",
+          reconnectReason: null,
+        });
+
         const recovered = await firewall.requestFirewallAuth(
           authHeaders,
           body,

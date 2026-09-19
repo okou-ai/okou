@@ -6131,7 +6131,10 @@ async function resolveFirewallAuthMaterial(args: {
         ok: false,
         response:
           credential.reason === "temporary"
-            ? tokenRefreshFailed([args.prepared.connectorSlug])
+            ? tokenRefreshFailed(
+                [args.prepared.connectorSlug],
+                "upstream_provider",
+              )
             : credential.reason === "reconnect"
               ? connectorReconnectRequired([args.prepared.connectorSlug])
               : connectorNotConfigured(),
