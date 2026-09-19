@@ -46,6 +46,7 @@ import {
   type PiPreparationObserver,
   type PiApiFirstTurnOwnership,
   type PiApiFirstTurnResult,
+  type PiApiUsageObservation,
   UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
 } from "@okouai/pi-agent-runtime/api";
@@ -1473,6 +1474,7 @@ function validateApiModelTurnOutcome(turn: PiApiFirstTurnResult): void {
     throw new PiApiFirstTurnModelFailureError(
       turn.assistantMessage.failureDiagnostic,
       turn.assistantMessage.failureReason,
+      turn.usageObservation,
     );
   }
 }
@@ -1722,6 +1724,7 @@ async function executeApiModelTurn(
       throw new PiApiFirstTurnModelFailureError(
         executed.error.diagnostic,
         executed.error.failureReason,
+        executed.error.usageObservation,
       );
     }
     throw piApiFirstTurnError(
@@ -1821,15 +1824,15 @@ function noInferenceApiHandoffUsage(): PiApiHandoffUsage {
 }
 
 function observedApiHandoffUsage(
-  turn: PiApiFirstTurnResult,
+  observation: PiApiUsageObservation | undefined,
 ): PiApiHandoffUsage | undefined {
-  return turn.usageObservation
+  return observation
     ? {
         schemaVersion: 1,
         state: "observed",
         sampledAt: now(),
-        coverage: turn.usageObservation.coverage,
-        tokens: turn.usageObservation.tokens,
+        coverage: observation.coverage,
+        tokens: observation.tokens,
       }
     : undefined;
 }
@@ -2532,7 +2535,7 @@ function durableContinuation(
   receipt: DurablePiPublicationReceipt,
 ): PiSandboxContinuation {
   const inspection = inspectPiSessionJsonl(prepared.turn.sessionJsonl);
-  const apiUsage = observedApiHandoffUsage(prepared.turn);
+  const apiUsage = observedApiHandoffUsage(prepared.turn.usageObservation);
   return prepared.turn.handoffRequired
     ? {
         mode: "pending-tools",
@@ -2971,7 +2974,9 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
       await set(publishEvents$, { auth: prepared.auth, events }, signal);
       if (transition.outcome === "transfer") {
         const publicationStartedAt = nowDate();
-        const apiUsage = observedApiHandoffUsage(prepared.turn);
+        const apiUsage = observedApiHandoffUsage(
+          prepared.turn.usageObservation,
+        );
         const manifest = ownershipTransferManifest({
           mode: transition.mode,
           baseSession: prepared.baseSession,
@@ -3526,7 +3531,11 @@ const runPiApiFirstTurnCore$ = command(
           decision.reason,
           ownership.stage === "pre-provider"
             ? noInferenceApiHandoffUsage()
-            : undefined,
+            : observedApiHandoffUsage(
+                executed.error instanceof PiApiFirstTurnModelFailureError
+                  ? executed.error.usageObservation
+                  : undefined,
+              ),
           handoffSignal,
         ),
         handoffSignal,
