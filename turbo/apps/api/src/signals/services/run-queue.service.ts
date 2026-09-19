@@ -91,7 +91,7 @@ async function closeQueuedApiUsageBestEffort(
   const closed = await settle(closePiApiUsageRunsAsNoInference(db, runIds));
   if (!closed.ok) {
     L.warn("Failed to close queued API usage before provider ownership", {
-      runIds,
+      runCount: runIds.length,
       error: closed.error,
     });
   }
