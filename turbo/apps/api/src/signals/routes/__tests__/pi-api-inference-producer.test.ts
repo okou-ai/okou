@@ -1308,7 +1308,16 @@ describe("durable Pi API producer", () => {
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
-      apiFirstTurn: { continuation: { mode: "untouched-h0" } },
+      apiFirstTurn: {
+        continuation: {
+          mode: "untouched-h0",
+          apiUsage: {
+            schemaVersion: 1,
+            state: "no-inference",
+            sampledAt: expect.any(Number),
+          },
+        },
+      },
     });
     await api.requestCancelRun(actor, run.runId, [200], usagePricingResolution);
     await releaseDeferredPiRun(run.runId, runnerId, claim);
