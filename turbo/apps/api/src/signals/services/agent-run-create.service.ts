@@ -735,9 +735,18 @@ interface ProductResolutionOptions {
   readonly timing?: ApiDispatchTimingCollector;
 }
 
+interface AgentExecutionRequestObservation {
+  readonly requestUserId: string;
+  readonly requestOrgId: string;
+  readonly agentId: string;
+  readonly ownerUserId: string;
+  readonly agentOrgId: string;
+}
+
 interface ResolveAgentExecutionOptions {
   readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
   readonly testOnlyResolveDirectRun?: TestOnlyDirectRunResolver;
+  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
 }
 
@@ -1146,6 +1155,13 @@ export interface CreateAgentRunArgs {
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly includeOkouTokenSecret?: boolean;
   readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
+  /**
+   * Request-scoped Agent identity facts from an already authorized product
+   * entry point. This can replace the equivalent preparation lookup only; the
+   * launch transaction still locks and validates the current Agent owner,
+   * organization, and erasure state before committing a Run.
+   */
+  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   /**
    * Retired direct-run test support. Production callers must supply a canonical
    * productAgentExecutionPlan; keeping legacy reads in the test fixture
@@ -6294,6 +6310,22 @@ function resolveAgentExecution(
         return badRequestMessage("Missing agentId or sessionId");
       }
       const agentId = body.agentId;
+      const preloadedAgent = options.preloadedAgentExecutionObservation;
+      if (
+        preloadedAgent &&
+        preloadedAgent.requestUserId === userId &&
+        preloadedAgent.requestOrgId === orgId &&
+        preloadedAgent.agentId === agentId &&
+        preloadedAgent.agentOrgId === orgId
+      ) {
+        return {
+          agentId,
+          ownerUserId: preloadedAgent.ownerUserId,
+          orgId: preloadedAgent.agentOrgId,
+          content: productAgentExecutionPlan.content,
+          artifacts: [],
+        };
+      }
       return await measureApiDispatchTiming(
         options.timing,
         "api_dispatch_resolve_agent_execution_by_agent_id",
@@ -9931,7 +9963,9 @@ function agentRunResolutionOptions(
   args: CreateAgentRunArgs,
 ): Pick<
   ResolveAgentExecutionOptions,
-  "productAgentExecutionPlan" | "testOnlyResolveDirectRun"
+  | "productAgentExecutionPlan"
+  | "testOnlyResolveDirectRun"
+  | "preloadedAgentExecutionObservation"
 > {
   const productAgentExecutionPlan = args.productAgentExecutionPlan;
   const testOnlyResolveDirectRun = args.testOnlyResolveDirectRun;
@@ -9978,6 +10012,7 @@ function agentRunResolutionOptions(
   return {
     productAgentExecutionPlan,
     testOnlyResolveDirectRun,
+    preloadedAgentExecutionObservation: args.preloadedAgentExecutionObservation,
   };
 }
 

@@ -30,6 +30,7 @@ import {
   appendChatThreadEvent,
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
 import {
   withRunContentWrite,
@@ -103,18 +104,37 @@ export function inferMimetype(filename: string): string {
     : "application/octet-stream";
 }
 
+interface AuthorizedChatThreadTouchScope {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+}
+
 export async function touchChatThreadLastMessageAt(
   tx: ChatThreadEventTransaction,
   threadId: string,
   touchedAt: Date = nowDate(),
   eventId?: string,
+  authorizedScope?: AuthorizedChatThreadTouchScope,
 ): Promise<void> {
   const [thread] = await tx
     .update(chatThreads)
     .set({
       lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt})`,
     })
-    .where(and(eq(chatThreads.id, threadId), isNotNull(chatThreads.agentId)))
+    .where(
+      and(
+        eq(chatThreads.id, threadId),
+        isNotNull(chatThreads.agentId),
+        authorizedScope
+          ? and(
+              eq(chatThreads.userId, authorizedScope.userId),
+              eq(chatThreads.agentId, authorizedScope.agentId),
+              chatThreadOrganizationCondition(tx, authorizedScope.orgId),
+            )
+          : undefined,
+      ),
+    )
     .returning({
       id: chatThreads.id,
       userId: chatThreads.userId,
@@ -122,11 +142,15 @@ export async function touchChatThreadLastMessageAt(
       lastMessageAt: chatThreads.lastMessageAt,
     });
   if (!thread?.agentId) {
+    if (authorizedScope) {
+      throw new Error("Authorized chat thread changed before sort touch");
+    }
     return;
   }
   await appendChatThreadEvent(tx, {
     kind: "sort_touched",
     userId: thread.userId,
+    ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
     chatThreadId: thread.id,
     agentId: thread.agentId,
     eventId,

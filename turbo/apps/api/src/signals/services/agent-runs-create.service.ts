@@ -103,7 +103,7 @@ const DISALLOWED_TOOLS = [
   "Skill(loop *)",
 ] as const;
 
-interface AgentRunRecord {
+export interface AgentRunRequestAgent {
   readonly id: string;
   readonly name: string;
   readonly orgId: string;
@@ -115,6 +115,28 @@ interface AgentRunRecord {
   readonly sound: string | null;
   readonly modelProviderId: string | null;
   readonly selectedModel: string | null;
+}
+
+type AgentRunRecord = AgentRunRequestAgent;
+
+/**
+ * Request-scoped preparation facts from an entry point that already authorized
+ * this exact user, organization, and Agent. These observations can remove
+ * equivalent preflight reads, but they never authorize the later launch
+ * transaction: compute admission still locks and revalidates Agent ownership
+ * and erasure state before it claims input or inserts a Run.
+ *
+ * When this object is present, nullable Agent metadata and feature overrides
+ * are authoritative observations. The bootstrap materializer may enrich an
+ * omitted email from the same request's user-info row. Absence of the object
+ * means those facts were not loaded and every existing database fallback
+ * remains.
+ */
+export interface AuthorizedAgentRunRequestObservation {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agent: AgentRunRequestAgent;
+  readonly featureSwitchContext: FeatureSwitchContext;
 }
 
 function optionalAgentSetting(value: string | null): string | undefined {
@@ -183,6 +205,8 @@ interface CreateAgentRunCommandArgs {
   readonly piExecution: boolean;
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
+  readonly preloadedFeatureSwitchContext?: FeatureSwitchContext;
+  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
 interface CreateQueueFirstAgentRunCommandArgs extends Omit<
@@ -674,6 +698,7 @@ async function loadAgentRunPostAuthorizationContext(
     readonly agentId: string;
     readonly apiStartTime: number;
     readonly timing: ApiDispatchTimingCollector;
+    readonly preloadedFeatureSwitchContext?: FeatureSwitchContext;
   },
   signal: AbortSignal,
 ) {
@@ -682,17 +707,27 @@ async function loadAgentRunPostAuthorizationContext(
     args.timing,
     "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
     async () => {
-      const loadedRows = await loadRunBootstrapSnapshotRows(db, {
-        userId: args.userId,
-        orgId: args.orgId,
-        agentId: args.agentId,
-        checkedAt: new Date(args.apiStartTime),
-      });
+      const loadedRows = await loadRunBootstrapSnapshotRows(
+        db,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          agentId: args.agentId,
+          checkedAt: new Date(args.apiStartTime),
+        },
+        args.preloadedFeatureSwitchContext,
+      );
       measuredSnapshotRows = loadedRows;
       return loadedRows;
     },
     () => {
-      return bootstrapLoadTimingDimensions(measuredSnapshotRows);
+      return {
+        ...bootstrapLoadTimingDimensions(measuredSnapshotRows),
+        bootstrap_feature_context_source:
+          args.preloadedFeatureSwitchContext === undefined
+            ? "database"
+            : "request_observation",
+      };
     },
   );
   signal.throwIfAborted();
@@ -702,10 +737,14 @@ async function loadAgentRunPostAuthorizationContext(
     args.timing,
     "api_dispatch_pre_create_agent_materialize_bootstrap_context",
     () => {
-      const context = materializeRunBootstrapContext(snapshotRows, {
-        userId: args.userId,
-        orgId: args.orgId,
-      });
+      const context = materializeRunBootstrapContext(
+        snapshotRows,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+        },
+        args.preloadedFeatureSwitchContext,
+      );
       measuredBootstrapContext = context;
       return context;
     },
@@ -760,6 +799,7 @@ async function loadAgentRunPostAuthorizationContext(
 interface BuildCreateAgentRunArgsInput {
   readonly command: AnyCreateAgentRunCommandArgs;
   readonly agent: AgentRunRecord;
+  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly userInfo: UserInfo;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
   readonly permissionValidityHorizon: string | null;
@@ -946,6 +986,17 @@ function buildCreateAgentRunArgs(
     callbacks: command.callbacks,
     includeOkouTokenSecret: true,
     productAgentExecutionPlan,
+    ...(args.authorizedRequestObservation
+      ? {
+          preloadedAgentExecutionObservation: {
+            requestUserId: args.authorizedRequestObservation.userId,
+            requestOrgId: args.authorizedRequestObservation.orgId,
+            agentId: args.agent.id,
+            ownerUserId: args.agent.owner,
+            agentOrgId: args.agent.orgId,
+          },
+        }
+      : {}),
     okouTokenComputerUseHostId: command.computerUseHostId,
     okouTokenCloudBrowserEnabled: args.cloudBrowserEnabled,
     enforceBuiltInCredits: true,
@@ -989,6 +1040,7 @@ function buildCreateAgentRunArgs(
 
 interface AgentRunAfterPreCreate {
   readonly agent: AgentRunRecord;
+  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly userInfo: UserInfo;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
@@ -1195,6 +1247,35 @@ const createAgentRunAfterPreCreate$ = command(
   },
 );
 
+function matchingPreloadedFeatureSwitchContext(
+  args: AnyCreateAgentRunCommandArgs,
+): FeatureSwitchContext | undefined {
+  const context = args.preloadedFeatureSwitchContext;
+  return context?.userId === args.auth.userId &&
+    context.orgId === args.auth.orgId
+    ? context
+    : undefined;
+}
+
+function matchingAuthorizedRequestObservation(
+  args: AnyCreateAgentRunCommandArgs,
+  agentId: string,
+): AuthorizedAgentRunRequestObservation | undefined {
+  const observation = args.authorizedRequestObservation;
+  if (
+    !observation ||
+    observation.userId !== args.auth.userId ||
+    observation.orgId !== args.auth.orgId ||
+    observation.agent.id !== agentId ||
+    observation.agent.orgId !== args.auth.orgId ||
+    observation.featureSwitchContext.userId !== args.auth.userId ||
+    observation.featureSwitchContext.orgId !== args.auth.orgId
+  ) {
+    return undefined;
+  }
+  return observation;
+}
+
 const createAgentRunInternal$ = command(
   async ({ set }, args: AnyCreateAgentRunCommandArgs, signal: AbortSignal) => {
     assertThreadBoundAgentRunHasQueueAssociation(args);
@@ -1219,11 +1300,26 @@ const createAgentRunInternal$ = command(
         : badRequestMessage("Missing agentId or sessionId");
     }
 
+    const authorizedRequestObservation = matchingAuthorizedRequestObservation(
+      args,
+      agentId,
+    );
+    const preloadedFeatureSwitchContext =
+      authorizedRequestObservation?.featureSwitchContext ??
+      matchingPreloadedFeatureSwitchContext(args);
     const agent = await measureAgentRunPreCreate(
       timing,
       "api_dispatch_pre_create_agent_load_agent",
       async () => {
-        return await loadAgent(db, agentId);
+        return (
+          authorizedRequestObservation?.agent ?? (await loadAgent(db, agentId))
+        );
+      },
+      {
+        authorized_request_agent_source:
+          authorizedRequestObservation === undefined
+            ? "database"
+            : "request_observation",
       },
     );
     signal.throwIfAborted();
@@ -1276,6 +1372,9 @@ const createAgentRunInternal$ = command(
         agentId: agent.id,
         apiStartTime: args.apiStartTime,
         timing,
+        ...(preloadedFeatureSwitchContext
+          ? { preloadedFeatureSwitchContext }
+          : {}),
       },
       signal,
     );
@@ -1285,6 +1384,9 @@ const createAgentRunInternal$ = command(
       {
         command: args,
         agent,
+        ...(authorizedRequestObservation
+          ? { authorizedRequestObservation }
+          : {}),
         userInfo,
         featureSwitchContext,
         runPermissionPolicies,

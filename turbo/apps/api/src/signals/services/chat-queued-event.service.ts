@@ -689,6 +689,12 @@ async function discardUnclaimedUserMessageInTransaction(
   if (!(await lockUserMessageQueueThread(db, args.threadId))) {
     return false;
   }
+  if (
+    (await loadNextUnclaimedQueuedUserMessageId(db, args.threadId)) !==
+    args.eventId
+  ) {
+    return false;
+  }
   const pending = await loadPendingChatQueueEvent(db, {
     chatThreadId: args.threadId,
     eventId: args.eventId,
@@ -713,9 +719,9 @@ export async function discardUnclaimedUserMessage(
     readonly threadId: string;
     readonly eventId: string;
   },
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await discardUnclaimedUserMessageInTransaction(tx, args);
+): Promise<boolean> {
+  return await db.transaction(async (tx) => {
+    return await discardUnclaimedUserMessageInTransaction(tx, args);
   });
 }
 
