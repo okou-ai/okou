@@ -7071,7 +7071,14 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
  * message row re-render on every optimistic change.
  */
 function OptimisticSpinner({ eventId }: { eventId: string }) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.OptimisticMessageSpinner] === true;
   const optimisticEventIds = useGet(optimisticEventIds$);
+  // Only the presentation is gated: the message still renders and reconciles
+  // exactly as before, so a message keeps its layout while the switch is off.
+  if (!enabled) {
+    return null;
+  }
   // The slot repeats the bubble's own padding and line metrics so the spinner
   // centers on the first line of text however many lines the message wraps to.
   // It stays reserved when the message is confirmed, so the bubble never

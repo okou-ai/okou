@@ -350,6 +350,9 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
+      true,
+    );
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -367,6 +370,9 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
+      false,
+    );
+    expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       false,
     );
   });

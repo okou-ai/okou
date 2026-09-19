@@ -497,6 +497,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.OptimisticMessageSpinner]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Show a spinner beside a user message the server has not confirmed yet",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
 };
 
 interface ResolvedHashes {
