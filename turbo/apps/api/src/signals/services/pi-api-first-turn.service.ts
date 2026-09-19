@@ -15,7 +15,10 @@ import {
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { modelProviderTypeSchema } from "@okouai/api-contracts/contracts/model-providers";
-import type { PiSandboxContinuation } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
+import type {
+  PiApiHandoffUsage,
+  PiSandboxContinuation,
+} from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
 import { activeInputDeliveries } from "@okouai/db/schema/active-input-delivery";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
@@ -43,6 +46,7 @@ import {
   type PiPreparationObserver,
   type PiApiFirstTurnOwnership,
   type PiApiFirstTurnResult,
+  type PiApiUsageObservation,
   UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
 } from "@okouai/pi-agent-runtime/api";
@@ -1470,6 +1474,7 @@ function validateApiModelTurnOutcome(turn: PiApiFirstTurnResult): void {
     throw new PiApiFirstTurnModelFailureError(
       turn.assistantMessage.failureDiagnostic,
       turn.assistantMessage.failureReason,
+      turn.usageObservation,
     );
   }
 }
@@ -1719,6 +1724,7 @@ async function executeApiModelTurn(
       throw new PiApiFirstTurnModelFailureError(
         executed.error.diagnostic,
         executed.error.failureReason,
+        executed.error.usageObservation,
       );
     }
     throw piApiFirstTurnError(
@@ -1799,6 +1805,7 @@ function ownershipTransferManifest(args: {
   };
   readonly sandboxEventSequenceStart: number;
   readonly langfuseParent?: PiLangfuseParent;
+  readonly apiUsage?: PiApiHandoffUsage;
 }): PiApiFirstTurnManifest {
   return {
     schemaVersion: 3,
@@ -1808,7 +1815,26 @@ function ownershipTransferManifest(args: {
     session: args.session,
     sandboxEventSequenceStart: args.sandboxEventSequenceStart,
     ...(args.langfuseParent ? { langfuseParent: args.langfuseParent } : {}),
+    ...(args.apiUsage ? { apiUsage: args.apiUsage } : {}),
   };
+}
+
+function noInferenceApiHandoffUsage(): PiApiHandoffUsage {
+  return { schemaVersion: 1, state: "no-inference", sampledAt: now() };
+}
+
+function observedApiHandoffUsage(
+  observation: PiApiUsageObservation | undefined,
+): PiApiHandoffUsage | undefined {
+  return observation
+    ? {
+        schemaVersion: 1,
+        state: "observed",
+        sampledAt: now(),
+        coverage: observation.coverage,
+        tokens: observation.tokens,
+      }
+    : undefined;
 }
 
 function validateSandboxFallbackSession(
@@ -1864,6 +1890,7 @@ const publishDurableSandboxFallback$ = command(
     _accessors,
     args: ApiFirstTurnContext,
     reason: PiSandboxFirstReason,
+    apiUsage: PiApiHandoffUsage | undefined,
     signal: AbortSignal,
   ): Promise<void> => {
     if (!isDurablePiApiFirstTurnActivation(args.activation)) {
@@ -1901,7 +1928,10 @@ const publishDurableSandboxFallback$ = command(
         ownerEpoch: args.activation.inference.ownerEpoch,
         generation: 1,
       },
-      { mode: "untouched-h0" },
+      {
+        mode: "untouched-h0",
+        ...(apiUsage ? { apiUsage } : {}),
+      },
     );
     signal.throwIfAborted();
     if (!accepted) {
@@ -1921,6 +1951,7 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
   { get, set },
   args: ApiFirstTurnContext,
   reason: PiSandboxFirstReason,
+  apiUsage: PiApiHandoffUsage | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   const { executionContext, launchConfig, sessionId } =
@@ -1928,7 +1959,7 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
   const commitIdentity = apiFirstTurnCommitIdentity(args);
   signal.throwIfAborted();
   if (isDurablePiApiFirstTurnActivation(args.activation)) {
-    await set(publishDurableSandboxFallback$, args, reason, signal);
+    await set(publishDurableSandboxFallback$, args, reason, apiUsage, signal);
     return;
   }
   await withApiFirstTurnLifecycle(args, async (tx) => {
@@ -2013,6 +2044,7 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
         rawSize: session.bytes.length,
       },
       sandboxEventSequenceStart: launchConfig.sandboxEventSequenceStart,
+      ...(apiUsage ? { apiUsage } : {}),
     });
     await set(
       writeManifest$,
@@ -2503,6 +2535,7 @@ function durableContinuation(
   receipt: DurablePiPublicationReceipt,
 ): PiSandboxContinuation {
   const inspection = inspectPiSessionJsonl(prepared.turn.sessionJsonl);
+  const apiUsage = observedApiHandoffUsage(prepared.turn.usageObservation);
   return prepared.turn.handoffRequired
     ? {
         mode: "pending-tools",
@@ -2510,12 +2543,14 @@ function durableContinuation(
         manifestGeneration: receipt.manifestGeneration,
         pendingToolIds: [...inspection.pendingToolIds],
         lastEventSequence: receipt.lastEventSequence,
+        ...(apiUsage ? { apiUsage } : {}),
       }
     : {
         mode: "settled-session",
         h1Hash: receipt.h1Hash,
         manifestGeneration: receipt.manifestGeneration,
         lastEventSequence: receipt.lastEventSequence,
+        ...(apiUsage ? { apiUsage } : {}),
       };
 }
 
@@ -2939,6 +2974,9 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
       await set(publishEvents$, { auth: prepared.auth, events }, signal);
       if (transition.outcome === "transfer") {
         const publicationStartedAt = nowDate();
+        const apiUsage = observedApiHandoffUsage(
+          prepared.turn.usageObservation,
+        );
         const manifest = ownershipTransferManifest({
           mode: transition.mode,
           baseSession: prepared.baseSession,
@@ -2948,6 +2986,7 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
             rawSize: prepared.sessionBytes.length,
           },
           sandboxEventSequenceStart: nextSequenceNumber,
+          ...(apiUsage ? { apiUsage } : {}),
           langfuseParent: piLangfuseSandboxParent({
             enabled: isPiLangfuseDebugRunEnvironment(
               args.activation.executionContext.platformEnvironment,
@@ -3089,6 +3128,7 @@ const publishLargeHistoryTransfer$ = command(
               encodedSize: metadata.encodedSize,
             },
             sandboxEventSequenceStart: launchConfig.sandboxEventSequenceStart,
+            apiUsage: noInferenceApiHandoffUsage(),
           },
         },
         signal,
@@ -3485,7 +3525,19 @@ const runPiApiFirstTurnCore$ = command(
       }
       const handoffSignal = piApiFirstTurnHandoffSignal(activation, signal);
       const fallback = await settleApiFirstTurnExecution(
-        set(publishSandboxFallback$, context, decision.reason, handoffSignal),
+        set(
+          publishSandboxFallback$,
+          context,
+          decision.reason,
+          ownership.stage === "pre-provider"
+            ? noInferenceApiHandoffUsage()
+            : observedApiHandoffUsage(
+                executed.error instanceof PiApiFirstTurnModelFailureError
+                  ? executed.error.usageObservation
+                  : undefined,
+              ),
+          handoffSignal,
+        ),
         handoffSignal,
         signal,
       );

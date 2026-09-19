@@ -321,6 +321,11 @@ describe("CHAT-02: model-first provider policies", () => {
           url: expect.any(String),
         },
         sandboxEventSequenceStart: 1,
+        apiUsage: {
+          schemaVersion: 1,
+          state: "no-inference",
+          sampledAt: expect.any(Number),
+        },
       });
       if (manifest.schemaVersion !== 4) {
         throw new Error("Expected a referenced sandbox checkpoint");

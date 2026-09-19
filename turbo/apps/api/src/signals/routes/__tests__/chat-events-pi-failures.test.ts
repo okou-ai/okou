@@ -1221,6 +1221,33 @@ describe("CHAT-02: model-first provider policies", () => {
         baseSession: { sessionId: run.threadId, sha256: null },
         sandboxEventSequenceStart: 1,
       });
+      if (scenario.name === "failed result with usage") {
+        expect(manifest.apiUsage).toMatchObject({
+          schemaVersion: 1,
+          state: "observed",
+          sampledAt: expect.any(Number),
+          coverage: "partial",
+          tokens: {
+            input: null,
+            cacheRead: null,
+            cacheCreation: null,
+            output: 3,
+          },
+        });
+      } else {
+        expect(manifest.apiUsage).toMatchObject({
+          schemaVersion: 1,
+          state: "observed",
+          sampledAt: expect.any(Number),
+          coverage: "unavailable",
+          tokens: {
+            input: null,
+            cacheRead: null,
+            cacheCreation: null,
+            output: null,
+          },
+        });
+      }
       const h0 = checkpointObjects.get(`${prefix}session.jsonl`);
       if (!h0) {
         throw new Error("Expected original H0 after model failure");

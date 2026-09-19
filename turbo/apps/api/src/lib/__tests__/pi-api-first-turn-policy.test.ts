@@ -265,6 +265,21 @@ describe("Pi API-first transition precedence", () => {
     },
   );
 
+  it("preserves known provider usage across model-failure recovery", () => {
+    const usageObservation = {
+      coverage: "partial",
+      tokens: { input: 4, cacheRead: 1, cacheCreation: null, output: 2 },
+    } as const;
+
+    expect(
+      new PiApiFirstTurnModelFailureError(
+        { category: "stream_terminated" },
+        undefined,
+        usageObservation,
+      ).usageObservation,
+    ).toStrictEqual(usageObservation);
+  });
+
   it.each([
     { status: "cancelled", expected: "cancelled" },
     { status: "completed", expected: "already-terminal" },
