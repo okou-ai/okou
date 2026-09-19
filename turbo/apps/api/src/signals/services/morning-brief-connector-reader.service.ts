@@ -250,26 +250,16 @@ export async function withMorningBriefDatabaseDeadline<T>(
         }
         const transactionTimeout = `${transactionRemaining.toString()}ms`;
         await tx.execute(sql`SELECT
-            set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
-            set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
+            set_config('lock_timeout', ${`${args.caps.lockTimeoutMs.toString()}ms`}, true),
+            set_config('statement_timeout', ${`${args.caps.statementTimeoutMs.toString()}ms`}, true),
             set_config('transaction_timeout', ${transactionTimeout}, true)`);
 
-        const beforeStatement = async (): Promise<void> => {
-          signal.throwIfAborted();
-          if (applicationRemaining() === 0) {
-            throw new MorningBriefDatabaseDeadlineExceededError();
-          }
-          const statementRemaining = ioRemaining();
-          if (statementRemaining === 0) {
-            throw new MorningBriefDatabaseDeadlineExceededError();
-          }
-          await tx.execute(sql`SELECT
-              set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
-              set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
+        const beforeStatement = (): Promise<void> => {
           signal.throwIfAborted();
           if (applicationRemaining() === 0 || ioRemaining() === 0) {
             throw new MorningBriefDatabaseDeadlineExceededError();
           }
+          return Promise.resolve();
         };
 
         await beforeStatement();

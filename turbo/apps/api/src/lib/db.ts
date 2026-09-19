@@ -69,8 +69,12 @@ export const db: SingletonValue<ApiDb> = singleton((): ApiDb => {
 export async function closeDbPool(): Promise<void> {
   const current = pool.peek();
   if (current) {
-    await current.end();
+    // Relinquish this exact pool before its asynchronous shutdown. A timed-out
+    // test can make fixture cleanup and suite teardown close concurrently; the
+    // first caller owns `current`, while later work must either observe no pool
+    // or create a fresh one instead of reusing a pool whose `end()` has begun.
     pool.reset();
     db.reset();
+    await current.end();
   }
 }
