@@ -253,6 +253,9 @@ describe("CHAT-02: web chat send and client ids", () => {
       userId: actor.userId,
       orgId,
     });
+    // Agent ownership has no production mutation API. This test-only override
+    // models the otherwise-unconstructible transfer after request observation
+    // but before the transaction-authoritative compute admission recheck.
     await overrideCanonicalAgentAuthorityFixture({
       agentId,
       override: {
