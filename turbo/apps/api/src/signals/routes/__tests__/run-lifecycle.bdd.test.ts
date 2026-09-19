@@ -10957,6 +10957,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
+    const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const connectionId = await connectAutomaticRuntime({
       actor,
@@ -11000,6 +11001,25 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       outcome: "resolved",
       connector: { credentialResolution: "none" },
     });
+    const resolved = await fw.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      {
+        encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+        authHeaders: catalog.firewallAuthHeaders,
+        forceRefresh: true,
+        matchedFirewall: {
+          name: catalog.slug,
+          apiId: `${catalog.slug}:0`,
+          base: catalog.endpoint,
+          connectorSlug: catalog.slug,
+          sourceId: connectionId,
+          routingVariables: {},
+        },
+      },
+      [200],
+    );
+    expect(resolved.body).toMatchObject({ headers: {} });
+    expect(provider.tokenBodies).toHaveLength(1);
     const [runtime] = await api.syncConnectorRuntime(run.runId, {
       targets: [target],
     });

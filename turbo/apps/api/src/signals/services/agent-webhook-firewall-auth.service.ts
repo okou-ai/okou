@@ -5854,6 +5854,9 @@ async function prepareNonCustomFirewallAuth(args: {
 > {
   const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+  const requiresAutomaticMcpCredential = args.referenced.secrets.has(
+    AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+  );
   // Account deletion or reconnect must end cached MCP credential authorization,
   // including static credentials whose provider token has no expiry. Start
   // the lease before reading the account so slow resolution cannot extend it.
@@ -5863,7 +5866,11 @@ async function prepareNonCustomFirewallAuth(args: {
       ?.catalogConnector.mcp !== undefined
       ? Math.floor(nowDate().getTime() / 1000) + BUILTIN_MCP_AUTH_LEASE_SECONDS
       : null;
-  if (connectorSlug !== undefined && builtinMcpExpiresAt !== null) {
+  if (
+    connectorSlug !== undefined &&
+    builtinMcpExpiresAt !== null &&
+    requiresAutomaticMcpCredential
+  ) {
     const sourceId = args.body.matchedFirewall?.sourceId;
     if (sourceId === undefined) {
       return { ok: false, response: connectorNotConfigured() };
