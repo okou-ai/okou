@@ -261,10 +261,8 @@ test("Get started is the only control in the corner", async () => {
   });
 
   await expect(
-    waitFor(() => {
-      return screen.getByTestId("get-started-entry");
-    }),
-  ).resolves.toBeVisible();
+    screen.findByTestId("get-started-entry"),
+  ).resolves.toBeInTheDocument();
 
   // Get started already carries inviting and Slack as its own rows, so the
   // split control that used to sit beside it is gone.

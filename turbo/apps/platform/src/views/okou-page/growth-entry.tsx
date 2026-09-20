@@ -264,16 +264,20 @@ function AdminGrowthEntry() {
  * Whether Get started will draw a control of its own.
  *
  * The switch alone does not settle it: the server can still withhold the
- * quests, and the entry renders nothing when it has none. A pending answer
- * counts as showing, so the corner never offers the split control only to
- * swap it out once the quests arrive.
+ * quests, and the entry renders nothing when it has none. Only a pending
+ * answer counts as showing, so the corner never offers the split control and
+ * then swaps it out once the quests arrive. A failed status request never
+ * becomes data, so it hands the corner back rather than emptying it.
  */
 function useGetStartedShown(questsEnabled: boolean): boolean {
   const summaryLoadable = useLastLoadable(getStartedSummary$);
   if (!questsEnabled) {
     return false;
   }
-  return summaryLoadable.state !== "hasData" || summaryLoadable.data.total > 0;
+  if (summaryLoadable.state === "loading") {
+    return true;
+  }
+  return summaryLoadable.state === "hasData" && summaryLoadable.data.total > 0;
 }
 
 export function GrowthEntryHeader() {

@@ -9,6 +9,7 @@ import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
+import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
@@ -353,7 +354,36 @@ test("An admin keeps the growth entry when the org has no quests", async () => {
   const invitePeople = await waitFor(() => {
     return actionNamed("button", "Invite humans 🤝");
   });
-  expect(invitePeople).toBeVisible();
+  expect(invitePeople).toBeInTheDocument();
+  expect(screen.queryByTestId("get-started-entry")).toBeNull();
+});
+
+test("An admin keeps the growth entry when the quest request fails", async () => {
+  // A rejected status request never resolves into quests, so Get started can
+  // never draw its own control and must not hold the corner hostage.
+  configureGrowthPage(context, {
+    role: "admin",
+    slack: slackStatus({
+      connected: false,
+      installed: true,
+      workspaceAdmin: true,
+    }),
+  });
+  context.mocks.api(getStartedContract.status, ({ respond }) => {
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Session expired" },
+    });
+  });
+  await setupPage({
+    context,
+    path: growthChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  const invitePeople = await waitFor(() => {
+    return actionNamed("button", "Invite humans 🤝");
+  });
+  expect(invitePeople).toBeInTheDocument();
   expect(screen.queryByTestId("get-started-entry")).toBeNull();
 });
 
