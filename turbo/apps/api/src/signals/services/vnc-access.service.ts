@@ -128,6 +128,8 @@ export async function listRunVncHosts(
       and(
         eq(vncConnections.orgId, agentRuns.orgId),
         eq(vncConnections.userId, agentRuns.userId),
+        eq(vncConnections.authMethod, "vnc_password"),
+        eq(vncConnections.securityType, "x509_vnc"),
       ),
     )
     .leftJoin(
@@ -136,6 +138,7 @@ export async function listRunVncHosts(
         eq(vncCredentials.id, vncConnections.credentialId),
         eq(vncCredentials.orgId, owner.orgId),
         eq(vncCredentials.userId, owner.userId),
+        eq(vncCredentials.authMethod, "vnc_password"),
       ),
     )
     .where(

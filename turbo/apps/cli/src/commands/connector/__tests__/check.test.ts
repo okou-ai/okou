@@ -127,7 +127,7 @@ function resolvedUrl(
     },
     method: options.method ?? "GET",
     base: options.base ?? "https://api.github.com",
-    relativePath: options.relativePath ?? "/repos/vm0-ai/vm0",
+    relativePath: options.relativePath ?? "/repos/okou-ai/okou",
     permission: options.permission ?? {
       kind: "matched",
       permissions: [
@@ -396,7 +396,7 @@ describe("okou connector check command", () => {
         "node",
         "cli",
         "--url",
-        "https://api.github.com/repos/vm0-ai/vm0?token=private-query#private-fragment",
+        "https://api.github.com/repos/okou-ai/okou?token=private-query#private-fragment",
         "--json",
       ]);
       const json: unknown = JSON.parse(getOutput());
@@ -405,7 +405,7 @@ describe("okou connector check command", () => {
         request: {
           mode: "url",
           method: "GET",
-          url: "https://api.github.com/repos/vm0-ai/vm0",
+          url: "https://api.github.com/repos/okou-ai/okou",
         },
         diagnostic: {
           outcome: "resolved",
@@ -432,7 +432,7 @@ describe("okou connector check command", () => {
           expect.objectContaining({
             kind: "command",
             command:
-              "okou connector permission-request 'github' --permission 'contents:read' --url 'https://api.github.com/repos/vm0-ai/vm0' --method 'GET'",
+              "okou connector permission-request 'github' --permission 'contents:read' --url 'https://api.github.com/repos/okou-ai/okou' --method 'GET'",
           }),
           expect.objectContaining({
             kind: "link",
@@ -492,7 +492,7 @@ describe("okou connector check command", () => {
           "node",
           "cli",
           "--url",
-          "https://api.github.com/repos/vm0-ai/vm0",
+          "https://api.github.com/repos/okou-ai/okou",
           "--json",
         ]);
         const json: unknown = JSON.parse(getOutput());
@@ -644,7 +644,7 @@ describe("okou connector check command", () => {
 
       await expectCommandFailure([
         "--url",
-        "https://sensitive-user:sensitive-password@api.github.com/repos/vm0-ai/vm0",
+        "https://sensitive-user:sensitive-password@api.github.com/repos/okou-ai/okou",
       ]);
 
       expect(diagnosticRequested).toBe(false);
@@ -760,7 +760,7 @@ describe("okou connector check command", () => {
         name: "rejects permission with URL",
         args: [
           "--url",
-          "https://api.github.com/repos/vm0-ai/vm0",
+          "https://api.github.com/repos/okou-ai/okou",
           "--check-permission",
           "contents:read",
         ],
@@ -1173,7 +1173,7 @@ describe("okou connector check command", () => {
         "node",
         "cli",
         "--url",
-        "https://api.github.com/repos/vm0-ai/vm0",
+        "https://api.github.com/repos/okou-ai/okou",
       ]);
 
       expect(getOutput()).toContain(expected);
@@ -1379,7 +1379,7 @@ describe("okou connector check command", () => {
         "node",
         "cli",
         "--url",
-        "https://api.github.com/repos/vm0-ai/vm0",
+        "https://api.github.com/repos/okou-ai/okou",
       ]);
 
       expect(getOutput()).toContain(
@@ -1389,7 +1389,7 @@ describe("okou connector check command", () => {
       expect(getOutput()).toContain('"metadata:read" is in the ask list');
       expect(getOutput()).not.toContain("--permission contents:read");
       expect(getOutput()).toContain(
-        "okou connector permission-request 'github' --permission 'metadata:read' --url 'https://api.github.com/repos/vm0-ai/vm0' --method 'GET'",
+        "okou connector permission-request 'github' --permission 'metadata:read' --url 'https://api.github.com/repos/okou-ai/okou' --method 'GET'",
       );
     });
 
@@ -1476,7 +1476,7 @@ describe("okou connector check command", () => {
         name: "invalid method",
         args: [
           "--url",
-          "https://api.github.com/repos/vm0-ai/vm0",
+          "https://api.github.com/repos/okou-ai/okou",
           "--method",
           "TRACE",
         ],
@@ -1529,7 +1529,7 @@ describe("okou connector check command", () => {
         name: "connector mismatch",
         args: [
           "--url",
-          "https://api.github.com/repos/vm0-ai/vm0",
+          "https://api.github.com/repos/okou-ai/okou",
           "--connector",
           "slack",
         ],
@@ -1543,7 +1543,7 @@ describe("okou connector check command", () => {
         name: "environment not owned",
         args: [
           "--url",
-          "https://api.github.com/repos/vm0-ai/vm0",
+          "https://api.github.com/repos/okou-ai/okou",
           "--env-name",
           "SLACK_TOKEN",
         ],
@@ -1558,7 +1558,7 @@ describe("okou connector check command", () => {
         name: "environment not used",
         args: [
           "--url",
-          "https://api.github.com/repos/vm0-ai/vm0",
+          "https://api.github.com/repos/okou-ai/okou",
           "--env-name",
           "GH_TOKEN",
         ],

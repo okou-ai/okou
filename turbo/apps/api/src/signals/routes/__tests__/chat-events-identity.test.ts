@@ -220,8 +220,8 @@ describe("CHAT-02: default assistant identity", () => {
       http.post(
         "https://api.github.com/repos/:owner/:repo/issues/:issueNumber/comments",
         async ({ request, params }) => {
-          expect(params.owner).toBe("vm0-ai");
-          expect(params.repo).toBe("vm0");
+          expect(params.owner).toBe("okou-ai");
+          expect(params.repo).toBe("okou");
           const body = (await request.json()) as Record<string, unknown>;
           if (typeof body.body !== "string") {
             return HttpResponse.json(
@@ -243,7 +243,7 @@ describe("CHAT-02: default assistant identity", () => {
     await setChatCallbackGitHubDeliveryFixture({
       runId: run.runId,
       remoteInstallationId: installation.remoteInstallationId,
-      repo: "vm0-ai/vm0",
+      repo: "okou-ai/okou",
       subjectNumber: 1,
       subjectKind: "issue",
       agentId,

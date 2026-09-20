@@ -22,7 +22,7 @@
 import { ESLintUtils, TSESTree } from "@typescript-eslint/utils";
 
 const createRule = ESLintUtils.RuleCreator((name) => {
-  return `https://github.com/vm0-ai/vm0/blob/main/docs/eslint/${name}.md`;
+  return `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`;
 });
 
 type MessageIds = "missingSignalCheck";

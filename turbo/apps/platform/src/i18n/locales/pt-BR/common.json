@@ -1445,6 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} adicionados",
+        "checkedIn": "Check-in feito",
         "checkin": {
           "action": "Fazer check-in",
           "description": "Faça check-in uma vez por dia. Reinicia às 00:00 UTC.",
@@ -1454,11 +1456,12 @@
         "connector": {
           "action": "Conectar",
           "description": "Gmail, Notion e mais de 100",
-          "name": "Conectar um conector",
+          "name": "Conecte uma ferramenta",
           "unit": "por conector"
         },
+        "earned": "{{amount}} ganhos",
+        "howRewardsWork": "Como funcionam as recompensas",
         "inReview": "Em análise",
-        "inReviewDescription": "Enviado, aguardando análise",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} créditos",
@@ -1514,16 +1517,13 @@
           "name": "Convide seu time",
           "unit": "por membro"
         },
-        "pendingInvitations": "Convites pendentes: {{amount}}",
-        "personalBalanceNote": "As recompensas expiram 7 dias após a concessão. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
-        "progressLabel": "Progresso dos primeiros passos",
-        "rejectedDescription": "Esta publicação não atende aos requisitos. Envie outra publicação pública que mencione Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Conectores recompensados: {{amount}}",
+        "notEligible": "Não elegível",
+        "pendingState": "{{amount}} pendentes",
+        "rewardsNote": "As recompensas expiram 7 dias após a concessão. O check-in reinicia às 00:00 UTC. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
         "share": {
           "action": "Compartilhar",
           "description": "Publique e cole o link aqui",
-          "name": "Compartilhe o {{assistantName}} no X"
+          "name": "Compartilhar no X"
         },
         "shareDialog": {
           "description": "Envie uma publicação pública para análise. Uma recompensa aprovada por pessoa.",
@@ -1536,11 +1536,12 @@
         "slack": {
           "action": "Adicionar",
           "description": "Onde seu time já trabalha",
-          "name": "Adicionar o {{assistantName}} ao Slack"
+          "name": "Adicionar ao Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Experimente uma tarefa e ganhe créditos.",
+        "streak": "Sequência de {{amount}} dias",
         "title": "Primeiros passos",
+        "toGo": "Faltam {{amount}}",
         "workflow": {
           "action": "Criar",
           "description": "Transforme uma tarefa repetida em uma habilidade reutilizável",
@@ -7351,7 +7352,7 @@
         "refs": "Refs",
         "refsPlaceholder": "main, v1.0.0",
         "repositories": "Repositórios",
-        "repositoriesPlaceholder": "vm0-ai/vm0, owner/another-repo",
+        "repositoriesPlaceholder": "okou-ai/okou, owner/another-repo",
         "repositoriesSummary": "Repositórios {{values}}",
         "repository": "Repositório",
         "repositoryPlaceholder": "owner/name",

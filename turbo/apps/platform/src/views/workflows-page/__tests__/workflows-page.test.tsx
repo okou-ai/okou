@@ -313,7 +313,7 @@ function githubPullRequestWorkflowAutomation(): WorkflowGithubPullRequestAutomat
     eventConfig: {
       provider: "github",
       event: "pull_request",
-      repository: "vm0-ai/vm0",
+      repository: "okou-ai/okou",
       action: "closed",
       merged: true,
       filters: {},
@@ -3451,7 +3451,7 @@ test("Create a filtered GitHub workflow-run automation", async () => {
   const form = await screen.findByRole("form", {
     name: "Add GitHub workflow automation",
   });
-  await fill(within(form).getByLabelText("Repositories"), "vm0-ai/vm0");
+  await fill(within(form).getByLabelText("Repositories"), "okou-ai/okou");
   await fill(
     within(form).getByLabelText("GitHub workflows"),
     "Turbo, .github/workflows/turbo.yml",
@@ -3471,7 +3471,7 @@ test("Create a filtered GitHub workflow-run automation", async () => {
         provider: "github",
         event: "workflow_run_completed",
         filters: {
-          repositories: ["vm0-ai/vm0"],
+          repositories: ["okou-ai/okou"],
           workflows: ["Turbo", ".github/workflows/turbo.yml"],
           conclusions: ["failure", "startup_failure"],
           branches: ["main"],
@@ -3572,7 +3572,7 @@ test("Create a filtered GitHub issue-comment automation", async () => {
   await waitFor(() => {
     expect(within(form).getByLabelText("Trusted authors")).toBeEnabled();
   });
-  await fill(within(form).getByLabelText("Repositories"), "vm0-ai/vm0");
+  await fill(within(form).getByLabelText("Repositories"), "okou-ai/okou");
   selectOptionByLabel("Subject", "Pull requests only", form);
   fireEvent.change(within(form).getByLabelText("Trusted authors"), {
     target: { value: "e7h4n, lancy" },
@@ -3590,7 +3590,7 @@ test("Create a filtered GitHub issue-comment automation", async () => {
         provider: "github",
         event: "issue_comment_created",
         filters: {
-          repositories: ["vm0-ai/vm0"],
+          repositories: ["okou-ai/okou"],
           subject: "pull_requests",
           trustedAuthors: ["e7h4n", "lancy"],
           commentPrefixes: ["/verify", "/deploy"],

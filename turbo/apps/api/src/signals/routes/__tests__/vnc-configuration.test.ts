@@ -20,6 +20,10 @@ const security = Object.freeze({
   type: "x509_vnc" as const,
   trust: Object.freeze({ mode: "system" as const }),
 });
+const plainSecurity = Object.freeze({
+  type: "x509_plain" as const,
+  trust: Object.freeze({ mode: "system" as const }),
+});
 const leafCertificate = readFileSync(
   new URL("./fixtures/vnc-leaf.txt", import.meta.url),
   "utf8",
@@ -63,6 +67,9 @@ async function owner(
 }
 function passwordAuthentication(password: string) {
   return { method: "vnc_password" as const, password };
+}
+function usernamePasswordAuthentication(username: string, password: string) {
+  return { method: "username_password" as const, username, password };
 }
 function hostBody(host = "vnc.example.com") {
   return {
@@ -246,7 +253,8 @@ describe("VNC owner configuration", () => {
     const before = (await accept(credentials().list({ headers }), [200])).body;
     for (const authentication of [
       { method: "none" },
-      { method: "username_password", username: "canary", password: "secret" },
+      { method: "username_password", username: "canary" },
+      { method: "username_password", password: "secret" },
       { method: "vnc_password" },
       { method: "vnc_password", password: "secret", username: "canary" },
     ]) {
@@ -284,6 +292,7 @@ describe("VNC owner configuration", () => {
       { type: "none" },
       { type: "tls_vnc" },
       { type: "x509_vnc" },
+      { type: "x509_plain" },
       { type: "x509_vnc", trust: { mode: "insecure" } },
     ]) {
       expect(
@@ -313,6 +322,163 @@ describe("VNC owner configuration", () => {
     expect(
       (await accept(credentials().list({ headers }), [200])).body,
     ).toStrictEqual(before);
+  });
+
+  it("models username/password credentials and enforces exact profile pairs", async () => {
+    const kms = useSecretKmsProbe();
+    await owner();
+    for (const authentication of [
+      usernamePasswordAuthentication("", "secret"),
+      usernamePasswordAuthentication("bad\u0000name", "secret"),
+      usernamePasswordAuthentication("é".repeat(128), "secret"),
+      usernamePasswordAuthentication("canary", ""),
+      usernamePasswordAuthentication("canary", "bad\u0000secret"),
+      usernamePasswordAuthentication("canary", "é".repeat(512)),
+    ]) {
+      const result = await rawRequest("/api/vnc/credentials", {
+        id: randomUUID(),
+        name: "Invalid username password",
+        authentication,
+      });
+      expect(result.status).toBe(400);
+      expect(result.body).toMatchObject({
+        error: { code: "VNC_INVALID_INPUT" },
+      });
+    }
+    expect(kms.generateDataKeyCalls).toBe(0);
+
+    const username = `${"é".repeat(127)}a`;
+    const password = " ".repeat(1023);
+    const credential = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Username password",
+          authentication: usernamePasswordAuthentication(username, password),
+        },
+      }),
+      [201],
+    );
+    expect(credential.body).toMatchObject({
+      authMethod: "username_password",
+      username,
+      revision: 1,
+      hosts: [],
+    });
+    expect(JSON.stringify(credential.body)).not.toContain(password);
+    expect(JSON.stringify(credential.body)).not.toContain("encryptedPassword");
+
+    const plain = await accept(
+      connections().create({
+        headers,
+        body: {
+          ...hostBody("plain.example.com"),
+          credential: { id: credential.body.id },
+          security: plainSecurity,
+        },
+      }),
+      [201],
+    );
+    expect(plain.body.security).toStrictEqual(plainSecurity);
+
+    for (const body of [
+      {
+        ...hostBody("inline-plain.example.com"),
+        credential: {
+          create: {
+            name: "Mismatched username password",
+            authentication: usernamePasswordAuthentication(
+              "operator",
+              "secret",
+            ),
+          },
+        },
+      },
+      {
+        ...hostBody("selected-plain.example.com"),
+        credential: { id: credential.body.id },
+      },
+      {
+        ...hostBody("inline-vnc.example.com"),
+        security: plainSecurity,
+      },
+    ]) {
+      const result = await accept(
+        connections().create({ headers, body }),
+        [400],
+      );
+      expect(result.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    }
+
+    const rejectedMethod = await accept(
+      credentials().update({
+        headers,
+        params: { credentialId: credential.body.id },
+        body: {
+          expectedRevision: 1,
+          authentication: passwordAuthentication("replace"),
+        },
+      }),
+      [400],
+    );
+    expect(rejectedMethod.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+    const rejectedSecurity = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: plain.body.id },
+        body: { expectedGeneration: 1, security },
+      }),
+      [400],
+    );
+    expect(rejectedSecurity.body.error.code).toBe("VNC_PROFILE_MISMATCH");
+
+    const legacy = await accept(
+      credentials().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Legacy password",
+          authentication: passwordAuthentication("legacy"),
+        },
+      }),
+      [201],
+    );
+    const rebound = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: plain.body.id },
+        body: {
+          expectedGeneration: 1,
+          credential: { id: legacy.body.id },
+          security,
+        },
+      }),
+      [200],
+    );
+    expect(rebound.body).toMatchObject({
+      credentialId: legacy.body.id,
+      generation: 2,
+      security,
+    });
+
+    const changedUnreferenced = await accept(
+      credentials().update({
+        headers,
+        params: { credentialId: credential.body.id },
+        body: {
+          expectedRevision: 1,
+          authentication: passwordAuthentication("changed"),
+        },
+      }),
+      [200],
+    );
+    expect(changedUnreferenced.body).toMatchObject({
+      authMethod: "vnc_password",
+      revision: 2,
+      hosts: [],
+    });
+    expect("username" in changedUnreferenced.body).toBeFalsy();
   });
 
   it("validates canonical endpoints and bounded certificate-only trust", async () => {

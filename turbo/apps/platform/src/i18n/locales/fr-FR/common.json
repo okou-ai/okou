@@ -1445,6 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} ajoutés",
+        "checkedIn": "Présence validée",
         "checkin": {
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
@@ -1454,11 +1456,12 @@
         "connector": {
           "action": "Connecter",
           "description": "Gmail, Notion et plus de 100 autres",
-          "name": "Connecter un connecteur",
+          "name": "Connecter un outil",
           "unit": "par connecteur"
         },
+        "earned": "{{amount}} obtenus",
+        "howRewardsWork": "Comment fonctionnent les récompenses",
         "inReview": "En cours d'examen",
-        "inReviewDescription": "Envoyé, en attente d'examen",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} crédits",
@@ -1514,16 +1517,13 @@
           "name": "Invitez votre équipe",
           "unit": "par membre"
         },
-        "pendingInvitations": "Invitations en attente : {{amount}}",
-        "personalBalanceNote": "Les récompenses expirent 7 jours après leur attribution. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
-        "progressLabel": "Progression du démarrage",
-        "rejectedDescription": "Cette publication n’est pas éligible. Envoyez une autre publication publique mentionnant Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Connecteurs récompensés : {{amount}}",
+        "notEligible": "Non éligible",
+        "pendingState": "{{amount}} en attente",
+        "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
         "share": {
           "action": "Partager",
           "description": "Publiez, puis collez le lien",
-          "name": "Partager {{assistantName}} sur X"
+          "name": "Partager sur X"
         },
         "shareDialog": {
           "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
@@ -1536,11 +1536,12 @@
         "slack": {
           "action": "Ajouter",
           "description": "Là où votre équipe travaille déjà",
-          "name": "Ajouter {{assistantName}} à Slack"
+          "name": "Ajouter à Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Essayez une tâche et gagnez des crédits.",
+        "streak": "{{amount}} jours d’affilée",
         "title": "Démarrer",
+        "toGo": "Encore {{amount}}",
         "workflow": {
           "action": "Créer",
           "description": "Transformez une tâche répétitive en compétence réutilisable",
@@ -7351,7 +7352,7 @@
         "refs": "Refs",
         "refsPlaceholder": "main, v1.0.0",
         "repositories": "Dépôts",
-        "repositoriesPlaceholder": "vm0-ai/vm0, owner/another-repo",
+        "repositoriesPlaceholder": "okou-ai/okou, owner/another-repo",
         "repositoriesSummary": "Dépôts {{values}}",
         "repository": "Dépôt",
         "repositoryPlaceholder": "owner/name",

@@ -610,7 +610,7 @@ export function ArtifactCatalogPage({
 
       <main
         onScroll={handleScroll}
-        className="flex-1 overflow-auto px-4 pb-[max(2rem,var(--sab))] pt-1 sm:px-6 [scrollbar-gutter:stable]"
+        className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
       >
         <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
           {catalog.state === "loading" ? (

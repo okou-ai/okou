@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { mcpChatMessageSchema } from "./mcp-chat-messages";
+import {
+  mcpChatMessageSchema,
+  mcpGetChatMessagesOutputSchema,
+} from "./mcp-chat-messages";
 import { runStatusSchema } from "./runs";
 
 const inputReferenceSchema = z.strictObject({
@@ -13,13 +16,24 @@ export const mcpGetChatStatusInputSchema = z
   .strictObject({
     threadId: z.uuid().toLowerCase(),
     inputRef: inputReferenceSchema.optional(),
+    waitMs: z.number().int().nonnegative().max(60_000).optional(),
   })
-  .refine(
-    (input) => {
-      return !input.inputRef || input.inputRef.threadId === input.threadId;
-    },
-    { message: "inputRef must belong to threadId" },
-  );
+  .superRefine((input, context) => {
+    if (input.inputRef && input.inputRef.threadId !== input.threadId) {
+      context.addIssue({
+        code: "custom",
+        path: ["inputRef", "threadId"],
+        message: "inputRef must belong to threadId",
+      });
+    }
+    if (input.waitMs !== undefined && input.waitMs > 0 && !input.inputRef) {
+      context.addIssue({
+        code: "custom",
+        path: ["inputRef"],
+        message: "A positive waitMs requires the exact original inputRef",
+      });
+    }
+  });
 
 export const mcpGetChatStatusOutputSchema = z.strictObject({
   threadId: z.uuid(),
@@ -70,6 +84,23 @@ export const mcpGetChatStatusOutputSchema = z.strictObject({
       }),
     })
     .nullable(),
+  wait: z
+    .strictObject({
+      requestedMs: z.number().int().positive(),
+      effectiveMs: z.number().int().positive(),
+      elapsedMs: z.number().int().nonnegative(),
+      observations: z.number().int().positive().max(5),
+      outcome: z.enum(["ready", "deadline", "status"]),
+      returnReason: z.enum([
+        "output_ready",
+        "application_deadline",
+        "non_retryable_state",
+        "waiter_limit",
+        "observation_limit",
+      ]),
+    })
+    .nullable(),
+  messagePage: mcpGetChatMessagesOutputSchema.nullable(),
   retryAfterMs: z.number().int().positive().nullable(),
 });
 

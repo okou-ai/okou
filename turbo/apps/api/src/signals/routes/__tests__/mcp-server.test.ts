@@ -4,6 +4,8 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import type { JsonSchemaType } from "@modelcontextprotocol/server";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
@@ -42,7 +44,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -94,6 +101,55 @@ const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
   "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
+// Full-scope tools/list before this optimization on main at 20ac28bd53.
+const fullCatalogBaselineBytes = 47_144;
+const fullCatalogMaximumBytes = Math.floor(fullCatalogBaselineBytes * 0.8);
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function measureCompactSuccess(result: unknown): {
+  readonly baselineBytes: number;
+  readonly compactBytes: number;
+} {
+  const parsed = z
+    .looseObject({
+      isError: z.boolean().optional(),
+      content: z.array(z.object({ type: z.literal("text"), text: z.string() })),
+      structuredContent: z.unknown(),
+    })
+    .parse(result);
+  expect(parsed.isError).not.toBeTruthy();
+  expect(parsed.content).toHaveLength(1);
+  const summary = parsed.content[0]?.text;
+  if (!summary) {
+    throw new Error("Expected a nonempty MCP tool summary");
+  }
+  expect(Buffer.byteLength(summary, "utf8")).toBeLessThanOrEqual(512);
+  expect(summary).not.toBe(JSON.stringify(parsed.structuredContent));
+  const baselineResult = {
+    ...parsed,
+    content: [
+      { type: "text" as const, text: JSON.stringify(parsed.structuredContent) },
+    ],
+  };
+  const measurement = {
+    baselineBytes: jsonBytes(baselineResult),
+    compactBytes: jsonBytes(parsed),
+  };
+  expect(measurement.compactBytes).toBeLessThanOrEqual(
+    measurement.baselineBytes,
+  );
+  return measurement;
+}
+
+function expectSubstantialCompactSuccess(result: unknown): void {
+  const measurement = measureCompactSuccess(result);
+  expect(measurement.compactBytes).toBeLessThanOrEqual(
+    Math.floor(measurement.baselineBytes * 0.6),
+  );
+}
 
 function client() {
   return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
@@ -230,7 +286,7 @@ async function callTool(
     }),
     [200],
   );
-  return z
+  const result = z
     .object({
       result: z.object({
         isError: z.boolean().optional(),
@@ -241,6 +297,10 @@ async function callTool(
       }),
     })
     .parse(rpc(response.body)).result;
+  if (!result.isError && result.structuredContent !== undefined) {
+    measureCompactSuccess(result);
+  }
+  return result;
 }
 
 function structuredToolError(result: Awaited<ReturnType<typeof callTool>>) {
@@ -515,6 +575,25 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
+  it("substantially reduces a 20-thread list result", async () => {
+    const f = await threadFixture();
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) => {
+        return f.chat.createThread(f.actor, {
+          agentId: f.agent.agentId,
+          title: `Payload measurement ${index}`,
+        });
+      }),
+    );
+    const result = await callTool(f.auth.token(), "list_chat_threads", {
+      limit: 20,
+    });
+    expectSubstantialCompactSuccess(result);
+    expect(
+      mcpListChatThreadsOutputSchema.parse(result.structuredContent).threads,
+    ).toHaveLength(20);
+  });
+
   it("does not initialize missing model policies through a discovery read", async () => {
     const auth = await fixture();
     const first = await callTool(auth.token(), "list_models");
@@ -687,14 +766,19 @@ describe("MCP chat discovery and creation", () => {
     const f = await creationFixture();
     const requestId = randomUUID();
     const token = f.auth.token({ scope: defaultScopes });
-    const created = await createThread(
+    const createdResult = await callTool(
       f.auth.token({ scope: `${requiredScopes} okou:chat:manage` }),
+      "create_chat_thread",
       {
         requestId: requestId.toUpperCase(),
         agentId: f.agent.agentId.toUpperCase(),
         title: "Review the quarterly plan",
         model: "claude-sonnet-4-6",
       },
+    );
+    expectSubstantialCompactSuccess(createdResult);
+    const created = mcpCreateChatThreadOutputSchema.parse(
+      createdResult.structuredContent,
     );
     expect(created).toMatchObject({
       threadId: requestId,
@@ -1335,7 +1419,10 @@ describe("MCP chat status", () => {
       agentId: f.agent.agentId,
     });
     const before = await f.chat.readThread(f.actor, thread.id);
-    const status = await getStatus(f.auth.token(), { threadId: thread.id });
+    const status = await getStatus(f.auth.token(), {
+      threadId: thread.id,
+      waitMs: 0,
+    });
     expect(status).toMatchObject({
       threadId: thread.id,
       input: null,
@@ -1348,6 +1435,8 @@ describe("MCP chat status", () => {
         reason: "no_associated_run",
       },
       messages: null,
+      wait: null,
+      messagePage: null,
       retryAfterMs: null,
     });
     expect(Number.isNaN(Date.parse(status.observedAt))).toBeFalsy();
@@ -1434,7 +1523,11 @@ describe("MCP chat status", () => {
       lastEventSequence: 0,
     });
     await flushWaitUntilForTest();
-    const ready = await getStatus(token, args);
+    const readyResult = await callTool(token, "get_chat_status", args);
+    expectSubstantialCompactSuccess(readyResult);
+    const ready = mcpGetChatStatusOutputSchema.parse(
+      readyResult.structuredContent,
+    );
     expect(ready).toMatchObject({
       run: { id: runId, status: "completed", completedAt: expect.any(String) },
       output: { state: "ready", messageRefs: partial.output.messageRefs },
@@ -1443,7 +1536,22 @@ describe("MCP chat status", () => {
     if (!ready.messages) {
       throw new Error("Expected a message retrieval handoff");
     }
-    const messages = await getMessages(token, ready.messages.arguments);
+    const messagesResult = await callTool(
+      token,
+      "get_chat_messages",
+      ready.messages.arguments,
+    );
+    expectSubstantialCompactSuccess(messagesResult);
+    const messages = mcpGetChatMessagesOutputSchema.parse(
+      messagesResult.structuredContent,
+    );
+    expect(
+      new Set(
+        messages.messages.map((message) => {
+          return message.role;
+        }),
+      ),
+    ).toStrictEqual(new Set(["user", "assistant"]));
     expect(
       messages.messages
         .filter((message) => {
@@ -1453,6 +1561,16 @@ describe("MCP chat status", () => {
           return message.ref;
         }),
     ).toStrictEqual(ready.output.messageRefs);
+    const waited = await getStatus(token, { ...args, waitMs: 60_000 });
+    expect(waited.wait).toStrictEqual({
+      requestedMs: 60_000,
+      effectiveMs: 8000,
+      elapsedMs: expect.any(Number),
+      observations: 1,
+      outcome: "ready",
+      returnReason: "output_ready",
+    });
+    expect(waited.messagePage).toStrictEqual(messages);
     await expect(
       getStatus(token, { threadId: thread.id }),
     ).resolves.toMatchObject({
@@ -1460,6 +1578,8 @@ describe("MCP chat status", () => {
       runSelection: "latest",
       run: { id: runId, status: "completed" },
       output: { state: "ready" },
+      wait: null,
+      messagePage: null,
     });
     const invalidRefs = [
       { ...sent.inputRef, eventId: randomUUID() },
@@ -1492,6 +1612,353 @@ describe("MCP chat status", () => {
       threadId: thread.id,
       input: { ref: sent.inputRef, runId },
       run: { id: runId, status: "completed" },
+    });
+  });
+
+  it("rereads after a bounded delay and returns ready content from the fresh snapshot", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Wait for the canonical result",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              content: [{ type: "text", text: "Bounded wait result" }],
+            },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    context.mocks.signalTimers.delay.mockImplementationOnce(
+      async (_ms, options) => {
+        options?.signal?.throwIfAborted();
+        await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+          lastEventSequence: 0,
+        });
+        await flushWaitUntilForTest();
+      },
+    );
+
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+
+    expect(status).toMatchObject({
+      run: { id: runId, status: "completed" },
+      output: { state: "ready" },
+      wait: {
+        requestedMs: 5000,
+        effectiveMs: 5000,
+        observations: 2,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage: {
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            text: "Bounded wait result",
+          }),
+        ]),
+      },
+      retryAfterMs: null,
+    });
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledOnce();
+  });
+
+  it("returns a fresh deadline status and exposes output that arrives later", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Finish after the bounded wait",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    let monotonicMs = 1000;
+    mockMonotonicNow(monotonicMs);
+    onTestFinished(() => {
+      clearMockMonotonicNow();
+    });
+    context.mocks.signalTimers.delay.mockImplementation(
+      (milliseconds, options) => {
+        options?.signal?.throwIfAborted();
+        monotonicMs += milliseconds;
+        mockMonotonicNow(monotonicMs);
+        return Promise.resolve();
+      },
+    );
+
+    const deadline = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+
+    expect(deadline).toMatchObject({
+      run: { id: runId, status: "running" },
+      output: { state: "pending" },
+      wait: {
+        requestedMs: 5000,
+        effectiveMs: 5000,
+        elapsedMs: 5000,
+        observations: 4,
+        outcome: "deadline",
+        returnReason: "application_deadline",
+      },
+      messagePage: null,
+      retryAfterMs: 2000,
+    });
+    expect(
+      context.mocks.signalTimers.delay.mock.calls.map(([milliseconds]) => {
+        return milliseconds;
+      }),
+    ).toStrictEqual([2000, 2000, 1000]);
+
+    clearMockMonotonicNow();
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: { content: [{ type: "text", text: "Late result" }] },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    const late = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+    expect(late.wait).toMatchObject({
+      observations: 1,
+      outcome: "ready",
+      returnReason: "output_ready",
+    });
+    expect(late.messagePage?.messages).toContainEqual(
+      expect.objectContaining({ role: "assistant", text: "Late result" }),
+    );
+  });
+
+  it("returns current status when principal wait capacity is full and reuses released slots", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Keep bounded waiters pending",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let heldWaiters = 0;
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+      options?.signal?.throwIfAborted();
+      if (heldWaiters < 2) {
+        heldWaiters += 1;
+        if (heldWaiters === 2) {
+          entered.resolve();
+        }
+        return release.promise;
+      }
+      return Promise.resolve();
+    });
+    const args = {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    };
+
+    const first = getStatus(token, args);
+    const second = getStatus(token, args);
+    await entered.promise;
+    const exhausted = await getStatus(token, args);
+    expect(exhausted.wait).toMatchObject({
+      observations: 1,
+      outcome: "status",
+      returnReason: "waiter_limit",
+    });
+    expect(exhausted.output.state).toBe("pending");
+
+    release.resolve();
+    await expect(Promise.all([first, second])).resolves.toStrictEqual([
+      expect.objectContaining({
+        wait: expect.objectContaining({
+          outcome: "status",
+          returnReason: "observation_limit",
+        }),
+      }),
+      expect.objectContaining({
+        wait: expect.objectContaining({
+          outcome: "status",
+          returnReason: "observation_limit",
+        }),
+      }),
+    ]);
+    await expect(getStatus(token, args)).resolves.toMatchObject({
+      wait: {
+        outcome: "status",
+        returnReason: "observation_limit",
+      },
+    });
+  });
+
+  it("cancels only a disconnected waiter and releases its admission slot", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Keep running after the waiter disconnects",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    const controller = new AbortController();
+    onTestFinished(async () => {
+      controller.abort();
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const delayStarted = createDeferredPromise<void>(context.signal);
+    const delayAborted = createDeferredPromise<void>(context.signal);
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+      const waitSignal = options?.signal;
+      if (!waitSignal) {
+        throw new Error("Expected the waiter delay to own a signal");
+      }
+      const held = createDeferredPromise<void>(waitSignal);
+      waitSignal.addEventListener(
+        "abort",
+        () => {
+          delayAborted.resolve();
+        },
+        { once: true },
+      );
+      delayStarted.resolve();
+      return held.promise;
+    });
+    const app = createAppWithRoutes({
+      routes: mcpServerRoutes,
+      signal: context.signal,
+    });
+    const pending = settleIncludingAbort(
+      (async () => {
+        const response = await app.request(
+          new Request(resource, {
+            method: "POST",
+            headers: {
+              ...protocolHeaders(token, "tools/call", true, "get_chat_status"),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(
+              requestBody("tools/call", true, {
+                name: "get_chat_status",
+                arguments: {
+                  threadId: thread.id,
+                  inputRef: sent.inputRef,
+                  waitMs: 8000,
+                },
+              }),
+            ),
+            signal: controller.signal,
+          }),
+        );
+        return { status: response.status, body: await response.text() };
+      })(),
+    );
+
+    await delayStarted.promise;
+    controller.abort(new DOMException("Caller disconnected", "AbortError"));
+    await delayAborted.promise;
+    await pending;
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+    const after = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    });
+    expect(after.wait?.returnReason).toBe("observation_limit");
+    await expect(f.api.readRun(actor.actor, runId)).resolves.toMatchObject({
+      status: expect.not.stringMatching(/cancel/u),
     });
   });
 
@@ -1574,10 +2041,18 @@ describe("MCP chat status", () => {
       userId: auth.userId,
       orgId: auth.orgId,
     });
-    const sent = await f.sendChatRun(actor.actor, {
+    const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
-      prompt: "Fail before producing output",
     });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Fail before producing output",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
     const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
     await f.failChatRun(
       sent.runId,
@@ -1585,10 +2060,20 @@ describe("MCP chat status", () => {
       "PRIVATE_RAW_ERROR",
     );
     await flushWaitUntilForTest();
-    const status = await getStatus(auth.token(), { threadId: sent.threadId });
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    });
     expect(status).toMatchObject({
       run: { id: sent.runId, status: "failed" },
       output: { state: "unavailable", reason: "no_output", messageRefs: [] },
+      wait: {
+        observations: 1,
+        outcome: "status",
+        returnReason: "non_retryable_state",
+      },
+      messagePage: null,
       retryAfterMs: null,
     });
     expect(JSON.stringify(status)).not.toContain("PRIVATE_RAW_ERROR");
@@ -5052,7 +5537,22 @@ describe("external MCP entry", () => {
         }),
         [200],
       );
-      expect(rpc(listed.body)).toMatchObject({
+      const listedPayload = rpc(listed.body);
+      const listedTools = z
+        .object({
+          result: z.object({
+            tools: z.array(
+              z.looseObject({
+                name: z.string(),
+                description: z.string(),
+                inputSchema: z.record(z.string(), z.unknown()),
+                outputSchema: z.record(z.string(), z.unknown()),
+              }),
+            ),
+          }),
+        })
+        .parse(listedPayload).result.tools;
+      expect(listedPayload).toMatchObject({
         result: {
           tools: [
             { name: "get_chat_messages", annotations: { readOnlyHint: true } },
@@ -5154,6 +5654,62 @@ describe("external MCP entry", () => {
           ],
         },
       });
+      const schemaValidator = new AjvJsonSchemaValidator();
+      for (const tool of listedTools) {
+        expect(() => {
+          schemaValidator.getValidator(tool.inputSchema as JsonSchemaType);
+          schemaValidator.getValidator(tool.outputSchema as JsonSchemaType);
+        }).not.toThrow();
+      }
+      if (scopes === defaultScopes) {
+        expect(listedTools).toHaveLength(12);
+        expect(jsonBytes(listedTools)).toBeLessThanOrEqual(
+          fullCatalogMaximumBytes,
+        );
+        expect(JSON.stringify(listedTools)).toContain('"$ref":"#/$defs/');
+        const safetyTerms = {
+          get_chat_messages: [
+            /nextContentCursor/iu,
+            /UTF-16/iu,
+            /does not mark read/iu,
+            /8 MiB/iu,
+          ],
+          search_chat_messages: [
+            /scanLimited/iu,
+            /do not prove absence/iu,
+            /does not mark read/iu,
+            /32 MiB/iu,
+          ],
+          get_chat_status: [
+            /waitMs/iu,
+            /current state, not a run outcome/iu,
+            /messagePage/iu,
+            /Disconnect cancels only the waiter/iu,
+            /retryAfterMs/iu,
+            /ready means current materialized output/iu,
+            /neither marks read nor changes or cancels/iu,
+          ],
+          list_agents: [/24 hours/iu, /visibility/iu],
+          list_models: [/admission/iu, /does not repair/iu, /model settings/iu],
+          list_chat_threads: [/does not mark read/iu, /not run completion/iu],
+          get_chat_thread: [
+            /neither reads messages nor marks read/iu,
+            /not prove/iu,
+          ],
+          create_chat_thread: [/24 hours/iu, /retry only/iu, /admission/iu],
+          update_chat_thread: [/24 hours/iu, /retry only/iu, /active run/iu],
+          send_chat_message: [/24 hours/iu, /not proof/iu, /get_chat_status/iu],
+          revoke_queued_message: [/never cancels a run/iu, /not_revocable/iu],
+          cancel_run: [/neither revokes/iu, /prior effects/iu],
+        } as const;
+        for (const tool of listedTools) {
+          const terms = safetyTerms[tool.name as keyof typeof safetyTerms];
+          expect(terms, `Unexpected tool ${tool.name}`).toBeDefined();
+          for (const term of terms ?? []) {
+            expect(tool.description).toMatch(term);
+          }
+        }
+      }
       const result = await accept(
         client().request({
           extraHeaders: protocolHeaders(token, "tools/call", modern),
@@ -5235,6 +5791,14 @@ describe("external MCP entry", () => {
         "revoke_queued_message",
         "cancel_run",
       ]);
+      const advertisedOutputValidators = new Map(
+        tools.tools.map((tool) => {
+          const validator = new AjvJsonSchemaValidator().getValidator(
+            tool.outputSchema as JsonSchemaType,
+          );
+          return [tool.name, validator] as const;
+        }),
+      );
       const result = await sdk.callTool({
         name: "list_chat_threads",
         arguments: {},
@@ -5243,6 +5807,9 @@ describe("external MCP entry", () => {
         structuredContent: { threads: [], nextCursor: null },
       });
       const sent = await f.send("sdksearchneedle context handoff");
+      for (let index = 1; index < 5; index++) {
+        await f.send(`sdksearchneedle context handoff ${index}`, sent.threadId);
+      }
       await projectSearchMessages([sent.threadId]);
       const searched = await sdk.callTool({
         name: "search_chat_messages",
@@ -5268,7 +5835,10 @@ describe("external MCP entry", () => {
       expect(around).toMatchObject({
         structuredContent: {
           messages: [
-            { ref: match.ref, text: "sdksearchneedle context handoff" },
+            {
+              ref: match.ref,
+              text: expect.stringContaining("sdksearchneedle"),
+            },
           ],
         },
       });
@@ -5291,6 +5861,45 @@ describe("external MCP entry", () => {
         disposition: "rejected",
         runId: null,
       });
+      const status = await sdk.callTool({
+        name: "get_chat_status",
+        arguments: {
+          threadId: sent.threadId,
+          inputRef: receipt.inputRef,
+        },
+      });
+      expect(status).toMatchObject({
+        structuredContent: {
+          threadId: sent.threadId,
+          input: { ref: receipt.inputRef, state: "rejected" },
+        },
+      });
+      const representativeResults = [
+        ["list_chat_threads", result],
+        ["search_chat_messages", searched],
+        ["get_chat_messages", around],
+        ["send_chat_message", submitted],
+        ["get_chat_status", status],
+      ] as const;
+      const measurements = representativeResults.map(
+        ([toolName, toolResult]) => {
+          const validateOutput = advertisedOutputValidators.get(toolName);
+          if (!validateOutput) {
+            throw new Error(`Missing output validator for ${toolName}`);
+          }
+          expect(validateOutput(toolResult.structuredContent)).toMatchObject({
+            valid: true,
+          });
+          return measureCompactSuccess(toolResult);
+        },
+      );
+      const baselineBytes = measurements.reduce((total, measurement) => {
+        return total + measurement.baselineBytes;
+      }, 0);
+      const compactBytes = measurements.reduce((total, measurement) => {
+        return total + measurement.compactBytes;
+      }, 0);
+      expect(compactBytes).toBeLessThanOrEqual(Math.floor(baselineBytes * 0.6));
       const missing = await sdk.callTool({
         name: "get_chat_thread",
         arguments: { threadId: randomUUID() },

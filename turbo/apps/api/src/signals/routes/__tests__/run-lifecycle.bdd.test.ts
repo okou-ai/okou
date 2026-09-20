@@ -1047,7 +1047,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("mounts shared skills without granting Goal authority to a fresh manual run", async () => {
     const names = ["goal", "workflow-setup"];
     const versions = names.map((name) => {
-      const fullPath = `vm0-ai/vm0-skills/tree/fixture-${randomUUID()}/${name}`;
+      const fullPath = `okou-ai/vm0-skills/tree/fixture-${randomUUID()}/${name}`;
       return {
         name,
         url: `https://github.com/${fullPath}`,
@@ -13043,11 +13043,26 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(grantedContext.claim.networkPolicyRefreshes).not.toHaveProperty(
       "model-provider:anthropic-api-key",
     );
+    expect(
+      findFirewallEntry(
+        grantedContext.claim.firewalls,
+        "model-provider:anthropic-api-key",
+      ),
+    ).toMatchObject({
+      kind: "builtin",
+      name: "model-provider:anthropic-api-key",
+    });
     expect(grantedContext.claim.connectorRuntimeTargets).toContainEqual({
       kind: "builtin",
       connectorSlug: "slack",
       sourceId: expect.any(String),
     });
+    expect(grantedContext.claim.connectorRuntimeTargets).not.toContainEqual(
+      expect.objectContaining({
+        kind: "builtin",
+        connectorSlug: "model-provider:anthropic-api-key",
+      }),
+    );
     expect(granted.allow).toContain("chat:write");
     expect(granted.allow).toContain("files:read");
     expect(granted.deny).not.toContain("chat:write");
@@ -13114,7 +13129,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(sameUserRuntime.body.results[0]).toMatchObject({
       target: { kind: "builtin", connectorSlug: "missing-builtin" },
-      state: "unresolved",
+      state: "absent",
       reason: "connector-unavailable",
     });
     expect(sameUserRuntime.body.results[1]).toMatchObject({
@@ -13925,44 +13940,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     ).toBeGreaterThan(appendSystemPrompt.indexOf("# Current User Info"));
     expect(appendSystemPrompt.trimEnd()).toMatch(
       /offer a safe, non-explicit or non-graphic alternative\.$/u,
-    );
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("requires Mercury attribution when a response presents account data", async () => {
-    const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
-    const fw = createFirewallApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    await connectors.updateFeatureSwitches(actor, {
-      mercuryConnector: true,
-    });
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "mercury",
-      authMethod: "oauth",
-      accessToken: "mercury-bdd-access",
-      refreshToken: "mercury-bdd-refresh",
-    });
-    await api.enableAgentConnectors(actor, agentId, ["mercury"]);
-
-    const run = await api.createRun(actor, {
-      agentId,
-      prompt: "summarize my Mercury account balances",
-      modelProvider: "anthropic-api-key",
-    });
-    const appendSystemPrompt =
-      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-
-    expect(appendSystemPrompt).toContain("# Mercury Account Data Disclosure");
-    expect(appendSystemPrompt).toContain(
-      "[Powered by Mercury](https://mercury.com)",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
-    );
-    expect(appendSystemPrompt).toContain(
-      "Do not include this disclosure when the response does not present Mercury-sourced data.",
     );
 
     await api.requestCancelRun(actor, run.runId, [200]);

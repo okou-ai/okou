@@ -738,9 +738,7 @@ const notifyStep$ = command(
       if (!(await completeBackgroundJob(tx, { job }, signal))) {
         return false;
       }
-      if (email) {
-        await tx.insert(emailOutbox).values(email);
-      }
+      await tx.insert(emailOutbox).values(email);
       signal.throwIfAborted();
       return true;
     });

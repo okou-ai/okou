@@ -730,8 +730,8 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
     ready: true,
   });
   const artifactDigest = await removePiStableContextHeadFixture(headId);
+  const cleanupEntered = createDeferredPromise<number>(context.signal);
   const gcEntered = createDeferredPromise<number>(context.signal);
-  const releaseGc = createDeferredPromise<void>(context.signal);
   const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
     artifactDigest,
     cutoff: new Date("2099-01-01T00:00:00.000Z"),
@@ -739,12 +739,23 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
       const result = await tx.execute(
         sql`SELECT pg_backend_pid()::int AS "pid"`,
       );
-      gcEntered.resolve(Number(result.rows[0]?.pid));
-      await releaseGc.promise;
+      const gcPid = Number(result.rows[0]?.pid);
+      gcEntered.resolve(gcPid);
+      const cleanupPid = await cleanupEntered.promise;
+      await expect
+        .poll(
+          async () => {
+            return await stableContextBackendBlockedByFixture(
+              { blockedPid: cleanupPid, blockerPid: gcPid },
+              tx,
+            );
+          },
+          { interval: 5, timeout: 500 },
+        )
+        .toBe(true);
     },
   });
-  const gcPid = await gcEntered.promise;
-  const cleanupEntered = createDeferredPromise<number>(context.signal);
+  await gcEntered.promise;
   observeClerkAgentLifecycleBeforeAgentLockFixture(async (tx, agentId) => {
     if (agentId !== agent.body.agentId) {
       return;
@@ -755,24 +766,7 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
   await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure", {
     flush: false,
   });
-  const cleanupPid = await cleanupEntered.promise;
-  await expect
-    .poll(
-      async () => {
-        const blocked = await stableContextBackendBlockedByFixture({
-          blockedPid: cleanupPid,
-          blockerPid: gcPid,
-        });
-        if (blocked && !releaseGc.settled()) {
-          // Release in the same poll iteration that proves the real block. A
-          // later statement can consume the 100 ms production lock deadline.
-          releaseGc.resolve();
-        }
-        return blocked;
-      },
-      { interval: 5, timeout: 500 },
-    )
-    .toBe(true);
+  await cleanupEntered.promise;
   await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
   await flushWaitUntilForTest();
   await expect(

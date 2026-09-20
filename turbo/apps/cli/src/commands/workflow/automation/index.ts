@@ -2175,9 +2175,9 @@ Examples:
   okou workflow automation add triage --agent <agent-id> gmail-new-message --from-contains "@example.com"
   okou workflow automation add triage --agent <agent-id> gmail-new-message --config ./gmail-automation.json
   okou workflow automation add triage --agent <agent-id> gmail-label-applied --label "Support"
-  okou workflow automation add merge-follow-up --agent <agent-id> github-pull-request --repository vm0-ai/vm0 --action closed --merged yes --base-branch main
-  okou workflow automation add pr-triage --agent <agent-id> github-pull-request --repository vm0-ai/vm0 --action labeled --label "triage"
-  okou workflow automation add ci-triage --agent <agent-id> github-workflow-run-completed --repository vm0-ai/vm0 --workflow Turbo --conclusion failure,timed_out --branch main --triggering-event push --actor dependabot[bot]
+  okou workflow automation add merge-follow-up --agent <agent-id> github-pull-request --repository okou-ai/okou --action closed --merged yes --base-branch main
+  okou workflow automation add pr-triage --agent <agent-id> github-pull-request --repository okou-ai/okou --action labeled --label "triage"
+  okou workflow automation add ci-triage --agent <agent-id> github-workflow-run-completed --repository okou-ai/okou --workflow Turbo --conclusion failure,timed_out --branch main --triggering-event push --actor dependabot[bot]
   okou workflow automation add triage --agent <agent-id> google-calendar-event-created
   okou workflow automation add triage --agent <agent-id> google-calendar-event-updated
   okou workflow automation add triage --agent <agent-id> google-calendar-event-cancelled

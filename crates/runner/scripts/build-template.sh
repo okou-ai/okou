@@ -487,7 +487,7 @@ install_runtimes() {
         ;;
       *) echo \"Unsupported architecture: \$ARCH\" >&2; exit 1 ;;
     esac
-    DOWNLOAD_BASE_URL=\"https://github.com/vm0-ai/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}\"
+    DOWNLOAD_BASE_URL=\"https://github.com/okou-ai/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}\"
     curl -fsSL \"\${DOWNLOAD_BASE_URL}/agent-browser-\${PLATFORM}\" -o /tmp/agent-browser
     echo \"\${CHECKSUM}  /tmp/agent-browser\" | sha256sum -c -
     install -m 0755 /tmp/agent-browser /usr/local/bin/agent-browser

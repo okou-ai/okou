@@ -4,7 +4,7 @@
 //! to measure its encoded size. It does not own transport admission: producers
 //! must ensure that the encoded bytes fit the process-control frame before
 //! delivery. The inclusive production limit is the
-//! [`process_control_ipc::MAX_CONTROL_PAYLOAD_BYTES`](https://github.com/vm0-ai/vm0/blob/main/crates/process-control-ipc/src/lib.rs)
+//! [`process_control_ipc::MAX_CONTROL_PAYLOAD_BYTES`](https://github.com/okou-ai/okou/blob/main/crates/process-control-ipc/src/lib.rs)
 //! boundary, currently 1 MiB (1,048,576 bytes); Runner and process-control
 //! enforce that boundary.
 //!
@@ -106,7 +106,7 @@ impl std::error::Error for ActiveInputDecodeError {}
 /// The producer remains responsible for supplying valid field values and
 /// should use [`encoded_active_input_len`] to preflight the exact encoded byte
 /// count before transport. The inclusive production boundary is the
-/// [`process_control_ipc::MAX_CONTROL_PAYLOAD_BYTES`](https://github.com/vm0-ai/vm0/blob/main/crates/process-control-ipc/src/lib.rs)
+/// [`process_control_ipc::MAX_CONTROL_PAYLOAD_BYTES`](https://github.com/okou-ai/okou/blob/main/crates/process-control-ipc/src/lib.rs)
 /// value, currently 1 MiB (1,048,576 bytes), and Runner/process-control own
 /// its admission check. Use [`decode_active_input`] at the consumer trust
 /// boundary to validate the fields.
@@ -136,7 +136,7 @@ impl Write for CountingWriter {
 /// Calculate the exact encoded byte length without allocating the payload.
 ///
 /// Producers should compare the returned count with the inclusive
-/// [`process_control_ipc::MAX_CONTROL_PAYLOAD_BYTES`](https://github.com/vm0-ai/vm0/blob/main/crates/process-control-ipc/src/lib.rs)
+/// [`process_control_ipc::MAX_CONTROL_PAYLOAD_BYTES`](https://github.com/okou-ai/okou/blob/main/crates/process-control-ipc/src/lib.rs)
 /// transport boundary before delivery. That boundary is currently 1 MiB
 /// (1,048,576 bytes), and Runner/process-control enforce it; this helper only
 /// measures the JSON bytes and does not reject an oversized payload. Therefore,

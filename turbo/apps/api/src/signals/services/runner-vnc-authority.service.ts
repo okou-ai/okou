@@ -100,8 +100,5 @@ export async function currentRunnerVncAuthority(
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  if (row.authMethod !== "vnc_password" || row.securityType !== "x509_vnc") {
-    throw new Error("VNC configuration has an unsupported stored profile");
-  }
   return row;
 }

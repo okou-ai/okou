@@ -1,0 +1,1 @@
+ALTER TABLE "morning_brief_native_occurrences" ADD COLUMN "collection_facts" jsonb;

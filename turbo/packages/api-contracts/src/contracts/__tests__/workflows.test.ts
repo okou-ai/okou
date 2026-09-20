@@ -90,7 +90,7 @@ describe("GitHub pull request workflow automation contract", () => {
     const parsed = githubPullRequestEventConfigSchema.safeParse({
       provider: "github",
       event: "pull_request",
-      repository: "vm0-ai/vm0",
+      repository: "okou-ai/okou",
       action: "closed",
       merged: true,
       filters: {
@@ -106,7 +106,7 @@ describe("GitHub pull request workflow automation contract", () => {
     const parsed = githubPullRequestEventConfigSchema.safeParse({
       provider: "github",
       event: "pull_request",
-      repository: "vm0-ai/vm0",
+      repository: "okou-ai/okou",
       action: "opened",
       merged: true,
       filters: {},
@@ -122,7 +122,7 @@ describe("GitHub pull request workflow automation contract", () => {
       eventConfig: {
         provider: "github",
         event: "pull_request",
-        repository: "vm0-ai/vm0",
+        repository: "okou-ai/okou",
         action: "labeled",
         filters: { labels: ["ready-to-merge"] },
       },

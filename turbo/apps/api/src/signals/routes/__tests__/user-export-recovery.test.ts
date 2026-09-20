@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
+import { emailSubscriptionContract } from "@okouai/api-contracts/contracts/email-subscription";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import AdmZip from "adm-zip";
@@ -14,9 +15,11 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockOptionalEnv } from "../../../lib/env";
 import { tarArchive, tarEntry } from "../../../test-fixtures/tar-archive";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
+import { emailSubscriptionRoutes } from "../email-subscription";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -201,6 +204,12 @@ test("continues the same export across bounded requests after a staged write los
     downloadUrl: null,
   });
   expect(["pending", "running"]).toContain(interrupted.body.job?.status);
+  await expect(
+    createEmailOutboxStateApi(context).findItems({
+      toAddress: user.email,
+      subject: readySubject,
+    }),
+  ).resolves.toHaveLength(0);
   const repeated = await api.requestPostUserExport(user, [202]);
   expect(repeated.body.jobId).toBe(started.body.jobId);
   await flushWaitUntilForTest();
@@ -240,6 +249,89 @@ test("continues the same export across bounded requests after a staged write los
   ).toMatchObject({
     instruction: "Preserve the workflow instruction.",
   });
+});
+
+test("recovers the completion email without repeating the export or requiring an optional-email subscription", async () => {
+  const user = await actor();
+  await updateFeatureSwitchesForUser(context, user, {
+    [FeatureSwitchKey.DurableUserExport]: true,
+    [FeatureSwitchKey.MorningBrief]: true,
+  });
+  const subscriptions = setupApp({ context, routes: emailSubscriptionRoutes })(
+    emailSubscriptionContract,
+  );
+  const headers = { authorization: "Bearer clerk-session" };
+  await accept(
+    subscriptions.update({ headers, body: { subscribed: false } }),
+    [200],
+  );
+  const storage = installDurableUserExportStorage(context);
+  const api = createOpsLogsApi(context);
+  const outbox = createEmailOutboxStateApi(context);
+  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `resend_${user.userId}` },
+    error: null,
+  });
+  context.mocks.clerk.users.getUser.mockRejectedValueOnce(
+    new Error("Export recipient is temporarily unavailable"),
+  );
+
+  const started = await api.requestPostUserExport(user, [202]);
+  cleanup(user, started.body.jobId);
+  await flushWaitUntilForTest();
+  await work(user, started.body.jobId, "run", 200);
+  const completed = await api.requestGetUserExport(user, [200]);
+  expect(completed.body.job).toMatchObject({
+    id: started.body.jobId,
+    status: "completed",
+    error: null,
+  });
+  const downloadUrl = completed.body.job?.downloadUrl;
+  if (!downloadUrl) {
+    throw new Error("The completed export must remain downloadable");
+  }
+  const original = storage.download(downloadUrl);
+  expect(original.byteLength).toBeGreaterThan(0);
+  await expect(
+    outbox.findItems({ toAddress: user.email, subject: readySubject }),
+  ).resolves.toHaveLength(0);
+  expect(context.mocks.resend.send).not.toHaveBeenCalled();
+
+  await work(user, started.body.jobId, "make-due");
+  await work(user, started.body.jobId, "run", 200);
+  await completedZip(user, started.body.jobId, storage);
+  expect(storage.download(downloadUrl)).toStrictEqual(original);
+  const item = await outbox.findItem({
+    toAddress: user.email,
+    subject: readySubject,
+  });
+  await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+  await work(user, started.body.jobId, "run", 200);
+  await expect(
+    outbox.findItems({ toAddress: user.email, subject: readySubject }),
+  ).resolves.toHaveLength(1);
+  await expect(outbox.drainItems([item.id])).resolves.toBe(0);
+  expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      to: user.email,
+      subject: readySubject,
+      html: expect.stringContaining(downloadUrl),
+      text: expect.stringContaining(downloadUrl),
+    }),
+    { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
+  );
+  const sent = context.mocks.resend.send.mock.calls[0]?.[0];
+  expect(sent).toMatchObject({
+    html: expect.stringContaining("Download data"),
+    text: expect.stringContaining(
+      "Your requested data export has been completed and is ready to download.",
+    ),
+  });
+  expect(sent).not.toHaveProperty("headers.List-Unsubscribe");
+  expect(
+    (await accept(subscriptions.get({ headers }), [200])).body.subscribed,
+  ).toBeFalsy();
 });
 
 test.each(["part", "completion"] as const)(

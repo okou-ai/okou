@@ -103,10 +103,8 @@ export interface LocatorPreview {
   readonly text: string;
   /** ISO timestamp of the turn, or undefined when it carries none. */
   readonly createdAt: string | undefined;
-  /** Viewport x where the card fits beside the pointer. */
-  readonly left: number;
-  /** Viewport y of the pointer, so the card can sit beside it. */
-  readonly pointerClientY: number;
+  /** The magnified tick the preview is anchored to. */
+  readonly tick: LocatorTick;
 }
 
 interface LocatorLanding {
@@ -161,8 +159,8 @@ export interface ChatConversationLocatorSignals {
   readonly engaged$: Computed<boolean>;
   /** The sampled turn sequence the ticks are drawn from. */
   readonly sampledTurns$: Computed<readonly LocatorTurn[]>;
-  /** Track the pointer fraction, preview left, and pointer viewport y. */
-  readonly trackPointer$: Command<void, [number, number, number]>;
+  /** Track the pointer's position along the tick scale. */
+  readonly trackPointer$: Command<void, [number]>;
   readonly leaveRail$: Command<void, []>;
   /** Takes the viewport reading synchronously, under the caller's signal. */
   readonly measure$: Command<void, [AbortSignal]>;
@@ -546,8 +544,6 @@ export function createChatConversationLocatorSignals({
   >;
 }): ChatConversationLocatorSignals {
   const pointerFraction$ = state<number | null>(null);
-  const previewLeft$ = state(0);
-  const pointerClientY$ = state(0);
   const engaged$ = state(false);
   const internalLanding$ = state<LocatorLanding>({
     eventId: null,
@@ -569,27 +565,26 @@ export function createChatConversationLocatorSignals({
       return null;
     }
     const turn = get(sampledTurns$)[hit];
+    const tick = get(layout$).ticks[hit];
+    if (tick === undefined) {
+      throw new Error("Locator hit has no matching layout tick");
+    }
     return turn === undefined
       ? null
       : {
           turnIndex: turn.turnIndex,
           text: turn.text,
           createdAt: turn.createdAt,
-          left: get(previewLeft$),
-          pointerClientY: get(pointerClientY$),
+          tick,
         };
   });
 
-  const trackPointer$ = command(
-    ({ set }, fraction: number, previewLeft: number, clientY: number): void => {
-      set(engaged$, true);
-      // Keep coordinates outside the centered tick group so its surrounding
-      // whitespace does not become a shortcut to the first or last turn.
-      set(pointerFraction$, fraction);
-      set(previewLeft$, previewLeft);
-      set(pointerClientY$, clientY);
-    },
-  );
+  const trackPointer$ = command(({ set }, fraction: number): void => {
+    set(engaged$, true);
+    // Keep coordinates outside the centered tick group so its surrounding
+    // whitespace does not become a shortcut to the first or last turn.
+    set(pointerFraction$, fraction);
+  });
 
   const leaveRail$ = command(({ set }): void => {
     set(engaged$, false);

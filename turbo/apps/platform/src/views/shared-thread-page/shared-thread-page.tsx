@@ -318,10 +318,7 @@ function SharedThreadHandoff({
   return (
     <footer
       data-shared-thread-handoff=""
-      className="relative shrink-0"
-      style={{
-        paddingBottom: "max(0.5rem, var(--sab))",
-      }}
+      className="relative shrink-0 pb-safe-or-2"
     >
       <div className="pb-2 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6">
         <div className="mx-auto max-w-[900px]">

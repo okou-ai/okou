@@ -138,11 +138,13 @@ test("creates a password-backed test identity without skipping its password poli
       const id = await createUser(
         "password-fixture@example.com",
         "Fixture-Password!2026",
+        { firstName: "Christopher" },
       );
       assert.equal(id, "user_password_fixture");
       const request = requests.find((item) => item.url === "/v1/users");
       assert.ok(isRecord(request?.body));
       assert.equal(request.body.password, "Fixture-Password!2026");
+      assert.equal(request.body.first_name, "Christopher");
       assert.equal(request.body.skip_password_requirement, undefined);
     },
   );

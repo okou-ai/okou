@@ -239,6 +239,58 @@ describe("explicit VNC grants and current Agent inventory", () => {
     );
   });
 
+  it("contains X509Plain while returning the supported inventory subset", async () => {
+    const current = await owner();
+    const runtime = { ...current, ...(await api.runtime(current)) };
+    const kms = useSecretKmsProbe();
+    const plain = await accept(
+      api.connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Plain desktop",
+          host: "plain.example.com",
+          credential: {
+            create: {
+              name: "Plain credential",
+              authentication: {
+                method: "username_password",
+                username: "operator",
+                password: " private secret ",
+              },
+            },
+          },
+          security: {
+            type: "x509_plain",
+            trust: { mode: "system" },
+          },
+        },
+      }),
+      [201],
+    );
+    expect(plain.body.security.type).toBe("x509_plain");
+    expect(
+      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+    ).toStrictEqual({ hosts: [] });
+
+    const supported = await createHost("supported.example.com");
+    expect(
+      (await accept(inventory().list({ headers: token(runtime) }), [200])).body,
+    ).toStrictEqual({
+      hosts: [
+        {
+          id: supported.body.id,
+          displayName: "VNC desktop",
+          host: "supported.example.com",
+          port: 5900,
+          authMethod: "vnc_password",
+          securityType: "x509_vnc",
+        },
+      ],
+    });
+    expect(kms.decryptCalls).toBe(0);
+  });
+
   it("isolates a shared Agent's grants and inventory by the Run owner", async () => {
     const creator = await api.fixture();
     const consumer = await owner({ orgId: creator.orgId });

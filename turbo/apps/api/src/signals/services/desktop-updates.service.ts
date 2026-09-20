@@ -35,9 +35,9 @@ export const DESKTOP_UPDATE_MANIFEST_LOG_TYPE =
 export const DESKTOP_UPDATE_MANIFEST_PROVIDER = "github_release_asset";
 
 const DESKTOP_RELEASE_DOWNLOAD_URL_PREFIX =
-  "https://github.com/vm0-ai/vm0/releases/download";
+  "https://github.com/okou-ai/okou/releases/download";
 const DESKTOP_RELEASE_PAGE_URL_PREFIX =
-  "https://github.com/vm0-ai/vm0/releases/tag";
+  "https://github.com/okou-ai/okou/releases/tag";
 const MIN_DESKTOP_DMG_VERSION = "0.12.0";
 
 const DESKTOP_UPDATE_MANIFEST_CACHE_TTL_MS = 60_000;
@@ -142,10 +142,10 @@ type ResolvableDesktopUpdateLine = Exclude<
 
 function desktopUpdateManifestUrl(line: ResolvableDesktopUpdateLine): string {
   if (line === DESKTOP_UPDATE_LINE_LEGACY_OKOU) {
-    return "https://github.com/vm0-ai/vm0/releases/download/okou-desktop-updates/okou-desktop-update-manifest.json";
+    return "https://github.com/okou-ai/okou/releases/download/okou-desktop-updates/okou-desktop-update-manifest.json";
   }
   if (line === DESKTOP_UPDATE_LINE_OKOU) {
-    return "https://github.com/vm0-ai/vm0/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
+    return "https://github.com/okou-ai/okou/releases/download/ai-okou-desktop-updates/ai-okou-desktop-update-manifest.json";
   }
   return line satisfies never;
 }

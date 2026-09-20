@@ -51,7 +51,7 @@ Use an English title describing the concrete problem; include affected paths,
 evidence, impact, and actionable acceptance criteria in the body. Use only
 existing relevant labels and include source links pinned to the inspected SHA.
 
-Write the body to a temporary file and pass `gh issue create --repo vm0-ai/vm0
+Write the body to a temporary file and pass `gh issue create --repo okou-ai/okou
 --body-file <file>` the exact Markdown. Keep the report focused enough to fit one
 issue; add detailed comments only when needed for the requested tracking task.
 Verify the created issue and return its URL. If posting fails, retain the report

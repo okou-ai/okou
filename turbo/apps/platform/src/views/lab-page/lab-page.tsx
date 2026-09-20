@@ -323,7 +323,7 @@ export function LabPage() {
     <div className="flex flex-1 flex-col min-h-0">
       <LabHeader />
 
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-[max(2.5rem,var(--sab))]">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 pb-safe-or-10">
         <div className="mx-auto max-w-[900px] space-y-4">
           <LabControls
             maintainerFilter={maintainerFilter}

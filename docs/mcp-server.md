@@ -11,8 +11,9 @@ foundation shipped in #34931; discovery and current context are tracked by
 #34932 under #34890. Message history is delivered in #34933 and search in
 #35100; sending and cancellation are delivered in #34934, status in #35101,
 and Agent/model discovery and empty conversation creation in #35102.
-Results include both structured content and a
-JSON text representation.
+Successful results keep the complete machine-readable value in
+`structuredContent` and include a tool-specific human summary of at most 512
+UTF-8 bytes in text content; they do not duplicate the full JSON value as text.
 
 ## Tool errors and CLI exit status
 
@@ -254,9 +255,9 @@ concatenate text and files in offset order. Content continuation returns one
 message segment and no history-page cursors; retain the original page's cursors
 separately. A large attachment can occupy a segment on its own; its text resumes
 from the unchanged text offset in later segments. Oversized indivisible metadata
-fails explicitly. Complete structured responses are capped at 160 KiB,
-reserving space for the SDK's duplicate text representation and JSON escaping
-within a 512 KiB tool result.
+fails explicitly. Complete structured responses are capped at 160 KiB, leaving
+transport, human-readable summary and JSON-envelope headroom within a 512 KiB
+tool result.
 
 Signed cursors bind the user, selected organization, thread, run filter, page
 size and operation, and expire 24 hours after the initial page. History cursors
@@ -363,9 +364,9 @@ Canonical validation shares a **single** 32 MiB decoded/database-tail,
 reader's 8 MiB compressed limit per archive and three-second SQL deadline.
 Each distinct thread is reconstructed once per call. Index text fingerprints
 are calculated only after the candidate limit, and bodies over 32 MiB are
-rejected before hashing. Structured pages are capped at 160 KiB, keeping the
-SDK's duplicate text/JSON output within 512 KiB. Resource errors recommend
-narrowing thread/Agent/time filters or retrying; reducing page size cannot make
+rejected before hashing. Structured pages are capped at 160 KiB, leaving
+transport, summary and JSON-envelope headroom within 512 KiB. Resource errors
+recommend narrowing thread/Agent/time filters or retrying; reducing page size cannot make
 one oversized history readable. These source-size caps are not absolute process
 memory limits. Search reuses existing lexical indexes and adds no migration.
 
@@ -460,6 +461,8 @@ The result separates three observations:
 | `output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
 | `output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
 | `messages`           | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
+| `wait`               | For positive `waitMs`, requested/effective wait, elapsed phase, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.              |
+| `messagePage`        | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
 | `retryAfterMs`       | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
 
 Initial admission is `associated`, even when the run has started: the service
@@ -492,13 +495,48 @@ run/receipt metadata inside that reader's repeatable-read, read-only snapshot.
 changes appear on the next call. Every call reconstructs the supported history
 and inherits the limits above, including three-second SQL statements and a
 15-second overall budget. Disconnect cancels the read only.
-Status data is capped at 16 KiB, leaving space for the duplicated MCP wire
-representation below 64 KiB. Oversized historical reference metadata fails
+Status data is capped at 16 KiB, leaving transport, summary and JSON-envelope
+headroom below 64 KiB. Oversized historical reference metadata fails
 explicitly instead of truncating identities. Poll no faster
 than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
 and stop automatic polling when it is null or the tool returns a resource
 error. A queued input with no run has unavailable output but a non-null retry
 delay: continue tracking that original input instead of submitting it again.
+
+Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
+single immediate observation above. A positive value is a client preference up
+to 60 seconds and is currently clamped to an 8-second server dwell after the
+initial observation. Each fresh observation keeps its independent 15-second
+history budget, so total request time also includes the initial and final
+bounded reads. The waiter follows `retryAfterMs`, completes at most five
+canonical observations, and never holds a transaction, connection, snapshot or
+authorization decision between them.
+
+`wait.outcome` is `ready` only at the same materialized-output condition used by
+ordinary status. `deadline` returns the last fresh retryable state after the
+effective dwell; `status` returns a non-retryable state or a capacity fallback.
+Inspect `returnReason` to distinguish those cases. Deadline, capacity and the
+observation limit are successful reads, not run completion or tool failure.
+Ready wait responses include `messagePage`, a first limit-20 page made from the
+same final authorized history snapshot. Its signed page/content cursors,
+segmentation and artifact authorization are identical to `get_chat_messages`.
+The combined status and page data is capped at 192 KiB; follow the existing
+handoff/cursors for more content.
+
+At most two active waits per principal and 32 per API runtime are admitted after
+the initial retryable observation. Capacity exhaustion returns current status
+immediately. Cancellation or disconnect releases the abortable timer and slot
+and stops only this read; it never cancels or revokes accepted work. These are
+runtime resource limits, not a deployment-global lease. MCP Tasks remains the
+longer-term negotiated protocol for durable work; bounded status wait is the
+compatibility optimization for current clients.
+
+Each positive wait also adds an identifier-free `mcp.chat_status.wait` event to
+the request trace. It records requested/effective/elapsed milliseconds,
+observations, outcome and return reason, principal/runtime occupancy and
+capacity, final input/run/output state categories, and whether content was
+included. Use these fields to validate live timeout margin and capacity before
+raising the server dwell limit.
 
 Original input lookup lasts while the exact canonical input and linkage remain
 in readable retained thread history. It continues through archives after the

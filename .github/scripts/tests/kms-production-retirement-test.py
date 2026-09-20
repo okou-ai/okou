@@ -23,7 +23,7 @@ TARGET = "arn:aws:kms:us-west-2:251964670836:key/e68917e2-5541-4597-b6ef-7e9eb56
 
 class RetirementCliTest(unittest.TestCase):
     def invoke(self, scenario="success", overrides=None):
-        repository = (overrides or {}).get("GITHUB_REPOSITORY", "vm0-ai/okou")
+        repository = (overrides or {}).get("GITHUB_REPOSITORY", "okou-ai/okou")
         with tempfile.TemporaryDirectory(prefix="kms-retirement-test-") as directory:
             root = Path(directory)
             binary = root / "bin"
@@ -182,13 +182,13 @@ class RetirementCliTest(unittest.TestCase):
                 "KMS_OPERATION": "retire-source",
                 "GITHUB_RUN_ATTEMPT": "1",
                 "GITHUB_ACTOR": "hulh122",
-                "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY": "okou-ai/okou",
                 "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
                 "GITHUB_SHA": "c" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-retire.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "okou-ai/okou/.github/workflows/kms-production-retire.yml@refs/heads/main",
                 "EXPECTED_BACKUP_SHA256": hashlib.sha256(
                     json.dumps(snapshot, separators=(",", ":")).encode()
                 ).hexdigest(),

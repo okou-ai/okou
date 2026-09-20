@@ -3,6 +3,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -11,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { MorningBriefOccurrenceCollectionFacts } from "../jsonb-contracts/morning-brief-native-occurrence";
 import { chatThreads } from "./chat-thread";
 
 /**
@@ -276,6 +278,18 @@ export const morningBriefNativeOccurrences = pgTable(
     deferredUntil: timestamp("deferred_until"),
     deferAttempt: integer("defer_attempt").notNull().default(0),
     deferReason: text("defer_reason"),
+
+    /**
+     * What this slot actually collected, and which branch finished it.
+     *
+     * Null until a settlement or deferral records it, and for rows written by
+     * an API version that predates #35656. The settlement `outcome` above says
+     * how the slot ended; this says what it had to work with, so a delivered
+     * brief, a genuinely quiet morning and a refused or exhausted collection
+     * are distinguishable from first-party state instead of from a trace.
+     */
+    collectionFacts:
+      jsonb("collection_facts").$type<MorningBriefOccurrenceCollectionFacts>(),
 
     claimedAt: timestamp("claimed_at").notNull(),
     settledAt: timestamp("settled_at"),

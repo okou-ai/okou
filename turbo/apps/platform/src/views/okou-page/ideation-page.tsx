@@ -136,7 +136,7 @@ export function IdeationPage() {
       </nav>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <div className="px-4 pb-[max(2rem,var(--sab))] sm:px-6">
+        <div className="px-4 pb-safe-or-8 sm:px-6">
           <div className="mx-auto w-full max-w-[900px]">
             <header className="bg-transparent pt-3 md:pt-6 pb-3">
               <h1 className="hidden md:block text-lg font-semibold tracking-tight text-foreground">

@@ -293,7 +293,7 @@ if (!callbackPromptAvailable) {
   callbackPromptOption.hideHelp();
 }
 const callbackPromptExample = callbackPromptAvailable
-  ? '  okou connector permission-request github --permission contents:write --url https://api.github.com/repos/vm0-ai/vm0 --method POST --callback-prompt "Re-check the permission, then continue the previous task"\n'
+  ? '  okou connector permission-request github --permission contents:write --url https://api.github.com/repos/okou-ai/okou --method POST --callback-prompt "Re-check the permission, then continue the previous task"\n'
   : "";
 const callbackPromptNotes = callbackPromptAvailable
   ? "  - Use --callback-prompt only when this turn needs exactly one connector or permission action\n  - Callback prompts are included in the URL; keep them concise and do not include secrets\n"
@@ -336,7 +336,7 @@ export const permissionRequestCommand = new Command()
     "after",
     `
 Examples:
-  okou connector permission-request github --permission contents:read --url https://api.github.com/repos/vm0-ai/vm0 --method GET
+  okou connector permission-request github --permission contents:read --url https://api.github.com/repos/okou-ai/okou --method GET
 ${callbackPromptExample}  okou connector permission-request gmail --permission messages.write --url https://gmail.googleapis.com/gmail/v1/users/me/messages --method POST --agent <agent-id>
   okou connector permission-request cloudflare --permission __unknown__ --url https://api.cloudflare.com/client/v4/example --method POST
   okou connector permission-request computer-use --permission computer-use:write

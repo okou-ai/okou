@@ -37,6 +37,7 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 
@@ -2582,11 +2583,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
   });
 
-  it("creates an agent run for a linked official-bot group mention", async () => {
+  it("keeps an official-bot group mention routable after an overlapping model-key fixture releases", async () => {
     configureOfficialBotEnv();
+    const overlappingModelKey = await seedBuiltInDefaultModelKey(context);
     const fixture = await trackFixture(
       seedTelegramPostFixture({ installBot: false, seedOfficialLink: true }),
     );
+    await overlappingModelKey.release();
     telegramApiMocks(OFFICIAL_BOT_TOKEN);
 
     const response = await postWebhook({

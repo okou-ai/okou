@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.688.2](https://github.com/okou-ai/okou/compare/core-v8.688.1...core-v8.688.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.479.0
+
+## [8.688.1](https://github.com/okou-ai/okou/compare/core-v8.688.0...core-v8.688.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.3
+
 ## [8.688.0](https://github.com/okou-ai/okou/compare/core-v8.687.1...core-v8.688.0) (2026-09-20)
 
 
