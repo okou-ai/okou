@@ -5158,7 +5158,7 @@ describe("MCP message search", () => {
     ]);
   });
 
-  it("applies role, source time, Agent and thread filters before limiting and excludes private context", async () => {
+  async function setupMessageSearchFilters() {
     const auth = await fixture();
     const f = createChatEventsFixture(context);
     const actor = await f.entitledChatActor({
@@ -5260,25 +5260,45 @@ describe("MCP message search", () => {
     }
     const token = auth.token();
     const args = { query, limit: 1 };
+    return { actor, args, baseTime, other, query, sent, token };
+  }
+
+  it("applies the result limit after ordering message search matches", async () => {
+    const { args, other, token } = await setupMessageSearchFilters();
     expect((await searchMessages(token, args)).matches[0]?.ref.threadId).toBe(
       other.threadId,
     );
-    for (const filters of [
-      { agentId: actor.agentId },
-      { threadId: sent.threadId },
-    ]) {
+  });
+
+  it.each(["agent", "thread"] as const)(
+    "applies the $filter filter before limiting message search matches",
+    async (filter) => {
+      const { actor, args, query, sent, token } =
+        await setupMessageSearchFilters();
+      const filters =
+        filter === "agent"
+          ? { agentId: actor.agentId }
+          : { threadId: sent.threadId };
       expect(
         (await searchMessages(token, { ...args, ...filters })).matches[0]
           ?.excerpt.text,
       ).toBe(`${query} queued after`);
-    }
-    const since = new Date(baseTime + 1000).toISOString();
-    const before = new Date(baseTime + 2000).toISOString();
-    for (const filters of [
-      { role: "assistant" },
-      { before },
-      { since, before },
-    ]) {
+    },
+  );
+
+  it.each(["role", "before", "bounded"] as const)(
+    "applies the $filter source filter before limiting message search matches",
+    async (filter) => {
+      const { args, baseTime, query, sent, token } =
+        await setupMessageSearchFilters();
+      const since = new Date(baseTime + 1000).toISOString();
+      const before = new Date(baseTime + 2000).toISOString();
+      const filters =
+        filter === "role"
+          ? ({ role: "assistant" } as const)
+          : filter === "before"
+            ? { before }
+            : { since, before };
       const page = await searchMessages(token, { ...args, ...filters });
       expect(page.matches).toMatchObject([
         {
@@ -5287,7 +5307,13 @@ describe("MCP message search", () => {
           excerpt: { text: `${query} assistant answer` },
         },
       ]);
-    }
+    },
+  );
+
+  it("applies an inclusive source-time lower bound before limiting", async () => {
+    const { args, baseTime, query, sent, token } =
+      await setupMessageSearchFilters();
+    const before = new Date(baseTime + 2000).toISOString();
     expect(
       (
         await searchMessages(token, {
@@ -5297,12 +5323,24 @@ describe("MCP message search", () => {
         })
       ).matches[0]?.excerpt.text,
     ).toBe(`${query} queued after`);
+  });
+
+  it("filters message search by user role", async () => {
+    const { query, token } = await setupMessageSearchFilters();
     expect(
       (await searchMessages(token, { query, role: "user" })).matches,
     ).toHaveLength(3);
+  });
+
+  it("excludes private message context from search", async () => {
+    const { token } = await setupMessageSearchFilters();
     expect(
       (await searchMessages(token, { query: "mcpprivateneedle" })).matches,
     ).toStrictEqual([]);
+  });
+
+  it("returns no message-search matches for an unrelated thread", async () => {
+    const { args, token } = await setupMessageSearchFilters();
     expect(
       (await searchMessages(token, { ...args, threadId: randomUUID() }))
         .matches,

@@ -2250,7 +2250,7 @@ beforeEach(async () => {
 });
 
 describe("Morning Brief preference", () => {
-  it("installs idempotently without the Official Workflows feature and preserves identities across disable and re-enable", async () => {
+  async function setupEnabledMorningBrief() {
     installCatalogStorageFixture();
     const synced = await syncDeployedCatalog();
     expect(synced.body).toMatchObject({ outcome: "accepted", diagnostics: [] });
@@ -2363,7 +2363,21 @@ describe("Morning Brief preference", () => {
       officialBlueprintKey: "daily-delivery",
       officialResultEmailEnabled: true,
     });
+    return { actor, headers, identities, morningBrief };
+  }
 
+  it("installs idempotently without the Official Workflows feature", async () => {
+    const { identities } = await setupEnabledMorningBrief();
+    expect(identities).toStrictEqual({
+      workflowId: expect.any(String),
+      automationId: expect.any(String),
+      chatThreadId: null,
+    });
+  });
+
+  it("preserves Morning Brief identities across disable and re-enable", async () => {
+    const { headers, identities, morningBrief } =
+      await setupEnabledMorningBrief();
     const disabled = await accept(
       morningBriefPreferenceClient().update({
         headers,
@@ -2409,7 +2423,11 @@ describe("Morning Brief preference", () => {
       },
     ]);
     expect(after.body.workflow.id).toBe(identities.workflowId);
+  });
 
+  it("preserves an installed Morning Brief when its rollout turns off", async () => {
+    const { actor, headers, identities, morningBrief } =
+      await setupEnabledMorningBrief();
     await setMorningBriefEnabled(actor, false);
     const deniedRead = await accept(
       morningBriefPreferenceClient().get({ headers }),

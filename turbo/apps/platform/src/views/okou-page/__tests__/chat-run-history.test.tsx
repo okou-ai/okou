@@ -89,7 +89,7 @@ function viewAgentProfileLinks(): HTMLElement[] {
   });
 }
 
-test("Browse completed work by conversation phase", async () => {
+async function setupCompletedConversationPhases(): Promise<void> {
   installRunChat({
     chatEvents: [
       promptEvent({
@@ -188,6 +188,10 @@ test("Browse completed work by conversation phase", async () => {
   });
 
   await readyChat();
+}
+
+test("Summarize completed work by conversation phase", async () => {
+  await setupCompletedConversationPhases();
   expect(
     assistantGroupFor(screen.getByText("Phase one outline")),
   ).toHaveTextContent("Worked for 1m");
@@ -202,7 +206,10 @@ test("Browse completed work by conversation phase", async () => {
   expect(screen.queryByText("Compared rollback options")).toBeNull();
   expect(screen.queryByText("Checked launch dependencies")).toBeNull();
   expect(queryWorkHistoryToggles("collapsed")).toHaveLength(3);
+});
 
+test("Expand the first completed conversation phase", async () => {
+  await setupCompletedConversationPhases();
   click(
     buttonNamedIn(
       "Expand work history",
@@ -221,6 +228,10 @@ test("Browse completed work by conversation phase", async () => {
     "Include rollback steps",
     "Phase one final plan",
   );
+});
+
+test("Expand a completed follow-up phase", async () => {
+  await setupCompletedConversationPhases();
   click(
     buttonNamedIn(
       "Expand work history",
@@ -231,7 +242,22 @@ test("Browse completed work by conversation phase", async () => {
     screen.findByText("Compared rollback options"),
   ).resolves.toBeVisible();
   expect(screen.queryByText("Checked launch dependencies")).toBeNull();
+});
 
+test("Expand completed work from a later run with its usage", async () => {
+  await setupCompletedConversationPhases();
+  for (const [answer, work] of [
+    ["Phase one outline", "Collected requirements"],
+    ["Phase one final plan", "Compared rollback options"],
+  ] as const) {
+    click(
+      buttonNamedIn(
+        "Expand work history",
+        assistantGroupFor(screen.getByText(answer)),
+      ),
+    );
+    await screen.findByText(work);
+  }
   click(
     buttonNamedIn(
       "Expand work history",

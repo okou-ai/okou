@@ -107,6 +107,15 @@ function selectedTask(editor: HTMLElement, task: string): HTMLElement {
   return button(`Remove ${task}`, composerCard(editor));
 }
 
+async function expectSelectedTask(
+  editor: HTMLElement,
+  task: string,
+): Promise<void> {
+  await waitFor(() => {
+    expect(selectedTask(editor, task)).toBeVisible();
+  });
+}
+
 async function addMenuRow(
   editor: HTMLElement,
   label: string,
@@ -577,7 +586,7 @@ test.each([
   },
 );
 
-test("Task changes preserve uploaded files and the draft, and toggling off restores ordinary chat", async () => {
+async function setupTaskChangesWithUpload() {
   const capture = mockTemplateChat();
   context.mocks.upload.success({
     id: "81000000-0000-4000-a000-000000000021",
@@ -624,6 +633,18 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   expect(editor).toHaveTextContent("Keep my draft");
   expect(screen.getByText("brief.txt")).toBeInTheDocument();
   expect(capture.sentMessages).toHaveLength(0);
+  return { capture, editor };
+}
+
+test("Task changes preserve uploaded files and the draft", async () => {
+  const { capture, editor } = await setupTaskChangesWithUpload();
+  expect(editor).toHaveTextContent("Keep my draft");
+  expect(screen.getByText("brief.txt")).toBeInTheDocument();
+  expect(capture.sentMessages).toHaveLength(0);
+});
+
+test("Toggling a task off sends the ordinary draft and uploaded file", async () => {
+  const { capture } = await setupTaskChangesWithUpload();
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -741,32 +762,49 @@ async function closeTemplatePicker(): Promise<void> {
   });
 }
 
-test("Slash commands keep the selected task and recommendations in sync", async () => {
-  mockTemplateChat();
-  const editor = await setupChipsWithSlashPanel();
-  await fill(editor, "A quiet garden /ill");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  const user = userEvent.setup({ delay: null });
-  // The panel's rows act on mousedown, which only a full pointer sequence fires.
-  await user.click(button("Illustration", menu));
-  await closeTemplatePicker();
-  await waitFor(() => {
-    expect(selectedTask(editor, "Image")).toBeVisible();
-  });
-  expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
-  expect(editor).toHaveTextContent("A quiet garden");
-  expect(editor).not.toHaveTextContent("/ill");
-  await fill(editor, "A quiet garden /pres");
-  const presentationMenu = await screen.findByTestId("slash-workflow-menu");
-  await user.click(button("Presentation", presentationMenu));
-  await closeTemplatePicker();
-  await waitFor(() => {
-    expect(selectedTask(editor, "Presentation")).toBeVisible();
-  });
-  expect(screen.queryByRole("group", { name: "Image" })).toBeNull();
-  await screen.findByText("Pitch my new business to a room of investors");
-  expect(editor).toHaveTextContent("A quiet garden");
-});
+test.each([
+  {
+    command: "/ill",
+    row: "Illustration",
+    task: "Image",
+    recommendation: null,
+  },
+  {
+    command: "/pres",
+    row: "Presentation",
+    task: "Presentation",
+    recommendation: "Pitch my new business to a room of investors",
+  },
+])(
+  "The $command slash command selects $task and its recommendations",
+  async ({ command, row, task, recommendation }) => {
+    mockTemplateChat();
+    const editor = await setupChipsWithSlashPanel();
+    const user = userEvent.setup({ delay: null });
+    if (task === "Presentation") {
+      await fill(editor, "A quiet garden /ill");
+      const imageMenu = await screen.findByTestId("slash-workflow-menu");
+      await user.click(button("Illustration", imageMenu));
+      await closeTemplatePicker();
+      await expectSelectedTask(editor, "Image");
+    }
+    await fill(editor, `A quiet garden ${command}`);
+    const menu = await screen.findByTestId("slash-workflow-menu");
+    // The panel's rows act on mousedown, which only a full pointer sequence fires.
+    await user.click(button(row, menu));
+    await closeTemplatePicker();
+    await expectSelectedTask(editor, task);
+    expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
+    expect(editor).toHaveTextContent("A quiet garden");
+    expect(editor).not.toHaveTextContent(command);
+    if (recommendation) {
+      if (screen.queryByRole("group", { name: "Image" }) !== null) {
+        throw new Error("Expected Image recommendations to be removed");
+      }
+      await screen.findByText(recommendation);
+    }
+  },
+);
 
 // Website has no create mode, so the chips are the only surface that can carry
 // its selection; the row still has to open the picker on the way there.
