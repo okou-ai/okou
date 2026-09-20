@@ -88,6 +88,7 @@ interface StatusObservation {
 interface StatusProjection {
   readonly data: McpGetChatStatusOutput;
   readonly observation: StatusObservation;
+  readonly readyMessagePage: McpGetChatStatusOutput["messagePage"];
 }
 
 function activeLifecycleOutput(
@@ -532,7 +533,7 @@ async function projectMcpChatStatus(
     output.state === "partial" ||
     selection.input?.state === "queued" ||
     selection.input?.state === "reserved";
-  const messagePage = includeMessagePage
+  const readyMessagePage = includeMessagePage
     ? readReadyMessagePage(projectedMessages, budget, {
         principal,
         args,
@@ -562,10 +563,11 @@ async function projectMcpChatStatus(
           }
         : null,
       wait: null,
-      messagePage,
+      messagePage: null,
       retryAfterMs: retry ? 2000 : null,
     },
     observation,
+    readyMessagePage,
   };
 }
 
@@ -642,6 +644,10 @@ function withWaitResult(
   outcome: WaitOutcome,
   returnReason: WaitReturnReason,
 ): StatusProjection {
+  const messagePage = outcome === "ready" ? status.readyMessagePage : null;
+  if (outcome === "ready" && messagePage === null) {
+    throw new Error("Ready chat status wait is missing its message page");
+  }
   const result: McpGetChatStatusOutput = {
     ...status.data,
     wait: {
@@ -652,7 +658,7 @@ function withWaitResult(
       outcome,
       returnReason,
     },
-    messagePage: outcome === "ready" ? status.data.messagePage : null,
+    messagePage,
   };
   checkResponseSize(result);
   return { ...status, data: result };
