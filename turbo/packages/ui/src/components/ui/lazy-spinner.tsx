@@ -10,7 +10,7 @@ function LazySpinner({ className, ...props }: LazySpinnerProps) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setVisible(true);
-    }, 500);
+    }, 2000);
 
     return () => {
       window.clearTimeout(timer);
