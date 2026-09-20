@@ -428,7 +428,6 @@ function SettingsDialog({
 
           {/* Content area */}
           <div
-            id="settings-dialog-content"
             className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
             style={{ backgroundColor: "hsl(var(--background))" }}
           >

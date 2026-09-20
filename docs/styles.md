@@ -667,10 +667,12 @@ met it.
 ### Floating layers and portal ownership
 
 Portals belong to the shared primitives. Business components must not import
-`createPortal` from `react-dom`. `DialogContent`, `SheetContent`,
-`PopoverContent`, `SelectContent`, `DropdownMenuContent` and `TooltipContent`
-already own that relocation through Base UI's own `Portal`, together with the
-focus, outside-press, scroll-lock and `aria` ownership that arrives with it.
+`createPortal` from `react-dom`; `no-restricted-imports` in
+`turbo/apps/platform/eslint.config.js` enforces that. `DialogContent`,
+`SheetContent`, `PopoverContent`, `SelectContent`, `DropdownMenuContent` and
+`TooltipContent` already own that relocation through Base UI's own `Portal`,
+together with the focus, outside-press, scroll-lock and `aria` ownership that
+arrives with it.
 The portal there is not a rendering convenience: it is what lets a layer escape
 an ancestor's `overflow` clip or `transform` containing block, which is a DOM
 constraint rather than a state-location one. The toaster is the one surface

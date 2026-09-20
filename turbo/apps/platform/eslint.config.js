@@ -410,6 +410,12 @@ export default [
               message:
                 "Only src/clerk-ui.ts imports the optional UI at runtime; use ensureClerkUiLoaded$ on v1 routes. Other imports must be type-only.",
             },
+            {
+              name: "react-dom",
+              importNames: ["createPortal"],
+              message:
+                "Portals belong to the @okouai/ui primitives. Render the surface in its layout host, or use sticky to escape a scrollport.",
+            },
           ],
           patterns: [
             {
