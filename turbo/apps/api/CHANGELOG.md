@@ -8,6 +8,24 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.642.1](https://github.com/okou-ai/okou/compare/api-v1.642.0...api-v1.642.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* export core user data with resumable background jobs ([#35486](https://github.com/okou-ai/okou/issues/35486)) ([e68c5ce](https://github.com/okou-ai/okou/commit/e68c5ce0cf7f07a64eb6397214e177e9226b7429))
+* **mcp:** align chat tool input schemas ([#35619](https://github.com/okou-ai/okou/issues/35619)) ([9e32b4e](https://github.com/okou-ai/okou/commit/9e32b4ec8b77ef30e3a80fcd528119a683adcfb8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/db bumped to 1.279.6
+    * @okouai/pi-agent-runtime bumped to 1.33.28
+
 ## [1.642.0](https://github.com/okou-ai/okou/compare/api-v1.641.0...api-v1.642.0) (2026-09-20)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.204.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.203.1...runner-rs-v0.204.0) (2026-09-20)
+
+
+### Features
+
+* **runner:** accept terminal absence for built-in connectors ([#35542](https://github.com/okou-ai/okou/issues/35542)) ([16f2397](https://github.com/okou-ai/okou/commit/16f239728d078d42f6847b8057ef5c1cbd6e9ee0))
+
 ## [0.203.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.203.0...runner-rs-v0.203.1) (2026-09-20)
 
 

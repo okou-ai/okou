@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.687.1](https://github.com/okou-ai/okou/compare/core-v8.687.0...core-v8.687.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* export core user data with resumable background jobs ([#35486](https://github.com/okou-ai/okou/issues/35486)) ([e68c5ce](https://github.com/okou-ai/okou/commit/e68c5ce0cf7f07a64eb6397214e177e9226b7429))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+
 ## [8.687.0](https://github.com/okou-ai/okou/compare/core-v8.686.0...core-v8.687.0) (2026-09-20)
 
 
