@@ -133,7 +133,7 @@ test("A public conversation hides owner and agent identity", async () => {
   expect(screen.queryByText("Agent")).not.toBeInTheDocument();
 });
 
-test("A link inside a public prompt is clickable without becoming Markdown", async () => {
+test("A signed-out visitor reads a shared prompt's link as plain text", async () => {
   const content =
     "Compare https://example.com/report and keep **bold** as is, please.";
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
@@ -150,23 +150,15 @@ test("A link inside a public prompt is clickable without becoming Markdown", asy
     featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
   });
 
-  const link = await waitFor(() => {
-    const found = queryAllByRoleFast("link").find((candidate) => {
-      return candidate.getAttribute("href") === "https://example.com/report";
-    });
-    if (!found) {
-      throw new Error("Prompt link not found");
-    }
-    return found;
-  });
-  expect(link).toHaveTextContent("https://example.com/report");
-  expect(link).toHaveAttribute("target", "_blank");
-  expect(link).toHaveAttribute("rel", "noopener noreferrer");
-  // The prompt is not Markdown, so `**bold**` has to survive linking.
-  expect(screen.getByText("Compare")).toBeInTheDocument();
+  // A share link has no workspace, so the staff switch cannot resolve and the
+  // prompt keeps the presentation it has today, overrides included.
+  const prompt = await screen.findByText(content);
+  expect(prompt).toBeVisible();
   expect(
-    screen.getByText("and keep **bold** as is, please."),
-  ).toBeInTheDocument();
+    queryAllByRoleFast("link").filter((candidate) => {
+      return candidate.getAttribute("href") === "https://example.com/report";
+    }),
+  ).toHaveLength(0);
 });
 
 test("A public conversation renders embedded media and diagrams", async () => {
