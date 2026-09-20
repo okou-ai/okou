@@ -950,13 +950,21 @@ describe("Morning Brief exact source selection and retained authority", () => {
     TEST_TIMEOUT_MS,
   );
 
-  it.each([
-    [4999, "composed"],
-    [5000, "authority-changed"],
-    [5001, "authority-changed"],
-  ] as const)(
-    "decides retained proof at the absolute five-second boundary (%i ms)",
-    async (elapsedMs, expected) => {
+  /**
+   * The retained proof owns the attempt's deadline, not a second one.
+   *
+   * This check used to give itself a fresh five-second ceiling regardless of
+   * how much of the 45-second phase remained, and reported exhausting it as an
+   * authority change — so a complete collection was discarded, before its
+   * occurrence could be finalized, with most of the attempt's own budget
+   * unspent. Every source that answers adds a descriptor to this proof, which
+   * made a healthy multi-source morning the likeliest one to be thrown away
+   * (#35656). Elapsing well past that retired ceiling while the attempt still
+   * owns its phase is now an ordinary, successful composition.
+   */
+  it(
+    "keeps proving retained authority past the retired five-second ceiling",
+    async () => {
       const fixture = await setupOwner(objectStorage);
       const reproofArrived = createDeferredPromise<void>(context.signal);
       const releaseReproof = createDeferredPromise<void>(context.signal);
@@ -971,11 +979,13 @@ describe("Morning Brief exact source selection and retained authority", () => {
 
       const pending = compose(fixture);
       await reproofArrived.promise;
-      mockNow(ANCHOR_MS + 30_000 + elapsedMs);
+      mockNow(ANCHOR_MS + 30_000 + 5001);
       releaseReproof.resolve();
 
       const response = await pending;
-      expect(response.body.result).toBe(expected);
+      expect(response.body.result).toBe("composed");
+      // The proof itself is unchanged: the same single re-enumeration, not a
+      // retry loop bought by the larger allowance.
       expect(
         calls.slack.filter((call) => {
           return call === "users.conversations";

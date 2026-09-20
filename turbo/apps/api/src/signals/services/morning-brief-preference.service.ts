@@ -2,6 +2,7 @@ import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
   type MorningBriefPreferenceErrorCode,
+  type MorningBriefLastRun,
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -49,7 +50,9 @@ import {
   applyMorningBriefLogicalChoice,
   lockMorningBriefNativeScheduleForWrite,
   materializeMorningBriefNativeSchedule,
+  readLatestMorningBriefNativeOccurrence,
   readMorningBriefNativeSchedule,
+  type MorningBriefNativeOccurrenceRow,
   type MorningBriefNativeScheduleRow,
 } from "./morning-brief-native-schedule.service";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -336,6 +339,44 @@ async function withMorningBriefPreferenceLock<T>(
  * legacy state (with the disposable projection only as a compatibility check).
  * This path never writes, installs or repairs.
  */
+/**
+ * The caller's most recent occurrence, projected as an account.
+ *
+ * This is the first-party answer to "what did my last brief actually do?".
+ * Before it existed, a settled occurrence that delivered nothing was
+ * indistinguishable from one that had nothing to say, and the only way to tell
+ * them apart was to read a distributed trace — the diagnosis gap #35656
+ * recorded. It is read-only and carries counts and labels, never evidence.
+ */
+function projectLastRun(
+  occurrence: MorningBriefNativeOccurrenceRow | undefined,
+): MorningBriefLastRun | null {
+  if (occurrence === undefined) {
+    return null;
+  }
+  const facts = occurrence.collectionFacts ?? null;
+  return {
+    scheduledFor: occurrence.scheduledFor.toISOString(),
+    settledAt: occurrence.settledAt?.toISOString() ?? null,
+    state: occurrence.state,
+    outcome: occurrence.outcome,
+    // A deferral's own reason survives even when the attempt never collected,
+    // so an unexplained silent slot is no longer possible.
+    reason: facts?.reason ?? occurrence.deferReason,
+    sources: facts === null ? null : [...facts.sources],
+  };
+}
+
+/** Attach the account without changing any existing preference projection. */
+function withLastRun(
+  result: MorningBriefPreferenceResult & { readonly workflowId?: string },
+  lastRun: MorningBriefLastRun | null,
+): MorningBriefPreferenceResult & { readonly workflowId?: string } {
+  return result.kind === "ok"
+    ? { ...result, preference: { ...result.preference, lastRun } }
+    : result;
+}
+
 export const morningBriefPreference$ = command(
   async (
     { set },
@@ -347,15 +388,19 @@ export const morningBriefPreference$ = command(
     const owner = morningBriefOwner(args);
     const native = await readMorningBriefNativeSchedule(db, owner);
     signal.throwIfAborted();
+    const lastRun = projectLastRun(
+      await readLatestMorningBriefNativeOccurrence(db, owner),
+    );
+    signal.throwIfAborted();
     if (native !== undefined && native.phase !== "legacy") {
-      return projectNativePreference(native);
+      return withLastRun(projectNativePreference(native), lastRun);
     }
     const state = await loadMorningBriefMigrationState(db, owner);
     signal.throwIfAborted();
     const legacy = await projectInstalledPreference(db, args, state);
     signal.throwIfAborted();
     if (state.kind !== "installed" || legacy.kind !== "ok") {
-      return legacy;
+      return withLastRun(legacy, lastRun);
     }
     const featureSwitchContext = await loadUserFeatureSwitchContext(
       db,
@@ -369,11 +414,14 @@ export const morningBriefPreference$ = command(
         featureSwitchContext,
       )
     ) {
-      return legacy;
+      return withLastRun(legacy, lastRun);
     }
     const projected = await readMorningBriefPreferenceProjection(db, state);
     signal.throwIfAborted();
-    return projected === null ? legacy : { kind: "ok", preference: projected };
+    return withLastRun(
+      projected === null ? legacy : { kind: "ok", preference: projected },
+      lastRun,
+    );
   },
 );
 
@@ -1015,7 +1063,13 @@ export const updateMorningBriefPreference$ = command(
     );
     await publishMorningBriefChangedSafely(morningBriefOwner(args));
     signal.throwIfAborted();
-    return result;
+    // The same account the read path returns, so a caller sees one response
+    // shape whether it just read the preference or just changed it.
+    const lastRun = projectLastRun(
+      await readLatestMorningBriefNativeOccurrence(db, morningBriefOwner(args)),
+    );
+    signal.throwIfAborted();
+    return withLastRun(result, lastRun);
   },
 );
 
