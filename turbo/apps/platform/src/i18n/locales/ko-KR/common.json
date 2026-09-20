@@ -6480,7 +6480,6 @@
     "add": "호스트 추가",
     "cancel": "취소",
     "close": "닫기",
-    "configurationHelp": "호스트를 저장해도 연결을 테스트하지 않습니다. Agent가 세션 시작 시 공유 또는 독점 모드를 선택하며, VNC 서버가 접속을 허용할지 결정합니다.",
     "configured": "구성됨",
     "credential": {
       "add": "자격 증명 추가",
@@ -6502,6 +6501,7 @@
       "select": "인증 정보 선택",
       "sharedHelp_one": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 해당 호스트에 영향을 줍니다.",
       "sharedHelp_other": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 모두에 영향을 줍니다.",
+      "summary_other": "자격 증명 {{count}}개 구성됨",
       "unused": "사용 중인 호스트가 없습니다."
     },
     "credentialsTab": "자격 증명",

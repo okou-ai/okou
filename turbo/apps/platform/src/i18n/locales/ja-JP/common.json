@@ -6480,7 +6480,6 @@
     "add": "ホストを追加",
     "cancel": "キャンセル",
     "close": "閉じる",
-    "configurationHelp": "保存しても接続テストは行われません。Agent が接続時に共有または排他モードを選び、VNC サーバーが接続の可否を決めます。",
     "configured": "設定済み",
     "credential": {
       "add": "認証情報を追加",
@@ -6502,6 +6501,7 @@
       "select": "認証情報を選択",
       "sharedHelp_one": "{{count}} 台のホストで使用中です。パスワード変更はこのホストに影響します。",
       "sharedHelp_other": "{{count}} 台のホストで使用中です。パスワード変更はすべてに影響します。",
+      "summary_other": "{{count}} 件の認証情報を設定済み",
       "unused": "使用しているホストはありません。"
     },
     "credentialsTab": "認証情報",

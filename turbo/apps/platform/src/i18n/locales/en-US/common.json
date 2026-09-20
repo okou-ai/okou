@@ -6492,7 +6492,6 @@
     "add": "Add host",
     "cancel": "Cancel",
     "close": "Close",
-    "configurationHelp": "Saving a host does not test its connection. Agents choose shared or exclusive mode when starting a session; the VNC server controls admission.",
     "configured": "Configured",
     "credential": {
       "add": "Add credential",
@@ -6514,6 +6513,8 @@
       "select": "Select a credential",
       "sharedHelp_one": "Used by {{count}} host. Password changes affect this host.",
       "sharedHelp_other": "Used by {{count}} hosts. Password changes affect all of them.",
+      "summary_one": "{{count}} credential configured",
+      "summary_other": "{{count}} credentials configured",
       "unused": "Not used by any saved host."
     },
     "credentialsTab": "Credentials",

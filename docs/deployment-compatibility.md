@@ -580,7 +580,7 @@ Backend changes must be safe with:
 
 #### Pro-suspend plan retirement
 
-Migration `1176_retire_pro_suspend_tier` rewrites persisted `pro-suspend`
+Migration `1177_retire_pro_suspend_tier` rewrites persisted `pro-suspend`
 organization tiers, pending cancellation targets, and entitlement snapshots to
 `limited-free-1`. The entitlement rewrite applies the complete canonical
 limited-free capability set and active status while preserving balances,
@@ -2393,23 +2393,6 @@ policy. The database's required `refresh_after` and `last_requested_at` columns
 remain writable for deployment coexistence; new rows set `refresh_after` to their
 expiration and new code does not use either column to schedule renewal.
 
-## Pi inference lifecycle reader floor (#34242)
-
-The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v4
-launch discriminator without a Runner profile and three sparse ownership/intent/lease
-tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
-expand migration replaces the launch CHECK as NOT VALID; a separate bounded
-validation transaction scans retained runs before API promotion. The
-`piDeferredSandbox` default remains off, but that default does not establish the
-state of every organization or staff override; historical v4 attempts and their
-retained obligations must remain readable.
-
-After future v4 activation, disabling starts must retain phase/epoch-aware readers,
-consumer/recovery, cancellation, capacity counting, credential retention and erasure.
-A v1–v3-only application is below the rollback floor while v4 records remain.
-Do not shrink the CHECK or cascade away releasing leases. See the linked contract
-for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
-
 ## API-first usage handoff producer (#35413)
 
 The consumer contract and tolerant readers are delivered by #34787. This
@@ -2447,31 +2430,6 @@ the additive column.
 Deploy the API across the serving fleet before enabling the Runner consumer in
 #34384. Unsupported endpoints and other inconclusive reads must not become
 disappearance decisions. This API slice alone adds no new stop-delay bound.
-
-## Deferred Pi Sandbox reader floor
-
-Before a v4 API-inference producer can emit Sandbox demand, deploy the
-[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
-Its optional Runner header is ignored by older APIs; older Runners remain
-excluded from v4 jobs. The release endpoint and Runner use one strict explicit
-outcome contract: a missing, malformed or unknown outcome retains the receipt
-instead of fabricating a stale acknowledgement. No mixed-response bridge is
-provided for this non-GA path. New admission remains default-off and the
-user-reported shutdown is the current operational boundary, but historical
-production attempts under #34795 mean retained v4 obligations may still exist.
-The outer Pi launch-config v2 contains a new versioned continuation slot. The
-co-built Guest uses its private Sandbox control token to assemble the handoff in
-a 0600 run-scoped file and passes only an additive path variable to the CLI. The
-entire pre-spawn request and response-body wait stays under the existing user
-cancellation token, original absolute execution deadline and heartbeat terminal
-semantics; a winning control removes unpublished/published startup files and
-starts no child. An older CLI fails its legacy ordinary-token read; a newer CLI
-under an older Guest fails because the authenticated file is absent. Both
-combinations stop before the RPC boundary. Enablement therefore requires the
-capable API, Runner/Guest and newly captured commit-addressed CLI.
-Drain existing v4 intents, leases, claims and release receipts before rolling any
-of those readers back below that floor. No switch is enabled by the consumer
-implementation.
 
 ## Email outbox provider replay and send-time expiry (#34645, #34695)
 

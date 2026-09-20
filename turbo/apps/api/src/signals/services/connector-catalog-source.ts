@@ -16,13 +16,6 @@ const scopedConnectorCatalogSource = singleton(() => {
   return new AsyncLocalStorage<ConnectorCatalogSource>();
 });
 
-export async function withConnectorCatalogSourceForTest<T>(
-  source: ConnectorCatalogSource,
-  work: () => Promise<T>,
-): Promise<T> {
-  return await scopedConnectorCatalogSource().run(source, work);
-}
-
 export function connectorCatalogSourceIsTestScoped(): boolean {
   return scopedConnectorCatalogSource.peek()?.getStore() !== undefined;
 }

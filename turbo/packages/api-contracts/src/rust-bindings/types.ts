@@ -1,8 +1,6 @@
 import { z } from "zod";
 import {
   piApiFirstTurnConfigSchema,
-  piDeferredHandoffChunkSchema,
-  piDeferredSandboxConfigSchema,
   activeInputDeliveryReserveResponseSchema,
   activeInputDeliveryReceiptResponseSchema,
   artifactMissingRootPolicySchema,
@@ -87,14 +85,6 @@ export const rustTypeModuleDocs = [
     rustDoc: [
       "Run-scoped DTOs exchanged between runners, guests, and the API.",
     ],
-  },
-  {
-    rustModulePath: ["runners", "jobs"],
-    rustDoc: ["Authenticated Runner job DTOs."],
-  },
-  {
-    rustModulePath: ["runners", "jobs", "pi_handoff"],
-    rustDoc: ["Authenticated deferred Pi handoff DTOs."],
   },
   {
     rustModulePath: ["runners", "runs", "active_inputs"],
@@ -225,89 +215,6 @@ export const rustTypeBindings = [
           ],
           modelCatalog: [
             "Optional opaque Codex model catalog supplied by the API.",
-          ],
-        },
-      },
-    ],
-  },
-  {
-    schema: z.object({
-      schemaVersion: z.literal(2),
-      apiFirstTurn: piDeferredSandboxConfigSchema.unwrap().pick({
-        schemaVersion: true,
-        ownerEpoch: true,
-        generation: true,
-        deadlineAt: true,
-        resourceSnapshotDigest: true,
-        baseSession: true,
-        sandboxEventSequenceStart: true,
-        historyHash: true,
-        runId: true,
-        activeInput: true,
-      }),
-    }),
-    rustModulePath: ["runners", "runs"],
-    rustTypeName: "PiDeferredLaunchConfig",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "PiDeferredLaunchConfig",
-        rustDoc: [
-          "Deferred Pi Runner validation view. The CLI validates the full immutable payload.",
-        ],
-        fields: {
-          schemaVersion: ["Outer Pi launch version."],
-          apiFirstTurn: ["Generation-fenced durable continuation."],
-        },
-      },
-      {
-        rustTypeName: "PiDeferredLaunchConfigApiFirstTurn",
-        rustDoc: ["Minimum deferred handoff identity accepted by the Runner."],
-        fields: {
-          schemaVersion: ["Deferred continuation version."],
-          ownerEpoch: ["Claimed inference owner epoch."],
-          generation: ["Claimed demand generation."],
-          deadlineAt: ["Execution startup deadline in Unix milliseconds."],
-          resourceSnapshotDigest: [
-            "Digest of the frozen resources validated by the CLI.",
-          ],
-          baseSession: ["Original canonical Pi session checkpoint."],
-          sandboxEventSequenceStart: [
-            "First unpublished Sandbox event sequence.",
-          ],
-          historyHash: ["Digest of the exact H1 or untouched H0 bytes."],
-          runId: ["Original Run authorized by the Sandbox token."],
-          activeInput: [
-            "Original Run has a thread capable of receiving active input.",
-          ],
-        },
-      },
-      {
-        rustTypeName: "PiDeferredLaunchConfigApiFirstTurnBaseSession",
-        rustDoc: ["Captured H0 checkpoint."],
-        fields: {
-          sessionId: ["Canonical Pi session identifier."],
-          sha256: ["Original H0 history digest, or null for an empty session."],
-        },
-      },
-    ],
-  },
-  {
-    schema: piDeferredHandoffChunkSchema,
-    rustModulePath: ["runners", "jobs", "pi_handoff"],
-    rustTypeName: "Response",
-    direction: "response",
-    sensitive: true,
-    declarations: [
-      {
-        rustTypeName: "Response",
-        rustDoc: [
-          "One bounded chunk of authenticated deferred Pi handoff data.",
-        ],
-        fields: {
-          chunk: ["Base64-encoded handoff bytes."],
-          nextOffset: [
-            "Next exact byte offset, or null after the final chunk.",
           ],
         },
       },

@@ -6480,7 +6480,6 @@
     "add": "Tambahkan host",
     "cancel": "Batal",
     "close": "Tutup",
-    "configurationHelp": "Menyimpan host tidak menguji koneksinya. Agen memilih mode bersama atau eksklusif saat memulai sesi; server VNC menentukan apakah koneksi diterima.",
     "configured": "Terkonfigurasi",
     "credential": {
       "add": "Tambah kredensial",
@@ -6502,6 +6501,7 @@
       "select": "Pilih kredensial",
       "sharedHelp_one": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi host ini.",
       "sharedHelp_other": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi semuanya.",
+      "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host tersimpan mana pun."
     },
     "credentialsTab": "Kredensial",

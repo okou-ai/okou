@@ -6571,7 +6571,6 @@
     "add": "Añadir host",
     "cancel": "Cancelar",
     "close": "Cerrar",
-    "configurationHelp": "Guardar un host no comprueba su conexión. Los agentes eligen el modo compartido o exclusivo al iniciar una sesión; el servidor VNC controla la admisión.",
     "configured": "Configurado",
     "credential": {
       "add": "Añadir credenciales",
@@ -6594,6 +6593,9 @@
       "sharedHelp_one": "Utilizadas por {{count}} host. Los cambios de contraseña afectan a este host.",
       "sharedHelp_many": "Utilizadas por {{count}} hosts. Los cambios de contraseña afectan a todos ellos.",
       "sharedHelp_other": "Utilizadas por {{count}} hosts. Los cambios de contraseña afectan a todos ellos.",
+      "summary_one": "{{count}} credencial configurada",
+      "summary_many": "{{count}} credenciales configuradas",
+      "summary_other": "{{count}} credenciales configuradas",
       "unused": "Ningún host guardado las utiliza."
     },
     "credentialsTab": "Credenciales",

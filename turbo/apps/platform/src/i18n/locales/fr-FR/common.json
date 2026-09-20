@@ -6571,7 +6571,6 @@
     "add": "Ajouter un hôte",
     "cancel": "Annuler",
     "close": "Fermer",
-    "configurationHelp": "L’enregistrement d’un hôte ne teste pas sa connexion. Les agents choisissent le mode partagé ou exclusif au démarrage d’une session ; le serveur VNC contrôle l’admission.",
     "configured": "Configuré",
     "credential": {
       "add": "Ajouter des identifiants",
@@ -6594,6 +6593,9 @@
       "sharedHelp_one": "Utilisés par {{count}} hôte. Les changements de mot de passe affectent cet hôte.",
       "sharedHelp_many": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
       "sharedHelp_other": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
+      "summary_one": "{{count}} identifiant configuré",
+      "summary_many": "{{count}} identifiants configurés",
+      "summary_other": "{{count}} identifiants configurés",
       "unused": "Aucun hôte enregistré n’utilise ces identifiants."
     },
     "credentialsTab": "Identifiants",

@@ -225,6 +225,14 @@ function artifactKindTitle(kind: ArtifactTitleKind): string {
   }
 }
 
+/**
+ * Fullscreen exists to make a picture bigger. An audio player has no picture,
+ * so offering the control there only produces a larger empty stage.
+ */
+export function artifactSupportsFullscreen(kind: ArtifactDisplayKind): boolean {
+  return kind !== "audio";
+}
+
 export function artifactFallbackSubtitle(
   kind: ArtifactDisplayKind,
   filename: string,

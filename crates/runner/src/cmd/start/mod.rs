@@ -945,7 +945,6 @@ async fn run_start_with_home(
             http.clone(),
             server.token,
             ApiProviderConfig {
-                deferred_release_root: home.deferred_sandbox_recovery_dir(),
                 ssh: ssh.clone(),
                 runner_identity,
                 runner_hostname: hostname.clone(),

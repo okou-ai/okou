@@ -6571,7 +6571,6 @@
     "add": "Aggiungi host",
     "cancel": "Annulla",
     "close": "Chiudi",
-    "configurationHelp": "Il salvataggio di un host non verifica la connessione. Gli agenti scelgono la modalità condivisa o esclusiva all’avvio della sessione; il server VNC controlla l’ammissione.",
     "configured": "Configurato",
     "credential": {
       "add": "Aggiungi credenziali",
@@ -6594,6 +6593,9 @@
       "sharedHelp_one": "Usate da {{count}} host. Le modifiche alla password interessano questo host.",
       "sharedHelp_many": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
       "sharedHelp_other": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
+      "summary_one": "{{count}} credenziale configurata",
+      "summary_many": "{{count}} credenziali configurate",
+      "summary_other": "{{count}} credenziali configurate",
       "unused": "Nessun host salvato usa queste credenziali."
     },
     "credentialsTab": "Credenziali",

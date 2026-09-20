@@ -11,15 +11,19 @@ delivery slices; VNC remains disabled by default.
 ## Contract
 
 `authenticate` consumes an already connected, uniquely owned asynchronous stream,
-a certificate identity, a `VncPassword`, explicit `TrustRoots`, and a deadline.
-The caller must validate its saved destination and authorization before opening
-that stream. This crate never resolves a hostname or opens a second socket.
+a certificate identity, one exact `X509Authentication`, explicit `TrustRoots`,
+and a deadline. The caller must validate its saved destination, profile and
+authorization before opening that stream. This crate never resolves a hostname
+or opens a second socket.
 
-Only RFB 3.8 / VeNCrypt 0.2 / X509Vnc (subtype 261) is supported. TLS 1.2 or 1.3
-verifies the certificate chain, validity and saved DNS name or IP SAN before any
-password-derived response is sent. Insecure alternatives are never selected,
-including when the server also offers them. There is no verification bypass or
-fallback to None, bare VncAuth or anonymous TLS.
+RFB 3.8 / VeNCrypt 0.2 supports only the caller-selected X509None (subtype 260),
+X509Vnc (261), or X509Plain (262) policy. TLS 1.2 or 1.3 verifies the certificate
+chain, validity and saved DNS name or IP SAN before any reusable credential is
+sent. Other offered X509 variants and insecure alternatives are never selected.
+There is no verification bypass or fallback to bare None, VncAuth, Plain, or
+anonymous TLS. X509None verifies and encrypts the server channel but performs no
+inner VNC client authentication; engine support is not a decision to expose that
+profile in Runner or product configuration.
 
 Public trust uses `webpki-roots`; custom trust replaces those roots with 1-8 DER
 certificates totaling at most 64 KiB. PEM parsing and its encoded-size limit belong
@@ -33,13 +37,21 @@ waiting for SecurityResult. DES is used only inside verified TLS, never as the
 transport's security boundary. Callers remain responsible for their own copies
 of secrets; this is not a guarantee that a compiler or TLS library makes no copies.
 
+`PlainCredentials` requires 1-1023 UTF-8 bytes in each field, rejects embedded
+NUL, preserves spaces and performs no normalization or truncation. Both fields
+are erased on drop and Debug output is redacted. The exact username and password
+lengths and bytes are sent only after verified TLS, then erased before waiting for
+SecurityResult. Product configuration may impose a tighter username limit.
+
 Success returns `Authenticated::into_stream()`, positioned immediately after
 SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer data
-are not consumed. The returned object retains no password and starts no task.
+are not consumed. The returned object retains no client credentials and starts no
+task.
 
 The earlier of the caller deadline and 30 seconds bounds the whole handshake.
-RFB version exchange, security negotiation, TLS handshake and VNC authentication
-all consume that same absolute deadline rather than receiving per-stage budgets.
+RFB version exchange, security negotiation, TLS handshake and the selected inner
+authentication/result exchange all consume that same absolute deadline rather
+than receiving per-stage budgets.
 An authentication deadline error retains only the bounded local stage active at
 expiry. The stage locates the client-side protocol responsibility; it does not
 identify whether a server, firewall, proxy or another network component caused

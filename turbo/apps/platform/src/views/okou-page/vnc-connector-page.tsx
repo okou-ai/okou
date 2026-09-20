@@ -139,11 +139,6 @@ function VncHosts() {
           })}
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.configurationHelp;
-        })}
-      </p>
       {hosts.data.length === 0 && (
         <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
           {t(($) => {
@@ -243,7 +238,15 @@ function VncCredentials() {
   }
   return (
     <div className="grid gap-5">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.vnc.credential.summary;
+            },
+            { count: credentials.data.length },
+          )}
+        </p>
         <Button
           onClick={() => {
             detach(open("create-credential", null, signal), Reason.DomCallback);

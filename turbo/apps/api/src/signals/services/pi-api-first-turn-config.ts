@@ -41,39 +41,14 @@ interface PiApiFirstTurnExecutionContext {
   readonly h0SessionHistory?: string;
 }
 
-export interface PiApiFirstTurnActivationBase {
+export interface PiApiFirstTurnActivation {
   readonly runId: string;
+  readonly runnerGroup: string;
   readonly userId: string;
   readonly orgId: string;
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly executionContext: PiApiFirstTurnExecutionContext;
-}
-
-export type PiApiFirstTurnActivation = PiApiFirstTurnActivationBase &
-  (
-    | {
-        readonly executionMode: "legacy-sandbox-race";
-        readonly runnerGroup: string;
-      }
-    | {
-        readonly executionMode: "durable-inference";
-        readonly inference: {
-          readonly ownerEpoch: number;
-          readonly providerAttemptId: string;
-          readonly configurationHash: string;
-          readonly contextHash: string;
-        };
-      }
-  );
-
-export function isDurablePiApiFirstTurnActivation(
-  activation: PiApiFirstTurnActivation,
-): activation is Extract<
-  PiApiFirstTurnActivation,
-  { readonly executionMode: "durable-inference" }
-> {
-  return activation.executionMode === "durable-inference";
 }
 
 export const PI_API_FIRST_TURN_API_OWNERSHIP_TIMEOUT_MS = 45_000;

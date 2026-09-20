@@ -6500,7 +6500,6 @@
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
     "close": "Schließen",
-    "configurationHelp": "Beim Speichern eines Hosts wird die Verbindung nicht getestet. Agents wählen beim Sitzungsstart den gemeinsamen oder exklusiven Modus; der VNC-Server entscheidet über die Zulassung.",
     "configured": "Konfiguriert",
     "credential": {
       "add": "Zugangsdaten hinzufügen",
@@ -6522,6 +6521,8 @@
       "select": "Zugangsdaten auswählen",
       "sharedHelp_one": "Von {{count}} Host verwendet. Passwortänderungen betreffen diesen Host.",
       "sharedHelp_other": "Von {{count}} Hosts verwendet. Passwortänderungen betreffen alle diese Hosts.",
+      "summary_one": "{{count}} Zugangsdaten-Satz konfiguriert",
+      "summary_other": "{{count}} Zugangsdaten-Sätze konfiguriert",
       "unused": "Von keinem gespeicherten Host verwendet."
     },
     "credentialsTab": "Anmeldeinformationen",

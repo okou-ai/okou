@@ -76,9 +76,7 @@ type TooltipPositionerProps = Pick<
 >;
 
 type TooltipContentProps = TooltipPrimitive.Popup.Props &
-  TooltipPositionerProps & {
-    portalContainer?: HTMLElement | null;
-  };
+  TooltipPositionerProps;
 
 const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
   (
@@ -90,7 +88,6 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
       collisionAvoidance,
       collisionBoundary,
       collisionPadding,
-      portalContainer,
       positionMethod = "fixed",
       side = "top",
       sideOffset = 4,
@@ -100,7 +97,7 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
     ref,
   ) => {
     return (
-      <TooltipPrimitive.Portal container={portalContainer}>
+      <TooltipPrimitive.Portal>
         <TooltipPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
