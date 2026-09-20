@@ -559,40 +559,83 @@ test("browser completion waits through pending and consumed, and manual reopen n
   expect(polls).toBe(3);
 });
 
-test("browser polling stops on an unusable status and retry explicitly navigates to a fresh callback attempt", async () => {
-  const documents = navigation();
+test.each([404, 500] as const)(
+  "browser polling stops on status %s and retry explicitly navigates to a fresh callback attempt",
+  async (status) => {
+    const documents = navigation();
+    context.mocks.browser.locationAssign();
+    const unusable = context.mocks.deferred<void>();
+    let polls = 0;
+    let creates = 0;
+    context.mocks.api(desktopAuthHandoffContract.create, ({ respond }) => {
+      creates += 1;
+      return respond(200, {
+        callbackUrl: `${SCHEME}://auth/callback?code=${CODE}&handoffId=${HANDOFF}`,
+        handoffId: HANDOFF,
+      });
+    });
+    context.mocks.api(
+      desktopAuthHandoffContract.status,
+      async ({ respond }) => {
+        polls += 1;
+        if (polls === 1) {
+          return respond(200, { status: "pending" });
+        }
+        await unusable.promise;
+        return respond(status, {
+          error: {
+            code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+            message: TICKET,
+          },
+        });
+      },
+    );
+    await page(`/desktop-auth/callback?callbackScheme=${SCHEME}`);
+    await screen.findByRole("region", {
+      description: "Open Desktop to continue signing in.",
+    });
+    unusable.resolve();
+    await failed();
+    expect(polls).toBe(2);
+    expect(creates).toBe(1);
+    expect(document.body.textContent).not.toContain(TICKET);
+    click(button("Try again"));
+    expect(documents).toStrictEqual([CALLBACK]);
+  },
+);
+
+test("leaving the browser callback aborts a pending handoff status request", async () => {
   context.mocks.browser.locationAssign();
-  const unusable = context.mocks.deferred<void>();
-  let polls = 0;
-  let creates = 0;
+  const requested = context.mocks.deferred<AbortSignal>();
+  const response = context.mocks.deferred<void>();
   context.mocks.api(desktopAuthHandoffContract.create, ({ respond }) => {
-    creates += 1;
     return respond(200, {
       callbackUrl: `${SCHEME}://auth/callback?code=${CODE}&handoffId=${HANDOFF}`,
       handoffId: HANDOFF,
     });
   });
-  context.mocks.api(desktopAuthHandoffContract.status, async ({ respond }) => {
-    polls += 1;
-    if (polls === 1) {
-      return respond(200, { status: "pending" });
-    }
-    await unusable.promise;
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: TICKET },
-    });
-  });
+  context.mocks.api(
+    desktopAuthHandoffContract.status,
+    async ({ request, respond }) => {
+      requested.resolve(request.signal);
+      await response.promise;
+      return respond(200, { status: "completed" });
+    },
+  );
+
   await page(`/desktop-auth/callback?callbackScheme=${SCHEME}`);
   await screen.findByRole("region", {
     description: "Open Desktop to continue signing in.",
   });
-  unusable.resolve();
-  await failed();
-  expect(polls).toBe(2);
-  expect(creates).toBe(1);
-  expect(document.body.textContent).not.toContain(TICKET);
-  click(button("Try again"));
-  expect(documents).toStrictEqual([CALLBACK]);
+  const requestSignal = await requested.promise;
+  await leaveDesktopAuthPage();
+  expect(requestSignal.aborted).toBeTruthy();
+
+  response.resolve();
+  await response.promise;
+  expect(
+    screen.getByRole("heading", { name: "That page isn't here." }),
+  ).toBeInTheDocument();
 });
 
 test.each([

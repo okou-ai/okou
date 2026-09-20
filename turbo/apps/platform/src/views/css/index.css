@@ -16,6 +16,8 @@
 @source "../../../../../packages/ui/src/**/*.{ts,tsx}";
 
 @theme {
+  --animate-locator-landed: okou-locator-landed 1.15s
+    cubic-bezier(0.2, 0.8, 0.2, 1);
   /* Hosted Clerk card geometry owned by the application page shell. */
   --okou-auth-card-max-width: 25rem;
   --okou-auth-card-page-width: calc(100% + 0.5rem);
@@ -610,15 +612,6 @@ body {
   to {
     background-color: transparent;
     box-shadow: 0 0 0 0.75rem transparent;
-  }
-}
-[data-locator-landed] {
-  border-radius: 0.75rem;
-  animation: okou-locator-landed 1.15s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-locator-landed] {
-    animation-duration: 0.01ms;
   }
 }
 

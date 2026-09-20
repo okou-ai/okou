@@ -70,6 +70,7 @@ import {
   getShortcutLabel,
   getShortcutParts,
   Button,
+  CopyButton,
   Checkbox,
   Input,
   Skeleton,
@@ -136,7 +137,10 @@ import {
   ChatVideoPreviewButton,
 } from "./chat-body-cards.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatConversationLocator } from "./chat-conversation-locator.tsx";
+import {
+  ChatConversationLandingHighlight,
+  ChatConversationLocator,
+} from "./chat-conversation-locator.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isStandalonePwa } from "../../lib/keyboard-dismiss-gesture.ts";
 import {
@@ -6094,12 +6098,10 @@ function UserMessageAttachments({
 // the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
   showCopy,
-  copied,
   onCopy,
 }: {
   showCopy: boolean;
-  copied: boolean;
-  onCopy: () => void;
+  onCopy: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
   return (
@@ -6108,20 +6110,28 @@ function UserMessageActions({
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
       {showCopy ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          iconSize="sm"
-          showTooltip
-          onClick={onCopy}
-          className="text-muted-foreground/60"
-          aria-label={t(($) => {
-            return $.chat.actions.copyMessage;
-          })}
-        >
-          {copied ? <Check /> : <Copy />}
-        </Button>
+        <CopyButton
+          copyAction={onCopy}
+          render={({ onClick, ref }, { copied }) => {
+            return (
+              <Button
+                ref={ref}
+                type="button"
+                variant="quiet"
+                size="icon-xs"
+                iconSize="sm"
+                showTooltip
+                onClick={onClick}
+                className="text-muted-foreground/60"
+                aria-label={t(($) => {
+                  return $.chat.actions.copyMessage;
+                })}
+              >
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            );
+          }}
+        />
       ) : null}
     </div>
   );
@@ -7002,9 +7012,12 @@ function UserMessageContent({
 
 function WorkflowUserMessage({
   event,
+  thread,
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
+  thread: ChatPanelSignals;
 }) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -7028,8 +7041,10 @@ function WorkflowUserMessage({
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
-      className="group"
+      className="relative group"
+      ref={turnOnRef}
     >
+      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
       <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
@@ -7043,9 +7058,12 @@ function WorkflowUserMessage({
 
 function GoalUserMessage({
   event,
+  thread,
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
+  thread: ChatPanelSignals;
 }) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -7059,8 +7077,10 @@ function GoalUserMessage({
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
-      className="group"
+      className="relative group"
+      ref={turnOnRef}
     >
+      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
       <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
@@ -7157,6 +7177,7 @@ function PagedUserMessage({
   thread: ChatPanelSignals;
   stackedOnPrevious?: boolean;
 }) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const inputEvent = asInputChatEvent(event);
   const renderDocument = event.userMessageRenderDocument;
   const { canonicalUserMessage, clipboardAttachments, copyText } =
@@ -7173,8 +7194,6 @@ function PagedUserMessage({
       preview: attachment.signals,
     });
   };
-  const copiedId = useGet(thread.copiedEventId$);
-  const copied = copiedId === event.id;
   const copyEvent = useSet(thread.copyEvent$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const allAttachments = userMessageRenderAttachments(renderDocument);
@@ -7184,22 +7203,13 @@ function PagedUserMessage({
     clipboardAttachments.length > 0;
 
   const handleCopy = () => {
-    if (!canCopy) {
-      return;
-    }
-    detach(
-      copyEvent(
-        event.id,
-        {
-          text: copyText,
-          attachments: clipboardAttachments,
-          ...(canonicalUserMessage
-            ? { userMessage: canonicalUserMessage }
-            : {}),
-        },
-        pageSignal,
-      ),
-      Reason.DomCallback,
+    return copyEvent(
+      {
+        text: copyText,
+        attachments: clipboardAttachments,
+        ...(canonicalUserMessage ? { userMessage: canonicalUserMessage } : {}),
+      },
+      pageSignal,
     );
   };
 
@@ -7208,11 +7218,11 @@ function PagedUserMessage({
   }
 
   if (isWorkflowUserMessage(event)) {
-    return <WorkflowUserMessage event={event} />;
+    return <WorkflowUserMessage event={event} thread={thread} />;
   }
 
   if (isGoalUserMessage(event)) {
-    return <GoalUserMessage event={event} />;
+    return <GoalUserMessage event={event} thread={thread} />;
   }
 
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
@@ -7221,14 +7231,16 @@ function PagedUserMessage({
   return (
     <div
       id={inputPromptRunAnchor(inputEvent)}
+      ref={turnOnRef}
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
       className={cn(
-        "group",
+        "relative group",
         stackedOnPrevious && CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
       )}
     >
+      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
       <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex flex-col items-end w-full">
@@ -7249,7 +7261,6 @@ function PagedUserMessage({
                   still pulled up by the height this row holds. */}
               <UserMessageActions
                 showCopy={canCopy && sharingPhase === "idle"}
-                copied={copied}
                 onCopy={handleCopy}
               />
             </>
@@ -7531,6 +7542,7 @@ function PagedAssistantGroup({
   runIndicatorMode,
   statusTailEvents,
 }: PagedAssistantGroupProps) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const hasRenderableEvent = group.events.some((event) => {
     return isRenderableAssistantEvent(event);
   });
@@ -7554,11 +7566,19 @@ function PagedAssistantGroup({
   return (
     <div
       id={groupElementId}
+      ref={turnOnRef}
       data-role="assistant"
       data-chat-run-id={runId}
       data-turn-created-at={group.events[0]?.createdAt}
       className={CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS}
     >
+      <ChatConversationLandingHighlight
+        thread={thread}
+        eventId={
+          runWorkSection?.anchorEventId ??
+          group.events.find(isRenderableAssistantEvent)?.id
+        }
+      />
       <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
         <AssistantBubbleAvatar thread={thread} />
         <div
@@ -8016,7 +8036,6 @@ function PagedGroupPrimaryActions({
   thread,
   hasContent,
   usage,
-  copied,
   onCopy,
   relatedArtifacts,
 }: {
@@ -8024,8 +8043,7 @@ function PagedGroupPrimaryActions({
   thread: ChatPanelSignals;
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
-  copied: boolean;
-  onCopy: () => void;
+  onCopy: () => Promise<boolean>;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
@@ -8080,34 +8098,42 @@ function PagedGroupPrimaryActions({
         <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                iconSize="sm"
-                onClick={onCopy}
-                className="text-muted-foreground/60"
-                aria-label={t(($) => {
-                  return $.chat.actions.copyMessage;
-                })}
-              >
-                {copied ? <Check /> : <Copy />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {copied
-                ? t(($) => {
-                    return $.chat.actions.copied;
-                  })
-                : t(($) => {
-                    return $.chat.actions.copyMessage;
-                  })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <CopyButton
+          copyAction={onCopy}
+          render={({ onClick, ref }, { copied }) => {
+            return (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      ref={ref}
+                      type="button"
+                      variant="quiet"
+                      size="icon-xs"
+                      iconSize="sm"
+                      onClick={onClick}
+                      className="text-muted-foreground/60"
+                      aria-label={t(($) => {
+                        return $.chat.actions.copyMessage;
+                      })}
+                    >
+                      {copied ? <Check /> : <Copy />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {copied
+                      ? t(($) => {
+                          return $.chat.actions.copied;
+                        })
+                      : t(($) => {
+                          return $.chat.actions.copyMessage;
+                        })}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          }}
+        />
       )}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
@@ -8131,8 +8157,6 @@ function PagedGroupActions({
   embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
-  const copiedId = useGet(thread.copiedEventId$);
-  const copied = copiedId === group.beginEventId;
   const copyEvent = useSet(thread.copyEvent$);
   const sharingPhase = useGet(thread.sharing.phase$);
   if (sharingPhase !== "idle") {
@@ -8146,17 +8170,7 @@ function PagedGroupActions({
   const hasContent = content.length > 0;
 
   const handleCopy = () => {
-    if (!content) {
-      return;
-    }
-    detach(
-      copyEvent(
-        group.beginEventId,
-        { text: content, attachments: [] },
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
+    return copyEvent({ text: content, attachments: [] }, pageSignal);
   };
 
   const actions = (
@@ -8166,7 +8180,6 @@ function PagedGroupActions({
         thread={thread}
         hasContent={hasContent}
         usage={usage}
-        copied={copied}
         onCopy={handleCopy}
         relatedArtifacts={relatedArtifacts}
       />
