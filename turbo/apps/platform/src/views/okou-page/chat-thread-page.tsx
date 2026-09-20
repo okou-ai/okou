@@ -248,6 +248,7 @@ import type { AgentReferenceSignals } from "../../signals/chat-page/agent-refere
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
+import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -6686,7 +6687,7 @@ function UserMessageFeedbackNote({
             <UserMessageTemplateReference key={key} part={renderPart.part} />
           );
         }
-        return <span key={key}>{renderPart.part.text}</span>;
+        return <PlainTextWithLinks key={key} text={renderPart.part.text} />;
       })}
     </div>
   );
@@ -6829,7 +6830,7 @@ function UserMessagePartView({
   renderPart: UserMessageStandaloneRenderPart;
 }): ReactNode {
   if (renderPart.type === "text") {
-    return <span>{renderPart.part.text}</span>;
+    return <PlainTextWithLinks text={renderPart.part.text} />;
   }
   if (renderPart.type === "chat_thread") {
     return (

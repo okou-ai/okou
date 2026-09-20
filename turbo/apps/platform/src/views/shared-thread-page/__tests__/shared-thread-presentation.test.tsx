@@ -133,6 +133,39 @@ test("A public conversation hides owner and agent identity", async () => {
   expect(screen.queryByText("Agent")).not.toBeInTheDocument();
 });
 
+test("A link inside a public prompt is clickable without becoming Markdown", async () => {
+  const content =
+    "Compare https://example.com/report and keep **bold** as is, please.";
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [{ messageIndex: 0, role: "user", content, runIndex: 0 }],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const link = await waitFor(() => {
+    const found = queryAllByRoleFast("link").find((candidate) => {
+      return candidate.getAttribute("href") === "https://example.com/report";
+    });
+    if (!found) {
+      throw new Error("Prompt link not found");
+    }
+    return found;
+  });
+  expect(link).toHaveTextContent("https://example.com/report");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  // The prompt is not Markdown, so `**bold**` has to survive linking.
+  expect(screen.getByText("Compare")).toBeInTheDocument();
+  expect(
+    screen.getByText("and keep **bold** as is, please."),
+  ).toBeInTheDocument();
+});
+
 test("A public conversation renders embedded media and diagrams", async () => {
   const content = [
     "![Launch map](https://media.example.com/launch.png)",
