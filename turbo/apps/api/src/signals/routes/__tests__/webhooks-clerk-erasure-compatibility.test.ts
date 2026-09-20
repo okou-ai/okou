@@ -19,6 +19,7 @@ import { createDeferredPromise } from "../../utils";
 import {
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
+  createStableContextBlockObserverFixture,
   deleteExpiredOwnedPiStableContextArtifactFixture,
   readAgentInstructionsStorageFixture,
   removePiStableContextHeadFixture,
@@ -730,6 +731,9 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
     ready: true,
   });
   const artifactDigest = await removePiStableContextHeadFixture(headId);
+  const blockObserver = await createStableContextBlockObserverFixture(
+    context.signal,
+  );
   const gcEntered = createDeferredPromise<number>(context.signal);
   const releaseGc = createDeferredPromise<void>(context.signal);
   const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
@@ -759,7 +763,7 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
   await expect
     .poll(
       async () => {
-        const blocked = await stableContextBackendBlockedByFixture({
+        const blocked = await blockObserver.blockedBy({
           blockedPid: cleanupPid,
           blockerPid: gcPid,
         });
