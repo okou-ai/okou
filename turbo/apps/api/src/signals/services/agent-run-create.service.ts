@@ -461,17 +461,6 @@ type DbTransaction = Tx;
 
 const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
   "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
-const MERCURY_NOT_A_BANK_DISCLOSURE =
-  "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.";
-const MERCURY_RESPONSE_DISCLOSURE_PROMPT = [
-  "# Mercury Account Data Disclosure",
-  "",
-  "When a response displays or summarizes any data retrieved through the Mercury connector, including account details, balances, or transactions, include both of the following:",
-  "- [Powered by Mercury](https://mercury.com)",
-  `- ${MERCURY_NOT_A_BANK_DISCLOSURE}`,
-  "",
-  "Do not include this disclosure when the response does not present Mercury-sourced data.",
-].join("\n");
 const IMAGE_RECOGNITION_PROMPT =
   '# Image Recognition Fallback\n\nThis run\'s selected model cannot inspect images directly. To inspect one local PNG, JPEG, or WebP image up to 20 MB, run `okou image-recognition --file <image-path> --prompt "<instruction>"`.';
 const RESTRICTED_EXPLICIT_CONTENT_PROMPT = [
@@ -572,7 +561,6 @@ function withFinalRunAppendSystemPrompt(args: {
   readonly framework: SupportedFramework;
   readonly chatThreadId: string | undefined;
   readonly imageRecognitionAvailable: boolean;
-  readonly connectorSlugs: readonly ConnectorSlug[];
   readonly mcpConnectorSlugs: readonly string[];
   readonly selectedImageModel: ImageModel | null;
   readonly cliAvailable: boolean;
@@ -583,9 +571,6 @@ function withFinalRunAppendSystemPrompt(args: {
     if (mcpConnectorPrompt) {
       appendedParts.push(mcpConnectorPrompt);
     }
-  }
-  if (args.connectorSlugs.includes("mercury")) {
-    appendedParts.push(MERCURY_RESPONSE_DISCLOSURE_PROMPT);
   }
   if (args.imageRecognitionAvailable) {
     appendedParts.push(IMAGE_RECOGNITION_PROMPT);
@@ -11604,7 +11589,6 @@ function finalizePreparedRunContext(
       framework: prepared.context.framework,
       chatThreadId: prepared.args.chatThreadId,
       imageRecognitionAvailable: prepared.context.imageRecognitionAvailable,
-      connectorSlugs: prepared.context.connectorContext.connectorSlugs,
       mcpConnectorSlugs: [
         ...prepared.context.connectorContext.mcpConnectorSlugs,
         ...prepared.context.customConnectorContext.mcpConnectorSlugs,
