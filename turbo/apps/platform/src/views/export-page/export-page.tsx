@@ -1,4 +1,4 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
@@ -18,7 +18,6 @@ import {
   startUserExport$,
   userExportStartError$,
   userExportStatus$,
-  userExportStatusPollingRef$,
 } from "../../signals/export-page/export-page-signals.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
@@ -402,8 +401,12 @@ function iconTone(viewState: ExportViewState): string {
 export function ExportPage() {
   const { t } = useTranslation();
   const statusLoadable = useLoadable(userExportStatus$);
-  const data = statusLoadable.state === "hasData" ? statusLoadable.data : null;
-  const loading = statusLoadable.state === "loading";
+  const lastResolvedStatus = useLastResolved(userExportStatus$);
+  const data =
+    statusLoadable.state === "hasData"
+      ? statusLoadable.data
+      : (lastResolvedStatus ?? null);
+  const loading = statusLoadable.state === "loading" && data === null;
   const loadError =
     statusLoadable.state === "hasError"
       ? errorMessage(
@@ -415,7 +418,6 @@ export function ExportPage() {
       : null;
   const startError = useGet(userExportStartError$);
   const [startLoadable, startExport] = useLoadableSet(startUserExport$);
-  const statusPollingRef = useSet(userExportStatusPollingRef$);
   const pageSignal = useGet(pageSignal$);
   const triggering = startLoadable.state === "loading";
   const startActionError =
@@ -469,10 +471,6 @@ export function ExportPage() {
             </div>
 
             <ExportScopeList />
-
-            {viewState === "in-progress" ? (
-              <span ref={statusPollingRef} hidden />
-            ) : null}
 
             <div className="rounded-xl border border-border/70 bg-card p-4">
               <div
