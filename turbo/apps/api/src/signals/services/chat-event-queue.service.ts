@@ -334,7 +334,13 @@ export async function loadPendingChatQueueEvent(
   return { ...event, eventType: event.eventType };
 }
 
-/** Shared row lock for every authoritative queue claim or revocation. */
+/**
+ * Shared row lock for every authoritative queue claim or revocation.
+ *
+ * Queue mutations only change non-key columns, so `NO KEY UPDATE` preserves
+ * their same-thread exclusion against other writers and deletion without
+ * conflicting with a content writer's identity-only `KEY SHARE` pin.
+ */
 export async function lockChatQueueThread(
   db: ChatQueueReadDb,
   chatThreadId: string,
@@ -343,7 +349,7 @@ export async function lockChatQueueThread(
     .select({ id: chatThreads.id })
     .from(chatThreads)
     .where(eq(chatThreads.id, chatThreadId))
-    .for("update");
+    .for("no key update");
   return thread !== undefined;
 }
 

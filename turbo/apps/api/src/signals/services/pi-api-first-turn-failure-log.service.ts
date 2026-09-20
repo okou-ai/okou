@@ -31,6 +31,7 @@ const L = logger("pi-api-first-turn");
 const INFO_FAILURE_REASON_POLICY = Object.freeze({
   session_history_limit: false,
   guest_root_filesystem_full: true,
+  codex_access_program_unavailable: true,
   execution_timeout: true,
   insufficient_credits: true,
   provider_insufficient_credits: true,

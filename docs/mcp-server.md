@@ -14,6 +14,33 @@ and Agent/model discovery and empty conversation creation in #35102.
 Results include both structured content and a
 JSON text representation.
 
+## Tool errors and CLI exit status
+
+MCP server-declared tool failures use `isError: true` and content for human
+inspection; MCP does not require structured error metadata. Okou chat tools also
+return the optional `structuredContent.error` extension with a stable `code`,
+human-readable `message`, explicit `retryable` boolean, and optional bounded
+validation `issues` containing field paths, issue codes and messages. Invalid
+tool arguments use `invalid_arguments`; an idempotency key reused for a different
+request uses `request_id_conflict`. A retryable value is metadata, not permission
+to automatically replay a tool call.
+
+For `okou mcp call`, a successful invocation exits `0`. A server result with
+`isError: true`, a protocol failure, a transport failure, or an action-level
+client failure exits nonzero. Successful `--json` output remains the raw MCP
+result. Failed `--json` output uses `{status:"error", error:{kind,code,message,retryable}}`;
+server-declared tool failures also preserve the complete raw MCP result under
+`result`. When the optional Okou extension is absent or invalid, the CLI reports
+`tool` / `tool_error` with a fixed generic message; it does not infer machine
+fields from human text. Without `--json`, tool errors continue to print the
+complete raw result for inspection before exiting nonzero. Commander syntax and
+option-conflict errors occur before the action and retain the CLI's standard
+error format.
+
+The CLI never automatically retries a tool call. A timeout, connection failure,
+or error result does not prove that a remote side effect did not happen; follow
+the tool's documented idempotency and inspection guidance before retrying.
+
 ## Starting a conversation
 
 Call `list_agents` and `list_models` before `create_chat_thread`. Discovery
