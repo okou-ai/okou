@@ -24,6 +24,7 @@ import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
+import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import {
   ChatAssistantMessageBody,
@@ -203,7 +204,7 @@ function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
                     ) : null}
                     {message.content.length > 0 ? (
                       <div className="whitespace-pre-wrap">
-                        {message.content}
+                        <PlainTextWithLinks text={message.content} />
                       </div>
                     ) : null}
                   </div>

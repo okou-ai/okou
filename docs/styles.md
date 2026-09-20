@@ -268,6 +268,15 @@ those consumers; deprecated names are removed when their consumers have
 migrated, rather than being copied into component-local registries. A change to
 ownership, naming, or theme mapping must update this guide in the same PR.
 
+`text-link` and `text-link-hover` carry the hyperlink colors for first-party
+body copy. They track what Markdown links already render, so a link a user
+typed and a link an Agent wrote read the same: colored with no underline, then
+underlined and a shade deeper on hover. Dark sits four lightness points above
+the Markdown value because that stop was tuned against the canvas and reads
+4.02:1 on the user bubble, while 74% is the first to clear 4.5:1. Markdown
+keeps its own rule in the App stylesheet; these tokens govern first-party
+markup.
+
 Large editable surfaces use `border-surface-focus` to emphasize their existing
 border on focus: neutral gray in light themes and muted amber in dark themes.
 Keep the border width constant across interaction states. A shadow-only focus
