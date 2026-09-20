@@ -213,11 +213,13 @@ function TypewriterText({ text }: { text: string }) {
       <span key={text} ref={typewriterRef} aria-hidden className="invisible">
         {text}
       </span>
+      <span
+        aria-hidden
+        data-slot="chat-tagline-measurement"
+        className="invisible absolute inset-0"
+      />
       <span aria-hidden className="absolute inset-0">
         <span data-slot="chat-tagline-text">{displayedText}</span>
-        {displayedText.length > 0 && displayedText.length < text.length && (
-          <span className="inline-block w-[2px] h-[1em] bg-foreground/60 ml-0.5 align-middle motion-safe:animate-pulse" />
-        )}
       </span>
     </>
   );

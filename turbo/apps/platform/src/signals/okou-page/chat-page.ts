@@ -49,41 +49,61 @@ function taglineProgress(progress: number): number {
   return (progress - ramp / 2) / (1 - ramp);
 }
 
-function taglinePrefixWidth(range: Range, end: number): number {
-  range.setEnd(range.startContainer, end);
+function taglineTextWidth(range: Range): number {
   const lineWidths = new Map<number, number>();
   for (const rect of range.getClientRects()) {
     // A logical prefix may occupy separate bidi fragments on the same line.
-    // Count only selected glyphs, not the unrevealed space between fragments.
+    // Sum their widths rather than measuring the gap between their endpoints.
     lineWidths.set(rect.top, (lineWidths.get(rect.top) ?? 0) + rect.width);
   }
   return Math.max(0, ...lineWidths.values());
 }
 
+interface TaglineMeasurement {
+  readonly heading: HTMLElement;
+  readonly row: HTMLElement;
+  readonly range: Range;
+  readonly measurement: Text;
+  readonly fullRange: Range;
+}
+
 function moveTagline(
-  heading: HTMLElement,
-  row: HTMLElement,
-  range: Range,
+  { heading, row, range, measurement, fullRange }: TaglineMeasurement,
   segment: Intl.SegmentData,
   fraction: number,
-): void {
-  const previousWidth = taglinePrefixWidth(range, segment.index);
-  const nextWidth = taglinePrefixWidth(
-    range,
+  revealedWidth: number,
+): number {
+  // Measure the same partial words that are painted. A prefix selected from
+  // the complete sentence can already wrap a word that still fits while typed.
+  measurement.data = segment.input.slice(0, segment.index);
+  range.selectNodeContents(measurement);
+  const previousWidth = taglineTextWidth(range);
+  measurement.data = segment.input.slice(
+    0,
     segment.index + segment.segment.length,
   );
-  const fullWidth = taglinePrefixWidth(range, segment.input.length);
+  range.selectNodeContents(measurement);
+  const nextWidth = taglineTextWidth(range);
+  const fullWidth = taglineTextWidth(fullRange);
   const width = previousWidth + (nextWidth - previousWidth) * fraction;
-  // Preserve the final line wrapping. Once the longest line has unfolded,
-  // the remaining lines can type without moving the avatar any farther.
   const headingWidth = heading.getBoundingClientRect().width;
-  const visibleWidth = fullWidth === 0 ? 0 : (width / fullWidth) * headingWidth;
+  // A completed word can move onto the next line and reduce its prefix width.
+  // Keep the avatar moving left, stopping at its final position once a line
+  // has filled the available space.
+  const visibleWidth = Math.min(
+    headingWidth,
+    Math.max(
+      revealedWidth,
+      fullWidth === 0 ? 0 : (width / fullWidth) * headingWidth,
+    ),
+  );
   const gapProgress = segment.index === 0 ? fraction : 1;
   // The row owns gap-4, so centering needs half of its four spacing units.
   row.style.setProperty(
     "--chat-greeting-offset",
     `calc(50% - 1.75rem - ${visibleWidth / 2}px - var(--spacing) * ${gapProgress * 2})`,
   );
+  return visibleWidth;
 }
 
 const startTaglineTypewriter$ = command(
@@ -111,14 +131,26 @@ const startTaglineTypewriter$ = command(
     if (!text) {
       return;
     }
+    const measurementElement = heading.querySelector(
+      '[data-slot="chat-tagline-measurement"]',
+    );
+    if (!measurementElement) {
+      throw new Error("The tagline must include its prefix measurement");
+    }
+    // React owns the empty host; this ref lifecycle owns its measuring text.
+    const measurement = document.createTextNode("");
+    measurementElement.replaceChildren(measurement);
     const range = document.createRange();
-    range.setStart(node, 0);
+    const fullRange = document.createRange();
+    fullRange.selectNodeContents(node);
+    const layout = { heading, row, range, measurement, fullRange };
     const segments = Array.from(
       new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
     );
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const startedAt = now();
     let displayedIndex = 0;
+    let revealedWidth = 0;
 
     setLoop(
       () => {
@@ -143,7 +175,12 @@ const startTaglineTypewriter$ = command(
         if (!segment) {
           throw new Error("The reveal position must name an existing grapheme");
         }
-        moveTagline(heading, row, range, segment, position - index);
+        revealedWidth = moveTagline(
+          layout,
+          segment,
+          position - index,
+          revealedWidth,
+        );
         if (index !== displayedIndex) {
           displayedIndex = index;
           set(internalTaglineDisplayed$, {

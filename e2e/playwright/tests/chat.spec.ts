@@ -5,6 +5,29 @@ import { deriveAppUrl } from "../playwright.config";
 const appUrl = deriveAppUrl(resolveApiBackendUrl());
 const MOBILE_VIEWPORT = { width: 402, height: 874 } as const;
 
+interface GreetingFrame {
+  readonly prefix: string;
+  readonly avatarLeft: number;
+  readonly avatarWidth: number;
+  readonly avatarHeight: number;
+  readonly clipLeft: number;
+  readonly clipRight: number;
+  readonly glyphLeft: number | null;
+  readonly glyphRight: number | null;
+  readonly lineCount: number;
+}
+
+interface GreetingCapture {
+  readonly text: string;
+  readonly frames: GreetingFrame[];
+}
+
+declare global {
+  interface Window {
+    recordChatGreeting?: (capture: GreetingCapture) => Promise<void>;
+  }
+}
+
 test("a short nested avatar dialog keeps its footer reachable by scrolling", async ({
   page,
 }) => {
@@ -87,6 +110,129 @@ test("chat page displays tagline after onboarding", async ({ page }) => {
   await expect(page.getByTestId("chat-tagline")).toBeVisible({
     timeout: 20_000,
   });
+});
+
+test("a mobile greeting unfolds from a centered avatar without clipping its text", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  // Warm the actual product fonts before observing the entrance animation.
+  await page.goto(new URL("/agents", appUrl).href);
+  await expect(page.getByRole("heading", { name: "Agents" })).toBeVisible();
+  await expect
+    .poll(async () => {
+      return page.evaluate(async () => {
+        const faces = await document.fonts.load("600 24px Geist");
+        return faces.some((face) => face.status === "loaded");
+      });
+    })
+    .toBe(true);
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+
+  const observed: { capture?: GreetingCapture } = {};
+  await page.exposeFunction(
+    "recordChatGreeting",
+    (capture: GreetingCapture) => {
+      observed.capture = capture;
+    },
+  );
+  await page.addInitScript(() => {
+    const frames: GreetingFrame[] = [];
+    let text = "";
+    const sample = () => {
+      const heading = document.querySelector('[data-testid="chat-tagline"]');
+      const typed = heading?.querySelector('[data-slot="chat-tagline-text"]');
+      const row = heading?.closest('[data-slot="chat-greeting"]');
+      const avatar = row?.querySelector("a");
+      const clip = row?.parentElement;
+      const currentText = heading?.getAttribute("aria-label");
+      // Setup creates this ordinary first name through Clerk before any
+      // feature test starts; the product still chooses its own greeting.
+      if (!currentText?.includes("Christopher") || !typed || !avatar || !clip) {
+        requestAnimationFrame(sample);
+        return;
+      }
+      if (currentText !== text) {
+        text = currentText;
+        frames.length = 0;
+      }
+      const prefix = typed.textContent ?? "";
+      const avatarRect = avatar.getBoundingClientRect();
+      const clipRect = clip.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(typed);
+      const glyphs = Array.from(range.getClientRects()).filter(
+        (rect) => rect.width > 0 && rect.height > 0,
+      );
+      frames.push({
+        prefix,
+        avatarLeft: avatarRect.left,
+        avatarWidth: avatarRect.width,
+        avatarHeight: avatarRect.height,
+        clipLeft: clipRect.left,
+        clipRight: clipRect.right,
+        glyphLeft: glyphs.length
+          ? Math.min(...glyphs.map((r) => r.left))
+          : null,
+        glyphRight: glyphs.length
+          ? Math.max(...glyphs.map((r) => r.right))
+          : null,
+        lineCount: new Set(glyphs.map((rect) => Math.round(rect.top))).size,
+      });
+      if (prefix === text) {
+        if (!window.recordChatGreeting) {
+          throw new Error("The browser greeting recorder is not installed");
+        }
+        void window.recordChatGreeting({ text, frames });
+        return;
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+
+  await page.goto(appUrl);
+  await expect.poll(() => observed.capture, { timeout: 20_000 }).toBeDefined();
+  const capture = observed.capture;
+  const first = capture?.frames[0];
+  const last = capture?.frames.at(-1);
+  if (!capture || !first || !last) {
+    throw new Error("Expected the complete greeting animation");
+  }
+  await expect(page.locator('[data-slot="chat-tagline-text"]')).toBeVisible();
+  await expect(page.getByTestId("chat-tagline")).toHaveAccessibleName(
+    capture.text,
+  );
+  expect(first.prefix).toBe("");
+  expect(
+    Math.abs(
+      first.avatarLeft +
+        first.avatarWidth / 2 -
+        (first.clipLeft + first.clipRight) / 2,
+    ),
+  ).toBeLessThanOrEqual(1);
+  expect(
+    capture.frames.some((frame) => {
+      return frame.prefix.length > 0 && frame.prefix !== capture.text;
+    }),
+  ).toBe(true);
+  expect(last.prefix).toBe(capture.text);
+  expect(last.lineCount).toBeGreaterThan(1);
+  expect(last.avatarLeft).toBeLessThan(first.avatarLeft);
+
+  let previousLeft = first.avatarLeft;
+  for (const frame of capture.frames) {
+    const label = `Visible greeting prefix: ${JSON.stringify(frame.prefix)}`;
+    expect(frame.avatarLeft, label).toBeLessThanOrEqual(previousLeft + 1);
+    expect(frame.avatarWidth, label).toBeCloseTo(first.avatarWidth, 1);
+    expect(frame.avatarHeight, label).toBeCloseTo(first.avatarHeight, 1);
+    if (frame.glyphLeft !== null && frame.glyphRight !== null) {
+      expect(frame.glyphLeft, label).toBeGreaterThanOrEqual(frame.clipLeft - 1);
+      expect(frame.glyphRight, label).toBeLessThanOrEqual(frame.clipRight + 1);
+    }
+    previousLeft = frame.avatarLeft;
+  }
 });
 
 test("sidebar scrollbar thumb meets the workspace edge without a mobile inset", async ({
