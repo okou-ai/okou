@@ -8,8 +8,8 @@ import {
   Check,
   Coins,
   Link2,
+  Route,
   UserPlus,
-  Workflow,
 } from "lucide-react";
 import {
   Button,
@@ -108,7 +108,7 @@ function XMark() {
 const QUEST_ICONS = Object.freeze<Record<GetStartedQuestKey, ReactNode>>({
   connector: <Link2 className="text-muted-foreground" />,
   slack: <SlackMark size={16} />,
-  workflow: <Workflow className="text-muted-foreground" />,
+  workflow: <Route className="text-muted-foreground" />,
   invite: <UserPlus className="text-muted-foreground" />,
   share: <XMark />,
   checkin: <CalendarCheck className="text-muted-foreground" />,
@@ -355,7 +355,7 @@ function QuestRowBody({
         )}
       </span>
       {/* One trailing slot, one meaning: finished, waiting, or pressable. */}
-      {done && <Check className="shrink-0 text-[#2EB67D]" />}
+      {done && <Check className="shrink-0 text-chart-green" />}
       {quest.status === "inReview" && (
         <span className="shrink-0 rounded-full bg-gray-50 px-2 py-0.5 text-xs text-muted-foreground">
           {t(($) => {
