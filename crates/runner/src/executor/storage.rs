@@ -129,22 +129,12 @@ fn storage_inputs(
     };
     let json = manifest_json(&manifest)?;
     if files.is_empty() {
-        if json.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES {
-            attach_shadow_within_manifest_budget(
-                &mut manifest,
-                &mut pending_shadow,
-                &mut shadow_transport,
-                guest_control_proto::MAX_EXEC_STDIN_BYTES,
-            )?;
-        } else {
-            // This request already requires the file-backed fallback, so attaching the descriptor
-            // cannot change its transport or add another helper invocation.
-            attach_shadow_to_json_request(
-                &mut manifest,
-                &mut pending_shadow,
-                &mut shadow_transport,
-            );
-        }
+        attach_shadow_preserving_json_transport(
+            &mut manifest,
+            &mut pending_shadow,
+            &mut shadow_transport,
+            json.len(),
+        )?;
         if matches!(shadow_transport, HistoryOverlapShadowTransport::Attached) {
             return Ok(StorageInputs {
                 inputs: vec![StorageInput::Json(manifest_json(&manifest)?)],
@@ -194,22 +184,13 @@ fn storage_inputs(
         || !manifest.cleanup_paths.is_empty()
         || !manifest.instruction_cleanups.is_empty()
     {
-        if manifest_json(&manifest)?.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES {
-            attach_shadow_within_manifest_budget(
-                &mut manifest,
-                &mut pending_shadow,
-                &mut shadow_transport,
-                guest_control_proto::MAX_EXEC_STDIN_BYTES,
-            )?;
-        } else {
-            // This split JSON request already requires the file-backed fallback, so attaching the
-            // descriptor cannot change its transport or add another helper invocation.
-            attach_shadow_to_json_request(
-                &mut manifest,
-                &mut pending_shadow,
-                &mut shadow_transport,
-            );
-        }
+        let json_len = manifest_json(&manifest)?.len();
+        attach_shadow_preserving_json_transport(
+            &mut manifest,
+            &mut pending_shadow,
+            &mut shadow_transport,
+            json_len,
+        )?;
         inputs.push(StorageInput::Json(manifest_json(&manifest)?));
     }
     let mut batch = empty_storage_manifest();
@@ -258,6 +239,27 @@ fn storage_inputs(
         inputs,
         shadow_transport,
     })
+}
+
+fn attach_shadow_preserving_json_transport(
+    manifest: &mut Manifest,
+    pending_shadow: &mut Option<guest_contracts::storage_manifest::HistoryOverlapShadow>,
+    transport: &mut HistoryOverlapShadowTransport,
+    original_json_len: usize,
+) -> RunnerResult<()> {
+    if original_json_len <= guest_control_proto::MAX_EXEC_STDIN_BYTES {
+        attach_shadow_within_manifest_budget(
+            manifest,
+            pending_shadow,
+            transport,
+            guest_control_proto::MAX_EXEC_STDIN_BYTES,
+        )?;
+    } else {
+        // The required request already needs the file-backed fallback, so the descriptor cannot
+        // change its transport or add another helper invocation.
+        attach_shadow_to_json_request(manifest, pending_shadow, transport);
+    }
+    Ok(())
 }
 
 fn attach_shadow_to_json_request(
