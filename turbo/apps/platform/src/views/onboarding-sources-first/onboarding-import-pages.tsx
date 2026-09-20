@@ -541,13 +541,18 @@ function OtherChatChannels({
                 onPick(channel.id);
               }}
             >
-              {added
-                ? t(($) => {
-                    return $.onboarding.sourcesFirst.slack.otherAdded;
-                  })
-                : channel.label}
+              {/* The name stays whatever the state: a button reading only
+                  "Added" no longer says which channel was added. */}
+              {channel.label}
               {added ? (
-                <Check size={16} aria-hidden="true" />
+                <>
+                  <span className="sr-only">
+                    {t(($) => {
+                      return $.onboarding.sourcesFirst.slack.otherAdded;
+                    })}
+                  </span>
+                  <Check size={16} aria-hidden="true" />
+                </>
               ) : (
                 <ProductMark name={channel.mark} alt="" size="mark" />
               )}

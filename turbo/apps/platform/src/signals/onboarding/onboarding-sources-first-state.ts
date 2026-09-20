@@ -71,6 +71,8 @@ const internalFlow$ = state<SourcesFirstFlow>("owner");
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
   readonly searchOpen: boolean;
+  /** What the catalog search is filtered by, kept while its dialog is open. */
+  readonly searchQuery: string;
   readonly inviteEmail: string;
   /** File name waiting for import confirmation, null when no file is chosen. */
   readonly pendingSkillName: string | null;
@@ -78,6 +80,7 @@ interface SourcesFirstUi {
 
 const internalUi$ = state<SourcesFirstUi>({
   searchOpen: false,
+  searchQuery: "",
   inviteEmail: "",
   pendingSkillName: null,
 });
