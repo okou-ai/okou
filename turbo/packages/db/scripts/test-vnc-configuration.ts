@@ -45,44 +45,123 @@ try {
       agent_id uuid NOT NULL,
       PRIMARY KEY (org_id,user_id,agent_id)
     );
-    INSERT INTO vnc_credentials (id,org_id,user_id,name,auth_method,encrypted_password)
-      VALUES ('00000000-0000-4000-8000-000000000001','org','owner','Password','vnc_password','ciphertext');
-    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,security_type,trust_mode)
-      VALUES ('00000000-0000-4000-8000-000000000003','org','owner','Desktop','desktop.example.com','00000000-0000-4000-8000-000000000001','x509_vnc','system');
-    INSERT INTO agent_vnc_access VALUES ('org','owner','00000000-0000-4000-8000-000000000004');
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,auth_method,encrypted_password,revision)
+      VALUES ('00000000-0000-4000-8000-000000000001','org','owner','Password','vnc_password','ciphertext',7),
+             ('00000000-0000-4000-8000-000000000007','org','second-owner','Second password','vnc_password','second-ciphertext',11);
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,port,credential_id,security_type,trust_mode,ca_bundle,generation)
+      VALUES ('00000000-0000-4000-8000-000000000003','org','owner','Desktop','desktop.example.com',5900,'00000000-0000-4000-8000-000000000001','x509_vnc','system',NULL,9),
+             ('00000000-0000-4000-8000-000000000008','org','second-owner','Second desktop','second.example.com',5901,'00000000-0000-4000-8000-000000000007','x509_vnc','custom_ca','second-ca',13);
+    INSERT INTO agent_vnc_access
+      VALUES ('org','owner','00000000-0000-4000-8000-000000000004'),
+             ('org','second-owner','00000000-0000-4000-8000-000000000009');
   `);
 
-  await client.query(await migration("1181_reset_vnc_configuration.sql"));
-  for (const table of [
-    "agent_vnc_access",
-    "vnc_connections",
-    "vnc_credentials",
+  const credentialsBefore = (
+    await client.query(
+      "SELECT id::text,org_id,user_id,name,auth_method,encrypted_password,revision,created_at,updated_at FROM vnc_credentials ORDER BY id",
+    )
+  ).rows;
+  const connectionsBefore = (
+    await client.query(
+      "SELECT id::text,org_id,user_id,display_name,host,port,credential_id::text,security_type,trust_mode,ca_bundle,generation,created_at,updated_at FROM vnc_connections ORDER BY id",
+    )
+  ).rows;
+  const grantsBefore = (
+    await client.query(
+      "SELECT org_id,user_id,agent_id::text FROM agent_vnc_access ORDER BY org_id,user_id,agent_id",
+    )
+  ).rows;
+
+  for (const name of [
+    "1182_wet_felicia_hardy.sql",
+    "1183_wild_natasha_romanoff.sql",
+    "1184_lovely_christian_walker.sql",
   ]) {
-    assert.deepEqual(
-      (await client.query(`SELECT count(*)::int AS count FROM ${table}`)).rows,
-      [{ count: 0 }],
-      `${table} must be empty after the pre-launch VNC reset`,
+    await client.query(
+      (await migration(name)).replaceAll('"public".', `"${schema}".`),
     );
   }
+
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT id::text,org_id,user_id,name,auth_method,encrypted_password,revision,created_at,updated_at FROM vnc_credentials ORDER BY id",
+      )
+    ).rows,
+    credentialsBefore,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT id::text,org_id,user_id,display_name,host,port,credential_id::text,security_type,trust_mode,ca_bundle,generation,created_at,updated_at FROM vnc_connections ORDER BY id",
+      )
+    ).rows,
+    connectionsBefore,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT org_id,user_id,agent_id::text FROM agent_vnc_access ORDER BY org_id,user_id,agent_id",
+      )
+    ).rows,
+    grantsBefore,
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT id::text,username,auth_method FROM vnc_credentials ORDER BY id",
+      )
+    ).rows,
+    [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        username: null,
+        auth_method: "vnc_password",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000007",
+        username: null,
+        auth_method: "vnc_password",
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT id::text,auth_method FROM vnc_connections ORDER BY id",
+      )
+    ).rows,
+    [
+      {
+        id: "00000000-0000-4000-8000-000000000003",
+        auth_method: "vnc_password",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000008",
+        auth_method: "vnc_password",
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT column_default FROM information_schema.columns WHERE table_schema=$1 AND table_name='vnc_connections' AND column_name='auth_method'",
+        [schema],
+      )
+    ).rows,
+    [{ column_default: null }],
+  );
   assert.deepEqual(
     (await client.query("SELECT value FROM retained_owner_data")).rows,
     [{ value: "retained" }],
   );
 
-  await client.query(
-    (await migration("1182_motionless_ares.sql")).replaceAll(
-      '"public".',
-      `"${schema}".`,
-    ),
-  );
   await client.query(`
     INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
-      VALUES ('00000000-0000-4000-8000-000000000001','org','owner','Password',NULL,'vnc_password','ciphertext'),
-             ('00000000-0000-4000-8000-000000000002','org','owner','Username password','operator','username_password','username-ciphertext'),
+      VALUES ('00000000-0000-4000-8000-000000000002','org','owner','Username password','operator','username_password','username-ciphertext'),
              ('00000000-0000-4000-8000-000000000005','org','other','Other',NULL,'vnc_password','other-ciphertext');
     INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode)
-      VALUES ('00000000-0000-4000-8000-000000000003','org','owner','Desktop','desktop.example.com','00000000-0000-4000-8000-000000000001','vnc_password','x509_vnc','system'),
-             ('00000000-0000-4000-8000-000000000004','org','owner','Plain desktop','plain.example.com','00000000-0000-4000-8000-000000000002','username_password','x509_plain','system');
+      VALUES ('00000000-0000-4000-8000-000000000004','org','owner','Plain desktop','plain.example.com','00000000-0000-4000-8000-000000000002','username_password','x509_plain','system');
   `);
 
   for (const assignment of [
@@ -224,10 +303,10 @@ try {
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 3 }],
+    [{ count: 4 }],
   );
   await client.query("DELETE FROM vnc_credentials");
-  console.log("VNC reset, schema migration and storage constraints passed");
+  console.log("VNC preservation migrations and storage constraints passed");
 } finally {
   await client.query("ROLLBACK");
   await client.end();

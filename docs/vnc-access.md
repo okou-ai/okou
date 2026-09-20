@@ -170,6 +170,13 @@ validated variants and matching runtime support. Their credential requirements
 and length limits must not inherit classic VNC's eight-byte limit. Binding or
 changing a credential must remain compatible with every referencing connection;
 authentication changes invalidate those connection generations.
+Persisted discriminator meanings are immutable: a later profile extends the
+allowed values and adds its concrete typed fields or references, but cannot
+reinterpret an existing value or require clearing saved VNC state. Every schema
+extension must exercise its migration against populated credentials, connections
+and grants. A protocol with different credential bounds gets a new method value
+even when its UI also looks like username/password; it does not broaden
+`username_password`.
 
 X509Plain is persisted control-plane state in this slice, but current Run host
 inventory returns only the X509Vnc subset. Private resolve reports X509Plain as
@@ -192,17 +199,18 @@ how to admit clients; shared sessions can interact with the same desktop.
 
 ## Deployment and rollback
 
-The feature is disabled and has never been activated. A Drizzle-managed custom
-migration intentionally deletes all pre-launch rows from `agent_vnc_access`,
-`vnc_connections` and `vnc_credentials`, in that dependency order. A following
-generated schema migration installs the required connection authentication
-method and exact compatibility constraints. The reset does not touch SSH or
-unrelated owner/Agent data and is not reversible without a database backup.
+The feature is disabled and has never been activated, but its persisted state is
+still retained. Three generated migrations expand credentials first, add the
+connection authentication method with a temporary `vnc_password` default, then
+remove that default. Existing constraints prove every pre-change credential and
+connection is the exact `vnc_password` / `x509_vnc` pair, so the temporary default
+is a bounded backfill rather than a policy inference. The final schema requires
+all new writes to select a method explicitly. No VNC credentials, connections or
+Agent grants are deleted or rewritten.
 
-There is no legacy VNC data or writer compatibility contract. The configuration
-API remains unavailable until the feature is explicitly enabled; merging this
-change does not enable it, authorize an out-of-band migration, or activate UI or
-Runner support.
+The configuration API remains unavailable until the feature is explicitly
+enabled; merging this change does not enable it, authorize an out-of-band
+migration, or activate UI or Runner support.
 
 Before enabling the feature, every serving API must include the new owner reader,
 VNC-aware cleanup and the runtime/UI slices required for the selected activation.
@@ -218,8 +226,10 @@ rejoined owner access, secret-free output, validation, zero-to-one Agent grants,
 concurrent first-host creation, live-resource retries, recreation after deletion,
 optimistic concurrency, rotation, inline rollback and scoped cleanup through
 production HTTP boundaries.
-The dedicated migration test seeds the pre-launch tables, verifies the bounded
-reset preserves unrelated data, installs the replacement schema, and validates
-both exact pairs, ownership, credential compatibility, version and trust
-constraints on a disposable schema. Broader API tests and required checks run in
-the PR pipeline.
+The dedicated migration test seeds populated pre-change credentials,
+connections, grants and unrelated owner data, applies all three additive
+migrations, and verifies row identity, ciphertext, versions, trust configuration
+and grants are unchanged. It also verifies the exact backfill, absence of a final
+column default, both exact pairs, ownership, credential compatibility, version
+and trust constraints on a disposable schema. Broader API tests and required
+checks run in the PR pipeline.
