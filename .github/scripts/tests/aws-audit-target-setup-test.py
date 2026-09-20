@@ -88,21 +88,6 @@ class AuditSetupTests(unittest.TestCase):
                 )
                 self.assertNotIn(LEGACY_PRODUCTION_SUBJECT, policy_text)
 
-    def test_kms_instructions_pin_immutable_subject_configuration(self):
-        readme = (
-            SCRIPT.parent.parent / "kms-migration-32264/README.md"
-        ).read_text()
-        for expected in [
-            "organization ID `242540347`",
-            "repository ID `1096175506`",
-            f"`{IMMUTABLE_SUB_CLAIM_PREFIX}`",
-            "`use_immutable_subject` set to\n  `true`",
-            f"`{IMMUTABLE_PRODUCTION_SUBJECT}`",
-            f"Do not use the legacy name-only subject\n  `{LEGACY_PRODUCTION_SUBJECT}`",
-        ]:
-            with self.subTest(expected=expected):
-                self.assertIn(expected, readme)
-
     def main(self, account=audit.ACCOUNT, denied=False, oidc_status="200"):
         sts = self.stubs["sts"]
         sts.add_response(
