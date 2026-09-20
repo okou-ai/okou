@@ -436,13 +436,26 @@ export async function resolveModelSelectionPin(params: {
       "The selected model is not available in this workspace",
     );
   }
-  return modelRouteAllowedForOrgPlan({
-    capabilities: modelRouteCapabilities(facts.orgPlanCapabilities),
-    selectedModel: route.selectedModel,
-    modelProviderType: route.modelProviderType,
-  })
-    ? modelFirstPinFromRoute(route)
-    : insufficientCredits();
+  const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
+  if (
+    modelRouteAllowedForOrgPlan({
+      capabilities: planCapabilities,
+      selectedModel: route.selectedModel,
+      modelProviderType: route.modelProviderType,
+    })
+  ) {
+    return modelFirstPinFromRoute(route);
+  }
+  // The unfiltered route is the member's own route and the plan cannot use it.
+  // Resolving again under the plan restores the workspace route the member
+  // falls back to, so a personal subscription the plan does not cover keeps
+  // reporting its own availability instead of failing the whole selection.
+  const planRoute = await resolveValidPolicyRoute({
+    facts,
+    capabilities: planCapabilities,
+    selectedModel: modelSelection.selectedModel,
+  });
+  return planRoute ? modelFirstPinFromRoute(planRoute) : insufficientCredits();
 }
 
 async function resolveEffectiveModelProviderType(params: {
