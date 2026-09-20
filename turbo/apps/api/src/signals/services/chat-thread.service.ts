@@ -130,6 +130,45 @@ function parseHostedArtifactAliasUrlFromMetadata(
   return metadata.aliasUrl;
 }
 
+/**
+ * Markup, styles, and scripts a run uploaded next to its deployment are the
+ * inputs the site was built from; the deployment itself is the artifact.
+ */
+function isHostedSiteBuildContentType(value: string): boolean {
+  switch (value) {
+    case "application/javascript":
+    case "application/x-javascript":
+    case "text/css":
+    case "text/html":
+    case "text/javascript": {
+      return true;
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
+function baseContentType(value: string): string {
+  const separator = value.indexOf(";");
+  const base = separator === -1 ? value : value.slice(0, separator);
+  return base.trim().toLowerCase();
+}
+
+/**
+ * Media and documents generated in the same run are independent deliverables,
+ * so only the deployment's own web assets stay hidden behind it.
+ */
+function isHostedSiteBuildAsset(row: {
+  readonly contentType: string | null;
+  readonly externalId: string;
+  readonly filename: string | null;
+}): boolean {
+  const contentType =
+    row.contentType ?? inferMimetype(row.filename ?? row.externalId);
+  return isHostedSiteBuildContentType(baseContentType(contentType));
+}
+
 function canonicalAssetMaterialization(
   status: "pending" | "ready" | "failed" | null,
   error: {
@@ -560,10 +599,11 @@ export function chatThreadArtifacts(args: {
         if (!row.runId) {
           return false;
         }
+        if (!hostedArtifactRunIds.has(row.runId)) {
+          return true;
+        }
         const artifactKind = parseHostedArtifactKindFromMetadata(row.metadata);
-        return (
-          !hostedArtifactRunIds.has(row.runId) || artifactKind !== undefined
-        );
+        return artifactKind !== undefined || !isHostedSiteBuildAsset(row);
       });
 
       const rowsByUrl = new Map<string, (typeof visibleRows)[number]>();

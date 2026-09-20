@@ -5103,4 +5103,80 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(run2.runId, claim2.sandboxHeaders);
   }, 120_000);
+
+  it("keeps media generated beside a hosted site visible", async () => {
+    const { actor, agentId, runnerGroup } =
+      await entitledChatActor("Hosted media agent");
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const objectStore = chatCallbacks.acceptChatObjectStorage();
+
+    // One run generates deliverables and then publishes a site from its markup.
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "generate media then publish a site",
+    });
+    await flushWaitUntilForTest();
+    const claim = await claimChatRun(runnerGroup, run.runId);
+    const bearer = `Bearer ${okouTokenFromClaim(claim.claim)}`;
+    const videoId = randomUUID();
+    const imageId = randomUUID();
+    const markupId = randomUUID();
+    for (const [id, name, size] of [
+      [videoId, "kitten.mp4", 2048],
+      [imageId, "kitten.jpg", 512],
+      [markupId, "index.html", 128],
+    ] as const) {
+      objectStore.addObject({
+        bucket: "test-user-artifacts",
+        key: `artifacts/${actor.userId}/${id}/${name}`,
+        size,
+      });
+    }
+    // The video carries an explicit content type; the others resolve theirs
+    // from the filename, covering both discovery paths.
+    await chat.completeUploadWithBearer(
+      bearer,
+      { id: videoId, contentType: "video/mp4" },
+      [200],
+    );
+    await chat.completeUploadWithBearer(bearer, { id: imageId }, [200]);
+    await chat.completeUploadWithBearer(bearer, { id: markupId }, [200]);
+
+    const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
+      site: `bdd-media-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>kitten</main>")],
+    });
+    await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
+
+    const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
+    const group = artifacts.runs.find((item) => {
+      return item.runId === run.runId;
+    });
+    // The deployment replaces the markup it was built from, while the media
+    // stays addressable with its own metadata.
+    expect(group?.files).toHaveLength(3);
+    expect(
+      group?.files.slice(0, 2).map((file) => {
+        return file.id;
+      }),
+    ).toStrictEqual([videoId, imageId]);
+    expect(group?.files[0]).toMatchObject({
+      contentType: "video/mp4",
+      filename: "kitten.mp4",
+    });
+    expect(group?.files[2]).toMatchObject({
+      artifactKind: "hosted-site",
+      url: prepared.artifactUrl,
+    });
+    expect(
+      group?.files.map((file) => {
+        return file.id;
+      }),
+    ).not.toContain(markupId);
+
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(run.runId, claim.sandboxHeaders);
+  }, 120_000);
 });
