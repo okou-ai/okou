@@ -399,10 +399,13 @@ export function AgentChatPage() {
           {/* The greeting keeps the space the composer left behind rather than
               staying pinned under the header with a screen-deep hole under it.
               Both margins are auto, so the free space is split above and below
-              it and the line lands in the middle of what is left. */}
+              it and the line lands in the middle of what is left. The reserved
+              line extends past the right edge during the centered hold, so clip
+              that axis while keeping the pin button visible vertically. */}
           <div className="flex w-full justify-center overflow-x-clip my-auto sm:my-0">
             <div
               data-slot="chat-greeting"
+              data-testid="chat-greeting"
               className="flex max-w-full items-center gap-4 motion-safe:translate-x-[var(--chat-greeting-offset,calc(50%-1.75rem))]"
             >
               <ChatAgentAvatar agentId={currentChatAgentId} />
@@ -411,7 +414,7 @@ export function AgentChatPage() {
                 data-testid="chat-tagline"
                 className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
               >
-                <TypewriterText text={tagline} />
+                <TypewriterText key={currentChatAgentId} text={tagline} />
               </h2>
             </div>
           </div>
