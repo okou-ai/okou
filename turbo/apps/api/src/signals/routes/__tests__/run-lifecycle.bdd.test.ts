@@ -11355,10 +11355,14 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
+    if (!runtimeApi) {
+      throw new Error("Expected the built-in MCP runtime API");
+    }
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: catalog.firewallAuthHeaders,
+      authHeaders: runtimeApi.auth.headers ?? {},
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
@@ -11521,6 +11525,10 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
+      const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
+      if (!runtimeApi) {
+        throw new Error("Expected the built-in MCP runtime API");
+      }
       expect(target.sourceId).toBe(refreshConnectionId);
       const held = await holdConnectorAccountFixture(
         {
@@ -11539,7 +11547,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
               forceRefresh: true,
               encryptedSecrets:
                 claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-              authHeaders: catalog.firewallAuthHeaders,
+              authHeaders: runtimeApi.auth.headers ?? {},
               matchedFirewall: {
                 name: catalog.slug,
                 apiId: `${catalog.slug}:0`,
@@ -11673,9 +11681,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
+    const runtimeApi = inlineFirewallApis(claim.firewalls, catalog.slug)[0];
+    if (!runtimeApi) {
+      throw new Error("Expected the built-in MCP runtime API");
+    }
     const body = {
       encryptedSecrets: claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
-      authHeaders: catalog.firewallAuthHeaders,
+      authHeaders: runtimeApi.auth.headers ?? {},
       matchedFirewall: {
         name: catalog.slug,
         apiId: `${catalog.slug}:0`,
