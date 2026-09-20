@@ -17,6 +17,41 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Slack ingress failed status retirement (2026-09-20)
+
+Migration `1179_retire_slack_ingress_failed_status` rewrites every
+`slack_chat_ingress` row still held at the legacy `failed` status to `terminal`
+with `last_error_class = 'legacy_terminal_failure'` and a cleared `retry_at`,
+then re-adds `chk_slack_chat_ingress_status` without `'failed'`. The conversion
+runs inside the same migration and before `ADD CONSTRAINT`, so the validating
+scan has no row left to reject and any row written during the deploy window is
+absorbed. `slack_chat_ingress` is not exposed through the masked production
+gateway, so the residual count cannot be measured in advance; the in-migration
+conversion removes that dependency. `retry_count`, the `attempts_exhausted`
+conversion, the constraint name and `idx_slack_chat_ingress_retry_sweep` are
+unchanged.
+
+Old API/new DB is compatible. #35193 removed the last writer of `'failed'`; the
+serving API classifies failures into `retryable` and `terminal` only, and it
+reads the converted rows as ordinary terminal rows. New API/old DB is also
+compatible: the new API neither writes nor reads `'failed'` and does not require
+the tightened constraint, so it is safe before the migration is visible to it.
+
+**API rollback floor: `29dfab0ba2bdc20979635596ccfa5c78809426c0`** (#35193's
+merge commit). An API artifact that predates it still writes `'failed'`, and
+after this migration that write fails with SQLSTATE `23514` instead of being
+handled — worse than the bounded-retry behaviour it replaced. Rolling the API
+back does not restore the previous constraint. Every rollback target must
+contain that commit; verify with
+`gh api repos/okou-ai/okou/compare/29dfab0ba2bdc20979635596ccfa5c78809426c0...<artifact-sha> --jq .status`
+and require `ahead` or `identical`.
+
+The floor was established before merge from `api_commit_sha` in the
+`vm0-sandbox-op-log-prod` Axiom dataset: all 17 distinct production API
+artifacts observed from 2026-09-18T07:37:39Z, when #35193 first reached
+production, through 2026-09-20T11:57:25Z report `ahead`. No production artifact
+has been able to write `'failed'` since that first appearance.
+
 ## Chat search GIN maintenance (2026-09-20)
 
 Apply `1178_chat_search_gin_statistics` before promoting the API that calls
