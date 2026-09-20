@@ -12,27 +12,52 @@ const inputReferenceSchema = z.strictObject({
   seqId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 });
 
-export const mcpChatLifecycleSchema = z.strictObject({
-  phase: z.enum([
-    "idle",
-    "queued",
-    "running",
-    "finalizing",
-    "settled",
-    "unavailable",
-  ]),
-  outcome: z
-    .enum([
-      "completed",
-      "failed",
-      "timeout",
-      "cancelled",
-      "rejected",
-      "revoked",
-    ])
-    .nullable(),
-  output: z.enum(["pending", "partial", "ready", "none", "unavailable"]),
-});
+const activeLifecycleOutputSchema = z.enum(["pending", "partial"]);
+const terminalRunOutcomes = [
+  "completed",
+  "failed",
+  "timeout",
+  "cancelled",
+] as const;
+const terminalRunOutcomeSchema = z.enum(terminalRunOutcomes);
+
+export const mcpChatLifecycleSchema = z.union([
+  z.strictObject({
+    phase: z.literal("idle"),
+    outcome: z.null(),
+    output: z.literal("none"),
+  }),
+  z.strictObject({
+    phase: z.literal("queued"),
+    outcome: z.null(),
+    output: activeLifecycleOutputSchema,
+  }),
+  z.strictObject({
+    phase: z.literal("running"),
+    outcome: z.null(),
+    output: activeLifecycleOutputSchema,
+  }),
+  z.strictObject({
+    phase: z.literal("finalizing"),
+    outcome: terminalRunOutcomeSchema,
+    output: activeLifecycleOutputSchema,
+  }),
+  z.strictObject({
+    phase: z.literal("settled"),
+    outcome: terminalRunOutcomeSchema,
+    output: z.literal("ready"),
+  }),
+  z.strictObject({
+    phase: z.literal("settled"),
+    outcome: z.enum([...terminalRunOutcomes, "rejected", "revoked"]),
+    output: z.literal("none"),
+  }),
+  z.strictObject({
+    phase: z.literal("unavailable"),
+    outcome: z.null(),
+    output: z.literal("unavailable"),
+  }),
+]);
 
 export const mcpGetChatStatusInputSchema = z
   .strictObject({
@@ -57,46 +82,56 @@ export const mcpGetChatStatusInputSchema = z
     }
   });
 
+const mcpChatStatusInputEvidenceSchema = z
+  .strictObject({
+    ref: inputReferenceSchema,
+    state: z.enum([
+      "queued",
+      "reserved",
+      "associated",
+      "delivered",
+      "rejected",
+      "revoked",
+      "unavailable",
+    ]),
+    deliveryMode: z.enum(["launch", "steer", "unknown"]),
+    runId: z.uuid().nullable(),
+    visibleMessageRef: mcpChatMessageSchema.shape.ref.nullable(),
+  })
+  .nullable();
+
+const mcpChatStatusRunEvidenceSchema = z
+  .strictObject({
+    id: z.uuid(),
+    status: runStatusSchema,
+    createdAt: z.iso.datetime(),
+    startedAt: z.iso.datetime().nullable(),
+    completedAt: z.iso.datetime().nullable(),
+    cancellationRecovery: z.enum(["pending", "complete", "not_applicable"]),
+  })
+  .nullable();
+
+const mcpChatStatusOutputEvidenceSchema = z.strictObject({
+  state: z.enum(["pending", "partial", "ready", "unavailable"]),
+  messageRefs: z.array(mcpChatMessageSchema.shape.ref).max(20),
+  hasMore: z.boolean(),
+  reason: z
+    .enum(["no_associated_run", "run_unavailable", "no_output"])
+    .nullable(),
+});
+
+export const mcpChatStatusEvidenceSchema = z.strictObject({
+  input: mcpChatStatusInputEvidenceSchema,
+  runSelection: z.enum(["input", "latest"]),
+  run: mcpChatStatusRunEvidenceSchema,
+  output: mcpChatStatusOutputEvidenceSchema,
+});
+
 export const mcpGetChatStatusOutputSchema = z.strictObject({
   threadId: z.uuid(),
   observedAt: z.iso.datetime(),
   lifecycle: mcpChatLifecycleSchema,
-  input: z
-    .strictObject({
-      ref: inputReferenceSchema,
-      state: z.enum([
-        "queued",
-        "reserved",
-        "associated",
-        "delivered",
-        "rejected",
-        "revoked",
-        "unavailable",
-      ]),
-      deliveryMode: z.enum(["launch", "steer", "unknown"]),
-      runId: z.uuid().nullable(),
-      visibleMessageRef: mcpChatMessageSchema.shape.ref.nullable(),
-    })
-    .nullable(),
-  runSelection: z.enum(["input", "latest"]),
-  run: z
-    .strictObject({
-      id: z.uuid(),
-      status: runStatusSchema,
-      createdAt: z.iso.datetime(),
-      startedAt: z.iso.datetime().nullable(),
-      completedAt: z.iso.datetime().nullable(),
-      cancellationRecovery: z.enum(["pending", "complete", "not_applicable"]),
-    })
-    .nullable(),
-  output: z.strictObject({
-    state: z.enum(["pending", "partial", "ready", "unavailable"]),
-    messageRefs: z.array(mcpChatMessageSchema.shape.ref).max(20),
-    hasMore: z.boolean(),
-    reason: z
-      .enum(["no_associated_run", "run_unavailable", "no_output"])
-      .nullable(),
-  }),
+  evidence: mcpChatStatusEvidenceSchema,
   messages: z
     .strictObject({
       tool: z.literal("get_chat_messages"),

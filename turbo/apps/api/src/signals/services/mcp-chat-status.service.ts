@@ -48,9 +48,14 @@ interface Principal {
   readonly orgId: string;
 }
 
-type InputStatus = NonNullable<McpGetChatStatusOutput["input"]>;
-type RunStatus = NonNullable<McpGetChatStatusOutput["run"]>;
-type OutputStatus = McpGetChatStatusOutput["output"];
+type StatusEvidence = McpGetChatStatusOutput["evidence"];
+type InputStatus = NonNullable<StatusEvidence["input"]>;
+type RunStatus = NonNullable<StatusEvidence["run"]>;
+type OutputStatus = StatusEvidence["output"];
+type TerminalRunOutcome = Extract<
+  McpChatLifecycle,
+  { readonly phase: "finalizing" }
+>["outcome"];
 
 interface LifecycleEvidence {
   readonly input: Pick<InputStatus, "state"> | null;
@@ -72,7 +77,7 @@ function activeLifecycleOutput(
 
 function terminalLifecycleOutcome(
   status: RunStatus["status"],
-): NonNullable<McpChatLifecycle["outcome"]> {
+): TerminalRunOutcome {
   switch (status) {
     case "completed":
     case "failed":
@@ -408,7 +413,7 @@ function outputStatus(
   messages: readonly McpCompleteChatMessage[],
   run: RunStatus,
   budget: HistoryBudget,
-): McpGetChatStatusOutput["output"] {
+): OutputStatus {
   const assistantMessages = messages.filter((message) => {
     budget.check();
     return message.runId === run.id && message.role === "assistant";
@@ -491,7 +496,7 @@ function readReadyMessagePage(
     readonly principal: Principal;
     readonly args: McpGetChatStatusInput;
     readonly selection: StatusSelection;
-    readonly output: McpGetChatStatusOutput["output"];
+    readonly output: OutputStatus;
   },
 ): McpGetChatStatusOutput["messagePage"] {
   const { principal, args, selection, output } = context;
@@ -533,7 +538,7 @@ async function projectMcpChatStatus(
   const projectedMessages = selection.run
     ? projectMcpChatMessages(rows, budget.check)
     : [];
-  const output: McpGetChatStatusOutput["output"] = selection.run
+  const output: OutputStatus = selection.run
     ? outputStatus(rows, projectedMessages, selection.run, budget)
     : {
         state: "unavailable",
@@ -557,18 +562,17 @@ async function projectMcpChatStatus(
       })
     : null;
   budget.check();
-  return {
-    threadId: args.threadId,
-    observedAt: nowDate().toISOString(),
-    lifecycle: deriveMcpChatLifecycle({
-      input: selection.input,
-      run: selection.run,
-      output,
-    }),
+  const evidence: StatusEvidence = {
     input: selection.input,
     runSelection: args.inputRef ? "input" : "latest",
     run: selection.run,
     output,
+  };
+  return {
+    threadId: args.threadId,
+    observedAt: nowDate().toISOString(),
+    lifecycle: deriveMcpChatLifecycle(evidence),
+    evidence,
     messages: selection.run
       ? {
           tool: "get_chat_messages",
@@ -704,9 +708,12 @@ function recordWaitTelemetry(
     "mcp.chat_status.wait.runtime_occupancy": details.runtimeOccupancy,
     "mcp.chat_status.wait.runtime_capacity":
       MCP_CHAT_STATUS_MAX_RUNTIME_WAITERS,
-    "mcp.chat_status.wait.input_state": data?.input?.state ?? "not_requested",
-    "mcp.chat_status.wait.run_state": data?.run?.status ?? "unavailable",
-    "mcp.chat_status.wait.output_state": data?.output.state ?? "unavailable",
+    "mcp.chat_status.wait.input_state":
+      data?.evidence.input?.state ?? "not_requested",
+    "mcp.chat_status.wait.run_state":
+      data?.evidence.run?.status ?? "unavailable",
+    "mcp.chat_status.wait.output_state":
+      data?.evidence.output.state ?? "unavailable",
     "mcp.chat_status.wait.content_included":
       data?.messagePage !== null && data?.messagePage !== undefined,
   });
@@ -716,7 +723,7 @@ function completeObservedWait(
   data: McpGetChatStatusOutput,
   operation: WaitOperation,
 ): McpGetChatStatusOutput | null {
-  if (data.output.state === "ready") {
+  if (data.evidence.output.state === "ready") {
     return withWaitResult(data, operation, "ready", "output_ready");
   }
   if (data.retryAfterMs === null) {

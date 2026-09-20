@@ -476,30 +476,31 @@ unchanged.
 
 Call `get_chat_status` with `threadId` and the complete original `inputRef`
 returned by send (`threadId`, `eventId`, `seqId`). All three coordinates must
-match. With no input reference, `runSelection: "latest"` observes the latest
+match. With no input reference, `evidence.runSelection: "latest"` observes the latest
 authorized run by creation time, with run ID as a deterministic tie breaker.
-With an input reference, `runSelection: "input"` observes only its associated
+With an input reference, `evidence.runSelection: "input"` observes only its associated
 or reserved run. A queued, revoked, missing or inaccessible association never
 falls back to another run in the conversation.
 
-The result includes a compact lifecycle projection and preserves the three
-authoritative observations from which it is derived:
+The result uses lifecycle as its primary conclusion and keeps the precise
+observations from which it is derived under `evidence`:
 
-| Field                | Meaning                                                                                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lifecycle`          | Evidence-derived `{phase, outcome, output}` summary for ordinary polling; the detailed input, run and output fields remain authoritative.                  |
-| `input.state`        | `queued`, `reserved`, `associated`, `delivered`, `rejected`, `revoked`, or `unavailable`; null input means no reference was requested.                     |
-| `input.deliveryMode` | `launch` only when the exact initial callback input proves launch admission; `steer` only with a delivered active-input receipt; otherwise `unknown`.      |
-| `run`                | Authorized run ID, actual status, timestamps and cancellation recovery; null means no accessible selected run.                                             |
-| `output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
-| `output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
-| `messages`           | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
-| `wait`               | For positive `waitMs`, requested/effective wait, elapsed phase, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.              |
-| `messagePage`        | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
-| `retryAfterMs`       | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
+| Field                         | Meaning                                                                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle`                   | Primary evidence-derived `{phase, outcome, output}` result for ordinary polling. Its strict union permits only documented combinations.                    |
+| `evidence.input.state`        | `queued`, `reserved`, `associated`, `delivered`, `rejected`, `revoked`, or `unavailable`; null input means no reference was requested.                     |
+| `evidence.input.deliveryMode` | `launch` only when the exact initial callback input proves launch admission; `steer` only with a delivered active-input receipt; otherwise `unknown`.      |
+| `evidence.runSelection`       | `input` when observing the supplied original input reference, otherwise `latest`.                                                                          |
+| `evidence.run`                | Authorized run ID, actual status, timestamps and cancellation recovery; null means no accessible selected run.                                             |
+| `evidence.output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
+| `evidence.output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
+| `messages`                    | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
+| `wait`                        | For positive `waitMs`, requested/effective wait, elapsed phase, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.              |
+| `messagePage`                 | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
+| `retryAfterMs`                | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
 
-Initial admission is `associated`, even when the run has started: the service
-does not invent a runtime delivery receipt for the initial prompt. `reserved`
+Initial `evidence.input.state` is `associated`, even when the run has started:
+the service does not invent a runtime delivery receipt for the initial prompt. `reserved`
 means an active-input handoff is open. `delivered` requires an acknowledged
 active-input receipt and its canonical replacement; it never proves model
 compliance. Several inputs may share one run and its conversation output.
@@ -526,12 +527,12 @@ ready. Pending cancellation recovery also remains finalizing. This summary is a
 current evidence projection, not proof of delivery mode, model compliance, or a
 single immutable final answer.
 
-Run status preserves `queued`, `pending`, `running`, `completed`, `failed`,
-`timeout` and `cancelled`. A terminal run is not enough for output readiness.
+`evidence.run.status` preserves `queued`, `pending`, `running`, `completed`,
+`failed`, `timeout` and `cancelled`. A terminal run is not enough for output readiness.
 Actual visible assistant output plus the matching canonical terminal marker
 is required for `ready`; unresolved cancellation recovery keeps it `partial`.
-Without messages the state is `pending` until materialization completes, then
-`unavailable` with `no_output`. Missing associations use `no_associated_run`,
+Without messages `evidence.output.state` is `pending` until materialization
+completes, then `unavailable` with `no_output`. Missing associations use `no_associated_run`,
 and a deleted or inaccessible associated run uses `run_unavailable`. Terminal
 error/control markers are not fabricated as message references. Read the run
 status to distinguish success, failure and cancellation.
@@ -594,7 +595,7 @@ Original input lookup lasts while the exact canonical input and linkage remain
 in readable retained thread history. It continues through archives after the
 30-day live-event window, within the stated history limits; it is not a new
 permanent identity store. Deleted/mismatched/absent references return
-`input.state: "unavailable"`; corrupt, missing or oversized required archives
+`evidence.input.state: "unavailable"`; corrupt, missing or oversized required archives
 fail the tool explicitly. Historical launch/steer evidence can become `unknown`
 when receipt or callback records are no longer available. None of this extends
 the independent 24-hour send retry guarantee. References and artifact links
