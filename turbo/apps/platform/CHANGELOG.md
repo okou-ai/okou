@@ -11,6 +11,34 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.926.0](https://github.com/vm0-ai/okou/compare/app-v0.925.0...app-v0.926.0) (2026-09-20)
+
+
+### Features
+
+* **app:** give composer starting ideas a card and more air ([#35494](https://github.com/vm0-ai/okou/issues/35494)) ([04be54b](https://github.com/vm0-ai/okou/commit/04be54b1ad94864f0c98d7c6c1c6d48d70e04774))
+* **app:** remove the workflow type row from the slash panel ([#35556](https://github.com/vm0-ai/okou/issues/35556)) ([4354578](https://github.com/vm0-ai/okou/commit/4354578ff5a21e48fb57120a0ca51d66a810448f))
+
+
+### Bug Fixes
+
+* **platform:** align remote access copy ([#35553](https://github.com/vm0-ai/okou/issues/35553)) ([5456ab5](https://github.com/vm0-ai/okou/commit/5456ab5305eceddb3d665600ca8bb6dbf6ab90df))
+* **platform:** remove redundant vnc refresh action ([#35493](https://github.com/vm0-ai/okou/issues/35493)) ([668fc86](https://github.com/vm0-ai/okou/commit/668fc86f75542cc92275868636e54b38b65b34cb))
+
+
+### Refactoring
+
+* **app:** retire acquisition attribution ([#35324](https://github.com/vm0-ai/okou/issues/35324)) ([61618b1](https://github.com/vm0-ai/okou/commit/61618b151d9511f0317481976d35423072cf1dc8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+    * @okouai/connectors bumped to 3.14.2
+    * @okouai/core bumped to 8.686.0
+
 ## [0.925.0](https://github.com/vm0-ai/okou/compare/app-v0.924.0...app-v0.925.0) (2026-09-20)
 
 

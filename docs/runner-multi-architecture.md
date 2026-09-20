@@ -159,6 +159,25 @@ fork and Dependabot pull requests skip the credentialed setup and run the same
 coverage command without sccache. A trusted run that selects the action still
 fails when its R2 configuration is missing instead of silently falling back.
 
+### Production release compilation
+
+`build-runner-release-assets` uses the same shared action before its existing
+release rust-cache. The release matrix resolves its Rust target through
+`runner_image_sccache_architecture`, then passes the repo-level R2 secrets and
+variables shown above. The job intentionally has no `environment: production`,
+so compiler caching uses the test/development R2 bucket shared with CI rather
+than the production-scoped user-storage bucket.
+
+This is separate from the downstream `resolve-image-cache` handoff. Production
+host image builds require `environment: production`, so that resolver reads the
+repo-level image-cache configuration outside the environment and transfers the
+encrypted credentials into the environment-bound job. Release-asset compilation
+must not replace or redirect that handoff.
+
+The production release job retains its separate guest and embedded Runner
+compilation phases together with the existing release creation, asset upload,
+Slack notification, and deployment behavior.
+
 This avoids GitHub's branch-scoped compiler cache and shared storage quota.
 The additional Cargo dependency cache still uses GitHub and saves only on main;
 main often reuses the complete runner binary and skips compilation, so that

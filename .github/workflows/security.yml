@@ -334,6 +334,7 @@ jobs:
             .github/scripts/tests/report-cgroup-memory-peak-test.sh \
             .github/scripts/tests/runner-lifecycle-lock-test.sh \
             .github/scripts/tests/runner-lifecycle-lock-diagnostics-test.sh \
+            .github/scripts/tests/runner-release-build-workflow-test.sh \
             .github/scripts/tests/rust-coverage-cache-workflow-test.sh \
             .github/scripts/tests/rust-ci-memory-workflow-test.sh \
             .github/scripts/tests/runner-lifecycle-ownership-workflow-test.sh \

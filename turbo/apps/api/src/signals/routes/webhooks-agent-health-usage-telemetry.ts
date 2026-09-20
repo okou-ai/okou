@@ -3,6 +3,7 @@ import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
+  type ArchiveConnectionAttempt,
   type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
   type RunnerResourceBudgetLeaseCountBucket,
@@ -58,6 +59,7 @@ interface SandboxOperationDimensionInput {
   readonly outcome?: string;
   readonly reason?: string;
   readonly archive_size_mismatch?: ArchiveSizeMismatch;
+  readonly archive_connection_attempt?: ArchiveConnectionAttempt;
   readonly dns_readiness_attempt?: number;
   readonly dns_readiness_final_attempt?: boolean;
   readonly dns_readiness_guest_duration_ms?: number;
@@ -152,6 +154,25 @@ function dnsReadinessDimensions(
   };
 }
 
+function archiveConnectionAttemptDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, number | boolean> {
+  const attempt = op.archive_connection_attempt;
+  if (!attempt) {
+    return {};
+  }
+  return {
+    archive_connection_attempt_started: attempt.started,
+    archive_connection_attempt_succeeded: attempt.succeeded,
+    archive_connection_attempt_failed: attempt.failed,
+    archive_connection_attempt_dropped: attempt.dropped,
+    archive_connection_attempt_active_at_headers: attempt.active_at_headers,
+    archive_connection_attempt_terminal_duration_ms:
+      attempt.terminal_duration_ms,
+    archive_connection_attempt_saturated: attempt.saturated,
+  };
+}
+
 function sandboxOperationDimensions(
   op: SandboxOperationDimensionInput,
   runner: SandboxRunnerDimensionInput,
@@ -179,6 +200,7 @@ function sandboxOperationDimensions(
             op.archive_size_mismatch.content_encoding,
         }
       : {}),
+    ...archiveConnectionAttemptDimensions(op),
     ...dnsReadinessDimensions(op),
     ...(op.runner_startup_path
       ? { runner_startup_path: op.runner_startup_path }

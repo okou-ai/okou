@@ -402,6 +402,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       true,
     );
+    expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -425,6 +426,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       false,
     );
+    expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 
   it("enables Pi memory only for the user whose override says so", () => {

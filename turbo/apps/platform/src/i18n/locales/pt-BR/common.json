@@ -1472,7 +1472,9 @@
           },
           "connector": {
             "confirm": "Ver todos os conectores",
-            "description": "Conecte uma das suas ferramentas para o {{assistantName}} trabalhar dentro dela.",
+            "connected": "Conectado",
+            "description": "Escolha um e {{assistantName}} começa a trabalhar nele.",
+            "notConnected": "Não conectado",
             "pickerFailed": "Não foi possível carregar os conectores. Abra a página de conectores para tentar de novo.",
             "pickerLoading": "Carregando conectores…",
             "title": "O {{assistantName}} trabalha dentro das ferramentas que você já usa"

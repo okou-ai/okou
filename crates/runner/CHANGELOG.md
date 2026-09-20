@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.203.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.2...runner-rs-v0.203.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Bug Fixes
+
+* **runner:** use fresh memory evidence for balloon grace ([#35509](https://github.com/vm0-ai/okou/issues/35509)) ([961efe6](https://github.com/vm0-ai/okou/commit/961efe6ab002c6414844e65309e2df75fce4dba7))
+
 ## [0.202.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.1...runner-rs-v0.202.2) (2026-09-20)
 
 

@@ -1447,7 +1447,9 @@
           },
           "connector": {
             "confirm": "모든 커넥터 보기",
-            "description": "쓰던 도구를 연결해 {{assistantName}}가 그 안에서 일하게 하세요.",
+            "connected": "연결됨",
+            "description": "하나를 선택하면 {{assistantName}}이(가) 그 안에서 작업을 시작합니다.",
+            "notConnected": "연결 안 됨",
             "pickerFailed": "커넥터를 불러오지 못했습니다. 커넥터 페이지에서 다시 시도하세요.",
             "pickerLoading": "커넥터 불러오는 중…",
             "title": "{{assistantName}}는 이미 쓰고 있는 도구 안에서 일합니다"

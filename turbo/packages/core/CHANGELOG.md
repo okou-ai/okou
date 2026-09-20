@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.686.0](https://github.com/vm0-ai/okou/compare/core-v8.685.0...core-v8.686.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+
 ## [8.685.0](https://github.com/vm0-ai/okou/compare/core-v8.684.1...core-v8.685.0) (2026-09-20)
 
 

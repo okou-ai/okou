@@ -3671,6 +3671,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         f: OutputFixture,
         kind: TerminalKind,
         options: {
+          awaitTerminalProjection?: boolean;
           mode?: "plain" | "ccstate";
           payload?: Record<string, unknown>;
           sourceCallbackId?: string;
@@ -3703,6 +3704,9 @@ describe("actual compute transactions versus the B1 projector", () => {
                 db,
                 callback,
                 context.signal,
+                {
+                  awaitTerminalProjection: options.awaitTerminalProjection,
+                },
               );
         expect(result).toStrictEqual({ success: true });
       }
@@ -5195,13 +5199,46 @@ describe("actual compute transactions versus the B1 projector", () => {
         ).toHaveLength(1);
       });
 
-      it("lock timeout rolls back rather than becoming closure denial, allowing an open retry", async () => {
+      it("projects terminal content while a thread identity pin is held", async () => {
+        const f = await terminalFixture("failed");
+        const held = await holdBusinessRow((tx) => {
+          return tx
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .where(eq(chatThreads.id, f.threadId))
+            .for("key share");
+        });
+
+        await invokeTerminal(f, "failed", {
+          awaitTerminalProjection: true,
+        });
+        expect(
+          (await terminalState(f)).events.filter((event) => {
+            return event.eventType === "run.failed";
+          }),
+        ).toHaveLength(1);
+        await held.release();
+      });
+
+      it("surfaces a competing queue-writer timeout and permits an open retry", async () => {
         const f = await terminalFixture("failed");
         const before = await terminalState(f);
-        const held = await holdResource(f.agentId);
-        const writing = invokeTerminal(f, "failed");
+        const held = await holdBusinessRow((tx) => {
+          return tx
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .where(eq(chatThreads.id, f.threadId))
+            .for("no key update");
+        });
+        const writing = settle(
+          invokeTerminal(f, "failed", { awaitTerminalProjection: true }),
+        );
         await waitForBlockedBy(held.pid);
-        await writing;
+        const failure = await writing;
+        expect(failure.ok).toBeFalsy();
+        if (!failure.ok) {
+          expect(safeSqlStateCode(failure.error)).toBe("55P03");
+        }
         await expect(terminalState(f)).resolves.toStrictEqual(before);
         await held.release();
         await invokeTerminal(f, "failed");
