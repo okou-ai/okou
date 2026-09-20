@@ -30,6 +30,7 @@ import { GrowthEntryHeader } from "./growth-entry.tsx";
 import {
   chatPageTaglineDisplayed$,
   chatPageTaglineIndex$,
+  chatPageTaglineStarted$,
   chatPageTaglineTypewriterRef$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
@@ -368,6 +369,7 @@ export function AgentChatPage() {
   const setInput = useSet(composerSignals.draft.setDraftInput$);
   const saveDraft = useSet(composerSignals.draft.save$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
+  const taglineStarted = useGet(chatPageTaglineStarted$);
   const tagline = useTagline(
     currentChatAgentDisplayName,
     userFirstName,
@@ -388,26 +390,51 @@ export function AgentChatPage() {
           data-testid="agent-chat-scroll-content"
           className="mx-auto w-full max-w-[900px] flex flex-col items-stretch gap-10 pt-8 pb-[max(3rem,var(--sab))] sm:pt-[20vh] sm:pb-[max(10vh,var(--sab))]"
         >
-          <div className="flex w-full items-center justify-center gap-4">
-            <ChatAgentAvatar agentId={currentChatAgentId} />
-            <h2
-              aria-label={tagline}
-              data-testid="chat-tagline"
-              className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+          {/* The avatar is on the row before the line is: the tagline needs the
+              agent's name, so the frame stands alone for as long as that takes
+              to resolve. Centred alone and centred against a full line are two
+              different places, and the step between them is what this animates.
+
+              `calc(50% - 1.75rem)` is that step, written without measuring
+              anything. 50% of this box puts its left edge on the row's centre,
+              and 1.75rem is half of the avatar frame's `h-14`, so together they
+              land the avatar's own centre there. The percentage resolves
+              against the box as it is painted, so the frame that widens this
+              box with the reserved line still draws the avatar exactly centred,
+              and the settle runs from that position rather than from a stale
+              one. Reduced motion keeps the offset off entirely, which resolves
+              to the settled layout.
+
+              While the offset is on, the reserved line hangs past the right
+              edge; the scrollport above would answer that with a horizontal
+              scrollbar, so the row clips its own axis. `clip` rather than
+              `hidden` leaves the vertical axis visible for the pin button. */}
+          <div className="flex w-full justify-center overflow-x-clip">
+            <div
+              data-testid="chat-greeting"
+              data-settled={taglineStarted}
+              className="flex min-w-0 items-center gap-4 transition-transform duration-500 ease-in-out motion-safe:translate-x-[calc(50%_-_1.75rem)] data-[settled=true]:translate-x-0"
             >
-              {/* The tagline is typed one character at a time. Centred, every
-                  character would widen the row and slide the avatar left, so
-                  the full line holds the box from the first frame and the typed
-                  text paints over it. The reserving copy stays in flow: it has
-                  to wrap exactly the way the visible text will, which a
-                  measured width could not promise. */}
-              <span aria-hidden className="invisible">
-                {tagline}
-              </span>
-              <span className="absolute inset-0">
-                <TypewriterText text={tagline} />
-              </span>
-            </h2>
+              <ChatAgentAvatar agentId={currentChatAgentId} />
+              <h2
+                aria-label={tagline}
+                data-testid="chat-tagline"
+                className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+              >
+                {/* The tagline is typed one character at a time. Centred, every
+                    character would widen the row and slide the avatar left, so
+                    the full line holds the box from the first frame and the
+                    typed text paints over it. The reserving copy stays in flow:
+                    it has to wrap exactly the way the visible text will, which a
+                    measured width could not promise. */}
+                <span aria-hidden className="invisible">
+                  {tagline}
+                </span>
+                <span className="absolute inset-0">
+                  <TypewriterText text={tagline} />
+                </span>
+              </h2>
+            </div>
           </div>
 
           <ChatComposer signals={composerSignals} />

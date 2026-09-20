@@ -57,3 +57,30 @@ test("The tagline holds its full line while it types", async () => {
   });
   expect(reserved?.textContent).toBe(fullLine);
 });
+
+/**
+ * The avatar reaches the row before the line does, because the line needs the
+ * agent's name, so it stands centred on its own until that resolves and the
+ * reserved line then moves it left by half of what the line occupies. The
+ * travel is a CSS transition released by `data-settled`, which jsdom has no
+ * layout to run; what it can hold is the coupling that decides when the travel
+ * is allowed to start.
+ */
+test("The greeting settles once the line starts typing", async () => {
+  mountedAgent();
+
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+
+  const greeting = await screen.findByTestId("chat-greeting");
+  const tagline = screen.getByTestId("chat-tagline");
+  const typed = tagline.querySelector("[aria-hidden='true'] ~ *");
+
+  // Read as one pair rather than as a fixed opening state: the first character
+  // lands 40ms after the mount, and which side of it this observation falls on
+  // is not something the test can pin down. Both sides are the same rule.
+  expect(greeting.dataset.settled).toBe(typed?.textContent ? "true" : "false");
+
+  await waitFor(() => {
+    expect(greeting.dataset.settled).toBe("true");
+  });
+});
