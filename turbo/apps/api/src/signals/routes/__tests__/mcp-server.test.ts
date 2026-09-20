@@ -144,6 +144,13 @@ function measureCompactSuccess(result: unknown): {
   return measurement;
 }
 
+function expectSubstantialCompactSuccess(result: unknown): void {
+  const measurement = measureCompactSuccess(result);
+  expect(measurement.compactBytes).toBeLessThanOrEqual(
+    Math.floor(measurement.baselineBytes * 0.6),
+  );
+}
+
 function client() {
   return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
 }
@@ -568,6 +575,25 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
+  it("substantially reduces a 20-thread list result", async () => {
+    const f = await threadFixture();
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) => {
+        return f.chat.createThread(f.actor, {
+          agentId: f.agent.agentId,
+          title: `Payload measurement ${index}`,
+        });
+      }),
+    );
+    const result = await callTool(f.auth.token(), "list_chat_threads", {
+      limit: 20,
+    });
+    expectSubstantialCompactSuccess(result);
+    expect(
+      mcpListChatThreadsOutputSchema.parse(result.structuredContent).threads,
+    ).toHaveLength(20);
+  });
+
   it("does not initialize missing model policies through a discovery read", async () => {
     const auth = await fixture();
     const first = await callTool(auth.token(), "list_models");
@@ -740,14 +766,19 @@ describe("MCP chat discovery and creation", () => {
     const f = await creationFixture();
     const requestId = randomUUID();
     const token = f.auth.token({ scope: defaultScopes });
-    const created = await createThread(
+    const createdResult = await callTool(
       f.auth.token({ scope: `${requiredScopes} okou:chat:manage` }),
+      "create_chat_thread",
       {
         requestId: requestId.toUpperCase(),
         agentId: f.agent.agentId.toUpperCase(),
         title: "Review the quarterly plan",
         model: "claude-sonnet-4-6",
       },
+    );
+    expectSubstantialCompactSuccess(createdResult);
+    const created = mcpCreateChatThreadOutputSchema.parse(
+      createdResult.structuredContent,
     );
     expect(created).toMatchObject({
       threadId: requestId,
@@ -1492,7 +1523,11 @@ describe("MCP chat status", () => {
       lastEventSequence: 0,
     });
     await flushWaitUntilForTest();
-    const ready = await getStatus(token, args);
+    const readyResult = await callTool(token, "get_chat_status", args);
+    expectSubstantialCompactSuccess(readyResult);
+    const ready = mcpGetChatStatusOutputSchema.parse(
+      readyResult.structuredContent,
+    );
     expect(ready).toMatchObject({
       run: { id: runId, status: "completed", completedAt: expect.any(String) },
       output: { state: "ready", messageRefs: partial.output.messageRefs },
@@ -1501,7 +1536,22 @@ describe("MCP chat status", () => {
     if (!ready.messages) {
       throw new Error("Expected a message retrieval handoff");
     }
-    const messages = await getMessages(token, ready.messages.arguments);
+    const messagesResult = await callTool(
+      token,
+      "get_chat_messages",
+      ready.messages.arguments,
+    );
+    expectSubstantialCompactSuccess(messagesResult);
+    const messages = mcpGetChatMessagesOutputSchema.parse(
+      messagesResult.structuredContent,
+    );
+    expect(
+      new Set(
+        messages.messages.map((message) => {
+          return message.role;
+        }),
+      ),
+    ).toStrictEqual(new Set(["user", "assistant"]));
     expect(
       messages.messages
         .filter((message) => {
