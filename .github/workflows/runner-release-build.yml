@@ -43,7 +43,7 @@ jobs:
           - aarch64-unknown-linux-musl
           - x86_64-unknown-linux-musl
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Resolve runner target metadata
         id: target-metadata
@@ -71,7 +71,7 @@ jobs:
           r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
           r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: crates -> target
           shared-key: ${{ steps.target-metadata.outputs.cache_suffix }}-release

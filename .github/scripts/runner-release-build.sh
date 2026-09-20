@@ -4,8 +4,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# Paths are resolved from this script at runtime.
+# shellcheck disable=SC1091
 # shellcheck source=.github/scripts/runner-image-target.sh
 . "${SCRIPT_DIR}/runner-image-target.sh"
+# Paths are resolved from this script at runtime.
+# shellcheck disable=SC1091
 # shellcheck source=.github/scripts/runner-guest-binaries.sh
 . "${SCRIPT_DIR}/runner-guest-binaries.sh"
 

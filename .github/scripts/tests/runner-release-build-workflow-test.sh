@@ -111,7 +111,7 @@ jq -e '
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
   any($job.steps[];
-    .uses == "Swatinem/rust-cache@v2" and
+    .uses == "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6" and
     .with.workspaces == "crates -> target" and
     .with["shared-key"] == "${{ steps.target-metadata.outputs.cache_suffix }}-release" and
     .with["save-if"] == "false"
