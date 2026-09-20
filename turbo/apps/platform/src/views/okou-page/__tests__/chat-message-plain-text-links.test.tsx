@@ -1,5 +1,6 @@
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { waitFor } from "@testing-library/react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import {
@@ -76,7 +77,11 @@ test("A link a user typed is clickable in the message and in its feedback note",
     },
   ]);
 
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
+  });
 
   const message = await waitFor(() => {
     const element = userMessage();
@@ -101,7 +106,11 @@ test("A sentence typed onto the end of a link stays outside it", async () => {
   const prompt = `${url}二额，另见 https://zh.example.com/wiki/中文 和 https://example.com/搜索?q=中文`;
   installPrompt(prompt);
 
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
+  });
 
   const message = await waitFor(() => {
     const element = userMessage();
@@ -127,7 +136,29 @@ test("Text that only looks like a link stays plain text", async () => {
   ].join(" ");
   installPrompt(prompt);
 
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
+  });
+
+  const message = await waitFor(() => {
+    const element = userMessage();
+    expect(element).toHaveTextContent(prompt);
+    return element;
+  });
+  expect(queryAllByRoleFast("link", message)).toHaveLength(0);
+});
+
+test("With the switch off a link stays plain text", async () => {
+  const prompt = "Start from https://example.com/brief and keep reading.";
+  installPrompt(prompt);
+
+  await setupPage({
+    context,
+    path: `/chats/${context.resourceId}`,
+    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: false },
+  });
 
   const message = await waitFor(() => {
     const element = userMessage();

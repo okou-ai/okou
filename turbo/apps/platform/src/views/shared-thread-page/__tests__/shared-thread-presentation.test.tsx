@@ -145,7 +145,10 @@ test("A link inside a public prompt is clickable without becoming Markdown", asy
     );
   });
 
-  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
+  });
 
   const link = await waitFor(() => {
     const found = queryAllByRoleFast("link").find((candidate) => {

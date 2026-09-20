@@ -687,8 +687,8 @@ test("User attachments appear before their message text", async () => {
 });
 
 test("A user's Markdown image syntax stays literal", async () => {
-  const url = "https://cdn.vm7.io/artifacts/tests/chat-attachments/chart.png";
-  const markdown = `![quarterly chart](${url})`;
+  const markdown =
+    "![quarterly chart](https://cdn.vm7.io/artifacts/tests/chat-attachments/chart.png)";
   mockAttachmentChat(context, {
     chatEvents: [
       sentUserMessage(userMessage([{ type: "text", text: markdown }])),
@@ -697,21 +697,13 @@ test("A user's Markdown image syntax stays literal", async () => {
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
-  // The destination inside the syntax becomes a link, so the message reads as
-  // several nodes; every character the author typed is still shown in order.
-  const userMessageContainer = await waitFor(() => {
-    const element = document.querySelector<HTMLElement>('[data-role="user"]');
-    if (!element?.textContent?.includes(markdown)) {
-      throw new Error("Expected the literal Markdown to stay visible");
-    }
-    return element;
-  });
-  const link = queryAllByRoleFast("link", userMessageContainer).find(
-    (candidate) => {
-      return candidate.getAttribute("href") === url;
-    },
-  );
-  expect(link).toBeVisible();
+  const literalText = await screen.findByText(markdown);
+  const userMessageContainer =
+    literalText.closest<HTMLElement>('[data-role="user"]');
+  if (!userMessageContainer) {
+    throw new Error("Expected a user-authored message container");
+  }
+  expect(literalText).toBeVisible();
   expect(userMessageContainer.querySelector("img")).toBeNull();
   expect(
     userMessageContainer.querySelector('[data-testid^="attachment-preview-"]'),
