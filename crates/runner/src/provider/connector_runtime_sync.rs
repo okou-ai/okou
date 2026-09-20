@@ -4195,6 +4195,8 @@ mod tests {
             refreshes: None,
         })
         .await;
+        core.notify_connector_runtime_sync(run_id, target.clone())
+            .await;
         let request = recv_sync_request(&mut requests).await;
 
         let (keep_run, events) =
