@@ -100,14 +100,14 @@ describe("chat event annotations", () => {
     ).toStrictEqual({
       type: "source",
       kind: "github",
-      href: "https://github.com/vm0-ai/vm0/issues/24218#issuecomment-123456",
+      href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-123456",
     });
     expect(
       sourcePartForText(events, "github pull request linked"),
     ).toStrictEqual({
       type: "source",
       kind: "github",
-      href: "https://github.com/vm0-ai/vm0/pull/24219",
+      href: "https://github.com/okou-ai/okou/pull/24219",
     });
   });
 
@@ -126,7 +126,7 @@ describe("chat event annotations", () => {
     ).toStrictEqual({
       type: "source",
       kind: "github",
-      href: "https://github.com/vm0-ai/vm0/issues/24218#issuecomment-654321",
+      href: "https://github.com/okou-ai/okou/issues/24218#issuecomment-654321",
     });
     const rejectedReplacement = events.find((event) => {
       return (

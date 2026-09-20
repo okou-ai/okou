@@ -120,7 +120,7 @@ function inspectFile(
       type: "http",
       action: "ALLOW",
       method: "GET",
-      url: "https://api.github.com/repos/vm0-ai/vm0",
+      url: "https://api.github.com/repos/okou-ai/okou",
       status: 200,
       latency_ms: 123,
       request_size: 42,
@@ -641,7 +641,7 @@ test("A user can inspect steps, context, and network details from an exported lo
 
   await waitFor(() => {
     expect(
-      screen.getByText("https://api.github.com/repos/vm0-ai/vm0"),
+      screen.getByText("https://api.github.com/repos/okou-ai/okou"),
     ).toBeInTheDocument();
   });
   const networkTable = screen.getByRole("table");

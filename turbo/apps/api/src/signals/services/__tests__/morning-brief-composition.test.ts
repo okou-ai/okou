@@ -1309,7 +1309,7 @@ describe("five-source normalization", () => {
       outcome: "complete",
       items: [
         {
-          repository: "vm0-ai/okou",
+          repository: "okou-ai/okou",
           number: 12,
           kind: "issue",
           title: "Stale issue",
@@ -1318,7 +1318,7 @@ describe("five-source normalization", () => {
           reasons: [{ branch: "assigned" }],
         },
         {
-          repository: "vm0-ai/okou",
+          repository: "okou-ai/okou",
           number: 12,
           kind: "pull-request",
           title: "Fresh notification",
@@ -1663,7 +1663,7 @@ describe("preserved provider facts", () => {
       outcome: "complete" as const,
       items: [
         {
-          repository: "vm0-ai/okou",
+          repository: "okou-ai/okou",
           number: 7,
           kind: "pull-request" as const,
           title: "Ship the composition",

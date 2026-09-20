@@ -931,7 +931,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     api.configureGithubWebhookSecret();
     const user = { id: 42, login: "bdd-user", type: "User" };
     const bot = { id: 43, login: "zero[bot]", type: "Bot" };
-    const repository = { full_name: "vm0-ai/vm0" };
+    const repository = { full_name: "okou-ai/okou" };
     const installation = { id: 12_345 };
     const issue = {
       number: 123,
@@ -946,7 +946,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       pull_request: {
         number: 123,
         title: "BDD pull request",
-        html_url: "https://github.com/vm0-ai/vm0/pull/123",
+        html_url: "https://github.com/okou-ai/okou/pull/123",
         draft: false,
         merged: false,
         user,
@@ -1035,7 +1035,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "suspend",
       installation: {
         id: 67_890,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -1050,7 +1050,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "created",
       installation: {
         id: 67_891,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });
@@ -1065,7 +1065,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       action: "deleted",
       installation: {
         id: 67_892,
-        account: { id: 98_765, login: "vm0-ai", type: "Organization" },
+        account: { id: 98_765, login: "okou-ai", type: "Organization" },
       },
       sender: { id: 42, login: "bdd-user" },
     });

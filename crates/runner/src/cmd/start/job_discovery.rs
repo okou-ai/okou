@@ -43,7 +43,7 @@
 //!    persists `preparing` active status before unpark. Exact speculation validates the claimed
 //!    identity and commits the prepared sandbox only under the cancellation transfer guard. A
 //!    finalizing admission is handed to the specialized finalizing-successor path described in
-//!    [`finalizing_claim.rs`](https://github.com/vm0-ai/vm0/blob/main/crates/runner/src/cmd/start/finalizing_claim.rs#L1-L72).
+//!    [`finalizing_claim.rs`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/finalizing_claim.rs#L1-L72).
 //! 6. **Transfer to the executor.** `ClaimedActivationGuard` owns the claimed setup while active
 //!    status and the spawn request are prepared. It publishes the active status using the matching
 //!    idle snapshot, builds the session-history restore plan, and takes the setup only when the

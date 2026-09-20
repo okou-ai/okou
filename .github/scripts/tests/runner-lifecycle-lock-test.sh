@@ -39,17 +39,17 @@ for argument in "$@"; do
 done
 
 case "$endpoint" in
-  repos/vm0-ai/vm0/pulls/42)
+  repos/okou-ai/okou/pulls/42)
     if [[ " $* " == *" --jq .state "* ]]; then
       case "${MOCK_PR_STATE:-closed}" in
         error) exit 1 ;;
         *) printf '%s\n' "${MOCK_PR_STATE:-closed}" ;;
       esac
     else
-      printf 'feature/late-approval\tvm0-ai/vm0\n'
+      printf 'feature/late-approval\tokou-ai/okou\n'
     fi
     ;;
-  repos/vm0-ai/vm0/actions/runs)
+  repos/okou-ai/okou/actions/runs)
     printf '[{"workflow_runs":[]}]\n'
     ;;
   *)
@@ -108,7 +108,7 @@ barrier_output=$(
     PATH="${fake_bin}:$PATH" \
     HOME="${HOME:-/tmp}" \
     GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     GITHUB_RUN_ID=900 \
     PR_NUMBER=42 \
     RUNNER_OWNER_SCOPE=closed-pr-cleanup \
@@ -126,7 +126,7 @@ for rejected_state in open error; do
   if PATH="${fake_bin}:$PATH" \
     JOB_REF=pr-42 \
     GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     GITHUB_RUN_ID=900 \
     METAL_HOSTS=metal-a.example.test \
     METAL_USER=runner \
@@ -150,7 +150,7 @@ mkfifo "$cleanup_ready_fifo" "$cleanup_release_fifo" "$late_attempt_fifo"
 PATH="${fake_bin}:$PATH" \
   JOB_REF=pr-42 \
   GH_TOKEN=test-token \
-  GITHUB_REPOSITORY=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=okou-ai/okou \
   GITHUB_RUN_ID=900 \
   METAL_HOSTS=metal-a.example.test \
   METAL_USER=runner \

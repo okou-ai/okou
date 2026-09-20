@@ -664,7 +664,7 @@ exit 18
 
         assert!(
             TEMPLATE_BUILD_SCRIPT.contains(
-                r#"DOWNLOAD_BASE_URL=\"https://github.com/vm0-ai/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}\""#
+                r#"DOWNLOAD_BASE_URL=\"https://github.com/okou-ai/agent-browser/releases/download/v${AGENT_BROWSER_VERSION}\""#
             ),
             "build-template.sh should download agent-browser from the vm0 fork"
         );

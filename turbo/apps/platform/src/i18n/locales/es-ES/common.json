@@ -7351,7 +7351,7 @@
         "refs": "Referencias",
         "refsPlaceholder": "main, v1.0.0",
         "repositories": "Repositorios",
-        "repositoriesPlaceholder": "vm0-ai/vm0, owner/another-repo",
+        "repositoriesPlaceholder": "okou-ai/okou, owner/another-repo",
         "repositoriesSummary": "Repositorios {{values}}",
         "repository": "Repositorio",
         "repositoryPlaceholder": "owner/name",

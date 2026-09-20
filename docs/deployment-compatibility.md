@@ -52,6 +52,44 @@ artifacts observed from 2026-09-18T07:37:39Z, when #35193 first reached
 production, through 2026-09-20T11:57:25Z report `ahead`. No production artifact
 has been able to write `'failed'` since that first appearance.
 
+## Durable Pi inference table retirement (2026-09-20)
+
+Migration `1180_retire_durable_pi_inference` drops `agent_run_inference`,
+`agent_run_sandbox_intent`, `agent_run_sandbox_lease`,
+`agent_run_inference_objects` and `pi_inference_objects`. It must ship in a
+**later release than the code removal**, not alongside it. Migrations run
+before API promotion, so a combined release would have executed this migration
+while the previous backend was still serving. In that backend, run creation
+reached `checkRunConcurrencyLimit` → `loadOrgConcurrencyAdmissionState`, which
+cross-joined `earlierDeferredDemandTotals` into its admission aggregate in a
+single statement. That subquery read `agent_run_sandbox_intent` and
+`agent_run_inference_objects` with no `schemaVersion` or feature-switch gate,
+so every run creation would have failed. The remaining three tables were
+reached only by the durable surface itself and by the conversation-history
+erasure path, both removed by #35559.
+
+The writers were removed by #35559 and are live in `api-v1.642.2`. Before this
+migration ran, only `3ba83ad99700` and `b96c4458caa2` had served since
+11:53:45Z, and both contain that removal; the pre-removal commit
+`26f1b0acf73a` last served at 11:47:47Z. Old backend/new schema is therefore
+not a serving combination for this contraction, which is the only reason the
+drop is safe. New backend/old schema remains compatible: the current API never
+references these tables.
+
+**This contraction sets a rollback floor.** Once the tables are gone, the API
+cannot be rolled back to any build at or before `api-v1.642.1`, because run
+creation in those builds reads `agent_run_sandbox_intent` and
+`agent_run_inference_objects` unconditionally. A rollback must stay at or above
+the release carrying #35559.
+
+The tables held only internal test records: 24, 16, 16, 91 and 90 rows
+respectively, measured directly against production on 2026-09-20 before this
+migration shipped, matching the 24 durable-inference runs recorded on
+2026-09-17 and 2026-09-19. `piDeferredSandbox` shipped `enabled: false` with no org hashes and
+never carried real traffic. No backfill is performed and none is required; the
+migration comment records that as a decision. There are no browser, Runner, or
+API response changes.
+
 ## Chat search GIN maintenance (2026-09-20)
 
 Apply `1178_chat_search_gin_statistics` before promoting the API that calls

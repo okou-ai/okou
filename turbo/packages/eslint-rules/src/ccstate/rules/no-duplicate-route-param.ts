@@ -12,7 +12,7 @@
 import { ESLintUtils, type TSESTree } from "@typescript-eslint/utils";
 
 const createRule = ESLintUtils.RuleCreator(
-  (name) => `https://github.com/vm0-ai/vm0/blob/main/docs/eslint/${name}.md`,
+  (name) => `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`,
 );
 
 type MessageIds = "duplicateRouteParam";

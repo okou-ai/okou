@@ -170,7 +170,7 @@ test("Return to the conversation that started a chat message", async () => {
       id: "source-github",
       kind: "github" as const,
       label: "Open original issue or pull request in GitHub",
-      href: "https://github.com/vm0-ai/vm0/issues/123",
+      href: "https://github.com/okou-ai/okou/issues/123",
     },
     {
       id: "source-telegram",
