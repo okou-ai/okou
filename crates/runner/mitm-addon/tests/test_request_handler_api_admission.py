@@ -684,7 +684,11 @@ async def test_platform_api_test_paths_skip_auto_allow(
 _PLATFORM_MCP_CUSTOM_CONNECTOR_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
-def _write_platform_mcp_registry(tmp_path):
+def _write_platform_mcp_registry(
+    tmp_path,
+    *,
+    api_origin="https://api.okou.ai",
+):
     return _write_registry(
         tmp_path,
         client_ip="10.200.0.1",
@@ -695,7 +699,7 @@ def _write_platform_mcp_registry(tmp_path):
             firewall_name="platform-mcp",
             custom_connector_id=_PLATFORM_MCP_CUSTOM_CONNECTOR_ID,
             api_entry={
-                "base": "https://api.okou.ai/mcp",
+                "base": f"{api_origin}/mcp",
                 "auth": {
                     "headers": {
                         "Authorization": "Bearer ${{ secrets.PLATFORM_MCP_TOKEN }}",
@@ -749,6 +753,46 @@ async def test_platform_mcp_matching_intent_injects_oauth_through_request_lifecy
     assert flow.metadata[metadata_keys.FIREWALL_NAME] == "platform-mcp"
     assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.okou.ai/mcp"
     assert flow.request.headers["Authorization"] == "Bearer resolved-platform-mcp-token"
+    binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
+    assert binding.kinds == frozenset(("connector_auth",))
+
+
+async def test_platform_mcp_connector_auth_injects_runner_preview_bypass(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    monkeypatch,
+):
+    api_origin = "https://preview-api.vm6.ai"
+    reg_path = _write_platform_mcp_registry(tmp_path, api_origin=api_origin)
+    flow = real_flow(
+        with_response=False,
+        host="preview-api.vm6.ai",
+        method="POST",
+        path="/mcp",
+        request_headers=headers(
+            ("Host", "preview-api.vm6.ai"),
+            ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+        ),
+    )
+    monkeypatch.setattr(platform_api, "VERCEL_BYPASS", "preview-secret")
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url=api_origin),
+        fake_firewall_headers(
+            headers={"Authorization": "Bearer resolved-platform-mcp-token"}
+        ) as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        assert flow.request.headers["x-vercel-protection-bypass"] == "preview-secret"
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_awaited_once()
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer resolved-platform-mcp-token"
+    assert flow.request.headers["x-vercel-protection-bypass"] == "preview-secret"
     binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
     assert binding.kinds == frozenset(("connector_auth",))
 

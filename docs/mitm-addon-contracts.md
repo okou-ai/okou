@@ -28,8 +28,9 @@ resolution, and auth revalidation. Its `FirewallAllow` carries an internal proof
 to request-header prebinding, optional header streaming, and final request
 handling. Platform-origin `connector_auth` binding requires that proof and
 re-evaluates the current path policy; the independent `/api/test/*` secret bypass
-is unchanged. The private intent header remains stripped before upstream
-forwarding.
+is unchanged. Once the privileged binding succeeds, the request receives the
+same Runner-owned Vercel preview bypass as the ordinary platform `api_allow`
+path. The private intent header remains stripped before upstream forwarding.
 
 No API/Runner registry schema changes. Older Runner instances keep the prior
 credential-free `api_allow` behavior and therefore may receive the MCP service's
