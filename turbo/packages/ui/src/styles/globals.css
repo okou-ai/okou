@@ -109,6 +109,7 @@
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-link: hsl(var(--link));
+  --color-link-hover: hsl(var(--link-hover));
   --color-interrupt: hsl(var(--interrupt));
   --color-interrupt-foreground: hsl(var(--interrupt-foreground));
   --color-muted: hsl(var(--muted));
@@ -471,7 +472,8 @@
     --destructive-foreground: var(
       --on-filled
     ); /* on-filled - white text on destructive */
-    --link: 213.4 94.4% 35.1%; /* #0550AE - clears AA on the canvas and the user bubble */
+    --link: 222 64% 45%; /* #2955BC - tracks the Markdown link color */
+    --link-hover: 222 65% 39%; /* #234AA4 - tracks the Markdown link hover */
 
     /* Interrupting a run is not destruction -- nothing is lost and the work is
        resumable -- so it steps two stops up the same Coral ramp: still clearly
@@ -644,7 +646,10 @@
        stop to stay legible, and that stop flips the label to Ink (7.21:1). */
     --destructive: 13.1 100% 72.2%; /* #FF9071 - Coral 400 */
     --destructive-foreground: 40 4.3% 13.5%; /* #242321 - Ink */
-    --link: 208.2 100% 73.7%; /* #79C0FF - clears AA on the canvas and the user bubble */
+    /* Four lightness points above the Markdown link's 70%: that stop reads
+       4.02:1 on the user bubble, and 74% is the first that clears 4.5:1. */
+    --link: 222 72% 74%; /* #8DAAEC */
+    --link-hover: 222 80% 88%; /* #C8D7F9 - tracks the Markdown link hover */
 
     /* Coral 500 does not flip the way `--destructive` does: it already clears
        5.23:1 against the dark page, so the pause control keeps one fill and one
