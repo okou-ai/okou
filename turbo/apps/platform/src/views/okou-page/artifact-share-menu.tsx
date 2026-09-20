@@ -145,9 +145,7 @@ function PermissionChoices({
             aria-busy={selected === audience && saving}
             className={cn(
               "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
-              unavailable
-                ? "opacity-50"
-                : "hover:bg-state-hover cursor-pointer",
+              unavailable ? "opacity-50" : "hover:bg-state-hover",
               selected === audience && "bg-state-hover",
             )}
             onClick={() => {

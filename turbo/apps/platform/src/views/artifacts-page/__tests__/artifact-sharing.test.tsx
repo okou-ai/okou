@@ -474,7 +474,7 @@ test("status errors do not treat an owner as a recipient, and the action can be 
   // menu keeps its shape and shows what Retry will restore, but none of them
   // may claim to be the current one.
   const choices = screen.getByRole("radiogroup");
-  const options = within(choices).getAllByRole("radio");
+  const options = queryAllByRoleFast("radio", choices);
   expect(options).toHaveLength(3);
   for (const option of options) {
     expect(option).toBeDisabled();

@@ -393,9 +393,13 @@ export function ArtifactCatalogSkeleton({
   );
 }
 
-export function ArtifactCatalogError() {
+/**
+ * The catalog surfaces render their own instance of these signals, so the retry
+ * arrives as a prop. Binding one scope's reload here would leave the thread
+ * sidebar showing a failure while a different catalog refetched.
+ */
+export function ArtifactCatalogError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
-  const reload = useSet(reloadArtifactCatalog$);
   return (
     <Alert variant="destructive">
       <AlertTriangle size={16} aria-hidden />
@@ -412,7 +416,7 @@ export function ArtifactCatalogError() {
           size="sm"
           variant="outline"
           onClick={() => {
-            reload();
+            onRetry();
           }}
         >
           {t(($) => {
@@ -557,6 +561,7 @@ export function ArtifactCatalogPage({
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
   const loadMore = useSet(loadMoreArtifactCatalog$);
+  const reloadCatalog = useSet(reloadArtifactCatalog$);
   const pageSignal = useGet(pageSignal$);
   const catalog = useLoadable(artifactCatalog$);
   const artifacts = catalog.state === "hasData" ? catalog.data.artifacts : [];
@@ -613,7 +618,7 @@ export function ArtifactCatalogPage({
               layout={sharedConversationLayout ? "list" : "grid"}
             />
           ) : catalog.state === "hasError" ? (
-            <ArtifactCatalogError />
+            <ArtifactCatalogError onRetry={reloadCatalog} />
           ) : artifacts.length === 0 ? (
             <ArtifactCatalogEmpty />
           ) : sharedConversationLayout ? (
