@@ -319,7 +319,7 @@ interface CreateComposerSignalsOptions {
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
-  readonly forwardComposer?: boolean;
+  readonly forwardComposer: boolean;
   readonly modelSelection$: ComposerModelSignals["modelSelection$"];
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
@@ -371,7 +371,7 @@ function composerEditorSignals(
 ): ComposerEditorSignals {
   return {
     singleLineOnMobile: options.singleLineOnMobile,
-    forwardComposer: options.forwardComposer ?? false,
+    forwardComposer: options.forwardComposer,
     editor: composer.editor,
     setContainerRef$: composer.setContainerRef$,
     focus$: composer.focus$,
