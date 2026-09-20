@@ -33,7 +33,6 @@ export enum FeatureSwitchKey {
   RampConnector = "rampConnector",
   ResendConnector = "resendConnector",
   SpotifyConnector = "spotifyConnector",
-  StripeMarketplaceOAuthConnector = "stripeMarketplaceOAuthConnector",
   OkouDebug = "_debug",
   Banking = "banking",
   Lab = "_lab",
