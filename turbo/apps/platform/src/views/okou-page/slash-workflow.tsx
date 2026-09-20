@@ -207,7 +207,12 @@ export function SlashWorkflowMenu({
       className={cn(
         "flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0",
         panel
-          ? "h-[min(380px,var(--available-height))] w-auto"
+          ? // The index alone, at a width it never leaves. Its detail pane is a
+            // flyout anchored to this box rather than a column inside it, so
+            // opening one cannot resize the box Base UI pins — a content-width
+            // popover re-pinned itself against the viewport edge and slid the
+            // whole index out from under the pointer that opened the row.
+            "h-[min(380px,var(--available-height))] w-[260px]"
           : "h-[min(16rem,var(--available-height))] w-[300px] md:h-[min(20rem,var(--available-height))]",
       )}
       data-testid="slash-workflow-menu"
