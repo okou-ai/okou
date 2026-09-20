@@ -200,6 +200,37 @@ test.each([false, true])(
   },
 );
 
+test.each([
+  { count: 1, label: "1 host configured" },
+  { count: 2, label: "2 hosts configured" },
+])(
+  "VNC uses the connected remote-access summary for $count hosts",
+  async ({ count, label }) => {
+    mockCatalog();
+    context.mocks.data.agents([]);
+    context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
+      return respond(200, { configuredCount: count });
+    });
+    await setupPage({
+      context,
+      path: "/connectors?keywords=vnc",
+      featureSwitches: {
+        [FeatureSwitchKey.VncAccess]: true,
+        [FeatureSwitchKey.ConnectorDirectory]: false,
+      },
+    });
+    const summary = await screen.findByText(label);
+    const status = summary.parentElement;
+    expect(status).toHaveClass(
+      "min-w-0",
+      "flex-1",
+      "text-xs",
+      "text-muted-foreground",
+    );
+    expect(status?.firstElementChild).toHaveClass("bg-emerald-500");
+  },
+);
+
 test.each([false, true])(
   "VNC discovery does not report an empty result while a failed summary retries (%s)",
   async (directory) => {

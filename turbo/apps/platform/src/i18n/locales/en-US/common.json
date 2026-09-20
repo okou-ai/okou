@@ -6550,8 +6550,8 @@
       "system": "System certificate authorities",
       "title": "Server certificate trust"
     },
-    "summary_one": "{{count}} configured host",
-    "summary_other": "{{count}} configured hosts",
+    "summary_one": "{{count}} host configured",
+    "summary_other": "{{count}} hosts configured",
     "title": "VNC remote access",
     "unavailable": "VNC is not available in this workspace."
   },
