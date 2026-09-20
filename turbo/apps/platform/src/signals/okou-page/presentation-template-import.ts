@@ -4,9 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-templates";
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { toast } from "@okouai/ui/components/ui/sonner";
 
-import { i18n } from "../../i18n/index.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
@@ -62,17 +60,6 @@ export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
  * their own document before the analysis has read it.
  */
 export const CUSTOM_TEMPLATE_IMPORT_ACCEPT = acceptList(USER_TEMPLATE_KINDS);
-
-function importedTemplateKind(file: File): UserTemplateKind | null {
-  const name = file.name.toLowerCase();
-  return (
-    USER_TEMPLATE_KINDS.find((kind) => {
-      return TEMPLATE_IMPORT_EXTENSIONS[kind].some((extension) => {
-        return name.endsWith(extension);
-      });
-    }) ?? null
-  );
-}
 
 /**
  * The message the deck is sent with.
@@ -130,31 +117,25 @@ interface TemplateImportMessage {
 }
 
 /**
- * Which message this file is sent with, or null if it cannot become one.
+ * Which message an import is sent with.
  *
- * The switch-off answer does not read the file at all. That path is the one
- * every existing import already takes, and it has always sent the same
- * sentence for whatever the input accepted, so inspecting the file here could
- * only start refusing something it accepts today.
+ * Neither answer reads the file. Which formats can become a template is what
+ * the input's `accept` states and the file chooser applies, so re-reading the
+ * extension here could only refuse a file the chooser already handed over,
+ * and what to make of the one that arrives is the `reverse-template` guide's
+ * decision rather than this function's.
  */
-function templateImportMessage(args: {
-  readonly file: File;
-  readonly customTemplates: boolean;
-}): TemplateImportMessage | null {
-  if (!args.customTemplates) {
-    return {
-      prompt: presentationTemplateImportPrompt(),
-      additionalInfo: undefined,
-    };
-  }
-  // The kind still decides whether the file can become a template at all, even
-  // though the message no longer names it: a source matching no kind is one
-  // this catalog cannot compile, and refusing it here costs the member nothing.
-  return importedTemplateKind(args.file) === null
-    ? null
-    : {
+function templateImportMessage(
+  customTemplates: boolean,
+): TemplateImportMessage {
+  return customTemplates
+    ? {
         prompt: customTemplateImportPrompt(),
         additionalInfo: customTemplateImportGuidance(),
+      }
+    : {
+        prompt: presentationTemplateImportPrompt(),
+        additionalInfo: undefined,
       };
 }
 
@@ -182,23 +163,9 @@ export const importPresentationTemplateDeck$ = command(
     // while the switch is off would publish templates into a pane that member
     // cannot open, and take them out of the Presentation grid where they
     // currently appear.
-    const customTemplates =
-      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
-    // Decided before the upload so a file that cannot become a template is
-    // refused while the user still has the picker open, rather than after the
-    // bytes have been spent and a run has started.
-    const message = templateImportMessage({ file, customTemplates });
-    if (message === null) {
-      toast.error(
-        i18n.t(
-          ($) => {
-            return $.artifacts.templates.importUnsupported;
-          },
-          { formats: CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ") },
-        ),
-      );
-      return false;
-    }
+    const message = templateImportMessage(
+      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true,
+    );
 
     const before = new Set(get(signals.draft.attachments$));
     await set(signals.draft.uploadAttachment$, file, signal);

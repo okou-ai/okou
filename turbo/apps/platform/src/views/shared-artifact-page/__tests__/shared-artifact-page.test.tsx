@@ -307,6 +307,16 @@ test.each([
     expect(action("button", "Try again")).toBeEnabled();
     expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
     expect(queryAllByRoleFast("button")).toHaveLength(2);
+    // One status covers every denial, so a signed-in visitor is told both
+    // possibilities rather than the signed-out guess about privacy.
+    expect(
+      screen.getByText(
+        /It may not exist, or it may be shared with a different account or organization\./u,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/It may be private or no longer available\./u),
+    ).not.toBeInTheDocument();
     await expect(
       screen.findByText("Signed in as alex@example.test"),
     ).resolves.toBeInTheDocument();

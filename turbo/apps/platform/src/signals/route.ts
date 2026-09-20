@@ -20,7 +20,6 @@ import {
   markBootstrapRouteSetup$,
   markNavigationPushState$,
 } from "../lib/posthog.ts";
-import { recordAdAttribution$ } from "./bootstrap/ad-attribution.ts";
 
 const L = logger("Route");
 
@@ -161,10 +160,6 @@ const loadRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   set(markBootstrapRouteSetup$, currentRoute.path);
   L.debug("loading route", currentRoute.path);
-  if (currentRoute.analytics !== false) {
-    set(recordAdAttribution$, get(searchParams$));
-  }
-
   const [setup] = await Promise.allSettled([
     set(currentRoute.setup, routeSignal),
   ]);

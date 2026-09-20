@@ -445,6 +445,7 @@
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
       "signedInAs": "Signed in as {{email}}",
+      "signedInDescription": "It may not exist, or it may be shared with a different account or organization.",
       "signIn": "Sign in",
       "signInFailed": "Could not open sign-in. Please try again.",
       "switchAccount": "Switch account",
@@ -505,7 +506,7 @@
       "description": "Browse everything you have created here.",
       "emptyDescription": "Artifacts will appear here when they are available.",
       "emptyTitle": "No artifacts found",
-      "error": "Could not load artifacts. Try again later.",
+      "error": "Could not load artifacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Show avatar artifacts",
@@ -524,7 +525,8 @@
         "websiteAria": "Show website artifacts"
       },
       "kindIcon": "{{kind}} artifact",
-      "loading": "Loading artifacts"
+      "loading": "Loading artifacts",
+      "retry": "Try again"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -603,6 +605,7 @@
       "onlyMeDescription": "Only you can view this artifact",
       "organization": "Organization",
       "organizationDescription": "Anyone in {{organization}} with the link",
+      "organizationDescriptionUnnamed": "Anyone in your organization with the link",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
       "publicDescription": "Anyone with the link can view",
@@ -646,7 +649,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import your own file",
       "importFileHint": "Reuse your file's design",
-      "importUnsupported": "Choose a {{formats}} file to make a template.",
       "multiAccent": "Multi-accent",
       "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
@@ -2185,7 +2187,7 @@
             "prompt": "Help me create a logo concept for my business. Start with the business name, what it does, and the impression I want to make."
           },
           "cafeMenu": {
-            "label": "Design a menu for my café",
+            "label": "Design a menu for my café counter",
             "prompt": "Design a menu visual for my café. Use the items, prices, and brand details I provide, with clear readable sections."
           },
           "eventPoster": {
@@ -2201,7 +2203,7 @@
             "prompt": "Design a greeting card for someone I know. Help me choose a personal message and visual style for the occasion."
           },
           "headshot": {
-            "label": "Make a headshot for work",
+            "label": "Make a headshot I can use at work",
             "prompt": "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting."
           },
           "infographic": {
@@ -2229,11 +2231,11 @@
             "prompt": "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent."
           },
           "profileBanner": {
-            "label": "Refresh my profile banner",
+            "label": "Refresh the banner on my profile",
             "prompt": "Create a profile banner that represents my work. Help me choose a message, style, and composition for the platform I use."
           },
           "roomDesign": {
-            "label": "Try a new look for my room",
+            "label": "Try a new look for a room at home",
             "prompt": "Help me visualize a different look for my room from a photo. Keep the room layout recognizable and explore furniture, colors, and decor."
           },
           "storePhoto": {
@@ -2247,35 +2249,35 @@
         },
         "presentation": {
           "clientProposal": {
-            "label": "Write a proposal for a client",
+            "label": "Write a proposal for a client project",
             "prompt": "Create a client proposal deck. Ask me about the client, the work I am proposing, the timeline, and the price."
           },
           "companyOverview": {
-            "label": "Explain what my company does",
+            "label": "Explain what my company does to a newcomer",
             "prompt": "Create a company overview deck. Ask me what we do, who we serve, and what the audience should remember."
           },
           "eventTalk": {
-            "label": "Prepare a talk for an event",
+            "label": "Prepare a talk for an upcoming event",
             "prompt": "Build a deck for a talk I am giving. Ask me about the event, the audience, and the one idea I want to land."
           },
           "pitchDeck": {
-            "label": "Pitch my business to investors",
+            "label": "Pitch my new business to a room of investors",
             "prompt": "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising."
           },
           "productIntro": {
-            "label": "Introduce a new product",
+            "label": "Introduce a new product to our customers",
             "prompt": "Create a deck introducing a new product. Ask me what it does, who it is for, and what makes it different."
           },
           "resultsReadout": {
-            "label": "Present my results",
+            "label": "Present this quarter’s results to the team",
             "prompt": "Turn my results into a readout deck. Ask me for the numbers, the period they cover, and the decision they support."
           },
           "teamUpdate": {
-            "label": "Put together a team update",
+            "label": "Put together this week’s team update",
             "prompt": "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room."
           },
           "training": {
-            "label": "Teach something to my team",
+            "label": "Teach my team how something works",
             "prompt": "Build a training deck on a topic I choose. Ask me who is being trained and what they should be able to do afterwards."
           }
         },
@@ -2323,15 +2325,15 @@
             "prompt": "Build a website that explains my business, services, and how to contact me. Start with my business details and audience."
           },
           "cafeMenu": {
-            "label": "Put my café menu online",
+            "label": "Put my café menu online for guests",
             "prompt": "Create a café website with my menu, prices, opening hours, and location. Use the details and photos I provide."
           },
           "coursePage": {
-            "label": "Create a page for my course",
+            "label": "Create a page that sells my course",
             "prompt": "Create a page introducing my course, who it is for, what learners will gain, and how to sign up using my registration link."
           },
           "eventPage": {
-            "label": "Create a page for my event",
+            "label": "Create a page for an event I am running",
             "prompt": "Create an event page with the date, location, agenda, and registration link I provide. Ask for any missing details."
           },
           "linkPage": {
@@ -2343,7 +2345,7 @@
             "prompt": "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details."
           },
           "productLaunch": {
-            "label": "Launch a page for my product",
+            "label": "Launch a page for my new product",
             "prompt": "Create a landing page for my product with its benefits, visuals, and a clear next step. Ask what I am launching and who it is for."
           }
         },
@@ -6330,7 +6332,7 @@
     "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
-    "description": "Configure SSH hosts for your Agents to execute remote commands.",
+    "description": "Let your agents run commands on remote machines.",
     "displayName": "Display name",
     "edit": "Edit host",
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
@@ -6385,7 +6387,7 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "SSH hosts",
+    "title": "SSH remote access",
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
@@ -6505,7 +6507,7 @@
     "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this saved host? Its reusable credential will be kept.",
-    "description": "Let your agents view and control your remote desktops.",
+    "description": "Let your agents view and control remote desktops.",
     "displayName": "Display name",
     "displayNameHint": "e.g. Office desktop",
     "edit": "Edit host",
@@ -6532,7 +6534,6 @@
     "loadingAccess": "Loading Agent access…",
     "manage": "Manage VNC",
     "port": "Port",
-    "refresh": "Refresh",
     "retry": "Retry",
     "save": "Save",
     "saveRecovery": {
@@ -6551,8 +6552,8 @@
       "system": "System certificate authorities",
       "title": "Server certificate trust"
     },
-    "summary_one": "{{count}} configured host",
-    "summary_other": "{{count}} configured hosts",
+    "summary_one": "{{count}} host configured",
+    "summary_other": "{{count}} hosts configured",
     "title": "VNC remote access",
     "unavailable": "VNC is not available in this workspace."
   },

@@ -11,6 +11,48 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.925.0](https://github.com/vm0-ai/okou/compare/app-v0.924.0...app-v0.925.0) (2026-09-20)
+
+
+### Features
+
+* **platform:** gate AgentPhone entry behind feature switch ([#35488](https://github.com/vm0-ai/okou/issues/35488)) ([37f2fa4](https://github.com/vm0-ai/okou/commit/37f2fa4a63c075cf895061d5138edb1a437d0f40))
+
+
+### Bug Fixes
+
+* **app:** give the artifact catalog, share menu and unpreviewable files a way out ([#35330](https://github.com/vm0-ai/okou/issues/35330)) ([0c851f5](https://github.com/vm0-ai/okou/commit/0c851f5af41ad294297500f7549447bd49d25918))
+* **platform:** close the template picker when a custom import starts ([#35443](https://github.com/vm0-ai/okou/issues/35443)) ([296665c](https://github.com/vm0-ai/okou/commit/296665c8590f75eacd56156b4bd7ee5df0893d9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.685.0
+
+## [0.924.0](https://github.com/vm0-ai/okou/compare/app-v0.923.1...app-v0.924.0) (2026-09-20)
+
+
+### Features
+
+* **platform:** align oauth consent with auth pages ([#35436](https://github.com/vm0-ai/okou/issues/35436)) ([7df89f9](https://github.com/vm0-ai/okou/commit/7df89f95e5ef418c1b759ab498ffb28073ef045d))
+
+
+### Bug Fixes
+
+* **app:** derive unread chat list from shared indicators ([#35438](https://github.com/vm0-ai/okou/issues/35438)) ([ac5d47a](https://github.com/vm0-ai/okou/commit/ac5d47aa708a1c08ec7ad6887cc590986bfefca1))
+* **app:** make artifact fullscreen enlarge media and stop offering a dead recovery action ([#35328](https://github.com/vm0-ai/okou/issues/35328)) ([cf7e8c3](https://github.com/vm0-ai/okou/commit/cf7e8c3d919a31712818da83d99c298a09e95c8d))
+* **platform:** reuse artifact preview credentials ([#35320](https://github.com/vm0-ai/okou/issues/35320)) ([72d6914](https://github.com/vm0-ai/okou/commit/72d6914ae5577544ed673cece31a6473a1c9fea6))
+* **templates:** center the open template dialog's close button on its header ([#35441](https://github.com/vm0-ai/okou/issues/35441)) ([ef7a703](https://github.com/vm0-ai/okou/commit/ef7a703d87d7b9d21e034ce21477292cdd83e07a))
+* **vnc:** align remote access defaults ([#35448](https://github.com/vm0-ai/okou/issues/35448)) ([08b7e4c](https://github.com/vm0-ai/okou/commit/08b7e4c9d5a641c665616f9bbbde2b2efe50294e))
+
+
+### Refactoring
+
+* **app:** move custom template import instructions out of the visible message ([#35300](https://github.com/vm0-ai/okou/issues/35300)) ([6cd1062](https://github.com/vm0-ai/okou/commit/6cd1062ff7890a2c1b256b61f3c4e9721a02f122))
+* **templates:** open every custom template in one dialog ([#35185](https://github.com/vm0-ai/okou/issues/35185)) ([86c22a9](https://github.com/vm0-ai/okou/commit/86c22a9022970439281cc7f16693a3a658f978b7))
+
 ## [0.923.1](https://github.com/vm0-ai/okou/compare/app-v0.923.0...app-v0.923.1) (2026-09-20)
 
 

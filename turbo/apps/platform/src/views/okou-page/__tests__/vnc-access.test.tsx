@@ -200,6 +200,29 @@ test.each([false, true])(
   },
 );
 
+test.each([
+  { count: 1, label: "1 host configured" },
+  { count: 2, label: "2 hosts configured" },
+])(
+  "VNC uses the SSH host-count wording for $count hosts",
+  async ({ count, label }) => {
+    mockCatalog();
+    context.mocks.data.agents([]);
+    context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
+      return respond(200, { configuredCount: count });
+    });
+    await setupPage({
+      context,
+      path: "/connectors?keywords=vnc",
+      featureSwitches: {
+        [FeatureSwitchKey.VncAccess]: true,
+        [FeatureSwitchKey.ConnectorDirectory]: false,
+      },
+    });
+    await expect(screen.findByText(label)).resolves.toBeInTheDocument();
+  },
+);
+
 test.each([false, true])(
   "VNC discovery does not report an empty result while a failed summary retries (%s)",
   async (directory) => {

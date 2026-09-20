@@ -8,10 +8,14 @@ mode for each session; the VNC server enforces its connection policy.
 ## Explicit grants and inventory
 
 Session-authenticated owners use GET/PUT `/api/agents/:agentId/vnc-access` with
-`{ enabled }`. The Agent must be visible in the same organization. Creating a
-connection never grants access. Grants use the composite `(orgId, userId, agentId)`
-key, matching SSH. Repeated enable is idempotent; revoke removes the row and
-regrant restores current access without a historical grant incarnation.
+`{ enabled }`. The Agent must be visible in the same organization. Creating the
+first connection automatically grants every Agent currently visible to the owner;
+the connection and grants commit atomically. Later connections preserve manual
+revocations and do not grant later Agents. Deleting every connection makes the
+next creation repeat the onboarding grant. Grants use the composite
+`(orgId, userId, agentId)` key, matching SSH. Repeated enable is idempotent;
+revoke removes the row and regrant restores current access without a historical
+grant incarnation.
 
 Agent tokens receive `vnc:read` and `vnc:write` only when the feature is enabled.
 These capabilities do not replace a current grant. GET `/api/vnc/hosts` requires

@@ -174,6 +174,7 @@ describe("Pi stable context projection", () => {
       vncEnabled: false,
       larkEnabled: false,
       deliveryFormatGuidanceEnabled: false,
+      presentationConvertEnabled: false,
       customConnectorMcpEnabled: false,
       triggerSource: "web",
     };

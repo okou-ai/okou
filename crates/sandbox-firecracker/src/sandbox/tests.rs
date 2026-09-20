@@ -34,6 +34,7 @@ fn test_severe_memory_retention_diagnostics() -> SevereMemoryRetentionDiagnostic
         observed_target_mib: None,
         target_observed: false,
         first_actual_mib: None,
+        previous_actual_mib: None,
         actual_mib: None,
         max_actual_mib: None,
         deficit_mib: None,
@@ -48,6 +49,8 @@ fn test_severe_memory_retention_diagnostics() -> SevereMemoryRetentionDiagnostic
         reported_major_faults: None,
         reported_minor_faults: None,
         reported_disk_caches_bytes: None,
+        progress_extension_blocker: None,
+        guest_memory_snapshot_attempted: false,
         guest_memory_snapshot: None,
     }
 }
@@ -313,6 +316,19 @@ fn test_guest_memory_snapshot() -> MemorySnapshot {
         page_tables_bytes: 16,
         swap_total_bytes: 17,
         swap_free_bytes: 18,
+    }
+}
+
+fn test_guest_memory_snapshot_with_memory_mib(
+    free_mib: u64,
+    available_mib: u64,
+    total_mib: u64,
+) -> MemorySnapshot {
+    MemorySnapshot {
+        mem_total_bytes: total_mib * 1024 * 1024,
+        mem_free_bytes: free_mib * 1024 * 1024,
+        mem_available_bytes: available_mib * 1024 * 1024,
+        ..test_guest_memory_snapshot()
     }
 }
 
@@ -4926,6 +4942,29 @@ async fn wait_for_balloon_sample_count<F>(
     }
 }
 
+async fn advance_balloon_wait_to_fresh_guest_snapshot<F>(
+    mut future: std::pin::Pin<&mut F>,
+    captured: &CapturedEvents,
+    guest_stream: &mut UnixStream,
+) -> RawMessage
+where
+    F: Future,
+{
+    wait_for_balloon_sample_count(future.as_mut(), captured, 1).await;
+    tokio::time::advance(BALLOON_SETTLE_FAST_POLL_INTERVALS[0]).await;
+    tokio::time::resume();
+    wait_for_balloon_sample_count(future.as_mut(), captured, 2).await;
+    tokio::time::pause();
+    tokio::time::advance(BALLOON_SETTLE_INITIAL_TIMEOUT - BALLOON_SETTLE_FAST_POLL_INTERVALS[0])
+        .await;
+    tokio::time::resume();
+
+    tokio::select! {
+        request = read_vsock_message(guest_stream) => request,
+        _ = future.as_mut() => panic!("balloon wait completed before requesting fresh memory"),
+    }
+}
+
 async fn advance_balloon_wait_to_progress_grace<F>(
     mut future: std::pin::Pin<&mut F>,
     captured: &CapturedEvents,
@@ -5450,6 +5489,422 @@ async fn wait_for_balloon_extends_deadline_for_recent_safe_progress() {
 }
 
 #[tokio::test]
+async fn wait_for_balloon_extends_low_free_progress_with_fresh_guest_memory() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let low_free_stats = |actual_mib| {
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(100), mib(3000), mib(4096))
+    };
+    let api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(low_free_stats(0)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(target_mib, target_mib)),
+        ]),
+    );
+    let client = ApiClient::new(api.socket_path()).unwrap();
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    tokio::time::pause();
+    let wait = wait_for_balloon_with_optional_handoff(
+        &client,
+        target_mib,
+        "fresh-progress-grace",
+        Some(&guest),
+        None,
+    );
+    tokio::pin!(wait);
+
+    let request =
+        advance_balloon_wait_to_fresh_guest_snapshot(wait.as_mut(), &captured, &mut guest_stream)
+            .await;
+    assert_eq!(request.msg_type, MSG_MEMORY_SNAPSHOT);
+    let snapshot = test_guest_memory_snapshot_with_memory_mib(100, 3000, 4096);
+    let response = guest_control_proto::encode(
+        MSG_MEMORY_SNAPSHOT_RESULT,
+        request.seq,
+        &snapshot.encode_payload(),
+    )
+    .unwrap();
+    guest_stream.write_all(&response).await.unwrap();
+
+    let outcome = wait.await;
+    drop(guard);
+    let events = captured.entries();
+
+    assert!(matches!(
+        outcome,
+        BalloonSettleWaitResult::Settled(BalloonSettleResult {
+            park_outcome: SandboxParkOutcome::Reusable,
+            telemetry_outcome: SandboxFinalExecParkSubstageOutcome::TargetReached,
+        })
+    ));
+    let event = captured_event(
+        &events,
+        "balloon inflation still progressing, extending settle deadline",
+    );
+    assert_eq!(event.level, Level::INFO);
+    assert_event_field(event, "memory_evidence", "fresh_guest");
+    assert_event_field(
+        event,
+        "guest_mem_available_bytes",
+        &(3000_u64 * 1024 * 1024).to_string(),
+    );
+    assert!(!has_captured_event(
+        &events,
+        "balloon inflate incomplete after 5s, pausing anyway"
+    ));
+}
+
+#[tokio::test]
+async fn fresh_guest_memory_probe_time_is_charged_to_the_fixed_settle_schedule() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let low_free_stats = |actual_mib| {
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(100), mib(3000), mib(4096))
+    };
+    let api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(low_free_stats(0)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+        ]),
+    );
+    let client = ApiClient::new(api.socket_path()).unwrap();
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    tokio::time::pause();
+    let wait = wait_for_balloon_with_optional_handoff(
+        &client,
+        target_mib,
+        "fresh-progress-fixed-deadline",
+        Some(&guest),
+        None,
+    );
+    tokio::pin!(wait);
+
+    let request =
+        advance_balloon_wait_to_fresh_guest_snapshot(wait.as_mut(), &captured, &mut guest_stream)
+            .await;
+    tokio::time::pause();
+    let probe_delay = Duration::from_millis(500);
+    tokio::time::advance(probe_delay).await;
+    let snapshot = test_guest_memory_snapshot_with_memory_mib(100, 3000, 4096);
+    let response = guest_control_proto::encode(
+        MSG_MEMORY_SNAPSHOT_RESULT,
+        request.seq,
+        &snapshot.encode_payload(),
+    )
+    .unwrap();
+    guest_stream.write_all(&response).await.unwrap();
+    tokio::time::resume();
+    wait_for_balloon_sample_count(wait.as_mut(), &captured, 3).await;
+    tokio::time::pause();
+    tokio::time::advance(BALLOON_SETTLE_PROGRESS_GRACE - probe_delay).await;
+    tokio::time::resume();
+
+    let outcome = wait.await;
+    drop(guard);
+    let BalloonSettleWaitResult::Settled(outcome) = outcome else {
+        panic!("unexpected handoff");
+    };
+    let diagnostics = expect_severe_memory_retention(outcome.park_outcome);
+    assert!(
+        (10_000..=10_010).contains(&diagnostics.elapsed_ms),
+        "diagnostics={diagnostics:#?}"
+    );
+    assert_eq!(
+        diagnostics.progress_extension_blocker,
+        Some("actual_not_progressing")
+    );
+    let events = captured.entries();
+    let grace = captured_event(
+        &events,
+        "balloon inflation still progressing, extending settle deadline",
+    );
+    assert_event_field(grace, "grace_ms", "5000");
+    let remaining_grace_ms = grace
+        .fields
+        .get("remaining_grace_ms")
+        .expect("remaining grace field")
+        .parse::<u64>()
+        .unwrap();
+    assert!(remaining_grace_ms <= 4500, "event={grace:#?}");
+}
+
+#[tokio::test]
+async fn wait_for_balloon_refreshes_guest_memory_at_each_low_free_boundary() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let low_free_stats = |actual_mib| {
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(100), mib(3300), mib(4096))
+    };
+    let api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(low_free_stats(256)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+            MockBalloonStatsReply::Ok(low_free_stats(2314)),
+            MockBalloonStatsReply::Ok(MockBalloonStats::new(target_mib, target_mib)),
+        ]),
+    );
+    let client = ApiClient::new(api.socket_path()).unwrap();
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let snapshot_responder = tokio::spawn(async move {
+        for _ in 0..2 {
+            let request = read_vsock_message(&mut guest_stream).await;
+            assert_eq!(request.msg_type, MSG_MEMORY_SNAPSHOT);
+            let snapshot = test_guest_memory_snapshot_with_memory_mib(100, 3300, 4096);
+            let response = guest_control_proto::encode(
+                MSG_MEMORY_SNAPSHOT_RESULT,
+                request.seq,
+                &snapshot.encode_payload(),
+            )
+            .unwrap();
+            guest_stream.write_all(&response).await.unwrap();
+        }
+    });
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    tokio::time::pause();
+    let wait = wait_for_balloon_with_optional_handoff(
+        &client,
+        target_mib,
+        "fresh-progress-each-boundary",
+        Some(&guest),
+        None,
+    );
+    tokio::pin!(wait);
+
+    advance_balloon_wait_to_progress_grace(wait.as_mut(), &captured).await;
+    advance_balloon_wait_to_next_progress_grace(wait.as_mut(), &captured, 3, 2).await;
+    tokio::time::resume();
+    let outcome = wait.await;
+    snapshot_responder.await.unwrap();
+    drop(guard);
+
+    assert!(matches!(
+        outcome,
+        BalloonSettleWaitResult::Settled(BalloonSettleResult {
+            park_outcome: SandboxParkOutcome::Reusable,
+            telemetry_outcome: SandboxFinalExecParkSubstageOutcome::TargetReached,
+        })
+    ));
+    let events = captured.entries();
+    assert_eq!(
+        captured_message_count(
+            &events,
+            "balloon inflation still progressing, extending settle deadline"
+        ),
+        2
+    );
+    let fresh_guest_extensions = events
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").is_some_and(|message| {
+                message == "balloon inflation still progressing, extending settle deadline"
+            }) && event
+                .fields
+                .get("memory_evidence")
+                .is_some_and(|value| value == "fresh_guest")
+        })
+        .count();
+    assert_eq!(fresh_guest_extensions, 2);
+}
+
+#[tokio::test]
+async fn wait_for_balloon_rejects_insufficient_fresh_guest_memory_without_retry() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let low_free_stats = |actual_mib| {
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(100), mib(3000), mib(4096))
+    };
+    let api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(low_free_stats(0)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+        ]),
+    );
+    let client = ApiClient::new(api.socket_path()).unwrap();
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    tokio::time::pause();
+    let wait = wait_for_balloon_with_optional_handoff(
+        &client,
+        target_mib,
+        "fresh-reserve-insufficient",
+        Some(&guest),
+        None,
+    );
+    tokio::pin!(wait);
+
+    let request =
+        advance_balloon_wait_to_fresh_guest_snapshot(wait.as_mut(), &captured, &mut guest_stream)
+            .await;
+    let snapshot = test_guest_memory_snapshot_with_memory_mib(100, 2063, 4096);
+    let response = guest_control_proto::encode(
+        MSG_MEMORY_SNAPSHOT_RESULT,
+        request.seq,
+        &snapshot.encode_payload(),
+    )
+    .unwrap();
+    guest_stream.write_all(&response).await.unwrap();
+
+    let outcome = wait.await;
+    drop(guard);
+    let events = captured.entries();
+    let BalloonSettleWaitResult::Settled(outcome) = outcome else {
+        panic!("unexpected handoff");
+    };
+    let diagnostics = expect_severe_memory_retention(outcome.park_outcome);
+
+    assert_eq!(
+        diagnostics.progress_extension_blocker,
+        Some("fresh_guest_available_reserve_insufficient")
+    );
+    assert!(diagnostics.guest_memory_snapshot_attempted);
+    assert_eq!(
+        diagnostics.guest_memory_snapshot,
+        Some(guest_memory_snapshot(snapshot))
+    );
+    let event = captured_event(
+        &events,
+        "balloon inflate incomplete after 5s, pausing anyway",
+    );
+    assert_eq!(event.level, Level::WARN);
+    assert_event_field(
+        event,
+        "progress_extension_blocker",
+        "Some(\"fresh_guest_available_reserve_insufficient\")",
+    );
+    assert_event_field(event, "guest_memory_snapshot_attempted", "true");
+}
+
+#[tokio::test]
+async fn fresh_guest_memory_snapshot_fails_closed_when_guest_is_unavailable() {
+    let result = fresh_guest_memory_snapshot_for_progress(
+        None,
+        "fresh-guest-unavailable",
+        tokio::time::Instant::now() + Duration::from_secs(1),
+        None,
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        FreshGuestMemorySnapshotResult::GuestUnavailable
+    ));
+}
+
+#[tokio::test]
+async fn fresh_guest_memory_snapshot_times_out_without_extending_the_absolute_deadline() {
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    tokio::time::pause();
+    let probe = fresh_guest_memory_snapshot_for_progress(
+        Some(&guest),
+        "fresh-guest-timeout",
+        tokio::time::Instant::now() + BALLOON_SETTLE_MAX_TIMEOUT,
+        None,
+    );
+    tokio::pin!(probe);
+
+    let request = tokio::select! {
+        request = read_vsock_message(&mut guest_stream) => request,
+        _ = probe.as_mut() => panic!("snapshot probe completed before sending a request"),
+    };
+    assert_eq!(request.msg_type, MSG_MEMORY_SNAPSHOT);
+    tokio::time::advance(GUEST_MEMORY_SNAPSHOT_TIMEOUT).await;
+    tokio::time::resume();
+
+    assert!(matches!(
+        probe.await,
+        FreshGuestMemorySnapshotResult::RequestFailed
+    ));
+}
+
+#[tokio::test]
+async fn exact_handoff_interrupts_fresh_guest_memory_snapshot() {
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let handoff = SandboxFinalExecParkHandoff::new();
+    let probe = fresh_guest_memory_snapshot_for_progress(
+        Some(&guest),
+        "fresh-guest-handoff",
+        tokio::time::Instant::now() + BALLOON_SETTLE_MAX_TIMEOUT,
+        Some(&handoff),
+    );
+    tokio::pin!(probe);
+
+    let request = tokio::select! {
+        request = read_vsock_message(&mut guest_stream) => request,
+        _ = probe.as_mut() => panic!("snapshot probe completed before sending a request"),
+    };
+    assert_eq!(request.msg_type, MSG_MEMORY_SNAPSHOT);
+    assert!(handoff.request());
+
+    let result = tokio::time::timeout(Duration::from_secs(1), probe)
+        .await
+        .expect("handoff should interrupt the pending Guest snapshot");
+    assert!(matches!(result, FreshGuestMemorySnapshotResult::Handoff));
+}
+
+#[tokio::test]
+async fn exact_handoff_interrupts_balloon_settle_during_fresh_guest_memory_snapshot() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let low_free_stats = |actual_mib| {
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(100), mib(3000), mib(4096))
+    };
+    let api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(low_free_stats(0)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+        ]),
+    );
+    let client = ApiClient::new(api.socket_path()).unwrap();
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let handoff = SandboxFinalExecParkHandoff::new();
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    tokio::time::pause();
+    let wait = wait_for_balloon_with_optional_handoff(
+        &client,
+        target_mib,
+        "fresh-guest-handoff-during-settle",
+        Some(&guest),
+        Some(&handoff),
+    );
+    tokio::pin!(wait);
+
+    let request =
+        advance_balloon_wait_to_fresh_guest_snapshot(wait.as_mut(), &captured, &mut guest_stream)
+            .await;
+    assert_eq!(request.msg_type, MSG_MEMORY_SNAPSHOT);
+    assert!(handoff.request());
+    let result = tokio::time::timeout(Duration::from_secs(1), wait)
+        .await
+        .expect("handoff should interrupt balloon settling during the Guest snapshot");
+    drop(guard);
+
+    assert!(matches!(result, BalloonSettleWaitResult::Handoff));
+    assert!(!has_captured_event(
+        &captured.entries(),
+        "balloon inflation still progressing, extending settle deadline"
+    ));
+}
+
+#[tokio::test]
 async fn wait_for_balloon_progress_extensions_stop_when_progress_stalls() {
     let target_mib = 4096 - balloon::MIN_GUEST_MIB;
     let initial_stats =
@@ -5506,6 +5961,11 @@ async fn wait_for_balloon_progress_extensions_stop_when_progress_stalls() {
     assert_event_field(event, "deficit_mib", "Some(758)");
     assert_event_field(event, "reason", "severe_deficit");
     assert_event_field(event, "admission_action", "reject_and_destroy");
+    assert_event_field(
+        event,
+        "progress_extension_blocker",
+        "Some(\"actual_not_progressing\")",
+    );
 }
 
 #[tokio::test]
@@ -5582,6 +6042,11 @@ async fn wait_for_balloon_progress_extensions_stop_at_absolute_timeout() {
     assert_event_field(event, "actual", "Some(500)");
     assert_event_field(event, "reason", "severe_deficit");
     assert_event_field(event, "admission_action", "reject_and_destroy");
+    assert_event_field(
+        event,
+        "progress_extension_blocker",
+        "Some(\"absolute_deadline\")",
+    );
 }
 
 #[tokio::test]
@@ -5792,6 +6257,55 @@ fn balloon_settle_summary_classifies_progressing_timeout() {
 }
 
 #[test]
+fn balloon_progress_extension_requests_fresh_memory_only_for_low_free_memory() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let mut summary = BalloonSettleSummary::new(target_mib);
+    let mut first = balloon_statistics(target_mib, 1000);
+    first.free_memory = Some(mib(100));
+    first.available_memory = Some(mib(3000));
+    first.total_memory = Some(mib(4096));
+    summary.observe(&first);
+    let mut second = balloon_statistics(target_mib, 1200);
+    second.free_memory = Some(mib(100));
+    second.available_memory = Some(mib(3000));
+    second.total_memory = Some(mib(4096));
+    summary.observe(&second);
+
+    assert_eq!(
+        summary.progress_extension_decision(),
+        BalloonProgressExtensionDecision::FreshGuestMemory
+    );
+
+    summary.last_free_memory_bytes = Some(mib(3000));
+    assert_eq!(
+        summary.progress_extension_decision(),
+        BalloonProgressExtensionDecision::CachedMemory
+    );
+
+    summary.last_free_memory_bytes = Some(mib(100));
+    summary.last_available_memory_bytes = Some(mib(2000));
+    assert_eq!(
+        summary.progress_extension_decision(),
+        BalloonProgressExtensionDecision::Ineligible("cached_available_reserve_insufficient")
+    );
+}
+
+#[test]
+fn fresh_guest_memory_reserve_uses_unrounded_bytes() {
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let mut summary = BalloonSettleSummary::new(target_mib);
+    summary.last_deficit_mib = Some(1000);
+    let required_bytes = u64::from(1000 + balloon::PRESSURE_AVAILABLE_MIB as u32) * 1024 * 1024;
+    let mut snapshot = test_guest_memory_snapshot();
+
+    snapshot.mem_available_bytes = required_bytes - 1;
+    assert!(!summary.fresh_guest_memory_has_reserve(guest_memory_snapshot(snapshot)));
+
+    snapshot.mem_available_bytes = required_bytes;
+    assert!(summary.fresh_guest_memory_has_reserve(guest_memory_snapshot(snapshot)));
+}
+
+#[test]
 fn pressure_limited_reclaim_ignores_free_memory_when_available_memory_is_missing() {
     let target_mib = 2048 - balloon::MIN_GUEST_MIB;
     let tolerance_mib = balloon_settle_tolerance_mib(target_mib);
@@ -5900,7 +6414,7 @@ async fn wait_for_balloon_stats_poll_is_bounded_by_settle_timeout() {
 }
 
 #[tokio::test]
-async fn wait_for_balloon_timeout_logs_severe_deficit_and_memory_stats() {
+async fn wait_for_balloon_timeout_logs_severe_deficit_at_warn_with_memory_stats() {
     let target_mib = 2048 - balloon::MIN_GUEST_MIB;
     let stats = MockBalloonStats::new(target_mib, 600)
         .with_memory(mib(32), mib(0), mib(2048))
@@ -6200,6 +6714,7 @@ async fn exact_handoff_interrupts_balloon_settle_after_multiple_progress_extensi
         &client,
         target_mib,
         "handoff-after-progress-extensions",
+        None,
         Some(&handoff),
     );
     tokio::pin!(wait);
@@ -7249,6 +7764,91 @@ async fn park_rejects_severe_balloon_retention_after_pausing() {
     assert_eq!(ps[0].path, "/balloon");
     assert_eq!(ps[1].path, "/vm");
     assert!(ps[1].body.contains("Paused"));
+}
+
+#[tokio::test]
+async fn severe_park_retries_terminal_snapshot_after_failed_progress_probe() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let low_free_stats = |actual_mib| {
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(100), mib(3000), mib(4096))
+    };
+    let mut api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(low_free_stats(0)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+        ]),
+    );
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    let mut is_parked = false;
+    tokio::time::pause();
+    let (result, snapshot) = {
+        let park = park_inner_with_guest(
+            &mut is_parked,
+            4096,
+            api.socket_path(),
+            "failed-progress-probe-terminal-retry",
+            PhysicalParkRequest {
+                guest,
+                handoff: None,
+                memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
+            },
+            SandboxFinalExecParkSubstageEvents::new(None),
+        );
+        tokio::pin!(park);
+
+        let progress_probe = advance_balloon_wait_to_fresh_guest_snapshot(
+            park.as_mut(),
+            &captured,
+            &mut guest_stream,
+        )
+        .await;
+        assert_eq!(progress_probe.msg_type, MSG_MEMORY_SNAPSHOT);
+        let failed_response =
+            guest_control_proto::encode(MSG_PONG, progress_probe.seq, &[]).unwrap();
+        guest_stream.write_all(&failed_response).await.unwrap();
+
+        let terminal_probe = tokio::select! {
+            request = read_vsock_message(&mut guest_stream) => request,
+            _ = park.as_mut() => {
+                panic!("park completed without retrying the terminal snapshot")
+            }
+        };
+        assert_eq!(terminal_probe.msg_type, MSG_MEMORY_SNAPSHOT);
+        assert_ne!(terminal_probe.seq, progress_probe.seq);
+        let snapshot = test_guest_memory_snapshot();
+        let terminal_response = guest_control_proto::encode(
+            MSG_MEMORY_SNAPSHOT_RESULT,
+            terminal_probe.seq,
+            &snapshot.encode_payload(),
+        )
+        .unwrap();
+        guest_stream.write_all(&terminal_response).await.unwrap();
+
+        let (_, result) = park.as_mut().await;
+        (result, snapshot)
+    };
+    drop(guard);
+    let diagnostics = expect_severe_memory_retention(result.unwrap());
+    assert!(diagnostics.guest_memory_snapshot_attempted);
+    assert_eq!(
+        diagnostics.guest_memory_snapshot,
+        Some(guest_memory_snapshot(snapshot))
+    );
+    assert!(is_parked);
+
+    let requests = api.drain_requests();
+    let pause = patches(&requests)
+        .into_iter()
+        .find(|request| request.path == "/vm")
+        .expect("severe park should pause after collecting terminal memory evidence");
+    assert!(pause.body.contains("Paused"));
 }
 
 #[tokio::test]

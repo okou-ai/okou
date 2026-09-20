@@ -1023,6 +1023,16 @@ test("Filter the chat list to unread conversations", async () => {
       cancellationRecoveryPending: false,
     });
   });
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: { [AGENT_ID]: "unread" },
+      threads: {
+        [AUTOMATION_THREAD_ID]: "unread",
+        [INCIDENT_THREAD_ID]: "unread",
+        [EXISTING_THREAD_ID]: "active",
+      },
+    });
+  });
   context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
     return respond(200, {
       unreads: [
@@ -1060,6 +1070,88 @@ test("Filter the chat list to unread conversations", async () => {
       within(sidebar()).queryByText("Archived context"),
     ).not.toBeInTheDocument();
   });
+});
+
+test("Keep unread conversations visible while remote read cursors refresh", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "New unread conversation"),
+    createThread(INCIDENT_THREAD_ID, "Previously unread conversation"),
+    createThread(AUTOMATION_THREAD_ID, "Read conversation"),
+  ]);
+  const indicatorRefreshStarted = context.mocks.deferred<void>();
+  const releaseIndicatorRefresh = context.mocks.deferred<void>();
+  let refreshing = false;
+  let unreadThreadId = INCIDENT_THREAD_ID;
+  context.mocks.api(
+    chatThreadsContract.indicators,
+    async ({ respond, withSignal }) => {
+      if (refreshing) {
+        indicatorRefreshStarted.resolve();
+        await withSignal(releaseIndicatorRefresh.promise);
+      }
+      return respond(200, {
+        agents: { [AGENT_ID]: "unread" },
+        threads: { [unreadThreadId]: "unread" },
+      });
+    },
+  );
+  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+    return respond(200, {
+      unreads: [{ threadId: unreadThreadId, unreadAt: "2026-03-10T00:05:00Z" }],
+    });
+  });
+  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await within(sidebar()).findByText("Read conversation");
+  openChatListMenu();
+  click(menuItemByText("Unread only"));
+  await waitFor(() => {
+    expect(
+      visibleThreadTitles([
+        "New unread conversation",
+        "Previously unread conversation",
+        "Read conversation",
+      ]),
+    ).toStrictEqual(["Previously unread conversation"]);
+  });
+
+  unreadThreadId = EXISTING_THREAD_ID;
+  refreshing = true;
+  await act(async () => {
+    changeChatThreadReadCursor({
+      agentId: AGENT_ID,
+      threadIds: [],
+      scope: "agent",
+    });
+    await indicatorRefreshStarted.promise;
+  });
+
+  expect(
+    visibleThreadTitles([
+      "New unread conversation",
+      "Previously unread conversation",
+      "Read conversation",
+    ]),
+  ).toStrictEqual(["Previously unread conversation"]);
+  expect(within(sidebar()).queryAllByTestId("sidebar-skeleton")).toHaveLength(
+    0,
+  );
+  expect(
+    within(sidebar()).queryByText("No unread chats"),
+  ).not.toBeInTheDocument();
+
+  releaseIndicatorRefresh.resolve();
+  await within(sidebar()).findByText("New unread conversation");
+  expect(
+    visibleThreadTitles([
+      "New unread conversation",
+      "Previously unread conversation",
+      "Read conversation",
+    ]),
+  ).toStrictEqual(["New unread conversation"]);
+  expect(within(sidebar()).queryAllByTestId("sidebar-skeleton")).toHaveLength(
+    0,
+  );
 });
 
 test("Keep check-mark chats and archive controls unchanged when archiving is disabled", async () => {
@@ -1109,6 +1201,12 @@ test("Hide archived chats until they are explicitly shown", async () => {
     archivedReadThread,
     archivedUnreadThread,
   ]);
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: { [AGENT_ID]: "unread" },
+      threads: { [INCIDENT_THREAD_ID]: "unread" },
+    });
+  });
   context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
     return respond(200, {
       unreads: [
@@ -1802,8 +1900,16 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   expect(
     menuWithMarkAllRead.querySelectorAll('[role="separator"]'),
   ).toHaveLength(1);
+  click(menuItemByText("Unread only"));
+  await waitFor(() => {
+    expect(
+      visibleThreadTitles(["Existing conversation", "Unread conversation"]),
+    ).toStrictEqual(["Unread conversation"]);
+  });
+  click(within(list).getByLabelText("Open chat list menu"));
   click(menuItemByText("Mark all read"));
 
+  await within(list).findByText("No unread chats");
   await waitFor(() => {
     expect(markedAgentIds).toStrictEqual([AGENT_ID]);
     expect(within(list).queryByLabelText("Unread")).not.toBeInTheDocument();
@@ -3465,9 +3571,8 @@ test("Show useful search-result ages and an illustrated empty state", async () =
   );
 });
 
-test("Update the existing chat list when switching agents", async () => {
+test("Show only the selected agent’s unread conversations when switching agents", async () => {
   prepareAgents();
-  const supportUnreadGate = context.mocks.deferred<void>();
   context.mocks.data.userPreferences({
     pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
   });
@@ -3485,10 +3590,20 @@ test("Update the existing chat list when switching agents", async () => {
     },
   );
   mockSidebarThreadStory([researchThread, supportThread, olderSupportThread]);
-  context.mocks.api(chatThreadsContract.unreads, async ({ query, respond }) => {
-    if (query.agentId === SUPPORT_AGENT_ID) {
-      await supportUnreadGate.promise;
-    }
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: {
+        [RESEARCH_AGENT_ID]: "unread",
+        [SUPPORT_AGENT_ID]: "unread",
+      },
+      threads: {
+        [RESEARCH_THREAD_ID]: "unread",
+        [INCIDENT_THREAD_ID]: "unread",
+        [AUTOMATION_THREAD_ID]: "active",
+      },
+    });
+  });
+  context.mocks.api(chatThreadsContract.unreads, ({ query, respond }) => {
     const threadId =
       query.agentId === SUPPORT_AGENT_ID
         ? INCIDENT_THREAD_ID
@@ -3516,7 +3631,9 @@ test("Update the existing chat list when switching agents", async () => {
   await waitFor(() => {
     expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
   });
-  const chatList = within(sidebar()).getByLabelText("Chat threads");
+  expect(
+    within(sidebar()).queryByText("Support escalation"),
+  ).not.toBeInTheDocument();
 
   fireEvent.keyDown(document.body, {
     key: "}",
@@ -3527,17 +3644,14 @@ test("Update the existing chat list when switching agents", async () => {
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
     expect(
-      within(sidebar()).queryByText("Research kickoff"),
-    ).not.toBeInTheDocument();
-    expect(within(sidebar()).getByLabelText("Chat threads")).toBe(chatList);
-  });
-
-  supportUnreadGate.resolve(undefined);
-  await waitFor(() => {
-    expect(
       within(sidebar()).getByText("Support escalation"),
     ).toBeInTheDocument();
-    expect(within(sidebar()).getByLabelText("Chat threads")).toBe(chatList);
+    expect(
+      within(sidebar()).queryByText("Research kickoff"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(sidebar()).queryByText("Support archive"),
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -32,7 +32,7 @@ const preamble = source.slice(0, queryStart);
 const query = source.slice(queryStart, source.lastIndexOf("ROLLBACK;"));
 const counts = z.record(z.string(), z.number().int().nonnegative().safe());
 const receiptSchema = z.strictObject({
-  receipt_version: z.literal("hosted_publication_history_v1"),
+  receipt_version: z.literal("hosted_publication_history_v2"),
   observed_at: z.string(),
   finished_at: z.string(),
   transaction: z.strictObject({
@@ -118,17 +118,20 @@ async function deployment(args: {
     : "hosted_deployments";
   await writer.query(
     `INSERT INTO ${table}
-      (id, site_id, org_id, user_id, public_brand, status, deployment_version,
+      (id, site_id, org_id, user_id, public_brand, status,
        artifact_url, r2_prefix, manifest, manifest_hash, content_hash, file_count, size_bytes, url)
-      VALUES ($1, $2, 'audit-org', $3, 'okou', $4, $5,
-        'private-url-sentinel', 'private-path-sentinel', $6, $7, $7, 1, 10, 'private-url-sentinel')`,
+      VALUES ($1, $2, 'audit-org', $3, 'okou', $4,
+        'private-url-sentinel', 'private-path-sentinel', $5, $6, $6, 1, 10, 'private-url-sentinel')`,
     [
       id,
       args.site,
       args.user ?? "audit-owner",
       args.status,
-      args.version,
-      JSON.stringify({ version: 1, immutableContent: args.immutable }),
+      JSON.stringify({
+        version: 1,
+        immutableContent: args.immutable,
+        ...(args.version === null ? {} : { deploymentVersion: args.version }),
+      }),
       "a".repeat(64),
     ],
   );
@@ -201,27 +204,16 @@ try {
     status: "failed",
     user: "other-owner",
   });
-  // The audit must report corruption from before the compatibility trigger
-  // existed. Bypass it only while constructing that historical fixture.
-  await writer.query(
-    "ALTER TABLE hosted_sites DISABLE TRIGGER mirror_hosted_site_active_version",
-  );
-  try {
-    for (const [siteId, deploymentId, version] of [
-      [mixed, first, 1],
-      [deleted, legacy, null],
-      [missingPointer, randomUUID(), 2],
-      [wrongPointer, first, 2],
-      [failed, failure, 1],
-    ]) {
-      await writer.query(
-        "UPDATE hosted_sites SET active_deployment_id = $2, active_deployment_version = $3 WHERE id = $1",
-        [siteId, deploymentId, version],
-      );
-    }
-  } finally {
+  for (const [siteId, deploymentId] of [
+    [mixed, first],
+    [deleted, legacy],
+    [missingPointer, randomUUID()],
+    [wrongPointer, first],
+    [failed, failure],
+  ]) {
     await writer.query(
-      "ALTER TABLE hosted_sites ENABLE TRIGGER mirror_hosted_site_active_version",
+      "UPDATE hosted_sites SET active_deployment_id = $2 WHERE id = $1",
+      [siteId, deploymentId],
     );
   }
   for (const target of [mixed, deleted, randomUUID()]) {
@@ -290,7 +282,6 @@ try {
   });
   assert.deepEqual(receipt.pointer_integrity, {
     absent_pointers: 0,
-    version_without_pointer: 0,
     missing_targets: 1,
     ambiguous_targets: 0,
     different_site_targets: 1,
@@ -298,7 +289,6 @@ try {
     different_brand_targets: 1,
     not_ready_targets: 1,
     private_targets: 1,
-    different_version_targets: 1,
   });
   assert.deepEqual(receipt.shares, {
     html_share_rows: 3,

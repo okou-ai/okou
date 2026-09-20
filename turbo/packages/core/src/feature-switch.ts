@@ -51,6 +51,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.RunUsage]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Query observed provider-token usage for the current assigned Run. Off for everyone until CLI and Runner consumers are deployed.",
+    enabled: false,
+  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
@@ -99,6 +105,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.AhrefsConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ahrefs SEO connector",
+    enabled: false,
+  },
+  [FeatureSwitchKey.MondayConnector]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable the Monday.com MCP connector",
     enabled: false,
   },
   [FeatureSwitchKey.PlaudConnector]: {
@@ -399,6 +410,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Allow personal Codex and Claude Code subscriptions to store and manually switch between multiple accounts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AgentPhoneEntry]: {
+    maintainer: "linghan@okou.ai",
+    description: "Show the AgentPhone entry point on the Works page.",
+    enabled: false,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",

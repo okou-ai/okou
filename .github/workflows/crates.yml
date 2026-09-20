@@ -434,6 +434,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - name: Setup R2 sccache
+        if: >-
+          (github.event_name != 'pull_request' ||
+          (github.event.pull_request.user.login != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository))
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: x86_64
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+
       - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
         with:
           workspaces: crates -> target
@@ -453,7 +466,9 @@ jobs:
           done
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: cargo-llvm-cov@0.9.1
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
@@ -468,6 +483,26 @@ jobs:
         run: |
           cd crates
           cargo llvm-cov --all-targets --all-features --lcov --output-path lcov.info
+
+      - name: Validate coverage report
+        run: |
+          report=crates/lcov.info
+          source_files="${RUNNER_TEMP:-/tmp}/coverage-source-files.txt"
+          [ -s "$report" ]
+          awk -v root="${GITHUB_WORKSPACE}/" '
+            index($0, "SF:") == 1 {
+              path = substr($0, 4)
+              if (index(path, root) == 1) {
+                path = substr(path, length(root) + 1)
+              }
+              print path
+            }
+          ' "$report" | LC_ALL=C sort -u > "$source_files"
+          source_file_count=$(wc -l < "$source_files" | tr -d ' ')
+          [ "$source_file_count" -gt 0 ]
+          source_file_digest=$(sha256sum "$source_files" | cut -d ' ' -f 1)
+          echo "Coverage source files: $source_file_count"
+          echo "Coverage source file set SHA-256: $source_file_digest"
 
       - name: Report final coverage disk usage
         if: success() || failure()

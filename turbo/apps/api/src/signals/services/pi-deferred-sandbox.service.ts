@@ -513,11 +513,17 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
     if (!legacyEarlier) {
       throw new Error("Earlier queued demand count query returned no row");
     }
+    // This candidate keeps the position it was enqueued at, but `at` is the
+    // instant that decides which earlier demand is still eligible, so demand
+    // that expired while this one waited no longer reserves a slot.
     const earlierDeferredDemand = await countEarlierDeferredDemand(
       tx,
       run.orgId,
-      lifecycle.intent.enqueuedAt,
-      runId,
+      {
+        positionTime: lifecycle.intent.enqueuedAt,
+        eligibilityTime: at,
+        runId,
+      },
     );
     const capacity = await loadOrgConcurrencyState(tx, {
       orgId: run.orgId,

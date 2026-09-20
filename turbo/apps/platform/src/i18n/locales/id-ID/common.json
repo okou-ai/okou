@@ -445,6 +445,7 @@
       "description": "Artefak ini mungkin bersifat pribadi atau sudah tidak tersedia.",
       "help": "Minta orang yang membagikan tautan ini untuk memeriksa akses.",
       "signedInAs": "Masuk sebagai {{email}}",
+      "signedInDescription": "Artefak ini mungkin tidak ada atau dibagikan ke akun atau organisasi lain.",
       "signIn": "Masuk",
       "signInFailed": "Tidak dapat membuka halaman masuk. Silakan coba lagi.",
       "switchAccount": "Ganti akun",
@@ -504,7 +505,7 @@
       "description": "Telusuri semua yang Anda buat di sini.",
       "emptyDescription": "Artefak akan muncul di sini saat tersedia.",
       "emptyTitle": "Tidak ada artefak ditemukan",
-      "error": "Tidak dapat memuat artefak. Coba lagi nanti.",
+      "error": "Tidak dapat memuat artefak.",
       "filters": {
         "avatar": "Avatar",
         "avatarAria": "Tampilkan artefak avatar",
@@ -523,7 +524,8 @@
         "websiteAria": "Tampilkan artefak situs web"
       },
       "kindIcon": "Artefak {{kind}}",
-      "loading": "Memuat artefak"
+      "loading": "Memuat artefak",
+      "retry": "Coba lagi"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -602,6 +604,7 @@
       "onlyMeDescription": "Hanya Anda yang dapat melihat artefak ini",
       "organization": "Organisasi",
       "organizationDescription": "Siapa pun di {{organization}} yang memiliki tautan",
+      "organizationDescriptionUnnamed": "Siapa pun di organisasi Anda yang memiliki tautan",
       "permissionsUpdated": "Akses diperbarui",
       "publicAccess": "Akses publik",
       "publicDescription": "Siapa pun yang memiliki tautan dapat melihat",
@@ -645,7 +648,6 @@
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor file Anda sendiri",
       "importFileHint": "Pakai lagi desain file Anda",
-      "importUnsupported": "Pilih file {{formats}} untuk membuat templat.",
       "multiAccent": "Multi-aksen",
       "needPro": "Perlu Pro",
       "nextSlide": "Pratinjau slide berikutnya",
@@ -6520,7 +6522,6 @@
     "loadingAccess": "Memuat akses Agen…",
     "manage": "Kelola VNC",
     "port": "Port",
-    "refresh": "Segarkan",
     "retry": "Coba lagi",
     "save": "Simpan",
     "saveRecovery": {

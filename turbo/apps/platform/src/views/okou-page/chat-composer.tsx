@@ -5878,7 +5878,7 @@ export function ComposerPresentationRecommendations({
       aria-label={label}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
+        <p className="min-w-0 truncate text-base font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
@@ -6504,7 +6504,7 @@ function TemplatePickerDialog({
                   onSelectCustom={handleSelectCustom}
                   onPreviewPresentation={handlePreview}
                   onPreviewImportedPresentation={handlePreviewImported}
-                  onImportedPresentation={closeTemplatePicker}
+                  onImported={closeTemplatePicker}
                   onSelectWebsite={handleSelectWebsite}
                   onPreviewWebsite={handlePreviewWebsite}
                   onSelectIllustration={handleSelectIllustration}
@@ -6563,7 +6563,7 @@ function TemplatePickerCategoryContent({
   onSelectCustom,
   onPreviewPresentation,
   onPreviewImportedPresentation,
-  onImportedPresentation,
+  onImported,
   onSelectWebsite,
   onPreviewWebsite,
   onSelectIllustration,
@@ -6601,7 +6601,8 @@ function TemplatePickerCategoryContent({
     templateId: string,
     slideIndex: number,
   ) => void;
-  onImportedPresentation: () => void;
+  /** Both import entries leave the picker for the thread they send into. */
+  onImported: () => void;
   onSelectWebsite: (item: WebsiteTemplateItem) => void;
   onPreviewWebsite: (item: WebsiteTemplateItem) => void;
   onSelectIllustration: (item: IllustrationTemplateItem) => void;
@@ -6619,7 +6620,11 @@ function TemplatePickerCategoryContent({
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        <CustomTemplatePickerPane signals={signals} onSelect={onSelectCustom} />
+        <CustomTemplatePickerPane
+          signals={signals}
+          onSelect={onSelectCustom}
+          onImported={onImported}
+        />
       </div>
     );
   }
@@ -6641,7 +6646,7 @@ function TemplatePickerCategoryContent({
           onSelectImported={onSelectImportedPresentation}
           onPreview={onPreviewPresentation}
           onPreviewImported={onPreviewImportedPresentation}
-          onImported={onImportedPresentation}
+          onImported={onImported}
           runtime={runtime}
           signals={signals}
         />
@@ -9581,29 +9586,43 @@ interface ComposerLayoutHeightClassNames {
 // the shell stable and let its flexible input region absorb that 20px change.
 // A template chip reserves the same additional 38px in both footer modes.
 function composerLayoutHeightClassNames(
-  singleLineOnMobile: boolean,
+  { singleLineOnMobile, forwardComposer }: ComposerSignals["editor"],
   hasTemplateAttachment: boolean,
 ): ComposerLayoutHeightClassNames {
+  // On the start page the composer is the subject of the screen rather than a
+  // dock under a transcript, so it opens 48px taller. The forward dialog shares
+  // these signals and is not that page, so it keeps the compact shell.
+  const startPage = !singleLineOnMobile && !forwardComposer;
   if (hasTemplateAttachment) {
     return singleLineOnMobile
       ? {
           input: "min-h-[86px] composer-wide:min-h-[114px]",
           shell: "min-h-[158px] composer-wide:min-h-[186px]",
         }
-      : {
-          input: "min-h-[114px]",
-          shell: "min-h-[186px]",
-        };
+      : startPage
+        ? {
+            input: "min-h-[162px]",
+            shell: "min-h-[234px]",
+          }
+        : {
+            input: "min-h-[114px]",
+            shell: "min-h-[186px]",
+          };
   }
   return singleLineOnMobile
     ? {
         input: "min-h-12 composer-wide:min-h-[76px]",
         shell: "min-h-[120px] composer-wide:min-h-[148px]",
       }
-    : {
-        input: "min-h-[76px]",
-        shell: "min-h-[148px]",
-      };
+    : startPage
+      ? {
+          input: "min-h-[124px]",
+          shell: "min-h-[196px]",
+        }
+      : {
+          input: "min-h-[76px]",
+          shell: "min-h-[148px]",
+        };
 }
 
 function ComposerInputSlot({
@@ -11220,7 +11239,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const uploadFile = useComposerFileUpload(signals);
   const notifyDraftChanged = useComposerDraftChange(signals);
   const layoutHeightClassNames = composerLayoutHeightClassNames(
-    signals.editor.singleLineOnMobile,
+    signals.editor,
     hasTemplateAttachment,
   );
 

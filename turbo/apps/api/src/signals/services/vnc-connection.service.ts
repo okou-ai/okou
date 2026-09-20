@@ -4,11 +4,14 @@ import type {
   VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { agents } from "@okouai/db/schema/agent";
+import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { visibleJoinedAgentCondition } from "./agent-data.service";
 import {
   canonicalizeVncHost,
   prepareVncSecurity,
@@ -172,6 +175,23 @@ export async function createVncConnection(args: {
     if (!credential.ok) {
       return credential;
     }
+    // Match SSH's zero-to-one host transition, including re-adding after all
+    // hosts were deleted. enterVncWrite serializes concurrent owner writes.
+    const firstHost =
+      (await summarizeVncConnections(tx, owner)).configuredCount === 0;
+    const visibleAgents = firstHost
+      ? await tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.orgId, owner.orgId),
+              visibleJoinedAgentCondition(owner.userId),
+            ),
+          )
+          .orderBy(asc(agents.id))
+          .for("update")
+      : [];
     const [created] = await tx
       .insert(vncConnections)
       .values({
@@ -186,6 +206,16 @@ export async function createVncConnection(args: {
       .returning(metadata);
     if (!created) {
       throw new Error("VNC connection insert returned no row");
+    }
+    if (visibleAgents.length > 0) {
+      await tx
+        .insert(agentVncAccess)
+        .values(
+          visibleAgents.map((agent) => {
+            return { ...owner, agentId: agent.id };
+          }),
+        )
+        .onConflictDoNothing();
     }
     return { ok: true as const, value: response(created, credential.value) };
   });

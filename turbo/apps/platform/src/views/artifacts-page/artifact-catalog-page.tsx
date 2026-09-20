@@ -18,7 +18,7 @@ import {
   useLoadable,
   useSet,
 } from "ccstate-react";
-import { surfaceVariants, cn } from "@okouai/ui";
+import { Button, surfaceVariants, cn } from "@okouai/ui";
 import { Alert, AlertDescription } from "@okouai/ui/components/ui/alert";
 import { useTranslation } from "react-i18next";
 
@@ -26,6 +26,7 @@ import {
   artifactCatalog$,
   loadMoreArtifactCatalog$,
   openArtifact$,
+  reloadArtifactCatalog$,
   scrollArtifactCardIntoViewRef$,
   selectedArtifactCatalogKind$,
   setArtifactCatalogKind$,
@@ -392,15 +393,36 @@ export function ArtifactCatalogSkeleton({
   );
 }
 
-export function ArtifactCatalogError() {
+/**
+ * The catalog surfaces render their own instance of these signals, so the retry
+ * arrives as a prop. Binding one scope's reload here would leave the thread
+ * sidebar showing a failure while a different catalog refetched.
+ */
+export function ArtifactCatalogError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
     <Alert variant="destructive">
       <AlertTriangle size={16} aria-hidden />
-      <AlertDescription>
-        {t(($) => {
-          return $.artifacts.catalog.error;
-        })}
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+        <span>
+          {t(($) => {
+            return $.artifacts.catalog.error;
+          })}
+        </span>
+        {/* Reading the first page again is the whole recovery, so the message
+            carries the action instead of asking for a browser reload. */}
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            onRetry();
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.catalog.retry;
+          })}
+        </Button>
       </AlertDescription>
     </Alert>
   );
@@ -539,6 +561,7 @@ export function ArtifactCatalogPage({
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
   const loadMore = useSet(loadMoreArtifactCatalog$);
+  const reloadCatalog = useSet(reloadArtifactCatalog$);
   const pageSignal = useGet(pageSignal$);
   const catalog = useLoadable(artifactCatalog$);
   const artifacts = catalog.state === "hasData" ? catalog.data.artifacts : [];
@@ -595,7 +618,7 @@ export function ArtifactCatalogPage({
               layout={sharedConversationLayout ? "list" : "grid"}
             />
           ) : catalog.state === "hasError" ? (
-            <ArtifactCatalogError />
+            <ArtifactCatalogError onRetry={reloadCatalog} />
           ) : artifacts.length === 0 ? (
             <ArtifactCatalogEmpty />
           ) : sharedConversationLayout ? (

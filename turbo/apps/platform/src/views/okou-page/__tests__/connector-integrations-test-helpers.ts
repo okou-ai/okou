@@ -131,6 +131,7 @@ export function mockFeishu(
 export function setupIntegrationsPage(
   context: TestContext,
   options: {
+    readonly agentPhone?: boolean;
     readonly feishu?: boolean;
     readonly lark?: boolean;
   } = {},
@@ -139,6 +140,7 @@ export function setupIntegrationsPage(
     context,
     path: "/works",
     featureSwitches: {
+      [FeatureSwitchKey.AgentPhoneEntry]: options.agentPhone ?? false,
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
       [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
     },

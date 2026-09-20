@@ -14372,6 +14372,56 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     },
   );
 
+  it.each([false, true])(
+    "advertises pptx presentation delivery and Run capabilities only while its feature is enabled (%s)",
+    async (enabled) => {
+      const api = createRunsApi(context);
+      const connectors = createConnectorBddApi(context);
+      const webhooks = createWebhookCallbackApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PresentationConvert]: enabled,
+      });
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "make me a deck about our quarterly plan",
+        modelProvider: "anthropic-api-key",
+      });
+      expect(run.status).toBe("pending");
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const prompt = claim.appendSystemPrompt ?? "";
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a minted Run token");
+      }
+      const capabilities = verifyOkouToken(token)?.capabilities;
+      expect(capabilities).toBeDefined();
+      if (enabled) {
+        expect(capabilities).toContain("presentation-convert:write");
+        expect(prompt).toContain("Presentation delivery:");
+        expect(prompt).toContain(
+          "deliver both the hosted HTML deck and a pptx of it in one reply",
+        );
+        expect(prompt).toContain("name the artifact, not a format");
+        expect(prompt).toContain(
+          "okou presentation convert --input <deck.html> --verify",
+        );
+      } else {
+        expect(capabilities).not.toContain("presentation-convert:write");
+        expect(prompt).not.toContain("okou presentation convert");
+        expect(prompt).not.toContain("Presentation delivery:");
+      }
+      await api.requestCancelRun(actor, run.runId, [200]);
+      await webhooks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1 },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+    },
+  );
+
   it("advertises connector account switching", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();

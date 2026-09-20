@@ -30,6 +30,7 @@ import {
   appendChatThreadEvent,
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
+import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
 import {
   withRunContentWrite,
@@ -103,18 +104,41 @@ export function inferMimetype(filename: string): string {
     : "application/octet-stream";
 }
 
+/**
+ * Supplies the organization the caller already authorized for this thread, so
+ * the sort event does not rediscover it. The predicates only re-prove that
+ * same scope; they must not narrow which threads the caller could already
+ * touch.
+ */
+interface AuthorizedChatThreadTouchScope {
+  readonly userId: string;
+  readonly orgId: string;
+}
+
 export async function touchChatThreadLastMessageAt(
   tx: ChatThreadEventTransaction,
   threadId: string,
   touchedAt: Date = nowDate(),
   eventId?: string,
+  authorizedScope?: AuthorizedChatThreadTouchScope,
 ): Promise<void> {
   const [thread] = await tx
     .update(chatThreads)
     .set({
       lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt})`,
     })
-    .where(and(eq(chatThreads.id, threadId), isNotNull(chatThreads.agentId)))
+    .where(
+      and(
+        eq(chatThreads.id, threadId),
+        isNotNull(chatThreads.agentId),
+        authorizedScope
+          ? and(
+              eq(chatThreads.userId, authorizedScope.userId),
+              chatThreadOrganizationCondition(tx, authorizedScope.orgId),
+            )
+          : undefined,
+      ),
+    )
     .returning({
       id: chatThreads.id,
       userId: chatThreads.userId,
@@ -122,11 +146,15 @@ export async function touchChatThreadLastMessageAt(
       lastMessageAt: chatThreads.lastMessageAt,
     });
   if (!thread?.agentId) {
+    if (authorizedScope) {
+      throw new Error("Authorized chat thread changed before sort touch");
+    }
     return;
   }
   await appendChatThreadEvent(tx, {
     kind: "sort_touched",
     userId: thread.userId,
+    ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
     chatThreadId: thread.id,
     agentId: thread.agentId,
     eventId,

@@ -264,14 +264,10 @@ describe("v4 connector catalog reader", () => {
     }).toThrow("invalid-artifact");
   });
 
-  it("preserves replacement metadata and rejects coexisting predecessors", () => {
+  it("rejects removed replacement metadata", () => {
     const artifact = publishedCatalog();
     const plaud = requiredConnector(artifact, "plaud-mcp");
-    plaud.replaces = { connectorSlug: "plaud" };
-    expect(requiredConnector(decode(artifact), "plaud-mcp").replaces).toEqual({
-      connectorSlug: "plaud",
-    });
-    plaud.replaces = { connectorSlug: "019sms" };
+    Object.assign(plaud, { replaces: { connectorSlug: "plaud" } });
     expect(() => {
       decode(artifact);
     }).toThrow("invalid-artifact");

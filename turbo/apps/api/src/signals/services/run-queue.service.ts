@@ -81,8 +81,8 @@ const QUEUED_RUN_LAUNCH_ORPHAN_REASON =
 async function effectiveOrgConcurrencyState(
   db: Pick<Db, "select">,
   orgId: string,
+  at: Date,
 ): Promise<{ readonly activeRunCount: number; readonly limit: number }> {
-  const at = nowDate();
   const state = await loadOrgConcurrencyState(db, {
     orgId,
     at,
@@ -336,7 +336,7 @@ async function loadDrainCandidates(
   db: Db,
   orgId: string,
 ): Promise<readonly QueueCandidate[]> {
-  const concurrency = await effectiveOrgConcurrencyState(db, orgId);
+  const concurrency = await effectiveOrgConcurrencyState(db, orgId, nowDate());
   if (concurrency.activeRunCount >= concurrency.limit) {
     return [];
   }
@@ -570,12 +570,24 @@ async function promoteQueuedCandidateInTransaction(
     await stopClosedComputeCandidate(tx, admission);
     return complete({ status: "lost" });
   }
-  const concurrency = await effectiveOrgConcurrencyState(tx, args.orgId);
+  // One observation instant for this locked admission. The candidate keeps the
+  // historical queue position it has held since it was queued, while expiry is
+  // decided now, so demand that expired while this run waited cannot hold the
+  // slot until a consumer sweeps it.
+  const admissionAt = nowDate();
+  const concurrency = await effectiveOrgConcurrencyState(
+    tx,
+    args.orgId,
+    admissionAt,
+  );
   const earlierDeferredDemand = await countEarlierDeferredDemand(
     tx,
     args.orgId,
-    args.row.createdAt,
-    args.row.runId,
+    {
+      positionTime: args.row.createdAt,
+      eligibilityTime: admissionAt,
+      runId: args.row.runId,
+    },
   );
   if (concurrency.activeRunCount + earlierDeferredDemand >= concurrency.limit) {
     return complete({ status: "full" });
@@ -1074,7 +1086,11 @@ export const staleQueueOrgIds$ = command(
       ),
     ];
     for (const orgId of orgsWithQueued) {
-      const capacity = await effectiveOrgConcurrencyState(writeDb, orgId);
+      const capacity = await effectiveOrgConcurrencyState(
+        writeDb,
+        orgId,
+        nowDate(),
+      );
       signal.throwIfAborted();
       if (capacity.activeRunCount < capacity.limit) {
         staleOrgIds.push(orgId);

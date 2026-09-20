@@ -26,6 +26,7 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
+    expect(FeatureSwitchKey.RunUsage).toBe("runUsage");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
   });
 });
@@ -101,6 +102,28 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("keeps current-run usage off until consumers are deployed and an override enables it", () => {
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, context)).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.RunUsage, {
+          ...context,
+          overrides: { [FeatureSwitchKey.RunUsage]: true },
+        }),
+      ).toBe(true);
+    }
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.RunUsage]).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description:
+        "Query observed provider-token usage for the current assigned Run. Off for everyone until CLI and Runner consumers are deployed.",
+      rolloutStage: "alpha",
+    });
+  });
+
   it("keeps chat thread archiving disabled by default and honors explicit overrides", () => {
     for (const context of [
       {},
@@ -163,6 +186,31 @@ describe("isFeatureEnabled", () => {
         userId: "some-user",
       }),
     ).toBe(false);
+  });
+
+  it("keeps the Monday MCP connector off until explicitly enabled", () => {
+    expect(FeatureSwitchKey.MondayConnector).toBe("mondayConnector");
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.MondayConnector, context)).toBe(
+        false,
+      );
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
+        overrides: { [FeatureSwitchKey.MondayConnector]: true },
+      }),
+    ).toBe(true);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.MondayConnector],
+    ).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description: "Enable the Monday.com MCP connector",
+      rolloutStage: "alpha",
+    });
   });
 
   it("should return true when orgId hash matches enabledOrgIdHashes", () => {

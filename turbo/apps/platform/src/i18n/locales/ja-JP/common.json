@@ -445,6 +445,7 @@
       "description": "非公開か、利用できなくなった可能性があります。",
       "help": "リンクを共有した人にアクセス権の確認を依頼してください。",
       "signedInAs": "{{email}} としてログイン中",
+      "signedInDescription": "存在しないか、別のアカウントまたは組織に共有されている可能性があります。",
       "signIn": "ログイン",
       "signInFailed": "ログイン画面を開けませんでした。もう一度お試しください。",
       "switchAccount": "アカウントを切り替える",
@@ -504,7 +505,7 @@
       "description": "ここで作成したものをすべて参照してください。",
       "emptyDescription": "アーティファクトが利用可能になると、ここに表示されます。",
       "emptyTitle": "アーティファクトは見つかりませんでした",
-      "error": "アーティファクトをロードできませんでした。後でもう一度試してください。",
+      "error": "アーティファクトをロードできませんでした。",
       "filters": {
         "avatar": "アバター",
         "avatarAria": "アバターのアーティファクトを表示する",
@@ -523,7 +524,8 @@
         "websiteAria": "Web サイトのアーティファクトを表示する"
       },
       "kindIcon": "{{kind}} アーティファクト",
-      "loading": "アーティファクトをロードしています"
+      "loading": "アーティファクトをロードしています",
+      "retry": "再試行"
     },
     "fileBadges": {
       "artwork": "アート",
@@ -602,6 +604,7 @@
       "onlyMeDescription": "このアーティファクトを表示できるのは自分だけです",
       "organization": "組織",
       "organizationDescription": "リンクを知っている {{organization}} のメンバー",
+      "organizationDescriptionUnnamed": "リンクを知っている組織内の全員",
       "permissionsUpdated": "アクセス権を更新しました",
       "publicAccess": "一般公開",
       "publicDescription": "リンクを知っている全員が表示できます",
@@ -645,7 +648,6 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "自分のファイルをインポート",
       "importFileHint": "ファイルのデザインを再利用",
-      "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -6520,7 +6522,6 @@
     "loadingAccess": "エージェントのアクセスを読み込み中…",
     "manage": "VNC を管理",
     "port": "ポート",
-    "refresh": "リフレッシュ",
     "retry": "再試行",
     "save": "保存",
     "saveRecovery": {

@@ -6,6 +6,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
+  getButtonByName,
   setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
@@ -92,5 +93,9 @@ test("Artifact catalog failure is announced clearly", async () => {
     screen.findByLabelText("Artifact kind filters"),
   ).resolves.toBeInTheDocument();
   const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("Could not load artifacts. Try again later.");
+  expect(alert).toHaveTextContent("Could not load artifacts.");
+  // The message owns the recovery, so it no longer tells the reader to come
+  // back later with nothing to act on.
+  expect(alert).not.toHaveTextContent("later");
+  expect(getButtonByName("Try again", alert)).toBeEnabled();
 });

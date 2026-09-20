@@ -36,6 +36,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   mcp: "connector:read",
   ssh: ["ssh:read", "ssh:write"],
   vnc: ["vnc:read", "vnc:write"],
+  run: "run-usage:read",
   mail: "connector:read",
   doctor: null,
   credit: ["billing:read", "billing:write"],
@@ -80,7 +81,13 @@ const COMMAND_CAPABILITY_MAP: Record<
   banking: "banking:read",
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "image-recognition"]);
+const RUN_ONLY_COMMANDS = new Set([
+  "mcp",
+  "ssh",
+  "vnc",
+  "run",
+  "image-recognition",
+]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -103,6 +110,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Access authorized VNC hosts, capture desktops and send input",
     load: async () => {
       return (await import("./commands/vnc")).vncCommand;
+    },
+  },
+  {
+    name: "run",
+    description: "Inspect observed usage for the current assigned Run",
+    load: async () => {
+      return (await import("./commands/run")).runCommand;
     },
   },
   {
@@ -572,6 +586,11 @@ export function buildHelpText(
     ...commandExampleIfVisible(
       "chat",
       '  Rename this chat?     okou chat rename "New title"',
+      payload,
+    ),
+    ...commandExampleIfVisible(
+      "run",
+      "  Inspect Run usage?    okou run usage --json",
       payload,
     ),
     "  Introduce Okou?       okou intro",
