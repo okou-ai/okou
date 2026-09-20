@@ -39,7 +39,6 @@ import { ROUTES, type RoutePath } from "./route-paths.ts";
 
 import { setupGlobalMethod$ } from "./bootstrap/global-method.ts";
 import { setupLoggers$ } from "./bootstrap/loggers.ts";
-import { clearRetiredAcquisitionState$ } from "./bootstrap/retired-acquisition-state.ts";
 import { setupSlackConnectPage$ } from "./okou-page/slack-connect-page.ts";
 import { setupAgentPhoneConnectPage$ } from "./okou-page/agentphone-connect-page.ts";
 import { setupGithubConnectPage$ } from "./okou-page/github-connect-page.ts";
@@ -626,9 +625,6 @@ export const bootstrap$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     set(initializeAppVersion$, appVersion);
-    // Pre-cutover browser state can outlive the bundle that created it. Remove
-    // only retired acquisition state; product identity and organization remain.
-    set(clearRetiredAcquisitionState$);
     set(initBootstrapPhaseTiming$);
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);

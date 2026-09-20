@@ -28,10 +28,10 @@ does not add a second query-parameter sanitizer for arbitrary incoming URLs.
 
 Pre-cutover browsers can retain `vm0.adAttribution`,
 `okou.impactAttribution`, and registered PostHog campaign properties after the
-old bundle is replaced. App startup clears only those retired session keys, and
-PostHog initialization unregisters the retired properties; product identity and
-organization registration remain intact. Historical Clerk, Stripe, analytics,
-and provider records are not rewritten by this browser cleanup.
+old bundle is replaced. The replacement App does not read or update those
+session keys and does not add a migration for historical browser state.
+Historical Clerk, Stripe, analytics, and provider records are likewise not
+rewritten by this change.
 
 ## Deployment compatibility
 
@@ -55,8 +55,8 @@ does not describe active App behavior.
 | `vm0_campaign_id`, `vm0_ad_group_id`                                          | Historical aliases remain readable where retained Clerk, Stripe, or provider records require them. Marketing uses canonical `okou_*` campaign fields for new attribution.       |
 | `vm0_source`, `vm0_experiment`, `vm0_variant`                                 | No longer collected or propagated by App attribution code. Existing provider-owned and analytics history is left unchanged.                                                     |
 | `vm0_attribution`                                                             | Retired cross-site browser attribution cookie. Marketing uses its own host-only consented storage; App does not read it.                                                        |
-| `vm0.adAttribution`, `okou.impactAttribution`                                 | Retired App session keys removed when the replacement App initializes.                                                                                                          |
-| Historical PostHog click, UTM, campaign, landing, and Impact super properties | Unregistered by the replacement App without resetting `distinct_id` or `org_id`.                                                                                                |
+| `vm0.adAttribution`, `okou.impactAttribution`                                 | No active App reader or writer; this change does not add a browser-state migration.                                                                                             |
+| Historical PostHog click, UTM, campaign, landing, and Impact super properties | No new App registration; already-persisted browser state is not migrated by this change.                                                                                        |
 | Clerk `signup_attribution` and Stripe acquisition metadata                    | No active App/API writer or reader. Physical historical cleanup is a separate key-level operation that must preserve billing, organization, financial, and `impact_*` metadata. |
 | `org_metadata.acquisition_*`                                                  | Historical database fields; no browser fallback or reconstructed first touch.                                                                                                   |
 | Archived SQL/scripts, published links, analytics rows, and provider receipts  | Immutable historical evidence. Never use a later visit to manufacture or replay an earlier conversion.                                                                          |

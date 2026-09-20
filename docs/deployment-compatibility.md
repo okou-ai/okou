@@ -2747,14 +2747,14 @@ fields, including old privacy receipts; Marketing retains authoritative
 withdrawal state. Historical rows and external objects are not erased in this
 change.
 
-The final App cleanup removes its remaining click/UTM parser, session storage,
-auth redirect propagation, and PostHog attribution properties. Existing product
+The final App cleanup removes its remaining click/UTM parser, attribution
+session-storage reader/writer, auth redirect propagation, and explicit PostHog
+attribution properties. Existing product
 analytics, PostHog user/organization identity, and `/api/events` business facts
 remain. Marketing is the single URL boundary: it omits acquisition parameters
 from App links while preserving product deep links. App does not add a second
-sanitizer for arbitrary incoming query strings. On startup it clears the two
-retired session keys and unregisters old acquisition super properties without
-resetting product identity.
+sanitizer for arbitrary incoming query strings or a migration that cleans
+historical browser state.
 
 Coordinate the Marketing single-sender cutover with this App/API deployment.
 Verify the replacement App is live before setting a later client floor; an

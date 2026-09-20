@@ -222,7 +222,6 @@ interface PostHogMock {
   readonly events: PostHogEvent[];
   readonly identifications: PostHogIdentification[];
   readonly initializations: PostHogInitialization[];
-  readonly unregistrations: string[];
 }
 
 interface ClerkResourceRequest {
@@ -786,7 +785,6 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
   const events: PostHogEvent[] = [];
   const identifications: PostHogIdentification[] = [];
   const initializations: PostHogInitialization[] = [];
-  const unregistrations: string[] = [];
   const capture = vi
     .spyOn(posthog, "capture")
     .mockImplementation((name, properties, options) => {
@@ -806,9 +804,7 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
   const reset = vi.spyOn(posthog, "reset").mockImplementation(() => {});
   const unregister = vi
     .spyOn(posthog, "unregister")
-    .mockImplementation((property) => {
-      unregistrations.push(property);
-    });
+    .mockImplementation(() => {});
 
   restoreOnAbort(signal, () => {
     capture.mockRestore();
@@ -819,7 +815,7 @@ function mockPostHog(signal: AbortSignal): PostHogMock {
     unregister.mockRestore();
   });
 
-  return { events, identifications, initializations, unregistrations };
+  return { events, identifications, initializations };
 }
 
 function mockWindowOpen(openedWindow: Window | null): BrowserOpenMock {

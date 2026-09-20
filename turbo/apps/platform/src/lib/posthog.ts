@@ -11,38 +11,6 @@ const POSTHOG_KEY = RUNTIME_CONFIG.postHogKey;
 const APP_FIRST_SKELETON_PAINT_EVENT = "app_first_skeleton_paint";
 const APP_FIRST_SKELETON_PAINT_DISTINCT_ID = "app-bootstrap";
 
-const RETIRED_ACQUISITION_PROPERTIES = [
-  "source_type",
-  "referrer_domain",
-  "landing_host",
-  "landing_path",
-  "vm0_source",
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "okou_campaign_id",
-  "okou_ad_group_id",
-  "vm0_campaign_id",
-  "vm0_ad_group_id",
-  "utm_content",
-  "utm_term",
-  "vm0_experiment",
-  "vm0_variant",
-  "lp_variant",
-  "gclid",
-  "gbraid",
-  "wbraid",
-  "ga_client_id",
-  "gclid_present",
-  "gbraid_present",
-  "wbraid_present",
-  "impact_click_id",
-  "impact_click_at",
-  "irclickid",
-  "im_ref",
-  "im_ref_at",
-] as const;
-
 function finiteNonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
@@ -121,9 +89,6 @@ export function initPostHog(): void {
         return { ...properties, public_brand: RUNTIME_CONFIG.publicBrand };
       },
     });
-    for (const property of RETIRED_ACQUISITION_PROPERTIES) {
-      posthog.unregister(property);
-    }
   });
 }
 
