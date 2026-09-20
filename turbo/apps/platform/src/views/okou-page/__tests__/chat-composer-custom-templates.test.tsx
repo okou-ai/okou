@@ -28,13 +28,8 @@ const PROMPT = "Analyse this file and save it as a reusable template.";
  * What the run is told on top of that request, and the member is not: which
  * guide reads the file, and which catalog the result belongs in.
  */
-const GUIDANCE = [
-  "# Custom Template Import",
-  "The user imported this file from the Custom template pane:",
-  "- Analyse it with the `reverse-template` skill, which decides whether the file is a deck, a Word document, a PDF document or artwork and follows the branch that matches.",
-  "- Publish the result with `okou user-template publish` so it appears under Custom.",
-  "- Do not publish it with `okou presentation-template publish`. That is the command the guide's presentation branch names, and it writes to the other catalog, which the Custom pane never reads.",
-].join("\n");
+const GUIDANCE =
+  "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
 
 function additionalInfo(message: UserMessageDocument): string[] {
   return message.parts.flatMap((part) => {

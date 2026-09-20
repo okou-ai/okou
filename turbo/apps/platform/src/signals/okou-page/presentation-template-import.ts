@@ -93,8 +93,7 @@ function presentationTemplateImportPrompt(): string {
  * The same request, aimed at the custom template catalog.
  *
  * One sentence for every kind, because the guide already sorts them: the
- * `reverse-template` skill decides whether the file is a deck, a Word
- * document, a PDF document or artwork and follows the branch that matches.
+ * `reverse-template` skill reads the file and follows the branch that matches.
  * Repeating that decision here would give the run two answers that can
  * disagree, and the one in the guide is the one that read the file.
  *
@@ -109,28 +108,19 @@ function customTemplateImportPrompt(): string {
 }
 
 /**
- * What the run has to be told and the member does not.
+ * What the run has to be told and the member does not, sent as the message's
+ * `additional_info` part, which reaches the agent's prompt and never the
+ * thread's visible text.
  *
- * Sent as the message's `additional_info` part, which reaches the agent's
- * prompt and never the thread's visible text, so the correction below can be
- * as specific as the run needs without the member reading instructions
- * addressed to it.
- *
- * Naming the catalog is what this has to carry. The guide's presentation
- * branch ends at `okou presentation-template publish`, which writes to the
- * presentation table; a template published there never reaches the Custom
- * pane, which reads the user template catalog. Its document branch already
- * publishes here and adds `--kind document` itself, so saying the command once
- * covers both without claiming a kind.
+ * Only the catalog is worth saying. The guide's own publish step is
+ * `okou presentation-template publish`, which writes to the presentation
+ * table, and a template published there never reaches the Custom pane, which
+ * reads the user template catalog. How to read the file, which branch to take
+ * and what the package must contain are all in the guide, and restating any of
+ * it here would only give the run a second answer to disagree with.
  */
 function customTemplateImportGuidance(): string {
-  return [
-    "# Custom Template Import",
-    "The user imported this file from the Custom template pane:",
-    "- Analyse it with the `reverse-template` skill, which decides whether the file is a deck, a Word document, a PDF document or artwork and follows the branch that matches.",
-    "- Publish the result with `okou user-template publish` so it appears under Custom.",
-    "- Do not publish it with `okou presentation-template publish`. That is the command the guide's presentation branch names, and it writes to the other catalog, which the Custom pane never reads.",
-  ].join("\n");
+  return "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
 }
 
 /** One import's message: what the member reads, and what only the run reads. */
