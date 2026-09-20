@@ -169,6 +169,7 @@ describe("Pi stable context projection", () => {
   it("filters MCP custom skills when their feature is disabled", () => {
     const promptInputs: PiStableContextPromptInputs = {
       privateArtifactsEnabled: false,
+      runUsageEnabled: false,
       cloudBrowserEnabled: false,
       bankingEnabled: false,
       vncEnabled: false,

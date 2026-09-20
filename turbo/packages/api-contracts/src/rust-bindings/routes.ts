@@ -69,19 +69,9 @@ export const rustRouteBindings = [
     rustConstName: "POLL",
   },
   {
-    route: runnersJobClaimContract.release,
-    rustModulePath: ["runners", "jobs", "by_id", "release"],
-    rustConstName: "RELEASE",
-  },
-  {
     route: runnersJobClaimContract.claim,
     rustModulePath: ["runners", "jobs", "by_id", "claim"],
     rustConstName: "CLAIM",
-  },
-  {
-    route: runnersJobClaimContract.handoff,
-    rustModulePath: ["runners", "jobs", "by_id", "pi_handoff", "by_offset"],
-    rustConstName: "GET",
   },
   {
     route: runnersActiveInputsContract.reserve,

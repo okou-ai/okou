@@ -27,6 +27,7 @@ import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
 import {
   sidebarExpanded$,
   setSidebarExpanded$,
+  sidebarOff$,
   isChatRoute,
 } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -387,6 +388,7 @@ function MobileSidebarMount() {
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
+  const chatListHidden = useGet(sidebarOff$);
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
 
   return withChatScrollLayout(
@@ -407,7 +409,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <AttachmentLightboxMount />
       <QueueDrawer />
       {isDesktop ? <Sidebar isDesktop /> : <MobileSidebarMount />}
-      <WorkspaceInset>
+      <WorkspaceInset beside={chatListHidden ? "nav-rail" : "chat-list"}>
         <InstallBanner />
         <IosInstallModal />
         {!isDesktop && <MobileTopBar />}

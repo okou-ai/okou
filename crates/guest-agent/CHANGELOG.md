@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.92.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.92.1...guest-agent-v0.92.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* classify codex access-program rejections ([#35512](https://github.com/okou-ai/okou/issues/35512)) ([fc5e3a2](https://github.com/okou-ai/okou/commit/fc5e3a213970835ae0a5108f4943c0f34d1cadd2))
+
 ## [0.92.1](https://github.com/vm0-ai/okou/compare/guest-agent-v0.92.0...guest-agent-v0.92.1) (2026-09-20)
 
 ## [0.92.0](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.20...guest-agent-v0.92.0) (2026-09-19)

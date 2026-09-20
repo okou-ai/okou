@@ -17,7 +17,6 @@ import {
 } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { piResponsesTextSse } from "./helpers/pi-responses";
-import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
 
 const context = testContext();
 const fixture = createChatEventsFixture(context);
@@ -36,7 +35,6 @@ async function completedPiRun() {
     { ...actor, orgId: requireOrgId(actor) },
     {
       [FeatureSwitchKey.PiLoop]: true,
-      [FeatureSwitchKey.PiDeferredSandbox]: true,
       [FeatureSwitchKey.OpenRouterUsRouting]: false,
     },
   );
@@ -61,17 +59,6 @@ async function completedPiRun() {
   });
   await fixture.waitForRunStatus(actor, run.runId, "completed", 10_000);
   await flushWaitUntilForTest();
-  // The snapshot is writer-only; this bounded read proves the API-created Run
-  // exercises the durable Pi preflight rather than the legacy Pi lifecycle.
-  await expect(
-    readRunLaunchSnapshotFixture(context, run.runId),
-  ).resolves.toMatchObject({
-    exists: true,
-    launch_snapshot: {
-      schemaVersion: 4,
-      executionMode: "api-inference",
-    },
-  });
   return { actor, run };
 }
 

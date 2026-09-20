@@ -342,6 +342,7 @@ export function createMiscRoutesApi(context: TestContext) {
       input: {
         readonly content: string;
         readonly files?: readonly WorkflowFileEntry[];
+        readonly visibility?: "public" | "private";
       },
       statuses: readonly (201 | 400 | 401 | 403 | 409)[],
     ) {
@@ -357,6 +358,9 @@ export function createMiscRoutesApi(context: TestContext) {
             description: "Created through public workflow API",
             instruction: input.content,
             ...(input.files === undefined ? {} : { files: [...input.files] }),
+            ...(input.visibility === undefined
+              ? {}
+              : { visibility: input.visibility }),
           },
         }),
         statuses,

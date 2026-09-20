@@ -659,7 +659,6 @@
       "previewSlide": "Pratinjau slide {{slideNumber}}",
       "previewVoice": "Dengarkan suara {{title}}",
       "previewWebsite": "Pratinjau template website {{title}}",
-      "previousHtmlPreview": "pratinjau HTML sebelumnya {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
       "recommended": "Direkomendasikan",
       "renameImportedTemplate": "Ganti nama templat",
@@ -3479,21 +3478,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Pengirim yang diizinkan",
+        "codeExpiry": "Kedaluwarsa dalam 10 menit",
         "connectAria": "Hubungkan telepon",
-        "connectDescription": "Kirim pesan ke nomor AgentPhone ini dari telepon yang ingin Anda hubungkan.",
+        "connectDescription": "Pindai kode atau buka Pesan, lalu kirim kode yang sudah terisi.",
         "connectTitle": "Hubungkan telepon",
         "copyAria": "Salin {{phone}}",
+        "copyCodeAria": "Salin kode koneksi {{code}}",
+        "copyCodeError": "Gagal menyalin kode koneksi",
+        "copyCodeSuccess": "Kode koneksi disalin",
         "copyError": "Gagal menyalin nomor telepon",
         "copySuccess": "Nomor telepon disalin",
+        "createCodeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
+        "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
         "destination": "iMessage atau SMS ke",
-        "messageInstruction": "Kirim “hi”",
+        "manualSend": "atau kirim",
+        "manualSendTo": "ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
-        "replyInstruction": "Buka tautan koneksi dalam 10 menit untuk menyelesaikannya.",
-        "replyTitle": "Buka balasan kami",
-        "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim."
+        "qrTitle": "Pindai untuk membuka Pesan dengan kode koneksi yang sudah terisi",
+        "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim.",
+        "tryAgain": "Coba lagi"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -5483,7 +5489,7 @@
         "starting": "Memulai ekspor"
       },
       "backToAssistant": "Kembali ke {{assistantName}}",
-      "description": "Unduh file dan catatan teks yang Anda buat di {{assistantName}}.",
+      "description": "Unduh percakapan, memori, serta instruksi agen dan alur kerja yang dapat Anda akses di {{assistantName}}.",
       "documentTitle": "Ekspor data",
       "duration": {
         "soon": "segera"
@@ -5494,11 +5500,12 @@
         "startFailed": "Gagal memulai ekspor"
       },
       "scope": {
-        "agentInstructions": "Dokumen instruksi agen",
-        "artifactsExcluded": "Artefak tidak disertakan dalam ekspor ini.",
-        "chatMessages": "Pesan chat teks pengguna dan asisten",
-        "memoryFiles": "File memori",
-        "workflowInstructions": "Instruksi dan file SKILL.md alur kerja"
+        "agentInstructions": "Instruksi agen yang dapat Anda akses",
+        "chatMessages": "Pesan chat Anda",
+        "chatThreads": "Percakapan chat Anda",
+        "filesExcluded": "Artefak, lampiran, dan file pendukung alur kerja tidak disertakan.",
+        "memoryFiles": "File memori Anda saat ini",
+        "workflowInstructions": "Instruksi alur kerja yang dapat Anda akses"
       },
       "status": {
         "checkingDescription": "Status ekspor terbaru Anda akan muncul di sini.",
@@ -5956,6 +5963,14 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
+        "morningBriefTrigger": {
+          "description": "Jalankan Morning Brief sungguhan sekarang. Ini mengantrekan proses berikutnya milikmu ke penjadwal biasa, yang mengirimkan brief nyata dan email nyata dalam satu menit. Memicunya sebelum waktu harianmu menghasilkan dua brief pagi itu.",
+          "failed": "Tidak dapat mengantrekan Morning Brief. Coba lagi.",
+          "queued": "Masuk antrean. Penjadwal akan mengirimkan brief dalam satu menit.",
+          "title": "Morning Brief",
+          "trigger": "Jalankan Morning Brief sekarang",
+          "triggering": "Mengantrekan…"
+        },
         "voiceInput": {
           "default": "Default ({{model}})",
           "description": "Pilih model untuk input suara v2. Model transkripsi menggunakan {{model}} untuk merapikan teks.",
@@ -6250,32 +6265,32 @@
     "chooseFile": "Pilih file",
     "choosePrivateKeyFile": "Pilih file kunci privat",
     "cloudflare": {
-      "add": "Tambah konfigurasi Access",
-      "changed": "Konfigurasi Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
+      "add": "Tambah Cloudflare Access",
+      "changed": "Cloudflare Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
       "clientId": "ID klien Service Token",
       "clientSecret": "Rahasia klien Service Token",
-      "configuration": "Konfigurasi Access",
-      "createNew": "Buat konfigurasi baru",
-      "delete": "Hapus konfigurasi",
-      "deleteHelp": "Hapus konfigurasi Access yang tidak digunakan ini? Service Token yang tersimpan tidak dapat dipulihkan.",
+      "configuration": "Cloudflare Access",
+      "createNew": "Buat Cloudflare Access baru",
+      "delete": "Hapus Cloudflare Access",
+      "deleteHelp": "Hapus Cloudflare Access yang tidak digunakan ini? Service Token yang tersimpan tidak dapat dipulihkan.",
       "direct": "Langsung",
-      "edit": "Edit konfigurasi Access",
-      "empty": "Belum ada konfigurasi Access. Tambahkan Service Token untuk menghubungkan host SSH yang dilindungi Cloudflare Access.",
-      "inUse": "Konfigurasi Access ini digunakan oleh host. Tinjau host terkait dan ubah konfigurasinya atau hapus terlebih dahulu.",
-      "inUseHelp": "Pilih konfigurasi Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus konfigurasi ini.",
+      "edit": "Edit Cloudflare Access",
+      "empty": "Belum ada Cloudflare Access. Tambahkan Service Token untuk menghubungkan host SSH yang dilindungi.",
+      "inUse": "Cloudflare Access ini digunakan oleh host. Tinjau host terkait dan ubah konfigurasinya atau hapus terlebih dahulu.",
+      "inUseHelp": "Pilih Cloudflare Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus yang ini.",
       "keepChanges": "Terapkan perubahan saya ke versi ini",
       "latest": "Pengaturan terakhir yang disimpan",
-      "loadFailed": "Tidak dapat memuat konfigurasi Access. Coba lagi.",
-      "loading": "Memuat konfigurasi Access…",
-      "missing": "Konfigurasi Access ini tidak tersedia lagi. Pilih konfigurasi lain atau buat yang baru.",
+      "loadFailed": "Tidak dapat memuat Cloudflare Access. Coba lagi.",
+      "loading": "Memuat Cloudflare Access…",
+      "missing": "Cloudflare Access ini tidak tersedia lagi. Pilih yang lain atau buat yang baru.",
       "mode": "Koneksi",
-      "name": "Nama konfigurasi",
+      "name": "Nama",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nama host yang dipublikasikan",
       "replace": "Ganti Service Token",
       "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
-      "select": "Pilih konfigurasi",
-      "summary_other": "{{count}} konfigurasi Access telah diatur",
+      "select": "Pilih Cloudflare Access",
+      "summary_other": "{{count}} Cloudflare Access telah diatur",
       "title": "Cloudflare Access",
       "tokenHelp": "Gunakan Service Token yang diizinkan kebijakan Service Auth aplikasi SSH Anda. Ini terpisah dari login SSH.",
       "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",
@@ -6469,7 +6484,6 @@
     "add": "Tambahkan host",
     "cancel": "Batal",
     "close": "Tutup",
-    "configurationHelp": "Menyimpan host tidak menguji koneksinya. Agen memilih mode bersama atau eksklusif saat memulai sesi; server VNC menentukan apakah koneksi diterima.",
     "configured": "Terkonfigurasi",
     "credential": {
       "add": "Tambah kredensial",
@@ -6491,6 +6505,7 @@
       "select": "Pilih kredensial",
       "sharedHelp_one": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi host ini.",
       "sharedHelp_other": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi semuanya.",
+      "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host tersimpan mana pun."
     },
     "credentialsTab": "Kredensial",

@@ -65,7 +65,6 @@ type DropdownMenuContentProps = MenuPrimitive.Popup.Props &
   DropdownMenuPositionerProps & {
     avoidCollisions?: boolean;
     hideWhenDetached?: boolean;
-    portalContainer?: HTMLElement | null;
     updatePositionStrategy?: "always" | "optimized";
   };
 
@@ -89,7 +88,6 @@ const DropdownMenuContent = React.forwardRef<
       collisionPadding,
       disableAnchorTracking,
       hideWhenDetached = false,
-      portalContainer,
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
@@ -110,7 +108,7 @@ const DropdownMenuContent = React.forwardRef<
         : undefined);
 
     return (
-      <DropdownMenuPortal container={portalContainer}>
+      <DropdownMenuPortal>
         <MenuPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}

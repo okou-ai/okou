@@ -12,6 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
+import { cn } from "@okouai/ui/lib/utils";
 import {
   currentChatAgentId$,
   currentChatAgentDisplayName$,
@@ -278,6 +279,33 @@ function PinPill() {
   );
 }
 
+/**
+ * The frame owns the shape, and it is the only shape.
+ *
+ * This box already existed as the profile link's hover target, but it carried
+ * no border, so the only edge anyone could see was the image's own
+ * `rounded-full`. The agent artwork is a half figure drawn to the bottom of its
+ * canvas, and a circle is at its narrowest exactly where the collar lands, so
+ * the bottom of the sweater was pinched into a point by a mask with nothing
+ * visible to attribute it to. `rounded-xl` is 14px, so it leaves 28px of
+ * straight bottom under a collar that renders 14.7px wide, and the border makes
+ * the frame answerable for the crop. `surface-border` is the registered token
+ * for a four-sided hairline; `--border` is a stop lighter and would disagree
+ * with the chips on the same screen.
+ *
+ * The size stays on the step the mobile layout already used rather than gaining
+ * a breakpoint: against a single line of tagline, 64px is 1.78x the line box and
+ * reads as a standee beside the text.
+ */
+const AGENT_AVATAR_FRAME =
+  "h-14 w-14 shrink-0 flex items-center justify-center overflow-hidden rounded-xl border border-surface-border";
+/**
+ * Fills the frame's content box. Restating the frame's own `h-14 w-14` here
+ * would overflow it by the border on every side and be silently clipped, since
+ * the border box is what the frame sizes.
+ */
+const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
+
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const { t } = useTranslation("agents");
 
@@ -295,12 +323,15 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                 aria-label={t(($) => {
                   return $.detail.viewProfile;
                 })}
-                className="h-14 w-14 shrink-0 sm:h-16 sm:w-16 flex items-center justify-center overflow-hidden rounded-xl transition-colors duration-150 hover:bg-state-hover cursor-pointer"
+                className={cn(
+                  AGENT_AVATAR_FRAME,
+                  "cursor-pointer transition-colors duration-150 hover:bg-state-hover",
+                )}
               >
                 <AgentAvatarImg
                   name={agentId}
                   alt=""
-                  className="h-14 w-14 rounded-full object-cover object-top sm:h-16 sm:w-16"
+                  className={AGENT_AVATAR_IMAGE}
                 />
               </Link>
             </TooltipTrigger>
@@ -314,12 +345,8 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
           </Tooltip>
         </TooltipProvider>
       ) : (
-        <div className="h-14 w-14 shrink-0 sm:h-16 sm:w-16 flex items-center justify-center overflow-hidden rounded-xl">
-          <AgentAvatarImg
-            name=""
-            alt=""
-            className="h-14 w-14 rounded-full object-cover object-top sm:h-16 sm:w-16"
-          />
+        <div className={AGENT_AVATAR_FRAME}>
+          <AgentAvatarImg name="" alt="" className={AGENT_AVATAR_IMAGE} />
         </div>
       )}
       <PinPill />
@@ -361,17 +388,26 @@ export function AgentChatPage() {
           data-testid="agent-chat-scroll-content"
           className="mx-auto w-full max-w-[900px] flex flex-col items-stretch gap-10 pt-8 pb-safe-or-12 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
         >
-          <div className="flex items-center gap-4 w-full">
+          <div className="flex w-full items-center justify-center gap-4">
             <ChatAgentAvatar agentId={currentChatAgentId} />
-            <div className="flex-1 min-w-0 flex items-center gap-3">
-              <h2
-                aria-label={tagline}
-                data-testid="chat-tagline"
-                className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
-              >
+            <h2
+              aria-label={tagline}
+              data-testid="chat-tagline"
+              className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+            >
+              {/* The tagline is typed one character at a time. Centred, every
+                  character would widen the row and slide the avatar left, so
+                  the full line holds the box from the first frame and the typed
+                  text paints over it. The reserving copy stays in flow: it has
+                  to wrap exactly the way the visible text will, which a
+                  measured width could not promise. */}
+              <span aria-hidden className="invisible">
+                {tagline}
+              </span>
+              <span className="absolute inset-0">
                 <TypewriterText text={tagline} />
-              </h2>
-            </div>
+              </span>
+            </h2>
           </div>
 
           <ChatComposer signals={composerSignals} />

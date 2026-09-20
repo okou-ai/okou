@@ -14,7 +14,6 @@ export const IMAGE_MODEL_IDS = [
   "fal-ai/flux-pro/v1.1",
   "fal-ai/flux-pro/v1.1-ultra",
   "fal-ai/flux-2-pro",
-  "fal-ai/qwen-image",
   "alibaba/qwen-image-3/text-to-image",
   "ideogram/v4",
   "fal-ai/bytedance/seedream/v4/text-to-image",

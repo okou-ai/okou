@@ -255,6 +255,29 @@ async function openQuestPanel(): Promise<HTMLElement> {
   return await screen.findByRole("menu");
 }
 
+test("Get started is the only control in the corner", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await expect(
+    screen.findByTestId("get-started-entry"),
+  ).resolves.toBeInTheDocument();
+
+  // Get started already carries inviting and Slack as its own rows, so the
+  // split control that used to sit beside it is gone.
+  expect(screen.queryByTestId("growth-entry")).toBeNull();
+  expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
+  expect(
+    queryAllByRoleFast("button").find((candidate) => {
+      return normalizedText(candidate) === "Invite humans 🤝";
+    }),
+  ).toBeUndefined();
+});
+
 test("An admin sees every step and what each one pays", async () => {
   configureQuestPage(context, "admin");
   await setupPage({

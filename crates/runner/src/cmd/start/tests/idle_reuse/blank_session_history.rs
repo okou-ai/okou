@@ -68,12 +68,19 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
             ResumeSessionHistoryEncoding::Zstd,
         ),
     ] {
-        let (framework, history, session_id, expected_path): (&str, &[u8], &str, String) = match framework {
+        let (framework, history, session_id, expected_path, expected_root): (
+            &str,
+            &[u8],
+            &str,
+            String,
+            &str,
+        ) = match framework {
             CliFramework::ClaudeCode => (
                 "claude-code",
                 HISTORY,
                 "sess-blank-history",
                 "/home/user/.claude/projects/-home-user-workspace/sess-blank-history.jsonl".into(),
+                "/home/user/.claude/projects/-home-user-workspace",
             ),
             CliFramework::Pi => (
                 "pi",
@@ -81,12 +88,14 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
                 "22222222-2222-4222-8222-222222222222",
                 format!("{}/restored-22222222-2222-4222-8222-222222222222.jsonl",
                     api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR),
+                "/home/user/.pi/agent/sessions/--home-user-workspace--",
             ),
             CliFramework::Codex => (
                 "codex",
                 br#"{"type":"session_meta","payload":{"id":"019e9154-c304-70f0-adde-36efb1be1701","timestamp":"2026-07-13T01:02:03Z"}}"#,
                 "019e9154-c304-70f0-adde-36efb1be1701",
                 "/home/user/.codex/sessions/2026/07/13/rollout-2026-07-13T01-02-03-019e9154-c304-70f0-adde-36efb1be1701.jsonl.zst".into(),
+                "/home/user/.codex/sessions",
             ),
         };
         let encoded = match encoding {
@@ -157,7 +166,13 @@ async fn blank_history_prestart_overlaps_storage_and_preserves_restore() {
         server
             .next_request("blank history before storage finishes")
             .await;
-        assert_eq!(overrides.storage_manifest_calls().len(), 1);
+        let storage_calls = overrides.storage_manifest_calls();
+        assert_eq!(storage_calls.len(), 1);
+        let guest_manifest: guest_contracts::storage_manifest::Manifest =
+            serde_json::from_slice(&storage_calls[0].manifest_json).unwrap();
+        let shadow = guest_manifest.history_overlap_shadow.unwrap();
+        assert_eq!(shadow.history_root, expected_root);
+        assert_eq!(shadow.storage_write_roots, ["/home/user/workspace"]);
         assert!(overrides.write_file_calls().is_empty());
         assert!(overrides.start_agent_process_calls().is_empty());
         storage_gate.release_one();

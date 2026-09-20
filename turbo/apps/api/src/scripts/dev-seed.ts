@@ -550,12 +550,6 @@ const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // gpt-5-mini model tokens, and operating margin.
   ...usageGroup("people-search", "perplexity", [["request", usd(0.02), 1]]),
 
-  // Gemini 2.5 Flash Image — https://cloud.google.com/vertex-ai/generative-ai/pricing
-  // $30/1M output tokens × 1290 tokens per 1024×1024 image = $0.0387/image.
-  ...usageGroup("image", "gemini-2.5-flash-image", [
-    ["output_image", usd(0.0387), 1],
-  ]),
-
   // Fal-hosted GPT Image models. The endpoints return image URLs without
   // token usage, so built-in generation bills per output image tier at the
   // raw provider cost. Large tiers use the highest documented non-1024x1024
@@ -608,6 +602,8 @@ const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["processed_megapixel.first", usd(0.03), 1],
     ["processed_megapixel.additional", usd(0.015), 1],
   ]),
+  // Qwen Image is no longer selectable, but its row stays so already-recorded
+  // usage keeps pricing.
   ...usageGroup("image", "fal-ai/qwen-image", [
     ["output_megapixel", usd(0.02), 1],
   ]),

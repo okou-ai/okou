@@ -3,8 +3,6 @@ import { and, count, eq } from "drizzle-orm";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { conversations } from "@okouai/db/schema/conversation";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
-import { piMemoryPublicationProvenance } from "@okouai/db/schema/pi-memory-publication-provenance";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 
@@ -44,80 +42,6 @@ export function piMemoryStage1AdmissionPrerequisiteSkipReasonFixture(
     idleDelayMs: 30 * 60 * 1000,
     ...overrides,
   });
-}
-
-export async function seedPiMemoryPhase2ExportJobFixture(args: {
-  readonly memoryStorageId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly currentTime: Date;
-}): Promise<{ readonly leaseToken: string; readonly selectionDigest: string }> {
-  const leaseToken = "00000000-0000-4000-8000-000000031237";
-  const selectionDigest = "a".repeat(64);
-  const [storage] = await db()
-    .select({ headVersionId: storages.headVersionId })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.id, args.memoryStorageId),
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  if (!storage?.headVersionId) {
-    throw new Error("Phase 2 export fixture requires a memory HEAD");
-  }
-  await db()
-    .insert(piMemoryPhase2Jobs)
-    .values({
-      memoryStorageId: args.memoryStorageId,
-      orgId: args.orgId,
-      userId: args.userId,
-      status: "leased",
-      inputRevision: 2,
-      completedRevision: 0,
-      reconciliationRevision: 0,
-      claimedRevision: 1,
-      claimedBaseVersionId: storage.headVersionId,
-      leaseToken,
-      sandboxLeaseToken: leaseToken,
-      leaseExpiresAt: new Date(args.currentTime.getTime() + 60 * 60 * 1000),
-      retryCount: 1,
-      lastSucceededAt: new Date(
-        args.currentTime.getTime() - 24 * 60 * 60 * 1000,
-      ),
-      claimedSelectionDigest: selectionDigest,
-      claimedSelectedCount: 1,
-      claimedSelectedUtf8Bytes: 42,
-      lastObservedHeadVersionId: storage.headVersionId,
-      createdAt: new Date(args.currentTime.getTime() - 2 * 60 * 60 * 1000),
-      updatedAt: args.currentTime,
-    });
-  await db()
-    .insert(piMemoryPublicationProvenance)
-    .values({
-      id: "00000000-0000-4000-8000-000000031258",
-      memoryStorageId: args.memoryStorageId,
-      orgId: args.orgId,
-      userId: args.userId,
-      claimedRevision: 1,
-      inputRevision: 1,
-      reconciliationRevision: 0,
-      selectionDigest,
-      selectedCount: 1,
-      selectedUtf8Bytes: 42,
-      baseVersionId: storage.headVersionId,
-      preparedVersionId: "b".repeat(64),
-      observedHeadVersionId: "c".repeat(64),
-      writer: "pi",
-      outcome: "conflicted",
-      size: 17,
-      archiveSize: 23,
-      fileCount: 2,
-      createdAt: new Date(args.currentTime.getTime() - 30 * 60 * 1000),
-    });
-  return { leaseToken, selectionDigest };
 }
 
 export async function readPiMemoryStage1CandidateFixture(args: {
@@ -288,9 +212,7 @@ export async function readmitPiMemoryStage1CandidateFixture(
     !run ||
     !completedAt ||
     run.status !== "completed" ||
-    (launchSnapshot?.schemaVersion !== 2 &&
-      launchSnapshot?.schemaVersion !== 3 &&
-      launchSnapshot?.schemaVersion !== 4)
+    (launchSnapshot?.schemaVersion !== 2 && launchSnapshot?.schemaVersion !== 3)
   ) {
     throw new Error(
       "Expected a completed V2 or V3 Run for Pi memory readmission",

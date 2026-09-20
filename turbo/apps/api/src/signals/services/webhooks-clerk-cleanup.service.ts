@@ -1,8 +1,4 @@
-import { deletePiObjectOrphansForOwner } from "./pi-inference-object.service";
-import {
-  assertPiInferenceScopeErasureReady,
-  piInferenceErasureScopePredicate,
-} from "./pi-inference-lifecycle.service";
+import { piInferenceErasureScopePredicate } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
@@ -906,7 +902,6 @@ async function deleteOrgData(
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.orgId, orgId));
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
-  await deletePiObjectOrphansForOwner(db, { orgId });
 }
 
 async function deleteUserData(
@@ -993,7 +988,6 @@ async function deleteUserData(
     );
     await tx.delete(users).where(eq(users.id, userId));
   });
-  await deletePiObjectOrphansForOwner(db, { userId });
 }
 
 export const cleanupClerkDeletedOrg$ = command(
@@ -1007,11 +1001,6 @@ export const cleanupClerkDeletedOrg$ = command(
     });
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, {
-      kind: "organization",
-      orgId,
-    });
-    signal.throwIfAborted();
-    await assertPiInferenceScopeErasureReady(db, {
       kind: "organization",
       orgId,
     });
@@ -1049,8 +1038,6 @@ export const cleanupClerkDeletedUser$ = command(
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
     signal.throwIfAborted();
-    await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
-    signal.throwIfAborted();
     await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
     const emptyOrgIds = await emptyOrgIdsAfterDeletingUser(
       db,
@@ -1071,11 +1058,6 @@ export const cleanupClerkDeletedUser$ = command(
       });
       signal.throwIfAborted();
       await revokeMorningBriefScheduleOwnership(db, {
-        kind: "organization",
-        orgId,
-      });
-      signal.throwIfAborted();
-      await assertPiInferenceScopeErasureReady(db, {
         kind: "organization",
         orgId,
       });

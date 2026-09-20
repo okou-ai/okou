@@ -659,7 +659,6 @@
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
       "previewVoice": "음성 {{title}} 미리 듣기",
       "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
-      "previousHtmlPreview": "{{title}} 이전 HTML 미리보기",
       "previousSlide": "이전 슬라이드 미리보기",
       "recommended": "추천",
       "renameImportedTemplate": "템플릿 이름 바꾸기",
@@ -3479,21 +3478,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "승인된 발신자",
+        "codeExpiry": "10분 후 만료",
         "connectAria": "전화 연결",
-        "connectDescription": "연결하려는 휴대폰에서 이 AgentPhone 번호로 메시지를 보내세요.",
+        "connectDescription": "코드를 스캔하거나 메시지 앱을 연 다음, 미리 입력된 코드를 보내세요.",
         "connectTitle": "전화 연결",
         "copyAria": "{{phone}} 복사",
+        "copyCodeAria": "연결 코드 {{code}} 복사",
+        "copyCodeError": "연결 코드를 복사하지 못했습니다",
+        "copyCodeSuccess": "연결 코드를 복사했습니다",
         "copyError": "전화번호 복사 실패",
         "copySuccess": "전화번호가 복사되었습니다",
+        "createCodeError": "연결 코드를 만들지 못했습니다. 다시 시도하세요.",
+        "creatingCode": "연결 코드 만드는 중…",
         "description": "{{assistantName}}에 문자 메시지 접근",
         "destination": "iMessage 또는 SMS 수신처",
-        "messageInstruction": "“hi” 보내기",
+        "manualSend": "또는",
+        "manualSendTo": "코드를 다음 번호로 전송:",
         "openMessages": "메시지 열기",
         "options": "전화 옵션",
         "phoneLabel": "전화",
-        "replyInstruction": "10분 안에 연결 링크를 열어 완료하세요.",
-        "replyTitle": "답장 열기",
-        "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다."
+        "qrTitle": "스캔하여 연결 코드가 미리 입력된 메시지 앱 열기",
+        "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다.",
+        "tryAgain": "다시 시도"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -5483,7 +5489,7 @@
         "starting": "내보내기 시작 중"
       },
       "backToAssistant": "{{assistantName}}로 돌아가기",
-      "description": "{{assistantName}}에서 생성한 파일과 텍스트 기록을 다운로드하세요.",
+      "description": "{{assistantName}}에서 내 대화와 메모리, 접근할 수 있는 에이전트 및 워크플로의 지침을 다운로드하세요.",
       "documentTitle": "데이터 내보내기",
       "duration": {
         "soon": "곧"
@@ -5494,11 +5500,12 @@
         "startFailed": "내보내기 시작 실패"
       },
       "scope": {
-        "agentInstructions": "에이전트 지침 문서",
-        "artifactsExcluded": "아티팩트는 이 내보내기에 포함되지 않습니다.",
-        "chatMessages": "사용자 및 AI 팀원 텍스트 채팅 메시지",
-        "memoryFiles": "메모리 파일",
-        "workflowInstructions": "워크플로 SKILL.md 지침 및 파일"
+        "agentInstructions": "접근할 수 있는 에이전트의 지침",
+        "chatMessages": "내 채팅 메시지",
+        "chatThreads": "내 채팅 스레드",
+        "filesExcluded": "아티팩트, 첨부 파일 및 워크플로 보조 파일은 포함되지 않습니다.",
+        "memoryFiles": "현재 메모리 파일",
+        "workflowInstructions": "접근할 수 있는 워크플로의 지침"
       },
       "status": {
         "checkingDescription": "최근 내보내기 상태가 여기에 표시됩니다.",
@@ -5956,6 +5963,14 @@
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
+        "morningBriefTrigger": {
+          "description": "실제 Morning Brief를 지금 실행합니다. 내 다음 실행을 일반 스케줄러 대기열에 넣으며, 1분 이내에 실제 브리프와 실제 이메일이 전송됩니다. 매일 전송 시각 이전에 실행하면 그날 아침에 브리프를 두 번 받게 됩니다.",
+          "failed": "Morning Brief를 대기열에 추가하지 못했습니다. 다시 시도하세요.",
+          "queued": "대기열에 추가했습니다. 스케줄러가 1분 이내에 브리프를 전송합니다.",
+          "title": "Morning Brief",
+          "trigger": "Morning Brief 지금 실행",
+          "triggering": "대기열에 추가하는 중…"
+        },
         "voiceInput": {
           "default": "기본값 ({{model}})",
           "description": "음성 입력 v2 모델을 선택하세요. 음성 인식 모델은 {{model}}로 텍스트를 다듬습니다.",
@@ -6250,32 +6265,32 @@
     "chooseFile": "파일 선택",
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "cloudflare": {
-      "add": "Access 구성 추가",
-      "changed": "편집 중 이 Access 구성이 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
+      "add": "Cloudflare Access 추가",
+      "changed": "편집 중 이 Cloudflare Access가 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
       "clientId": "Service Token 클라이언트 ID",
       "clientSecret": "Service Token 클라이언트 시크릿",
-      "configuration": "Access 구성",
-      "createNew": "새 구성 만들기",
-      "delete": "구성 삭제",
-      "deleteHelp": "사용하지 않는 이 Access 구성을 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
+      "configuration": "Cloudflare Access",
+      "createNew": "새 Cloudflare Access 만들기",
+      "delete": "Cloudflare Access 삭제",
+      "deleteHelp": "사용하지 않는 이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
       "direct": "직접 연결",
-      "edit": "Access 구성 편집",
-      "empty": "아직 Access 구성이 없습니다. Service Token을 추가하여 Cloudflare Access로 보호된 SSH 호스트에 연결하세요.",
-      "inUse": "호스트가 이 Access 구성을 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
-      "inUseHelp": "이 구성을 삭제하기 전에 해당 호스트에 다른 Access 구성을 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
+      "edit": "Cloudflare Access 편집",
+      "empty": "아직 Cloudflare Access가 없습니다. Service Token을 추가하여 보호된 SSH 호스트에 연결하세요.",
+      "inUse": "호스트가 이 Cloudflare Access를 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
+      "inUseHelp": "이 Cloudflare Access를 삭제하기 전에 해당 호스트에 다른 Cloudflare Access를 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
       "keepChanges": "이 버전에 내 변경 사항 적용",
       "latest": "최근 저장된 설정",
-      "loadFailed": "Access 구성을 불러오지 못했습니다. 다시 시도하세요.",
-      "loading": "Access 구성 불러오는 중…",
-      "missing": "이 Access 구성은 더 이상 사용할 수 없습니다. 다른 구성을 선택하거나 새로 만드세요.",
+      "loadFailed": "Cloudflare Access를 불러오지 못했습니다. 다시 시도하세요.",
+      "loading": "Cloudflare Access 불러오는 중…",
+      "missing": "이 Cloudflare Access는 더 이상 사용할 수 없습니다. 다른 항목을 선택하거나 새로 만드세요.",
       "mode": "연결",
-      "name": "구성 이름",
+      "name": "이름",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "공개 호스트 이름",
       "replace": "Service Token 교체",
       "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
-      "select": "구성 선택",
-      "summary_other": "Access 구성 {{count}}개 설정됨",
+      "select": "Cloudflare Access 선택",
+      "summary_other": "Cloudflare Access {{count}}개 설정됨",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH 애플리케이션의 Service Auth 정책에서 허용하는 Service Token을 사용하세요. SSH 로그인 정보와는 별개입니다.",
       "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
@@ -6469,7 +6484,6 @@
     "add": "호스트 추가",
     "cancel": "취소",
     "close": "닫기",
-    "configurationHelp": "호스트를 저장해도 연결을 테스트하지 않습니다. Agent가 세션 시작 시 공유 또는 독점 모드를 선택하며, VNC 서버가 접속을 허용할지 결정합니다.",
     "configured": "구성됨",
     "credential": {
       "add": "자격 증명 추가",
@@ -6491,6 +6505,7 @@
       "select": "인증 정보 선택",
       "sharedHelp_one": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 해당 호스트에 영향을 줍니다.",
       "sharedHelp_other": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 모두에 영향을 줍니다.",
+      "summary_other": "자격 증명 {{count}}개 구성됨",
       "unused": "사용 중인 호스트가 없습니다."
     },
     "credentialsTab": "자격 증명",

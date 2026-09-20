@@ -21,8 +21,19 @@ use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::telemetry::HistoryTransferMeasurements;
 use crate::types::{ExecutionContext, ResumeSessionHistoryRefKind, SandboxReuseResult};
 use api_contracts::generated::constants::runners::paths::{
-    CANONICAL_CLAUDE_CONFIG_DIR, CANONICAL_WORKING_DIR,
+    CANONICAL_CODEX_SESSIONS_DIR, CANONICAL_PI_SESSION_DIR,
 };
+
+const CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR: &str =
+    "/home/user/.claude/projects/-home-user-workspace";
+
+pub(super) const fn history_restore_write_root(framework: EffectiveCliFramework) -> &'static str {
+    match framework {
+        EffectiveCliFramework::ClaudeCode => CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR,
+        EffectiveCliFramework::Codex => CANONICAL_CODEX_SESSIONS_DIR,
+        EffectiveCliFramework::Pi => CANONICAL_PI_SESSION_DIR,
+    }
+}
 
 impl RestoredSessionIdentity {
     pub(crate) fn from_context(context: &ExecutionContext) -> Option<Self> {
@@ -182,7 +193,7 @@ async fn restore_pi_session(
 ) -> RunnerResult<SessionRestoreDiagnostics> {
     let session_history = session.history_bytes();
     let session_id = session.cli_agent_session_id();
-    let session_dir = api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR;
+    let session_dir = CANONICAL_PI_SESSION_DIR;
     let session_path = format!("{session_dir}/restored-{session_id}.jsonl");
     let transfer = write_session_history_file(sandbox, &session_path, session).await?;
     let diagnostics = SessionRestoreDiagnostics {
@@ -208,12 +219,8 @@ pub(super) async fn restore_claude_session(
     session: &MaterializedResumeSession,
 ) -> RunnerResult<SessionRestoreDiagnostics> {
     let session_history = session.history_bytes();
-    let project_name = CANONICAL_WORKING_DIR
-        .trim_start_matches('/')
-        .replace('/', "-");
-    let session_dir = format!("{CANONICAL_CLAUDE_CONFIG_DIR}/projects/-{project_name}");
     let session_id = session.cli_agent_session_id();
-    let session_path = format!("{session_dir}/{session_id}.jsonl");
+    let session_path = format!("{CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR}/{session_id}.jsonl");
 
     let transfer = write_session_history_file(sandbox, &session_path, session).await?;
     let diagnostics = SessionRestoreDiagnostics {

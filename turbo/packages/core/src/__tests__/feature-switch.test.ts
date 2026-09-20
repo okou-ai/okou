@@ -270,18 +270,18 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Lab, {})).toBe(false);
   });
 
-  it("should enable the Welcome Thread switch for the staff org only", () => {
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      }),
-    ).toBe(true);
+  it("should enable the Welcome Thread switch for every workspace", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
         orgId: "org_nonexistent",
       }),
+    ).toBe(true);
+    expect(isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {})).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
+        overrides: { [FeatureSwitchKey.WelcomeThread]: false },
+      }),
     ).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {})).toBe(false);
   });
 
   it("should default Langfuse tracing off for every org and accept user overrides", () => {
@@ -441,11 +441,13 @@ describe("getAllFeatureStates", () => {
       true,
     );
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
@@ -590,7 +592,12 @@ describe("getFeatureSwitchMetadata", () => {
       "released",
     );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
-    expect(metadata[FeatureSwitchKey.WelcomeThread].rolloutStage).toBe("beta");
+    expect(metadata[FeatureSwitchKey.WelcomeThread].rolloutStage).toBe(
+      "released",
+    );
+    expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
+      "beta",
+    );
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );

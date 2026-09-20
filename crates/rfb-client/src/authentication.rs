@@ -11,17 +11,19 @@ use tokio::time::Instant;
 use tokio_rustls::TlsConnector;
 use zeroize::Zeroizing;
 
-use crate::{Authenticated, AuthenticationStage, Error, TrustRoots, VncPassword};
+use crate::{
+    Authenticated, AuthenticationStage, Error, PlainCredentials, TrustRoots, VncPassword,
+    X509Authentication,
+};
 
 const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const VENCRYPT: u8 = 19;
-const X509_VNC: u32 = 261;
 const MAX_ERROR_BYTES: u32 = 4096;
 
 pub(crate) async fn authenticate<S>(
     mut stream: S,
     server_name: &str,
-    password: VncPassword,
+    authentication: X509Authentication,
     roots: TrustRoots,
     deadline: Instant,
 ) -> Result<Authenticated<S>, Error>
@@ -39,10 +41,11 @@ where
         exchange_version(&mut stream),
     )
     .await?;
+    let subtype = authentication.subtype();
     phase(
         AuthenticationStage::SecurityNegotiation,
         deadline,
-        negotiate_security(&mut stream),
+        negotiate_security(&mut stream, subtype),
     )
     .await?;
     let mut stream = phase(AuthenticationStage::TlsHandshake, deadline, async {
@@ -52,10 +55,11 @@ where
             .map_err(Error::Tls)
     })
     .await?;
+    let stage = authentication.stage();
     phase(
-        AuthenticationStage::VncAuthentication,
+        stage,
         deadline,
-        authenticate_vnc(&mut stream, password),
+        authenticate_x509(&mut stream, authentication),
     )
     .await?;
 
@@ -95,7 +99,7 @@ where
     Ok(())
 }
 
-async fn negotiate_security<S>(stream: &mut S) -> Result<(), Error>
+async fn negotiate_security<S>(stream: &mut S, subtype: u32) -> Result<(), Error>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -126,17 +130,31 @@ where
     let count = stream.read_u8().await?;
     let mut offered = false;
     for _ in 0..count {
-        offered |= stream.read_u32().await? == X509_VNC;
+        offered |= stream.read_u32().await? == subtype;
     }
     if !offered {
         return Err(Error::UnsupportedSecurity);
     }
-    stream.write_u32(X509_VNC).await?;
+    stream.write_u32(subtype).await?;
     stream.flush().await?;
     if stream.read_u8().await? != 1 {
         return Err(Error::NegotiationRejected);
     }
     Ok(())
+}
+
+async fn authenticate_x509<S>(
+    stream: &mut tokio_rustls::client::TlsStream<S>,
+    authentication: X509Authentication,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    match authentication {
+        X509Authentication::None => read_security_result(stream).await,
+        X509Authentication::VncPassword(password) => authenticate_vnc(stream, password).await,
+        X509Authentication::Plain(credentials) => authenticate_plain(stream, credentials).await,
+    }
 }
 
 async fn authenticate_vnc<S>(
@@ -154,6 +172,34 @@ where
     stream.flush().await?;
     drop(response);
 
+    read_security_result(stream).await
+}
+
+async fn authenticate_plain<S>(
+    stream: &mut tokio_rustls::client::TlsStream<S>,
+    credentials: PlainCredentials,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let username_length =
+        u32::try_from(credentials.username.len()).map_err(|_| Error::InvalidPlainUsername)?;
+    let password_length =
+        u32::try_from(credentials.password.len()).map_err(|_| Error::InvalidPlainPassword)?;
+    stream.write_u32(username_length).await?;
+    stream.write_u32(password_length).await?;
+    stream.write_all(&credentials.username).await?;
+    stream.write_all(&credentials.password).await?;
+    stream.flush().await?;
+    // Erase both fields before waiting for a potentially silent peer result.
+    drop(credentials);
+    read_security_result(stream).await
+}
+
+async fn read_security_result<S>(stream: &mut S) -> Result<(), Error>
+where
+    S: AsyncRead + Unpin,
+{
     match stream.read_u32().await? {
         0 => Ok(()),
         1 => {

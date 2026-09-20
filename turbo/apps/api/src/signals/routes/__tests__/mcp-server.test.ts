@@ -982,20 +982,33 @@ describe("MCP chat discovery and creation", () => {
       {},
       { title: " " },
       { title: "x".repeat(201) },
+      { model: " \n\t " },
+      { title: "Unknown field", extra: true },
+    ]) {
+      const result = await callTool(token, "update_chat_thread", {
+        requestId: randomUUID(),
+        threadId: created.threadId,
+        patch,
+      });
+      expect(structuredToolError(result)).toMatchObject({
+        code: "invalid_arguments",
+        retryable: false,
+      });
+    }
+    for (const patch of [
       { model: "not-a-supported-model" },
       { title: "Must roll back", model: "not-a-supported-model" },
       { title: "Must roll back denied model", model: "claude-opus-4-8" },
-      { title: "Unknown field", extra: true },
     ]) {
-      expect(
-        (
-          await callTool(token, "update_chat_thread", {
-            requestId: randomUUID(),
-            threadId: created.threadId,
-            patch,
-          })
-        ).isError,
-      ).toBeTruthy();
+      const result = await callTool(token, "update_chat_thread", {
+        requestId: randomUUID(),
+        threadId: created.threadId,
+        patch,
+      });
+      expect(structuredToolError(result)).toMatchObject({
+        code: "selection_unavailable",
+        retryable: false,
+      });
     }
     expect(
       (
@@ -1274,6 +1287,7 @@ describe("MCP chat discovery and creation", () => {
     for (const invalid of [
       { ...args, title: "  " },
       { ...args, title: "x".repeat(201) },
+      { ...args, model: " \n\t " },
       { ...args, model: undefined },
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
@@ -2525,8 +2539,10 @@ describe("MCP chat mutations", () => {
       { ...base, agentId: f.agent.agentId },
     ]) {
       const failed = await callTool(token, "send_chat_message", args);
-      expect(failed.isError).toBeTruthy();
-      structuredToolError(failed);
+      expect(structuredToolError(failed)).toMatchObject({
+        code: "invalid_arguments",
+        retryable: false,
+      });
     }
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
@@ -5054,20 +5070,67 @@ describe("external MCP entry", () => {
               annotations: { readOnlyHint: true },
             },
             { name: "list_models", annotations: { readOnlyHint: true } },
-            { name: "list_chat_threads", annotations: { readOnlyHint: true } },
+            {
+              name: "list_chat_threads",
+              inputSchema: {
+                properties: {
+                  title: {
+                    minLength: 1,
+                    maxLength: 200,
+                    pattern: "\\S",
+                  },
+                },
+              },
+              annotations: { readOnlyHint: true },
+            },
             { name: "get_chat_thread", annotations: { readOnlyHint: true } },
             ...(scopes === defaultScopes
               ? [
                   {
                     name: "create_chat_thread",
+                    inputSchema: {
+                      properties: {
+                        title: { pattern: "\\S" },
+                        model: {
+                          minLength: 1,
+                          maxLength: 255,
+                          pattern: "\\S",
+                        },
+                      },
+                    },
                     annotations: { readOnlyHint: false, idempotentHint: true },
                   },
                   {
                     name: "update_chat_thread",
+                    inputSchema: {
+                      properties: {
+                        patch: {
+                          minProperties: 1,
+                          properties: {
+                            title: { pattern: "\\S" },
+                            model: {
+                              anyOf: [
+                                {
+                                  minLength: 1,
+                                  maxLength: 255,
+                                  pattern: "\\S",
+                                },
+                                { type: "null" },
+                              ],
+                            },
+                          },
+                        },
+                      },
+                    },
                     annotations: { readOnlyHint: false, idempotentHint: true },
                   },
                   {
                     name: "send_chat_message",
+                    inputSchema: {
+                      properties: {
+                        text: { maxLength: 32_000, pattern: "\\S" },
+                      },
+                    },
                     annotations: { readOnlyHint: false, idempotentHint: true },
                   },
                   {
@@ -6099,14 +6162,17 @@ describe("external MCP entry", () => {
   it.each([
     { limit: 0 },
     { limit: 51 },
+    { title: " \n\t " },
     { since: "2026-09-18T00:00:00Z", before: "2026-09-17T00:00:00Z" },
     { activity: "completed" },
     { cursor: "x".repeat(4097) },
   ])("rejects invalid list arguments %j", async (args) => {
     const auth = await fixture();
     expect(
-      (await callTool(auth.token(), "list_chat_threads", args)).isError,
-    ).toBeTruthy();
+      structuredToolError(
+        await callTool(auth.token(), "list_chat_threads", args),
+      ),
+    ).toMatchObject({ code: "invalid_arguments", retryable: false });
   });
 
   it("returns canonical activity isolated to each signed organization", async () => {

@@ -12,9 +12,6 @@ import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
-import { importPresentationTemplateDeck$ } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -318,7 +315,6 @@ interface ComposerSuggestionMenuState {
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
   ) => void;
-  readonly importDeck: (file: File) => void;
   readonly browseAllTemplates: () => void;
   readonly showTemplatePanel: boolean;
   readonly workflowsLoading: boolean;
@@ -380,8 +376,6 @@ function useSlashTemplatePanelActions(
   const openTask = useSet(composer.taskChips.openTask$);
   const insertTemplate = useSet(composer.template.insertTemplate$);
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
-  const runDeckImport = useSet(importPresentationTemplateDeck$);
-  const rootSignal = useGet(rootSignal$);
   const categories = useSlashTemplateCategorySuggestions(
     enabled ? query : undefined,
   );
@@ -418,18 +412,6 @@ function useSlashTemplatePanelActions(
       close();
       insertTemplate(preview.template, preview.attachment);
       openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
-    },
-    /**
-     * The import attaches the deck and sends, which navigates away from the
-     * page that started it, so it owns the root signal rather than a page
-     * signal — the same reason the picker dialog's import card does.
-     */
-    importDeck(file: File): void {
-      close();
-      detach(
-        runDeckImport({ signals: composer, file }, rootSignal),
-        Reason.DomCallback,
-      );
     },
     browseAll(): void {
       clearSlashRange();
@@ -658,7 +640,6 @@ function useComposerSuggestionMenu({
     previewSuggestion,
     selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
-    importDeck: templatePanel.importDeck,
     browseAllTemplates: templatePanel.browseAll,
     showTemplatePanel: templatePanelEnabled,
     workflowsLoading: workflowResult.loading,
@@ -789,7 +770,6 @@ export function TiptapWorkflowComposer({
                 onPreview={suggestionMenu.previewSuggestion}
                 onSelectCategory={suggestionMenu.selectCategory}
                 onSelectTemplate={suggestionMenu.selectTemplate}
-                onImportDeck={suggestionMenu.importDeck}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
                 onBrowseAll={suggestionMenu.browseAllTemplates}
                 workflowOptionId={slashWorkflowOptionId}

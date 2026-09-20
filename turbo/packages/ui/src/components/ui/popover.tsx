@@ -81,7 +81,6 @@ type PopoverContentProps = PopoverPrimitive.Popup.Props &
   PopoverPositionerProps & {
     avoidCollisions?: boolean;
     hideWhenDetached?: boolean;
-    portalContainer?: HTMLElement | null;
     updatePositionStrategy?: "always" | "optimized";
   };
 
@@ -99,7 +98,6 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
       collisionPadding,
       disableAnchorTracking,
       hideWhenDetached = false,
-      portalContainer,
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
@@ -121,7 +119,7 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
         : undefined);
 
     return (
-      <PopoverPrimitive.Portal container={portalContainer}>
+      <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}

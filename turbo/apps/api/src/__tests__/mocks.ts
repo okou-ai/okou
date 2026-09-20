@@ -792,6 +792,14 @@ vi.mock("@aws-sdk/client-s3", () => {
     }
   }
 
+  class ListMultipartUploadsCommand {
+    readonly input: unknown;
+
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  }
+
   class DeleteObjectsCommand {
     readonly input: unknown;
 
@@ -839,6 +847,7 @@ vi.mock("@aws-sdk/client-s3", () => {
     HeadObjectCommand,
     ListObjectsV2Command,
     ListPartsCommand,
+    ListMultipartUploadsCommand,
     PutObjectCommand,
     S3Client,
     UploadPartCommand,
