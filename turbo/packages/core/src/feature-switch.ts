@@ -68,11 +68,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Templates compiled from a file the user uploaded, with their own catalog.",
     enabled: false,
-    // Narrowed from the staff org to the maintainer while nothing in the
-    // product publishes a row: the API route exists, but no upload surface
-    // calls it yet, so everyone else would only ever see the empty panel.
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    // Back to the staff org now that the picker carries its own upload entry:
+    // a colleague who opens the empty panel has the one action that fills it,
+    // which is what the earlier narrowing to the maintainer was waiting for.
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",

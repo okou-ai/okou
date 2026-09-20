@@ -379,6 +379,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       true,
     );
+    expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -402,6 +403,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
       false,
     );
+    expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 
   it("enables Pi memory only for the user whose override says so", () => {
@@ -422,18 +424,18 @@ describe("getAllFeatureStates", () => {
     expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
   });
 
-  it("should enable custom templates for Bingjie by email outside the staff org", () => {
+  it("should enable presentation convert for Bingjie by email outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
     });
-    expect(bingjieStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
+    expect(bingjieStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
 
     const otherStates = getAllFeatureStates({
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {
