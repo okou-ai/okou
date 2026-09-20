@@ -802,36 +802,3 @@ export function buildRunWorkFolding(
     ),
   };
 }
-
-/** Match the event ordering inside each outer page row after fold expansion. */
-export function applyRunWorkExpansion(
-  groups: readonly ChatEventGroup[],
-  folding: RunWorkFolding | null,
-  expandedKeys: ReadonlySet<string>,
-): ChatEventGroup[] {
-  const visibleGroups = folding?.visibleGroups ?? groups;
-  return visibleGroups.map((group) => {
-    const section = runWorkSectionForGroup(folding, group);
-    if (section === null || !expandedKeys.has(section.key)) {
-      return group;
-    }
-    const anchorIndex = group.events.findIndex((event) => {
-      return event.id === section.anchorEventId;
-    });
-    const anchorEndIndex =
-      anchorIndex === -1 ? group.events.length : anchorIndex + 1;
-    return {
-      ...group,
-      events: [
-        ...section.hiddenGroups.flatMap((hiddenGroup) => {
-          return hiddenGroup.events;
-        }),
-        ...group.events.slice(0, anchorEndIndex),
-        ...section.hiddenGroupsAfterAnchor.flatMap((hiddenGroup) => {
-          return hiddenGroup.events;
-        }),
-        ...group.events.slice(anchorEndIndex),
-      ],
-    };
-  });
-}

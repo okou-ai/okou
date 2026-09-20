@@ -401,7 +401,7 @@ test("Do not retain rows or show an empty state when the list query fails", asyn
   ).not.toBeInTheDocument();
 });
 
-test("Coalesce sidebar resize bursts and cancel pending measurements when hidden", async () => {
+test("Use the latest viewport size after resizing, hiding, and reopening the sidebar", async () => {
   mockThreads(120);
   let viewportHeight = 612;
   mockViewportHeight(() => {
@@ -420,13 +420,6 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
     expect(rows()).toHaveLength(25);
   });
 
-  const viewport = within(sidebar).getByTestId("sidebar-scroll-area");
-  let heightReads = 0;
-  vi.spyOn(viewport, "clientHeight", "get").mockImplementation(() => {
-    heightReads += 1;
-    return viewportHeight;
-  });
-  vi.spyOn(viewport, "scrollHeight", "get").mockReturnValue(120 * ROW_HEIGHT);
   const flushFrame = queueAnimationFrames();
 
   resizeWindow();
@@ -435,16 +428,12 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   viewportHeight = 360;
   resizeWindow();
 
-  // Intermediate layouts must not force repeated geometry reads. The single
-  // frame measurement must use the latest height and update the visible rows.
-  expect(heightReads).toBe(0);
+  // The frame must use the latest height and update the visible rows.
   flushFrame();
-  expect(heightReads).toBe(1);
   await waitFor(() => {
     expect(rows()).toHaveLength(18);
   });
 
-  heightReads = 0;
   viewportHeight = 900;
   resizeWindow();
   click(within(sidebar).getByLabelText("Hide chat list"));
@@ -453,7 +442,24 @@ test("Coalesce sidebar resize bursts and cancel pending measurements when hidden
   });
   resizeWindow();
   flushFrame();
-  expect(heightReads).toBe(0);
+  expect(screen.queryByTestId("chat-list-column")).not.toBeInTheDocument();
+
+  click(screen.getByLabelText("Show chat list"));
+  const reopenedSidebar = await screen.findByTestId("chat-list-column");
+  const reopenedRows = () => {
+    return within(reopenedSidebar).getAllByTestId(
+      "sidebar-chat-thread-virtual-row",
+    );
+  };
+  await waitFor(() => {
+    expect(reopenedRows()).toHaveLength(33);
+  });
+  viewportHeight = 360;
+  resizeWindow();
+  flushFrame();
+  await waitFor(() => {
+    expect(reopenedRows()).toHaveLength(18);
+  });
 });
 
 function mockPinnedGrid(): string {

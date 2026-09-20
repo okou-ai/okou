@@ -100,7 +100,6 @@ export default [
       "ccstate/no-new-promise": "error",
       "ccstate/no-direct-local-storage": "error",
       "ccstate/no-direct-session-storage": "error",
-      "ccstate/no-detach-in-signals": "error",
       "ccstate/no-direct-fetch": "error",
       "ccstate/no-empty-promise-catch": "error",
       "ccstate/no-void-statement": "error",
@@ -230,9 +229,7 @@ export default [
   // Allow detach() in signal infrastructure (definition site)
   {
     files: ["src/signals/utils.ts"],
-    rules: {
-      "ccstate/no-detach-in-signals": "off",
-    },
+    rules: {},
   },
   // Active transport and lifecycle boundaries are documented in docs/platform-lint.md.
   {

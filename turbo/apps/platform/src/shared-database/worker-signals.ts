@@ -34,7 +34,7 @@ import {
   setRootSignal$,
 } from "../signals/root-signal.ts";
 import { logger } from "../signals/log.ts";
-import { setDaemon, settle } from "../signals/utils.ts";
+import { detach, Reason, settle } from "../signals/utils.ts";
 import { throttleCommand } from "../signals/command-scheduling.ts";
 import {
   chatThreadIndicators$,
@@ -441,9 +441,11 @@ export const startSharedDatabaseWorkerDaemons$ = command(
     }
     const signal = get(rootSignal$);
     set(workerDaemonsStartedState$, true);
-    setDaemon((ownerSignal) => {
-      return set(runSharedDatabaseWorkerDaemons$, ownerSignal);
-    }, signal);
+    detach(
+      set(runSharedDatabaseWorkerDaemons$, signal),
+      Reason.Daemon,
+      "shared database worker daemons",
+    );
   },
 );
 

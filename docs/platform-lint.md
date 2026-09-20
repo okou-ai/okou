@@ -33,10 +33,9 @@ imperative ownership helper. No migration suppressions remain.
 
 Polling and timed retries use the shared loop primitives: `setLoop` starts an
 owner-scoped daemon, while `waitLoopUntil` waits for completion. The Ably
-counterparts are `setAbly*Loop$` and `waitAbly*LoopUntil$`. They use
-`setDaemon(operation, signal)` in `signals/utils.ts`, the only definition site
-that may detach background work inside signals. Explicitly background startup
-flows can use `setDaemon` directly; finite command composition stays awaited.
+counterparts are `setAbly*Loop$` and `waitAbly*LoopUntil$`. They detach their
+background work under the owner signal they are given. Explicitly background
+startup flows call `detach` directly; finite command composition stays awaited.
 Feature commands pass their real owner signal and do not detach starters again. Do not implement a loop containing
 `sleep`, `delay`, or a timer, including through an import alias. Tests
 should await an event or operation completion instead. Testing Library's

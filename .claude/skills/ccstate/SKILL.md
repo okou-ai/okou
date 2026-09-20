@@ -24,8 +24,9 @@ React/DOM reference unless it also changes that surface.
   or return its promise inside signals. Start background loops with `setLoop`
   or `setAbly*Loop$`; those primitives own `detach(..., Reason.Daemon)` internally.
   Use `waitLoopUntil` / `waitAbly*LoopUntil$` when subsequent work needs completion.
-  Non-periodic background processes use `setDaemon(operation, signal)`.
-  Other `detach()` calls belong at an actual outer boundary with their reason. Do not silence work with `void`.
+  Non-periodic background work uses `detach(promise, reason, description)` with
+  the owner's signal, in `signals/` as well as in views. Do not silence work
+  with `void`.
 - `resetSignal()` provides mutual exclusion. Add a parent when the work belongs
   to a page/route lifetime; parentless use still needs an explicit owner that
   cancels it. The lifecycle reference defines both valid patterns.
