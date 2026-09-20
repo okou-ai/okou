@@ -25,29 +25,22 @@ import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.ts
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import {
   FEATURED_SOURCE_SLUGS,
-  INDUSTRY_RECOMMENDED_SOURCES,
+  INDUSTRY_SOURCE_SLUGS,
   type IndustryId,
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 /**
- * The industry answered on the step before decides which sources lead the
- * grid, so the first cells are the ones that field actually works in. The rest
- * of the featured set follows, and nothing is taken away.
+ * The field answered on the step before decides the grid: it shows that
+ * field's own sources rather than the whole featured list. The catalog search
+ * beside them still reaches everything else.
  */
 function featuredSlugsFor(
   industry: IndustryId | null,
 ): readonly ConnectorSlug[] {
-  if (industry === null) {
-    return FEATURED_SOURCE_SLUGS;
-  }
-  const recommended = INDUSTRY_RECOMMENDED_SOURCES[industry];
-  return [
-    ...recommended,
-    ...FEATURED_SOURCE_SLUGS.filter((slug) => {
-      return !recommended.includes(slug);
-    }),
-  ];
+  return industry === null
+    ? FEATURED_SOURCE_SLUGS
+    : INDUSTRY_SOURCE_SLUGS[industry];
 }
 
 /** Search offers the rest of the catalog; the grid already carries the ten. */

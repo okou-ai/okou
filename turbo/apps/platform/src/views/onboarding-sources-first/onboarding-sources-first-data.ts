@@ -53,6 +53,105 @@ export const INDUSTRY_IDS = [
 
 export type IndustryId = (typeof INDUSTRY_IDS)[number];
 
+/**
+ * The sources a field actually works in. The step shows this set for the
+ * answered field rather than the whole featured list, so the grid is six
+ * choices that make sense plus the catalog search for anything else. The first
+ * entries are also the ones the starting prompt prefers.
+ */
+export const INDUSTRY_SOURCE_SLUGS: Readonly<
+  Record<IndustryId, readonly ConnectorSlug[]>
+> = {
+  marketing: [
+    "google-ads",
+    "meta-ads",
+    "google-sheets",
+    "google-docs",
+    "notion",
+    "gmail",
+  ],
+  design: [
+    "google-drive",
+    "google-docs",
+    "notion",
+    "google-sheets",
+    "gmail",
+    "google-calendar",
+  ],
+  consulting: [
+    "gmail",
+    "google-docs",
+    "google-sheets",
+    "google-drive",
+    "google-calendar",
+    "hubspot",
+  ],
+  coaching: [
+    "google-calendar",
+    "google-docs",
+    "gmail",
+    "google-sheets",
+    "notion",
+    "outlook-mail",
+  ],
+  finance: [
+    "quickbooks",
+    "google-sheets",
+    "gmail",
+    "google-drive",
+    "google-docs",
+    "outlook-mail",
+  ],
+  operations: [
+    "gmail",
+    "google-calendar",
+    "google-sheets",
+    "google-docs",
+    "notion",
+    "outlook-mail",
+  ],
+  sales: [
+    "hubspot",
+    "gmail",
+    "google-calendar",
+    "google-sheets",
+    "outlook-mail",
+    "google-docs",
+  ],
+  software: [
+    "github",
+    "linear",
+    "notion",
+    "google-docs",
+    "gmail",
+    "google-sheets",
+  ],
+  research: [
+    "notion",
+    "google-drive",
+    "google-docs",
+    "google-sheets",
+    "gmail",
+    "google-calendar",
+  ],
+  investing: [
+    "google-sheets",
+    "notion",
+    "gmail",
+    "google-drive",
+    "google-docs",
+    "quickbooks",
+  ],
+  other: [
+    "gmail",
+    "google-docs",
+    "google-sheets",
+    "google-drive",
+    "google-calendar",
+    "notion",
+  ],
+};
+
 /** Sources the prototype prefers first when several are connected. */
 export const INDUSTRY_RECOMMENDED_SOURCES: Readonly<
   Record<IndustryId, readonly ConnectorSlug[]>
