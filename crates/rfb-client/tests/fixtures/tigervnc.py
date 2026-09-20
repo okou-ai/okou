@@ -48,6 +48,17 @@ def main():
     ).stdout.decode()
     if version != PIN:
         raise RuntimeError(f"expected TigerVNC {PIN}, got {version}")
+    if len(sys.argv) < 3 or sys.argv[2] not in (
+        "X509None",
+        "X509Vnc",
+        "X509Plain",
+    ):
+        raise RuntimeError("expected an explicit X509None, X509Vnc, or X509Plain mode")
+    security = sys.argv[2]
+    plain_username = os.environ.get("RFB_TIGERVNC_PLAIN_USERNAME")
+    if security == "X509Plain" and not plain_username:
+        raise RuntimeError("RFB_TIGERVNC_PLAIN_USERNAME is required for X509Plain")
+    pam_service = os.environ.get("RFB_TIGERVNC_PAM_SERVICE", "tigervnc")
     scratch_root = (
         Path(sys.argv[1]).resolve()
         if len(sys.argv) > 1
@@ -124,8 +135,9 @@ def main():
             str(tmp / "ca.der"),
         )
         passwd = tmp / "passwd"
-        passwd.write_bytes(run("tigervncpasswd", "-f", input=b"testpass\n").stdout)
-        passwd.chmod(0o600)
+        if security == "X509Vnc":
+            passwd.write_bytes(run("tigervncpasswd", "-f", input=b"testpass\n").stdout)
+            passwd.chmod(0o600)
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
@@ -137,32 +149,37 @@ def main():
         )
         name = f":{number}"
         with (tmp / "server.log").open("w+") as server_log:
+            server_args = [
+                "Xtigervnc",
+                name,
+                "-geometry",
+                "320x240",
+                "-depth",
+                "24",
+                "-SecurityTypes",
+                security,
+                "-X509Cert",
+                str(cert),
+                "-X509Key",
+                str(key),
+                "-localhost",
+                "-rfbport",
+                str(port),
+                "-AlwaysShared",
+                "-ac",
+                "-nolisten",
+                "tcp",
+                "-Log",
+                "*:stderr:30",
+            ]
+            if security == "X509Vnc":
+                server_args.extend(["-PasswordFile", str(passwd)])
+            elif security == "X509Plain":
+                server_args.extend(
+                    ["-PlainUsers", plain_username, "-PAMService", pam_service]
+                )
             server = subprocess.Popen(
-                [
-                    "Xtigervnc",
-                    name,
-                    "-geometry",
-                    "320x240",
-                    "-depth",
-                    "24",
-                    "-SecurityTypes",
-                    "X509Vnc",
-                    "-X509Cert",
-                    str(cert),
-                    "-X509Key",
-                    str(key),
-                    "-PasswordFile",
-                    str(passwd),
-                    "-localhost",
-                    "-rfbport",
-                    str(port),
-                    "-AlwaysShared",
-                    "-ac",
-                    "-nolisten",
-                    "tcp",
-                    "-Log",
-                    "*:stderr:30",
-                ],
+                server_args,
                 stdout=server_log,
                 stderr=subprocess.STDOUT,
                 preexec_fn=partial(terminate_with_parent, os.getpid()),
@@ -181,7 +198,7 @@ def main():
                         time.sleep(0.02)
                 if connection is None:
                     raise RuntimeError("TigerVNC X11 readiness timed out")
-                fixture(connection, name, port, tmp)
+                fixture(connection, name, port, tmp, security)
             finally:
                 if connection is not None:
                     connection.close()
@@ -193,7 +210,7 @@ def main():
                     server.wait()
 
 
-def fixture(connection, name, port, tmp):
+def fixture(connection, name, port, tmp, security):
     screen = connection.screen()
     root = screen.root
     window = root.create_window(
@@ -253,6 +270,7 @@ def fixture(connection, name, port, tmp):
             "display": name,
             "ca_der": str(tmp / "ca.der"),
             "version": PIN,
+            "security": security,
         }
     )
     while True:
