@@ -1,7 +1,6 @@
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse } from "msw";
-import { delay } from "signal-timers";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -325,23 +324,23 @@ describe("builtin Automatic firewall credential destinations", () => {
       mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
     });
     const catalog = await installAutomaticMcpCatalog();
+    const firstRefreshSettled = createDeferredPromise<void>(context.signal);
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 3600,
       refreshResponse: async (attempt, signal) => {
         if (attempt === 1) {
-          const delayed = await settleIncludingAbort(delay(300, { signal }));
-          if (!delayed.ok) {
-            if (signal.aborted) {
-              return HttpResponse.error();
-            }
-            throw delayed.error;
+          const aborted = await settleIncludingAbort(
+            createDeferredPromise<never>(signal).promise,
+          );
+          firstRefreshSettled.resolve();
+          if (aborted.ok) {
+            throw new Error("Expected the pending refresh request to abort");
           }
-          return HttpResponse.json({
-            access_token: "too-late-automatic-token",
-            token_type: "Bearer",
-            expires_in: 3600,
-          });
+          if (signal.aborted) {
+            return HttpResponse.error();
+          }
+          throw aborted.error;
         }
         if (attempt === 2) {
           return HttpResponse.json(
@@ -466,6 +465,7 @@ describe("builtin Automatic firewall credential destinations", () => {
           failureReason: "upstream_provider",
           connectors: [catalog.slug],
         });
+        await firstRefreshSettled.promise;
         const account = await accept(
           accounts.connection({
             headers,
