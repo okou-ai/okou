@@ -1054,25 +1054,12 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
 
                 const pending = collectRequest(member);
                 requests.push(pending);
-                const waitForRequestBlock = async (
-                  barrier: { readonly waitForBlocked: () => Promise<number> },
-                  stage: string,
-                ): Promise<void> => {
-                  await Promise.race([
-                    barrier.waitForBlocked(),
-                    pending.then((earlyResponse) => {
-                      throw new Error(
-                        `Expected the request to block at ${stage}, received ${earlyResponse.status}: ${JSON.stringify(earlyResponse.body)}`,
-                      );
-                    }),
-                  ]);
-                };
-                await waitForRequestBlock(agent, "the Agent row");
+                await agent.waitForBlocked();
                 // The first owned row wait consumed most of the candidate
                 // allowance while staying within its individual lock cap.
                 mockNow(candidateDeadline(startedAt) - 500);
                 await agent.release();
-                await waitForRequestBlock(thread, "the Chat-thread row");
+                await thread.waitForBlocked();
                 mockNow(candidateDeadline(startedAt));
                 await thread.release();
 
