@@ -460,6 +460,8 @@ The result separates three observations:
 | `output.state`       | `pending`, `partial`, `ready`, or `unavailable`, independently of run status.                                                                              |
 | `output.messageRefs` | At most the latest 20 visible assistant-message references in conversation order; `hasMore` indicates earlier messages.                                    |
 | `messages`           | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
+| `wait`               | For positive `waitMs`, requested/effective wait, elapsed phase, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.              |
+| `messagePage`        | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
 | `retryAfterMs`       | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
 
 Initial admission is `associated`, even when the run has started: the service
@@ -499,6 +501,34 @@ than `retryAfterMs` (currently 2 seconds), use increasing delays when unchanged,
 and stop automatic polling when it is null or the tool returns a resource
 error. A queued input with no run has unavailable output but a non-null retry
 delay: continue tracking that original input instead of submitting it again.
+
+Set `waitMs` only with the complete exact `inputRef`. Omission or zero keeps the
+single immediate observation above. A positive value is a client preference up
+to 60 seconds and is currently clamped to an 8-second server dwell after the
+initial observation. Each fresh observation keeps its independent 15-second
+history budget, so total request time also includes the initial and final
+bounded reads. The waiter follows `retryAfterMs`, completes at most five
+canonical observations, and never holds a transaction, connection, snapshot or
+authorization decision between them.
+
+`wait.outcome` is `ready` only at the same materialized-output condition used by
+ordinary status. `deadline` returns the last fresh retryable state after the
+effective dwell; `status` returns a non-retryable state or a capacity fallback.
+Inspect `returnReason` to distinguish those cases. Deadline, capacity and the
+observation limit are successful reads, not run completion or tool failure.
+Ready wait responses include `messagePage`, a first limit-20 page made from the
+same final authorized history snapshot. Its signed page/content cursors,
+segmentation and artifact authorization are identical to `get_chat_messages`.
+The combined status and page data is capped at 192 KiB; follow the existing
+handoff/cursors for more content.
+
+At most two active waits per principal and 32 per API runtime are admitted after
+the initial retryable observation. Capacity exhaustion returns current status
+immediately. Cancellation or disconnect releases the abortable timer and slot
+and stops only this read; it never cancels or revokes accepted work. These are
+runtime resource limits, not a deployment-global lease. MCP Tasks remains the
+longer-term negotiated protocol for durable work; bounded status wait is the
+compatibility optimization for current clients.
 
 Original input lookup lasts while the exact canonical input and linkage remain
 in readable retained thread history. It continues through archives after the

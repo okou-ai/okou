@@ -13,8 +13,10 @@ import {
 } from "@okouai/db/schema/active-input-delivery";
 import { computed, type Computed } from "ccstate";
 import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { delay } from "signal-timers";
 
 import type { Tx } from "../../lib/db-types";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
@@ -24,7 +26,18 @@ import {
   readMcpChatHistoryProjection,
   type HistoryBudget,
 } from "./mcp-chat-message-history.service";
-import { projectMcpChatMessages } from "./mcp-chat-messages.service";
+import {
+  projectMcpChatMessages,
+  readMcpChatMessagePage,
+  type McpCompleteChatMessage,
+} from "./mcp-chat-messages.service";
+import { admitMcpChatStatusWaiter } from "./mcp-chat-status-wait-admission";
+
+const L = logger("McpChatStatus");
+export const MCP_CHAT_STATUS_MAX_WAIT_MS = 8000;
+const MCP_CHAT_STATUS_MAX_OBSERVATIONS = 5;
+const STATUS_OUTPUT_BYTES = 16 * 1024;
+const STATUS_WITH_MESSAGES_OUTPUT_BYTES = 192 * 1024;
 
 interface Principal {
   readonly userId: string;
@@ -251,15 +264,14 @@ async function observeLaunch(
 
 function outputStatus(
   rows: readonly ChatEventRow[],
+  messages: readonly McpCompleteChatMessage[],
   run: RunStatus,
   budget: HistoryBudget,
 ): McpGetChatStatusOutput["output"] {
-  const messages = projectMcpChatMessages(rows, budget.check).filter(
-    (message) => {
-      budget.check();
-      return message.runId === run.id && message.role === "assistant";
-    },
-  );
+  const assistantMessages = messages.filter((message) => {
+    budget.check();
+    return message.runId === run.id && message.role === "assistant";
+  });
   const terminalType = {
     queued: null,
     pending: null,
@@ -278,18 +290,401 @@ function outputStatus(
   const settled = materialized && run.cancellationRecovery !== "pending";
   return {
     state:
-      messages.length > 0
+      assistantMessages.length > 0
         ? settled
           ? "ready"
           : "partial"
         : settled
           ? "unavailable"
           : "pending",
-    messageRefs: messages.slice(-20).map((message) => {
+    messageRefs: assistantMessages.slice(-20).map((message) => {
       return message.ref;
     }),
-    hasMore: messages.length > 20,
-    reason: settled && messages.length === 0 ? "no_output" : null,
+    hasMore: assistantMessages.length > 20,
+    reason: settled && assistantMessages.length === 0 ? "no_output" : null,
+  };
+}
+
+interface StatusSelection {
+  readonly input: InputStatus | null;
+  readonly run: RunStatus | null;
+  readonly associationUnavailable: boolean;
+}
+
+async function readStatusSelection(
+  tx: Tx,
+  rows: readonly ChatEventRow[],
+  budget: HistoryBudget,
+  principal: Principal,
+  args: McpGetChatStatusInput,
+): Promise<StatusSelection> {
+  let input = args.inputRef
+    ? await observeDelivery(
+        tx,
+        principal,
+        resolveInput(args.inputRef, rows, budget),
+        budget,
+      )
+    : null;
+  const run = await readRun(tx, principal, args.threadId, input, budget);
+  const associationUnavailable =
+    input !== null && input.runId !== null && run === null;
+  if (input && run) {
+    input = await observeLaunch(tx, input, run, budget);
+  } else if (input && associationUnavailable) {
+    // A reference is never authority for an inaccessible or deleted run.
+    input = {
+      ...input,
+      state: "unavailable",
+      runId: null,
+      deliveryMode: "unknown",
+    };
+  }
+  return { input, run, associationUnavailable };
+}
+
+function readReadyMessagePage(
+  messages: readonly McpCompleteChatMessage[],
+  budget: HistoryBudget,
+  context: {
+    readonly principal: Principal;
+    readonly args: McpGetChatStatusInput;
+    readonly selection: StatusSelection;
+    readonly output: McpGetChatStatusOutput["output"];
+  },
+): McpGetChatStatusOutput["messagePage"] {
+  const { principal, args, selection, output } = context;
+  if (output.state !== "ready" || !selection.run) {
+    return null;
+  }
+  const page = readMcpChatMessagePage(
+    messages,
+    principal,
+    { threadId: args.threadId, runId: selection.run.id, limit: 20 },
+    budget.check,
+  );
+  if (page.kind !== "ok") {
+    throw new Error(
+      `Initial chat message page unexpectedly failed: ${page.kind}`,
+    );
+  }
+  return page.data;
+}
+
+async function projectMcpChatStatus(
+  tx: Tx,
+  rows: readonly ChatEventRow[],
+  budget: HistoryBudget,
+  context: {
+    readonly principal: Principal;
+    readonly args: McpGetChatStatusInput;
+    readonly includeMessagePage: boolean;
+  },
+): Promise<McpGetChatStatusOutput> {
+  const { principal, args, includeMessagePage } = context;
+  const selection = await readStatusSelection(
+    tx,
+    rows,
+    budget,
+    principal,
+    args,
+  );
+  const projectedMessages = selection.run
+    ? projectMcpChatMessages(rows, budget.check)
+    : [];
+  const output: McpGetChatStatusOutput["output"] = selection.run
+    ? outputStatus(rows, projectedMessages, selection.run, budget)
+    : {
+        state: "unavailable",
+        messageRefs: [],
+        hasMore: false,
+        reason: selection.associationUnavailable
+          ? "run_unavailable"
+          : "no_associated_run",
+      };
+  const retry =
+    output.state === "pending" ||
+    output.state === "partial" ||
+    selection.input?.state === "queued" ||
+    selection.input?.state === "reserved";
+  const messagePage = includeMessagePage
+    ? readReadyMessagePage(projectedMessages, budget, {
+        principal,
+        args,
+        selection,
+        output,
+      })
+    : null;
+  budget.check();
+  return {
+    threadId: args.threadId,
+    observedAt: nowDate().toISOString(),
+    input: selection.input,
+    runSelection: args.inputRef ? "input" : "latest",
+    run: selection.run,
+    output,
+    messages: selection.run
+      ? {
+          tool: "get_chat_messages",
+          arguments: {
+            threadId: args.threadId,
+            runId: selection.run.id,
+            limit: 20,
+          },
+        }
+      : null,
+    wait: null,
+    messagePage,
+    retryAfterMs: retry ? 2000 : null,
+  };
+}
+
+function observeMcpChatStatus(
+  runtime: { readonly db: Db; readonly bucket: string },
+  principal: Principal,
+  args: McpGetChatStatusInput,
+  signal: AbortSignal,
+  includeMessagePage: boolean,
+): Computed<Promise<McpGetChatStatusOutput | null>> {
+  return computed((get) => {
+    return get(
+      readMcpChatHistoryProjection(
+        runtime,
+        principal,
+        args.threadId,
+        signal,
+        (tx, rows, budget) => {
+          return projectMcpChatStatus(tx, rows, budget, {
+            principal,
+            args,
+            includeMessagePage,
+          });
+        },
+      ),
+    );
+  });
+}
+
+function checkResponseSize(data: McpGetChatStatusOutput): void {
+  const bytes = Buffer.byteLength(JSON.stringify(data), "utf8");
+  const limit = data.messagePage
+    ? STATUS_WITH_MESSAGES_OUTPUT_BYTES
+    : STATUS_OUTPUT_BYTES;
+  if (bytes <= limit) {
+    return;
+  }
+  throw new McpMessageHistoryError(
+    "history_limit",
+    data.messagePage
+      ? "Chat status and message content exceed the 192 KiB response data limit."
+      : "Chat status references exceed the 16 KiB response data limit.",
+  );
+}
+
+type WaitOutcome = NonNullable<McpGetChatStatusOutput["wait"]>["outcome"];
+type WaitReturnReason = NonNullable<
+  McpGetChatStatusOutput["wait"]
+>["returnReason"];
+
+interface WaitOperation {
+  readonly requestedMs: number;
+  readonly effectiveMs: number;
+  latest: McpGetChatStatusOutput | null;
+  observations: number;
+  waitStartedAt: number;
+  principalOccupancy: number;
+  runtimeOccupancy: number;
+}
+
+function elapsedWait(operation: WaitOperation): number {
+  return Math.max(
+    0,
+    Math.min(
+      operation.effectiveMs,
+      Math.round(performance.now() - operation.waitStartedAt),
+    ),
+  );
+}
+
+function withWaitResult(
+  data: McpGetChatStatusOutput,
+  operation: WaitOperation,
+  outcome: WaitOutcome,
+  returnReason: WaitReturnReason,
+): McpGetChatStatusOutput {
+  const result: McpGetChatStatusOutput = {
+    ...data,
+    wait: {
+      requestedMs: operation.requestedMs,
+      effectiveMs: operation.effectiveMs,
+      elapsedMs: elapsedWait(operation),
+      observations: operation.observations,
+      outcome,
+      returnReason,
+    },
+    messagePage: outcome === "ready" ? data.messagePage : null,
+  };
+  checkResponseSize(result);
+  return result;
+}
+
+function logWait(
+  data: McpGetChatStatusOutput | null,
+  details: {
+    readonly requestedMs: number;
+    readonly effectiveMs: number;
+    readonly elapsedMs: number;
+    readonly observations: number;
+    readonly outcome: WaitOutcome | "cancelled" | "error";
+    readonly returnReason:
+      | WaitReturnReason
+      | "request_cancelled"
+      | "observation_error";
+    readonly principalOccupancy: number;
+    readonly runtimeOccupancy: number;
+  },
+): void {
+  L.info("MCP chat status wait completed", {
+    ...details,
+    inputState: data?.input?.state ?? "not_requested",
+    runState: data?.run?.status ?? "unavailable",
+    outputState: data?.output.state ?? "unavailable",
+    contentIncluded:
+      data?.messagePage !== null && data?.messagePage !== undefined,
+  });
+}
+
+function completeObservedWait(
+  data: McpGetChatStatusOutput,
+  operation: WaitOperation,
+): McpGetChatStatusOutput | null {
+  if (data.output.state === "ready") {
+    return withWaitResult(data, operation, "ready", "output_ready");
+  }
+  if (data.retryAfterMs === null) {
+    return withWaitResult(data, operation, "status", "non_retryable_state");
+  }
+  return null;
+}
+
+function currentStatus(operation: WaitOperation): McpGetChatStatusOutput {
+  if (!operation.latest) {
+    throw new Error("MCP chat status wait is missing its latest observation");
+  }
+  return operation.latest;
+}
+
+function waitForMcpChatStatus(
+  runtime: { readonly db: Db; readonly bucket: string },
+  principal: Principal,
+  args: McpGetChatStatusInput,
+  signal: AbortSignal,
+  operation: WaitOperation,
+): Computed<Promise<McpGetChatStatusOutput | null>> {
+  return computed(async (get): Promise<McpGetChatStatusOutput | null> => {
+    const admission = admitMcpChatStatusWaiter(principal);
+    if (!admission) {
+      return withWaitResult(
+        currentStatus(operation),
+        operation,
+        "status",
+        "waiter_limit",
+      );
+    }
+    operation.principalOccupancy = admission.principalOccupancy;
+    operation.runtimeOccupancy = admission.runtimeOccupancy;
+    const deadline = operation.waitStartedAt + operation.effectiveMs;
+    try {
+      for (;;) {
+        const remaining = deadline - performance.now();
+        if (remaining <= 0) {
+          return withWaitResult(
+            currentStatus(operation),
+            operation,
+            "deadline",
+            "application_deadline",
+          );
+        }
+        if (operation.observations >= MCP_CHAT_STATUS_MAX_OBSERVATIONS) {
+          return withWaitResult(
+            currentStatus(operation),
+            operation,
+            "status",
+            "observation_limit",
+          );
+        }
+        await delay(
+          Math.min(operation.latest?.retryAfterMs ?? remaining, remaining),
+          { signal },
+        );
+        operation.latest = await get(
+          observeMcpChatStatus(runtime, principal, args, signal, true),
+        );
+        operation.observations += 1;
+        if (operation.latest === null) {
+          return null;
+        }
+        const completed = completeObservedWait(operation.latest, operation);
+        if (completed) {
+          return completed;
+        }
+      }
+    } finally {
+      admission.release();
+    }
+  });
+}
+
+function executeMcpChatStatus(
+  runtime: { readonly db: Db; readonly bucket: string },
+  principal: Principal,
+  args: McpGetChatStatusInput,
+  signal: AbortSignal,
+  operation: WaitOperation,
+): Computed<Promise<McpGetChatStatusOutput | null>> {
+  return computed(async (get): Promise<McpGetChatStatusOutput | null> => {
+    operation.latest = await get(
+      observeMcpChatStatus(
+        runtime,
+        principal,
+        args,
+        signal,
+        operation.effectiveMs > 0,
+      ),
+    );
+    operation.observations = 1;
+    if (operation.latest === null) {
+      return null;
+    }
+    if (operation.effectiveMs === 0) {
+      checkResponseSize(operation.latest);
+      return operation.latest;
+    }
+    operation.waitStartedAt = performance.now();
+    const completed = completeObservedWait(operation.latest, operation);
+    return (
+      completed ??
+      (await get(
+        waitForMcpChatStatus(runtime, principal, args, signal, operation),
+      ))
+    );
+  });
+}
+
+function waitLogDetails(
+  operation: WaitOperation,
+  outcome: WaitOutcome | "cancelled" | "error",
+  returnReason: WaitReturnReason | "request_cancelled" | "observation_error",
+): Parameters<typeof logWait>[1] {
+  return {
+    requestedMs: operation.requestedMs,
+    effectiveMs: operation.effectiveMs,
+    elapsedMs: elapsedWait(operation),
+    observations: operation.observations,
+    outcome,
+    returnReason,
+    principalOccupancy: operation.principalOccupancy,
+    runtimeOccupancy: operation.runtimeOccupancy,
   };
 }
 
@@ -300,104 +695,59 @@ export function getMcpChatStatus(
   signal: AbortSignal,
 ): Computed<Promise<McpChatStatusResult>> {
   return computed(async (get): Promise<McpChatStatusResult> => {
-    const result = await settle(
-      get(
-        readMcpChatHistoryProjection(
-          runtime,
-          principal,
-          args.threadId,
-          signal,
-          async (tx, rows, budget): Promise<McpGetChatStatusOutput> => {
-            let input = args.inputRef
-              ? await observeDelivery(
-                  tx,
-                  principal,
-                  resolveInput(args.inputRef, rows, budget),
-                  budget,
-                )
-              : null;
-            const run = await readRun(
-              tx,
-              principal,
-              args.threadId,
-              input,
-              budget,
-            );
-            const associationUnavailable =
-              input !== null && input.runId !== null && run === null;
-            if (input && run) {
-              input = await observeLaunch(tx, input, run, budget);
-            } else if (input && associationUnavailable) {
-              // A reference is never authority for an inaccessible or deleted run.
-              input = {
-                ...input,
-                state: "unavailable",
-                runId: null,
-                deliveryMode: "unknown",
-              };
-            }
-            const output: McpGetChatStatusOutput["output"] = run
-              ? outputStatus(rows, run, budget)
-              : {
-                  state: "unavailable",
-                  messageRefs: [],
-                  hasMore: false,
-                  reason: associationUnavailable
-                    ? "run_unavailable"
-                    : "no_associated_run",
-                };
-            const retry =
-              output.state === "pending" ||
-              output.state === "partial" ||
-              input?.state === "queued" ||
-              input?.state === "reserved";
-            budget.check();
-            const data: McpGetChatStatusOutput = {
-              threadId: args.threadId,
-              observedAt: nowDate().toISOString(),
-              input,
-              runSelection: args.inputRef ? "input" : "latest",
-              run,
-              output,
-              messages: run
-                ? {
-                    tool: "get_chat_messages",
-                    arguments: {
-                      threadId: args.threadId,
-                      runId: run.id,
-                      limit: 20,
-                    },
-                  }
-                : null,
-              retryAfterMs: retry ? 2000 : null,
-            };
-            // Includes historical archive identities, whose text length is not
-            // constrained by the live UUID columns. Leave room for the SDK's
-            // duplicated structuredContent/text representation below 64 KiB.
-            if (Buffer.byteLength(JSON.stringify(data), "utf8") > 16 * 1024) {
-              throw new McpMessageHistoryError(
-                "history_limit",
-                "Chat status references exceed the 16 KiB response data limit.",
-              );
-            }
-            budget.check();
-            return data;
-          },
-        ),
-      ),
-      signal,
-    );
-    if (result.ok) {
-      return result.value === null
-        ? { kind: "not_found", message: "Conversation not found." }
-        : { kind: "ok", data: result.value };
-    }
-    if (result.error instanceof McpMessageHistoryError) {
-      return { kind: result.error.kind, message: result.error.message };
-    }
-    return {
-      kind: "history_unavailable",
-      message: "Chat status is temporarily unavailable. Retry later.",
+    const requestedMs = args.waitMs ?? 0;
+    const operation: WaitOperation = {
+      requestedMs,
+      effectiveMs: Math.min(requestedMs, MCP_CHAT_STATUS_MAX_WAIT_MS),
+      latest: null,
+      observations: 0,
+      waitStartedAt: performance.now(),
+      principalOccupancy: 0,
+      runtimeOccupancy: 0,
     };
+    try {
+      const result = await settle(
+        get(executeMcpChatStatus(runtime, principal, args, signal, operation)),
+        signal,
+      );
+      if (operation.effectiveMs > 0) {
+        const completed = result.ok ? result.value : null;
+        if (completed?.wait) {
+          logWait(
+            completed,
+            waitLogDetails(
+              operation,
+              completed.wait.outcome,
+              completed.wait.returnReason,
+            ),
+          );
+        } else if (!result.ok || completed === null) {
+          logWait(
+            operation.latest,
+            waitLogDetails(operation, "error", "observation_error"),
+          );
+        }
+      }
+      if (result.ok) {
+        return result.value === null
+          ? { kind: "not_found", message: "Conversation not found." }
+          : { kind: "ok", data: result.value };
+      }
+      if (result.error instanceof McpMessageHistoryError) {
+        return { kind: result.error.kind, message: result.error.message };
+      }
+      return {
+        kind: "history_unavailable",
+        message: "Chat status is temporarily unavailable. Retry later.",
+      };
+    } catch (error) {
+      if (operation.effectiveMs > 0 && signal.aborted) {
+        logWait(
+          operation.latest,
+          waitLogDetails(operation, "cancelled", "request_cancelled"),
+        );
+      }
+      throw error;
+    }
   });
 }
