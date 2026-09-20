@@ -493,13 +493,7 @@ async function openLimitedModelAvailability() {
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   context.mocks.data.orgModelPolicies([
     builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna", true),
-    policy({
-      isDefault: false,
-      model: "claude-opus-4-8",
-      modelLabel: "Claude Opus 4.8",
-      providerType: "claude-code-oauth-token",
-      modelProviderId: CLAUDE_ROUTE_ID,
-    }),
+    builtInPolicy("claude-opus-4-8", "Claude Opus 4.8", false),
   ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     if (billing.mode === "failed") {
@@ -525,7 +519,7 @@ async function openLimitedModelAvailability() {
       200,
       billingStatus({
         tier: "limited-free-1",
-        supportByok: false,
+        supportByok: true,
         restrictedBuiltInModels: true,
       }),
     );
@@ -542,10 +536,10 @@ async function openLimitedModelAvailability() {
   await expect(
     screen.findByRole("option", { name: /GPT 5\.6 Luna/iu }),
   ).resolves.toBeVisible();
-  const gatedPersonalOption = await screen.findByRole("option", {
+  const gatedBuiltInOption = await screen.findByRole("option", {
     name: /Claude Opus 4\.8/iu,
   });
-  expect(within(gatedPersonalOption).getByText("Pro")).toBeVisible();
+  expect(within(gatedBuiltInOption).getByText("Pro")).toBeVisible();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
@@ -559,22 +553,22 @@ async function expectUpgradedModelsAvailable(
   context.mocks.ably.trigger("billing:changed");
 
   await waitFor(() => {
-    const personalOption = screen.getByRole("option", {
+    const builtInOption = screen.getByRole("option", {
       name: /Claude Opus 4\.8/iu,
     });
-    expect(personalOption).toBeVisible();
-    expect(within(personalOption).queryByText("Pro")).toBeNull();
+    expect(builtInOption).toBeVisible();
+    expect(within(builtInOption).queryByText("Pro")).toBeNull();
   });
 }
 
-test("A billing upgrade makes previously gated personal models available", async () => {
+test("A billing upgrade makes previously gated built-in models available", async () => {
   const scenario = await openLimitedModelAvailability();
   await expectUpgradedModelsAvailable(scenario);
-  const personalOption = screen.getByRole("option", {
+  const builtInOption = screen.getByRole("option", {
     name: /Claude Opus 4\.8/iu,
   });
-  expect(personalOption).toBeVisible();
-  expect(within(personalOption).queryByText("Pro")).toBeNull();
+  expect(builtInOption).toBeVisible();
+  expect(within(builtInOption).queryByText("Pro")).toBeNull();
 });
 
 test("A failed availability refresh keeps models resolved by the preceding billing upgrade", async () => {

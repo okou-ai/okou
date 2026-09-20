@@ -201,7 +201,7 @@ function planName(tier: UsagePackPlanTier): string {
 }
 
 function planConcurrentSlots(tier: UsagePackPlanTier): number {
-  return tier === "pro" ? 2 : 10;
+  return tier === "pro" ? 3 : 10;
 }
 
 /* Both caps are printed. ORG_PLAN_ENTITLEMENT_TIER_VALUES gives Pro and Team
@@ -858,7 +858,7 @@ function PlanPrice({
 }
 
 /* Each plan keeps its complete value story in one list. Concurrency leads both
-   lists, so 2 against 10 is still the first comparison without becoming a
+   lists, so 3 against 10 is still the first comparison without becoming a
    second visual hierarchy between the price and the bullets. Pro names three
    flagship models rather than asking "Every model" to carry the claim, then
    keeps BYOK as its own value prop.
@@ -869,7 +869,7 @@ function PlanPrice({
 
    Team's first three rows and its voice caps are the only real entitlement
    differences: ORG_PLAN_ENTITLEMENT_TIER_VALUES varies baseConcurrencyLimit
-   2/10, canBuyConcurrency, workflowWebhookAutomationAllowed, audioDailyRateLimit
+   3/10, canBuyConcurrency, workflowWebhookAutomationAllowed, audioDailyRateLimit
    300/500 and audioDailyDurationSeconds 200/500, and nothing else.
 
    The middle rows are capability both plans ship. They sit here because the

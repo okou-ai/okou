@@ -786,39 +786,42 @@ describe("GET/PUT /api/model-policies", () => {
     ).toStrictEqual([LIMITED_FREE1_DEFAULT_RUN_MODEL]);
   });
 
-  it("rejects BYOK policy writes for limited-free-1 workspaces", async () => {
+  it("allows BYOK policy writes for restricted limited-free-1 models", async () => {
     const fixture = await seedFixture();
     await makeLimitedFreeWorkspace(fixture);
     useSession(fixture);
-    const openRouterProviderId = await createOrgProvider(
-      fixture,
-      "openrouter-api-key",
-    );
+    const openAiProviderId = await createOrgProvider(fixture, "openai-api-key");
     const client = apiClient();
 
-    const response = await client.update({
-      headers: authHeaders(),
-      body: {
-        policies: [
-          {
-            ...makeBuiltInPolicy("claude-sonnet-5"),
-            isDefault: true,
-            defaultProviderType: "openrouter-api-key",
-            credentialScope: "org",
-            modelProviderId: openRouterProviderId,
-          },
-        ],
-      },
-    });
+    const response = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            {
+              ...makeBuiltInPolicy("gpt-6-astra"),
+              isDefault: true,
+              defaultProviderType: "openai-api-key",
+              credentialScope: "org",
+              modelProviderId: openAiProviderId,
+            },
+          ],
+        },
+      }),
+      [200],
+    );
 
-    expect(response.status).toBe(402);
-    expect(response.body).toStrictEqual({
-      error: {
-        message:
-          "Insufficient credits. Add credits or configure your own API key to continue.",
-        code: "INSUFFICIENT_CREDITS",
-      },
-    });
+    expect(response.body.workspaceDefaultModel).toBe("gpt-6-astra");
+    expect(response.body.policies).toContainEqual(
+      expect.objectContaining({
+        model: "gpt-6-astra",
+        isDefault: true,
+        defaultProviderType: "openai-api-key",
+        credentialScope: "org",
+        modelProviderId: openAiProviderId,
+        routeStatus: "valid",
+      }),
+    );
   });
 
   it("keeps Claude Sonnet 4.6 selectable", async () => {

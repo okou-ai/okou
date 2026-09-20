@@ -110,7 +110,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
     showUsagePack: false,
     tier: "limited-free-1",
     ...billingPlanCapabilities("limited-free-1"),
-    supportByok: false,
+    supportByok: true,
     restrictedBuiltInModels: true,
     credits: 0,
     onboardingPaymentPending: false,
@@ -123,7 +123,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
     creditExpiry: { expiringNextCycle: 0, nextExpiryDate: null },
     creditBreakdown: [],
     creditGrants: [],
-    concurrencyLimit: 0,
+    concurrencyLimit: 2,
     concurrencySubscriptions: [],
   };
 }

@@ -451,11 +451,11 @@ test("The saturated queue refreshes cancelled demand and its remaining lease tra
 
 test("A full queue offers the next appropriate plan upgrade", async () => {
   const fixture = installQueuePageFixture(context, {
-    billing: billingStatus({ tier: "free", concurrencyLimit: 1 }),
+    billing: billingStatus({ tier: "free", concurrencyLimit: 2 }),
     queue: queueResponse({
       tier: "free",
-      limit: 1,
-      active: 1,
+      limit: 2,
+      active: 2,
       available: 0,
       memberUsage: [],
     }),
@@ -470,7 +470,7 @@ test("A full queue offers the next appropriate plan upgrade", async () => {
 
   const drawer = await visibleQueueDrawer();
   expect(within(drawer).getByText("Free")).toBeVisible();
-  expect(within(drawer).getByText("1 of 1 slot in use")).toBeVisible();
+  expect(within(drawer).getByText("2 of 2 slots in use")).toBeVisible();
   expect(within(drawer).getByText("Available now")).toBeVisible();
   expect(within(drawer).getByText("0 slots")).toBeVisible();
   expect(button(drawer, "Upgrade to Pro")).toBeEnabled();
@@ -478,13 +478,13 @@ test("A full queue offers the next appropriate plan upgrade", async () => {
   fixture.setQueueResponse(
     queueResponse({
       tier: "pro",
-      limit: 2,
-      active: 2,
+      limit: 3,
+      active: 3,
       available: 0,
       memberUsage: [],
     }),
   );
-  fixture.setBillingStatus(billingStatus({ tier: "pro", concurrencyLimit: 2 }));
+  fixture.setBillingStatus(billingStatus({ tier: "pro", concurrencyLimit: 3 }));
   await announceBillingChange();
 
   const proPlan = await within(drawer).findByText("Pro");

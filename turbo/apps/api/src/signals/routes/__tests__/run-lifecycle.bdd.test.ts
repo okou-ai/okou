@@ -18098,6 +18098,10 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
     const { actor, granted } = await entitledRunActor();
     await failSubscription(granted);
 
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
       id: granted.subscriptionId,
       status: "past_due",
@@ -18161,10 +18165,10 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
       planKey: "limited-free-1",
       source: "stripe_subscription",
       status: "active",
-      baseConcurrencyLimit: 1,
+      baseConcurrencyLimit: 2,
       canBuyConcurrency: false,
       autoRechargeAllowed: false,
-      supportByok: false,
+      supportByok: true,
       restrictedBuiltInModels: true,
       videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: false,

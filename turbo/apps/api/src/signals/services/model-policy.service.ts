@@ -24,6 +24,7 @@ import {
   isModelSupportedByProvider,
   isLimitedFree1RestrictedRunModel,
   getRunModelAccess,
+  getRunModelRouteAccess,
   RETIRED_RUN_MODEL_MESSAGE,
   type ModelProviderCredentialScope,
   type OrgModelPoliciesResponse,
@@ -281,20 +282,22 @@ export interface EnsuredOrgModelPolicyFacts {
   readonly policies: readonly OrgModelPolicyRow[];
 }
 
-function modelAllowedForOrgPlan(
+function modelRouteAllowedForOrgPlan(
   model: string,
-  capabilities: Pick<OrgPlanCapabilities, "restrictedBuiltInModels">,
+  providerType: ModelProviderType,
+  capabilities: Pick<
+    OrgPlanCapabilities,
+    "restrictedBuiltInModels" | "supportByok"
+  >,
 ): boolean {
   return (
-    getRunModelAccess(model, capabilities.restrictedBuiltInModels) === "allowed"
+    getRunModelRouteAccess(
+      model,
+      providerType,
+      capabilities.restrictedBuiltInModels,
+    ) === "allowed" &&
+    (capabilities.supportByok || isBuiltInModelProviderType(providerType))
   );
-}
-
-function modelProviderAllowedForOrgPlan(
-  providerType: ModelProviderType,
-  capabilities: Pick<OrgPlanCapabilities, "supportByok">,
-): boolean {
-  return capabilities.supportByok || isBuiltInModelProviderType(providerType);
 }
 
 function getSupportedModelRank(model: string): number {
@@ -340,6 +343,7 @@ export function shouldReplaceExistingDefaultForPlan(
   }
   const shouldReplaceModel =
     capabilities.restrictedBuiltInModels &&
+    isBuiltInModelProviderType(existingDefault.defaultProviderType) &&
     existingDefault.model !== LIMITED_FREE1_DEFAULT_RUN_MODEL &&
     (existingDefault.model === DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL ||
       isLimitedFree1RestrictedRunModel(existingDefault.model));
@@ -750,14 +754,13 @@ async function validateUpdatePolicies(
     if (!parseSupportedModel(policy.model)) {
       return bad(`Unknown model "${policy.model}"`);
     }
-    if (!modelAllowedForOrgPlan(policy.model, capabilities)) {
-      return planRestricted();
-    }
     const providerType = parseProviderType(policy.defaultProviderType);
     if (!providerType) {
       return bad(`Unknown model provider type "${policy.defaultProviderType}"`);
     }
-    if (!modelProviderAllowedForOrgPlan(providerType, capabilities)) {
+    if (
+      !modelRouteAllowedForOrgPlan(policy.model, providerType, capabilities)
+    ) {
       return planRestricted();
     }
     if (!parseCredentialScope(policy.credentialScope)) {
