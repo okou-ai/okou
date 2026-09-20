@@ -122,15 +122,15 @@ export const updateSourcesFirstDraft$ = command(
 );
 
 const OWNER_BASE_STEPS = [
-  "sources",
   "industry",
+  "sources",
   "team",
   "experience",
 ] as const satisfies readonly SourcesFirstStep[];
 
 const MEMBER_BASE_STEPS = [
-  "sources",
   "industry",
+  "sources",
   "experience",
 ] as const satisfies readonly SourcesFirstStep[];
 

@@ -13,8 +13,8 @@ import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 
 const STEP_ROUTES: Readonly<Record<SourcesFirstStep, RoutePath>> = {
-  sources: ROUTES.onboarding,
-  industry: ROUTES.onboardingIndustry,
+  industry: ROUTES.onboarding,
+  sources: ROUTES.onboardingSources,
   team: ROUTES.onboardingTeam,
   experience: ROUTES.onboardingExperience,
   skills: ROUTES.onboardingSkills,

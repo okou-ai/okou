@@ -23,8 +23,32 @@ import {
 import { ConnectorEntryCard } from "../okou-page/components/settings/connector-entry-card.tsx";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
-import { FEATURED_SOURCE_SLUGS } from "./onboarding-sources-first-data.ts";
+import {
+  FEATURED_SOURCE_SLUGS,
+  INDUSTRY_RECOMMENDED_SOURCES,
+  type IndustryId,
+} from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
+
+/**
+ * The industry answered on the step before decides which sources lead the
+ * grid, so the first cells are the ones that field actually works in. The rest
+ * of the featured set follows, and nothing is taken away.
+ */
+function featuredSlugsFor(
+  industry: IndustryId | null,
+): readonly ConnectorSlug[] {
+  if (industry === null) {
+    return FEATURED_SOURCE_SLUGS;
+  }
+  const recommended = INDUSTRY_RECOMMENDED_SOURCES[industry];
+  return [
+    ...recommended,
+    ...FEATURED_SOURCE_SLUGS.filter((slug) => {
+      return !recommended.includes(slug);
+    }),
+  ];
+}
 
 /** Search offers the rest of the catalog; the grid already carries the ten. */
 function SourceSearchDialog({
@@ -110,8 +134,9 @@ export function OnboardingSourcesPage() {
       : [];
   // A source connected through search belongs in the grid too, so an enabled
   // Continue always has something visibly connected behind it.
+  const featuredSlugs = featuredSlugsFor(flow.draft.industry);
   const extraConnectedSlugs = connectedSlugs.filter((slug) => {
-    return !FEATURED_SOURCE_SLUGS.some((featured) => {
+    return !featuredSlugs.some((featured) => {
       return featured === slug;
     });
   });
@@ -134,7 +159,7 @@ export function OnboardingSourcesPage() {
       primaryDisabled={connectedSlugs.length === 0}
     >
       <OnboardingConnectorSetup
-        connectorSlugs={[...FEATURED_SOURCE_SLUGS, ...extraConnectedSlugs]}
+        connectorSlugs={[...featuredSlugs, ...extraConnectedSlugs]}
         variant="sources"
       >
         {/* The catalog entry closes the grid, as the last cell of its last row. */}

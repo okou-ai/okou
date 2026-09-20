@@ -75,7 +75,7 @@ import {
 import {
   setupOnboardingEntryPage$,
   setupOnboardingExperiencePage$,
-  setupOnboardingIndustryPage$,
+  setupOnboardingSourcesPage$,
   setupOnboardingReadyPage$,
   setupOnboardingSkillsPage$,
   setupOnboardingSlackPage$,
@@ -436,8 +436,8 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupOnboardingEntryPage$),
   },
   {
-    path: ROUTES.onboardingIndustry,
-    setup: setupAuthPageWrapper(setupOnboardingIndustryPage$),
+    path: ROUTES.onboardingSources,
+    setup: setupAuthPageWrapper(setupOnboardingSourcesPage$),
   },
   {
     path: ROUTES.onboardingTeam,

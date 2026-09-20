@@ -59,7 +59,7 @@ export const ROUTES = {
   onboardingVideoRun: "/onboarding/video-run",
   // Source-first onboarding. `/onboarding` itself renders its first step when
   // the switch is on, so the marketing handoff keeps working for both flows.
-  onboardingIndustry: "/onboarding/industry",
+  onboardingSources: "/onboarding/sources",
   onboardingTeam: "/onboarding/team",
   onboardingExperience: "/onboarding/experience",
   onboardingSkills: "/onboarding/skills",

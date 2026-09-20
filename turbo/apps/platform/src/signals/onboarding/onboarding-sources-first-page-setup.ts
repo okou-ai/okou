@@ -75,7 +75,7 @@ function createSourcesFirstPageSetup(
     set(setSourcesFirstFlow$, flow);
 
     const draft = get(sourcesFirstDraft$);
-    if (config.step !== "sources") {
+    if (config.step !== "industry" && config.step !== "sources") {
       const { connectors } = await get(connectorCatalogStatus$);
       signal.throwIfAborted();
       const hasSource = connectors.some((connector) => {
@@ -100,7 +100,7 @@ function createSourcesFirstPageSetup(
   });
 }
 
-const setupOnboardingSourcesPage$ = createSourcesFirstPageSetup({
+export const setupOnboardingSourcesPage$ = createSourcesFirstPageSetup({
   step: "sources",
   title: () => {
     return i18n.t(($) => {
@@ -110,23 +110,7 @@ const setupOnboardingSourcesPage$ = createSourcesFirstPageSetup({
   Page: OnboardingSourcesPage,
 });
 
-/**
- * `/onboarding` keeps its public path: the switch decides whether it opens the
- * source-first first step or the make-something page.
- */
-export const setupOnboardingEntryPage$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    if (await set(sourcesFirstEnabled$, signal)) {
-      signal.throwIfAborted();
-      await set(setupOnboardingSourcesPage$, signal);
-      return;
-    }
-    signal.throwIfAborted();
-    await set(setupOnboardingMakePage$, signal);
-  },
-);
-
-export const setupOnboardingIndustryPage$ = createSourcesFirstPageSetup({
+const setupOnboardingIndustryEntryPage$ = createSourcesFirstPageSetup({
   step: "industry",
   title: () => {
     return i18n.t(($) => {
@@ -135,6 +119,22 @@ export const setupOnboardingIndustryPage$ = createSourcesFirstPageSetup({
   },
   Page: OnboardingIndustryPage,
 });
+
+/**
+ * `/onboarding` keeps its public path: the switch decides whether it opens the
+ * source-first flow's first question or the make-something page.
+ */
+export const setupOnboardingEntryPage$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    if (await set(sourcesFirstEnabled$, signal)) {
+      signal.throwIfAborted();
+      await set(setupOnboardingIndustryEntryPage$, signal);
+      return;
+    }
+    signal.throwIfAborted();
+    await set(setupOnboardingMakePage$, signal);
+  },
+);
 
 export const setupOnboardingTeamPage$ = createSourcesFirstPageSetup({
   step: "team",
