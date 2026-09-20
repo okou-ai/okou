@@ -447,3 +447,57 @@ test.each([
     expect(action("button", "Download options")).toBeInTheDocument();
   },
 );
+
+test.each([
+  ["private", "Only me"],
+  ["organization", "Organization"],
+  ["public", "Public access"],
+] as const)(
+  "the viewer names who can reach the artifact without opening the share menu: %s",
+  async (audience, label) => {
+    context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+      return respond(200, {
+        ownerUrl: `https://app.okou.ai${imagePath}`,
+        shareId: audience === "private" ? null : artifactId,
+        audience,
+        organization: { id: "org_test", name: "Acme" },
+        selectedTarget: null,
+        selectedVersion: null,
+        candidateVersion: null,
+        url: audience === "private" ? null : `https://app.okou.ai${imagePath}`,
+        shortUrl:
+          audience === "private" ? null : `https://app.okou.ai${imagePath}`,
+      });
+    });
+    await openViewer();
+
+    // The audience is a standing fact about the artifact, so it belongs beside
+    // the kind rather than behind a menu. The subtitle composes the two from
+    // separate nodes, so the match is on the rendered line.
+    await expect(
+      screen.findByText((_content, element) => {
+        return (
+          element?.tagName === "P" && element.textContent === `Image · ${label}`
+        );
+      }),
+    ).resolves.toBeVisible();
+  },
+);
+
+test("an unresolved share read leaves the audience unstated rather than guessed", async () => {
+  await openViewer();
+
+  await expect(
+    screen.findByRole("heading", { name: "launch.png" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByText("Image")).toBeInTheDocument();
+  for (const label of ["Only me", "Organization", "Public access"]) {
+    expect(
+      screen.queryByText((_content, element) => {
+        return (
+          element?.tagName === "P" && element.textContent === `Image · ${label}`
+        );
+      }),
+    ).not.toBeInTheDocument();
+  }
+});

@@ -743,17 +743,26 @@ function ArtifactImageZoomButton({
 export function ArtifactImageZoomControls({
   controls,
   nativeTitle = false,
+  placement = "top",
   testIdPrefix,
 }: {
   controls: ZoomableImageControls;
   /** Use the browser title tooltip instead of the floating action tooltip. */
   nativeTitle?: boolean;
+  /**
+   * Fullscreen puts the exit control in the top-right corner, and it is the
+   * only way back out, so zoom yields that corner rather than sharing it.
+   */
+  placement?: "top" | "bottom";
   testIdPrefix: string;
 }) {
   const { t } = useTranslation();
   return (
     <div
-      className="absolute right-4 top-4 z-10 flex items-center gap-2 rounded-lg bg-background/95 px-2.5 py-1.5 text-muted-foreground shadow-sm backdrop-blur-sm"
+      className={cn(
+        "absolute right-4 z-10 flex items-center gap-2 rounded-lg bg-background/95 px-2.5 py-1.5 text-muted-foreground shadow-sm backdrop-blur-sm",
+        placement === "bottom" ? "bottom-4" : "top-4",
+      )}
       data-testid={`${testIdPrefix}-image-zoom-controls`}
     >
       <ArtifactImageZoomButton

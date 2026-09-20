@@ -31,6 +31,10 @@ import {
 } from "../okou-page/artifact-actions.tsx";
 import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
 import {
+  getArtifactShareScope,
+  type ArtifactShareSession,
+} from "../../signals/artifact-sharing.ts";
+import {
   artifactFallbackSubtitle,
   artifactSupportsFullscreen,
 } from "../okou-page/artifact-display.ts";
@@ -137,6 +141,63 @@ function ArtifactViewerActions({
   );
 }
 
+function ArtifactShareAudienceLabel({
+  session,
+}: {
+  session: ArtifactShareSession;
+}) {
+  const { t } = useTranslation();
+  const details = useLastResolved(session.details$);
+  if (!details?.status) {
+    return null;
+  }
+  return (
+    <>
+      {" · "}
+      {details.audience === "public"
+        ? t(($) => {
+            return $.artifacts.sharing.publicAccess;
+          })
+        : details.audience === "organization"
+          ? t(($) => {
+              return $.artifacts.sharing.organization;
+            })
+          : t(($) => {
+              return $.artifacts.sharing.onlyMe;
+            })}
+    </>
+  );
+}
+
+/**
+ * Who can reach this artifact is a standing fact about it, not something the
+ * owner should have to open a menu to recall. A public reference says so by
+ * itself; anything else is only known once the share read resolves, and an
+ * unresolved read prints nothing rather than guessing an audience.
+ */
+function ArtifactVisibilityLabel({
+  artifact,
+}: {
+  artifact: SharedArtifactPreview;
+}) {
+  const { t } = useTranslation();
+  const session = useGet(getArtifactShareScope("viewer").session$);
+  if (artifact.sharedThreadSnapshot) {
+    return null;
+  }
+  if (artifact.publicUrl !== null) {
+    return (
+      <>
+        {" · "}
+        {t(($) => {
+          return $.artifacts.sharing.publicAccess;
+        })}
+      </>
+    );
+  }
+  return session ? <ArtifactShareAudienceLabel session={session} /> : null;
+}
+
 function ArtifactAccessPage() {
   const { t } = useTranslation();
   const user = useLastResolved(currentUserInfo$);
@@ -146,10 +207,14 @@ function ArtifactAccessPage() {
     user ? openClerkAddAccount$ : signInToSharedArtifact$,
   );
   return (
-    <div className="flex min-h-full items-center justify-center bg-gray-50 px-5 py-10 sm:px-8">
+    // `gray-50` is the dark theme's page background, so using the primitive
+    // directly left the card and its surround within eight points of each
+    // other. The semantic pair is the one the ramp designs a step between:
+    // `card` sits above `background` in dark, and `muted` sits above `card`.
+    <div className="flex min-h-full items-center justify-center bg-background px-5 py-10 sm:px-8">
       <Card className="w-full max-w-[480px] rounded-3xl">
         <div className="px-6 pb-8 pt-9 text-center sm:px-9 sm:pt-10">
-          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-gray-50 text-muted-foreground">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
             <LockKeyhole size={24} strokeWidth={1.5} aria-hidden />
           </div>
           <h2 className="mt-6 text-2xl font-semibold leading-8 tracking-tight text-foreground">
@@ -287,6 +352,7 @@ export function SharedArtifactPage({
                 artifact.preview.kind,
                 artifact.filename,
               )}
+              <ArtifactVisibilityLabel artifact={artifact} />
             </p>
           )}
         </div>
