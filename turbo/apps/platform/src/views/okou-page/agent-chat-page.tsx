@@ -201,31 +201,24 @@ function useTagline(
   return taglines[index % taglines.length];
 }
 
-function TypewriterText({
-  text,
-  speed = 40,
-}: {
-  text: string;
-  speed?: number;
-}) {
-  const displayedText = useGet(chatPageTaglineDisplayed$);
+function TypewriterText({ text }: { text: string }) {
+  const animation = useGet(chatPageTaglineDisplayed$);
+  const displayedText = animation.text === text ? animation.displayed : "";
   const typewriterRef = useSet(chatPageTaglineTypewriterRef$);
-  const typewriterKey = `${text}:${String(speed)}`;
 
   return (
     <>
-      <span
-        key={typewriterKey}
-        ref={typewriterRef}
-        className="contents"
-        data-typewriter-speed={String(speed)}
-        data-typewriter-text={text}
-      >
-        {displayedText}
+      {/* The complete copy keeps wrapping and height stable while the row
+          follows the width of the text that has actually unfolded. */}
+      <span key={text} ref={typewriterRef} aria-hidden className="invisible">
+        {text}
       </span>
-      {displayedText.length < text.length && (
-        <span className="inline-block w-[2px] h-[1em] bg-foreground/60 ml-0.5 align-middle animate-pulse" />
-      )}
+      <span aria-hidden className="absolute inset-0">
+        <span data-slot="chat-tagline-text">{displayedText}</span>
+        {displayedText.length > 0 && displayedText.length < text.length && (
+          <span className="inline-block w-[2px] h-[1em] bg-foreground/60 ml-0.5 align-middle motion-safe:animate-pulse" />
+        )}
+      </span>
     </>
   );
 }
@@ -388,26 +381,20 @@ export function AgentChatPage() {
           data-testid="agent-chat-scroll-content"
           className="mx-auto w-full max-w-[900px] flex flex-col items-stretch gap-10 pt-8 pb-safe-or-12 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
         >
-          <div className="flex w-full items-center justify-center gap-4">
-            <ChatAgentAvatar agentId={currentChatAgentId} />
-            <h2
-              aria-label={tagline}
-              data-testid="chat-tagline"
-              className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+          <div className="flex w-full justify-center overflow-x-clip">
+            <div
+              data-slot="chat-greeting"
+              className="flex max-w-full items-center gap-4 motion-safe:translate-x-[var(--chat-greeting-offset,calc(50%-1.75rem))]"
             >
-              {/* The tagline is typed one character at a time. Centred, every
-                  character would widen the row and slide the avatar left, so
-                  the full line holds the box from the first frame and the typed
-                  text paints over it. The reserving copy stays in flow: it has
-                  to wrap exactly the way the visible text will, which a
-                  measured width could not promise. */}
-              <span aria-hidden className="invisible">
-                {tagline}
-              </span>
-              <span className="absolute inset-0">
+              <ChatAgentAvatar agentId={currentChatAgentId} />
+              <h2
+                aria-label={tagline}
+                data-testid="chat-tagline"
+                className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+              >
                 <TypewriterText text={tagline} />
-              </span>
-            </h2>
+              </h2>
+            </div>
           </div>
 
           <ChatComposer signals={composerSignals} />

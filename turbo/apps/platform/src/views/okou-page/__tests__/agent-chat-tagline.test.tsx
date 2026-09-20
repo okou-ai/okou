@@ -2,11 +2,13 @@ import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000002";
+const NOW = Date.parse("2026-09-20T12:00:00.000Z");
 
 function mountedAgent(): void {
   context.mocks.data.agents([
@@ -22,38 +24,53 @@ function mountedAgent(): void {
   ]);
 }
 
-/**
- * The greeting is centred, so the width of this heading is what holds the
- * avatar in place; a line that grew by one character every 40ms would walk the
- * avatar left across the whole animation. jsdom has no layout, so the box
- * cannot be measured here — what it can show is the guarantee behind the
- * width: the complete line is in the heading from the first observable frame,
- * and the typed text only ever paints over it.
- */
-test("The tagline holds its full line while it types", async () => {
+async function greeting() {
+  const tagline = await screen.findByTestId("chat-tagline");
+  const fullLine = tagline.getAttribute("aria-label");
+  const typed = tagline.querySelector('[data-slot="chat-tagline-text"]');
+  if (!fullLine || !typed) {
+    throw new Error("Expected the greeting and its displayed text");
+  }
+  return { tagline, fullLine, typed };
+}
+
+test("The greeting pauses before revealing its text and keeps its accessible name", async () => {
   mountedAgent();
+  context.mocks.browser.matchMedia(false);
+  mockNow(NOW, context.signal);
 
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
-  const tagline = await screen.findByTestId("chat-tagline");
-  const fullLine = tagline.getAttribute("aria-label");
-  expect(fullLine).toBeTruthy();
+  const { tagline, fullLine, typed } = await greeting();
+  expect(typed).toBeEmptyDOMElement();
+  expect(tagline).toHaveAccessibleName(fullLine);
 
-  // The whole line is in the heading and hidden from both the page and the
-  // accessibility tree, which is what holds the box open. Asserted through the
-  // hidden copy rather than through the number or order of elements, so that
-  // reserving the same width another way stays free to pass.
-  const reserved = tagline.querySelector("[aria-hidden='true']");
-  expect(reserved).toBeInTheDocument();
-  expect(reserved?.textContent).toBe(fullLine);
-
-  // Whatever the typewriter has reached is a prefix of that same line, so the
-  // visible text can never ask for more room than is already reserved.
-  const typed = tagline.querySelector("[aria-hidden='true'] ~ *");
-  expect(fullLine?.startsWith(typed?.textContent ?? "")).toBeTruthy();
-
+  mockNow(NOW + 745, context.signal);
   await waitFor(() => {
-    expect(typed?.textContent).toBe(fullLine);
+    const prefix = typed.textContent ?? "";
+    expect(prefix.length).toBeGreaterThan(0);
+    expect(prefix.length).toBeLessThan(fullLine.length);
+    expect(fullLine.startsWith(prefix)).toBeTruthy();
   });
-  expect(reserved?.textContent).toBe(fullLine);
+  expect(tagline).toHaveAccessibleName(fullLine);
+
+  mockNow(NOW + 1270, context.signal);
+  await waitFor(() => {
+    expect(typed.textContent).toBe(fullLine);
+  });
+  expect(tagline).toHaveAccessibleName(fullLine);
+});
+
+test("Reduced motion shows the complete greeting immediately", async () => {
+  mountedAgent();
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(prefers-reduced-motion: reduce)";
+  });
+  mockNow(NOW, context.signal);
+
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+
+  const { tagline, fullLine, typed } = await greeting();
+  expect(typed.textContent).toBe(fullLine);
+  expect(tagline).toHaveAccessibleName(fullLine);
 });

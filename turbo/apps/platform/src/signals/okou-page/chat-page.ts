@@ -16,9 +16,14 @@ import {
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { createPersonalModelProviderAuthSignals } from "./personal-model-provider-auth.ts";
 import { onRef, setLoop } from "../utils.ts";
+import { now } from "../../lib/time.ts";
 
 const internalTaglineIndex$ = state(Math.floor(Math.random() * 18));
-const internalTaglineDisplayed$ = state("");
+const internalTaglineDisplayed$ = state({ text: "", displayed: "" });
+
+const TAGLINE_HOLD_MS = 220;
+const TAGLINE_REVEAL_MS = 1050;
+const TAGLINE_FRAME_MS = 16;
 
 export const reloadTagline$ = command(({ set }) => {
   set(internalTaglineIndex$, Math.floor(Math.random() * 18));
@@ -32,25 +37,118 @@ export const chatPageTaglineDisplayed$ = computed((get) => {
   return get(internalTaglineDisplayed$);
 });
 
+/** Ease the first and last 16% of the travel without bouncing or overshooting. */
+function taglineProgress(progress: number): number {
+  const ramp = 0.16;
+  if (progress < ramp) {
+    return (progress * progress) / (2 * ramp * (1 - ramp));
+  }
+  if (progress > 1 - ramp) {
+    return 1 - (1 - progress) ** 2 / (2 * ramp * (1 - ramp));
+  }
+  return (progress - ramp / 2) / (1 - ramp);
+}
+
+function taglinePrefixWidth(range: Range, end: number): number {
+  range.setEnd(range.startContainer, end);
+  const rects = Array.from(range.getClientRects());
+  const left = rects[0]?.left ?? 0;
+  return Math.max(
+    0,
+    ...rects.map((rect) => {
+      return rect.right - left;
+    }),
+  );
+}
+
+function moveTagline(
+  element: HTMLElement,
+  row: HTMLElement,
+  range: Range,
+  ends: number[],
+  position: number,
+): void {
+  const index = Math.floor(position);
+  const fullLength = ends.at(-1) ?? 0;
+  const previousWidth = taglinePrefixWidth(range, ends[index - 1] ?? 0);
+  const nextWidth = taglinePrefixWidth(range, ends[index] ?? fullLength);
+  const fullWidth = taglinePrefixWidth(range, fullLength);
+  const width =
+    previousWidth + (nextWidth - previousWidth) * (position - index);
+  // Preserve the final line wrapping. Once the longest line has unfolded,
+  // the remaining lines can type without moving the avatar any farther.
+  const headingWidth =
+    element.parentElement?.getBoundingClientRect().width ?? 0;
+  const visibleWidth = fullWidth === 0 ? 0 : (width / fullWidth) * headingWidth;
+  const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+  const gapProgress = Math.min(1, position);
+  row.style.setProperty(
+    "--chat-greeting-offset",
+    `calc(50% - 1.75rem - ${(visibleWidth + gap * gapProgress) / 2}px)`,
+  );
+}
+
 const startTaglineTypewriter$ = command(
   ({ set }, element: HTMLElement, signal: AbortSignal) => {
-    const text = element.dataset.typewriterText ?? "";
-    const parsedSpeed = Number.parseInt(
-      element.dataset.typewriterSpeed ?? "40",
-      10,
-    );
-    const speed = Number.isFinite(parsedSpeed) ? parsedSpeed : 40;
+    const text = element.textContent ?? "";
+    const row = element.closest<HTMLElement>('[data-slot="chat-greeting"]');
+    if (!row) {
+      throw new Error("The tagline must be mounted inside its greeting row");
+    }
+    row.style.setProperty("--chat-greeting-offset", "calc(50% - 1.75rem)");
+    set(internalTaglineDisplayed$, { text, displayed: "" });
+    if (!text) {
+      return;
+    }
 
-    set(internalTaglineDisplayed$, "");
-    let index = 0;
+    const node = element.firstChild;
+    if (!(node instanceof Text)) {
+      throw new Error("The tagline measurement must contain its complete text");
+    }
+    const range = document.createRange();
+    range.setStart(node, 0);
+    const ends = Array.from(
+      new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
+      ({ index, segment }) => {
+        return index + segment.length;
+      },
+    );
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const startedAt = now();
+    let displayedIndex = 0;
+
     setLoop(
       () => {
-        index += 1;
-        set(internalTaglineDisplayed$, text.slice(0, index));
-        return index >= text.length;
+        const progress = Math.min(
+          1,
+          Math.max(
+            0,
+            (now() - startedAt - TAGLINE_HOLD_MS) / TAGLINE_REVEAL_MS,
+          ),
+        );
+        if (reducedMotion.matches || progress === 1) {
+          row.style.setProperty("--chat-greeting-offset", "0px");
+          set(internalTaglineDisplayed$, { text, displayed: text });
+          return true;
+        }
+        if (progress === 0) {
+          return false;
+        }
+        const position = taglineProgress(progress) * ends.length;
+        moveTagline(element, row, range, ends, position);
+        const index = Math.floor(position);
+        if (index !== displayedIndex) {
+          displayedIndex = index;
+          set(internalTaglineDisplayed$, {
+            text,
+            displayed: text.slice(0, ends[index - 1] ?? 0),
+          });
+        }
+        return false;
       },
-      speed,
+      TAGLINE_FRAME_MS,
       signal,
+      { testIntervalMs: TAGLINE_FRAME_MS },
     );
   },
 );
