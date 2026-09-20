@@ -121,26 +121,31 @@ export function registerAgentRunFailureLogTests(test: TestRegistrar): void {
     },
   );
 
-  test("keeps incomplete ownership conservative and omits a non-built-in runtime route", () => {
+  test("keeps incomplete ownership conservative without exposing an opaque provider model", () => {
+    const privateModelIdentity =
+      "arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/production";
     logAgentRunFailure({
       runId: "run-unresolved-limit",
       exitCode: 1,
       failureReason: "provider_rate_limited",
       executionOwner: "sandbox",
       run: runSnapshot({
-        modelProvider: "anthropic-api-key",
+        modelProvider: "aws-bedrock",
         modelProviderCredentialScope: null,
+        selectedModel: privateModelIdentity,
       }),
     });
 
     expect(axiomLogging.warn).toHaveBeenCalledWith(
       "Run failed",
       expect.objectContaining({
-        modelProvider: "anthropic-api-key",
+        modelProvider: "aws-bedrock",
+        selectedModel: "unknown",
         modelCredentialOwner: "unresolved",
       }),
     );
     const fields = axiomLogging.warn.mock.calls[0]?.[1];
+    expect(JSON.stringify(fields)).not.toContain(privateModelIdentity);
     expect(fields).not.toHaveProperty("modelRuntimeProvider");
     expect(fields).not.toHaveProperty("modelRuntimeModel");
     expect(fields).not.toHaveProperty("modelProviderCredentialScope");

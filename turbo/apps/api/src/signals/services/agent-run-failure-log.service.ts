@@ -2,6 +2,7 @@ import {
   isBuiltInModelProviderType,
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
+  supportedRunModelSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -75,6 +76,13 @@ function parsedModelProvider(
   return result.success ? result.data : undefined;
 }
 
+function parsedSelectedModel(
+  run: AgentRunFailureLogSnapshot,
+): string | undefined {
+  const result = supportedRunModelSchema.safeParse(run.selectedModel);
+  return result.success ? result.data : undefined;
+}
+
 function modelCredentialOwner(
   run: AgentRunFailureLogSnapshot,
   modelProvider: ModelProviderType | undefined,
@@ -128,7 +136,7 @@ function projectFailureEvidence(input: LogAgentRunFailureInput) {
     framework: input.run.launchSnapshot?.framework ?? "unknown",
     executionOwner: input.executionOwner,
     modelProvider: modelProvider ?? "unknown",
-    selectedModel: input.run.selectedModel ?? "unknown",
+    selectedModel: parsedSelectedModel(input.run) ?? "unknown",
     modelCredentialOwner: credentialOwner,
     ...runtimeRoute,
   };
