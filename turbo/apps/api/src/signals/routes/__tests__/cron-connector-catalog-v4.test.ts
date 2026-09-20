@@ -303,7 +303,7 @@ describe("connector catalog v4 preparation", () => {
     ["mcp", "none"],
     ["mcp", "manual"],
     ["mcp", "automatic"],
-    ["http", "none"],
+    ["http", "manual"],
   ] as const)(
     "refreshes a running %s %s builtin when its catalog configuration changes or disappears",
     async (protocol, authKind) => {
