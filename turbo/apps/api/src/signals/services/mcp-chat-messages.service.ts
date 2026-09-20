@@ -42,8 +42,7 @@ const CURSOR_TTL_MS = 24 * 60 * 60 * 1000;
 const TEXT_UNITS = 8192;
 const FILES_PER_SEGMENT = 8;
 const SEGMENT_BYTES = 64 * 1024;
-// The SDK sends both structuredContent and its JSON text rendering. Reserve
-// enough space for their duplication and JSON escaping within a 512 KiB result.
+// Leave transport, summary and JSON-envelope headroom within a 512 KiB result.
 const OUTPUT_BYTES = 160 * 1024;
 const cursorSchema = z.strictObject({
   version: z.literal(1),

@@ -4,6 +4,8 @@ import {
   Client,
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
+import type { JsonSchemaType } from "@modelcontextprotocol/server";
+import { AjvJsonSchemaValidator } from "@modelcontextprotocol/server/validators/ajv";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import {
@@ -99,6 +101,55 @@ const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
   "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
+// Full-scope tools/list before this optimization on main at 20ac28bd53.
+const fullCatalogBaselineBytes = 47_144;
+const fullCatalogMaximumBytes = Math.floor(fullCatalogBaselineBytes * 0.8);
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function measureCompactSuccess(result: unknown): {
+  readonly baselineBytes: number;
+  readonly compactBytes: number;
+} {
+  const parsed = z
+    .looseObject({
+      isError: z.boolean().optional(),
+      content: z.array(z.object({ type: z.literal("text"), text: z.string() })),
+      structuredContent: z.unknown(),
+    })
+    .parse(result);
+  expect(parsed.isError).not.toBeTruthy();
+  expect(parsed.content).toHaveLength(1);
+  const summary = parsed.content[0]?.text;
+  if (!summary) {
+    throw new Error("Expected a nonempty MCP tool summary");
+  }
+  expect(Buffer.byteLength(summary, "utf8")).toBeLessThanOrEqual(512);
+  expect(summary).not.toBe(JSON.stringify(parsed.structuredContent));
+  const baselineResult = {
+    ...parsed,
+    content: [
+      { type: "text" as const, text: JSON.stringify(parsed.structuredContent) },
+    ],
+  };
+  const measurement = {
+    baselineBytes: jsonBytes(baselineResult),
+    compactBytes: jsonBytes(parsed),
+  };
+  expect(measurement.compactBytes).toBeLessThanOrEqual(
+    measurement.baselineBytes,
+  );
+  return measurement;
+}
+
+function expectSubstantialCompactSuccess(result: unknown): void {
+  const measurement = measureCompactSuccess(result);
+  expect(measurement.compactBytes).toBeLessThanOrEqual(
+    Math.floor(measurement.baselineBytes * 0.6),
+  );
+}
 
 function client() {
   return setupApp({ context, routes: mcpServerRoutes })(mcpServerContract);
@@ -235,7 +286,7 @@ async function callTool(
     }),
     [200],
   );
-  return z
+  const result = z
     .object({
       result: z.object({
         isError: z.boolean().optional(),
@@ -246,6 +297,10 @@ async function callTool(
       }),
     })
     .parse(rpc(response.body)).result;
+  if (!result.isError && result.structuredContent !== undefined) {
+    measureCompactSuccess(result);
+  }
+  return result;
 }
 
 function structuredToolError(result: Awaited<ReturnType<typeof callTool>>) {
@@ -520,6 +575,25 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
+  it("substantially reduces a 20-thread list result", async () => {
+    const f = await threadFixture();
+    await Promise.all(
+      Array.from({ length: 20 }, (_, index) => {
+        return f.chat.createThread(f.actor, {
+          agentId: f.agent.agentId,
+          title: `Payload measurement ${index}`,
+        });
+      }),
+    );
+    const result = await callTool(f.auth.token(), "list_chat_threads", {
+      limit: 20,
+    });
+    expectSubstantialCompactSuccess(result);
+    expect(
+      mcpListChatThreadsOutputSchema.parse(result.structuredContent).threads,
+    ).toHaveLength(20);
+  });
+
   it("does not initialize missing model policies through a discovery read", async () => {
     const auth = await fixture();
     const first = await callTool(auth.token(), "list_models");
@@ -692,14 +766,19 @@ describe("MCP chat discovery and creation", () => {
     const f = await creationFixture();
     const requestId = randomUUID();
     const token = f.auth.token({ scope: defaultScopes });
-    const created = await createThread(
+    const createdResult = await callTool(
       f.auth.token({ scope: `${requiredScopes} okou:chat:manage` }),
+      "create_chat_thread",
       {
         requestId: requestId.toUpperCase(),
         agentId: f.agent.agentId.toUpperCase(),
         title: "Review the quarterly plan",
         model: "claude-sonnet-4-6",
       },
+    );
+    expectSubstantialCompactSuccess(createdResult);
+    const created = mcpCreateChatThreadOutputSchema.parse(
+      createdResult.structuredContent,
     );
     expect(created).toMatchObject({
       threadId: requestId,
@@ -1444,7 +1523,11 @@ describe("MCP chat status", () => {
       lastEventSequence: 0,
     });
     await flushWaitUntilForTest();
-    const ready = await getStatus(token, args);
+    const readyResult = await callTool(token, "get_chat_status", args);
+    expectSubstantialCompactSuccess(readyResult);
+    const ready = mcpGetChatStatusOutputSchema.parse(
+      readyResult.structuredContent,
+    );
     expect(ready).toMatchObject({
       run: { id: runId, status: "completed", completedAt: expect.any(String) },
       output: { state: "ready", messageRefs: partial.output.messageRefs },
@@ -1453,7 +1536,22 @@ describe("MCP chat status", () => {
     if (!ready.messages) {
       throw new Error("Expected a message retrieval handoff");
     }
-    const messages = await getMessages(token, ready.messages.arguments);
+    const messagesResult = await callTool(
+      token,
+      "get_chat_messages",
+      ready.messages.arguments,
+    );
+    expectSubstantialCompactSuccess(messagesResult);
+    const messages = mcpGetChatMessagesOutputSchema.parse(
+      messagesResult.structuredContent,
+    );
+    expect(
+      new Set(
+        messages.messages.map((message) => {
+          return message.role;
+        }),
+      ),
+    ).toStrictEqual(new Set(["user", "assistant"]));
     expect(
       messages.messages
         .filter((message) => {
@@ -5439,7 +5537,22 @@ describe("external MCP entry", () => {
         }),
         [200],
       );
-      expect(rpc(listed.body)).toMatchObject({
+      const listedPayload = rpc(listed.body);
+      const listedTools = z
+        .object({
+          result: z.object({
+            tools: z.array(
+              z.looseObject({
+                name: z.string(),
+                description: z.string(),
+                inputSchema: z.record(z.string(), z.unknown()),
+                outputSchema: z.record(z.string(), z.unknown()),
+              }),
+            ),
+          }),
+        })
+        .parse(listedPayload).result.tools;
+      expect(listedPayload).toMatchObject({
         result: {
           tools: [
             { name: "get_chat_messages", annotations: { readOnlyHint: true } },
@@ -5541,6 +5654,62 @@ describe("external MCP entry", () => {
           ],
         },
       });
+      const schemaValidator = new AjvJsonSchemaValidator();
+      for (const tool of listedTools) {
+        expect(() => {
+          schemaValidator.getValidator(tool.inputSchema as JsonSchemaType);
+          schemaValidator.getValidator(tool.outputSchema as JsonSchemaType);
+        }).not.toThrow();
+      }
+      if (scopes === defaultScopes) {
+        expect(listedTools).toHaveLength(12);
+        expect(jsonBytes(listedTools)).toBeLessThanOrEqual(
+          fullCatalogMaximumBytes,
+        );
+        expect(JSON.stringify(listedTools)).toContain('"$ref":"#/$defs/');
+        const safetyTerms = {
+          get_chat_messages: [
+            /nextContentCursor/iu,
+            /UTF-16/iu,
+            /does not mark read/iu,
+            /8 MiB/iu,
+          ],
+          search_chat_messages: [
+            /scanLimited/iu,
+            /do not prove absence/iu,
+            /does not mark read/iu,
+            /32 MiB/iu,
+          ],
+          get_chat_status: [
+            /waitMs/iu,
+            /current state, not a run outcome/iu,
+            /messagePage/iu,
+            /Disconnect cancels only the waiter/iu,
+            /retryAfterMs/iu,
+            /ready means current materialized output/iu,
+            /neither marks read nor changes or cancels/iu,
+          ],
+          list_agents: [/24 hours/iu, /visibility/iu],
+          list_models: [/admission/iu, /does not repair/iu, /model settings/iu],
+          list_chat_threads: [/does not mark read/iu, /not run completion/iu],
+          get_chat_thread: [
+            /neither reads messages nor marks read/iu,
+            /not prove/iu,
+          ],
+          create_chat_thread: [/24 hours/iu, /retry only/iu, /admission/iu],
+          update_chat_thread: [/24 hours/iu, /retry only/iu, /active run/iu],
+          send_chat_message: [/24 hours/iu, /not proof/iu, /get_chat_status/iu],
+          revoke_queued_message: [/never cancels a run/iu, /not_revocable/iu],
+          cancel_run: [/neither revokes/iu, /prior effects/iu],
+        } as const;
+        for (const tool of listedTools) {
+          const terms = safetyTerms[tool.name as keyof typeof safetyTerms];
+          expect(terms, `Unexpected tool ${tool.name}`).toBeDefined();
+          for (const term of terms ?? []) {
+            expect(tool.description).toMatch(term);
+          }
+        }
+      }
       const result = await accept(
         client().request({
           extraHeaders: protocolHeaders(token, "tools/call", modern),
@@ -5622,6 +5791,14 @@ describe("external MCP entry", () => {
         "revoke_queued_message",
         "cancel_run",
       ]);
+      const advertisedOutputValidators = new Map(
+        tools.tools.map((tool) => {
+          const validator = new AjvJsonSchemaValidator().getValidator(
+            tool.outputSchema as JsonSchemaType,
+          );
+          return [tool.name, validator] as const;
+        }),
+      );
       const result = await sdk.callTool({
         name: "list_chat_threads",
         arguments: {},
@@ -5630,6 +5807,9 @@ describe("external MCP entry", () => {
         structuredContent: { threads: [], nextCursor: null },
       });
       const sent = await f.send("sdksearchneedle context handoff");
+      for (let index = 1; index < 5; index++) {
+        await f.send(`sdksearchneedle context handoff ${index}`, sent.threadId);
+      }
       await projectSearchMessages([sent.threadId]);
       const searched = await sdk.callTool({
         name: "search_chat_messages",
@@ -5655,7 +5835,10 @@ describe("external MCP entry", () => {
       expect(around).toMatchObject({
         structuredContent: {
           messages: [
-            { ref: match.ref, text: "sdksearchneedle context handoff" },
+            {
+              ref: match.ref,
+              text: expect.stringContaining("sdksearchneedle"),
+            },
           ],
         },
       });
@@ -5678,6 +5861,45 @@ describe("external MCP entry", () => {
         disposition: "rejected",
         runId: null,
       });
+      const status = await sdk.callTool({
+        name: "get_chat_status",
+        arguments: {
+          threadId: sent.threadId,
+          inputRef: receipt.inputRef,
+        },
+      });
+      expect(status).toMatchObject({
+        structuredContent: {
+          threadId: sent.threadId,
+          input: { ref: receipt.inputRef, state: "rejected" },
+        },
+      });
+      const representativeResults = [
+        ["list_chat_threads", result],
+        ["search_chat_messages", searched],
+        ["get_chat_messages", around],
+        ["send_chat_message", submitted],
+        ["get_chat_status", status],
+      ] as const;
+      const measurements = representativeResults.map(
+        ([toolName, toolResult]) => {
+          const validateOutput = advertisedOutputValidators.get(toolName);
+          if (!validateOutput) {
+            throw new Error(`Missing output validator for ${toolName}`);
+          }
+          expect(validateOutput(toolResult.structuredContent)).toMatchObject({
+            valid: true,
+          });
+          return measureCompactSuccess(toolResult);
+        },
+      );
+      const baselineBytes = measurements.reduce((total, measurement) => {
+        return total + measurement.baselineBytes;
+      }, 0);
+      const compactBytes = measurements.reduce((total, measurement) => {
+        return total + measurement.compactBytes;
+      }, 0);
+      expect(compactBytes).toBeLessThanOrEqual(Math.floor(baselineBytes * 0.6));
       const missing = await sdk.callTool({
         name: "get_chat_thread",
         arguments: { threadId: randomUUID() },
