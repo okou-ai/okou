@@ -41,9 +41,7 @@ const creditGrantSchema = z.object({
 
 const scheduledBillingChangeSchema = z.object({
   type: z.enum(["cancel", "downgrade"]),
-  targetTier: z
-    .enum(["limited-free-1", "pro-suspend", "pro", "team"])
-    .nullable(),
+  targetTier: z.enum(["limited-free-1", "pro", "team"]).nullable(),
   effectiveDate: z.string().nullable(),
 });
 
@@ -1254,8 +1252,16 @@ export type BillingInvoicesContract = typeof billingInvoicesContract;
 // Downgrade
 // ---------------------------------------------------------------------------
 
+const downgradeTargetTierSchema = z
+  .enum(["limited-free-1", "pro-suspend", "pro"])
+  .transform((tier): "limited-free-1" | "pro" => {
+    // Previous App builds used pro-suspend as the cancellation request value.
+    // It is a wire-only alias and must never become persisted plan state again.
+    return tier === "pro-suspend" ? "limited-free-1" : tier;
+  });
+
 const downgradeRequestSchema = z.object({
-  targetTier: z.enum(["limited-free-1", "pro-suspend", "pro"]),
+  targetTier: downgradeTargetTierSchema,
   returnUrl: stripeRedirectUrlSchema.optional(),
 });
 

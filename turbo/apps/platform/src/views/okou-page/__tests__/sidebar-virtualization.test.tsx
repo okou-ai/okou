@@ -622,7 +622,7 @@ test("Refresh virtualization when the upgrade card appears and disappears", asyn
     ).toBeTruthy();
   });
 
-  tier = "pro-suspend";
+  tier = "limited-free-1";
   context.mocks.ably.trigger("billing:changed");
   await within(sidebar).findByText("Get Pro");
   await waitFor(() => {

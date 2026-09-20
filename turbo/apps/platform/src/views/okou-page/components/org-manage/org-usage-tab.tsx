@@ -527,9 +527,7 @@ function CreditBalanceChart({
   });
   const total = billing.credits;
   const showFreeEmptyPrompt =
-    (billing.tier === "free" ||
-      billing.tier === "limited-free-1" ||
-      billing.tier === "pro-suspend") &&
+    (billing.tier === "free" || billing.tier === "limited-free-1") &&
     total <= 0;
   const grants = billing.creditGrants.map((grant: CreditGrant) => {
     return {

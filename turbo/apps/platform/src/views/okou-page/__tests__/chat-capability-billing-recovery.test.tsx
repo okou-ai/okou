@@ -283,9 +283,9 @@ test("Let a paid workspace admin buy more credits", async () => {
   expect(checkoutRequests).toHaveLength(2);
 });
 
-test("Offer a plan upgrade when a paid workspace cannot buy top-ups", async () => {
+test("Offer a plan upgrade when a limited workspace cannot buy top-ups", async () => {
   installBillingState({
-    tier: "pro-suspend",
+    tier: "limited-free-1",
     role: "admin",
     credits: 0,
     canBuyCredits: false,

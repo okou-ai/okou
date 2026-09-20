@@ -8,6 +8,30 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.642.2](https://github.com/okou-ai/okou/compare/api-v1.642.1...api-v1.642.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* align cloudflare access naming ([#35632](https://github.com/okou-ai/okou/issues/35632)) ([708ac2e](https://github.com/okou-ai/okou/commit/708ac2e7cec6250eef99bdae13ce272ea2fff6e9))
+* **api:** advertise current run usage to agents ([#35627](https://github.com/okou-ai/okou/issues/35627)) ([67a701c](https://github.com/okou-ai/okou/commit/67a701ca94c65fcd0bce202ceb3bbd2a8a60189a))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+* remove the stripe marketplace oauth feature switch ([#35623](https://github.com/okou-ai/okou/issues/35623)) ([cc48fcf](https://github.com/okou-ai/okou/commit/cc48fcf04b8972204e619837915a59316d4b2326))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.2
+    * @okouai/core bumped to 8.688.0
+    * @okouai/db bumped to 1.279.7
+    * @okouai/pi-agent-runtime bumped to 1.33.29
+
 ## [1.642.1](https://github.com/okou-ai/okou/compare/api-v1.642.0...api-v1.642.1) (2026-09-20)
 
 

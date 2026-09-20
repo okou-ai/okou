@@ -65,7 +65,6 @@ import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
   setupOnboardingImageRunPage$,
   setupOnboardingImageTemplatePage$,
-  setupOnboardingMakePage$,
   setupOnboardingPresentationRunPage$,
   setupOnboardingPresentationTemplatePage$,
   setupOnboardingVideoRunPage$,
@@ -73,6 +72,15 @@ import {
   setupOnboardingWorkflowPickerPage$,
   setupOnboardingWorkflowRunPage$,
 } from "./onboarding/onboarding-page-setup.ts";
+import {
+  setupOnboardingEntryPage$,
+  setupOnboardingExperiencePage$,
+  setupOnboardingSourcesPage$,
+  setupOnboardingReadyPage$,
+  setupOnboardingSkillsPage$,
+  setupOnboardingSlackPage$,
+  setupOnboardingTeamPage$,
+} from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
@@ -425,7 +433,31 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.onboarding,
-    setup: setupAuthPageWrapper(setupOnboardingMakePage$),
+    setup: setupAuthPageWrapper(setupOnboardingEntryPage$),
+  },
+  {
+    path: ROUTES.onboardingSources,
+    setup: setupAuthPageWrapper(setupOnboardingSourcesPage$),
+  },
+  {
+    path: ROUTES.onboardingTeam,
+    setup: setupAuthPageWrapper(setupOnboardingTeamPage$),
+  },
+  {
+    path: ROUTES.onboardingExperience,
+    setup: setupAuthPageWrapper(setupOnboardingExperiencePage$),
+  },
+  {
+    path: ROUTES.onboardingSkills,
+    setup: setupAuthPageWrapper(setupOnboardingSkillsPage$),
+  },
+  {
+    path: ROUTES.onboardingSlack,
+    setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
+  },
+  {
+    path: ROUTES.onboardingReady,
+    setup: setupAuthPageWrapper(setupOnboardingReadyPage$),
   },
   {
     path: ROUTES.onboardingWorkflowPicker,
@@ -629,7 +661,7 @@ export const bootstrap$ = command(
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);
     set(setRootSignal$, signal);
-    set(initBootstrapSkeleton$, signal);
+    set(initBootstrapSkeleton$);
     // Claims `clerkUser$` in this synchronous pass. The daemons and route
     // setups below read it, and without an owner it never settles.
     const clerkIdentitySetup = set(setupClerkUser$, signal);

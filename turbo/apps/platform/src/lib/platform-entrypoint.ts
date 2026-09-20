@@ -27,7 +27,7 @@ function startApplication(rootSignal: AbortSignal): void {
 
   async function main() {
     const store = createStore();
-    detach(initPlausible(rootSignal), Reason.Entrance, "initPlausible");
+    initPlausible(rootSignal);
     setupVisualViewportKeyboardState(rootSignal, () => {
       return store.set(resetViewportSettleSignal$, rootSignal);
     });

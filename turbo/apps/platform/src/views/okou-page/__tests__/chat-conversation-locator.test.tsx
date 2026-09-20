@@ -428,10 +428,11 @@ test("The conversation locator follows folded goal continuation work", async () 
     "All deployment regions are healthy",
   );
   await waitFor(() => {
-    expect(turnForText("All deployment regions are healthy")).toHaveAttribute(
-      "data-locator-landed",
-      "",
-    );
+    expect(
+      turnForText("All deployment regions are healthy").querySelector(
+        "[data-locator-landed]",
+      ),
+    ).toBeInTheDocument();
   });
 
   expect(
@@ -504,12 +505,25 @@ test("Selecting a locator marker jumps to that conversation turn", async () => {
   fireEvent.pointerEnter(geometry.rail);
   await pointAndSelectTurn(geometry.rail, firstIndex, firstText);
   await waitFor(() => {
-    expect(firstTurn).toHaveAttribute("data-locator-landed", "");
+    expect(
+      firstTurn.querySelector("[data-locator-landed]"),
+    ).toBeInTheDocument();
     expect(geometry.scrollRequests.at(-1)).toMatchObject({
       behavior: "smooth",
     });
   });
   const firstLandingTop = geometry.scrollRequests.at(-1)?.top;
+  const firstHighlight = requiredElement("[data-locator-landed]", firstTurn);
+
+  // Selecting the same turn again starts a fresh CSS highlight without
+  // replacing the message or interrupting its content.
+  await pointAndSelectTurn(geometry.rail, firstIndex, firstText);
+  await waitFor(() => {
+    expect(firstHighlight).not.toBeInTheDocument();
+    expect(
+      firstTurn.querySelector("[data-locator-landed]"),
+    ).toBeInTheDocument();
+  });
 
   const secondGeometry = installLocatorGeometry({
     initialScrollTop: geometry.readScrollTop(),
@@ -532,8 +546,10 @@ test("Selecting a locator marker jumps to that conversation turn", async () => {
 
   await pointAndSelectTurn(secondGeometry.rail, secondIndex, secondText);
   await waitFor(() => {
-    expect(secondTurn).toHaveAttribute("data-locator-landed", "");
-    expect(firstTurn).not.toHaveAttribute("data-locator-landed");
+    expect(
+      secondTurn.querySelector("[data-locator-landed]"),
+    ).toBeInTheDocument();
+    expect(firstTurn.querySelector("[data-locator-landed]")).toBeNull();
     expect(secondGeometry.scrollRequests.length).toBeGreaterThan(0);
   });
   expect(secondGeometry.scrollRequests.at(-1)).toMatchObject({

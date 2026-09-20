@@ -698,8 +698,15 @@
     {
       "idx": 1177,
       "version": "7",
-      "when": 1789902234592,
-      "tag": "1177_chat_search_gin_statistics",
+      "when": 1789902350454,
+      "tag": "1177_retire_pro_suspend_tier",
+      "breakpoints": true
+    },
+    {
+      "idx": 1178,
+      "version": "7",
+      "when": 1789904435124,
+      "tag": "1178_chat_search_gin_statistics",
       "breakpoints": true
     }
   ]

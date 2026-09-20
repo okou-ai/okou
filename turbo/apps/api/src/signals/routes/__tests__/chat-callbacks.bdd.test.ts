@@ -3822,7 +3822,7 @@ describe("CHAT-02: drain-time admission failure", () => {
 
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({

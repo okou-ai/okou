@@ -943,8 +943,8 @@ describe("POST /api/billing/downgrade", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("downgrades pro to pro-suspend via cancel at period end", async () => {
-    const subId = `sub-pro-suspend-${randomUUID().slice(0, 8)}`;
+  it("normalizes a legacy pro-suspend cancellation request", async () => {
+    const subId = `sub-legacy-cancel-${randomUUID().slice(0, 8)}`;
     const periodEnd = new Date(now() + 30 * 86_400 * 1000);
     const fixture = await track(
       store.set(
@@ -988,7 +988,7 @@ describe("POST /api/billing/downgrade", () => {
     );
     const response = await accept(
       client.create({
-        body: { targetTier: "limited-free-1" },
+        body: { targetTier: "pro-suspend" },
         headers: { authorization: "Bearer clerk-session" },
       }),
       [200],

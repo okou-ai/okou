@@ -1714,6 +1714,9 @@ const checkoutCompleteAuthed$ = command(
         "Checkout session does not belong to current organization",
       );
     }
+    if (result.status === "expired") {
+      return badRequestMessage("Checkout session expired");
+    }
     if (result.status === "tier_conflict") {
       return badRequestMessage(
         checkoutTierConflictMessage({

@@ -65,20 +65,6 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         canRestorePlan: false,
       };
     }
-    case "pro-suspend": {
-      return {
-        status: "suspended",
-        canBuyConcurrency: false,
-        concurrencyPurchaseReviewAvailable: false,
-        canBuyCredits: false,
-        autoRechargeAllowed: false,
-        supportByok: true,
-        restrictedBuiltInModels: false,
-        videoGenerationAllowed: false,
-        workflowWebhookAutomationAllowed: false,
-        canRestorePlan: false,
-      };
-    }
     case "team":
     case "custom": {
       return {
@@ -113,8 +99,8 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
 
 function defaultBillingStatus(): BillingStatusResponse {
   return {
-    tier: "pro-suspend",
-    ...billingPlanCapabilities("pro-suspend"),
+    tier: "free",
+    ...billingPlanCapabilities("free"),
     showUsagePack: false,
     credits: 0,
     onboardingPaymentPending: true,
@@ -130,7 +116,7 @@ function defaultBillingStatus(): BillingStatusResponse {
     },
     creditBreakdown: [],
     creditGrants: [],
-    concurrencyLimit: 0,
+    concurrencyLimit: 1,
     concurrencySubscriptions: [],
   };
 }

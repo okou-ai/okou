@@ -797,7 +797,6 @@ function knownOrgTier(value: string): OrgTier {
   switch (value) {
     case "free":
     case "limited-free-1":
-    case "pro-suspend":
     case "pro":
     case "team":
     case "custom": {

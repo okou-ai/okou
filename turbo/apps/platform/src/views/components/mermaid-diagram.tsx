@@ -1,5 +1,5 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
-import { useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -7,7 +7,7 @@ import type {
   MermaidDiagramImage,
   MermaidDiagramSignals,
 } from "../../signals/mermaid-diagram.ts";
-import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { IconTooltipButton } from "./icon-tooltip.tsx";
 
@@ -63,7 +63,8 @@ export function MermaidDiagramView({
   signals: MermaidDiagramSignals;
 }) {
   const { t } = useTranslation();
-  const openImageLightbox = useSet(openImageLightbox$);
+  const openPreview = useSet(signals.openPreview$);
+  const pageSignal = useGet(pageSignal$);
   const loadable = useLoadable(signals.diagram$);
   const image = loadable.state === "hasData" ? loadable.data : null;
 
@@ -99,10 +100,7 @@ export function MermaidDiagramView({
           }
           // File metadata lets each preview surface present the diagram as
           // diagram.svg with download support.
-          openImageLightbox({
-            file: image.file,
-            shareAvailable: false,
-          });
+          openPreview(image.file, pageSignal);
         }}
       >
         {image ? (

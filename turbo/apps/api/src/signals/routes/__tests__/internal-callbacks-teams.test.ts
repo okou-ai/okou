@@ -793,7 +793,7 @@ describe("Teams chat callbacks", () => {
 
     await seedOrgMetadata({
       orgId: teams.fixture.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({
