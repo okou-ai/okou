@@ -116,7 +116,7 @@ const TEST_APP_ROUTES = Object.freeze([
  * where the persisted row shape is the contract under test.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);

@@ -24,7 +24,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { testStripeInvoicePaidReadinessRoutes } from "../test-stripe-invoice-paid-readiness";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
 const workflows = createWorkflowsBddApi(context);
 const mocks = createRouteMocks(context);

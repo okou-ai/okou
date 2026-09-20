@@ -84,7 +84,7 @@ const ANCHOR_MS = Date.parse(ANCHOR_ISO);
  */
 const TEST_TIMEOUT_MS = 60_000;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);

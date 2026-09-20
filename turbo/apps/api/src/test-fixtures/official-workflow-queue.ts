@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { eq, sql } from "drizzle-orm";
@@ -73,18 +72,4 @@ export async function appendOfficialWorkflowQueueInputFixture(args: {
     }
     return row;
   });
-}
-
-export async function readOfficialWorkflowQueueRunFixture(runId: string) {
-  const [run] = await db()
-    .select({
-      triggerSource: agentRuns.triggerSource,
-      autonomyBudget: agentRuns.autonomyBudget,
-    })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, runId));
-  if (!run) {
-    throw new Error("Official queued Run is missing");
-  }
-  return run;
 }

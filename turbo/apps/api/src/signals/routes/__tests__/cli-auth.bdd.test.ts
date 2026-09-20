@@ -14,7 +14,7 @@ import {
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const authDevice = createAuthDeviceApiActions(context);
 const support = createAuthDeviceSupportApi(context);

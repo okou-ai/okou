@@ -103,11 +103,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     action: z.literal("reset-database-pool"),
   }),
   z.object({
-    action: z.literal("mutate-runner-job-secret-value-environment-keys"),
-    run_id: z.uuid(),
-    mode: z.enum(["remove", "invalid"]),
-  }),
-  z.object({
     action: z.literal("set-runner-job-pi-context-as-versioned-writer"),
     run_id: z.uuid(),
     // Stored rows can come from a future or invalid writer. The claim boundary
@@ -212,10 +207,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("read-agent-run-family-counts"),
     agent_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("corrupt-official-workflow-revision-payload"),
-    definition_name: z.string(),
   }),
   z.object({
     action: z.literal("set-official-workflow-automation-admission-state"),

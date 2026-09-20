@@ -76,7 +76,7 @@ import {
 // in-flight claims, historical leases, or Phase 2 cron state, and must not
 // expose these private rows. Real routes still own Runner claim authentication,
 // generic publication, usage ingestion, and completion.
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const guestEnvironment = guestBoundaryEnvironment();
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";

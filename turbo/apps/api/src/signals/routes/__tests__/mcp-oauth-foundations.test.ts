@@ -13,7 +13,7 @@ import { server } from "../../../mocks/server";
 import { mcpOAuthClientMetadataRoutes } from "../mcp-oauth-client-metadata";
 import { testMcpOAuthFetchRoutes } from "../test-mcp-oauth-fetch";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 
 function metadataClient(baseUrl = "http://api.test") {
   return setupApp({

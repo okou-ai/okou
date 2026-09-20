@@ -26,7 +26,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);

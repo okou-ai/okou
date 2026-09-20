@@ -79,7 +79,7 @@ const GITHUB_API_URL = "https://api.github.com/*";
 const COLLECTION_PHASE_MS = 45_000;
 const NEW_READ_CUTOFF_MS = 40_000;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);

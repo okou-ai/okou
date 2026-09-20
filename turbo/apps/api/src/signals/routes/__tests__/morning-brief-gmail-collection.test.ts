@@ -92,7 +92,7 @@ const OVERSIZED_BODY_BYTES = 200 * 1024;
  */
 const FULL_OVERSIZED_ALLOWANCES = TOTAL_RESPONSE_BYTE_CAP / RESPONSE_BYTE_CAP;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);

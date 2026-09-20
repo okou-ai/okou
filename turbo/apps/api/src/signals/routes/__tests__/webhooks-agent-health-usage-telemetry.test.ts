@@ -10,7 +10,7 @@ import { nowDate } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 
 beforeEach(() => {
   mockEnv("SECRETS_ENCRYPTION_KEY", "a".repeat(64));

@@ -20,7 +20,7 @@ accept for agent creation. Sandbox, Okou run, and forged-PAT bearers are minted
 with the exported test token signers.
 */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const api = createAuthOrgAgentsBddApi(context);
 const cfg = createUserConfigBddApi(context);
 
