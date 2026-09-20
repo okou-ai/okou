@@ -1015,13 +1015,17 @@ describe("MCP chat discovery and creation", () => {
         })
         .sort(),
     ).toStrictEqual([false, true]);
-    const inputRefs = results.map((result) => {
+    const inputs = results.map((result) => {
       if (!("input" in result)) {
         throw new Error("Expected combined creation responses");
       }
-      return result.input.inputRef;
+      expect(result.input).toMatchObject({
+        disposition: "rejected",
+        runId: null,
+      });
+      return result.input;
     });
-    expect(inputRefs[0]).toStrictEqual(inputRefs[1]);
+    expect(inputs[0]?.inputRef).toStrictEqual(inputs[1]?.inputRef);
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
     ).toHaveLength(1);
