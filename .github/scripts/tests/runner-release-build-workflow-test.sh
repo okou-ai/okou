@@ -88,6 +88,7 @@ jq -e '
 ' <<<"$release_json" >/dev/null || fail "environment-bound production image builds must retain the repo-level R2 handoff"
 
 jq -e '
+  .env.npm_config_audit == "false" and
   .permissions == {"contents":"read"} and
   .jobs.build as $job |
   $job["runs-on"] == "ubuntu-latest-8-cores" and
