@@ -25,8 +25,8 @@ import {
 } from "../services/connector-account-lifecycle.service";
 import { commitConnectorRuntimeMutation } from "../services/connector-runtime-wakeup.service";
 import {
-  connectorScopeDiff,
-  deleteConnectorLocalState$,
+  builtinConnectorScopeDiff,
+  deleteBuiltinConnectorLocalState$,
 } from "../services/connector-data.service";
 import { deleteCustomConnectorAccount$ } from "../services/custom-connector.service";
 import { reconcileGmailWatchesForUser } from "../services/gmail-automation-event.service";
@@ -171,7 +171,7 @@ const scopeDiffInner$ = computed(async (get) => {
   const params = get(pathParamsOf(connectorAccountsContract.scopeDiff));
   const query = get(queryOf(connectorAccountsContract.scopeDiff));
   const diff = await get(
-    connectorScopeDiff({
+    builtinConnectorScopeDiff({
       orgId: auth.orgId,
       userId: auth.userId,
       connectorSlug: query.connectorSlug,
@@ -345,7 +345,7 @@ const deleteInner$ = command(
     const result =
       body.data.target.kind === "builtin"
         ? await set(
-            deleteConnectorLocalState$,
+            deleteBuiltinConnectorLocalState$,
             {
               orgId: auth.orgId,
               userId: auth.userId,

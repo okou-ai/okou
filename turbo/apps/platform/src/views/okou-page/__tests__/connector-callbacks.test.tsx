@@ -2,7 +2,7 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogIcon,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { customConnectorOAuth2Contract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -75,7 +75,7 @@ test("Complete a GitHub connector authorization", async () => {
     },
   );
   context.mocks.api(
-    connectorsSlugCallbackContract.callback,
+    builtinConnectorsSlugCallbackContract.callback,
     ({ params, query, respond }) => {
       requestOrder.push("callback");
       callbackStarted.resolve(undefined);
@@ -124,9 +124,12 @@ test("Complete a GitHub connector authorization", async () => {
 });
 
 test("Refreshing a completed connector callback does not reconnect it", async () => {
-  context.mocks.api(connectorsSlugCallbackContract.callback, ({ never }) => {
-    return never();
-  });
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ never }) => {
+      return never();
+    },
+  );
 
   await setupPage({
     context,
@@ -177,7 +180,7 @@ test("Show Mercury attribution on a completed connector callback", async () => {
 
 test("Show a provider error safely without an authenticated session", async () => {
   context.mocks.api(
-    connectorsSlugCallbackContract.callback,
+    builtinConnectorsSlugCallbackContract.callback,
     ({ query, respond }) => {
       expect(query).toMatchObject({
         error: "access_denied",

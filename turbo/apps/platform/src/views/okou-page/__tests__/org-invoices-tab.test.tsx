@@ -50,7 +50,6 @@ function mockInvoicesStory(): void {
   });
   context.mocks.api(billingInvoicesContract.get, ({ respond }) => {
     return respond(200, {
-      receiptDownloadsSupported: true,
       invoices: [
         {
           id: "in_2026_0001",

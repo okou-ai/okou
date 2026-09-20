@@ -5,7 +5,7 @@ import type {
   HostedSiteManifest,
   HostedSiteSnapshotDependencies,
 } from "@okouai/db/jsonb-contracts/hosted-site";
-import { privateHostedDeployments } from "@okouai/db/schema/hosted-site";
+import { privateHostedDeployments } from "@okouai/db/runtime/hosted-site";
 import {
   artifactTextContentType,
   artifactTextReferences,

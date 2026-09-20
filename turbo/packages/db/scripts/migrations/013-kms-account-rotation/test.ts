@@ -283,6 +283,7 @@ async function workflowCli(
     PATH: binary + delimiter + string(process.env.PATH),
     RUNNER_TEMP: root,
     GITHUB_REPOSITORY: "vm0-ai/okou",
+    GITHUB_REPOSITORY_ID: "1096175506",
     GITHUB_REF: "refs/heads/main",
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_RUN_ID: "12345",
@@ -801,6 +802,7 @@ try {
   }
   for (const [name, overrides] of [
     ["unprotected-branch", { GITHUB_REF: "refs/heads/unprotected" }],
+    ["wrong-repository-id", { GITHUB_REPOSITORY_ID: "1" }],
     ["missing-role", { KMS_MIGRATION_ROLE_ARN: "" }],
     ["invalid-limit", { MAX_ROWS: "100001" }],
     ["wrong-runtime-key", { SECRETS_KMS_KEY_ID: source }],

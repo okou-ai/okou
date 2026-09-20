@@ -44,9 +44,7 @@ export function createSharedThreadArtifactPreviewSignals() {
         title: label.trim() || artifact.filename,
         preview: {
           ...artifact,
-          ...createAttachmentPreviewSignals(artifact.url, {
-            contentType: artifact.contentType,
-          }),
+          preview: artifact,
           kind: artifact.kind,
           url: new URL(artifact.url, location.origin).href,
         },

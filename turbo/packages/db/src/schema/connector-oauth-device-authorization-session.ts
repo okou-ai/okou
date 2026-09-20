@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { StoredConnectorAccountMutation } from "@okouai/db/jsonb-contracts/connector-account-mutation";
 
-export const connectorOauthDeviceAuthorizationSessionStatusEnum = pgEnum(
+export const builtinConnectorOauthDeviceAuthorizationSessionStatusEnum = pgEnum(
   "connector_oauth_device_authorization_session_status",
   [
     "awaiting_user_authorization",
@@ -25,7 +25,7 @@ export const connectorOauthDeviceAuthorizationSessionStatusEnum = pgEnum(
   ],
 );
 
-export const connectorOauthDeviceAuthorizationSessions = pgTable(
+export const builtinConnectorOauthDeviceAuthorizationSessions = pgTable(
   "connector_oauth_device_authorization_sessions",
   {
     id: uuid("id").defaultRandom().primaryKey(),
@@ -35,7 +35,7 @@ export const connectorOauthDeviceAuthorizationSessions = pgTable(
     authorizeAgent: boolean("authorize_agent").default(false).notNull(),
     connectorSlug: varchar("connector_slug", { length: 64 }).notNull(),
     authMethod: varchar("auth_method", { length: 50 }).notNull(),
-    status: connectorOauthDeviceAuthorizationSessionStatusEnum("status")
+    status: builtinConnectorOauthDeviceAuthorizationSessionStatusEnum("status")
       .default("awaiting_user_authorization")
       .notNull(),
     sessionTokenHash: varchar("session_token_hash", { length: 128 }).notNull(),

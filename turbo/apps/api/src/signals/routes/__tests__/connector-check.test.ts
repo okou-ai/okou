@@ -729,13 +729,124 @@ describe("POST /api/connectors/diagnostics/check", () => {
     }
   });
 
-  it("uses pinned builtin registration state with current permission and account authority", async () => {
+  it("keeps builtin registration pinned while permission and account authority change", async () => {
+    const owner = bdd.user();
+    await seedAdminMembership(owner);
+    const runBase = "https://prod.api.reap.global/v1";
+    const changedBase = "https://changed.api.reap.global/v1";
+    const connectorId = await connectReap(owner, runBase);
+    const { runId, agentId } = await createOwnedRun(owner, {
+      builtinConnectorSlugs: ["reap"],
+    });
+    const request = {
+      mode: "url" as const,
+      method: "GET",
+      url: `${runBase}/users`,
+    };
+    context.mocks.axiom.query.mockRejectedValue(
+      new Error("Axiom connector diagnostics must not be queried"),
+    );
+    await runsApi.applyUserPermissionGrant(owner, {
+      agentId,
+      connectorSlug: "reap",
+      permission: "read",
+      action: "deny",
+    });
+    const initial = await checkWithToken(
+      okouToken(owner, runId, ["connector:read", "agent-run:read"]),
+      request,
+    );
+    expect(initial.body).toMatchObject({
+      outcome: "resolved",
+      connector: { connectorSlug: "reap" },
+      run: { status: "configured", bases: [runBase] },
+      base: runBase,
+      permission: {
+        kind: "matched",
+        permissions: [
+          {
+            name: "read",
+            policy: { outcome: "deny", basis: "deny-list" },
+          },
+        ],
+      },
+    });
+    await connectorsApi.connectManualGrant(
+      owner,
+      "reap",
+      "api-token",
+      {
+        apiKey: "reap-updated-api-key",
+        apiBaseUrl: changedBase,
+      },
+      undefined,
+      { intent: "reconnect", connectionId: connectorId },
+    );
+    await setConnectorDefaultState(context, {
+      orgId: requireOrgId(owner),
+      userId: owner.userId,
+      connectorId,
+      isDefault: false,
+    });
+    const pinned = await checkWithToken(
+      okouToken(owner, runId, ["connector:read", "agent-run:read"]),
+      request,
+    );
+    expect(pinned.body).toMatchObject({
+      outcome: "resolved",
+      base: runBase,
+      run: { status: "configured", bases: [runBase] },
+    });
+    const changed = await checkWithToken(
+      okouToken(owner, runId, ["connector:read", "agent-run:read"]),
+      { ...request, url: `${changedBase}/users` },
+    );
+    expect(changed.body).toStrictEqual({ outcome: "no-match", scope: "run" });
+    await setConnectorCredentialStorageState(context, {
+      connectorSlug: "reap",
+      orgId: requireOrgId(owner),
+      storageVersion: 2,
+      userId: owner.userId,
+    });
+    const unavailable = await checkWithToken(
+      okouToken(owner, runId, ["connector:read", "agent-run:read"]),
+      request,
+    );
+    expect(unavailable.body).toMatchObject({
+      outcome: "resolved",
+      connector: { connectorSlug: "reap" },
+      run: { status: "configured", bases: [runBase] },
+      permission: {
+        permissions: [
+          {
+            name: "read",
+            policy: {
+              outcome: "unavailable",
+              basis: "policies-unavailable",
+            },
+          },
+        ],
+      },
+    });
+    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
+    await setConnectorCredentialStorageState(context, {
+      connectorSlug: "reap",
+      orgId: requireOrgId(owner),
+      storageVersion: 1,
+      userId: owner.userId,
+    });
+    await setConnectorDefaultState(context, {
+      orgId: requireOrgId(owner),
+      userId: owner.userId,
+      connectorId,
+      isDefault: true,
+    });
+  });
+
+  it("uses current permission expiry for an admitted builtin connector", async () => {
     await withMockNowForTest(new Date("2026-09-07T08:00:00.000Z"), async () => {
       const owner = bdd.user();
       await seedAdminMembership(owner);
-      const runBase = "https://prod.api.reap.global/v1";
-      const changedBase = "https://changed.api.reap.global/v1";
-      const connectorId = await connectReap(owner, runBase);
       const firewallApi = createFirewallApi(context);
       await firewallApi.provisionRunReadyOrg(owner);
       await firewallApi.seedTestConnector(owner, {
@@ -747,44 +858,11 @@ describe("POST /api/connectors/diagnostics/check", () => {
         Promise.resolve({ actor: owner, connectorSlug: "cloudflare" }),
       );
       const { runId, agentId } = await createOwnedRun(owner, {
-        builtinConnectorSlugs: ["reap", "cloudflare"],
+        builtinConnectorSlugs: ["cloudflare"],
       });
-      const request = {
-        mode: "url" as const,
-        method: "GET",
-        url: `${runBase}/users`,
-      };
       context.mocks.axiom.query.mockRejectedValue(
         new Error("Axiom connector diagnostics must not be queried"),
       );
-
-      await runsApi.applyUserPermissionGrant(owner, {
-        agentId,
-        connectorSlug: "reap",
-        permission: "read",
-        action: "deny",
-      });
-
-      const initial = await checkWithToken(
-        okouToken(owner, runId, ["connector:read", "agent-run:read"]),
-        request,
-      );
-      expect(initial.body).toMatchObject({
-        outcome: "resolved",
-        connector: { connectorSlug: "reap" },
-        run: { status: "configured", bases: [runBase] },
-        base: runBase,
-        permission: {
-          kind: "matched",
-          permissions: [
-            {
-              name: "read",
-              policy: { outcome: "deny", basis: "deny-list" },
-            },
-          ],
-        },
-      });
-
       await runsApi.applyUserPermissionGrant(owner, {
         agentId,
         connectorSlug: "cloudflare",
@@ -792,14 +870,14 @@ describe("POST /api/connectors/diagnostics/check", () => {
         action: "allow",
         expiresIn: "1h",
       });
-      const expiringRequest = {
+      const request = {
         mode: "url" as const,
         method: "POST",
         url: "https://api.cloudflare.com/client/v4/accounts/test/dns_firewall/rules",
       };
       const allowed = await checkWithToken(
         okouToken(owner, runId, ["connector:read", "agent-run:read"]),
-        expiringRequest,
+        request,
       );
       expect(allowed.body).toMatchObject({
         outcome: "resolved",
@@ -813,11 +891,10 @@ describe("POST /api/connectors/diagnostics/check", () => {
           ],
         },
       });
-
       mockNow(new Date("2026-09-07T09:00:00.000Z"));
       const expired = await checkWithToken(
         okouToken(owner, runId, ["connector:read", "agent-run:read"]),
-        expiringRequest,
+        request,
       );
       expect(expired.body).toMatchObject({
         outcome: "resolved",
@@ -831,99 +908,44 @@ describe("POST /api/connectors/diagnostics/check", () => {
           ],
         },
       });
-
-      await connectorsApi.connectManualGrant(
-        owner,
-        "reap",
-        "api-token",
-        {
-          apiKey: "reap-updated-api-key",
-          apiBaseUrl: changedBase,
-        },
-        undefined,
-        { intent: "reconnect", connectionId: connectorId },
-      );
-      await setConnectorDefaultState(context, {
-        orgId: requireOrgId(owner),
-        userId: owner.userId,
-        connectorId,
-        isDefault: false,
-      });
-
-      const pinned = await checkWithToken(
-        okouToken(owner, runId, ["connector:read", "agent-run:read"]),
-        request,
-      );
-      expect(pinned.body).toMatchObject({
-        outcome: "resolved",
-        base: runBase,
-        run: { status: "configured", bases: [runBase] },
-      });
-      const changed = await checkWithToken(
-        okouToken(owner, runId, ["connector:read", "agent-run:read"]),
-        { ...request, url: `${changedBase}/users` },
-      );
-      expect(changed.body).toStrictEqual({ outcome: "no-match", scope: "run" });
-
-      await setConnectorCredentialStorageState(context, {
-        connectorSlug: "reap",
-        orgId: requireOrgId(owner),
-        storageVersion: 2,
-        userId: owner.userId,
-      });
-      const unavailable = await checkWithToken(
-        okouToken(owner, runId, ["connector:read", "agent-run:read"]),
-        request,
-      );
-      expect(unavailable.body).toMatchObject({
-        outcome: "resolved",
-        connector: { connectorSlug: "reap" },
-        run: { status: "configured", bases: [runBase] },
-        permission: {
-          permissions: [
-            {
-              name: "read",
-              policy: {
-                outcome: "unavailable",
-                basis: "policies-unavailable",
-              },
-            },
-          ],
-        },
-      });
-
-      const intruder = bdd.user({ orgId: requireOrgId(owner) });
-      await seedAdminMembership(intruder);
-      const wrongOwner = await accept(
-        client().check({
-          headers: {
-            authorization: `Bearer ${okouToken(intruder, runId, [
-              "connector:read",
-              "agent-run:read",
-            ])}`,
-          },
-          body: request,
-        }),
-        [404],
-      );
-      expect(wrongOwner.body.error).toStrictEqual({
-        code: "NOT_FOUND",
-        message: "Agent run not found",
-      });
       expect(context.mocks.axiom.query).not.toHaveBeenCalled();
-      await setConnectorCredentialStorageState(context, {
-        connectorSlug: "reap",
-        orgId: requireOrgId(owner),
-        storageVersion: 1,
-        userId: owner.userId,
-      });
-      await setConnectorDefaultState(context, {
-        orgId: requireOrgId(owner),
-        userId: owner.userId,
-        connectorId,
-        isDefault: true,
-      });
     });
+  });
+
+  it("rejects connector diagnostics from another owner of the same organization", async () => {
+    const owner = bdd.user();
+    await seedAdminMembership(owner);
+    const runBase = "https://prod.api.reap.global/v1";
+    await connectReap(owner, runBase);
+    const { runId } = await createOwnedRun(owner, {
+      builtinConnectorSlugs: ["reap"],
+    });
+    context.mocks.axiom.query.mockRejectedValue(
+      new Error("Axiom connector diagnostics must not be queried"),
+    );
+    const intruder = bdd.user({ orgId: requireOrgId(owner) });
+    await seedAdminMembership(intruder);
+    const wrongOwner = await accept(
+      client().check({
+        headers: {
+          authorization: `Bearer ${okouToken(intruder, runId, [
+            "connector:read",
+            "agent-run:read",
+          ])}`,
+        },
+        body: {
+          mode: "url",
+          method: "GET",
+          url: `${runBase}/users`,
+        },
+      }),
+      [404],
+    );
+    expect(wrongOwner.body.error).toStrictEqual({
+      code: "NOT_FOUND",
+      message: "Agent run not found",
+    });
+    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
   });
 
   describe("run-admitted custom connector diagnostics", () => {

@@ -103,7 +103,7 @@ function actionRowFor(text: string): HTMLElement {
   return actions;
 }
 
-test("Share selected message groups as a public conversation snapshot", async () => {
+async function setupMessageSharing() {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const createRequests: string[][] = [];
   mockConversation();
@@ -116,14 +116,11 @@ test("Share selected message groups as a public conversation snapshot", async ()
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
-
   await screen.findByText(PROMPT);
   await waitFor(() => {
     expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
   });
-
   click(requiredButtonNamed("Share messages"));
-
   await waitFor(() => {
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
     expect(
@@ -132,33 +129,41 @@ test("Share selected message groups as a public conversation snapshot", async ()
       ).length,
     ).toBeGreaterThan(0);
   });
-  const promptGroup = selectableGroupForText(PROMPT);
-  const answerGroup = selectableGroupForText(ANSWER);
+  return {
+    answerGroup: selectableGroupForText(ANSWER),
+    clipboard,
+    createRequests,
+    promptGroup: selectableGroupForText(PROMPT),
+  };
+}
+
+test("Toggle message groups while choosing a public snapshot", async () => {
+  const { promptGroup } = await setupMessageSharing();
   const promptSelection = within(promptGroup).getByRole("checkbox", {
     name: "Select message group",
   });
-
   click(screen.getByText(PROMPT));
   await waitFor(() => {
     expect(promptSelection).toBeChecked();
     expect(promptSelection).toHaveAccessibleName("Deselect message group");
   });
-
   click(screen.getByText(PROMPT));
   await waitFor(() => {
     expect(promptSelection).not.toBeChecked();
     expect(promptSelection).toHaveAccessibleName("Select message group");
   });
+});
 
+test("Share selected message groups as a public conversation snapshot", async () => {
+  const { answerGroup, clipboard, createRequests } =
+    await setupMessageSharing();
   click(screen.getByText(PROMPT));
   click(screen.getByText(ANSWER));
   await waitFor(() => {
     expect(screen.getAllByText("2 selected").length).toBeGreaterThan(0);
     expect(requiredButtonNamed("Share")).toBeEnabled();
   });
-
   click(requiredButtonNamed("Share"));
-
   await waitFor(() => {
     expect(createRequests).toStrictEqual([[PROMPT_EVENT_ID, ANSWER_EVENT_ID]]);
   });

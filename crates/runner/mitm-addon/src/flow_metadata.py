@@ -7,42 +7,8 @@ stays with the module that creates and releases it.
 
 import time
 from collections.abc import Mapping, MutableMapping
-from dataclasses import dataclass
-from datetime import date
-from typing import Literal
 
 import flow_metadata_keys as metadata_keys
-
-
-@dataclass(frozen=True)
-class XResourceBilling:
-    protocol: Literal["x-resource-v1"]
-    start_date: str
-
-
-def parse_x_resource_billing(value: object) -> XResourceBilling:
-    """Validate an advertised capability without downgrading malformed input."""
-    if not isinstance(value, dict) or set(value) != {"protocol", "startDate"}:
-        raise ValueError("xResourceBilling must contain protocol and startDate")
-    start_date = value["startDate"]
-    if value["protocol"] != "x-resource-v1" or not isinstance(start_date, str):
-        raise ValueError("xResourceBilling requires x-resource-v1 and a YYYY-MM-DD startDate")
-    try:
-        parsed_date = date.fromisoformat(start_date)
-    except ValueError as error:
-        raise ValueError("xResourceBilling startDate must be YYYY-MM-DD") from error
-    if parsed_date.isoformat() != start_date:
-        raise ValueError("xResourceBilling startDate must be YYYY-MM-DD")
-    return XResourceBilling(protocol="x-resource-v1", start_date=start_date)
-
-
-def x_resource_billing(meta: Mapping[str, object]) -> XResourceBilling | None:
-    value = meta.get(metadata_keys.X_RESOURCE_BILLING)
-    if value is None:
-        return None
-    if not isinstance(value, XResourceBilling):
-        raise TypeError("X resource billing metadata must be a validated capability")
-    return value
 
 
 def _metadata_str(meta: Mapping[str, object], key: str, default: str = "") -> str:

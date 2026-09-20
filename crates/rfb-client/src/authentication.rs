@@ -2,13 +2,16 @@
 // ab684d009d767c968af2f7559576334038623124 (MIT; see ../LICENSE-vnc-rs).
 // DES is supplied by RustCrypto, not the upstream custom implementation.
 
+use std::future::Future;
+
 use des::cipher::{Block, BlockCipherEncrypt, KeyInit};
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::time::Instant;
 use tokio_rustls::TlsConnector;
 use zeroize::Zeroizing;
 
-use crate::{Authenticated, Error, TrustRoots, VncPassword};
+use crate::{Authenticated, AuthenticationStage, Error, TrustRoots, VncPassword};
 
 const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const VENCRYPT: u8 = 19;
@@ -20,6 +23,7 @@ pub(crate) async fn authenticate<S>(
     server_name: &str,
     password: VncPassword,
     roots: TrustRoots,
+    deadline: Instant,
 ) -> Result<Authenticated<S>, Error>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -28,6 +32,59 @@ where
         .map_err(|_| Error::InvalidServerName)?
         .to_owned();
     let config = roots.into_config()?;
+
+    phase(
+        AuthenticationStage::RfbVersion,
+        deadline,
+        exchange_version(&mut stream),
+    )
+    .await?;
+    phase(
+        AuthenticationStage::SecurityNegotiation,
+        deadline,
+        negotiate_security(&mut stream),
+    )
+    .await?;
+    let mut stream = phase(AuthenticationStage::TlsHandshake, deadline, async {
+        TlsConnector::from(config)
+            .connect(server_name, stream)
+            .await
+            .map_err(Error::Tls)
+    })
+    .await?;
+    phase(
+        AuthenticationStage::VncAuthentication,
+        deadline,
+        authenticate_vnc(&mut stream, password),
+    )
+    .await?;
+
+    Ok(Authenticated { stream })
+}
+
+async fn phase<T>(
+    stage: AuthenticationStage,
+    deadline: Instant,
+    future: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    let expired = || Error::AuthenticationDeadlineExceeded { stage };
+    // timeout_at polls a ready future before its timer, so check both boundaries.
+    if deadline <= Instant::now() {
+        return Err(expired());
+    }
+    let value = tokio::time::timeout_at(deadline, future)
+        .await
+        .map_err(|_| expired())??;
+    if deadline <= Instant::now() {
+        return Err(expired());
+    }
+    Ok(value)
+}
+
+async fn exchange_version<S>(stream: &mut S) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut version = [0; 12];
     stream.read_exact(&mut version).await?;
     if &version != RFB_VERSION {
@@ -35,10 +92,16 @@ where
     }
     stream.write_all(RFB_VERSION).await?;
     stream.flush().await?;
+    Ok(())
+}
 
+async fn negotiate_security<S>(stream: &mut S) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let count = stream.read_u8().await?;
     if count == 0 {
-        discard_reason(&mut stream).await?;
+        discard_reason(stream).await?;
         return Err(Error::ServerRejected);
     }
     let mut types = vec![0; usize::from(count)];
@@ -73,11 +136,16 @@ where
     if stream.read_u8().await? != 1 {
         return Err(Error::NegotiationRejected);
     }
+    Ok(())
+}
 
-    let mut stream = TlsConnector::from(config)
-        .connect(server_name, stream)
-        .await
-        .map_err(Error::Tls)?;
+async fn authenticate_vnc<S>(
+    stream: &mut tokio_rustls::client::TlsStream<S>,
+    password: VncPassword,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut challenge = [0; 16];
     stream.read_exact(&mut challenge).await?;
     // Erase password and DES key before awaiting the write or SecurityResult.
@@ -87,9 +155,9 @@ where
     drop(response);
 
     match stream.read_u32().await? {
-        0 => Ok(Authenticated { stream }),
+        0 => Ok(()),
         1 => {
-            discard_reason(&mut stream).await?;
+            discard_reason(stream).await?;
             Err(Error::AuthenticationFailed)
         }
         _ => Err(Error::InvalidAuthenticationResult),

@@ -109,6 +109,7 @@ function sharingStatus(
 ): ArtifactShareStatus {
   return {
     ownerUrl: new URL(canonical, "http://localhost").href,
+    shortUrl: null,
     shareId: audience === "private" ? null : shareId,
     audience,
     organization: { id: "org_test", name: "Acme" },

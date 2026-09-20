@@ -1,3 +1,4 @@
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   userTemplatesContract,
   type UserTemplateDetail,
@@ -15,14 +16,27 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
+  THREAD_ID,
   context,
   mockTemplateChat,
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
-/** What the Custom entry sends, whatever the file turns out to be. */
-const PROMPT =
-  "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
+/** What the Custom entry asks for, whatever the file turns out to be. */
+const PROMPT = "Analyse this file and save it as a reusable template.";
+
+/**
+ * What the run is told on top of that request, and the member is not: which
+ * guide reads the file, and which catalog the result belongs in.
+ */
+const GUIDANCE =
+  "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
+
+function additionalInfo(message: UserMessageDocument): string[] {
+  return message.parts.flatMap((part) => {
+    return part.type === "additional_info" ? [part.text] : [];
+  });
+}
 
 function customTemplate(
   overrides: Partial<UserTemplateDetail> = {},
@@ -393,7 +407,7 @@ test("An empty catalog offers no search box, because there is nothing to narrow"
   ).not.toBeInTheDocument();
 });
 
-test("Opening a custom template shows its pages and management controls", async () => {
+test("Opening a deck shows its pages and management controls", async () => {
   mockCustomTemplates([customTemplate()]);
   context.mocks.api(userTemplatesContract.get, ({ respond }) => {
     return respond(200, customTemplate());
@@ -405,11 +419,19 @@ test("Opening a custom template shows its pages and management controls", async 
 
   click(buttonByName("Preview Q3 board review", dialog)!);
 
-  await expect(
-    within(dialog).findByText("18 pages · from q3-board-final-v4.pptx"),
-  ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByLabelText("Rename template")).toBeInTheDocument();
-  expect(buttonByName("Use this template", dialog)).toBeTruthy();
+  // A deck opens in the same dialog a document does, and draws the pages the
+  // reverse run already rendered rather than its source file through a viewer.
+  const page = await screen.findByAltText("Page 1");
+  expect(page).toHaveAttribute("src", "https://example.test/page-1.png");
+  const preview = previewDialogAround(page);
+  expect(
+    within(preview).getByText("18 pages · from q3-board-final-v4.pptx"),
+  ).toBeVisible();
+  expect(within(preview).getByLabelText("Rename template")).toBeInTheDocument();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+  expect(
+    within(preview).queryByTestId("custom-template-source-preview"),
+  ).not.toBeInTheDocument();
 });
 
 test("Using a custom template sends the row id and nothing about its kind", async () => {
@@ -453,8 +475,8 @@ function documentTemplate(
 }
 
 /** The preview dialog the picker opens over itself, found by what it renders. */
-function previewDialogAround(frame: HTMLElement): HTMLElement {
-  const preview = frame.closest<HTMLElement>('[role="dialog"]');
+function previewDialogAround(inside: HTMLElement): HTMLElement {
+  const preview = inside.closest<HTMLElement>('[role="dialog"]');
   if (!preview) {
     throw new Error("Source preview dialog not found");
   }
@@ -493,8 +515,8 @@ test("Opening a Word template hands the source file to the Office viewer", async
   );
   expect(viewerUrl.searchParams.get("src")).toBe(DOCUMENT_SOURCE_URL);
 
-  // The dialog carries the management column the panel shows for a deck, so
-  // what a member can do to a template does not depend on its kind.
+  // The dialog carries the management column a deck shows, so what a member
+  // can do to a template does not depend on its kind.
   const preview = previewDialogAround(frame);
   expect(within(preview).getByText("From brand-report.docx")).toBeVisible();
   expect(within(preview).getByLabelText("Rename template")).toBeVisible();
@@ -581,6 +603,37 @@ test("Opening an illustration template shows the source picture itself", async (
   expect(within(dialog).getByText("Market day")).toBeInTheDocument();
 });
 
+test("A template whose detail will not load can be asked for again", async () => {
+  mockCustomTemplateStore([customTemplate()], {
+    // A 500 is transient, so the detail load spends its two further attempts
+    // before it settles as an error. The click is requests one through three;
+    // the retry is the fourth.
+    detail: (call) => {
+      return call <= 3 ? "fail" : undefined;
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Preview Q3 board review", dialog)!);
+
+  // A detail that will not load says so and offers the way out. Without this
+  // the dialog keeps its spinner for as long as it stays open, which is the
+  // defect: nothing tells the member the request is never coming back.
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Couldn't load templates.");
+  const preview = previewDialogAround(alert);
+
+  click(buttonByName("Retry", preview)!);
+
+  // Asking again is the same request, so the template arrives on the surface
+  // the failure was shown on rather than in a second dialog.
+  const page = await screen.findByAltText("Page 1");
+  expect(previewDialogAround(page)).toBe(preview);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 async function openDetail(
   dialog: HTMLElement,
   title: string,
@@ -588,7 +641,14 @@ async function openDetail(
   click(tabByText("Custom"));
   await within(dialog).findByText(title);
   click(buttonByName(`Preview ${title}`, dialog)!);
-  return within(dialog).findByLabelText("Rename template");
+  // The preview dialog is portaled out of the picker, so the editor is found
+  // on the document rather than inside the panel that opened it.
+  return screen.findByLabelText("Rename template");
+}
+
+/** Leave the open template, which is what the dialog's breadcrumb does. */
+function closeDetail(): void {
+  click(buttonByName("Custom templates")!);
 }
 
 test("Clearing the title and leaving the field keeps the template named", async () => {
@@ -599,7 +659,7 @@ test("Clearing the title and leaving the field keeps the template named", async 
 
   await fill(input, "");
   fireEvent.blur(input);
-  click(buttonByName("Custom templates", dialog)!);
+  closeDetail();
 
   // A blank field is a slip, not a request to erase the name.
   await expect(
@@ -615,7 +675,7 @@ test("Renaming a template updates its card in the panel", async () => {
 
   await fill(input, "  Board   review FY26  ");
   fireEvent.blur(input);
-  click(buttonByName("Custom templates", dialog)!);
+  closeDetail();
 
   // Surrounding and repeated whitespace is collapsed before it is stored.
   await expect(
@@ -624,8 +684,8 @@ test("Renaming a template updates its card in the panel", async () => {
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
-function renameField(dialog: HTMLElement): HTMLElement {
-  return within(dialog).getByLabelText("Rename template");
+function renameField(): HTMLElement {
+  return screen.getByLabelText("Rename template");
 }
 
 test("A second rename waits for the one already sent", async () => {
@@ -645,7 +705,7 @@ test("A second rename waits for the one already sent", async () => {
   // Nothing here promises two renames arrive in the order they were typed, so
   // the field stays closed rather than letting the member send a second one.
   await waitFor(() => {
-    expect(renameField(dialog)).toBeDisabled();
+    expect(renameField()).toBeDisabled();
   });
 
   stored.resolve();
@@ -653,13 +713,13 @@ test("A second rename waits for the one already sent", async () => {
   // It reopens on the stored name, not on the one that was typed: the member
   // is editing what the server now holds.
   await waitFor(() => {
-    expect(renameField(dialog)).toBeEnabled();
+    expect(renameField()).toBeEnabled();
   });
-  expect(renameField(dialog)).toHaveValue("Board review FY26");
+  expect(renameField()).toHaveValue("Board review FY26");
 
-  await fill(renameField(dialog), "Board review FY27");
-  fireEvent.blur(renameField(dialog));
-  click(buttonByName("Custom templates", dialog)!);
+  await fill(renameField(), "Board review FY27");
+  fireEvent.blur(renameField());
+  closeDetail();
 
   // The later edit is the one that survives — the defect was the earlier one
   // landing last and taking the name back.
@@ -701,9 +761,9 @@ test("The editor is not taken away by the readback its own save causes", async (
   readback.resolve();
 
   await waitFor(() => {
-    expect(renameField(dialog)).toBeEnabled();
+    expect(renameField()).toBeEnabled();
   });
-  expect(renameField(dialog)).toHaveValue("Board review FY26");
+  expect(renameField()).toHaveValue("Board review FY26");
 });
 
 test("A rename left behind by going back still reaches the list", async () => {
@@ -719,7 +779,7 @@ test("A rename left behind by going back still reaches the list", async () => {
 
   await fill(input, "Board review FY26");
   fireEvent.blur(input);
-  click(buttonByName("Custom templates", dialog)!);
+  closeDetail();
 
   await within(dialog).findByText("Q3 board review");
   // Leaving the detail does not retract a rename the member already committed
@@ -745,15 +805,15 @@ test("A rejected rename keeps the typed name for another attempt", async () => {
   fireEvent.blur(input);
 
   await expect(
-    within(dialog).findByText("Couldn't rename the template."),
+    screen.findByText("Couldn't rename the template."),
   ).resolves.toBeInTheDocument();
   // The name the server refused is still in the field: it is the member's
   // work, and throwing it away would make them type it a second time.
-  expect(renameField(dialog)).toBeEnabled();
-  expect(renameField(dialog)).toHaveValue("Board review FY26");
+  expect(renameField()).toBeEnabled();
+  expect(renameField()).toHaveValue("Board review FY26");
 
-  fireEvent.blur(renameField(dialog));
-  click(buttonByName("Custom templates", dialog)!);
+  fireEvent.blur(renameField());
+  closeDetail();
 
   await expect(
     within(dialog).findByText("Board review FY26"),
@@ -766,7 +826,7 @@ test("Changing visibility updates the card's meta line", async () => {
   const { dialog } = await openCustomPanel();
   await openDetail(dialog, "Q3 board review");
 
-  click(buttonByName("Change", dialog)!);
+  click(buttonByName("Change")!);
   const organization = await waitFor(() => {
     const option = queryAllByRoleFast("radio").find((candidate) => {
       return candidate.textContent?.startsWith("Organization");
@@ -777,7 +837,7 @@ test("Changing visibility updates the card's meta line", async () => {
     return option;
   });
   click(organization);
-  click(buttonByName("Custom templates", dialog)!);
+  closeDetail();
 
   await expect(
     within(dialog).findByText("Organization"),
@@ -890,9 +950,12 @@ test("Every source is sent with one message that lets the guide sort it", async 
   });
   // The `reverse-template` guide decides whether the file is a deck or a
   // document; repeating that here would give the run two answers that can
-  // disagree. What this message does carry is the catalog, because the guide's
-  // presentation branch names the other one.
+  // disagree. What the member reads is the request they made, one sentence
+  // long whatever the file turns out to be.
   expect(capture.runPrompts[0]).toBe(PROMPT);
+  // The catalog still has to be said, because the guide's presentation branch
+  // names the other one — so it is said where only the run reads it.
+  expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 
 test("A deck from the same entry is sent the same message", async () => {
@@ -920,35 +983,46 @@ test("A deck from the same entry is sent the same message", async () => {
     expect(capture.runPrompts).toHaveLength(1);
   });
   expect(capture.runPrompts[0]).toBe(PROMPT);
+  expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 
-test("A source no kind is made from is refused before it is uploaded", async () => {
-  mockCustomTemplates([]);
-  const { dialog, capture } = await openCustomPanel();
+test("Choosing a source leaves the picker for the thread it starts", async () => {
+  mockCustomTemplates([customTemplate()]);
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000013",
+    filename: "brand-report.docx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 5,
+    url: "https://cdn.example.test/brand-report.docx",
+  });
+  const user = userEvent.setup({ delay: null });
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: true },
+  });
+  const dialog = await openTemplatePicker(user);
 
   click(tabByText("Custom"));
-  const entry = await within(dialog).findByLabelText("Import your own file");
-  // Fired rather than uploaded through userEvent on purpose: `accept` is a
-  // filter the browser offers, not one it enforces, so the refusal has to hold
-  // for a file that reaches the input anyway.
-  fireEvent.change(entry, {
-    target: {
-      files: [
-        new File(["sheet"], "figures.xlsx", {
-          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }),
-      ],
-    },
-  });
+  await user.upload(
+    await within(dialog).findByLabelText("Import your own file"),
+    new File(["docx"], "brand-report.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+  );
 
-  await expect(
-    screen.findByText(
-      "Choose a .pptx, .ppt, .pdf, .docx, .doc, .png, .jpg, .jpeg, .webp, .bmp file to make a template.",
-    ),
-  ).resolves.toBeVisible();
-  // Refused before the bytes are spent, not after a run has already started on
-  // a file that cannot become a template.
-  expect(capture.runPrompts).toStrictEqual([]);
+  await waitFor(() => {
+    expect(capture.runPrompts).toHaveLength(1);
+  });
+  // The import sends a message, and the thread it sends into is the one the
+  // member was just handed. A picker left open covers the run they were sent
+  // to watch — and from an existing chat nothing else takes it away.
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
 
 test("Uploading stays in Presentation while the switch is off", async () => {

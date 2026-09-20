@@ -31,18 +31,43 @@ function button(name: string, root: ParentNode = document.body) {
   return element;
 }
 
-async function setupComposer(enabled = true, taskChips = false) {
+async function setupComposer(
+  enabled = true,
+  taskChips = false,
+  chatPreference = true,
+) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.PaidToolControls]: enabled,
+      [FeatureSwitchKey.ChatPreference]: chatPreference,
       [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: taskChips,
     },
   });
   return findComposerEditor();
 }
+
+test("Paid tool guidance requires both UI rollouts", async () => {
+  mockTemplateChat();
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  await setupComposer(true, false, false);
+  const dialog = await openTemplatePicker(
+    userEvent.setup({ delay: null }),
+    "Illustration",
+  );
+  expect(
+    within(dialog).queryByText("Loading your tool settings…"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText(
+      "Image generation is disabled in your paid tool settings.",
+    ),
+  ).not.toBeInTheDocument();
+});
 
 async function selectCreation(mode: "image" | "video") {
   const user = userEvent.setup({ delay: null });

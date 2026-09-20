@@ -57,3 +57,19 @@ export function getClerkAuthAppearance(
     },
   };
 }
+
+/** Match OAuth consent's un-slotted Allow action to the hosted auth CTA. */
+export function getClerkOAuthConsentAppearance(
+  homeUrl: string,
+  theme: "light" | "dark",
+): ClerkAppearance {
+  const appearance = getClerkAuthAppearance(homeUrl, theme);
+  return {
+    ...appearance,
+    variables: {
+      ...appearance.variables,
+      colorPrimary: "hsl(var(--primary))",
+      colorPrimaryForeground: "hsl(var(--primary-foreground))",
+    },
+  };
+}

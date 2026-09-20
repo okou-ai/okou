@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Webhook } from "svix";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import {
   workflowsCollectionContract,
@@ -232,7 +232,7 @@ test("does not recreate erased generation metadata from an authenticated connect
     await release.promise;
   });
   const update = setupApp({ context, routes: agentsRoutes })(
-    userConnectorsContract,
+    userBuiltinConnectorsContract,
   ).update({
     params: { id: created.body.agentId },
     body: { enabledConnectorSlugs: [], operation: "remove" },

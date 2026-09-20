@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  XResourceDeduplication = "xResourceDeduplication",
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
@@ -28,6 +27,7 @@ export enum FeatureSwitchKey {
   WebflowConnector = "webflowConnector",
   CloseConnector = "closeConnector",
   PayPalConnector = "payPalConnector",
+  PlaudConnector = "plaudConnector",
   RampConnector = "rampConnector",
   ResendConnector = "resendConnector",
   SpotifyConnector = "spotifyConnector",
@@ -52,6 +52,7 @@ export enum FeatureSwitchKey {
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "_multipleSubscriptions",
+  AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   McpServer = "mcpServer",
@@ -72,9 +73,11 @@ export enum FeatureSwitchKey {
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   GetStartedQuests = "getStartedQuests",
+  GetStartedQuestIntro = "getStartedQuestIntro",
   ComposerAddMenu = "composerAddMenu",
   CustomTemplates = "customTemplates",
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
+  OptimisticMessageSpinner = "optimisticMessageSpinner",
 }

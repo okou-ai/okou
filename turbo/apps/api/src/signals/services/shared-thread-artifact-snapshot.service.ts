@@ -26,12 +26,13 @@ import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact"
 import {
   hostedSites,
   privateHostedDeployments,
-} from "@okouai/db/schema/hosted-site";
+} from "@okouai/db/runtime/hosted-site";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import { env } from "../../lib/env";
 import { artifactHash } from "../../lib/file-url";
+import { legacyPrivateHostedDeploymentVersion } from "../../lib/hosted-publication";
 import { db$ } from "../external/db";
 import {
   copyArtifactShareObject,
@@ -820,7 +821,9 @@ const privateHostedSnapshot$ = command(
       id: deployment.id,
       siteId: deployment.siteId,
       snapshotId: args.threadId,
-      deploymentVersion: deployment.deploymentVersion,
+      deploymentVersion: legacyPrivateHostedDeploymentVersion(
+        deployment.manifest,
+      ),
       manifest: {
         ...sourceManifest,
         access: "owner-private-v1",

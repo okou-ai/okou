@@ -46,7 +46,7 @@ import {
   nullableDriverValueDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { now } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
 import {
@@ -137,7 +137,8 @@ async function concurrencyUsage(
   readonly memberUsage: ConcurrencyMemberUsage[];
   readonly waiting: number;
 }> {
-  const staleThreshold = new Date(now() - PENDING_RUN_TTL_MS);
+  const observedAt = nowDate();
+  const staleThreshold = new Date(observedAt.getTime() - PENDING_RUN_TTL_MS);
   const active = count().as("active");
   const activeMembers = db
     .select({
@@ -160,7 +161,7 @@ async function concurrencyUsage(
     .select({ count: count().as("waiting") })
     .from(agentRunSandboxIntent)
     .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
-    .where(eligibleDeferredPiDemandPredicate(db, orgId))
+    .where(eligibleDeferredPiDemandPredicate(db, orgId, observedAt))
     .as("waiting_deferred_pi_demand");
   const rows = await db
     .select({

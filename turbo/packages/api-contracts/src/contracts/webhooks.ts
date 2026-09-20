@@ -645,6 +645,7 @@ const matchedFirewallAuthContextSchema = z
   .object({
     name: z.string().min(1),
     apiId: z.string().min(1),
+    base: z.string().min(1).optional(),
     connectorSlug: connectorSlugSchema.optional(),
     customConnectorId: z.uuid().optional(),
     sourceId: z.uuid().optional(),

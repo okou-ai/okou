@@ -62,11 +62,11 @@ const CREATE_CONTROL_FOCUS =
 const TASK_CONTROL_SHAPE =
   "h-8 min-w-0 shrink-0 gap-2 px-2.5 text-[13px] font-normal leading-5";
 /**
- * The label drops out below a 600px composer, the width at which the model
- * picker drops its own, so a phone keeps the icons, the type and send on one
- * line. The icon and the accessible name still carry the type.
+ * The label appears at the composer's width rule, the same width at which the
+ * model picker shows its own, so a narrow composer keeps the icons, the type
+ * and send on one line. The icon and the accessible name still carry the type.
  */
-const TASK_CONTROL_LABEL = "truncate @max-[600px]/composer:hidden";
+const TASK_CONTROL_LABEL = "hidden truncate composer-wide:block";
 
 /**
  * One muted ink for every type. Only presentation, video and image ever had an
@@ -408,12 +408,12 @@ function MediaModelSelect<Model extends string>({
     <Select value={value} onValueChange={onChange} modal={false}>
       <SelectTrigger
         aria-label={label}
-        className="h-8 w-8 shrink-0 gap-1 border-transparent bg-transparent px-0 text-sm text-muted-foreground hover:bg-state-hover @min-[600px]/composer:w-auto @min-[600px]/composer:max-w-[11rem] @min-[600px]/composer:px-2 [&>[data-slot=select-icon]]:hidden @min-[600px]/composer:[&>[data-slot=select-icon]]:block"
+        className="h-8 w-8 shrink-0 gap-1 border-transparent bg-transparent px-0 text-sm text-muted-foreground hover:bg-state-hover composer-wide:w-auto composer-wide:max-w-[11rem] composer-wide:px-2 [&>[data-slot=select-icon]]:hidden composer-wide:[&>[data-slot=select-icon]]:block"
       >
         <SelectValue>
-          <span className="flex min-w-0 items-center justify-center gap-1.5 @min-[600px]/composer:justify-start">
+          <span className="flex min-w-0 items-center justify-center gap-1.5 composer-wide:justify-start">
             {modelIcon(value)}
-            <span className="hidden truncate @min-[600px]/composer:block">
+            <span className="hidden truncate composer-wide:block">
               {modelLabel(value)}
             </span>
           </span>

@@ -4,8 +4,9 @@ This is the X resource ingestion contract for
 [#34713](https://github.com/vm0-ai/okou/issues/34713), using the schema prepared in
 [#34712](https://github.com/vm0-ai/okou/issues/34712), under backend
 [#34610](https://github.com/vm0-ai/okou/issues/34610) and overall delivery
-[#34532](https://github.com/vm0-ai/okou/issues/34532). The deduplication-only
-feature switch is defined in [#35197](https://github.com/vm0-ai/okou/issues/35197).
+[#34532](https://github.com/vm0-ai/okou/issues/34532).
+[#35197](https://github.com/vm0-ai/okou/issues/35197) introduced the staged
+rollout that preceded unconditional deduplication.
 
 There is one X upstream billing account. Resource deduplication is site-wide
 across organizations, users, runs and processes. Retain only the current UTC
@@ -13,29 +14,27 @@ date and the previous UTC date. Adding or replacing the billing account needs
 a new design decision before that account uses this path; credential refresh
 within the same account does not reset resource identity.
 
-## Protocol and deduplication switch
+## Protocol and daily deduplication
 
 The existing usage webhook validates the strict `x-resource-v1` schema and
-authenticates the sandbox run in both switch states. The standard
-`xResourceDeduplication` feature switch defaults to disabled, with no staff
-whitelist. Resolve it once per batch using the authenticated Run owner's
-organization and user through `loadUserFeatureSwitchContext`. It controls only
-the final quantity charged for a newly accepted resource observation. Collection,
-reporting, validation, resource recording, source idempotency, pricing, settlement
-and lifecycle admission remain active when the switch is disabled.
+authenticates the sandbox run. Every newly accepted resource observation is
+deduplicated against the site-wide daily resource history. Collection, reporting,
+validation, resource recording, source idempotency, pricing, settlement and
+lifecycle admission are unconditional.
 
 Observations must be inside the two-date admission window below. The complete
 batch commits atomically and returns the existing `{ success: true }`
-acknowledgement. Both mixed and legacy-only batches discard original zero
+acknowledgement. Both mixed and count-event batches discard original zero
 quantities for every usage kind, retain positive quantities and the existing BYOK
-model filter, and share bounded write admission regardless of the switch.
+model filter, and share bounded write admission.
 
-Runner claims always advertise
-`xResourceBilling: { protocol: "x-resource-v1", startDate: "1970-01-01" }`.
-The fixed date preserves compatibility with deployed Runner parsers that require
-this field; it is neither a configurable activation date nor an API admission
-cutoff. No environment setting is required. A rejected resource batch must never
-be downgraded to legacy count billing.
+X post and user reads always use resource observations. Runner claims and the
+proxy registry carry no separate X capability or activation date. The API retains
+its generic count-event contract alongside resource observations. Count events
+bill their supplied quantity; resource observations supply the identities needed
+for daily deduplication. X writes, other connectors, model and image usage keep
+their count-event format.
+A rejected resource batch must never be downgraded to a count event.
 
 Each event carries:
 
@@ -59,20 +58,14 @@ not accepted as a resource billing category. No category alias or price change
 is introduced.
 
 Let K be the sum of identified occurrences. Require Q = K + R, computing
-transient unidentified remainder R before collapsing repeated IDs. With the
-switch disabled, bill the original quantity Q while still recording resource
-IDs. With it enabled, bill N + R, where N is the number of newly inserted distinct
-resources. For Q=5 and occurrences A,A,B, R=2; if B was already read, N=1 and the
-enabled quantity is 3, while the disabled quantity remains 5. Only the final
-quantity reaches the existing ledger and rollups.
+transient unidentified remainder R before collapsing repeated IDs. Bill N + R,
+where N is the number of newly inserted distinct resources. For Q=5 and
+occurrences A,A,B, R=2; if B was already read, N=1 and the final quantity is 3.
+Only the final quantity reaches the existing ledger and rollups.
 
-Resources recorded while the switch is disabled also count as prior reads when
-it is enabled later that UTC day, including across organizations. Disabling the
-switch makes new observations count-priced again without clearing shared reads.
-Changing the switch never recalculates a persisted positive source's quantity.
-Zero results are discarded without a source receipt. Replaying one evaluates it
-against the current switch and retained resources; turning deduplication off can
-therefore make that previously discarded observation billable at Q.
+Resource history is shared across organizations. A persisted positive source
+retains its amount on replay. Zero results are discarded without a source receipt;
+replaying one evaluates it again against the retained resource history.
 
 ## One short-lived table
 
@@ -91,7 +84,7 @@ cascade into shared reads. The migration creates one empty table and changes
 no existing table or count writer.
 
 The table is used by the transactional consumer and the independent authenticated
-`GET /api/cron/cleanup-x-resource-reads` job, scheduled once per minute. No
+`GET /api/cron/cleanup-x-resource-reads` job, scheduled once per hour. No
 additional schema or index is required by the consumer.
 
 ## Consumer transaction and retries
@@ -119,13 +112,12 @@ the entire normalized/sorted source UUID set, then the entire sorted
 date/type/ID set. Reserve source rows at quantity zero before inserting any
 resource; uncommitted placeholders are invisible to settlement. Insert resources
 with `ON CONFLICT DO NOTHING RETURNING`, derive N from the inserted identities,
-and finalize the new sources at Q when disabled or N+R when enabled in that
-transaction, deleting placeholders whose final quantity is zero. Repeated
+and finalize the new sources at N+R in that transaction, deleting placeholders
+whose final quantity is zero. Repeated
 resources within a batch are first recorded by the first source in UUID order;
-that determines their contribution to N when enabled. Any
+that determines their contribution to N. Any
 failure rolls back both sources and claims. The first successfully committed
-observation records each resource, including allowance/pack-funded reads, in
-either switch state.
+observation records each resource, including allowance/pack-funded reads.
 Only quantity zero is omitted. Positive usage remains billable and observable
 when allowances cover it or pricing produces zero charged credits. Existing
 historical zero ledger rows are not rewritten or deleted by this change.
@@ -190,7 +182,6 @@ The Pi erasure preflight likewise drains usage admission before locking Runs,
 including already terminal Pi Runs. Admission and ledger cleanup occur before
 the lifecycle's existing 100-millisecond lock timeout; parent, Run and later
 deletion locks retain that policy. Shared resource records remain untouched.
-Neither cleanup path depends on the deduplication switch.
 
 X and compaction admission locks are global: account cleanup briefly pauses all
 webhook usage writes, settlement and Run deletion. Slow settlement or deletion
@@ -199,7 +190,7 @@ admission locks are held. Before deploying the unconditional path, all serving
 and supported rollback APIs must preserve shared compaction admission for
 settlement and ordinary Run deletion; otherwise those transactions could invert
 the combined cleanup's ledger/allowance/Run lock order. This deployment
-compatibility requirement is independent of the deduplication switch.
+compatibility requirement is independent of the deduplication calculation.
 
 ## Runner and deployment compatibility
 
@@ -207,16 +198,22 @@ compatibility requirement is independent of the deduplication switch.
 occurrences, Q and transient reasons through extraction, bounded chunks,
 cross-language copies, serialization and retries. There is no bindingId.
 
-The API adds the capability when claiming a run, not when persisting a queued
-context. Rust carries it into its private proxy registry; Python validates it
-and snapshots it onto each matched request. Missing capability selects the
-existing count-only producer. A malformed advertised capability is rejected,
-never interpreted as permission to downgrade. Existing Runner versions ignore
-the additive claim field, so capability advertisement alone does not prove a
-fleet-wide switch. #34615 owns removal of the absent-capability compatibility
-path after older APIs, already claimed Runs without capability and unsupported
-rollback targets leave the supported serving window. Previously queued Runs
-resolve capability when claimed by the current API.
+The producer unconditionally records resources for X post and user reads; it
+does not consult claim metadata or an activation date. All X events preserve
+their source UUIDs instead of using the aggregate-count buffer. The API always
+calculates N+R after ingestion.
+
+This cleanup retires the capability/date-based producer and its count-only X
+read branch. A new Runner can run against the preceding gated API,
+which already accepts resource observations; its tolerant claim projection
+ignores the old capability field. An old Runner against the cleaned-up API can
+instead emit count-only reads. Those events continue through the existing generic
+ingestion path and bill their full quantity during the normal API-before-Runner
+overlap. They cannot record identities or participate in deduplication, even with
+an API that unconditionally deduplicates resource observations. Complete resource
+coverage requires draining old Runner processes, Runs, streams and retained
+uploads; see the [rollout guide](./x-resource-rollout.md). No production release
+or drain is performed by the cleanup PR itself.
 
 The existing selective parser remains the authoritative count validator. An
 additional identity copy retains at most 256 KiB of a JSON document. Only a
@@ -231,11 +228,11 @@ the authoritative count and records the unidentified portion as `identity_limit`
 malformed bodies keep only the existing trusted count fallback as `parse_fallback`.
 This can leave large legitimate responses count-priced rather than deduplicated.
 
-Capable NDJSON flows report one complete validated row at a time while the
+NDJSON flows report one complete validated row at a time while the
 connection remains open. The row ordinal, flow, run and category form its stable
 source UUID. Observation time is the row's validation time; each row therefore
-belongs to one UTC date. The fixed compatibility date makes every current row
-use v1 regardless of the deduplication switch. Complete trailing rows report once
+belongs to one UTC date and uses v1.
+Complete trailing rows report once
 on normal completion or interruption; malformed rows remain unbilled. Terminal hooks do
 not repeat previously emitted rows, including when a later decoder failure ends
 the stream. Ordinary JSON uses document validation time and a flow-local terminal
@@ -253,25 +250,25 @@ process death. Existing buffer limits trigger flushing rather than imposing a
 new hard admission/memory ceiling.
 
 The protocol remainder stays internal to ingestion so the consumer can validate
-Q = K + R and bill Q or N + R according to the switch. User-facing usage and bills
+Q = K + R and bill N + R. User-facing usage and bills
 show the ordinary final quantity, with no separate deduplication status or result
 transport. Do not keep a flow-local remainder summary or add historical remainder
 metadata.
 
 [#34615](https://github.com/vm0-ai/okou/issues/34615) verifies the single-account
 serving configuration, compatible producers/readers and rollback targets,
-measured bounds and fleet-wide legacy upload drain. The feature switch may be
-rolled out through existing user overrides within the authenticated organization; resource identity
-remains global throughout. Disabling it is a supported return to full-count
-billing for new observations, while preserving v1 ingestion and existing source
-amounts. It does not make an older API compatible: an older API with its original
-date setting unset rejects v1 uploads. Legacy GA events remain necessary for
-existing producers and other providers. Followers/following and other unverified
-resource types remain outside this protocol.
+measured bounds and fleet-wide legacy upload drain. Deduplication is unconditional
+for resource observations, and resource identity remains global. Rolling back to
+the preceding gated API can restore full-count billing for accounts without an
+enabled override while preserving v1 ingestion and existing source amounts. It
+does not make an older date-gated API compatible: an older API with its original
+date setting unset rejects v1 uploads. Count events remain necessary for X writes
+and other providers. Followers/following and other unverified resource types remain
+outside this resource-identity protocol.
 
 ## Qualification and release evidence
 
 The [shared producer/consumer qualification and rollout evidence guide](./x-resource-rollout.md)
 maps repeatable tests to the remaining deployed checks for #34615. Matching
 Python webhook payloads and API billing results proves the shared examples;
-it does not prove a fleet-wide legacy drain or enable the production switch.
+it does not prove a fleet-wide legacy drain or deployed production acceptance.

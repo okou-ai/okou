@@ -31,6 +31,7 @@ import { now } from "../../lib/time";
 import { testOverride } from "../../lib/singleton";
 import type { AuthContext } from "../../types/auth";
 import { writeDb$, type Db } from "../external/db";
+import { joinAllInOrder } from "../utils";
 import {
   completeAgentRun$,
   isEmptyRunConnectorScope,
@@ -367,9 +368,15 @@ function buildAppendSystemPrompt(args: {
 }
 
 type StableAgentPromptBuildHook = () => void;
+type StableContextCacheIdentityBuildHook = () => void;
 
 const stableAgentPromptBuildHook = testOverride<
   StableAgentPromptBuildHook | undefined
+>(() => {
+  return undefined;
+});
+const stableContextCacheIdentityBuildHook = testOverride<
+  StableContextCacheIdentityBuildHook | undefined
 >(() => {
   return undefined;
 });
@@ -384,6 +391,16 @@ export function clearStableAgentPromptBuildHookForTest(): void {
   stableAgentPromptBuildHook.clear();
 }
 
+export function setStableContextCacheIdentityBuildHookForTest(
+  hook: StableContextCacheIdentityBuildHook,
+): void {
+  stableContextCacheIdentityBuildHook.set(hook);
+}
+
+export function clearStableContextCacheIdentityBuildHookForTest(): void {
+  stableContextCacheIdentityBuildHook.clear();
+}
+
 function buildStableAgentPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly agent: AgentRunRecord;
@@ -393,6 +410,7 @@ function buildStableAgentPrompt(args: {
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
 }): PiStableContextPromptProjection {
   stableAgentPromptBuildHook.get()?.();
@@ -407,6 +425,7 @@ function buildStableAgentPrompt(args: {
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
+      presentationConvertEnabled: args.presentationConvertEnabled,
     }),
   };
 }
@@ -666,7 +685,57 @@ async function resolveAgentRunAgentId(
   );
 }
 
-async function loadAgentRunPostAuthorizationContext(
+export type AgentRunPreCreateParallelStage =
+  | "post-authorization-context"
+  | "thread-session";
+
+type AgentRunPreCreateParallelHook = (args: {
+  readonly stage: AgentRunPreCreateParallelStage;
+  readonly userId: string;
+  readonly orgId: string;
+}) => Promise<void>;
+
+const agentRunPreCreateParallelHook = testOverride<
+  AgentRunPreCreateParallelHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setAgentRunPreCreateParallelHookForTest(
+  hook: AgentRunPreCreateParallelHook,
+): void {
+  agentRunPreCreateParallelHook.set(hook);
+}
+
+export function clearAgentRunPreCreateParallelHookForTest(): void {
+  agentRunPreCreateParallelHook.clear();
+}
+
+function observeAgentRunPreCreateParallelStage(
+  stage: AgentRunPreCreateParallelStage,
+  input: Pick<AgentRunAfterBootstrap, "command">,
+): Promise<void> | undefined {
+  return agentRunPreCreateParallelHook.get()?.({
+    stage,
+    userId: input.command.auth.userId,
+    orgId: input.command.auth.orgId,
+  });
+}
+
+interface AgentRunAfterBootstrap extends RunBootstrapContext {
+  readonly agent: AgentRunRecord;
+  readonly timing: ApiDispatchTimingCollector;
+  readonly cloudBrowserEnabled: boolean | undefined;
+  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly threadSessionResolution?: ChatThreadSessionResolution;
+}
+
+interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
+  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
+  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
+}
+
+async function loadAgentRunBootstrapContext(
   db: Db,
   args: {
     readonly userId: string;
@@ -676,7 +745,7 @@ async function loadAgentRunPostAuthorizationContext(
     readonly timing: ApiDispatchTimingCollector;
   },
   signal: AbortSignal,
-) {
+): Promise<RunBootstrapContext> {
   let measuredSnapshotRows: RunBootstrapSnapshotRows | undefined;
   const snapshotRows = await measureAgentRunPreCreate(
     args.timing,
@@ -717,26 +786,39 @@ async function loadAgentRunPostAuthorizationContext(
     },
   );
   signal.throwIfAborted();
+  return bootstrapContext;
+}
 
+async function completeAgentRunPostAuthorizationContext(
+  db: Db,
+  input: AgentRunAfterBootstrap,
+  signal: AbortSignal,
+): Promise<AgentRunAfterPreCreate> {
+  const testHold = observeAgentRunPreCreateParallelStage(
+    "post-authorization-context",
+    input,
+  );
+  if (testHold) {
+    await testHold;
+  }
   const connectorCatalogSelection: RunConnectorCatalogSelection =
-    isEmptyRunConnectorScope(bootstrapContext)
+    isEmptyRunConnectorScope(input)
       ? { kind: "empty" }
       : {
           kind: "scoped",
           selection: await loadConnectorRuntimeSelection(db, {
-            timing: args.timing,
-            requestedConnectorSlugs: bootstrapContext.allowedConnectorSlugs,
-            metadataConnectorSlugs:
-              bootstrapContext.connectorCatalogMetadataSlugs,
+            timing: input.timing,
+            requestedConnectorSlugs: input.allowedConnectorSlugs,
+            metadataConnectorSlugs: input.connectorCatalogMetadataSlugs,
           }),
         };
   signal.throwIfAborted();
   const runPermissionPolicies = await measureAgentRunPreCreate(
-    args.timing,
+    input.timing,
     "api_dispatch_pre_create_agent_resolve_firewall_metadata",
     async () => {
       const storedPermissionPolicies = permissionGrantsToFirewallPolicies(
-        bootstrapContext.permissionGrants,
+        input.permissionGrants,
       );
       if (connectorCatalogSelection.kind === "empty") {
         return storedPermissionPolicies;
@@ -744,14 +826,14 @@ async function loadAgentRunPostAuthorizationContext(
       return await expandConnectorServerFirewallPolicies({
         catalog: connectorCatalogSelection.selection.serverFirewalls,
         stored: storedPermissionPolicies,
-        connectorSlugs: [...bootstrapContext.allowedConnectorSlugs],
+        connectorSlugs: [...input.allowedConnectorSlugs],
       });
     },
   );
   signal.throwIfAborted();
 
   return {
-    ...bootstrapContext,
+    ...input,
     connectorCatalogSelection,
     runPermissionPolicies,
   };
@@ -809,12 +891,22 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
       FeatureSwitchKey.DeliveryFormatGuidance,
       args.featureSwitchContext,
     ),
+    presentationConvertEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PresentationConvert,
+      args.featureSwitchContext,
+    ),
     customConnectorMcpEnabled: true,
     triggerSource: args.command.triggerSource ?? "web",
     cloudBrowserEnabled: args.cloudBrowserEnabled,
   };
   const userInfo = { ...args.userInfo, ...args.command.userInfoExtras };
-  const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
+  const connectorScope = {
+    allowedConnectorSlugs: args.allowedConnectorSlugs,
+    allowedCustomConnectorIds: args.allowedCustomConnectorIds,
+    customConnectorGrants: args.customConnectorGrants,
+    customConnectorDefinitions: args.customConnectorDefinitions,
+    workflows: args.workflows,
+  };
   let stablePrompt: PiStableContextPromptProjection | undefined;
   const buildPrompt = () => {
     stablePrompt ??= buildStableAgentPrompt({
@@ -823,12 +915,18 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
     });
     return stablePrompt;
   };
-  return {
-    userInfo,
-    initialStablePrompt: args.command.piExecution
-      ? emptyStablePrompt()
-      : buildPrompt(),
-    piStableContext: {
+  let cacheIdentity:
+    | ReturnType<
+        NonNullable<CreateAgentRunArgs["piStableContext"]>["buildCacheIdentity"]
+      >
+    | undefined;
+  const buildCacheIdentity = () => {
+    if (cacheIdentity) {
+      return cacheIdentity;
+    }
+    stableContextCacheIdentityBuildHook.get()?.();
+    const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
+    cacheIdentity = {
       owner: {
         orgId: args.command.auth.orgId,
         userId: args.command.auth.userId,
@@ -843,25 +941,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
         cloudBrowserEnabled: promptInputs.cloudBrowserEnabled,
         connectorSource: "stored_agent",
       }),
-      buildPrompt,
-      dynamicAppendSystemPrompt: [
-        buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
-        args.command.appendSystemPrompt,
-      ]
-        .filter((part): part is string => {
-          return Boolean(part);
-        })
-        .join("\n\n"),
-      semantic: {
-        promptInputs,
-        connectorScope: {
-          allowedConnectorSlugs: args.allowedConnectorSlugs,
-          allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-          customConnectorGrants: args.customConnectorGrants,
-          customConnectorDefinitions: args.customConnectorDefinitions,
-          workflows: args.workflows,
-        },
-      },
+      semantic: { promptInputs, connectorScope },
       source: {
         catalogIdentity:
           args.connectorCatalogSelection.kind === "scoped"
@@ -878,17 +958,30 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
         permissionDigest: piStableContextVariantDigest(
           args.runPermissionPolicies ?? null,
         ),
-        connectorScopeDigest: piStableContextVariantDigest({
-          allowedConnectorSlugs: args.allowedConnectorSlugs,
-          allowedCustomConnectorIds: args.allowedCustomConnectorIds,
-          customConnectorGrants: args.customConnectorGrants,
-          customConnectorDefinitions: args.customConnectorDefinitions,
-          workflows: args.workflows,
-        }),
+        connectorScopeDigest: piStableContextVariantDigest(connectorScope),
         validityHorizon: args.permissionValidityHorizon,
         promptSchemaVersion: 1,
         runtimeSchemaVersion: 1,
       },
+    };
+    return cacheIdentity;
+  };
+  return {
+    userInfo,
+    initialStablePrompt: args.command.piExecution
+      ? emptyStablePrompt()
+      : buildPrompt(),
+    piStableContext: {
+      buildPrompt,
+      buildCacheIdentity,
+      dynamicAppendSystemPrompt: [
+        buildCurrentUserPrompt(userInfo, promptInputs.triggerSource),
+        args.command.appendSystemPrompt,
+      ]
+        .filter((part): part is string => {
+          return Boolean(part);
+        })
+        .join("\n\n"),
     },
   };
 }
@@ -987,29 +1080,11 @@ function buildCreateAgentRunArgs(
   };
 }
 
-interface AgentRunAfterPreCreate {
-  readonly agent: AgentRunRecord;
-  readonly userInfo: UserInfo;
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly permissionValidityHorizon: string | null;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly workflows: readonly RunWorkflowRef[];
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
-  readonly customConnectorDefinitions: readonly CustomConnectorDefinitionVersion[];
-  readonly timing: ApiDispatchTimingCollector;
-  readonly cloudBrowserEnabled: boolean | undefined;
-  readonly command: AnyCreateAgentRunCommandArgs;
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
-}
-
 async function captureSubscriptionAccount(
   db: Db,
-  input: AgentRunAfterPreCreate,
+  input: AgentRunAfterBootstrap,
   signal: AbortSignal,
-): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> {
+): Promise<AgentRunAfterBootstrap | ReturnType<typeof conflict>> {
   const { command } = input;
   const pin = command.agentRunModelPin;
   if (
@@ -1049,13 +1124,30 @@ async function captureSubscriptionAccount(
   };
 }
 
+interface AgentRunThreadSessionPreparation {
+  readonly command: AnyCreateAgentRunCommandArgs;
+  readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly cloudBrowserEnabled: boolean | undefined;
+}
+
 async function resolveThreadSessionForAgentRun(
   db: Db,
-  input: AgentRunAfterPreCreate,
-): Promise<AgentRunAfterPreCreate> {
+  input: AgentRunAfterBootstrap,
+): Promise<AgentRunThreadSessionPreparation> {
   const threadId = input.command.chatThreadId;
   if (!threadId) {
-    return input;
+    return {
+      command: input.command,
+      threadSessionResolution: input.threadSessionResolution,
+      cloudBrowserEnabled: input.cloudBrowserEnabled,
+    };
+  }
+  const testHold = observeAgentRunPreCreateParallelStage(
+    "thread-session",
+    input,
+  );
+  if (testHold) {
+    await testHold;
   }
   const threadSessionRoute = input.command.threadSessionRoute;
   if (!threadSessionRoute) {
@@ -1097,17 +1189,33 @@ async function resolveThreadSessionForAgentRun(
     delete body.sessionId;
   }
   return {
-    ...input,
     command: { ...input.command, body, appendSystemPrompt: sessionPrompt },
     threadSessionResolution: resolution,
     cloudBrowserEnabled: resolution.cloudBrowserEnabled,
   };
 }
 
+async function joinAgentRunAttemptPreparation(
+  postAuthorization: Promise<AgentRunAfterPreCreate>,
+  threadSession: Promise<AgentRunThreadSessionPreparation>,
+  signal: AbortSignal,
+): Promise<AgentRunAfterPreCreate> {
+  // Preserve the historical post-authorization -> session error precedence,
+  // but settle both owned branches before surfacing either failure.
+  const [postAuthorizationResult, threadSessionResult] = await joinAllInOrder(
+    [postAuthorization, threadSession],
+    signal,
+  );
+  return {
+    ...postAuthorizationResult,
+    ...threadSessionResult,
+  };
+}
+
 const THREAD_SESSION_PREPARATION_ATTEMPTS = 3;
 
 const createAgentRunAfterPreCreate$ = command(
-  async ({ set }, input: AgentRunAfterPreCreate, signal: AbortSignal) => {
+  async ({ set }, input: AgentRunAfterBootstrap, signal: AbortSignal) => {
     const db = set(writeDb$);
     const capturedInput = await measureAgentRunPreCreate(
       input.timing,
@@ -1120,16 +1228,21 @@ const createAgentRunAfterPreCreate$ = command(
     if ("status" in capturedInput) {
       return capturedInput;
     }
+    const postAuthorization = completeAgentRunPostAuthorizationContext(
+      db,
+      capturedInput,
+      signal,
+    );
     for (
       let attempt = 0;
       attempt < THREAD_SESSION_PREPARATION_ATTEMPTS;
       attempt += 1
     ) {
-      const attemptInput = await resolveThreadSessionForAgentRun(
-        db,
-        capturedInput,
+      const attemptInput = await joinAgentRunAttemptPreparation(
+        postAuthorization,
+        resolveThreadSessionForAgentRun(db, capturedInput),
+        signal,
       );
-      signal.throwIfAborted();
       const baseCreateAgentRunArgs = await measureAgentRunPreCreate(
         capturedInput.timing,
         "api_dispatch_pre_create_agent_build_create_run_args",
@@ -1163,10 +1276,10 @@ const createAgentRunAfterPreCreate$ = command(
           checkOrgPlanStatusBeforeContext: false,
           preloadedFeatureSwitchContext: capturedInput.featureSwitchContext,
           preloadedUserTimezone: capturedInput.userInfo.timezone,
-          ...(capturedInput.connectorCatalogSelection.kind === "scoped"
+          ...(attemptInput.connectorCatalogSelection.kind === "scoped"
             ? {
                 preloadedConnectorCatalogSnapshot:
-                  capturedInput.connectorCatalogSelection.selection,
+                  attemptInput.connectorCatalogSelection.selection,
               }
             : {}),
         },
@@ -1257,18 +1370,7 @@ const createAgentRunInternal$ = command(
     });
     signal.throwIfAborted();
 
-    const {
-      userInfo,
-      featureSwitchContext,
-      allowedConnectorSlugs,
-      allowedCustomConnectorIds,
-      customConnectorGrants,
-      customConnectorDefinitions,
-      workflows,
-      runPermissionPolicies,
-      permissionValidityHorizon,
-      connectorCatalogSelection,
-    } = await loadAgentRunPostAuthorizationContext(
+    const bootstrapContext = await loadAgentRunBootstrapContext(
       db,
       {
         userId: args.auth.userId,
@@ -1283,18 +1385,9 @@ const createAgentRunInternal$ = command(
     return await set(
       createAgentRunAfterPreCreate$,
       {
+        ...bootstrapContext,
         command: args,
         agent,
-        userInfo,
-        featureSwitchContext,
-        runPermissionPolicies,
-        permissionValidityHorizon,
-        connectorCatalogSelection,
-        workflows,
-        allowedConnectorSlugs,
-        allowedCustomConnectorIds,
-        customConnectorGrants,
-        customConnectorDefinitions,
         timing,
         cloudBrowserEnabled: undefined,
       },

@@ -12,7 +12,7 @@ import {
   type ConnectorShelfLayout,
 } from "../../signals/okou-page/settings/connector-shelves.ts";
 import {
-  connectorCurrentConnectionStatus,
+  builtinConnectorCurrentConnectionStatus,
   matchesConnectorDirectorySearch,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
@@ -49,7 +49,7 @@ export interface ConnectorDirectoryModel {
 function needsAttention(
   connector: PlatformConnectorCatalogStatusItem,
 ): boolean {
-  const status = connectorCurrentConnectionStatus(connector);
+  const status = builtinConnectorCurrentConnectionStatus(connector);
   return status === "reconnect-required" || status === "scope-mismatch";
 }
 

@@ -47,6 +47,14 @@ and an allow-listed `reason`. Input has the delivery outcomes described below.
 Neither raw API bodies nor peer-supplied errors, desktop names, passwords or
 trust bundles reach guest responses.
 
+Authentication deadlines retain a bounded local stage for Runner diagnostics:
+RFB version exchange, security negotiation, TLS handshake or VNC authentication.
+Runner records only that stage label and still returns the stable guest reason
+`timed_out`; it does not add the destination, peer text, credential/trust data or
+wrapped transport error. The stage identifies where the client waited, not whether
+a firewall, proxy or VNC server caused the silence. Framebuffer, capture and input
+deadlines remain separate engine operations and use the same public reason.
+
 ## Capture and input
 
 A capture starts a fresh full-frame update and preserves the engine's dimensions
@@ -196,6 +204,11 @@ can be investigated with `session list`; list contains active sessions only,
 not a historical execution receipt. Failures and uncertain outcomes exit
 nonzero. Local invalid input or missing capability reports
 `delivery: "not_dispatched"` without launching the helper.
+
+For a certain `timed_out` result, human-readable output recommends checking
+reachability from the Runner network, prompt RFB banner behavior and relevant
+firewall/server logs without naming the failed component. Unknown delivery keeps
+the no-replay guidance instead. JSON output remains the unchanged terminal result.
 
 Screenshot JSON includes `path`, `sha256`, `bytes`, dimensions, `geometry`,
 `updateSequence` and `capturedAt`. The CLI stages data in a private directory and

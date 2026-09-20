@@ -15,6 +15,18 @@ teardown() {
     runner_e2e_teardown_test bentoml
 }
 
+assert_no_connector_refresh_raw_secrets() {
+    local surfaces="$1"
+    shift
+
+    local raw_secret
+    for raw_secret in "$@"; do
+        if [[ "$surfaces" == *"$raw_secret"* ]]; then
+            fail "raw BentoML credential appeared in a public runner surface"
+        fi
+    done
+}
+
 @test "continued runner session refreshes replaced connector credentials" {
     run create_runner_agent "runner-connector-refresh-${TEST_ID}"
     echo "$output"
@@ -56,6 +68,7 @@ printf '%s' "$BENTO_CLOUD_API_ENDPOINT" | sha256sum | cut -d' ' -f1
 # IPv4 so an unavailable AAAA response cannot block an otherwise valid request.
 # Leave room for connection setup around the proxy's 10-second auth deadline.
 if curl --ipv4 --silent --show-error --max-time 15 \
+    --write-out '__OUTPUT_PREFIX__CURL http_code=%{http_code} namelookup=%{time_namelookup} connect=%{time_connect} appconnect=%{time_appconnect} starttransfer=%{time_starttransfer} total=%{time_total}\n' \
     --output /dev/null \
     "${BENTO_CLOUD_API_ENDPOINT}/"; then
     printf '__OUTPUT_PREFIX__SENT\n'
@@ -101,6 +114,27 @@ EOF
     assert_success
     local first_agent_text="$output"
     public_surfaces+="$first_agent_text"$'\n'
+    if [[ "$first_agent_text" != *"${first_output_prefix}SENT"* ]]; then
+        # Network telemetry is uploaded after completion. Collect both public
+        # diagnostic surfaces before preserving the original probe assertion.
+        run runner_api_curl "/api/runs/${first_run_id}/context"
+        local first_context_diagnostics="$output"
+        public_surfaces+="$first_context_diagnostics"$'\n'
+        run runner_e2e_wait_for_firewall_log \
+            "$first_run_id" \
+            bentoml \
+            bentoml.com \
+            '["BENTO_CLOUD_API_KEY"]'
+        local first_network_diagnostics="$output"
+        public_surfaces+="$first_network_diagnostics"$'\n'
+        assert_no_connector_refresh_raw_secrets \
+            "$public_surfaces" \
+            "$initial_secret" \
+            "$updated_secret"
+        echo "$first_context_diagnostics"
+        echo "$first_network_diagnostics"
+        output="$first_agent_text"
+    fi
     assert_output --partial "${first_output_prefix}SENT"
     assert_output --partial \
         "BENTOML_API_KEY=cur7hCoffeeSafeLocalCoffeeSafeLocalCoffeeSafe"
@@ -182,6 +216,27 @@ EOF
     assert_success
     local updated_agent_text="$output"
     public_surfaces+="$updated_agent_text"$'\n'
+    if [[ "$updated_agent_text" != *"${updated_output_prefix}SENT"* ]]; then
+        # Preserve the continued Run's completed public diagnostics before the
+        # phase-specific probe assertion reports its original failure.
+        run runner_api_curl "/api/runs/${RUN_ID}/context"
+        local updated_context_diagnostics="$output"
+        public_surfaces+="$updated_context_diagnostics"$'\n'
+        run runner_e2e_wait_for_firewall_log \
+            "$RUN_ID" \
+            bentoml \
+            cloud.bentoml.com \
+            '["BENTO_CLOUD_API_KEY"]'
+        local updated_network_diagnostics="$output"
+        public_surfaces+="$updated_network_diagnostics"$'\n'
+        assert_no_connector_refresh_raw_secrets \
+            "$public_surfaces" \
+            "$initial_secret" \
+            "$updated_secret"
+        echo "$updated_context_diagnostics"
+        echo "$updated_network_diagnostics"
+        output="$updated_agent_text"
+    fi
     assert_output --partial "${updated_output_prefix}SENT"
     assert_output --partial \
         "BENTOML_API_KEY=cur7hCoffeeSafeLocalCoffeeSafeLocalCoffeeSafe"
@@ -216,10 +271,8 @@ EOF
     assert_success
     public_surfaces+="$output"$'\n'
 
-    local raw_secret
-    for raw_secret in "$initial_secret" "$updated_secret"; do
-        if [[ "$public_surfaces" == *"$raw_secret"* ]]; then
-            fail "raw BentoML credential appeared in a public runner surface"
-        fi
-    done
+    assert_no_connector_refresh_raw_secrets \
+        "$public_surfaces" \
+        "$initial_secret" \
+        "$updated_secret"
 }

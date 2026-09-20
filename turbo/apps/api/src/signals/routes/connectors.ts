@@ -1,13 +1,13 @@
 import { command, computed } from "ccstate";
 import {
-  connectorManualGrantContract,
-  connectorNoAuthGrantContract,
-  connectorOpenIdStartContract,
-  connectorOauthStartContract,
-  connectorScopeDiffContract,
-  connectorsBySlugContract,
-  connectorsMainContract,
-  connectorsSearchContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOpenIdStartContract,
+  builtinConnectorOauthStartContract,
+  builtinConnectorScopeDiffContract,
+  builtinConnectorsBySlugContract,
+  builtinConnectorsMainContract,
+  builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import type { PublicConnectorCatalogDetail } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorGrantScopes } from "@okouai/connectors/connector-auth-method";
@@ -30,12 +30,12 @@ import {
   validateConnectorAuthorizationTarget$,
 } from "../services/connected-connector-authorization.service";
 import {
-  connectManualGrantConnector$,
-  connectNoAuthConnector$,
-  connectorBySlug,
-  connectorList,
-  connectorScopeDiff,
-  connectorSearch,
+  connectManualGrantBuiltinConnector$,
+  connectNoAuthBuiltinConnector$,
+  builtinConnectorBySlug,
+  builtinConnectorList,
+  builtinConnectorScopeDiff,
+  builtinConnectorSearch,
 } from "../services/connector-data.service";
 import {
   connectorActionResolver,
@@ -45,17 +45,17 @@ import { isConnectorCatalogUnavailableError } from "../services/connector-catalo
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 import {
-  getConnectorOAuthCallbackUrlForMethod,
-  getConnectorOpenIdCallbackOriginForMethod,
+  getBuiltinConnectorOAuthCallbackUrlForMethod,
+  getBuiltinConnectorOpenIdCallbackOriginForMethod,
 } from "./connector-oauth-origin";
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import {
-  buildConnectorAuthCodeAuthUrlWithMethod,
-  prepareConnectorAuthCodeStartWithMethod,
+  buildBuiltinConnectorAuthCodeAuthUrlWithMethod,
+  prepareBuiltinConnectorAuthCodeStartWithMethod,
 } from "./connector-auth-code-start";
 import {
-  buildConnectorOpenIdAuthUrlWithMethod,
-  prepareConnectorOpenIdAuthStartWithMethod,
+  buildBuiltinConnectorOpenIdAuthUrlWithMethod,
+  prepareBuiltinConnectorOpenIdAuthStartWithMethod,
 } from "./connector-openid-auth-start";
 import { resolveConnectorConnectionMutation } from "../services/connector-connection-write.service";
 import { insertConnectorOAuthState } from "../services/connector-oauth-state.service";
@@ -178,19 +178,19 @@ function connectorMethodResolutionError(
   }
 }
 
-const getConnectorListInner$ = computed(async (get) => {
+const getBuiltinConnectorListInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   const result = await get(
-    connectorList({ orgId: auth.orgId, userId: auth.userId }),
+    builtinConnectorList({ orgId: auth.orgId, userId: auth.userId }),
   );
   return { status: 200 as const, body: result };
 });
 
-const getConnectorBySlugInner$ = computed(async (get) => {
+const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(connectorsBySlugContract.get));
+  const params = get(pathParamsOf(builtinConnectorsBySlugContract.get));
   const connector = await get(
-    connectorBySlug({
+    builtinConnectorBySlug({
       orgId: auth.orgId,
       userId: auth.userId,
       connectorSlug: params.connectorSlug,
@@ -203,11 +203,13 @@ const getConnectorBySlugInner$ = computed(async (get) => {
   return { status: 200 as const, body: connector };
 });
 
-const getScopeDiffInner$ = computed(async (get) => {
+const getBuiltinConnectorScopeDiffInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(connectorScopeDiffContract.getScopeDiff));
+  const params = get(
+    pathParamsOf(builtinConnectorScopeDiffContract.getScopeDiff),
+  );
   const diff = await get(
-    connectorScopeDiff({
+    builtinConnectorScopeDiff({
       orgId: auth.orgId,
       userId: auth.userId,
       connectorSlug: params.connectorSlug,
@@ -221,12 +223,12 @@ const getScopeDiffInner$ = computed(async (get) => {
   return { status: 200 as const, body: diff };
 });
 
-const searchConnectorsInner$ = computed(async (get) => {
+const searchBuiltinConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const query = get(queryOf(connectorsSearchContract.search));
+  const query = get(queryOf(builtinConnectorsSearchContract.search));
   const connectors = await settle(
     get(
-      connectorSearch({
+      builtinConnectorSearch({
         orgId: auth.orgId,
         userId: auth.userId,
         keyword: query.keyword,
@@ -247,12 +249,14 @@ const searchConnectorsInner$ = computed(async (get) => {
   };
 });
 
-const connectManualGrantConnectorInner$ = command(
+const connectManualGrantBuiltinConnectorInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(connectorManualGrantContract.connect));
+    const params = get(
+      pathParamsOf(builtinConnectorManualGrantContract.connect),
+    );
     const bodyResult = await get(
-      bodyResultOf(connectorManualGrantContract.connect),
+      bodyResultOf(builtinConnectorManualGrantContract.connect),
     );
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -289,7 +293,7 @@ const connectManualGrantConnectorInner$ = command(
     }
 
     const result = await set(
-      connectManualGrantConnector$,
+      connectManualGrantBuiltinConnector$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -329,12 +333,14 @@ const connectManualGrantConnectorInner$ = command(
   },
 );
 
-const connectNoAuthConnectorInner$ = command(
+const connectNoAuthBuiltinConnectorInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(connectorNoAuthGrantContract.connect));
+    const params = get(
+      pathParamsOf(builtinConnectorNoAuthGrantContract.connect),
+    );
     const bodyResult = await get(
-      bodyResultOf(connectorNoAuthGrantContract.connect),
+      bodyResultOf(builtinConnectorNoAuthGrantContract.connect),
     );
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -371,7 +377,7 @@ const connectNoAuthConnectorInner$ = command(
     }
 
     const result = await set(
-      connectNoAuthConnector$,
+      connectNoAuthBuiltinConnector$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -407,9 +413,9 @@ const connectNoAuthConnectorInner$ = command(
   },
 );
 
-const startConnectorOauthInner$ = command(
+const startBuiltinConnectorOauthInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const route = connectorOauthStartContract.start;
+    const route = builtinConnectorOauthStartContract.start;
     const params = get(pathParamsOf(route));
     const bodyResult = await get(bodyResultOf(route));
     signal.throwIfAborted();
@@ -461,13 +467,13 @@ const startConnectorOauthInner$ = command(
       return internalServerError("Connector execution is not configured");
     }
 
-    const redirectUri = getConnectorOAuthCallbackUrlForMethod({
+    const redirectUri = getBuiltinConnectorOAuthCallbackUrlForMethod({
       request,
       method,
       connectorSlug: resolved.connectorSlug,
       callbackTarget: bodyResult.data.callbackTarget,
     });
-    const prepared = prepareConnectorAuthCodeStartWithMethod({
+    const prepared = prepareBuiltinConnectorAuthCodeStartWithMethod({
       method,
       redirectUri,
       readEnv: optionalEnv,
@@ -475,7 +481,7 @@ const startConnectorOauthInner$ = command(
     if (!prepared.ok) {
       return internalServerError(`${connectorSlug} auth client not configured`);
     }
-    const authResult = await buildConnectorAuthCodeAuthUrlWithMethod({
+    const authResult = await buildBuiltinConnectorAuthCodeAuthUrlWithMethod({
       connectorSlug: resolved.connectorSlug,
       authMethodId: resolved.authMethodId,
       method,
@@ -536,11 +542,11 @@ const startConnectorOauthInner$ = command(
   },
 );
 
-const startConnectorOpenIdInner$ = command(
+const startBuiltinConnectorOpenIdInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const params = get(pathParamsOf(connectorOpenIdStartContract.start));
+    const params = get(pathParamsOf(builtinConnectorOpenIdStartContract.start));
     const bodyResult = await get(
-      bodyResultOf(connectorOpenIdStartContract.start),
+      bodyResultOf(builtinConnectorOpenIdStartContract.start),
     );
     signal.throwIfAborted();
     if (!bodyResult.ok) {
@@ -591,15 +597,15 @@ const startConnectorOpenIdInner$ = command(
       return internalServerError("Connector execution is not configured");
     }
 
-    const prepared = prepareConnectorOpenIdAuthStartWithMethod({
+    const prepared = prepareBuiltinConnectorOpenIdAuthStartWithMethod({
       connectorSlug: resolved.connectorSlug,
       method: resolved.method,
-      origin: getConnectorOpenIdCallbackOriginForMethod({
+      origin: getBuiltinConnectorOpenIdCallbackOriginForMethod({
         request,
         method: resolved.method,
       }),
     });
-    const authResult = await buildConnectorOpenIdAuthUrlWithMethod({
+    const authResult = await buildBuiltinConnectorOpenIdAuthUrlWithMethod({
       connectorSlug: resolved.connectorSlug,
       authMethodId: resolved.authMethodId,
       method: resolved.method,
@@ -659,37 +665,40 @@ const startConnectorOpenIdInner$ = command(
   },
 );
 
-export const connectorsRoutes: readonly RouteEntry[] = [
+export const builtinConnectorsRoutes: readonly RouteEntry[] = [
   {
-    route: connectorManualGrantContract.connect,
-    handler: authRoute(connectorWriteAuth, connectManualGrantConnectorInner$),
+    route: builtinConnectorManualGrantContract.connect,
+    handler: authRoute(
+      connectorWriteAuth,
+      connectManualGrantBuiltinConnectorInner$,
+    ),
   },
   {
-    route: connectorNoAuthGrantContract.connect,
-    handler: authRoute(connectorWriteAuth, connectNoAuthConnectorInner$),
+    route: builtinConnectorNoAuthGrantContract.connect,
+    handler: authRoute(connectorWriteAuth, connectNoAuthBuiltinConnectorInner$),
   },
   {
-    route: connectorsSearchContract.search,
-    handler: authRoute(connectorReadAuth, searchConnectorsInner$),
+    route: builtinConnectorsSearchContract.search,
+    handler: authRoute(connectorReadAuth, searchBuiltinConnectorsInner$),
   },
   {
-    route: connectorsMainContract.list,
-    handler: authRoute(connectorReadAuth, getConnectorListInner$),
+    route: builtinConnectorsMainContract.list,
+    handler: authRoute(connectorReadAuth, getBuiltinConnectorListInner$),
   },
   {
-    route: connectorScopeDiffContract.getScopeDiff,
-    handler: authRoute(connectorReadAuth, getScopeDiffInner$),
+    route: builtinConnectorScopeDiffContract.getScopeDiff,
+    handler: authRoute(connectorReadAuth, getBuiltinConnectorScopeDiffInner$),
   },
   {
-    route: connectorOauthStartContract.start,
-    handler: authRoute(connectorWriteAuth, startConnectorOauthInner$),
+    route: builtinConnectorOauthStartContract.start,
+    handler: authRoute(connectorWriteAuth, startBuiltinConnectorOauthInner$),
   },
   {
-    route: connectorOpenIdStartContract.start,
-    handler: authRoute(connectorWriteAuth, startConnectorOpenIdInner$),
+    route: builtinConnectorOpenIdStartContract.start,
+    handler: authRoute(connectorWriteAuth, startBuiltinConnectorOpenIdInner$),
   },
   {
-    route: connectorsBySlugContract.get,
-    handler: authRoute(connectorReadAuth, getConnectorBySlugInner$),
+    route: builtinConnectorsBySlugContract.get,
+    handler: authRoute(connectorReadAuth, getBuiltinConnectorBySlugInner$),
   },
 ];

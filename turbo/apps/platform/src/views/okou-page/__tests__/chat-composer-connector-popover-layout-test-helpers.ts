@@ -86,7 +86,7 @@ function connectorPositionerPopup(element: HTMLElement): HTMLElement | null {
   return null;
 }
 
-function connectorList(element: HTMLElement): boolean {
+function builtinConnectorList(element: HTMLElement): boolean {
   return (
     element.getAttribute("role") === "list" &&
     element.getAttribute("aria-label") === "Connectors"
@@ -250,7 +250,7 @@ export function mockConnectorPopoverLayout(
       if (popup) {
         return connectorPopupHeight(popup, options.viewport.height);
       }
-      if (connectorList(this)) {
+      if (builtinConnectorList(this)) {
         const parentPopup = this.closest<HTMLElement>('[role="dialog"]');
         return parentPopup ? connectorListHeight(parentPopup) : 0;
       }
@@ -260,7 +260,7 @@ export function mockConnectorPopoverLayout(
   replaceProperty(HTMLElement.prototype, "offsetWidth", {
     get(this: HTMLElement): number {
       const popup = connectorPopup(this) ?? connectorPositionerPopup(this);
-      if (popup !== null || connectorList(this)) {
+      if (popup !== null || builtinConnectorList(this)) {
         return CONNECTOR_POPOVER_WIDTH;
       }
       return offsetWidthDescriptor?.get?.call(this) ?? 0;
@@ -268,7 +268,7 @@ export function mockConnectorPopoverLayout(
   });
   replaceProperty(HTMLElement.prototype, "clientHeight", {
     get(this: HTMLElement): number {
-      if (connectorList(this)) {
+      if (builtinConnectorList(this)) {
         const parentPopup = this.closest<HTMLElement>('[role="dialog"]');
         return parentPopup ? connectorListHeight(parentPopup) : 0;
       }
@@ -277,7 +277,7 @@ export function mockConnectorPopoverLayout(
   });
   replaceProperty(HTMLElement.prototype, "scrollHeight", {
     get(this: HTMLElement): number {
-      if (connectorList(this)) {
+      if (builtinConnectorList(this)) {
         return Math.max(
           this.clientHeight,
           this.querySelectorAll('[role="listitem"]').length *
@@ -299,7 +299,7 @@ export function mockConnectorPopoverLayout(
       if (popup) {
         return connectorPopupRect(popup, options);
       }
-      if (connectorList(this)) {
+      if (builtinConnectorList(this)) {
         const parentPopup = this.closest<HTMLElement>('[role="dialog"]');
         if (parentPopup) {
           const popupRect = connectorPopupRect(parentPopup, options);

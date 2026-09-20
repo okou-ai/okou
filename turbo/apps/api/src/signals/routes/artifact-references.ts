@@ -8,7 +8,7 @@ import {
 import {
   hostedSites,
   privateHostedDeployments,
-} from "@okouai/db/schema/hosted-site";
+} from "@okouai/db/runtime/hosted-site";
 import { notFound } from "../../lib/error";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";

@@ -756,19 +756,23 @@ describe("durable Pi API producer", () => {
         );
       }),
     );
-    const { buildCount, result: ready } =
-      await withStableAgentPromptBuildCountFixture(async () => {
-        return await sendChatRun(
-          actor,
-          {
-            agentId,
-            prompt: "use the worker-published projection",
-            model: SELECTED_MODEL,
-          },
-          usagePricingResolution,
-        );
-      });
+    const {
+      buildCount,
+      cacheIdentityBuildCount,
+      result: ready,
+    } = await withStableAgentPromptBuildCountFixture(async () => {
+      return await sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: "use the worker-published projection",
+          model: SELECTED_MODEL,
+        },
+        usagePricingResolution,
+      );
+    });
     expect(buildCount).toBe(0);
+    expect(cacheIdentityBuildCount).toBe(1);
     onTestFinished(async () => {
       await flushWaitUntilForTest();
       await removePiInferenceFixtures({
@@ -901,19 +905,23 @@ describe("durable Pi API producer", () => {
     );
     expect(work.body.stableContext.ready).toBeGreaterThanOrEqual(1);
 
-    const { buildCount, result: ready } =
-      await withStableAgentPromptBuildCountFixture(async () => {
-        return await sendChatRun(
-          actor,
-          {
-            agentId,
-            prompt: "consume ordered custom skills",
-            model: SELECTED_MODEL,
-          },
-          usagePricingResolution,
-        );
-      });
+    const {
+      buildCount,
+      cacheIdentityBuildCount,
+      result: ready,
+    } = await withStableAgentPromptBuildCountFixture(async () => {
+      return await sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: "consume ordered custom skills",
+          model: SELECTED_MODEL,
+        },
+        usagePricingResolution,
+      );
+    });
     expect(buildCount).toBe(0);
+    expect(cacheIdentityBuildCount).toBe(1);
     await waitForRunStatus(actor, ready.runId, "completed", 10_000);
     expect(providerCalls).toBe(2);
     onTestFinished(async () => {
@@ -1308,7 +1316,16 @@ describe("durable Pi API producer", () => {
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
-      apiFirstTurn: { continuation: { mode: "untouched-h0" } },
+      apiFirstTurn: {
+        continuation: {
+          mode: "untouched-h0",
+          apiUsage: {
+            schemaVersion: 1,
+            state: "no-inference",
+            sampledAt: expect.any(Number),
+          },
+        },
+      },
     });
     await api.requestCancelRun(actor, run.runId, [200], usagePricingResolution);
     await releaseDeferredPiRun(run.runId, runnerId, claim);
@@ -2218,7 +2235,23 @@ describe("durable Pi API producer", () => {
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
-      apiFirstTurn: { continuation: { mode: "settled-session" } },
+      apiFirstTurn: {
+        continuation: {
+          mode: "settled-session",
+          apiUsage: {
+            schemaVersion: 1,
+            state: "observed",
+            sampledAt: expect.any(Number),
+            coverage: "partial",
+            tokens: {
+              input: null,
+              cacheRead: null,
+              cacheCreation: null,
+              output: 3,
+            },
+          },
+        },
+      },
     });
     await api.requestCancelRun(actor, run.runId, [200], usagePricingResolution);
     await releaseDeferredPiRun(run.runId, runnerId, claim);
@@ -2366,6 +2399,18 @@ describe("durable Pi API producer", () => {
         continuation: {
           mode: "pending-tools",
           pendingToolIds: [expect.stringMatching(/^call_durable_pi_tool\|/u)],
+          apiUsage: {
+            schemaVersion: 1,
+            state: "observed",
+            sampledAt: expect.any(Number),
+            coverage: "partial",
+            tokens: {
+              input: null,
+              cacheRead: null,
+              cacheCreation: null,
+              output: 3,
+            },
+          },
         },
       },
     });

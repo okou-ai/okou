@@ -7,11 +7,13 @@ import {
 } from "@okouai/connectors/connector-auth-method";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import type { FirewallPermissionPolicyDefaultMetadata } from "@okouai/connectors/firewall-metadata/policy";
+import { projectRunnerRuntimeFirewall } from "@okouai/connectors/firewall-metadata/runner-runtime-catalog";
 import {
   extractSecretNamesFromApis,
   normalizeFirewallFixedHost,
   UNKNOWN_PERMISSION_GRANT,
   type FirewallBaseHostPolicy,
+  type Firewall,
   type FirewallPolicies,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-types";
@@ -108,6 +110,7 @@ export interface ConnectorServerFirewallMetadataCatalog {
 }
 
 export interface ConnectorServerFirewallSelection extends ConnectorServerFirewallMetadataCatalog {
+  getRuntimeFirewall(connectorSlug: string): Firewall | null;
   getExecutionMetadata(
     connectorSlug: string,
   ): ConnectorServerFirewallExecutionMetadata | null;
@@ -599,6 +602,12 @@ export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args:
     isMcp: (connectorSlug) => {
       return entries.get(connectorSlug)?.connector.mcp !== undefined;
     },
+    getRuntimeFirewall: (connectorSlug) => {
+      const entry = entries.get(connectorSlug);
+      return entry
+        ? projectRunnerRuntimeFirewall(acceptedEntryFirewall(entry).firewall)
+        : null;
+    },
     getExecutionMetadata: (connectorSlug) => {
       const entry = entries.get(connectorSlug);
       return entry ? acceptedEntryExecutionMetadata(entry) : null;
@@ -643,6 +652,11 @@ export function selectConnectorServerFirewalls(args: {
   };
   return {
     has: selectedEntryExists,
+    getRuntimeFirewall: (connectorSlug) => {
+      return selectedEntryExists(connectorSlug)
+        ? args.catalog.getRuntimeFirewall(connectorSlug)
+        : null;
+    },
     isMcp: (connectorSlug) => {
       return (
         selectedEntryExists(connectorSlug) && args.catalog.isMcp(connectorSlug)

@@ -12,7 +12,11 @@ import platform_api_url
 import registry
 import request_classification
 import upstream_destination_binding
-from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
+from tests.request_handler_helpers import (
+    _sandbox_without_firewalls,
+    _single_firewall_sandbox,
+    _write_registry,
+)
 from tests.upstream_connection_helpers import (
     bind_flow_upstream,
     mark_connected_tls_upstream,
@@ -677,8 +681,353 @@ async def test_platform_api_test_paths_skip_auto_allow(
     assert binding.kinds == frozenset(("connector_auth",))
 
 
-async def test_platform_api_non_test_paths_auto_allow_before_firewall_auth(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
+_PLATFORM_MCP_CUSTOM_CONNECTOR_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+def _write_platform_mcp_registry(
+    tmp_path,
+    *,
+    api_origin="https://api.okou.ai",
+):
+    return _write_registry(
+        tmp_path,
+        client_ip="10.200.0.1",
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            run_id="run-platform-mcp",
+            sandbox_marker="tok-platform-mcp",
+            firewall_name="platform-mcp",
+            custom_connector_id=_PLATFORM_MCP_CUSTOM_CONNECTOR_ID,
+            api_entry={
+                "base": f"{api_origin}/mcp",
+                "auth": {
+                    "headers": {
+                        "Authorization": "Bearer ${{ secrets.PLATFORM_MCP_TOKEN }}",
+                    }
+                },
+                "permissions": [{"name": "mcp", "rules": ["ANY /"]}],
+            },
+            network_policy=None,
+        ),
+    )
+
+
+async def test_platform_mcp_matching_intent_injects_oauth_through_request_lifecycle(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+):
+    reg_path = _write_platform_mcp_registry(tmp_path)
+    request_body = b'{"jsonrpc":"2.0","method":"initialize","id":1}'
+    flow = real_flow(
+        with_response=False,
+        host="api.okou.ai",
+        method="POST",
+        path="/mcp?session=one",
+        request_body=request_body,
+        request_headers=headers(
+            ("Host", "api.okou.ai"),
+            ("Content-Length", str(len(request_body))),
+            ("Content-Type", "application/json"),
+            ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(
+            headers={"Authorization": "Bearer resolved-platform-mcp-token"}
+        ) as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        assert "X-Okou-Connector-Intent" not in flow.request.headers
+        auth_fetch.assert_not_called()
+
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_awaited_once()
+    assert flow.response is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert flow.metadata[metadata_keys.FIREWALL_NAME] == "platform-mcp"
+    assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.okou.ai/mcp"
+    assert flow.request.headers["Authorization"] == "Bearer resolved-platform-mcp-token"
+    binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
+    assert binding.kinds == frozenset(("connector_auth",))
+
+
+async def test_platform_mcp_connector_auth_injects_runner_preview_bypass(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    monkeypatch,
+):
+    api_origin = "https://preview-api.vm6.ai"
+    reg_path = _write_platform_mcp_registry(tmp_path, api_origin=api_origin)
+    flow = real_flow(
+        with_response=False,
+        host="preview-api.vm6.ai",
+        method="POST",
+        path="/mcp",
+        request_headers=headers(
+            ("Host", "preview-api.vm6.ai"),
+            ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+        ),
+    )
+    monkeypatch.setattr(platform_api, "VERCEL_BYPASS", "preview-secret")
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url=api_origin),
+        fake_firewall_headers(
+            headers={"Authorization": "Bearer resolved-platform-mcp-token"}
+        ) as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        assert flow.request.headers["x-vercel-protection-bypass"] == "preview-secret"
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_awaited_once()
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer resolved-platform-mcp-token"
+    assert flow.request.headers["x-vercel-protection-bypass"] == "preview-secret"
+    binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
+    assert binding.kinds == frozenset(("connector_auth",))
+
+
+@pytest.mark.parametrize(
+    "intent_headers",
+    [
+        pytest.param((), id="missing"),
+        pytest.param(
+            (
+                ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+                ("X-Okou-Connector-Intent", "other"),
+            ),
+            id="malformed-duplicate",
+        ),
+    ],
+)
+async def test_platform_mcp_without_usable_intent_preserves_api_allow(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    intent_headers,
+):
+    reg_path = _write_platform_mcp_registry(tmp_path)
+    flow = real_flow(
+        with_response=False,
+        host="api.okou.ai",
+        method="POST",
+        path="/mcp",
+        request_headers=headers(("Host", "api.okou.ai"), *intent_headers),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_not_called()
+    assert flow.response is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
+    assert "Authorization" not in flow.request.headers
+    assert metadata_keys.FIREWALL_BASE not in flow.metadata
+    binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
+    assert binding.kinds == frozenset(("api_allow",))
+
+
+@pytest.mark.parametrize("intent_state", ["wrong", "removed"])
+async def test_platform_mcp_unselected_intent_cannot_obtain_connector_credentials(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    intent_state,
+):
+    if intent_state == "removed":
+        reg_path = _write_registry(
+            tmp_path,
+            client_ip="10.200.0.1",
+            sandbox_info=_sandbox_without_firewalls(
+                tmp_path,
+                run_id="run-platform-mcp-removed",
+                sandbox_marker="tok-platform-mcp-removed",
+                sandbox_fields={
+                    "connectorRoutingVariables": {
+                        f"custom:{_PLATFORM_MCP_CUSTOM_CONNECTOR_ID}": {}
+                    },
+                    "omittedCustomConnectorIds": [_PLATFORM_MCP_CUSTOM_CONNECTOR_ID],
+                },
+            ),
+        )
+        intent = _PLATFORM_MCP_CUSTOM_CONNECTOR_ID
+    else:
+        reg_path = _write_platform_mcp_registry(tmp_path)
+        intent = "00000000-0000-4000-8000-000000000000"
+
+    flow = real_flow(
+        with_response=False,
+        host="api.okou.ai",
+        method="POST",
+        path="/mcp",
+        request_headers=headers(
+            ("Host", "api.okou.ai"),
+            ("X-Okou-Connector-Intent", intent),
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_not_called()
+    assert flow.response is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
+    assert "Authorization" not in flow.request.headers
+    assert metadata_keys.FIREWALL_BASE not in flow.metadata
+    binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
+    assert binding.kinds == frozenset(("api_allow",))
+
+
+async def test_platform_mcp_selected_exact_owner_keeps_firewall_denial(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+):
+    reg_path = _write_registry(
+        tmp_path,
+        client_ip="10.200.0.1",
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            run_id="run-denied-platform-mcp",
+            sandbox_marker="tok-denied-platform-mcp",
+            firewall_name="denied-platform-mcp",
+            custom_connector_id=_PLATFORM_MCP_CUSTOM_CONNECTOR_ID,
+            api_entry={
+                "base": "https://api.okou.ai/mcp",
+                "auth": {
+                    "headers": {
+                        "Authorization": "Bearer ${{ secrets.PLATFORM_MCP_TOKEN }}",
+                    }
+                },
+                "permissions": [{"name": "mcp", "rules": ["ANY /"]}],
+            },
+            network_policy={
+                "allow": [],
+                "deny": ["mcp"],
+                "ask": [],
+                "unknownPolicy": "deny",
+            },
+        ),
+    )
+    flow = real_flow(
+        with_response=False,
+        host="api.okou.ai",
+        method="POST",
+        path="/mcp",
+        request_headers=headers(
+            ("Host", "api.okou.ai"),
+            ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_not_called()
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
+    assert "Authorization" not in flow.request.headers
+    assert upstream_destination_binding.binding_snapshot_for_tests() == {}
+
+
+async def test_platform_mcp_rejects_broad_platform_firewall_base(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+):
+    reg_path = _write_registry(
+        tmp_path,
+        client_ip="10.200.0.1",
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            run_id="run-broad-platform-connector",
+            sandbox_marker="tok-broad-platform-connector",
+            firewall_name="broad-platform-connector",
+            custom_connector_id=_PLATFORM_MCP_CUSTOM_CONNECTOR_ID,
+            api_entry={
+                "base": "https://api.okou.ai",
+                "auth": {
+                    "headers": {
+                        "Authorization": "Bearer ${{ secrets.BROAD_PLATFORM_TOKEN }}",
+                    }
+                },
+                "permissions": [],
+            },
+            network_policy=None,
+        ),
+    )
+    flow = real_flow(
+        with_response=False,
+        host="api.okou.ai",
+        method="POST",
+        path="/mcp",
+        request_headers=headers(
+            ("Host", "api.okou.ai"),
+            ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_not_called()
+    assert flow.response is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert "Authorization" not in flow.request.headers
+    assert metadata_keys.FIREWALL_BASE not in flow.metadata
+    binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
+    assert binding.kinds == frozenset(("api_allow",))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param("/api", id="denylisted-api-root"),
+        pytest.param("/api/runs", id="denylisted-api-descendant"),
+        pytest.param("/mcp/", id="denylisted-mcp-trailing-slash"),
+        pytest.param("/mcp/tools", id="denylisted-mcp-descendant"),
+        pytest.param("/other", id="unlisted-platform-path"),
+    ],
+)
+async def test_non_allowlisted_platform_paths_auto_allow_before_firewall_auth(
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, path
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -688,6 +1037,7 @@ async def test_platform_api_non_test_paths_auto_allow_before_firewall_auth(
             run_id="run-platform-api",
             sandbox_marker="tok-platform",
             firewall_name="platform-api",
+            custom_connector_id=_PLATFORM_MCP_CUSTOM_CONNECTOR_ID,
             api_entry={
                 "base": "https://api.okou.ai",
                 "auth": {
@@ -700,7 +1050,15 @@ async def test_platform_api_non_test_paths_auto_allow_before_firewall_auth(
             network_policy=None,
         ),
     )
-    flow = real_flow(with_response=False, host="api.okou.ai", path="/api/runs")
+    flow = real_flow(
+        with_response=False,
+        host="api.okou.ai",
+        path=path,
+        request_headers=headers(
+            ("Host", "api.okou.ai"),
+            ("X-Okou-Connector-Intent", _PLATFORM_MCP_CUSTOM_CONNECTOR_ID),
+        ),
+    )
 
     with (
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
@@ -711,6 +1069,7 @@ async def test_platform_api_non_test_paths_auto_allow_before_firewall_auth(
     auth_fetch.assert_not_called()
     assert flow.response is None
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert "Authorization" not in flow.request.headers
     assert metadata_keys.FIREWALL_BASE not in flow.metadata
     binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]

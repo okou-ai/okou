@@ -336,7 +336,7 @@ function connectorAuthProviderMethodContract(
       inputNames: accessInputNames,
       outputNames: accessOutputNames,
       platformSecrets:
-        method.access.kind === "none"
+        method.access.kind === "none" || method.access.kind === "automatic"
           ? []
           : [...(method.access.platformSecrets ?? [])].sort(
               compareCapabilityStrings,

@@ -28,15 +28,15 @@ export const openMarkdownArtifact$ = command(
         return;
       }
       case "video": {
-        set(openVideoLightbox$, { filename, url }, target);
+        set(openVideoLightbox$, { filename, url, preview: signals }, target);
         return;
       }
       case "audio": {
-        set(openAudioLightbox$, { filename, url }, target);
+        set(openAudioLightbox$, { filename, url, preview: signals }, target);
         return;
       }
       case "file": {
-        set(openFileLightbox$, { filename, url }, target);
+        set(openFileLightbox$, { filename, url, preview: signals }, target);
         return;
       }
       default: {
@@ -46,7 +46,7 @@ export const openMarkdownArtifact$ = command(
             filename,
             url,
             kind,
-            ...(kind === "html" ? { preview: signals } : {}),
+            preview: signals,
             text$: signals.text$,
           },
           target,

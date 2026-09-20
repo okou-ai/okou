@@ -1,6 +1,6 @@
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorsBySlugContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsBySlugContract } from "@okouai/api-contracts/contracts/connectors";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import {
   personalModelProvidersByTypeContract,
@@ -13,7 +13,7 @@ import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-pr
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import type { RouteEntry } from "../../../route-entry";
-import { connectorsRoutes } from "../../connectors";
+import { builtinConnectorsRoutes } from "../../connectors";
 import { featureSwitchesRoutes } from "../../feature-switches";
 import { meModelProvidersDeleteRoutes } from "../../me-model-providers-delete";
 import { meModelProviderAccountRoutes } from "../../me-model-provider-accounts";
@@ -28,7 +28,7 @@ interface AuthHeaders {
 }
 
 const authDeviceSupportRoutes: readonly RouteEntry[] = [
-  ...connectorsRoutes,
+  ...builtinConnectorsRoutes,
   ...featureSwitchesRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersDeleteRoutes,
@@ -205,9 +205,9 @@ export function createAuthDeviceSupportApi(context: TestContext) {
     async readConnectorBySlug(
       actor: ApiTestUser,
       connectorSlug: ConnectorSlug,
-    ): Promise<ConnectorResponse> {
+    ): Promise<BuiltinConnectorResponse> {
       const response = await accept(
-        authDeviceSupportApp(context)(connectorsBySlugContract).get({
+        authDeviceSupportApp(context)(builtinConnectorsBySlugContract).get({
           params: { connectorSlug },
           headers: authenticate(context, actor),
         }),

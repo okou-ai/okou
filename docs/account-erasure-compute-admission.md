@@ -367,6 +367,61 @@ daily cohorts mixed revisions/workloads. Neither interval is a causal savings
 estimate. The queue boundary remains the pre-CTE `runnerJobQueue.createdAt`;
 full transaction or lock-held spans must not be subtracted from it.
 
+### Ordinary Agent claim locked rereads (#35418)
+
+The successful ordinary, non-deferred Agent claim keeps the initial ownership
+observation, every sorted shared subject lock and the separate post-lock closure
+lookup above. After that lookup, one bound statement now validates the three
+business rows through dependency-linked materialized CTEs:
+
+1. `locked_resource` takes the Agent `FOR KEY SHARE` lock and returns its
+   current owner.
+2. `matching_resource` permits `locked_run` only when that owner still matches
+   the subject observation. `locked_run` retains the `status = 'pending'`
+   predicate and takes the run `FOR UPDATE` lock.
+3. `matching_run` permits `locked_session` only when the locked run still has
+   the observed owner and session. `locked_session` then takes the session
+   `FOR UPDATE` lock and returns its current owner and Agent.
+
+The final projection consumes every materialized result, so the lock dependency
+is Agent -> pending run -> session. If cancellation changes the run before the
+run lock is obtained, PostgreSQL rechecks the pending predicate, the session CTE
+receives no input and the claim returns unavailable without waiting on the
+session. A changed or deleted Agent, changed pending-run owner/session, or
+changed/deleted session retains the bounded fresh-transaction ownership retry.
+A stale expected resource owner retains its previous locked-unavailable result.
+
+For `S` distinct subjects, the ordinary claim prelude before the unchanged final
+run/queue CTE changes as follows. The isolation check is already part of the
+first subject-lock statement described in #35235.
+
+| Prelude before the ordinary claim CTE        | Before | After |
+| -------------------------------------------- | -----: | ----: |
+| Initial run/session and Agent ownership read |      1 |     1 |
+| Sorted subject locks, including isolation    |      S |     S |
+| Separate post-lock closure lookup            |      1 |     1 |
+| Resource, run and session locked rereads     |      3 |     1 |
+| Total                                        |  5 + S | 3 + S |
+
+The usual user-plus-organization path therefore changes from **seven to five
+statements**, excluding BEGIN/COMMIT and the final claim CTE. A real PostgreSQL
+driver-level regression captures the selected claim transaction and checks one
+ownership observation, two subject locks, one closure lookup, one combined
+locked reread and the existing final CTE. Closure-first/writer-first, Agent/run/
+session ownership changes, Agent deletion, cancellation/session-lock ordering,
+closed-candidate retention and concurrent-claim regressions exercise the same
+actual route.
+
+Null-Agent maintenance and deferred claims retain the generic separate locked
+rereads and their additional authority checks. Polling, run persistence,
+promotion, cleanup and every other shared admission consumer are unchanged. The
+final claim CTE still owns queue expiry/deletion, the pending-to-running update,
+Runner attribution and the database claim timestamp. No schema, protocol,
+lock namespace, cache or rollout switch changes, and mixed API versions still
+coordinate through the same subject and row locks. Statement reduction alone
+does not establish production latency improvement; exact containing API/Runner
+observation remains required.
+
 ## Remaining boundaries and activation gates
 
 - Preparation may already write provider/storage artifacts before the guarded

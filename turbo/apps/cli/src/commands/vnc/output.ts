@@ -13,6 +13,9 @@ function failureMessage(result: Extract<VncOutcome, { reason: string }>) {
   else if (result.reason === "stale_geometry")
     guidance =
       "Take a fresh screenshot and re-evaluate the intended coordinates.";
+  else if (result.reason === "timed_out")
+    guidance =
+      "The VNC operation exceeded its time budget. Check reachability from the Runner network, confirm the server promptly sends an RFB banner, and inspect relevant firewall or VNC server logs; this result does not identify which component was silent.";
   return `VNC ${result.outcome}: ${result.reason}${delivery ? `; delivery=${delivery}` : ""}. ${guidance}`;
 }
 

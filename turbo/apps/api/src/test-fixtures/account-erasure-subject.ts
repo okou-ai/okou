@@ -19,6 +19,7 @@ import {
   createDeferredPromise,
   detach,
   Mechanism,
+  onRejection,
   settleIncludingAbort,
 } from "../signals/utils";
 
@@ -78,6 +79,18 @@ export async function removeErasureSubjectsFixture(
   await db()
     .delete(accountErasureJobs)
     .where(inArray(accountErasureJobs.id, [...jobIds]));
+}
+
+/** Whether one exact test-owned erasure job still exists. */
+export async function erasureSubjectJobExistsFixture(
+  jobId: string,
+): Promise<boolean> {
+  const [job] = await db()
+    .select({ id: accountErasureJobs.id })
+    .from(accountErasureJobs)
+    .where(eq(accountErasureJobs.id, jobId))
+    .limit(1);
+  return job !== undefined;
 }
 
 /** Reassigns one Agent's owner, the change a future ownership transfer would
@@ -156,10 +169,9 @@ export interface TransactionBarrier {
     readonly statementTimeout: string;
     readonly transactionTimeout: string;
     /**
-     * Rows the chosen statement itself reported. It carries a number only in
-     * `pauseAfter` mode, where that statement has already run (and its
-     * transaction remains open when it has one), and is `null` when the barrier
-     * pauses before dispatch.
+     * Rows the chosen statement itself reported. In `pauseAfter` mode the
+     * statement has already run; commands such as COMMIT legitimately report
+     * `null`. It is also `null` when the barrier pauses before dispatch.
      */
     readonly rowCount: number | null;
   }>;
@@ -172,8 +184,10 @@ export interface TransactionBarrier {
 }
 
 /** The row count `pg` reports for an executed statement. */
-function pausedRowCount(executed: unknown): number {
-  const parsed = z.object({ rowCount: z.number() }).safeParse(executed);
+function pausedRowCount(executed: unknown): number | null {
+  const parsed = z
+    .object({ rowCount: z.number().nullable() })
+    .safeParse(executed);
   if (!parsed.success) {
     throw new Error(
       "Expected the paused statement result to carry a row count",
@@ -194,6 +208,17 @@ interface TransactionBarrierEntryDeferred {
   readonly resolve: (entry: TransactionBarrierEntry) => void;
   readonly reject: (reason?: unknown) => void;
   readonly settled: () => boolean;
+}
+
+function rejectBarrierEntry(
+  entered: TransactionBarrierEntryDeferred,
+  release: () => void,
+  error: unknown,
+): void {
+  if (!entered.settled()) {
+    entered.reject(error);
+  }
+  release();
 }
 
 function settleOwnedBarrierEntry<T>(promise: Promise<T>) {
@@ -273,10 +298,7 @@ async function deliverPausedCallbackQuery(args: {
     })(),
   );
   if (!paused.ok) {
-    if (!args.entered.settled()) {
-      args.entered.reject(paused.error);
-    }
-    args.release();
+    rejectBarrierEntry(args.entered, args.release, paused.error);
     Reflect.apply(args.completion, args.receiver, [paused.error]);
     return;
   }
@@ -418,18 +440,23 @@ export async function withDatabaseTransactionBarrierFixture<T>(
         };
         return execute(interceptedArgs);
       }
-      return (async () => {
-        const executed: unknown = args.pauseAfter
-          ? await execute(queryArgs)
-          : undefined;
-        const settings = await readTransactionBarrierSettings(execute);
-        entered.resolve({
-          ...settings,
-          rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
-        });
-        await released.promise;
-        return args.pauseAfter ? executed : await execute(queryArgs);
-      })();
+      return onRejection(
+        (async () => {
+          const executed: unknown = args.pauseAfter
+            ? await execute(queryArgs)
+            : undefined;
+          const settings = await readTransactionBarrierSettings(execute);
+          entered.resolve({
+            ...settings,
+            rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
+          });
+          await released.promise;
+          return args.pauseAfter ? executed : await execute(queryArgs);
+        })(),
+        (error) => {
+          rejectBarrierEntry(entered, release, error);
+        },
+      );
     },
   });
   const result = await settleIncludingAbort(

@@ -5,7 +5,7 @@ import {
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import {
   workflowAutomations,
@@ -179,13 +179,13 @@ export async function revokeAgentConnectorGrantFixture(
   args: { readonly agentId: string; readonly connectorSlug: string },
 ): Promise<void> {
   await db()
-    .delete(userConnectors)
+    .delete(userBuiltinConnectors)
     .where(
       and(
-        eq(userConnectors.orgId, owner.orgId),
-        eq(userConnectors.userId, owner.userId),
-        eq(userConnectors.agentId, args.agentId),
-        eq(userConnectors.connectorSlug, args.connectorSlug),
+        eq(userBuiltinConnectors.orgId, owner.orgId),
+        eq(userBuiltinConnectors.userId, owner.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
+        eq(userBuiltinConnectors.connectorSlug, args.connectorSlug),
       ),
     );
 }

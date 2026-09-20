@@ -208,7 +208,8 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     await expect(run(args)).rejects.toThrow("process.exit(1)");
 
     expect(errors).toContain(`Paid tool "${tool}" is disabled`);
-    expect(errors).toContain("http://localhost:3000/?settings=paid-tools");
+    expect(errors).toContain("Settings > Personal > Chat");
+    expect(errors).toContain("http://localhost:3000/?settings=chat");
     expect(requests).toEqual([]);
     expect(await readdir(directory)).toEqual([]);
   });
@@ -302,7 +303,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
   it("allows voice generation when only unrelated and future tools are disabled", async () => {
     vi.stubEnv(
       DISABLED_PAID_TOOLS_ENV_VAR,
-      '["image-generation", "video-generation", "avatar-video-generation", "video-rendering", "future-tool"]',
+      '["image-generation", "video-generation", "avatar-video-generation", "future-tool"]',
     );
     let submissions = 0;
     server.use(
@@ -337,12 +338,13 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     async ({ args, tool }) => {
       vi.stubEnv(
         DISABLED_PAID_TOOLS_ENV_VAR,
-        '["image-generation", "video-rendering"]',
+        '["image-generation", "video-generation"]',
       );
       await expect(run([...args, "--help"])).rejects.toMatchObject({
         code: "commander.helpDisplayed",
       });
       expect(output).toContain(`Disabled paid tools in this run: ${tool}.`);
+      expect(output).toContain("Settings > Personal > Chat");
       expect(requests).toEqual([]);
     },
   );
@@ -351,22 +353,22 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     {
       api: "https://api.okou.ai",
       app: undefined,
-      expected: "https://app.okou.ai/?settings=paid-tools",
+      expected: "https://app.okou.ai/?settings=chat",
     },
     {
       api: "https://staging-api.vm6.ai",
       app: undefined,
-      expected: "https://staging-app.omby.ai/?settings=paid-tools",
+      expected: "https://staging-app.omby.ai/?settings=chat",
     },
     {
       api: "https://pr-123-api.vm6.ai",
       app: undefined,
-      expected: "https://pr-123-app.omby.ai/?settings=paid-tools",
+      expected: "https://pr-123-app.omby.ai/?settings=chat",
     },
     {
       api: "https://api.okou.ai",
       app: "https://preview.example.test/path",
-      expected: "https://preview.example.test/?settings=paid-tools",
+      expected: "https://preview.example.test/?settings=chat",
     },
   ])(
     "uses the current platform recovery URL for $expected",

@@ -10,6 +10,10 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { AgentVncAccess } from "../okou-page/agent-vnc-access.tsx";
+import { VncLoadError } from "../okou-page/vnc-load-error.tsx";
+import { currentAgentVncAccess$ } from "../../signals/vnc-access.ts";
+import { vncIdentity$ } from "../../signals/vnc.ts";
 import { AgentSshAccess } from "../okou-page/agent-ssh-access.tsx";
 import { SshLoadError } from "../okou-page/ssh-load-error.tsx";
 import type { ReactNode } from "react";
@@ -443,6 +447,7 @@ function NoConnectedConnectors() {
 
 function ConnectedConnectorPermissions({
   sshAccess,
+  vncAccess,
   status,
   filteredConnectors,
   authorizedSet,
@@ -456,6 +461,7 @@ function ConnectedConnectorPermissions({
   onManage,
 }: {
   sshAccess: { readonly agentId: string; readonly enabled: boolean } | null;
+  vncAccess: { readonly agentId: string; readonly enabled: boolean } | null;
   status: ReactNode;
   filteredConnectors: readonly PlatformConnectorCatalogStatusItem[];
   authorizedSet: ReadonlySet<string>;
@@ -475,6 +481,13 @@ function ConnectedConnectorPermissions({
     sshAccess !== null &&
     `ssh ${commonT(($) => {
       return $.ssh.accessHelp;
+    })}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+  const showVnc =
+    vncAccess !== null &&
+    `vnc ${commonT(($) => {
+      return $.vnc.accessHelp;
     })}`
       .toLowerCase()
       .includes(search.trim().toLowerCase());
@@ -569,11 +582,13 @@ function ConnectedConnectorPermissions({
                   onManage={() => {
                     return onManage(c.slug);
                   }}
-                  isLast={i === filteredConnectors.length - 1 && !showSsh}
+                  isLast={
+                    i === filteredConnectors.length - 1 && !showSsh && !showVnc
+                  }
                 />
               );
             })
-          ) : !showSsh ? (
+          ) : !showSsh && !showVnc ? (
             <p className="px-5 py-4 text-sm text-muted-foreground">
               {t(
                 ($) => {
@@ -583,6 +598,13 @@ function ConnectedConnectorPermissions({
               )}
             </p>
           ) : null)}
+        {showVnc && vncAccess ? (
+          <AgentVncAccess
+            agentId={vncAccess.agentId}
+            enabled={vncAccess.enabled}
+            isLast={!showSsh}
+          />
+        ) : null}
         {showSsh && sshAccess ? (
           <AgentSshAccess
             agentId={sshAccess.agentId}
@@ -645,7 +667,7 @@ function AgentPermissionsDrawer({
 // Tab wrappers — resolve signals into shared component props
 // ---------------------------------------------------------------------------
 
-function sshAccessForAgent(
+function remoteAccessForAgent(
   access: Loadable<{
     readonly identity: string;
     readonly agentId: string;
@@ -663,6 +685,42 @@ function sshAccessForAgent(
     : null;
 }
 
+function useJobRemoteAccess(agentId: string) {
+  const sshAccessLoadable = useLastLoadable(currentAgentSshAccess$);
+  const sshIdentity = useLoadable(sshIdentity$);
+  const sshAccess = remoteAccessForAgent(
+    sshAccessLoadable,
+    agentId,
+    sshIdentity,
+  );
+  const vncAccessLoadable = useLastLoadable(currentAgentVncAccess$);
+  const vncIdentity = useLoadable(vncIdentity$);
+  const vncAccess = remoteAccessForAgent(
+    vncAccessLoadable,
+    agentId,
+    vncIdentity,
+  );
+  const sshFailed = sshAccessLoadable.state === "hasError";
+  const vncFailed = vncAccessLoadable.state === "hasError";
+  return {
+    sshAccess,
+    vncAccess,
+    hasRemoteAccess: Boolean(sshAccess || vncAccess),
+    hasRemoteLoading:
+      sshAccessLoadable.state === "loading" ||
+      sshIdentity.state === "loading" ||
+      vncAccessLoadable.state === "loading" ||
+      vncIdentity.state === "loading",
+    hasRemoteError: sshFailed || vncFailed,
+    remoteErrors: (
+      <>
+        {sshFailed && <SshLoadError />}
+        {vncFailed && <VncLoadError />}
+      </>
+    ),
+  };
+}
+
 function JobPermissionsTab({
   agentId,
   displayName,
@@ -671,9 +729,14 @@ function JobPermissionsTab({
   displayName: string;
 }) {
   const { t } = useTranslation("agents");
-  const sshAccessLoadable = useLastLoadable(currentAgentSshAccess$);
-  const sshIdentity = useLoadable(sshIdentity$);
-  const sshAccess = sshAccessForAgent(sshAccessLoadable, agentId, sshIdentity);
+  const {
+    sshAccess,
+    vncAccess,
+    hasRemoteAccess,
+    hasRemoteLoading,
+    remoteErrors,
+    hasRemoteError,
+  } = useJobRemoteAccess(agentId);
   // Use useLastLoadable so the list keeps showing the previous data while the
   // signal refetches after a toggle/save or a permission-policy reload. This
   // prevents the entire list from flickering to the skeleton on each change
@@ -763,23 +826,26 @@ function JobPermissionsTab({
     ) : userGrantsLoadable.state === "hasError" ? (
       <PermissionGrantsError />
     ) : null;
-  if (status && !sshAccess && sshAccessLoadable.state !== "hasError") {
+  if (status && !hasRemoteAccess && !hasRemoteError) {
     return status;
   }
 
   return (
     <div className="mx-auto w-full max-w-[900px] flex flex-col gap-4">
-      {connectedConnectors.length === 0 && !sshAccess ? (
-        sshAccessLoadable.state === "hasError" ? (
-          <SshLoadError />
+      {connectedConnectors.length === 0 && !hasRemoteAccess ? (
+        hasRemoteError ? (
+          remoteErrors
+        ) : hasRemoteLoading ? (
+          <PermissionListSkeleton />
         ) : (
           <NoConnectedConnectors />
         )
       ) : (
         <>
-          {sshAccessLoadable.state === "hasError" && <SshLoadError />}
+          {remoteErrors}
           <ConnectedConnectorPermissions
             sshAccess={sshAccess}
+            vncAccess={vncAccess}
             status={status}
             filteredConnectors={filteredConnectors}
             authorizedSet={authorizedSet}

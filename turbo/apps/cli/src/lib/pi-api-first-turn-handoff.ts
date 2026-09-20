@@ -14,6 +14,7 @@ import {
   type PiApiFirstTurnOwnershipTransferMode,
   type PiDeferredSandboxConfig,
 } from "@okouai/api-contracts/contracts/runners";
+import type { PiApiHandoffUsage } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
 import {
   inspectPiSessionJsonl,
   type PiSessionInspection,
@@ -66,6 +67,7 @@ interface PiApiFirstTurnHandoff {
   readonly boundaryControl: PiApiFirstTurnBoundaryControl;
   readonly ownershipTransferMode: PiApiFirstTurnOwnershipTransferMode;
   readonly langfuseParent?: PiApiFirstTurnManifest["langfuseParent"];
+  readonly apiUsage?: PiApiHandoffUsage;
 }
 
 export interface HandoffRuntime {
@@ -472,6 +474,7 @@ export async function resolvePiApiFirstTurnHandoff(args: {
     ...(manifest.langfuseParent
       ? { langfuseParent: manifest.langfuseParent }
       : {}),
+    ...(manifest.apiUsage ? { apiUsage: manifest.apiUsage } : {}),
     sessionFile: await restoreSession({
       config: args.config,
       manifest,
@@ -593,6 +596,9 @@ async function restoreDeferredSandboxHandoff(args: {
   return {
     sessionFile,
     resourceSnapshot: data.resourceSnapshot,
+    ...(config.continuation.apiUsage
+      ? { apiUsage: config.continuation.apiUsage }
+      : {}),
     ownershipTransferMode: mode,
     boundaryControl: {
       schemaVersion: 2,

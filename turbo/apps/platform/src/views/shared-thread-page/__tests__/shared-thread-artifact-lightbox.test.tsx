@@ -637,7 +637,7 @@ test("shared prompt attachments retain their covers and open the independent vie
   });
 });
 
-test("opening a shared site refreshes access and reopening after revocation removes private content", async () => {
+test("a shared site reuses its card credential across opening and reopening", async () => {
   const { site } = mockSnapshotResources();
   const refreshedUrl = `https://ps-${"d".repeat(48)}.okou.app/`;
   mockSharedMessage(`![Launch site](${SITE})`);
@@ -660,7 +660,7 @@ test("opening a shared site refreshes access and reopening after revocation remo
   const dialog = await screen.findByRole("dialog");
   await expect(
     within(dialog).findByTestId("artifact-dialog-body-html"),
-  ).resolves.toHaveAttribute("src", `${refreshedUrl}#slide-2`);
+  ).resolves.toHaveAttribute("src", `${SITE_URL}#slide-2`);
   expect(getButtonByName("Download", dialog)).toBeEnabled();
 
   click(getButtonByName("Close", dialog));
@@ -672,12 +672,11 @@ test("opening a shared site refreshes access and reopening after revocation remo
 
   click(card);
 
-  const unavailableDialog = await screen.findByRole("dialog");
+  const reopenedDialog = await screen.findByRole("dialog");
   await expect(
-    within(unavailableDialog).findByRole("status"),
-  ).resolves.toBeInTheDocument();
-  expect(getButtonByName("Download", unavailableDialog)).toBeDisabled();
-  expect(unavailableDialog.querySelector("iframe")).not.toBeInTheDocument();
+    within(reopenedDialog).findByTestId("artifact-dialog-body-html"),
+  ).resolves.toHaveAttribute("src", `${SITE_URL}#slide-2`);
+  expect(getButtonByName("Download", reopenedDialog)).toBeEnabled();
 });
 
 test("revoked download access reports an error without downloading or leaving the shared conversation", async () => {

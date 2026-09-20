@@ -119,6 +119,40 @@ the existing R2 access share this cache; forks without those secrets cannot
 populate it. The sccache server retains the startup step's credentials for its
 job-local lifetime. Missing R2 configuration fails cache startup explicitly.
 
+### Shared R2 sccache action
+
+Jobs that use the shared compiler cache call
+`.github/actions/setup-r2-sccache` once after checkout. The action installs the
+pinned sccache version, validates the architecture and R2 configuration, starts
+the job-local server, and exports only the compiler settings needed by later
+steps:
+
+```yaml
+- uses: actions/checkout@v7.0.1
+
+- name: Setup R2 sccache
+  uses: ./.github/actions/setup-r2-sccache
+  with:
+    architecture: ${{ matrix.id }}
+    r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+    r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+    r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+```
+
+The `architecture` input is the runner architecture-group ID, not an arbitrary
+cache prefix:
+
+| Architecture input | Rust target                  | sccache prefix           |
+| ------------------ | ---------------------------- | ------------------------ |
+| `arm64`            | `aarch64-unknown-linux-musl` | `runner-sccache/arm64/`  |
+| `x86_64`           | `x86_64-unknown-linux-musl`  | `runner-sccache/x86_64/` |
+
+Callers pass the existing R2 configuration explicitly. They do not pass a raw
+prefix or add job, crate, branch, or commit namespaces. Use the action only once
+per job so the server keeps the startup credentials for the complete compiler
+lifetime without exposing them to later build steps.
+
 This avoids GitHub's branch-scoped compiler cache and shared storage quota.
 The additional Cargo dependency cache still uses GitHub and saves only on main;
 main often reuses the complete runner binary and skips compilation, so that

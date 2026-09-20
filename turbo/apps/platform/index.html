@@ -36,6 +36,7 @@
     </script>
     <title>AI Teammate for Real Work — More Done, Same Team | Okou</title>
     <meta charset="UTF-8" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link
       rel="icon"
       type="image/svg+xml"
@@ -295,7 +296,10 @@
         window.__okouClerkBootstrap = bootstrap;
 
         function isAuthRoute(pathname) {
-          return /^\/sign-(?:in|up)(?:\/|$)/.test(pathname || "");
+          return (
+            /^\/sign-(?:in|up)(?:\/|$)/.test(pathname || "") ||
+            pathname === "/oauth-consent"
+          );
         }
 
         function createClerkRuntime() {

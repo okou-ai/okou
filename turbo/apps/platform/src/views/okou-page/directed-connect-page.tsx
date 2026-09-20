@@ -24,25 +24,25 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
-  connectConnectorOAuthAuthCode$,
+  connectBuiltinConnectorOAuthAuthCode$,
   type ConnectorConnectSuccess,
-  connectConnectorNoAuth$,
-  connectFlowConnectorSlug$,
-  getOnlyAvailableStatusBrowserAuthMethodDetail,
-  getOnlyAvailableStatusNoAuthMethod,
-  getConnectorStatusConnectLaunchMode,
-  justConnectedSlugs$,
-  pollingOAuthAuthCodeConnectorSlug$,
-  pollingOAuthDeviceAuthConnectorSlug$,
-  submitManualGrant$,
-  manualGrantFormSubmitting$,
-  setManualGrantFormValue$,
-  manualGrantFormValuesFor$,
-  setManualGrantFormSubmitting$,
-  getOnlyManualConnectorStatusAuthMethod,
-  hasConnectorStatusProviderDrivenConnectMethod,
+  connectBuiltinConnectorNoAuth$,
+  builtinConnectFlowSlug$,
+  getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
+  getOnlyAvailableBuiltinConnectorStatusNoAuthMethod,
+  getBuiltinConnectorStatusConnectLaunchMode,
+  justConnectedBuiltinSlugs$,
+  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthDeviceAuthSlug$,
+  submitBuiltinManualGrant$,
+  builtinManualGrantFormSubmitting$,
+  setBuiltinManualGrantFormValue$,
+  builtinManualGrantFormValuesFor$,
+  setBuiltinManualGrantFormSubmitting$,
+  getOnlyManualBuiltinConnectorStatusAuthMethod,
+  hasBuiltinConnectorStatusProviderDrivenConnectMethod,
   manualGrantInputValuesForMethod,
-  type ConnectorConnectionResult,
+  type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { hasTokenInputValue } from "../../signals/okou-page/settings/token-input.ts";
@@ -112,7 +112,7 @@ function runDirectedConnect(
         readonly authorizeVisibleAgents?: boolean;
       },
       signal: AbortSignal,
-    ) => Promise<ConnectorConnectionResult | false>;
+    ) => Promise<BuiltinConnectorConnectionResult | false>;
     connectNoAuth: (
       args: {
         readonly connectorSlug: ConnectorSlug;
@@ -126,23 +126,25 @@ function runDirectedConnect(
         };
       },
       signal: AbortSignal,
-    ) => Promise<ConnectorConnectionResult | false>;
+    ) => Promise<BuiltinConnectorConnectionResult | false>;
     openConnectModal: () => void;
     openManualGrantDialog: () => void;
     onSuccess: ConnectorConnectSuccess;
   },
   signal: AbortSignal,
 ): void {
-  const launchMode = getConnectorStatusConnectLaunchMode(params.item);
+  const launchMode = getBuiltinConnectorStatusConnectLaunchMode(params.item);
   if (
     launchMode === "modal" &&
-    hasConnectorStatusProviderDrivenConnectMethod(params.item)
+    hasBuiltinConnectorStatusProviderDrivenConnectMethod(params.item)
   ) {
     params.openConnectModal();
     return;
   }
 
-  const manualGrantMethod = getOnlyManualConnectorStatusAuthMethod(params.item);
+  const manualGrantMethod = getOnlyManualBuiltinConnectorStatusAuthMethod(
+    params.item,
+  );
 
   if (
     launchMode === "modal" &&
@@ -160,9 +162,10 @@ function runDirectedConnect(
   detach(
     (async () => {
       if (launchMode === "browser-auth") {
-        const authMethod = getOnlyAvailableStatusBrowserAuthMethodDetail(
-          params.item,
-        );
+        const authMethod =
+          getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(
+            params.item,
+          );
         if (!authMethod) {
           params.openConnectModal();
           return;
@@ -182,7 +185,9 @@ function runDirectedConnect(
           signal,
         );
       } else {
-        const authMethod = getOnlyAvailableStatusNoAuthMethod(params.item);
+        const authMethod = getOnlyAvailableBuiltinConnectorStatusNoAuthMethod(
+          params.item,
+        );
         if (!authMethod) {
           params.openConnectModal();
           return;
@@ -226,13 +231,13 @@ function ManualGrantForm({
   onSuccess: ConnectorConnectSuccess;
 }) {
   const { t } = useTranslation();
-  const submit = useSet(submitManualGrant$);
-  const setFormValue = useSet(setManualGrantFormValue$);
+  const submit = useSet(submitBuiltinManualGrant$);
+  const setFormValue = useSet(setBuiltinManualGrantFormValue$);
   const pageSignal = useGet(pageSignal$);
-  const manualGrantFormValuesFor = useGet(manualGrantFormValuesFor$);
+  const manualGrantFormValuesFor = useGet(builtinManualGrantFormValuesFor$);
   const fieldValues = manualGrantFormValuesFor(connectorSlug);
-  const submittingSlug = useGet(manualGrantFormSubmitting$);
-  const setSubmitting = useSet(setManualGrantFormSubmitting$);
+  const submittingSlug = useGet(builtinManualGrantFormSubmitting$);
+  const setSubmitting = useSet(setBuiltinManualGrantFormSubmitting$);
   const submitting = submittingSlug === connectorSlug;
 
   const allFilled = manualGrantMethod.manualFields.every((field) => {
@@ -544,7 +549,7 @@ interface DirectedConnectCatalogState {
 function useDirectedConnectCatalogState(
   connectorSlug: ConnectorSlug | null,
 ): DirectedConnectCatalogState {
-  const justConnected = useGet(justConnectedSlugs$);
+  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const allLoadable = useLastLoadable(connectorCatalogStatus$);
   const catalogLoaded = allLoadable.state === "hasData";
   const allData = catalogLoaded ? allLoadable.data.connectors : [];
@@ -752,11 +757,11 @@ function DirectedConnectCard() {
   const assistantName = useGet(assistantName$);
   const agentId = useGet(directedConnectAgentId$);
   const agentNameLoadable = useLastLoadable(directedConnectAgentName$);
-  const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
-  const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const connect = useSet(connectConnectorOAuthAuthCode$);
-  const connectNoAuth = useSet(connectConnectorNoAuth$);
+  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
+  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
+  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const signal = useGet(pageSignal$);
   const { item, presentation } = useDirectedConnectPresentation(connectorSlug);
   const setManualGrantDialogKey = useSet(setManualGrantDialogKey$);
@@ -787,7 +792,7 @@ function DirectedConnectCard() {
   const { accountOptions, reconnectAuthMethod, isConnected, isLoading } =
     presentation;
   const manualGrantMethod = item
-    ? getOnlyManualConnectorStatusAuthMethod(item)
+    ? getOnlyManualBuiltinConnectorStatusAuthMethod(item)
     : null;
   const canConnect = authMethods.length > 0 && accountOptions !== null;
   const connectorLabel = item?.label ?? connectorSlug;

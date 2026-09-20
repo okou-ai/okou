@@ -3,10 +3,10 @@ import type {
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
-  ConnectorExternalCodeSessionStartResponse,
-  ConnectorOauthDeviceAuthSessionPollResponse,
-  ConnectorOauthDeviceAuthSessionStartResponse,
-  ConnectorResponse,
+  BuiltinConnectorExternalCodeSessionStartResponse,
+  BuiltinConnectorOauthDeviceAuthSessionPollResponse,
+  BuiltinConnectorOauthDeviceAuthSessionStartResponse,
+  BuiltinConnectorResponse,
   ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
@@ -18,12 +18,12 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  connectorExternalCodeSessionContract,
-  connectorManualGrantContract,
-  connectorNoAuthGrantContract,
-  connectorOauthDeviceAuthSessionContract,
-  connectorScopeDiffContract,
-  connectorsMainContract,
+  builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
+  builtinConnectorScopeDiffContract,
+  builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorAccountsContract,
@@ -43,11 +43,11 @@ import {
   type TestConnectorCatalogDefinition,
 } from "./connector-catalog-fixtures.ts";
 
-let mockConnectors: ConnectorResponse[] = [];
+let mockConnectors: BuiltinConnectorResponse[] = [];
 const mockConnectorAccountDisplayNames = new Map<string, string | null>();
 const mockConnectorRequestedScopes = new Map<string, readonly string[]>();
 type MockOauthDeviceAuthSessionStartResponse = Omit<
-  Partial<ConnectorOauthDeviceAuthSessionStartResponse>,
+  Partial<BuiltinConnectorOauthDeviceAuthSessionStartResponse>,
   "verificationUriComplete"
 > & {
   readonly verificationUriComplete?: string | undefined;
@@ -56,16 +56,16 @@ type MockOauthDeviceAuthSessionStartResponse = Omit<
 let mockOauthDeviceAuthSessionStartResponse:
   | MockOauthDeviceAuthSessionStartResponse
   | undefined;
-let mockOauthDeviceAuthSessionPollResponses: ConnectorOauthDeviceAuthSessionPollResponse[] =
+let mockOauthDeviceAuthSessionPollResponses: BuiltinConnectorOauthDeviceAuthSessionPollResponse[] =
   [];
 
 let mockExternalCodeSessionStartResponse:
-  | Partial<ConnectorExternalCodeSessionStartResponse>
+  | Partial<BuiltinConnectorExternalCodeSessionStartResponse>
   | undefined;
 
 function createMockOauthDeviceAuthConnector(
   connectorSlug: ConnectorSlug,
-): ConnectorResponse {
+): BuiltinConnectorResponse {
   const now = "2026-01-01T00:00:00Z";
   return {
     id: crypto.randomUUID(),
@@ -85,7 +85,7 @@ function createMockOauthDeviceAuthConnector(
 
 function defaultOauthDeviceAuthSessionStartResponse(
   connectorSlug: ConnectorSlug,
-): ConnectorOauthDeviceAuthSessionStartResponse {
+): BuiltinConnectorOauthDeviceAuthSessionStartResponse {
   return {
     sessionId: "00000000-0000-4000-8000-000000000001",
     sessionToken: `mock-${connectorSlug}-oauth-device-session-token`,
@@ -102,7 +102,7 @@ function defaultOauthDeviceAuthSessionStartResponse(
 function createMockLocalGrantConnector(
   connectorSlug: ConnectorSlug,
   authMethod: ConnectorAuthMethodId,
-): ConnectorResponse {
+): BuiltinConnectorResponse {
   return {
     id: crypto.randomUUID(),
     slug: connectorSlug,
@@ -122,7 +122,7 @@ function createMockLocalGrantConnector(
 function createMockExternalCodeConnector(
   connectorSlug: ConnectorSlug,
   authMethod: ConnectorAuthMethodId,
-): ConnectorResponse {
+): BuiltinConnectorResponse {
   const now = "2026-01-01T00:00:00.000Z";
   return {
     id: crypto.randomUUID(),
@@ -142,7 +142,7 @@ function createMockExternalCodeConnector(
 
 function defaultExternalCodeSessionStartResponse(
   connectorSlug: ConnectorSlug,
-): ConnectorExternalCodeSessionStartResponse {
+): BuiltinConnectorExternalCodeSessionStartResponse {
   return {
     sessionId: "00000000-0000-4000-8000-000000000002",
     sessionToken: `mock-${connectorSlug}-external-code-session-token`,
@@ -154,7 +154,7 @@ function defaultExternalCodeSessionStartResponse(
 }
 
 export function setMockConnectors(
-  connectors: ConnectorResponse[],
+  connectors: BuiltinConnectorResponse[],
   requestedScopesByConnectionId?: ReadonlyMap<string, readonly string[]>,
 ): void {
   mockConnectors = connectors;
@@ -177,7 +177,7 @@ export function resetMockConnectors(): void {
 }
 
 function mockAccountForConnector(
-  connector: ConnectorResponse,
+  connector: BuiltinConnectorResponse,
 ): ConnectorAccountConnection {
   return {
     id: connector.id,
@@ -224,7 +224,7 @@ function findMockAccount(
   });
 }
 
-function upsertMockConnector(connector: ConnectorResponse): void {
+function upsertMockConnector(connector: BuiltinConnectorResponse): void {
   for (const existing of mockConnectors) {
     if (existing.slug === connector.slug) {
       mockConnectorRequestedScopes.delete(existing.id);
@@ -240,7 +240,7 @@ function upsertMockConnector(connector: ConnectorResponse): void {
 }
 
 function storeMockConnectorRequestedScopes(
-  connector: ConnectorResponse,
+  connector: BuiltinConnectorResponse,
   requestedScopes?: readonly string[],
 ): void {
   const definition = testConnectorCatalogDefinitions.find((candidate) => {
@@ -269,7 +269,7 @@ function mockPermissionDetail(
 }
 
 function mockConnectionForCatalogStatus(
-  connector: ConnectorResponse | null,
+  connector: BuiltinConnectorResponse | null,
 ): PublicConnectorCatalogConnection | null {
   if (!connector) {
     return null;
@@ -305,7 +305,7 @@ function mockConnectorAuthMethodSupportsRefresh(
 
 function mockConnectorHasRequestedScopes(
   definition: TestConnectorCatalogDefinition,
-  connector: ConnectorResponse,
+  connector: BuiltinConnectorResponse,
 ): boolean {
   const method = definition.authMethods.find((candidate) => {
     return candidate.detail.id === connector.authMethod;
@@ -324,7 +324,7 @@ function mockConnectorHasRequestedScopes(
 }
 
 function mockConnectorScopeDiff(
-  connector: ConnectorResponse,
+  connector: BuiltinConnectorResponse,
 ): ScopeDiffResponse | null {
   const definition = testConnectorCatalogDefinitions.find((candidate) => {
     return candidate.connectorSlug === connector.slug;
@@ -356,7 +356,7 @@ function mockConnectorScopeDiff(
 function mockConnectorCatalogStatusItem(
   definition: TestConnectorCatalogDefinition,
   authMethods: readonly PublicConnectorCatalogAuthMethodDetail[],
-  connector: ConnectorResponse | null,
+  connector: BuiltinConnectorResponse | null,
 ): PublicConnectorCatalogStatusItem {
   const scopeMismatch =
     connector !== null &&
@@ -432,7 +432,7 @@ export const apiConnectorsHandlers = [
   mockApi(sshConnectionsContract.observations, ({ respond }) => {
     return respond(200, { observations: [] });
   }),
-  mockApi(connectorsMainContract.list, ({ respond }) => {
+  mockApi(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, {
       connectors: mockConnectors,
       connectorProvidedBindings: [],
@@ -693,50 +693,59 @@ export const apiConnectorsHandlers = [
     });
   }),
 
-  mockApi(connectorManualGrantContract.connect, ({ body, params, respond }) => {
-    const connector = createMockLocalGrantConnector(
-      params.connectorSlug,
-      body.authMethod,
-    );
-    if (body.account?.intent === "add") {
-      mockConnectorAccountDisplayNames.set(
-        connector.id,
-        body.account.displayName ?? null,
+  mockApi(
+    builtinConnectorManualGrantContract.connect,
+    ({ body, params, respond }) => {
+      const connector = createMockLocalGrantConnector(
+        params.connectorSlug,
+        body.authMethod,
       );
-    }
-    upsertMockConnector(connector);
-    return respond(200, connector);
-  }),
-
-  mockApi(connectorNoAuthGrantContract.connect, ({ body, params, respond }) => {
-    const connector = createMockLocalGrantConnector(
-      params.connectorSlug,
-      body.authMethod,
-    );
-    if (body.account?.intent === "add") {
-      mockConnectorAccountDisplayNames.set(
-        connector.id,
-        body.account.displayName ?? null,
-      );
-    }
-    upsertMockConnector(connector);
-    return respond(200, connector);
-  }),
-
-  mockApi(connectorScopeDiffContract.getScopeDiff, ({ params, respond }) => {
-    const connector = mockConnectors.find((candidate) => {
-      return candidate.slug === params.connectorSlug;
-    });
-    const diff = connector ? mockConnectorScopeDiff(connector) : null;
-    return diff
-      ? respond(200, diff)
-      : respond(404, {
-          error: { message: "Connector not found", code: "NOT_FOUND" },
-        });
-  }),
+      if (body.account?.intent === "add") {
+        mockConnectorAccountDisplayNames.set(
+          connector.id,
+          body.account.displayName ?? null,
+        );
+      }
+      upsertMockConnector(connector);
+      return respond(200, connector);
+    },
+  ),
 
   mockApi(
-    connectorOauthDeviceAuthSessionContract.create,
+    builtinConnectorNoAuthGrantContract.connect,
+    ({ body, params, respond }) => {
+      const connector = createMockLocalGrantConnector(
+        params.connectorSlug,
+        body.authMethod,
+      );
+      if (body.account?.intent === "add") {
+        mockConnectorAccountDisplayNames.set(
+          connector.id,
+          body.account.displayName ?? null,
+        );
+      }
+      upsertMockConnector(connector);
+      return respond(200, connector);
+    },
+  ),
+
+  mockApi(
+    builtinConnectorScopeDiffContract.getScopeDiff,
+    ({ params, respond }) => {
+      const connector = mockConnectors.find((candidate) => {
+        return candidate.slug === params.connectorSlug;
+      });
+      const diff = connector ? mockConnectorScopeDiff(connector) : null;
+      return diff
+        ? respond(200, diff)
+        : respond(404, {
+            error: { message: "Connector not found", code: "NOT_FOUND" },
+          });
+    },
+  ),
+
+  mockApi(
+    builtinConnectorOauthDeviceAuthSessionContract.create,
     ({ params, respond }) => {
       const response = {
         ...defaultOauthDeviceAuthSessionStartResponse(params.connectorSlug),
@@ -758,14 +767,14 @@ export const apiConnectorsHandlers = [
   ),
 
   mockApi(
-    connectorOauthDeviceAuthSessionContract.poll,
+    builtinConnectorOauthDeviceAuthSessionContract.poll,
     ({ params, respond }) => {
       const response =
         mockOauthDeviceAuthSessionPollResponses.shift() ??
         ({
           status: "complete",
           connector: createMockOauthDeviceAuthConnector(params.connectorSlug),
-        } satisfies ConnectorOauthDeviceAuthSessionPollResponse);
+        } satisfies BuiltinConnectorOauthDeviceAuthSessionPollResponse);
 
       if (response.status === "complete") {
         upsertMockConnector(response.connector);
@@ -775,7 +784,7 @@ export const apiConnectorsHandlers = [
   ),
 
   mockApi(
-    connectorExternalCodeSessionContract.create,
+    builtinConnectorExternalCodeSessionContract.create,
     ({ params, respond }) => {
       return respond(200, {
         ...defaultExternalCodeSessionStartResponse(params.connectorSlug),
@@ -788,7 +797,7 @@ export const apiConnectorsHandlers = [
   ),
 
   mockApi(
-    connectorExternalCodeSessionContract.complete,
+    builtinConnectorExternalCodeSessionContract.complete,
     ({ body, params, respond }) => {
       if (!body.code) {
         return respond(400, {

@@ -3,6 +3,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 
 import { i18n } from "../i18n/index.ts";
 import { localizedSshError } from "./ssh-error.ts";
+import { localizedVncError } from "./vnc-error.ts";
 import { ACCEPT_ERROR_EVENT, type AcceptErrorEventDetail } from "./accept.ts";
 
 function localizedAutomaticMcpOAuthError(code: string): string | undefined {
@@ -82,6 +83,7 @@ globalThis.addEventListener(ACCEPT_ERROR_EVENT, (event) => {
   } else if (detail.code) {
     detail.message =
       localizedSshError(detail.code) ??
+      localizedVncError(detail.code) ??
       localizedAutomaticMcpOAuthError(detail.code) ??
       detail.message;
   }

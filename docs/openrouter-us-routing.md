@@ -4,10 +4,11 @@
 organizations and disabled by default for other users. Existing per-user
 feature-switch overrides take precedence, including an explicit `false` for
 staff. When enabled, it selects `https://us.openrouter.ai` only for platform-owned
-keys and the verified model/API pairs in `openrouter-routing.ts`. Built-in
-DeepSeek models then require their OpenRouter US candidate instead of selecting
-the direct DeepSeek candidate. BYOK, connection presets, saved URLs, other
-direct providers and model defaults are unchanged.
+keys and the verified model/API pairs in `openrouter-routing.ts`. It does not
+change built-in provider priority: DeepSeek models still prefer the direct
+DeepSeek candidate, and only a selected OpenRouter candidate changes endpoint.
+BYOK, connection presets, saved URLs, other direct providers and model defaults
+are unchanged.
 
 The 2026-09-13 tests and official US catalog comparison in
 [#33565](https://github.com/vm0-ai/vm0/issues/33565), plus the 2026-09-18
@@ -26,24 +27,26 @@ verifying that combination.
 
 ## Selection and capture
 
-Built-in primary/fallback selection resolves the platform key before choosing
-the endpoint. With the switch enabled, a built-in model that has a direct
-DeepSeek candidate is restricted to an allowlisted OpenRouter US Responses
-candidate. A missing or cooling OpenRouter key makes that route unavailable; it
-does not fall back to direct DeepSeek or the global OpenRouter host. The
-execution context captures the environment, Codex/Pi metadata, and exact
-firewall destinations together. US overrides use an existing inline firewall
-entry so a later name lookup cannot restore the global endpoint. Unverified API
-paths retain their current destination and auth binding.
+Built-in primary/fallback selection resolves the first available platform key in
+canonical provider order before choosing the endpoint. With the switch enabled,
+an allowlisted OpenRouter candidate uses the US endpoint only after direct
+candidates are unavailable. A missing or cooling OpenRouter key makes that
+fallback route unavailable; it does not change candidate priority or select the
+global OpenRouter host. The execution context captures the environment,
+Codex/Pi metadata, and exact firewall destinations together. US overrides use
+an existing inline firewall entry so a later name lookup cannot restore the
+global endpoint. Unverified API paths retain their current destination and auth
+binding.
 
 Pi memory Stage 1 retains its batch-selected
 platform model/key, but reads each work owner's feature context before inference;
 a batch must not borrow one user's switch for another user's work.
 
-Switch changes affect new selections. Queued/claimed executions and requests
-already in progress keep their captured endpoint and credentials. There is no
-failure-triggered retry against the global OpenRouter host. Ordinary existing
-retry, error handling, billing and provider selection remain in place.
+Switch changes affect new OpenRouter endpoint captures. Queued/claimed
+executions and requests already in progress keep their captured endpoint and
+credentials. There is no failure-triggered retry against the global OpenRouter
+host. Ordinary existing retry, error handling, billing and provider selection
+remain in place.
 
 ## Deployment and rollback
 

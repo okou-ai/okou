@@ -94,7 +94,7 @@ export const runsCancelContract = c.router({
     path: "/api/runs/:id/cancel",
     headers: authHeadersSchema,
     pathParams: z.object({
-      id: z.uuid("Run ID must be a valid UUID"),
+      id: z.uuid("Run ID must be a valid UUID").toLowerCase(),
     }),
     body: z.undefined(),
     responses: {

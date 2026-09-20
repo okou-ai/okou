@@ -13,6 +13,16 @@ use tokio::{io::AsyncReadExt, sync::Semaphore};
 use harness::{CONNECTION, Harness, TestRun, bounded, send};
 use peer::Event;
 
+#[test]
+fn authentication_deadline_remains_a_public_timeout() {
+    assert_eq!(
+        super::Failure::from(rfb_client::Error::AuthenticationDeadlineExceeded {
+            stage: rfb_client::AuthenticationStage::RfbVersion,
+        }),
+        super::Failure::TimedOut
+    );
+}
+
 async fn mode(h: &Harness, expected: u8) {
     match h.peer.event().await {
         Event::Mode(actual) => assert_eq!(actual, expected),

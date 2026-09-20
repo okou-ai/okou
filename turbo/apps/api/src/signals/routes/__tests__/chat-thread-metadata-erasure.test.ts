@@ -46,6 +46,25 @@ interface MetadataFixture {
   readonly threadId: string;
 }
 
+type Settled<T> = Awaited<ReturnType<typeof settleIncludingAbort<T>>>;
+
+interface OwnedOperation<T> {
+  readonly settled: Promise<Settled<T>>;
+  readonly acceptFailureAfter: (
+    inspect: (error: unknown) => void | Promise<void>,
+  ) => Promise<void>;
+}
+
+interface OperationOwner {
+  readonly start: <T>(operation: Promise<T>) => OwnedOperation<T>;
+  readonly abortOnExit: (controller: AbortController) => void;
+}
+
+interface OperationRecord {
+  readonly settled: Promise<Settled<unknown>>;
+  failureAccepted: boolean;
+}
+
 async function createMetadataFixture(options?: {
   readonly sharedAgentOwner?: boolean;
   readonly title?: string;
@@ -88,16 +107,135 @@ function closeSubject(
   return closing;
 }
 
-/** Own every concurrent operation through test cleanup as well as normal flow. */
-function operationOwner() {
-  const operations: Promise<unknown>[] = [];
-  onTestFinished(async () => {
-    await Promise.allSettled(operations);
-  });
-  return <T>(operation: Promise<T>): Promise<T> => {
-    operations.push(operation);
-    return operation;
+/**
+ * Gives every concurrent metadata-test operation one local owner. Rejections
+ * are observed when work starts, and every callback exit releases its selected
+ * PostgreSQL statement, aborts only registered controllers and joins all work.
+ */
+async function withOperationOwnership<T>(
+  release: () => void,
+  work: (owner: OperationOwner) => Promise<T>,
+): Promise<T> {
+  const operations: OperationRecord[] = [];
+  const controllers = new Set<AbortController>();
+  const owner: OperationOwner = {
+    start: <TValue>(operation: Promise<TValue>) => {
+      const settled = settleIncludingAbort(operation);
+      const record: OperationRecord = { settled, failureAccepted: false };
+      operations.push(record);
+      return {
+        settled,
+        acceptFailureAfter: async (inspect) => {
+          const result = await settled;
+          if (result.ok) {
+            throw new Error("Expected the owned metadata operation to fail");
+          }
+          await inspect(result.error);
+          record.failureAccepted = true;
+        },
+      };
+    },
+    abortOnExit: (controller) => {
+      controllers.add(controller);
+    },
   };
+
+  const workResult = await settleIncludingAbort(work(owner));
+  const cleanupResult = await settleIncludingAbort(() => {
+    release();
+    for (const controller of controllers) {
+      if (!controller.signal.aborted) {
+        controller.abort(new DOMException("Test cleanup", "AbortError"));
+      }
+    }
+  });
+  const joined = await Promise.all(
+    operations.map(async (record) => {
+      return { record, result: await record.settled };
+    }),
+  );
+
+  const errors: unknown[] = [];
+  if (!workResult.ok) {
+    errors.push(workResult.error);
+  }
+  if (!cleanupResult.ok) {
+    errors.push(cleanupResult.error);
+  }
+  for (const { record, result } of joined) {
+    if (
+      !result.ok &&
+      !record.failureAccepted &&
+      (workResult.ok || !Object.is(result.error, workResult.error))
+    ) {
+      errors.push(result.error);
+    }
+  }
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      "Concurrent metadata test work and cleanup failed",
+    );
+  }
+  if (!workResult.ok) {
+    throw workResult.error;
+  }
+  return workResult.value;
+}
+
+/** Fails immediately when an operation terminates before its selected gate. */
+async function waitForBarrierEntry<TEntry, TValue>(
+  entered: Promise<TEntry>,
+  operation: OwnedOperation<TValue>,
+): Promise<TEntry> {
+  const first = await Promise.race([
+    entered.then(
+      (value) => {
+        return { kind: "entered" as const, value };
+      },
+      (error: unknown) => {
+        return { kind: "entryFailure" as const, error };
+      },
+    ),
+    operation.settled.then((result) => {
+      return { kind: "operation" as const, result };
+    }),
+  ]);
+  if (first.kind === "entered") {
+    return first.value;
+  }
+  if (first.kind === "entryFailure") {
+    throw first.error;
+  }
+  if (!first.result.ok) {
+    throw first.result.error;
+  }
+  throw new Error("Metadata operation completed before barrier entry");
+}
+
+function valueOf<T>(settled: Settled<T>): T {
+  if (!settled.ok) {
+    throw settled.error;
+  }
+  return settled.value;
+}
+
+/** Starts one closure and registers exact-job retirement before it can commit. */
+function startClosure(
+  owner: OperationOwner,
+  subject: ErasureSubject,
+): OwnedOperation<{ readonly jobId: string }> {
+  const closing = owner.start(closeErasureSubjectFixture(subject));
+  onTestFinished(async () => {
+    const result = await closing.settled;
+    if (result.ok) {
+      await removeErasureSubjectsFixture([result.value.jobId]);
+    }
+  });
+  return closing;
 }
 
 async function eventSeqIds(
@@ -160,17 +298,18 @@ async function captureSqlPath(
   readonly attempts: readonly (readonly string[])[];
   readonly response: Awaited<ReturnType<typeof chat.requestReadThreadMetadata>>;
 }> {
-  const own = operationOwner();
   return await withChatThreadMetadataSqlControlFixture(async (barrier) => {
-    const reading = own(
-      chat.requestReadThreadMetadata(actor, threadId, [status]),
-    );
-    await barrier.entered;
-    const attempts = barrier.attempts().map((attempt) => {
-      return [...attempt];
+    return await withOperationOwnership(barrier.release, async (owner) => {
+      const reading = owner.start(
+        chat.requestReadThreadMetadata(actor, threadId, [status]),
+      );
+      await waitForBarrierEntry(barrier.entered, reading);
+      const attempts = barrier.attempts().map((attempt) => {
+        return [...attempt];
+      });
+      barrier.release();
+      return { attempts, response: valueOf(await reading.settled) };
     });
-    barrier.release();
-    return { attempts, response: await reading };
   }, context.signal);
 }
 
@@ -293,8 +432,9 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       "selectedVideoModel",
       "selectedImageModel",
     ]);
-    // UUIDs and ISO timestamps are fixed width. This bounds the complete JSON
-    // projection itself; transport headers/envelopes are outside this contract.
+    // This chosen complete fixture serializes to 425 UTF-8 bytes. Variable
+    // title, model and settings values make this evidence, not a payload bound;
+    // transport headers and envelopes are outside the measurement.
     expect(Buffer.byteLength(JSON.stringify(response.body))).toBe(425);
   });
 
@@ -452,47 +592,50 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
   it("makes closure wait for an admitted metadata read and then denies later reads", async () => {
     const fixture = await createMetadataFixture();
     const unrelated = await createMetadataFixture();
-    const own = operationOwner();
-
-    const closed = await withChatThreadContentBarrierFixture(
+    await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
         stopAt: "commit",
         work: async (barrier) => {
-          const reading = own(
-            chat.requestReadThreadMetadata(
-              fixture.actor,
-              fixture.threadId,
-              [200],
-            ),
+          return await withOperationOwnership(
+            barrier.release,
+            async (owner) => {
+              const reading = owner.start(
+                chat.requestReadThreadMetadata(
+                  fixture.actor,
+                  fixture.threadId,
+                  [200],
+                ),
+              );
+              await waitForBarrierEntry(barrier.entered, reading);
+              const closing = startClosure(owner, {
+                subjectKind: "user",
+                subjectId: fixture.actor.userId,
+              });
+              await expect
+                .poll(barrier.blockedWaiterCount, BLOCKED)
+                .toBeGreaterThanOrEqual(1);
+              const unrelatedReading = owner.start(
+                chat.requestReadThreadMetadata(
+                  unrelated.actor,
+                  unrelated.threadId,
+                  [200],
+                ),
+              );
+              expect(valueOf(await unrelatedReading.settled)).toMatchObject({
+                status: 200,
+              });
+              barrier.release();
+              expect(valueOf(await reading.settled)).toMatchObject({
+                status: 200,
+              });
+              return valueOf(await closing.settled);
+            },
           );
-          await barrier.entered;
-          const closing = own(
-            closeErasureSubjectFixture({
-              subjectKind: "user",
-              subjectId: fixture.actor.userId,
-            }),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          await expect(
-            chat.requestReadThreadMetadata(
-              unrelated.actor,
-              unrelated.threadId,
-              [200],
-            ),
-          ).resolves.toMatchObject({ status: 200 });
-          barrier.release();
-          await expect(reading).resolves.toMatchObject({ status: 200 });
-          return await closing;
         },
       },
       context.signal,
     );
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([closed.jobId]);
-    });
 
     await expectMetadata404(fixture);
   });
@@ -500,74 +643,71 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
   it("makes metadata wait for a closure-first commit, lets unrelated reads progress, then denies", async () => {
     const fixture = await createMetadataFixture();
     const unrelated = await createMetadataFixture();
-    const own = operationOwner();
-    let closedJobId: string | null = null;
-
     await withErasureSubjectClosureCommitBarrierFixture(async (barrier) => {
-      const closing = own(
-        closeErasureSubjectFixture({
+      await withOperationOwnership(barrier.release, async (owner) => {
+        const closing = startClosure(owner, {
           subjectKind: "user",
           subjectId: fixture.actor.userId,
-        }),
-      );
-      await barrier.entered;
-      const reading = own(
-        chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [404]),
-      );
-      await expect
-        .poll(barrier.blockedWaiterCount, BLOCKED)
-        .toBeGreaterThanOrEqual(1);
-      await expect(
-        chat.requestReadThreadMetadata(
-          unrelated.actor,
-          unrelated.threadId,
-          [200],
-        ),
-      ).resolves.toMatchObject({ status: 200 });
-      barrier.release();
-      closedJobId = (await closing).jobId;
-      await expect(reading).resolves.toMatchObject({ status: 404 });
+        });
+        await waitForBarrierEntry(barrier.entered, closing);
+        const reading = owner.start(
+          chat.requestReadThreadMetadata(
+            fixture.actor,
+            fixture.threadId,
+            [404],
+          ),
+        );
+        await expect
+          .poll(barrier.blockedWaiterCount, BLOCKED)
+          .toBeGreaterThanOrEqual(1);
+        const unrelatedReading = owner.start(
+          chat.requestReadThreadMetadata(
+            unrelated.actor,
+            unrelated.threadId,
+            [200],
+          ),
+        );
+        expect(valueOf(await unrelatedReading.settled)).toMatchObject({
+          status: 200,
+        });
+        barrier.release();
+        valueOf(await closing.settled);
+        expect(valueOf(await reading.settled)).toMatchObject({ status: 404 });
+      });
     }, context.signal);
-    onTestFinished(async () => {
-      if (closedJobId !== null) {
-        await removeErasureSubjectsFixture([closedJobId]);
-      }
-    });
   });
 
   it("serializes concurrent same-thread metadata GETs without an upgrade cycle", async () => {
     const fixture = await createMetadataFixture();
-    const own = operationOwner();
-
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
         stopAt: "commit",
         work: async (barrier) => {
-          const first = own(
-            chat.requestReadThreadMetadata(
-              fixture.actor,
-              fixture.threadId,
-              [200],
-            ),
-          );
-          await barrier.entered;
-          const second = own(
-            chat.requestReadThreadMetadata(
-              fixture.actor,
-              fixture.threadId,
-              [200],
-            ),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          barrier.release();
-          const [firstResult, secondResult] = await Promise.all([
-            first,
-            second,
-          ]);
-          expect(firstResult.body).toStrictEqual(secondResult.body);
+          await withOperationOwnership(barrier.release, async (owner) => {
+            const first = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                fixture.threadId,
+                [200],
+              ),
+            );
+            await waitForBarrierEntry(barrier.entered, first);
+            const second = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                fixture.threadId,
+                [200],
+              ),
+            );
+            await expect
+              .poll(barrier.blockedWaiterCount, BLOCKED)
+              .toBeGreaterThanOrEqual(1);
+            barrier.release();
+            const firstResult = valueOf(await first.settled);
+            const secondResult = valueOf(await second.settled);
+            expect(firstResult.body).toStrictEqual(secondResult.body);
+          });
         },
       },
       context.signal,
@@ -578,51 +718,54 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     "completes a same-thread metadata GET and rename in $0 order without deadlock",
     async (order) => {
       const fixture = await createMetadataFixture();
-      const own = operationOwner();
-
       await withChatThreadContentBarrierFixture(
         {
           chatThreadId: fixture.threadId,
           stopAt: "commit",
           work: async (barrier) => {
-            const first =
-              order === "metadata-first"
-                ? own(
-                    chat.requestReadThreadMetadata(
-                      fixture.actor,
-                      fixture.threadId,
-                      [200],
-                    ),
-                  )
-                : own(
-                    chat.renameThread(
-                      fixture.actor,
-                      fixture.threadId,
-                      "Writer won",
-                    ),
-                  );
-            await barrier.entered;
-            const second =
-              order === "metadata-first"
-                ? own(
-                    chat.renameThread(
+            await withOperationOwnership(barrier.release, async (owner) => {
+              const first = owner.start(
+                order === "metadata-first"
+                  ? chat
+                      .requestReadThreadMetadata(
+                        fixture.actor,
+                        fixture.threadId,
+                        [200],
+                      )
+                      .then(() => {
+                        return undefined;
+                      })
+                  : chat.renameThread(
                       fixture.actor,
                       fixture.threadId,
                       "Writer won",
                     ),
-                  )
-                : own(
-                    chat.requestReadThreadMetadata(
+              );
+              await waitForBarrierEntry(barrier.entered, first);
+              const second = owner.start(
+                order === "metadata-first"
+                  ? chat.renameThread(
                       fixture.actor,
                       fixture.threadId,
-                      [200],
-                    ),
-                  );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-            barrier.release();
-            await Promise.all([first, second]);
+                      "Writer won",
+                    )
+                  : chat
+                      .requestReadThreadMetadata(
+                        fixture.actor,
+                        fixture.threadId,
+                        [200],
+                      )
+                      .then(() => {
+                        return undefined;
+                      }),
+              );
+              await expect
+                .poll(barrier.blockedWaiterCount, BLOCKED)
+                .toBeGreaterThanOrEqual(1);
+              barrier.release();
+              valueOf(await first.settled);
+              valueOf(await second.settled);
+            });
           },
         },
         context.signal,
@@ -637,27 +780,29 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
 
   it("reselects a changed thread user and denies the stale caller", async () => {
     const fixture = await createMetadataFixture();
-    const own = operationOwner();
-
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
         stopAt: "admission",
         work: async (barrier) => {
-          const reading = own(
-            chat.requestReadThreadMetadata(
-              fixture.actor,
-              fixture.threadId,
-              [404],
-            ),
-          );
-          await barrier.entered;
-          await setChatThreadUserFixture({
-            chatThreadId: fixture.threadId,
-            userId: `user_${randomUUID()}`,
+          await withOperationOwnership(barrier.release, async (owner) => {
+            const reading = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                fixture.threadId,
+                [404],
+              ),
+            );
+            await waitForBarrierEntry(barrier.entered, reading);
+            await setChatThreadUserFixture({
+              chatThreadId: fixture.threadId,
+              userId: `user_${randomUUID()}`,
+            });
+            barrier.release();
+            expect(valueOf(await reading.settled)).toMatchObject({
+              status: 404,
+            });
           });
-          barrier.release();
-          await expect(reading).resolves.toMatchObject({ status: 404 });
         },
       },
       context.signal,
@@ -673,29 +818,32 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       visibility: "public",
     });
     await closeSubject({ subjectKind: "user", subjectId: nextOwner.userId });
-    const own = operationOwner();
 
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
         stopAt: "admission",
         work: async (barrier) => {
-          const reading = own(
-            chat.requestReadThreadMetadata(
-              fixture.actor,
-              fixture.threadId,
-              [404],
-            ),
-          );
-          await barrier.entered;
-          // No product endpoint rebinds a thread's Agent. This focused fixture
-          // mutates only that canonical FK so the real route must reselect it.
-          await setChatThreadAgentFixture({
-            chatThreadId: fixture.threadId,
-            agentId: nextAgent.agentId,
+          await withOperationOwnership(barrier.release, async (owner) => {
+            const reading = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                fixture.threadId,
+                [404],
+              ),
+            );
+            await waitForBarrierEntry(barrier.entered, reading);
+            // No product endpoint rebinds a thread's Agent. This focused fixture
+            // mutates only that canonical FK so the real route must reselect it.
+            await setChatThreadAgentFixture({
+              chatThreadId: fixture.threadId,
+              agentId: nextAgent.agentId,
+            });
+            barrier.release();
+            expect(valueOf(await reading.settled)).toMatchObject({
+              status: 404,
+            });
           });
-          barrier.release();
-          await expect(reading).resolves.toMatchObject({ status: 404 });
         },
       },
       context.signal,
@@ -712,34 +860,36 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
         subjectKind: field === "owner" ? "user" : "organization",
         subjectId: nextSubjectId,
       });
-      const own = operationOwner();
-
       await withChatThreadContentBarrierFixture(
         {
           chatThreadId: fixture.threadId,
           stopAt: "agent-lock",
           work: async (barrier) => {
-            const reading = own(
-              chat.requestReadThreadMetadata(
-                fixture.actor,
-                fixture.threadId,
-                [404],
-              ),
-            );
-            await barrier.entered;
-            if (field === "owner") {
-              await transferAgentOwnerFixture({
-                agentId: fixture.agentId,
-                owner: nextSubjectId,
+            await withOperationOwnership(barrier.release, async (owner) => {
+              const reading = owner.start(
+                chat.requestReadThreadMetadata(
+                  fixture.actor,
+                  fixture.threadId,
+                  [404],
+                ),
+              );
+              await waitForBarrierEntry(barrier.entered, reading);
+              if (field === "owner") {
+                await transferAgentOwnerFixture({
+                  agentId: fixture.agentId,
+                  owner: nextSubjectId,
+                });
+              } else {
+                await transferAgentOrganizationFixture({
+                  agentId: fixture.agentId,
+                  orgId: nextSubjectId,
+                });
+              }
+              barrier.release();
+              expect(valueOf(await reading.settled)).toMatchObject({
+                status: 404,
               });
-            } else {
-              await transferAgentOrganizationFixture({
-                agentId: fixture.agentId,
-                orgId: nextSubjectId,
-              });
-            }
-            barrier.release();
-            await expect(reading).resolves.toMatchObject({ status: 404 });
+            });
           },
         },
         context.signal,
@@ -749,7 +899,6 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
 
   it("retains Agent identity against owner transfer until the read commits", async () => {
     const fixture = await createMetadataFixture();
-    const own = operationOwner();
     const nextOwner = `user_${randomUUID()}`;
 
     await withChatThreadContentBarrierFixture(
@@ -757,25 +906,28 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
         chatThreadId: fixture.threadId,
         stopAt: "commit",
         work: async (barrier) => {
-          const reading = own(
-            chat.requestReadThreadMetadata(
-              fixture.actor,
-              fixture.threadId,
-              [200],
-            ),
-          );
-          await barrier.entered;
-          const transferring = own(
-            transferAgentOwnerFixture({
-              agentId: fixture.agentId,
-              owner: nextOwner,
-            }),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          barrier.release();
-          await Promise.all([reading, transferring]);
+          await withOperationOwnership(barrier.release, async (owner) => {
+            const reading = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                fixture.threadId,
+                [200],
+              ),
+            );
+            await waitForBarrierEntry(barrier.entered, reading);
+            const transferring = owner.start(
+              transferAgentOwnerFixture({
+                agentId: fixture.agentId,
+                owner: nextOwner,
+              }),
+            );
+            await expect
+              .poll(barrier.blockedWaiterCount, BLOCKED)
+              .toBeGreaterThanOrEqual(1);
+            barrier.release();
+            valueOf(await reading.settled);
+            valueOf(await transferring.settled);
+          });
         },
       },
       context.signal,
@@ -788,29 +940,30 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
 
   it("retains the thread against production deletion until commit, then returns missing", async () => {
     const fixture = await createMetadataFixture();
-    const own = operationOwner();
-
     await withChatThreadContentBarrierFixture(
       {
         chatThreadId: fixture.threadId,
         stopAt: "commit",
         work: async (barrier) => {
-          const reading = own(
-            chat.requestReadThreadMetadata(
-              fixture.actor,
-              fixture.threadId,
-              [200],
-            ),
-          );
-          await barrier.entered;
-          const deleting = own(
-            chat.deleteThread(fixture.actor, fixture.threadId),
-          );
-          await expect
-            .poll(barrier.blockedWaiterCount, BLOCKED)
-            .toBeGreaterThanOrEqual(1);
-          barrier.release();
-          await Promise.all([reading, deleting]);
+          await withOperationOwnership(barrier.release, async (owner) => {
+            const reading = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                fixture.threadId,
+                [200],
+              ),
+            );
+            await waitForBarrierEntry(barrier.entered, reading);
+            const deleting = owner.start(
+              chat.deleteThread(fixture.actor, fixture.threadId),
+            );
+            await expect
+              .poll(barrier.blockedWaiterCount, BLOCKED)
+              .toBeGreaterThanOrEqual(1);
+            barrier.release();
+            valueOf(await reading.settled);
+            valueOf(await deleting.settled);
+          });
         },
       },
       context.signal,
@@ -829,7 +982,6 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
         fixture.threadId,
       );
       const controller = new AbortController();
-      const own = operationOwner();
       context.mocks.ably.publish.mockClear();
 
       await withChatThreadContentBarrierFixture(
@@ -837,21 +989,35 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
           chatThreadId: fixture.threadId,
           stopAt: "metadata-read",
           work: async (barrier) => {
-            const reading = own(
-              chat.requestReadThreadMetadata(
-                fixture.actor,
-                fixture.threadId,
-                [200, 404],
-                controller.signal,
-              ),
-            );
-            const entered = await barrier.entered;
-            expect(entered.rowCount).toBe(1);
-            controller.abort(new DOMException("Operation ended", "AbortError"));
-            barrier.release();
-            await expect(reading).rejects.toThrow(
-              /Unknown response status 500/,
-            );
+            await withOperationOwnership(barrier.release, async (owner) => {
+              owner.abortOnExit(controller);
+              const reading = owner.start(
+                chat.requestReadThreadMetadata(
+                  fixture.actor,
+                  fixture.threadId,
+                  [200, 404],
+                  controller.signal,
+                ),
+              );
+              const entered = await waitForBarrierEntry(
+                barrier.entered,
+                reading,
+              );
+              expect(entered.rowCount).toBe(1);
+              controller.abort(
+                new DOMException("Operation ended", "AbortError"),
+              );
+              barrier.release();
+              await reading.acceptFailureAfter((error) => {
+                expect(error).toStrictEqual(
+                  expect.objectContaining({
+                    message: expect.stringMatching(
+                      /Unknown response status 500/,
+                    ),
+                  }),
+                );
+              });
+            });
           },
         },
         context.signal,
@@ -861,101 +1027,270 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
         readStoredChatThreadMetadataFixture(fixture.threadId),
       ).resolves.toStrictEqual(stored);
       expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+      await expect(
+        chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [200]),
+      ).resolves.toMatchObject({ status: 200 });
     },
     CASE_TIMEOUT_MS,
   );
 
-  it("propagates a real scoped thread-lock timeout instead of fabricating 404", async () => {
+  it("propagates holder setup and scoped thread-lock failures without fabricating 404", async () => {
     const fixture = await createMetadataFixture();
+    await expect(
+      holdChatThreadRowLockFixture({
+        threadId: randomUUID(),
+        signal: context.signal,
+      }),
+    ).rejects.toThrow("Expected the chat thread row");
+    await expect(
+      chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [200]),
+    ).resolves.toMatchObject({ status: 200 });
+
     const holder = await holdChatThreadRowLockFixture({
       threadId: fixture.threadId,
       signal: context.signal,
     });
-    const reading = await settleIncludingAbort(
-      chat.requestReadThreadMetadata(
-        fixture.actor,
-        fixture.threadId,
-        [200, 404],
-      ),
-    );
-    holder.release();
-    await holder.done;
-    expect(reading.ok).toBeFalsy();
-    if (reading.ok) {
-      throw new Error("Expected the held metadata read to fail");
-    }
-    expect(reading.error).toStrictEqual(
-      expect.objectContaining({
-        message: expect.stringMatching(/Unknown response status 500/),
-      }),
-    );
+    await withOperationOwnership(holder.release, async (owner) => {
+      const holding = owner.start(holder.done);
+      const reading = owner.start(
+        chat.requestReadThreadMetadata(
+          fixture.actor,
+          fixture.threadId,
+          [200, 404],
+        ),
+      );
+      await reading.acceptFailureAfter((error) => {
+        expect(error).toStrictEqual(
+          expect.objectContaining({
+            message: expect.stringMatching(/Unknown response status 500/),
+          }),
+        );
+      });
+      holder.release();
+      valueOf(await holding.settled);
+    });
 
     await expect(
       chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [200]),
     ).resolves.toMatchObject({ status: 200 });
   });
 
-  it("joins both readers when a contended barrier callback exits with an assertion-like failure", async () => {
-    const fixture = await createMetadataFixture();
-    const own = operationOwner();
-    let first: Promise<unknown> | null = null;
-    let second: Promise<unknown> | null = null;
+  it.each(["read-first", "closure-first"] as const)(
+    "joins reader and closure, retires the exact job, and recovers after a $0 callback exit",
+    async (order) => {
+      const fixture = await createMetadataFixture();
+      let earlyRead:
+        | OwnedOperation<
+            Awaited<ReturnType<typeof chat.requestReadThreadMetadata>>
+          >
+        | undefined;
+      let earlyClosure: OwnedOperation<{ readonly jobId: string }> | undefined;
 
-    await expect(
+      if (order === "read-first") {
+        await expect(
+          withChatThreadContentBarrierFixture(
+            {
+              chatThreadId: fixture.threadId,
+              stopAt: "commit",
+              work: async (barrier) => {
+                await withOperationOwnership(barrier.release, async (owner) => {
+                  earlyRead = owner.start(
+                    chat.requestReadThreadMetadata(
+                      fixture.actor,
+                      fixture.threadId,
+                      [200],
+                    ),
+                  );
+                  await waitForBarrierEntry(barrier.entered, earlyRead);
+                  earlyClosure = startClosure(owner, {
+                    subjectKind: "user",
+                    subjectId: fixture.actor.userId,
+                  });
+                  await expect
+                    .poll(barrier.blockedWaiterCount, BLOCKED)
+                    .toBeGreaterThanOrEqual(1);
+                  throw new Error("deliberate read-first callback exit");
+                });
+              },
+            },
+            context.signal,
+          ),
+        ).rejects.toThrow("deliberate read-first callback exit");
+      } else {
+        await expect(
+          withErasureSubjectClosureCommitBarrierFixture(async (barrier) => {
+            await withOperationOwnership(barrier.release, async (owner) => {
+              earlyClosure = startClosure(owner, {
+                subjectKind: "user",
+                subjectId: fixture.actor.userId,
+              });
+              await waitForBarrierEntry(barrier.entered, earlyClosure);
+              earlyRead = owner.start(
+                chat.requestReadThreadMetadata(
+                  fixture.actor,
+                  fixture.threadId,
+                  [404],
+                ),
+              );
+              await expect
+                .poll(barrier.blockedWaiterCount, BLOCKED)
+                .toBeGreaterThanOrEqual(1);
+              throw new Error("deliberate closure-first callback exit");
+            });
+          }, context.signal),
+        ).rejects.toThrow("deliberate closure-first callback exit");
+      }
+
+      if (!earlyRead || !earlyClosure) {
+        throw new Error("Expected both early-exit operations to start");
+      }
+      expect(valueOf(await earlyRead.settled)).toMatchObject({
+        status: order === "read-first" ? 200 : 404,
+      });
+      const closed = valueOf(await earlyClosure.settled);
+      await removeErasureSubjectsFixture([closed.jobId]);
+
+      await expect(
+        chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [200]),
+      ).resolves.toMatchObject({ status: 200 });
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  it("reports an unaccepted non-abort request failure together with a callback failure", async () => {
+    const fixture = await createMetadataFixture();
+    let pending:
+      | OwnedOperation<
+          Awaited<ReturnType<typeof chat.requestReadThreadMetadata>>
+        >
+      | undefined;
+
+    const combined = await settleIncludingAbort(
       withChatThreadContentBarrierFixture(
         {
           chatThreadId: fixture.threadId,
           stopAt: "commit",
           work: async (barrier) => {
-            first = own(
-              chat.requestReadThreadMetadata(
-                fixture.actor,
-                fixture.threadId,
-                [200],
-              ),
-            );
-            await barrier.entered;
-            second = own(
-              chat.requestReadThreadMetadata(
-                fixture.actor,
-                fixture.threadId,
-                [200],
-              ),
-            );
-            await expect
-              .poll(barrier.blockedWaiterCount, BLOCKED)
-              .toBeGreaterThanOrEqual(1);
-            throw new Error("synthetic assertion after contention");
+            await withOperationOwnership(barrier.release, async (owner) => {
+              pending = owner.start(
+                chat.requestReadThreadMetadata(
+                  fixture.actor,
+                  fixture.threadId,
+                  [200],
+                ),
+              );
+              await waitForBarrierEntry(barrier.entered, pending);
+              const rejected = owner.start(
+                chat.requestReadThreadMetadata(null, fixture.threadId, [200]),
+              );
+              await rejected.settled;
+              throw new Error("deliberate callback failure");
+            });
           },
         },
         context.signal,
       ),
-    ).rejects.toThrow("synthetic assertion after contention");
-
-    expect(first).not.toBeNull();
-    expect(second).not.toBeNull();
-    await expect(first).resolves.toMatchObject({ status: 200 });
-    await expect(second).resolves.toMatchObject({ status: 200 });
+    );
+    expect(combined.ok).toBeFalsy();
+    if (combined.ok || !(combined.error instanceof AggregateError)) {
+      throw new Error("Expected callback and operation failures to aggregate");
+    }
+    expect(combined.error.errors).toHaveLength(2);
+    expect(combined.error.errors).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ message: "deliberate callback failure" }),
+        expect.objectContaining({
+          message: expect.stringMatching(/received 401/),
+        }),
+      ]),
+    );
+    if (!pending) {
+      throw new Error("Expected the contended metadata read to start");
+    }
+    expect(valueOf(await pending.settled)).toMatchObject({ status: 200 });
   });
 
-  it("cleans up a barrier readiness miss after the route exits early", async () => {
+  it("surfaces pre-entry and setup failures before a healthy metadata read", async () => {
     const fixture = await createMetadataFixture();
-    let entered = true;
 
     await withChatThreadContentBarrierFixture(
       {
-        chatThreadId: randomUUID(),
+        chatThreadId: fixture.threadId,
         stopAt: "metadata-read",
         work: async (barrier) => {
-          await expect(
-            chat.requestReadThreadMetadata(fixture.actor, randomUUID(), [404]),
-          ).resolves.toMatchObject({ status: 404 });
-          entered = barrier.enteredYet();
+          await withOperationOwnership(barrier.release, async (owner) => {
+            const failedBeforeEntry = owner.start(
+              chat.requestReadThreadMetadata(null, fixture.threadId, [200]),
+            );
+            const surfaced = await settleIncludingAbort(
+              waitForBarrierEntry(barrier.entered, failedBeforeEntry),
+            );
+            expect(surfaced.ok).toBeFalsy();
+            await failedBeforeEntry.acceptFailureAfter((error) => {
+              expect(error).toStrictEqual(
+                expect.objectContaining({
+                  message: expect.stringMatching(/received 401/),
+                }),
+              );
+            });
+            expect(barrier.enteredYet()).toBeFalsy();
+
+            const completedBeforeEntry = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                randomUUID(),
+                [404],
+              ),
+            );
+            const missedEntry = await settleIncludingAbort(
+              waitForBarrierEntry(barrier.entered, completedBeforeEntry),
+            );
+            expect(missedEntry.ok).toBeFalsy();
+            if (missedEntry.ok) {
+              throw new Error("Expected successful completion before entry");
+            }
+            expect(missedEntry.error).toStrictEqual(
+              expect.objectContaining({
+                message: "Metadata operation completed before barrier entry",
+              }),
+            );
+            expect(valueOf(await completedBeforeEntry.settled)).toMatchObject({
+              status: 404,
+            });
+            expect(barrier.enteredYet()).toBeFalsy();
+
+            const recovery = owner.start(
+              chat.requestReadThreadMetadata(
+                fixture.actor,
+                fixture.threadId,
+                [200],
+              ),
+            );
+            await waitForBarrierEntry(barrier.entered, recovery);
+            barrier.release();
+            expect(valueOf(await recovery.settled)).toMatchObject({
+              status: 200,
+            });
+          });
         },
       },
       context.signal,
     );
-    expect(entered).toBeFalsy();
+
+    const rejectedSetup = new AbortController();
+    rejectedSetup.abort(new DOMException("Rejected setup", "AbortError"));
+    await expect(
+      withChatThreadContentBarrierFixture(
+        {
+          chatThreadId: fixture.threadId,
+          stopAt: "metadata-read",
+          work: () => {
+            return Promise.reject(new Error("setup must not enter work"));
+          },
+        },
+        rejectedSetup.signal,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
 
     await expect(
       chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [200]),
@@ -1024,31 +1359,34 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
     expect(openSql.match(/limit/g)?.length).toBeGreaterThanOrEqual(3);
 
     const retryFixture = await createMetadataFixture();
-    const own = operationOwner();
     const retry = await withChatThreadMetadataRetrySqlControlFixture(
       {
         chatThreadId: retryFixture.threadId,
         work: async (barrier) => {
-          const reading = own(
-            chat.requestReadThreadMetadata(
-              retryFixture.actor,
-              retryFixture.threadId,
-              [404],
-            ),
+          return await withOperationOwnership(
+            barrier.release,
+            async (owner) => {
+              const reading = owner.start(
+                chat.requestReadThreadMetadata(
+                  retryFixture.actor,
+                  retryFixture.threadId,
+                  [404],
+                ),
+              );
+              await waitForBarrierEntry(barrier.entered, reading);
+              await setChatThreadUserFixture({
+                chatThreadId: retryFixture.threadId,
+                userId: `user_${randomUUID()}`,
+              });
+              barrier.release();
+              return {
+                response: valueOf(await reading.settled),
+                attempts: barrier.attempts().map((attempt) => {
+                  return [...attempt];
+                }),
+              };
+            },
           );
-          await barrier.entered;
-          await setChatThreadUserFixture({
-            chatThreadId: retryFixture.threadId,
-            userId: `user_${randomUUID()}`,
-          });
-          barrier.release();
-          const response = await reading;
-          return {
-            response,
-            attempts: barrier.attempts().map((attempt) => {
-              return [...attempt];
-            }),
-          };
         },
       },
       context.signal,

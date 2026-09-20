@@ -6,15 +6,15 @@ import {
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
-  connectorOauthStartContract,
-  connectorsMainContract,
+  builtinConnectorOauthStartContract,
+  builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  userConnectorsContract,
-  type UserConnectorUpdate,
+  userBuiltinConnectorsContract,
+  type UserBuiltinConnectorUpdate,
 } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -60,7 +60,7 @@ const AUTHORIZATION_URL = "https://accounts.google.test/authorize-drive";
 
 type DriveConnectionState =
   | "not-connected"
-  | ConnectorResponse["connectionStatus"];
+  | BuiltinConnectorResponse["connectionStatus"];
 
 interface OauthRequest {
   readonly account: ConnectorAccountMutationIntent;
@@ -71,7 +71,7 @@ interface OauthRequest {
 }
 
 interface DriveMockControl {
-  readonly authorizationUpdates: readonly UserConnectorUpdate[];
+  readonly authorizationUpdates: readonly UserBuiltinConnectorUpdate[];
   readonly completeAuthorization: () => void;
   readonly oauthRequests: readonly OauthRequest[];
   readonly syncRequests: readonly {
@@ -97,7 +97,7 @@ function installDriveMocks(
   let connectionState = initialConnectionState;
   let agentAuthorized = options.agentAuthorized ?? false;
   let artifactSynced = false;
-  const authorizationUpdates: UserConnectorUpdate[] = [];
+  const authorizationUpdates: UserBuiltinConnectorUpdate[] = [];
   const oauthRequests: OauthRequest[] = [];
   const syncRequests: { fileId: string; runId: string }[] = [];
   targetContext.mocks.http.get(DRIVE_FILE_URL, () => {
@@ -170,7 +170,7 @@ function installDriveMocks(
     },
   });
 
-  targetContext.mocks.api(connectorsMainContract.list, ({ respond }) => {
+  targetContext.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, {
       connectors:
         connectionState === "not-connected"
@@ -184,13 +184,13 @@ function installDriveMocks(
       connectors: [googleDriveCatalogItem(connectionState)],
     });
   });
-  targetContext.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  targetContext.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, {
       enabledConnectorSlugs: agentAuthorized ? ["google-drive"] : [],
     });
   });
   targetContext.mocks.api(
-    userConnectorsContract.update,
+    userBuiltinConnectorsContract.update,
     ({ body, respond }) => {
       authorizationUpdates.push(body);
       agentAuthorized = true;
@@ -198,7 +198,7 @@ function installDriveMocks(
     },
   );
   targetContext.mocks.api(
-    connectorOauthStartContract.start,
+    builtinConnectorOauthStartContract.start,
     ({ body, respond }) => {
       oauthRequests.push(body);
       oauthAttemptId = crypto.randomUUID();

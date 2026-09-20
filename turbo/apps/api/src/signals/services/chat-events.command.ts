@@ -589,6 +589,7 @@ interface ExistingClientEventIdRow {
   readonly threadUserId: string;
   readonly eventType: ChatEventType;
   readonly content: string | null;
+  readonly userMessage: UserMessageDocument | null;
   readonly runId: string | null;
   readonly revokesEventId: string | null;
   readonly error: string | null;
@@ -637,6 +638,7 @@ function resolveExistingClientEventIdRow(
   if (
     row.revokesEventId !== null &&
     row.content === null &&
+    row.userMessage === null &&
     row.error === null
   ) {
     return { kind: "conflict" };
@@ -697,6 +699,7 @@ async function resolveClientEventId(
       threadUserId: chatThreads.userId,
       eventType: chatEvents.eventType,
       content: canonicalChatEventContent(),
+      userMessage: canonicalChatEventUserMessage(),
       runId: chatEvents.runId,
       revokesEventId: chatEvents.revokesEventId,
       error: canonicalChatEventError(),
@@ -1037,7 +1040,6 @@ function emptyModelFirstThreadPin(): ThreadModelPin {
 async function withBuiltInModelRuntimeRoute(
   db: Db,
   configuration: ResolvedRunConfiguration,
-  featureSwitchContext: FeatureSwitchContext,
 ): Promise<ResolvedRunConfiguration | NormalSendFailure> {
   if (
     configuration.providerAdmission.error ||
@@ -1056,7 +1058,6 @@ async function withBuiltInModelRuntimeRoute(
   const builtInModelRuntimeRoute = await resolveBuiltInModelRuntimeRoute(
     db,
     selectedModel,
-    featureSwitchContext,
   );
   return builtInModelRuntimeRoute
     ? { ...configuration, builtInModelRuntimeRoute }
@@ -1087,6 +1088,7 @@ async function resolveExplicitRunConfiguration(params: {
         orgId: params.orgId,
         userId: params.userId,
         modelSelection,
+        featureSwitchContext: params.featureSwitchContext,
       });
     },
   );
@@ -1137,20 +1139,16 @@ async function resolveExplicitRunConfiguration(params: {
   if (codexServiceTierError) {
     return codexServiceTierError;
   }
-  return await withBuiltInModelRuntimeRoute(
-    params.db,
-    {
+  return await withBuiltInModelRuntimeRoute(params.db, {
+    modelPin,
+    providerAdmission,
+    reasoningEffort: effort.reasoningEffort,
+    modelSettings: effort.modelSettings,
+    codexServiceTier: codexServiceTierForRun({
+      body: params.body,
       modelPin,
-      providerAdmission,
-      reasoningEffort: effort.reasoningEffort,
-      modelSettings: effort.modelSettings,
-      codexServiceTier: codexServiceTierForRun({
-        body: params.body,
-        modelPin,
-      }),
-    },
-    params.featureSwitchContext,
-  );
+    }),
+  });
 }
 
 async function resolveNormalSendFeatureSwitches(
@@ -1871,6 +1869,7 @@ async function resolveThread(params: {
           requestedCodexServiceTier: params.requestedCodexServiceTier,
           persistRequestedCodexServiceTier:
             params.persistRequestedCodexServiceTier,
+          featureSwitchContext: params.featureSwitches.featureSwitchContext,
         });
       },
     );
@@ -1889,7 +1888,6 @@ async function resolveThread(params: {
         reasoningEffort: persisted.reasoningEffort,
         modelSettings: persisted.modelSettings,
       },
-      params.featureSwitches.featureSwitchContext,
     );
     if ("status" in resolvedRunConfiguration) {
       return resolvedRunConfiguration;
@@ -1972,6 +1970,7 @@ async function resolveExistingUnassociatedClientEventId(
       threadUserId: chatThreads.userId,
       eventType: chatEvents.eventType,
       content: canonicalChatEventContent(),
+      userMessage: canonicalChatEventUserMessage(),
       runId: chatEvents.runId,
       revokesEventId: chatEvents.revokesEventId,
       error: canonicalChatEventError(),

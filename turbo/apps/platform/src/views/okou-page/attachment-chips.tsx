@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button, Dialog, DialogBody, DialogContent } from "@okouai/ui";
+import { Button, Dialog, DialogBody, DialogContent, cn } from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
@@ -716,18 +716,25 @@ function ArtifactDialogImageBody({
 
 function ArtifactDialogVideoBody({
   filename,
+  fullscreen,
   preview,
 }: {
   filename: string;
+  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
   const resourceUrl = useLastResolved(preview.resourceUrl$) ?? null;
 
+  // Fullscreen exists to make the picture bigger. The default stage clamps its
+  // content to a reading measure, so playback has to opt out of it.
   return (
-    <ArtifactDialogStage centered>
+    <ArtifactDialogStage centered flush={fullscreen} scrollable={!fullscreen}>
       <div
-        className="w-full overflow-hidden bg-black"
+        className={cn(
+          "w-full overflow-hidden bg-black",
+          fullscreen && "h-full min-h-0",
+        )}
         data-testid="artifact-dialog-video-stage"
       >
         {resourceUrl !== null && (
@@ -737,7 +744,10 @@ function ArtifactDialogVideoBody({
             autoPlay
             playsInline
             preload="metadata"
-            className="block aspect-video w-full bg-black object-contain"
+            className={cn(
+              "block w-full bg-black object-contain",
+              fullscreen ? "h-full" : "aspect-video",
+            )}
             aria-label={t(
               ($) => {
                 return $.artifacts.preview.videoLabel;
@@ -793,9 +803,11 @@ function ArtifactDialogAudioBody({
 
 function ArtifactDialogDocumentFrameBody({
   filename,
+  fullscreen,
   preview,
 }: {
   filename: string;
+  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
@@ -808,7 +820,7 @@ function ArtifactDialogDocumentFrameBody({
       : resourceUrl;
 
   return (
-    <ArtifactDialogStage scrollable={false}>
+    <ArtifactDialogStage flush={fullscreen} scrollable={false}>
       <div
         className="flex h-full min-h-0 w-full flex-1 overflow-hidden"
         data-testid="artifact-dialog-document-frame"
@@ -895,16 +907,23 @@ function ArtifactDialogGenericFileBody({
 
 function ArtifactDialogOfficeDocumentBody({
   filename,
+  fullscreen,
   preview,
 }: {
   filename: string;
+  fullscreen: boolean;
   preview: Extract<AttachmentLightboxState, { kind: "file" }>;
 }) {
   const resourceUrl = useLastResolved(preview.resourceUrl$) ?? null;
   const shareUrl = useLastResolved(preview.shareUrl$);
   return (
-    <ArtifactDialogStage scrollable={false}>
-      <div className="flex h-full min-h-0 w-full flex-1 overflow-hidden rounded-xl border border-border/70 bg-background shadow-sm">
+    <ArtifactDialogStage flush={fullscreen} scrollable={false}>
+      <div
+        className={cn(
+          "flex h-full min-h-0 w-full flex-1 overflow-hidden bg-background",
+          !fullscreen && "rounded-xl border border-border/70 shadow-sm",
+        )}
+      >
         <OfficeDocumentPreview
           resourceUrl={
             shareUrl === undefined ? null : (shareUrl ?? resourceUrl)
@@ -948,7 +967,13 @@ export function ArtifactPreviewBody({
   }
 
   if (preview.kind === "video") {
-    return <ArtifactDialogVideoBody filename={filename} preview={preview} />;
+    return (
+      <ArtifactDialogVideoBody
+        filename={filename}
+        fullscreen={fullscreen}
+        preview={preview}
+      />
+    );
   }
 
   if (preview.kind === "audio") {
@@ -960,6 +985,7 @@ export function ArtifactPreviewBody({
       return (
         <ArtifactDialogOfficeDocumentBody
           filename={filename}
+          fullscreen={fullscreen}
           preview={preview}
         />
       );
@@ -993,7 +1019,11 @@ export function ArtifactPreviewBody({
   }
 
   return (
-    <ArtifactDialogDocumentFrameBody filename={filename} preview={preview} />
+    <ArtifactDialogDocumentFrameBody
+      filename={filename}
+      fullscreen={fullscreen}
+      preview={preview}
+    />
   );
 }
 
@@ -1504,10 +1534,12 @@ function FileChipBody({
 export function FileAttachmentChip({
   contentType,
   filename,
+  preview,
   url,
 }: {
   contentType?: string;
   filename: string;
+  preview?: AttachmentPreviewSignals;
   url: string;
 }) {
   const { t } = useTranslation();
@@ -1520,7 +1552,11 @@ export function FileAttachmentChip({
       type="button"
       onClick={() => {
         if (previewOfficeDocument) {
-          openFileLightbox({ filename, url });
+          openFileLightbox({
+            filename,
+            url,
+            ...(preview ? { preview } : {}),
+          });
           return;
         }
         detach(
@@ -1638,12 +1674,14 @@ export function PreviewableFileAttachmentChip({
 export function PreviewableAudioAttachmentChip({
   contentType,
   filename,
+  preview,
   shareAvailable,
   splitViewAvailable,
   url,
 }: {
   contentType?: string;
   filename: string;
+  preview?: AttachmentPreviewSignals;
   shareAvailable?: boolean;
   splitViewAvailable?: boolean;
   url: string;
@@ -1658,6 +1696,7 @@ export function PreviewableAudioAttachmentChip({
         openAudioLightbox({
           url,
           filename,
+          ...(preview ? { preview } : {}),
           ...(shareAvailable === undefined ? {} : { shareAvailable }),
           ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
         });
@@ -1909,6 +1948,7 @@ function AttachmentChip({
                           key: attachment.key,
                           filename: attachment.filename,
                           url: previewUrl,
+                          preview: imagePreview,
                           annotations,
                           commit: async (next, signal) => {
                             // Persist once, after the annotated copy exists or
