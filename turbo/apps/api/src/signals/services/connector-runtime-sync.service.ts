@@ -603,6 +603,9 @@ export async function resolveConnectorRuntimeTargets(args: {
 }): Promise<readonly ConnectorRuntimeSyncResult[]> {
   const resolvedTargets = await resolveConnectorRuntimeTargetStates(args);
   return resolvedTargets.map((target) => {
+    // API promotion precedes Runner promotion, so a headerless Runner can keep
+    // syncing an active run while its process drains. Remove this downgrade
+    // after incompatible processes drain and leave the rollback floor: #35544.
     if (
       target.kind === "builtin" &&
       target.result.state === "absent" &&
