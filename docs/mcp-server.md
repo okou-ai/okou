@@ -74,39 +74,37 @@ defaults awaiting canonical repair after a plan change return a setup error.
 Open model settings to synchronize the policies, then retry discovery. Discovery
 reads enforce a 15-second deadline, three-second SQL limits and a 16 KiB data budget.
 
-To create an empty conversation, pass all four existing fields:
+To create an empty conversation, only `requestId` is required:
 
 ```json
 {
-  "requestId": "<new UUID for this intended conversation>",
-  "agentId": "<visible Agent UUID from list_agents>",
-  "title": "Review the quarterly plan",
-  "model": "<selectable model id from list_models>"
+  "requestId": "<new UUID for this intended conversation>"
 }
 ```
 
-Without `message`, `agentId` and `model` remain required. The response points
-`nextAction` to `send_chat_message`; no message is submitted and no run starts.
-Sending later uses its own request ID and self-contained text.
+The response points `nextAction` to `send_chat_message`; no message is submitted
+and no run starts. Sending later uses its own request ID and self-contained text.
 
 To atomically create a conversation and accept its first input, add `message`.
-In this branch `agentId` and `model` are optional:
+All selection fields remain optional:
 
 ```json
 {
   "requestId": "<new UUID for this intended conversation and input>",
-  "title": "Review the quarterly plan",
   "message": "Summarize the risks and propose next steps."
 }
 ```
 
+In either mode, optional `agentId`, `title`, and `model` select explicit values.
 An omitted Agent resolves to the currently visible organization default and is
-stored concretely on the thread. An omitted model leaves the thread unpinned
-until run admission, so the current member default then organization default is
-used for that admission. Canonical admission may persist the resolved model on
-the thread for future runs. The response exposes the selected/effective model
-and `source`. `message` uses the same nonblank, 32,000 UTF-16-unit limit as
-`send_chat_message` and preserves its exact accepted text.
+stored concretely on the thread. An omitted title stays null until the first
+text run triggers automatic title generation. An omitted model leaves the
+thread unpinned until run admission, so the current member default then
+organization default is used for that admission. Canonical admission may
+persist the resolved model on the thread for future runs. The response exposes
+the selected/effective model and `source`. `message` uses the same nonblank,
+32,000 UTF-16-unit limit as `send_chat_message` and preserves its exact accepted
+text.
 
 The thread and canonical input event commit in one transaction. Only after that
 commit does the shared scheduler attempt to start, queue, or steer execution.
@@ -126,12 +124,12 @@ Retry an uncertain creation within 24 hours using the identical request ID,
 operation mode, exact values, and optional-field presence. Combined retries keep
 the same derived input reference. Concurrent identical requests converge on one
 thread and, when present, one input. Switching between empty and combined modes,
-changing a message, or changing omitted-versus-explicit Agent/model intent is a
-conflict. Replay returns current stored thread settings without undoing later
-edits. An originally omitted model follows current defaults while the thread is
-still unpinned; after run admission persists the resolved model, replay reports
-that thread pin. Deleted conversations, expired retries, or missing canonical
-evidence return an error. There is no permanent request-ID ledger. Never
+changing a message, or changing omitted-versus-explicit Agent/title/model intent
+is a conflict. Replay returns current stored thread settings without undoing
+later edits. An originally omitted model follows current defaults while the
+thread is still unpinned; after run admission persists the resolved model,
+replay reports that thread pin. Deleted conversations, expired retries, or
+missing canonical evidence return an error. There is no permanent request-ID ledger. Never
 automatically retry an uncertain old request after the window; inspect the
 original thread before intentionally creating new work. No new table or schema
 migration is introduced.

@@ -33,7 +33,7 @@ describe("MCP chat input schemas", () => {
               pattern: "\\S",
             },
           },
-          required: ["requestId", "agentId", "title", "model"],
+          required: ["requestId"],
         },
         {
           properties: {
@@ -55,7 +55,7 @@ describe("MCP chat input schemas", () => {
               pattern: "\\S",
             },
           },
-          required: ["requestId", "title", "message"],
+          required: ["requestId", "message"],
         },
       ],
     });
@@ -136,6 +136,15 @@ describe("MCP chat input schemas", () => {
         title: "  Preserved title  ",
       }).title,
     ).toBe("  Preserved title  ");
+    expect(
+      mcpCreateChatThreadInputSchema.parse({ requestId: id }),
+    ).toStrictEqual({ requestId: id });
+    expect(
+      mcpCreateChatThreadInputSchema.parse({
+        requestId: id,
+        message: "Use every default",
+      }),
+    ).toStrictEqual({ requestId: id, message: "Use every default" });
 
     expect(
       mcpListChatThreadsInputSchema.safeParse({ title: " \n\t " }).success,

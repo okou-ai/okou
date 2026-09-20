@@ -50,7 +50,7 @@ import {
 } from "./model-selection.service";
 
 const CREATION_RETRY_MS = 24 * 60 * 60 * 1000;
-const COMBINED_CREATION_NAMESPACE = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
+const CREATION_NAMESPACE = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
 const COMBINED_INPUT_NAMESPACE = "c2559c1c-a5f8-4d43-88a6-9738ef189420";
 const L = logger("McpChatCreation");
 
@@ -82,23 +82,23 @@ function isCombinedCreation(
   return "message" in input;
 }
 
-function combinedCreationIdentity(
-  input: McpCreateChatWithMessageInput,
-): string {
+function optionalIdentity(value: string | undefined): readonly string[] {
+  return value === undefined ? ["omitted"] : ["present", value];
+}
+
+function creationIdentity(input: McpCreateChatThreadInput): string {
   return JSON.stringify([
-    "create_chat_thread_with_message",
+    "create_chat_thread",
     input.requestId,
-    input.agentId === undefined ? ["omitted"] : ["present", input.agentId],
-    input.title,
-    input.model === undefined ? ["omitted"] : ["present", input.model],
-    input.message,
+    optionalIdentity(input.agentId),
+    optionalIdentity(input.title),
+    optionalIdentity(input.model),
+    isCombinedCreation(input) ? ["present", input.message] : ["omitted"],
   ]);
 }
 
 function creationEventId(input: McpCreateChatThreadInput): string {
-  return isCombinedCreation(input)
-    ? uuidv5(combinedCreationIdentity(input), COMBINED_CREATION_NAMESPACE)
-    : input.requestId;
+  return uuidv5(creationIdentity(input), CREATION_NAMESPACE);
 }
 
 function combinedInputId(input: McpCreateChatWithMessageInput): string {
@@ -252,9 +252,10 @@ async function readCreation(
       threadId: chatThreadEvents.chatThreadId,
       agentId: chatThreadEvents.agentId,
       kind: chatThreadEvents.kind,
-      titleMatches: sql`${chatThreadEvents.title} = ${input.title}`.mapWith(
-        nullableDriverValueDecoder(pgBooleanDecoder),
-      ),
+      titleMatches:
+        sql`${chatThreadEvents.title} IS NOT DISTINCT FROM ${input.title ?? null}`.mapWith(
+          nullableDriverValueDecoder(pgBooleanDecoder),
+        ),
       model: chatThreadEvents.selectedModel,
       createdAt: chatThreadEvents.createdAt,
     })

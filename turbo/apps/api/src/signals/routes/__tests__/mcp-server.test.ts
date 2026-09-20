@@ -828,19 +828,47 @@ describe("MCP chat discovery and creation", () => {
     expect(sent.inputRef.threadId).toBe(requestId);
   });
 
+  it("creates an untitled empty conversation using Agent and model defaults", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = { requestId: randomUUID() };
+
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+        admission: "checked_on_send",
+      },
+      replayed: false,
+      nextAction: {
+        tool: "send_chat_message",
+        arguments: { threadId: args.requestId },
+      },
+    });
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      replayed: true,
+    });
+  });
+
   it("atomically creates a conversation with its first message and resolves defaults", async () => {
     const f = await creationFixture({ withDefaultAgent: true });
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
       requestId: randomUUID(),
-      title: "Start from organization defaults",
       message: "  Preserve this exact first message. 中文 😀  ",
     };
     const created = await createThread(token, args);
     expect(created).toMatchObject({
       threadId: args.requestId,
       agentId: f.defaultAgentId,
-      title: args.title,
+      title: null,
       model: {
         selectedModel: null,
         effectiveModel: "claude-sonnet-5",
@@ -1036,6 +1064,7 @@ describe("MCP chat discovery and creation", () => {
     });
     for (const conflicting of [
       { ...args, title: "Changed title" },
+      { ...args, title: undefined },
       { ...args, message: "Changed message" },
       { ...args, agentId: secondAgent.agentId },
       { ...args, agentId: undefined },
@@ -1153,7 +1182,10 @@ describe("MCP chat discovery and creation", () => {
     ).resolves.toStrictEqual(before);
     for (const conflicting of [
       { ...args, title: "Different intent" },
+      { ...args, title: undefined },
+      { ...args, agentId: undefined },
       { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: undefined },
     ]) {
       const result = await callTool(token, "create_chat_thread", conflicting);
       expect(structuredToolError(result)).toMatchObject({
@@ -1652,7 +1684,7 @@ describe("MCP chat discovery and creation", () => {
     },
   );
 
-  it("requires explicit creation choices and rejects unrelated execution controls", async () => {
+  it("validates optional creation choices and rejects unrelated execution controls", async () => {
     const f = await creationFixture();
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
@@ -1665,7 +1697,6 @@ describe("MCP chat discovery and creation", () => {
       { ...args, title: "  " },
       { ...args, title: "x".repeat(201) },
       { ...args, model: " \n\t " },
-      { ...args, model: undefined },
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
       { ...args, orgId: f.auth.orgId },

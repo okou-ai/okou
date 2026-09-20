@@ -19,15 +19,15 @@ const titleSchema = z
 
 export const mcpCreateEmptyChatThreadInputSchema = z.strictObject({
   requestId: requestIdSchema,
-  agentId: agentIdSchema,
-  title: titleSchema,
-  model: mcpChatModelIdSchema,
+  agentId: agentIdSchema.optional(),
+  title: titleSchema.optional(),
+  model: mcpChatModelIdSchema.optional(),
 });
 
 export const mcpCreateChatWithMessageInputSchema = z.strictObject({
   requestId: requestIdSchema,
   agentId: agentIdSchema.optional(),
-  title: titleSchema,
+  title: titleSchema.optional(),
   model: mcpChatModelIdSchema.optional(),
   message: mcpChatMessageTextSchema,
 });
