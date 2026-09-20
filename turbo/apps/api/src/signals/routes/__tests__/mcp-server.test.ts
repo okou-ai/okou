@@ -466,12 +466,15 @@ async function chatRunFixture() {
 
 async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
   const f = await threadFixture();
+  const runs = createRunsApi(context);
   const defaultAgentId = options.withDefaultAgent
     ? await f.bdd.bootstrapLimitedFreeOnboarding(f.actor, {
         displayName: "MCP default Agent",
       })
     : null;
-  const runs = createRunsApi(context);
+  if (defaultAgentId) {
+    await runs.grantProEntitlement(f.actor);
+  }
   const { providerId } = await runs.ensureOrgModelProvider(f.actor);
   await runs.updateOrgModelPolicies(
     f.actor,
