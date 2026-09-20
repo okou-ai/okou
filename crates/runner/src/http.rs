@@ -154,13 +154,6 @@ impl ApiRequestBuilder {
         }
     }
 
-    pub(crate) fn builtin_mcp_inline_firewall_reader(self) -> Self {
-        Self {
-            builder: self.builder.header("X-Builtin-Mcp-Inline-Firewall", "1"),
-            ..self
-        }
-    }
-
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {

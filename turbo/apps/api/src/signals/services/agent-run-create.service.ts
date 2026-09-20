@@ -104,7 +104,6 @@ import {
   connectorAuthMethodRuntimeMetadata,
   type ConnectorRuntimeBindingEntry,
 } from "@okouai/connectors/connector-auth-method";
-import { AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type {
   ConnectorServerFirewallExecutionMetadata,
   ConnectorServerFirewallPermissionIndex,
@@ -1195,9 +1194,6 @@ interface BuiltinConnectorRuntimeContext {
     | undefined;
   readonly connectorSlugs: readonly ConnectorSlug[];
   readonly mcpConnectorSlugs: readonly ConnectorSlug[];
-  readonly mcpFirewallAuthBySlug: Readonly<
-    Record<string, Firewall["apis"][number]["auth"]>
-  >;
   readonly connectorSourceIdBySlug: Readonly<Record<string, string>>;
   readonly storedEnvironment: Record<string, string> | undefined;
 }
@@ -3553,7 +3549,6 @@ function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
     secretConnectorMetadataMap: undefined,
     connectorSlugs: [],
     mcpConnectorSlugs: [],
-    mcpFirewallAuthBySlug: {},
     connectorSourceIdBySlug: {},
     storedEnvironment: undefined,
   };
@@ -3858,55 +3853,6 @@ function connectorSourceIdsBySlug(
   );
 }
 
-function mcpFirewallAuthBySlug(
-  rows: readonly StoredConnectorRuntimeRow[],
-): Readonly<Record<string, Firewall["apis"][number]["auth"]>> {
-  return Object.fromEntries(
-    rows.flatMap((row) => {
-      if (!row.isMcp) {
-        return [];
-      }
-      const grantKind = row.runtimeMethod.method.grant.kind;
-      if (grantKind === "none") {
-        return [[row.connectorSlug, {}]];
-      }
-      if (grantKind === "automatic") {
-        if (row.automaticAuthType === "none") {
-          return [[row.connectorSlug, {}]];
-        }
-        if (row.automaticAuthType !== "oauth") {
-          throw new Error("Missing built-in MCP Automatic auth outcome");
-        }
-        return [[row.connectorSlug, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH]];
-      }
-      const secretBindings = connectorAuthMethodRuntimeMetadata(
-        row.runtimeMethod.method,
-      ).runtimeBindings.filter((binding) => {
-        return binding.source.kind === "connector-secret";
-      });
-      const [binding] = secretBindings;
-      if (binding === undefined || secretBindings.length !== 1) {
-        throw new Error(
-          "Built-in MCP credential auth requires exactly one secret binding",
-        );
-      }
-      return [
-        [
-          row.connectorSlug,
-          {
-            headers: {
-              Authorization: [
-                "Bearer $",
-                `{{ secrets.${binding.envName} }}`,
-              ].join(""),
-            },
-          },
-        ],
-      ];
-    }),
-  );
-}
-
 function resolveStoredConnectorSecrets(
   bindingSets: readonly ConnectorEnvBindingSet[],
   connectorSecrets: Record<string, string>,
@@ -4015,7 +3961,6 @@ function storedConnectorContextFromSnapshot(
     mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
       return row.isMcp ? [row.connectorSlug] : [];
     }),
-    mcpFirewallAuthBySlug: mcpFirewallAuthBySlug(snapshot.allowedConnectorRows),
     connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
     storedEnvironment: undefined,
   };
@@ -4097,9 +4042,6 @@ async function materializeStoredConnectorContext(
         mcpConnectorSlugs: snapshot.allowedConnectorRows.flatMap((row) => {
           return row.isMcp ? [row.connectorSlug] : [];
         }),
-        mcpFirewallAuthBySlug: mcpFirewallAuthBySlug(
-          snapshot.allowedConnectorRows,
-        ),
         connectorSourceIdBySlug: connectorSourceIdsBySlug(snapshot.bindingSets),
         storedEnvironment: compactRecord(resolved.environment),
       });
@@ -5507,32 +5449,6 @@ function inlineFirewallEntry(
   return { kind: "inline", firewall: runtimeFirewall(firewall) };
 }
 
-function builtinMcpInlineFirewallEntry(args: {
-  readonly metadata: ConnectorServerFirewallExecutionMetadata;
-  readonly sourceId: string;
-  readonly auth: Firewall["apis"][number]["auth"];
-}): ExecutionFirewallEntry {
-  const [base] = args.metadata.fixedBaseUrls;
-  if (base === undefined || args.metadata.fixedBaseUrls.length !== 1) {
-    throw new Error("Built-in MCP connector must have one fixed endpoint");
-  }
-  return {
-    kind: "inline",
-    sourceId: args.sourceId,
-    firewall: {
-      name: args.metadata.connectorSlug,
-      apis: [
-        {
-          id: `${args.metadata.connectorSlug}:0`,
-          base,
-          auth: args.auth,
-          permissions: [],
-        },
-      ],
-    },
-  };
-}
-
 function customConnectorInlineFirewallEntry(
   firewall: ExpandedFirewallConfig,
   customConnectorIdByFirewallName: Readonly<Record<string, string>>,
@@ -5681,9 +5597,6 @@ function applyBuiltinConnectorMetadataPolicies(
   policies: FirewallPolicies | undefined,
   vars: Record<string, string> | undefined,
   connectorSourceIdBySlug: Readonly<Record<string, string>>,
-  mcpFirewallAuthBySlug: Readonly<
-    Record<string, Firewall["apis"][number]["auth"]>
-  >,
 ): PermissionManifest {
   const firewalls: ExecutionFirewalls = [];
   const networkPolicies: NetworkPolicies = {};
@@ -5701,23 +5614,9 @@ function applyBuiltinConnectorMetadataPolicies(
     if (sourceId === undefined) {
       throw new Error("Missing built-in connector source identity");
     }
-    if (source.isMcp) {
-      const auth = mcpFirewallAuthBySlug[name];
-      if (auth === undefined) {
-        throw new Error("Missing built-in MCP connector account auth");
-      }
-      firewalls.push(
-        builtinMcpInlineFirewallEntry({
-          metadata: source.metadata,
-          sourceId,
-          auth,
-        }),
-      );
-    } else {
-      firewalls.push(
-        builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
-      );
-    }
+    firewalls.push(
+      builtinFirewallEntryForMetadata(source.metadata, vars, sourceId),
+    );
     if (!source.isMcp) {
       Object.assign(
         environmentSecretPlaceholders,
@@ -5746,18 +5645,8 @@ function applyBuiltinConnectorMetadataPolicies(
 function builtinRuntimeTargetRegistration(
   firewall: ExecutionFirewallEntry,
 ): BuiltinRuntimeTargetRegistration {
-  if (firewall.kind === "inline") {
-    if (
-      firewall.customConnectorId !== undefined ||
-      firewall.sourceId === undefined
-    ) {
-      throw new Error("Built-in inline firewall is missing source identity");
-    }
-    return {
-      kind: "builtin",
-      connectorSlug: connectorSlugSchema.parse(firewall.firewall.name),
-      sourceId: firewall.sourceId,
-    };
+  if (firewall.kind !== "builtin") {
+    throw new Error("Builtin connector manifest contains an inline firewall");
   }
   return {
     kind: "builtin",
@@ -5835,9 +5724,6 @@ interface BuildPermissionManifestArgs {
   readonly connectorVars?: Record<string, string>;
   readonly connectorSlugs?: readonly ConnectorSlug[];
   readonly connectorSourceIdBySlug?: Readonly<Record<string, string>>;
-  readonly mcpFirewallAuthBySlug?: Readonly<
-    Record<string, Firewall["apis"][number]["auth"]>
-  >;
   readonly customConnectorFirewalls?: readonly ExpandedFirewallConfig[];
   readonly customConnectorPermissionPolicies?: FirewallPolicies;
   readonly customConnectorIdByFirewallName?: Readonly<Record<string, string>>;
@@ -5898,7 +5784,6 @@ async function buildPermissionManifest(
           args.permissionPolicies,
           connectorBaseUrlVars,
           args.connectorSourceIdBySlug ?? {},
-          args.mcpFirewallAuthBySlug ?? {},
         ),
       );
     },
@@ -6885,14 +6770,6 @@ function piLangfuseExecutionEnvironment(args: {
   };
 }
 
-function builtinMcpInlineFirewallRequirement(
-  connectorContext: BuiltinConnectorRuntimeContext,
-): { readonly requiresBuiltinMcpInlineFirewall?: true } {
-  return connectorContext.mcpConnectorSlugs.length === 0
-    ? {}
-    : { requiresBuiltinMcpInlineFirewall: true };
-}
-
 async function buildStoredExecutionContextDraft(args: {
   readonly runId: string;
   readonly userId: string;
@@ -7008,7 +6885,6 @@ async function buildStoredExecutionContextDraft(args: {
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
       connectorRuntimeTargets,
-      ...builtinMcpInlineFirewallRequirement(args.connectorContext),
       connectorPermissionBaseline: permissions?.connectorPermissionBaseline,
       disallowedTools: args.body.disallowedTools,
       tools: args.body.tools,
@@ -9931,8 +9807,6 @@ async function buildPreparedPermissionManifest(args: {
       connectorSlugs: args.storedConnectorMetadataContext.connectorSlugs,
       connectorSourceIdBySlug:
         args.storedConnectorMetadataContext.connectorSourceIdBySlug,
-      mcpFirewallAuthBySlug:
-        args.storedConnectorMetadataContext.mcpFirewallAuthBySlug,
       customConnectorFirewalls: args.customConnectorContext.firewalls,
       customConnectorPermissionPolicies:
         args.customConnectorContext.permissionPolicies,

@@ -72,7 +72,6 @@ export interface ConnectorServerFirewallExecutionBaseUrlTemplate {
 export interface ConnectorServerFirewallExecutionMetadata {
   readonly connectorSlug: ConnectorSlug;
   readonly billable: boolean;
-  readonly fixedBaseUrls: readonly string[];
   readonly baseUrlVarNames: readonly string[];
   readonly baseUrlTemplates: readonly ConnectorServerFirewallExecutionBaseUrlTemplate[];
   readonly secretPlaceholderNames: readonly string[];
@@ -372,9 +371,6 @@ function acceptedExecutionMetadata(args: {
   return {
     connectorSlug: args.firewall.connectorSlug,
     billable: args.firewall.billable,
-    fixedBaseUrls: args.routing.apis.flatMap((api) => {
-      return api.base.includes("${{") ? [] : [api.base];
-    }),
     baseUrlVarNames: args.routing.baseUrlVarNames,
     baseUrlTemplates: acceptedBaseUrlTemplates({
       firewall: args.firewall,
@@ -415,42 +411,6 @@ function acceptedRoutingMetadata(args: {
   };
 }
 
-function acceptedServerFirewall(
-  connector: ConnectorCatalogArtifactConnector,
-): AcceptedServerFirewall | null {
-  if (connector.mcp !== undefined) {
-    return {
-      connectorSlug: connector.slug,
-      label: connector.label,
-      billable: false,
-      firewall: {
-        name: connector.slug,
-        apis: [
-          {
-            base: connector.mcp.endpoint,
-            auth: {},
-            permissions: [],
-          },
-        ],
-      },
-      defaultAllowed: null,
-      defaultUnknownPolicy: "allow",
-    };
-  }
-  const firewall = connectorCatalogFirewallConfig(connector);
-  if (firewall === null || connector.firewall.kind === "none") {
-    return null;
-  }
-  return {
-    connectorSlug: connector.slug,
-    label: connector.label,
-    billable: connector.firewall.billable,
-    firewall,
-    defaultAllowed: connector.firewall.defaultAllowed,
-    defaultUnknownPolicy: connector.firewall.defaultUnknownPolicy,
-  };
-}
-
 function acceptedEntries(args: {
   readonly connectors: readonly ConnectorCatalogArtifactConnector[];
   readonly runtimeMethodsForSlug: (
@@ -462,7 +422,7 @@ function acceptedEntries(args: {
     AcceptedConnectorServerFirewallEntry
   >();
   for (const connector of args.connectors) {
-    if (acceptedServerFirewall(connector) === null) {
+    if (connector.firewall.kind === "none") {
       continue;
     }
     if (entries.has(connector.slug)) {
@@ -493,12 +453,20 @@ function acceptedEntryFirewall(
     return entry.firewall;
   }
   const connector = entry.connector;
-  const accepted = acceptedServerFirewall(connector);
-  if (accepted === null) {
+  const firewall = connectorCatalogFirewallConfig(connector);
+  if (firewall === null || connector.firewall.kind === "none") {
     throw new Error(
       `Accepted connector server firewall is missing: ${connector.slug}`,
     );
   }
+  const accepted = {
+    connectorSlug: connector.slug,
+    label: connector.label,
+    billable: connector.firewall.billable,
+    firewall,
+    defaultAllowed: connector.firewall.defaultAllowed,
+    defaultUnknownPolicy: connector.firewall.defaultUnknownPolicy,
+  };
   entry.firewall = accepted;
   return accepted;
 }

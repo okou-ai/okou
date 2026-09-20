@@ -1,5 +1,4 @@
 import {
-  BUILTIN_MCP_INLINE_FIREWALL_HEADER,
   NATIVE_GPT_6_SOL_HEADER,
   claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -827,11 +826,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     eq(agentRuns.status, "pending"),
   ];
 
-  if (get(request$).header(BUILTIN_MCP_INLINE_FIREWALL_HEADER) !== "1") {
-    whereConditions.push(sql`(
-      ${runnerJobQueue.executionContext}->>'requiresBuiltinMcpInlineFirewall'
-    )::boolean IS NOT TRUE`);
-  }
   if (get(request$).header(NATIVE_GPT_6_SOL_HEADER) !== "1") {
     // Filter before the bounded candidate lookup so an unsupported Sol job
     // cannot hide existing models behind it from an older Runner.
@@ -2697,7 +2691,6 @@ async function resolveStoredExecutionContextForClaim(
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
-    readonly supportsBuiltinMcpInlineFirewall: boolean;
     readonly supportsNativeGpt6Sol: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
@@ -2728,15 +2721,6 @@ async function resolveStoredExecutionContextForClaim(
     };
   }
   const storedContext = storedContextResult.data;
-  if (
-    storedContext.requiresBuiltinMcpInlineFirewall === true &&
-    !args.supportsBuiltinMcpInlineFirewall
-  ) {
-    return {
-      compatible: false as const,
-      response: notFound("Job not found in queue"),
-    };
-  }
   const nativeModel = storedContext.environment?.OPENAI_MODEL;
   if (
     !args.supportsNativeGpt6Sol &&
@@ -2782,21 +2766,23 @@ async function resolveStoredExecutionContextForClaim(
   };
 }
 
-interface ClaimAuthorizedJobArgs {
-  readonly db: Db;
-  readonly runId: string;
-  readonly authType: RunnerAuthContext["type"];
-  readonly runnerAttribution: RunnerClaimAttribution | undefined;
-  readonly capabilities: RunnerClaimCapabilities;
-  readonly supportsBuiltinMcpInlineFirewall: boolean;
-  readonly supportsNativeGpt6Sol: boolean;
-  readonly jobWithRun: ClaimableJob;
-  readonly telemetry: ClaimTimingTelemetry | undefined;
-  readonly claimRequestStartedAtMs: number;
-  readonly claimRouteTiming: ClaimRouteTimingCollector;
-}
 const claimAuthorizedJob$ = command(
-  async ({ set }, args: ClaimAuthorizedJobArgs, signal: AbortSignal) => {
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly runId: string;
+      readonly authType: RunnerAuthContext["type"];
+      readonly runnerAttribution: RunnerClaimAttribution | undefined;
+      readonly capabilities: RunnerClaimCapabilities;
+      readonly supportsNativeGpt6Sol: boolean;
+      readonly jobWithRun: ClaimableJob;
+      readonly telemetry: ClaimTimingTelemetry | undefined;
+      readonly claimRequestStartedAtMs: number;
+      readonly claimRouteTiming: ClaimRouteTimingCollector;
+    },
+    signal: AbortSignal,
+  ) => {
     const { db, runId, jobWithRun, claimRouteTiming } = args;
     const run = jobWithRun.run;
 
@@ -2808,7 +2794,6 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
-        supportsBuiltinMcpInlineFirewall: args.supportsBuiltinMcpInlineFirewall,
         supportsNativeGpt6Sol: args.supportsNativeGpt6Sol,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
@@ -2971,8 +2956,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
-      supportsBuiltinMcpInlineFirewall:
-        get(request$).header(BUILTIN_MCP_INLINE_FIREWALL_HEADER) === "1",
       supportsNativeGpt6Sol:
         get(request$).header(NATIVE_GPT_6_SOL_HEADER) === "1",
       jobWithRun,

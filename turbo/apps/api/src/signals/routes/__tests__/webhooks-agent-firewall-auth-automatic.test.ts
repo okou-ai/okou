@@ -26,9 +26,14 @@ const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 
 describe("builtin Automatic firewall credential destinations", () => {
-  it.each(["before auth", "while auth waits", "during refresh"] as const)(
-    "rejects a stale MCP endpoint when the catalog changes %s without runtime sync",
-    async (timing) => {
+  it.each([
+    ["endpoint", "before auth"],
+    ["endpoint", "while auth waits"],
+    ["endpoint", "during refresh"],
+    ["auth", "during refresh"],
+  ] as const)(
+    "rejects a stale catalog %s when the catalog changes %s without runtime sync",
+    async (changedContract, timing) => {
       mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
       mockEnv("APP_URL", "https://app.okou.ai");
       mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -137,18 +142,11 @@ describe("builtin Automatic firewall credential destinations", () => {
           await runs.heartbeatRunner(runnerGroup);
           const claim = await runs.claimRunnerJob(run.runId);
           const builtin = claim.firewalls?.find((entry) => {
-            return (
-              entry.kind === "inline" && entry.firewall.name === catalog.slug
-            );
+            return entry.kind === "builtin" && entry.name === catalog.slug;
           });
-          if (builtin?.kind !== "inline") {
-            throw new Error("Expected the builtin Automatic inline firewall");
+          if (builtin?.kind !== "builtin") {
+            throw new Error("Expected the builtin Automatic firewall");
           }
-          const runtimeApi = builtin.firewall.apis[0];
-          if (!runtimeApi) {
-            throw new Error("Expected the builtin Automatic runtime API");
-          }
-          const runtimeAuthHeaders = runtimeApi.auth.headers ?? {};
           const originalBase = catalog.endpoint;
           const nextEndpoint = "https://replacement-mcp.example.test/server";
           const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
@@ -158,7 +156,7 @@ describe("builtin Automatic firewall credential destinations", () => {
               {
                 encryptedSecrets:
                   claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-                authHeaders: runtimeAuthHeaders,
+                authHeaders: catalog.firewallAuthHeaders,
                 forceRefresh,
                 matchedFirewall: {
                   name: catalog.slug,
@@ -175,8 +173,9 @@ describe("builtin Automatic firewall credential destinations", () => {
           async function updateCatalog() {
             await installAutomaticMcpCatalog({
               ...catalog,
-              endpoint: nextEndpoint,
-              firewallAuth: "oauth",
+              endpoint:
+                changedContract === "endpoint" ? nextEndpoint : originalBase,
+              firewallAuth: changedContract === "auth" ? "none" : "oauth",
               isolateSource: false,
             });
           }
@@ -238,6 +237,14 @@ describe("builtin Automatic firewall credential destinations", () => {
           } else {
             await updateCatalog();
           }
+          if (changedContract === "auth") {
+            await installAutomaticMcpCatalog({
+              ...catalog,
+              endpoint: nextEndpoint,
+              firewallAuth: "oauth",
+              isolateSource: false,
+            });
+          }
           if (timing !== "before auth") {
             const retained = await accept(
               accounts.connection({
@@ -259,7 +266,7 @@ describe("builtin Automatic firewall credential destinations", () => {
             initialExpiresIn: 3600,
           });
           // The account commits even when notification delivery fails. Keep using
-          // the Run's inline firewall auth without calling runtime sync.
+          // the catalog firewall auth without calling runtime sync.
           context.mocks.ably.batchPublish.mockRejectedValue(
             new Error("Wakeup unavailable"),
           );
@@ -424,16 +431,10 @@ describe("builtin Automatic firewall credential destinations", () => {
         await runs.heartbeatRunner(runnerGroup);
         const claim = await runs.claimRunnerJob(run.runId);
         const builtin = claim.firewalls?.find((entry) => {
-          return (
-            entry.kind === "inline" && entry.firewall.name === catalog.slug
-          );
+          return entry.kind === "builtin" && entry.name === catalog.slug;
         });
-        if (builtin?.kind !== "inline") {
-          throw new Error("Expected the builtin Automatic inline firewall");
-        }
-        const runtimeApi = builtin.firewall.apis[0];
-        if (!runtimeApi) {
-          throw new Error("Expected the builtin Automatic runtime API");
+        if (builtin?.kind !== "builtin") {
+          throw new Error("Expected the builtin Automatic firewall");
         }
         const authHeaders = {
           authorization: `Bearer ${claim.sandboxToken}`,
@@ -441,7 +442,7 @@ describe("builtin Automatic firewall credential destinations", () => {
         const body = {
           encryptedSecrets:
             claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
-          authHeaders: runtimeApi.auth.headers ?? {},
+          authHeaders: catalog.firewallAuthHeaders,
           forceRefresh: true,
           matchedFirewall: {
             name: catalog.slug,
