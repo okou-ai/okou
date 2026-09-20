@@ -114,6 +114,7 @@
         "time": "Time"
       },
       "log": "Log",
+      "manualReloadNotice": "Reload this page to see the latest activity logs.",
       "modelProvidedBy": "{{model}} provided by {{provider}}",
       "networkEmpty": {
         "description": "No network traffic was recorded for this run.",
@@ -444,6 +445,7 @@
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
       "signedInAs": "Signed in as {{email}}",
+      "signedInDescription": "It may not exist, or it may be shared with a different account or organization.",
       "signIn": "Sign in",
       "signInFailed": "Could not open sign-in. Please try again.",
       "switchAccount": "Switch account",
@@ -504,7 +506,7 @@
       "description": "Browse everything you have created here.",
       "emptyDescription": "Artifacts will appear here when they are available.",
       "emptyTitle": "No artifacts found",
-      "error": "Could not load artifacts. Try again later.",
+      "error": "Could not load artifacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Show avatar artifacts",
@@ -523,7 +525,8 @@
         "websiteAria": "Show website artifacts"
       },
       "kindIcon": "{{kind}} artifact",
-      "loading": "Loading artifacts"
+      "loading": "Loading artifacts",
+      "retry": "Try again"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -602,6 +605,7 @@
       "onlyMeDescription": "Only you can view this artifact",
       "organization": "Organization",
       "organizationDescription": "Anyone in {{organization}} with the link",
+      "organizationDescriptionUnnamed": "Anyone in your organization with the link",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
       "publicDescription": "Anyone with the link can view",
@@ -645,7 +649,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import your own file",
       "importFileHint": "Reuse your file's design",
-      "importUnsupported": "Choose a {{formats}} file to make a template.",
       "multiAccent": "Multi-accent",
       "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
@@ -657,7 +660,6 @@
       "previewSlide": "Preview slide {{slideNumber}}",
       "previewVoice": "Preview voice {{title}}",
       "previewWebsite": "Preview website template {{title}}",
-      "previousHtmlPreview": "{{title}} previous HTML preview",
       "previousSlide": "Preview previous slide",
       "recommended": "Recommended",
       "renameImportedTemplate": "Rename template",
@@ -1445,7 +1447,9 @@
           },
           "connector": {
             "confirm": "Browse all connectors",
-            "description": "Connect one of your tools so {{assistantName}} can work in it.",
+            "connected": "Connected",
+            "description": "Pick one and {{assistantName}} starts working in it.",
+            "notConnected": "Not connected",
             "pickerFailed": "Connectors could not be loaded. Open the connectors page to try again.",
             "pickerLoading": "Loading connectors…",
             "title": "{{assistantName}} works inside the tools you already use"
@@ -2184,7 +2188,7 @@
             "prompt": "Help me create a logo concept for my business. Start with the business name, what it does, and the impression I want to make."
           },
           "cafeMenu": {
-            "label": "Design a menu for my café",
+            "label": "Design a menu for my café counter",
             "prompt": "Design a menu visual for my café. Use the items, prices, and brand details I provide, with clear readable sections."
           },
           "eventPoster": {
@@ -2200,7 +2204,7 @@
             "prompt": "Design a greeting card for someone I know. Help me choose a personal message and visual style for the occasion."
           },
           "headshot": {
-            "label": "Make a headshot for work",
+            "label": "Make a headshot I can use at work",
             "prompt": "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting."
           },
           "infographic": {
@@ -2228,11 +2232,11 @@
             "prompt": "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent."
           },
           "profileBanner": {
-            "label": "Refresh my profile banner",
+            "label": "Refresh the banner on my profile",
             "prompt": "Create a profile banner that represents my work. Help me choose a message, style, and composition for the platform I use."
           },
           "roomDesign": {
-            "label": "Try a new look for my room",
+            "label": "Try a new look for a room at home",
             "prompt": "Help me visualize a different look for my room from a photo. Keep the room layout recognizable and explore furniture, colors, and decor."
           },
           "storePhoto": {
@@ -2246,35 +2250,35 @@
         },
         "presentation": {
           "clientProposal": {
-            "label": "Write a proposal for a client",
+            "label": "Write a proposal for a client project",
             "prompt": "Create a client proposal deck. Ask me about the client, the work I am proposing, the timeline, and the price."
           },
           "companyOverview": {
-            "label": "Explain what my company does",
+            "label": "Explain what my company does to a newcomer",
             "prompt": "Create a company overview deck. Ask me what we do, who we serve, and what the audience should remember."
           },
           "eventTalk": {
-            "label": "Prepare a talk for an event",
+            "label": "Prepare a talk for an upcoming event",
             "prompt": "Build a deck for a talk I am giving. Ask me about the event, the audience, and the one idea I want to land."
           },
           "pitchDeck": {
-            "label": "Pitch my business to investors",
+            "label": "Pitch my new business to a room of investors",
             "prompt": "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising."
           },
           "productIntro": {
-            "label": "Introduce a new product",
+            "label": "Introduce a new product to our customers",
             "prompt": "Create a deck introducing a new product. Ask me what it does, who it is for, and what makes it different."
           },
           "resultsReadout": {
-            "label": "Present my results",
+            "label": "Present this quarter’s results to the team",
             "prompt": "Turn my results into a readout deck. Ask me for the numbers, the period they cover, and the decision they support."
           },
           "teamUpdate": {
-            "label": "Put together a team update",
+            "label": "Put together this week’s team update",
             "prompt": "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room."
           },
           "training": {
-            "label": "Teach something to my team",
+            "label": "Teach my team how something works",
             "prompt": "Build a training deck on a topic I choose. Ask me who is being trained and what they should be able to do afterwards."
           }
         },
@@ -2322,15 +2326,15 @@
             "prompt": "Build a website that explains my business, services, and how to contact me. Start with my business details and audience."
           },
           "cafeMenu": {
-            "label": "Put my café menu online",
+            "label": "Put my café menu online for guests",
             "prompt": "Create a café website with my menu, prices, opening hours, and location. Use the details and photos I provide."
           },
           "coursePage": {
-            "label": "Create a page for my course",
+            "label": "Create a page that sells my course",
             "prompt": "Create a page introducing my course, who it is for, what learners will gain, and how to sign up using my registration link."
           },
           "eventPage": {
-            "label": "Create a page for my event",
+            "label": "Create a page for an event I am running",
             "prompt": "Create an event page with the date, location, agenda, and registration link I provide. Ask for any missing details."
           },
           "linkPage": {
@@ -2342,7 +2346,7 @@
             "prompt": "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details."
           },
           "productLaunch": {
-            "label": "Launch a page for my product",
+            "label": "Launch a page for my new product",
             "prompt": "Create a landing page for my product with its benefits, visuals, and a clear next step. Ask what I am launching and who it is for."
           }
         },
@@ -3152,7 +3156,6 @@
       "device": {
         "checking": "Checking for approval...",
         "connect": "Connect {{connector}}",
-        "copyThenOpen": "Copy this code, then open the verification page to approve access.",
         "description": "Open the provider's verification page, then enter this verification code to approve access.",
         "intro": "Connect to get a verification code, then use it on the provider's verification page to approve access.",
         "openPage": "Open verification page",
@@ -3479,21 +3482,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Authorized sender",
+        "codeExpiry": "Expires in 10 minutes",
         "connectAria": "Connect phone",
-        "connectDescription": "Message this AgentPhone number from the phone you want to connect.",
+        "connectDescription": "Scan the code or open Messages, then send the prefilled code.",
         "connectTitle": "Connect phone",
         "copyAria": "Copy {{phone}}",
+        "copyCodeAria": "Copy connection code {{code}}",
+        "copyCodeError": "Failed to copy connection code",
+        "copyCodeSuccess": "Connection code copied",
         "copyError": "Failed to copy phone number",
         "copySuccess": "Phone number copied",
+        "createCodeError": "Couldn't create a connection code. Try again.",
+        "creatingCode": "Creating connection code…",
         "description": "Text-message access to {{assistantName}}",
         "destination": "iMessage or SMS to",
-        "messageInstruction": "Send “hi”",
+        "manualSend": "or send",
+        "manualSendTo": "to",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
-        "replyInstruction": "Tap the connection link within 10 minutes to finish.",
-        "replyTitle": "Open our reply",
-        "risk": "Use iMessage when possible. SMS and MMS replies may not arrive reliably."
+        "qrTitle": "Scan to open Messages with the connection code ready",
+        "risk": "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
+        "tryAgain": "Try again"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -4130,6 +4140,489 @@
       "checkingPlan": "Checking plan",
       "runNow": "Run now",
       "upgradePro": "Upgrade Pro to run"
+    },
+    "sourcesFirst": {
+      "common": {
+        "back": "Back",
+        "cancel": "Cancel",
+        "continue": "Continue",
+        "finish": "Finish setup",
+        "notNow": "Not now",
+        "skip": "Skip for now"
+      },
+      "documentTitles": {
+        "experience": "Your AI experience",
+        "industry": "Choose your field",
+        "ready": "Okou is ready",
+        "skills": "Import your skills",
+        "slack": "Add Okou to Slack",
+        "sources": "Connect your work",
+        "team": "Invite a teammate"
+      },
+      "experience": {
+        "copy": "Connect the plan you already pay for and your work runs there, not on Okou credits.",
+        "no": "No, I’m new to this",
+        "noCopy": "Okou picks a first task for you.",
+        "title": "Have you used Codex or Claude Code?"
+      },
+      "industries": {
+        "coaching": {
+          "name": "Coaching & training",
+          "summary": "Coaching, courses & training"
+        },
+        "consulting": {
+          "name": "Independent consulting",
+          "summary": "Business, HR & IT advisory"
+        },
+        "design": {
+          "name": "Design & creative",
+          "summary": "Graphics, websites & creative work"
+        },
+        "finance": {
+          "name": "Accounting & bookkeeping",
+          "summary": "Books, reports & reconciliation"
+        },
+        "investing": {
+          "name": "Investment & market research",
+          "summary": "Investments, markets & portfolios"
+        },
+        "marketing": {
+          "name": "Marketing & content",
+          "summary": "Social media, content & brand"
+        },
+        "operations": {
+          "name": "Business & operations",
+          "summary": "Business owners, assistants & operators"
+        },
+        "other": {
+          "name": "Other / still exploring",
+          "summary": "A different field, or still exploring"
+        },
+        "research": {
+          "name": "Research & learning",
+          "summary": "Research, study & learning"
+        },
+        "sales": {
+          "name": "Sales & customer development",
+          "summary": "Prospecting, sales & client growth"
+        },
+        "software": {
+          "name": "Software & apps",
+          "summary": "Apps, games & development"
+        }
+      },
+      "industry": {
+        "copy": "Okou uses this to pick your first task and the sources it starts from.",
+        "title": "What kind of work do you do?"
+      },
+      "skills": {
+        "confirm": "Import and continue",
+        "copy": "Import a SKILL.md and it becomes a workflow in Okou, ready to run with /.",
+        "import": "Choose a file",
+        "importedCopy": "Imported as an Okou workflow.",
+        "importedTitle": "Your workflow is ready",
+        "panelCopy": "From Codex, Claude Code, or any agent that writes one.",
+        "panelTitle": "Drop a SKILL.md here",
+        "previewCopy": "Imported as an Okou workflow. Only you can use it until you share it.",
+        "previewTitle": "Review your skill",
+        "replace": "Choose another file",
+        "title": "Bring the skills you already wrote."
+      },
+      "slack": {
+        "add": "Add to Slack",
+        "connectedCopy": "Open Slack and mention @Okou to give it a task.",
+        "connectedStatus": "Added to your workspace",
+        "connectedTitle": "Slack is connected",
+        "copy": "Add it once, then mention @Okou where the work already happens.",
+        "otherAdded": "Added",
+        "otherImessage": "iMessage",
+        "othersLabel": "Add these later, or now",
+        "otherTeams": "Teams",
+        "otherTelegram": "Telegram",
+        "previewAppBadge": "APP",
+        "previewAsk": "pull last week’s signups by source, reconcile them with the ads account, and put the table in a sheet.",
+        "previewAskAuthor": "Mia Chen",
+        "previewChannel": "# growth",
+        "previewChannelGeneral": "# general",
+        "previewChannelLaunch": "# launch",
+        "previewChannelsLabel": "Channels",
+        "previewChannelTopic": "Weekly numbers and what we ship next",
+        "previewComposer": "Message #growth",
+        "previewContext": "Board call is Thursday and I still owe them last week’s numbers.",
+        "previewContextAuthor": "Dan Rivera",
+        "previewContextTime": "9:06 AM",
+        "previewDirectMessagesLabel": "Direct messages",
+        "previewMention": "@Okou",
+        "previewReplies": "3 replies",
+        "previewReply": "1,284 signups last week, up 18% from 1,088. The sheet is in the thread.",
+        "previewReplyAuthor": "Okou",
+        "previewReplyTime": "9:16 AM",
+        "previewTime": "9:14 AM",
+        "previewWorkspace": "Northwind",
+        "rowCopy": "Works in any channel you add it to.",
+        "rowTitle": "Okou for Slack",
+        "title": "Give Okou a job without leaving Slack."
+      },
+      "sources": {
+        "copy": "It works in the cloud, from the tools your team already uses. 10x the output, less operational friction, lower cost. Connect one source to start.",
+        "note": "You choose which accounts to connect.",
+        "searchAction": "Find a source for your work",
+        "searchCopy": "Search the full catalog by task or app name.",
+        "searchEmpty": "No matching sources",
+        "searchPlaceholder": "Search by task or app name",
+        "searchTitle": "Find a source for your work",
+        "title": "Okou is for you, and shared across your whole team."
+      },
+      "startingPrompt": {
+        "exact": {
+          "finance_quickbooks": {
+            "outcome": "Your month-end picture",
+            "question": "Which company and reporting month should I use?",
+            "text": "Summarize last month’s income, expenses, and overdue invoices in QuickBooks. Give me a short list of items to check."
+          },
+          "finance_xero": {
+            "outcome": "Your month-end picture",
+            "question": "Which organization and reporting month should I use?",
+            "text": "Summarize last month’s income, expenses, and overdue invoices in Xero. Give me a short list of items to check."
+          },
+          "marketing_google_ads": {
+            "outcome": "Three ideas for your next campaign test",
+            "question": "Which account, campaign, and goal should I focus on?",
+            "text": "Review last week’s Google Ads results and suggest three things to investigate or test next. Keep any changes as recommendations."
+          },
+          "marketing_google_analytics": {
+            "outcome": "Three opportunities in your traffic",
+            "question": "Which property and conversion goal should I use?",
+            "text": "Review last week’s traffic in Google Analytics and suggest three opportunities to improve my content or landing pages."
+          },
+          "marketing_google_search_console": {
+            "outcome": "Five content updates to work on",
+            "question": "Which site and time period should I focus on?",
+            "text": "Review my recent Google Search Console results and suggest five content updates based on search queries and pages."
+          },
+          "marketing_meta_ads": {
+            "outcome": "Three ideas for your next creative test",
+            "question": "Which campaigns and audience should I focus on?",
+            "text": "Review last week’s Meta Ads results and suggest three creative ideas to test next. Keep any changes as recommendations."
+          },
+          "marketing_tiktok_ads": {
+            "outcome": "Three ideas for your next creative test",
+            "question": "Which campaigns and audience should I focus on?",
+            "text": "Review last week’s TikTok Ads results and suggest three creative ideas to test next. Keep any changes as recommendations."
+          },
+          "marketing_youtube": {
+            "outcome": "Five ideas for your next videos",
+            "question": "Which channel and videos should we review?",
+            "text": "Review my recent YouTube videos and suggest five follow-up topics based on the available performance and audience feedback."
+          },
+          "sales_google_contacts": {
+            "outcome": "People to reconnect with",
+            "question": "What kind of prospect would you like to reconnect with?",
+            "text": "Review my Google Contacts and help me shortlist people to reconnect with for my sales work. Ask me what a good prospect looks like."
+          },
+          "sales_hubspot": {
+            "outcome": "Five deals to move forward",
+            "question": "Which pipeline or deal owner should I focus on?",
+            "text": "Review my open HubSpot deals and suggest five follow-ups to focus on this week, with a reason for each."
+          },
+          "software_github": {
+            "outcome": "Release notes your customers can use",
+            "question": "Which repository and release should we start with?",
+            "text": "Turn last week’s changes in GitHub into clear release notes for customers. Ask me which repository to use."
+          },
+          "software_linear": {
+            "outcome": "Your project progress, in one place",
+            "question": "Which Linear project should I focus on?",
+            "text": "Summarize the current work in Linear into shipped items, blockers, and the next priorities. Ask me which project to use."
+          }
+        },
+        "fallback": {
+          "calendar": {
+            "outcome": "Your upcoming meetings, prepared",
+            "question": "Which calendar and meetings should we prepare for?",
+            "text": "Review my upcoming {{short}} meetings in {{source}} and draft a short preparation checklist. Ask me which calendar to use."
+          },
+          "generic": {
+            "outcome": "A useful first task with {{source}}",
+            "question": "What would you like to achieve with this source?",
+            "text": "Help me use {{source}} for my {{short}} work. Ask what I want to achieve, then suggest one useful task using the information available there."
+          },
+          "noSource": {
+            "question": "What would you like me to focus on first?"
+          },
+          "projects": {
+            "outcome": "Your next project priorities",
+            "question": "Which project or workspace should we start with?",
+            "text": "Review my {{short}} work in {{source}} and summarize open tasks, blockers, and next steps. Ask me which project to use."
+          }
+        },
+        "family": {
+          "coaching_calendar": {
+            "outcome": "Your upcoming sessions, prepared",
+            "question": "Which calendar and session goals should we use?",
+            "text": "Look at this week’s coaching sessions in {{source}} and help me prepare an agenda for each one. Ask me about the session goals."
+          },
+          "coaching_documents": {
+            "outcome": "An action plan for your client",
+            "question": "Which session notes should we turn into an action plan?",
+            "text": "Turn session notes in {{source}} into a client action plan with three exercises and a focus for the next session. Ask me which notes to use."
+          },
+          "coaching_email": {
+            "outcome": "Your next session agenda",
+            "question": "Which client should we prepare for?",
+            "text": "Review a coaching client’s recent {{source}} emails and draft a next-session agenda around their questions and goals."
+          },
+          "coaching_sheets": {
+            "outcome": "Your learner check-in list",
+            "question": "Which learner progress tracker should I use?",
+            "text": "Review my learner progress tracker in {{source}} and suggest who needs a check-in and what to cover. Ask me which sheet to use."
+          },
+          "consulting_documents": {
+            "outcome": "A proposal from your client brief",
+            "question": "Which client brief should we turn into a proposal?",
+            "text": "Turn a client brief in {{source}} into a proposal outline with scope, deliverables, and open questions. Ask me which brief to use."
+          },
+          "consulting_email": {
+            "outcome": "Your next client follow-up",
+            "question": "Which client conversation should I use?",
+            "text": "Review my latest client conversation in {{source}} and draft a follow-up with agreed next steps and questions to resolve."
+          },
+          "consulting_sheets": {
+            "outcome": "Your client progress update",
+            "question": "Which client project tracker should we start with?",
+            "text": "Review a client project tracker in {{source}} and draft a short progress update with risks and next steps. Ask me which sheet to use."
+          },
+          "design_documents": {
+            "outcome": "A clear creative direction",
+            "question": "Which project folder or brief should we start with?",
+            "text": "Use a project folder or brief in {{source}} to draft a creative direction, an asset checklist, and next steps. Ask me which project to use."
+          },
+          "design_email": {
+            "outcome": "A brief from client feedback",
+            "question": "Which client conversation should become the brief?",
+            "text": "Turn a recent client conversation in {{source}} into a creative brief with goals, deliverables, and open questions."
+          },
+          "design_sheets": {
+            "outcome": "Your next design priorities",
+            "question": "Which project tracker should I look at?",
+            "text": "Turn my project tracker in {{source}} into a list of design priorities, deadlines, and missing assets. Ask me which sheet to use."
+          },
+          "finance_documents": {
+            "outcome": "Your month-end checklist",
+            "question": "Which month-end notes should I work from?",
+            "text": "Turn my month-end notes in {{source}} into a checklist of missing records, open questions, and client follow-ups. Ask me which notes to use."
+          },
+          "finance_email": {
+            "outcome": "Your missing-records follow-up list",
+            "question": "Which client and reporting period should I focus on?",
+            "text": "Find recent client emails in {{source}} about missing invoices or records and draft a bookkeeping follow-up list."
+          },
+          "finance_sheets": {
+            "outcome": "Your reconciliation review",
+            "question": "Which reconciliation sheet and reporting period should I use?",
+            "text": "Review my reconciliation sheet in {{source}} and flag unmatched records, differences, and items to check. Ask me which sheet to use."
+          },
+          "investing_documents": {
+            "outcome": "Your investment thesis, organized",
+            "question": "Which company or investment notes should we review?",
+            "text": "Turn investment notes in {{source}} into a brief with the thesis, supporting evidence, risks, and open questions. Ask me which notes to use."
+          },
+          "investing_email": {
+            "outcome": "Your latest research, summarized",
+            "question": "Which markets or research emails should I focus on?",
+            "text": "Summarize recent market research emails in {{source}} into key themes, dated sources, and questions to investigate."
+          },
+          "investing_sheets": {
+            "outcome": "What to research next",
+            "question": "Which watchlist and recorded time period should I use?",
+            "text": "Review my watchlist in {{source}}. Flag missing data and changes in the recorded numbers, then suggest three things to research next."
+          },
+          "marketing_documents": {
+            "outcome": "Five posts from your brand brief",
+            "question": "Which brand brief and audience should we start with?",
+            "text": "Turn a brand brief in {{source}} into five social posts for next week. Ask me which brief and audience to use."
+          },
+          "marketing_email": {
+            "outcome": "Five post ideas from customer questions",
+            "question": "Which product or customer conversations should I focus on?",
+            "text": "Find recurring customer questions in my {{source}} emails from the past week and turn them into five social post ideas."
+          },
+          "marketing_sheets": {
+            "outcome": "Five ideas for next week",
+            "question": "Which sheet contains the content results?",
+            "text": "Look at my content results in {{source}} and suggest five posts to try next week. Ask me which sheet to use."
+          },
+          "operations_calendar": {
+            "outcome": "Your week, planned",
+            "question": "Which calendar should we plan around?",
+            "text": "Review this week’s meetings in {{source}} and make a prep list with deadlines and time I should keep free."
+          },
+          "operations_documents": {
+            "outcome": "A process your team can follow",
+            "question": "Which process document should we turn into a checklist?",
+            "text": "Turn a process document in {{source}} into a practical checklist with owners, deadlines, and missing steps. Ask me which process to use."
+          },
+          "operations_email": {
+            "outcome": "What needs your attention today",
+            "question": "Which customer or supplier conversations should I prioritize?",
+            "text": "Summarize today’s customer and supplier emails in {{source}}. Pull out urgent requests, deadlines, and replies I should handle first."
+          },
+          "operations_sheets": {
+            "outcome": "Your next three priorities",
+            "question": "Which operations tracker should we review?",
+            "text": "Review my operations tracker in {{source}} and highlight overdue work, blockers, and the next three priorities. Ask me which sheet to use."
+          },
+          "other_documents": {
+            "outcome": "Your document, distilled",
+            "question": "Which document should we start with?",
+            "text": "Turn a document in {{source}} into a short summary and three useful next steps. Ask me which document to use."
+          },
+          "other_email": {
+            "outcome": "Your inbox priorities",
+            "question": "Which conversations should I focus on?",
+            "text": "Summarize my work emails in {{source}} from today and tell me what needs a reply or a decision."
+          },
+          "other_sheets": {
+            "outcome": "Your progress at a glance",
+            "question": "Which tracker should I review?",
+            "text": "Turn a tracker in {{source}} into a short progress update and a list of what needs attention. Ask me which sheet to use."
+          },
+          "research_documents": {
+            "outcome": "Your research in one page",
+            "question": "Which notes or research topic should I focus on?",
+            "text": "Turn my research notes in {{source}} into a one-page brief with key findings, sources, and unanswered questions. Ask me which notes to use."
+          },
+          "research_email": {
+            "outcome": "Your research discussion, summarized",
+            "question": "Which research conversation should we summarize?",
+            "text": "Turn a research discussion in {{source}} into a summary of findings, references, and open questions. Ask me which conversation to use."
+          },
+          "research_sheets": {
+            "outcome": "Patterns in your research",
+            "question": "Which dataset and research question should we start with?",
+            "text": "Review my research data in {{source}} and summarize patterns, missing information, and questions worth investigating."
+          },
+          "sales_calendar": {
+            "outcome": "Your sales meetings, prepared",
+            "question": "Which sales meetings should we prepare for first?",
+            "text": "Review my upcoming sales meetings in {{source}} and draft a prep checklist for each prospect."
+          },
+          "sales_documents": {
+            "outcome": "Your next sales call, prepared",
+            "question": "Which prospect are we preparing for?",
+            "text": "Turn a prospect brief in {{source}} into discovery questions and a short pitch for my next sales call. Ask me which prospect to use."
+          },
+          "sales_email": {
+            "outcome": "Three follow-ups to move deals forward",
+            "question": "Which prospects or email threads should we start with?",
+            "text": "Review my recent prospect conversations in {{source}} and draft three follow-ups based on their questions and next steps."
+          },
+          "sales_sheets": {
+            "outcome": "Five prospects to follow up with",
+            "question": "Which lead list and customer criteria should I use?",
+            "text": "Review my lead list in {{source}} and shortlist five prospects to follow up with, using the information already in the sheet."
+          },
+          "software_documents": {
+            "outcome": "Your feature, clearly scoped",
+            "question": "Which feature brief should we work from?",
+            "text": "Turn a feature brief in {{source}} into a clear scope, acceptance criteria, and open questions. Ask me which brief to use."
+          },
+          "software_email": {
+            "outcome": "Three feedback themes to investigate",
+            "question": "Which product or customer feedback threads should I use?",
+            "text": "Group recent product feedback in {{source}} into themes and suggest three issues to investigate first."
+          },
+          "software_sheets": {
+            "outcome": "Your release blockers, in one place",
+            "question": "Which bug or release tracker should I review?",
+            "text": "Review a bug or release tracker in {{source}} and summarize blockers, owners, and next steps. Ask me which sheet to use."
+          }
+        },
+        "profile": {
+          "coaching": {
+            "firstTaskPrompt": "Outline a practical training session with learning goals, activities, and a takeaway exercise. Ask me about the learners and topic first.",
+            "firstTaskTitle": "Outline a training session",
+            "short": "coaching & training"
+          },
+          "consulting": {
+            "firstTaskPrompt": "Prepare a sourced brief on a prospective client: business, recent developments, and questions for our first meeting. Ask for the company name.",
+            "firstTaskTitle": "Research a prospective client",
+            "short": "consulting"
+          },
+          "design": {
+            "firstTaskPrompt": "Help me write a creative brief with the audience, message, deliverables, and visual direction. Ask me about the project first.",
+            "firstTaskTitle": "Build a creative brief",
+            "short": "creative work"
+          },
+          "finance": {
+            "firstTaskPrompt": "Help me build a month-end close checklist for my bookkeeping work. Ask about the business and reporting needs first.",
+            "firstTaskTitle": "Prepare a month-end checklist",
+            "short": "accounting"
+          },
+          "investing": {
+            "firstTaskPrompt": "Prepare a company research brief with the business model, recent public filings, key risks, and dated sources. Ask which company to research.",
+            "firstTaskTitle": "Research a company",
+            "short": "investment research"
+          },
+          "marketing": {
+            "firstTaskPrompt": "Compare the public content of three competitors and suggest three angles for my brand. Ask me which brand and audience to focus on.",
+            "firstTaskTitle": "Research my competitors",
+            "short": "marketing"
+          },
+          "operations": {
+            "firstTaskPrompt": "Help me plan my week around priorities, deadlines, and meetings. Ask me what matters most and what is already committed.",
+            "firstTaskTitle": "Plan my working week",
+            "short": "operations"
+          },
+          "other": {
+            "firstTaskPrompt": "Help me turn a work goal into a practical plan with priorities and next steps. Ask me about the goal, deadline, and constraints.",
+            "firstTaskTitle": "Turn a goal into a plan",
+            "short": "work"
+          },
+          "research": {
+            "firstTaskPrompt": "Prepare a research brief with reliable sources, key findings, and open questions. Ask about my topic and what I need to learn.",
+            "firstTaskTitle": "Research a topic",
+            "short": "research"
+          },
+          "sales": {
+            "firstTaskPrompt": "Research businesses that match my ideal customer and make a shortlist with public sources and reasons for fit. Ask me about my offer and target market.",
+            "firstTaskTitle": "Find potential customers",
+            "short": "sales"
+          },
+          "software": {
+            "firstTaskPrompt": "Help me write a feature brief with the user problem, expected behavior, acceptance criteria, and open questions. Ask about the feature first.",
+            "firstTaskTitle": "Write a feature brief",
+            "short": "software"
+          }
+        }
+      },
+      "subscription": {
+        "claudeCode": "Claude Code",
+        "codex": "Codex",
+        "rowCopy": "Runs on your plan, not on Okou credits."
+      },
+      "team": {
+        "copy": "Invite a teammate now, or do it later from the workspace menu.",
+        "invite": "Send invite",
+        "invited": "Invited",
+        "label": "Teammate’s email",
+        "note": "They join this workspace; their own accounts stay theirs.",
+        "panelTitle": "Invite a teammate",
+        "placeholder": "teammate@company.com",
+        "points": {
+          "accounts": "Their connected accounts stay theirs — nothing is shared without them.",
+          "workflows": "Anyone here can run the workflows this workspace already has.",
+          "workspace": "They land in this workspace, with the sources you just connected."
+        },
+        "title": "Bring the people who do this work with you."
+      },
+      "welcome": {
+        "copy": "Start with a first task, picked for the work you just connected.",
+        "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
+        "promptLabel": "Your starting prompt",
+        "start": "Start with Okou",
+        "title": "Okou is ready for you"
+      }
     },
     "templatePicker": {
       "image": {
@@ -5483,7 +5976,7 @@
         "starting": "Starting export"
       },
       "backToAssistant": "Back to {{assistantName}}",
-      "description": "Download the files and text records you created in {{assistantName}}.",
+      "description": "Download your conversations, memory, and the agent and workflow instructions you can access in {{assistantName}}.",
       "documentTitle": "Export data",
       "duration": {
         "soon": "soon"
@@ -5494,11 +5987,12 @@
         "startFailed": "Failed to start export"
       },
       "scope": {
-        "agentInstructions": "Agent instruction documents",
-        "artifactsExcluded": "Artifacts are not included in this export.",
-        "chatMessages": "User and assistant text chat messages",
-        "memoryFiles": "Memory files",
-        "workflowInstructions": "Workflow SKILL.md instructions and files"
+        "agentInstructions": "Instructions for agents you can access",
+        "chatMessages": "Your chat messages",
+        "chatThreads": "Your chat threads",
+        "filesExcluded": "Artifact, attachment, and workflow supporting files are not included.",
+        "memoryFiles": "Your current memory files",
+        "workflowInstructions": "Instructions for workflows you can access"
       },
       "status": {
         "checkingDescription": "Your latest export state will appear here.",
@@ -5957,6 +6451,14 @@
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
         },
+        "morningBriefTrigger": {
+          "description": "Run a real Morning Brief now. It queues your own next run for the ordinary scheduler, which delivers a real brief and a real email within a minute. Triggering before your daily time gives you two briefs that morning.",
+          "failed": "Could not queue the Morning Brief. Try again.",
+          "queued": "Queued. The scheduler delivers the brief within a minute.",
+          "title": "Morning Brief",
+          "trigger": "Run Morning Brief now",
+          "triggering": "Queueing…"
+        },
         "voiceInput": {
           "default": "Default ({{model}})",
           "description": "Choose the model for voice input v2. Speech-to-text models and GPT Audio recordings over 90 seconds use {{model}} for cleanup.",
@@ -6251,33 +6753,33 @@
     "chooseFile": "Choose file",
     "choosePrivateKeyFile": "Choose private key file",
     "cloudflare": {
-      "add": "Add Access configuration",
-      "changed": "This Access configuration changed while you were editing. Review its latest settings before saving your changes.",
+      "add": "Add Cloudflare Access",
+      "changed": "This Cloudflare Access changed while you were editing. Review its latest settings before saving your changes.",
       "clientId": "Service Token Client ID",
       "clientSecret": "Service Token Client Secret",
-      "configuration": "Access configuration",
-      "createNew": "Create new configuration",
-      "delete": "Delete configuration",
-      "deleteHelp": "Delete this unused Access configuration? Its stored Service Token cannot be recovered.",
+      "configuration": "Cloudflare Access",
+      "createNew": "Create new Cloudflare Access",
+      "delete": "Delete Cloudflare Access",
+      "deleteHelp": "Delete this unused Cloudflare Access? Its stored Service Token cannot be recovered.",
       "direct": "Direct",
-      "edit": "Edit Access configuration",
-      "empty": "No Access configurations yet. Add a Service Token to connect to SSH hosts protected by Cloudflare Access.",
-      "inUse": "This Access configuration is used by a host. Review the affected hosts and rebind or delete them first.",
-      "inUseHelp": "Select another Access configuration for these hosts, switch them explicitly to Direct, or delete them before deleting this configuration.",
+      "edit": "Edit Cloudflare Access",
+      "empty": "No Cloudflare Access yet. Add a Service Token to connect to protected SSH hosts.",
+      "inUse": "This Cloudflare Access is used by a host. Review the affected hosts and rebind or delete them first.",
+      "inUseHelp": "Select another Cloudflare Access for these hosts, switch them explicitly to Direct, or delete them before deleting this one.",
       "keepChanges": "Keep my changes with this version",
       "latest": "Latest saved settings",
-      "loadFailed": "Could not load Access configurations. Try again.",
-      "loading": "Loading Access configurations…",
-      "missing": "This Access configuration is no longer available. Select another configuration or create one.",
+      "loadFailed": "Could not load Cloudflare Access. Try again.",
+      "loading": "Loading Cloudflare Access…",
+      "missing": "This Cloudflare Access is no longer available. Select another one or create one.",
       "mode": "Connection",
-      "name": "Configuration name",
+      "name": "Name",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Published hostname",
       "replace": "Replace Service Token",
       "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
-      "select": "Select a configuration",
-      "summary_one": "{{count}} Access configuration configured",
-      "summary_other": "{{count}} Access configurations configured",
+      "select": "Select Cloudflare Access",
+      "summary_one": "{{count}} Cloudflare Access configured",
+      "summary_other": "{{count}} Cloudflare Access configured",
       "title": "Cloudflare Access",
       "tokenHelp": "Use a Service Token allowed by your SSH application's Service Auth policy. This is separate from your SSH login.",
       "unavailable": "Cloudflare Access is not available for this account.",
@@ -6328,7 +6830,7 @@
     "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
-    "description": "Configure SSH hosts for your Agents to execute remote commands.",
+    "description": "Let your agents run commands on remote machines.",
     "displayName": "Display name",
     "edit": "Edit host",
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
@@ -6383,7 +6885,7 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "SSH hosts",
+    "title": "SSH remote access",
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
@@ -6476,7 +6978,6 @@
     "add": "Add host",
     "cancel": "Cancel",
     "close": "Close",
-    "configurationHelp": "Saving a host does not test its connection. Agents choose shared or exclusive mode when starting a session; the VNC server controls admission.",
     "configured": "Configured",
     "credential": {
       "add": "Add credential",
@@ -6498,12 +6999,14 @@
       "select": "Select a credential",
       "sharedHelp_one": "Used by {{count}} host. Password changes affect this host.",
       "sharedHelp_other": "Used by {{count}} hosts. Password changes affect all of them.",
+      "summary_one": "{{count}} credential configured",
+      "summary_other": "{{count}} credentials configured",
       "unused": "Not used by any saved host."
     },
     "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this saved host? Its reusable credential will be kept.",
-    "description": "Let your agents view and control your remote desktops.",
+    "description": "Let your agents view and control remote desktops.",
     "displayName": "Display name",
     "displayNameHint": "e.g. Office desktop",
     "edit": "Edit host",
@@ -6530,7 +7033,6 @@
     "loadingAccess": "Loading Agent access…",
     "manage": "Manage VNC",
     "port": "Port",
-    "refresh": "Refresh",
     "retry": "Retry",
     "save": "Save",
     "saveRecovery": {
@@ -6549,8 +7051,8 @@
       "system": "System certificate authorities",
       "title": "Server certificate trust"
     },
-    "summary_one": "{{count}} configured host",
-    "summary_other": "{{count}} configured hosts",
+    "summary_one": "{{count}} host configured",
+    "summary_other": "{{count}} hosts configured",
     "title": "VNC remote access",
     "unavailable": "VNC is not available in this workspace."
   },

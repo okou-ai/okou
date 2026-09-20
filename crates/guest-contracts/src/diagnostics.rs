@@ -724,6 +724,8 @@ pub enum FailureReason {
     SafetyPolicyRefusal,
     /// The CLI requires reconnecting or re-authentication.
     ReconnectRequired,
+    /// Codex sent an access-program selector unavailable to the account.
+    CodexAccessProgramUnavailable,
     /// The selected model is unsupported for the authenticated provider account.
     UnsupportedModel,
     /// The provider reported a usage limit.
@@ -753,6 +755,7 @@ impl FailureReason {
             Self::ResponseConnectionLost => "response_connection_lost",
             Self::SafetyPolicyRefusal => "safety_policy_refusal",
             Self::ReconnectRequired => "reconnect_required",
+            Self::CodexAccessProgramUnavailable => "codex_access_program_unavailable",
             Self::UnsupportedModel => "unsupported_model",
             Self::UsageLimit => "usage_limit",
         }
@@ -782,6 +785,7 @@ impl From<FailureReason>
             FailureReason::ResponseConnectionLost => Self::ResponseConnectionLost,
             FailureReason::SafetyPolicyRefusal => Self::SafetyPolicyRefusal,
             FailureReason::ReconnectRequired => Self::ReconnectRequired,
+            FailureReason::CodexAccessProgramUnavailable => Self::CodexAccessProgramUnavailable,
             FailureReason::UnsupportedModel => Self::UnsupportedModel,
             FailureReason::UsageLimit => Self::UsageLimit,
         }
@@ -1520,6 +1524,10 @@ mod tests {
             ),
             (FailureReason::SafetyPolicyRefusal, "safety_policy_refusal"),
             (FailureReason::ReconnectRequired, "reconnect_required"),
+            (
+                FailureReason::CodexAccessProgramUnavailable,
+                "codex_access_program_unavailable",
+            ),
             (FailureReason::UnsupportedModel, "unsupported_model"),
             (FailureReason::UsageLimit, "usage_limit"),
         ] {

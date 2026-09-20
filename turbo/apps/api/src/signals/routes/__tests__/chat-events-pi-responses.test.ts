@@ -1430,6 +1430,18 @@ describe("CHAT-02: model-first provider policies", () => {
       const manifest = piApiFirstTurnManifestSchema.parse(
         JSON.parse(manifestBytes.toString("utf8")),
       );
+      expect(manifest.apiUsage).toMatchObject({
+        schemaVersion: 1,
+        state: "observed",
+        sampledAt: expect.any(Number),
+        coverage: "partial",
+        tokens: {
+          input: null,
+          cacheRead: null,
+          cacheCreation: null,
+          output: 3,
+        },
+      });
       const h2Session = MemoryPiSession.fromJsonl(h1Bytes.toString("utf8"));
       const pendingAssistant = [...h2Session.buildSessionContext().messages]
         .reverse()

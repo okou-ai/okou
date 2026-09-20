@@ -1,8 +1,4 @@
-import { deletePiObjectOrphansForOwner } from "./pi-inference-object.service";
-import {
-  assertPiInferenceScopeErasureReady,
-  piInferenceErasureScopePredicate,
-} from "./pi-inference-lifecycle.service";
+import { piInferenceErasureScopePredicate } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
@@ -12,8 +8,8 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { composeJobs } from "@okouai/db/schema/compose-job";
-import { connectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
-import { connectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
+import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
+import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { deviceCodes } from "@okouai/db/schema/device-codes";
 import { exportJobs } from "@okouai/db/schema/export-job";
@@ -73,8 +69,8 @@ import { cleanupOrgMemberResources } from "./org-member-cleanup.service";
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import {
-  deleteConnectorLocalState$,
-  loadStoredConnectorRuntimeSnapshot,
+  deleteBuiltinConnectorLocalState$,
+  loadStoredBuiltinConnectorRuntimeSnapshot,
 } from "./connector-data.service";
 import {
   AGENT_LIFECYCLE_LOCK_TIMEOUT,
@@ -442,7 +438,7 @@ const revokeOrgConnectorTokens$ = command(
     orgId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const snapshot = await loadStoredConnectorRuntimeSnapshot(db);
+    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -460,7 +456,7 @@ const revokeOrgConnectorTokens$ = command(
 
     for (const row of rows) {
       await set(
-        deleteConnectorLocalState$,
+        deleteBuiltinConnectorLocalState$,
         {
           orgId,
           userId: row.userId,
@@ -481,7 +477,7 @@ const revokeUserConnectorTokens$ = command(
     userId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const snapshot = await loadStoredConnectorRuntimeSnapshot(db);
+    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(db);
     signal.throwIfAborted();
     const rows = await db
       .select({
@@ -499,7 +495,7 @@ const revokeUserConnectorTokens$ = command(
 
     for (const row of rows) {
       await set(
-        deleteConnectorLocalState$,
+        deleteBuiltinConnectorLocalState$,
         {
           orgId: row.orgId,
           userId,
@@ -875,11 +871,11 @@ async function deleteOrgData(
   await db.delete(secrets).where(eq(secrets.orgId, orgId));
   await db.delete(variables).where(eq(variables.orgId, orgId));
   await db
-    .delete(connectorOauthDeviceAuthorizationSessions)
-    .where(eq(connectorOauthDeviceAuthorizationSessions.orgId, orgId));
+    .delete(builtinConnectorOauthDeviceAuthorizationSessions)
+    .where(eq(builtinConnectorOauthDeviceAuthorizationSessions.orgId, orgId));
   await db
-    .delete(connectorExternalCodeSessions)
-    .where(eq(connectorExternalCodeSessions.orgId, orgId));
+    .delete(builtinConnectorExternalCodeSessions)
+    .where(eq(builtinConnectorExternalCodeSessions.orgId, orgId));
   await db.delete(exportJobs).where(eq(exportJobs.orgId, orgId));
   await db
     .delete(orgConcurrencyEntitlements)
@@ -906,7 +902,6 @@ async function deleteOrgData(
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.orgId, orgId));
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
-  await deletePiObjectOrphansForOwner(db, { orgId });
 }
 
 async function deleteUserData(
@@ -959,11 +954,11 @@ async function deleteUserData(
   await db.delete(cliTokens).where(eq(cliTokens.userId, userId));
   await db.delete(composeJobs).where(eq(composeJobs.userId, userId));
   await db
-    .delete(connectorOauthDeviceAuthorizationSessions)
-    .where(eq(connectorOauthDeviceAuthorizationSessions.userId, userId));
+    .delete(builtinConnectorOauthDeviceAuthorizationSessions)
+    .where(eq(builtinConnectorOauthDeviceAuthorizationSessions.userId, userId));
   await db
-    .delete(connectorExternalCodeSessions)
-    .where(eq(connectorExternalCodeSessions.userId, userId));
+    .delete(builtinConnectorExternalCodeSessions)
+    .where(eq(builtinConnectorExternalCodeSessions.userId, userId));
   await db.delete(deviceCodes).where(eq(deviceCodes.userId, userId));
   await db
     .delete(userPermissionGrants)
@@ -993,7 +988,6 @@ async function deleteUserData(
     );
     await tx.delete(users).where(eq(users.id, userId));
   });
-  await deletePiObjectOrphansForOwner(db, { userId });
 }
 
 export const cleanupClerkDeletedOrg$ = command(
@@ -1007,11 +1001,6 @@ export const cleanupClerkDeletedOrg$ = command(
     });
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, {
-      kind: "organization",
-      orgId,
-    });
-    signal.throwIfAborted();
-    await assertPiInferenceScopeErasureReady(db, {
       kind: "organization",
       orgId,
     });
@@ -1049,8 +1038,6 @@ export const cleanupClerkDeletedUser$ = command(
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
     signal.throwIfAborted();
-    await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
-    signal.throwIfAborted();
     await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
     const emptyOrgIds = await emptyOrgIdsAfterDeletingUser(
       db,
@@ -1071,11 +1058,6 @@ export const cleanupClerkDeletedUser$ = command(
       });
       signal.throwIfAborted();
       await revokeMorningBriefScheduleOwnership(db, {
-        kind: "organization",
-        orgId,
-      });
-      signal.throwIfAborted();
-      await assertPiInferenceScopeErasureReady(db, {
         kind: "organization",
         orgId,
       });

@@ -239,6 +239,25 @@ values and binds immutable public content by deployment ID. Legacy API history,
 selectors, old upload completion and schema fields remain until the documented
 consumer, data and rollback gates; no physical schema cleanup runs in that step.
 
+The subsequent runtime cleanup reads retained historical versions from manifest
+metadata and derives the active version through the fixed public deployment ID.
+Its runtime Drizzle mappings omit the four relational version fields from every
+implicit selection and insertion. A guarded SQL migration normalizes the
+metadata from the old authoritative columns, rotates changed manifest CAS hashes,
+and keeps outgoing API readers working with temporary defaults and a pointer
+projection trigger. IDs, stored byte paths and share policies do not change.
+See the [runtime retirement matrix](database/hosted-publication-retirement.md#runtime-version-column-retirement).
+The separately gated physical-drop migration removes the four columns, their
+two old indexes and the projection trigger/function. It verifies the retained
+manifest versions, public bindings and persisted SQL dependencies before
+dropping anything, and preserves content rows and share identities. This
+contraction remains draft until the runtime cleanup has shipped in its own
+production release and its predecessor has drained. The contraction installs
+that runtime transition's canonical main commit as the API rollback floor in
+the main-owned resolver before the physical drop deploys. Its API-only floor
+does not constrain the independently retained Runner tag. A migration journal
+entry cannot prove this serving/rollback boundary.
+
 New prepares bind each upload URL to its declared SHA-256 through the signed
 `x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
 `Content-Type`; identical-byte retries work, while different bytes fail R2's
@@ -914,6 +933,27 @@ protect late proxy usage. It remains unchanged, along with ordinary
 pending-usage/callback cleanup blockers, provider-result usage, lifecycle
 observation and private checkpoint validation.
 
+#### GPT 6 Sol native model readiness
+
+Poll and claim requests advertise `X-Native-Gpt-6-Sol: 1` only from Runner artifacts
+whose bundled Guest supports GPT 6 Sol and its reasoning efforts. The API checks
+this capability after authorizing and validating the stored context, before
+claiming native `gpt-6-sol` or `openai/gpt-6-sol` work. A claimant without the
+exact capability receives the existing claim `404`; the job stays pending for
+a capable Runner. This covers Built-in and BYOK routes without changing any
+organization default or stored selection.
+
+Poll excludes unsupported Sol jobs before applying its candidate limit, so old
+Runners can still discover existing models behind a Sol job. Claim repeats the
+capability check to cover direct notifications and previously discovered work.
+
+The header leaves the strict claim JSON unchanged, so a new Runner can still
+claim existing work from an old API, which ignores the extra header. During
+API-first promotion, or a Runner rollback, old Runners can continue executing
+existing models but cannot consume Sol jobs. Sol work waits until a supporting
+Runner is available. The capability remains necessary while an incompatible
+Runner is a supported rollback target; no database migration is involved.
+
 #### Runner process drain
 
 Runner deployment is draining, not instant. The production promote playbook
@@ -1297,6 +1337,17 @@ runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
 generic server/overload evidence from exact terminal text. It cannot undo
 retries already performed by an old SDK. No new protocol, database column or
 session format is introduced, and local-deadline handoff is unchanged.
+
+Codex access-program rejection adds `codex_access_program_unavailable` under
+that same open-token contract. The API accepts and persists future snake-case
+tokens, so a new Runner talking to an older API remains functional but receives
+generic failure presentation and the older unknown-token warning policy. An old
+Runner talking to a new API omits the reason and keeps its existing behavior.
+With both artifacts updated, the exact trusted terminal
+`access_programs.cyber` rejection receives specific guidance, Runner INFO
+telemetry, and no API WARN/ERROR. The run remains failed and retains its original
+error. There is no schema migration, historical backfill, replay, retry,
+credential change, rollout switch, or production-observation authorization.
 
 Queued or active commit-addressed contexts can retain the old CLI. Release
 acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
@@ -2107,11 +2158,12 @@ The receipt-capable writer from [#32880](https://github.com/vm0-ai/vm0/pull/3288
 Cancelling a connector connection aborts the current App attempt: owned requests
 and polling stop, its popup closes when the browser still permits access, busy controls are
 released, and unfinished local continuations (including account naming and Chat
-callbacks) must not start or update a newer attempt. Explicit dialog close and
-Escape have the same meaning; outside presses do not cancel pending work. Once
-the App has confirmed success, the action is labelled Close rather than Cancel.
-Provider isolation policies can sever the popup handle, so closing that external
-window is best-effort and is not required to release the App's attempt.
+callbacks) must not start or update a newer attempt. The dialog's Close control
+and Escape have the same meaning; outside presses do not cancel pending work.
+Connector authorization progress surfaces add no separate Cancel action; forms
+that already provide a general Cancel action keep it. Provider isolation
+policies can sever the popup handle, so closing that external window is
+best-effort and is not required to release the App's attempt.
 
 This is **local cancellation**, not a provider revocation or an API transaction
 rollback. The API may already have claimed OAuth state and may finish persisting
@@ -2190,27 +2242,24 @@ rewritten by any reader, producer or rollback.
 ## Connector catalog v4 consumption
 
 Publish the complete v4 catalog before deploying the consumer. The new API
-syncs and accepts only v4. Until a source has accepted v4, its shared catalog
-reader serves the retained accepted v3 snapshot, validating original v3 bytes
-and current executable capabilities. Discovery, execution and firewall permissions
-use that same reader. Normal sync switches subsequent reads to accepted v4.
-The release workflow stays unchanged; no environment variable, generation
-selector or separate warm-up endpoint is needed. MCP capability filtering does
-not block catalog acceptance.
+syncs, accepts and reads only v4. Discovery, execution and firewall permissions
+use that same accepted-v4 reader. A cold environment reports the catalog as
+unavailable until normal v4 sync succeeds. The release workflow stays unchanged;
+no environment variable, generation selector or separate warm-up endpoint is
+needed. MCP capability filtering does not block catalog acceptance.
 
 Earlier API binaries continue using their v3 namespace and rows. No database
 migration, source-salt change or historical-byte rewrite is needed. New APIs
-always prefer an accepted v4 snapshot, regardless of catalog version ordering.
-Later candidate failures retain v4; a corrupt accepted v4 snapshot fails rather
-than falling back to v3. Diagnostics describe the v4 sync target and can report
-cold v4 state while the v3 bridge keeps connectors available.
+require an accepted v4 snapshot. Later candidate failures retain v4, and a
+corrupt accepted v4 snapshot fails. Diagnostics describe the same v4 generation
+used by the current reader.
 
 [The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
-and rollback requirements. MCP execution and Automatic OAuth remain separate
-deliveries. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
-bridge cleanup after every serving source and supported bootstrap target has
-accepted v4 and the deployment/rollback window no longer needs the bridge.
-Historical v3 object and row retention for old binaries remains independent.
+and rollback requirements. Production diagnostics reported active catalog
+`2026-09-19.4560` on 2026-09-20 Asia/Shanghai, opening the v4-only reader gate
+under [#34913](https://github.com/vm0-ai/okou/issues/34913). Historical v3
+objects and rows remain available to older rollback binaries through their own
+v3 readers; current code performs no data deletion or rewrite.
 
 ### Builtin MCP execution
 
@@ -2223,24 +2272,49 @@ Custom and builtin MCP use the same typed discovery response.
 
 Queued Runs retain their captured CLI package and exact account mapping.
 Builtin MCP admission requires the Run's Okou token for authenticated MCP
-discovery. None/manual methods are executable; the published Plaud Automatic
-method remains unavailable until its handler lands. The addon honors explicit
+discovery. None/manual and Automatic methods are executable. Plaud's Automatic
+method defaults off in auth-method discovery through `plaudConnector`; this
+switch does not gate existing account callbacks or execution. The addon honors explicit
 owner intent and never injects another owner's credentials when the requested
 owner is absent, including overlapping builtin/custom destinations.
 
 No-auth builtin and custom MCP requests skip credential validity checks and
-proxy auth resolution, including Automatic custom MCP resolved to no
+proxy auth resolution, including Automatic builtin and custom MCP resolved to no
 authentication. Credentialed builtin MCP auth responses use the existing `expiresAt`
 field to cap cached account authorization at 30 seconds from validation; this
 also bounds static-token cache reuse. Discovery immediately removes deleted
 accounts, while subsequent proxy requests may reuse an existing lease until
 expiry. Expiry does not interrupt an in-flight request or stream. After
 resolution, the addon rechecks the current owner before forwarding. No new
-Runner wire field or HTTP/custom cache policy is introduced.
+HTTP/custom cache policy is introduced.
 
-The v3 catalog read bridge and its cleanup under
-[#34913](https://github.com/vm0-ai/okou/issues/34913) remain as described above.
-This execution change adds no environment variable, release workflow change or
+Automatic authentication adds separate builtin OAuth bindings and DCR
+registrations, plus a nullable account auth-resolution field. Apply this
+additive migration before deploying the API. The shared MCP protocol supports
+CIMD/DCR, PKCE, exact issuer/resource binding and optional refresh tokens.
+Builtin callbacks are owned by the API and completion receipts identify the
+exact account and attempt. Stored catalog method IDs remain unchanged.
+
+Automatic accounts receive the same compact builtin firewall reference used by
+builtin HTTP connectors. The Runner resolves its definition, including auth, from
+the accepted catalog; account state does not replace or override that firewall.
+An OAuth catalog firewall uses the proxy-only
+`Bearer ${{ secrets.MCP_ACCESS_TOKEN }}` template, resolved outside the sandbox.
+Automatic discovery still records whether the selected account resolved to OAuth
+or no-auth. A mismatch fails at its natural boundary: an OAuth catalog firewall
+cannot resolve its required secret from a no-auth account, while a no-auth catalog
+firewall sends an OAuth account's request without credentials and lets the upstream
+reject it. Builtin runtime-sync updates remain policy-only. There is no MCP-specific
+client or Runner capability negotiation. A rollback after Automatic accounts exist
+must retain their schema and credential readers.
+The addon sends `matchedFirewall.base` when resolving builtin credentials.
+Automatic OAuth resolution requires this destination to match the current
+catalog and the locked account binding. Missing or stale destinations fail closed;
+HTTP/custom and no-auth resolution do not require this field. Best-effort runtime
+sync cannot authorize credentials for a changed endpoint.
+
+The current connector catalog reader is v4-only as described above. This
+execution change adds no environment variable, release workflow change or
 per-service skill.
 
 ## PostHog CIMD OAuth
@@ -2290,22 +2364,23 @@ policy. The database's required `refresh_after` and `last_requested_at` columns
 remain writable for deployment coexistence; new rows set `refresh_after` to their
 expiration and new code does not use either column to schedule renewal.
 
-## Pi inference lifecycle reader floor (#34242)
+## API-first usage handoff producer (#35413)
 
-The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v4
-launch discriminator without a Runner profile and three sparse ownership/intent/lease
-tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
-expand migration replaces the launch CHECK as NOT VALID; a separate bounded
-validation transaction scans retained runs before API promotion. The
-`piDeferredSandbox` default remains off, but that default does not establish the
-state of every organization or staff override; historical v4 attempts and their
-retained obligations must remain readable.
+The consumer contract and tolerant readers are delivered by #34787. This
+follow-up enables the API to add optional `apiUsage` metadata to the existing Pi
+ownership-transfer manifest and durable continuation. Before deploying this
+producer, confirm those readers are deployed and older strict readers have
+drained.
 
-After future v4 activation, disabling starts must retain phase/epoch-aware readers,
-consumer/recovery, cancellation, capacity counting, credential retention and erasure.
-A v1–v3-only application is below the rollback floor while v4 records remain.
-Do not shrink the CHECK or cascade away releasing leases. See the linked contract
-for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
+Old payloads remain valid. A missing `apiUsage` field means unavailable, not
+zero. Roll back the producer before rolling back the consumer. The preceding API
+simply stops emitting the field; no database contraction or backfill is
+required.
+
+Provider results already known at transfer are included. Pre-provider transfer
+is marked `no-inference`. A transfer made before a late provider result becomes
+known has no snapshot and stays explicitly unavailable in this initial
+handoff-only design. See [API-first run usage handoff](api-run-usage.md).
 
 ## DeepSeek V4.1 Flash Pi coverage
 
@@ -2326,31 +2401,6 @@ the additive column.
 Deploy the API across the serving fleet before enabling the Runner consumer in
 #34384. Unsupported endpoints and other inconclusive reads must not become
 disappearance decisions. This API slice alone adds no new stop-delay bound.
-
-## Deferred Pi Sandbox reader floor
-
-Before a v4 API-inference producer can emit Sandbox demand, deploy the
-[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
-Its optional Runner header is ignored by older APIs; older Runners remain
-excluded from v4 jobs. The release endpoint and Runner use one strict explicit
-outcome contract: a missing, malformed or unknown outcome retains the receipt
-instead of fabricating a stale acknowledgement. No mixed-response bridge is
-provided for this non-GA path. New admission remains default-off and the
-user-reported shutdown is the current operational boundary, but historical
-production attempts under #34795 mean retained v4 obligations may still exist.
-The outer Pi launch-config v2 contains a new versioned continuation slot. The
-co-built Guest uses its private Sandbox control token to assemble the handoff in
-a 0600 run-scoped file and passes only an additive path variable to the CLI. The
-entire pre-spawn request and response-body wait stays under the existing user
-cancellation token, original absolute execution deadline and heartbeat terminal
-semantics; a winning control removes unpublished/published startup files and
-starts no child. An older CLI fails its legacy ordinary-token read; a newer CLI
-under an older Guest fails because the authenticated file is absent. Both
-combinations stop before the RPC boundary. Enablement therefore requires the
-capable API, Runner/Guest and newly captured commit-addressed CLI.
-Drain existing v4 intents, leases, claims and release receipts before rolling any
-of those readers back below that floor. No switch is enabled by the consumer
-implementation.
 
 ## Email outbox provider replay and send-time expiry (#34645, #34695)
 
@@ -2686,9 +2736,18 @@ fields, including old privacy receipts; Marketing retains authoritative
 withdrawal state. Historical rows and external objects are not erased in this
 change.
 
+The final App cleanup removes its remaining click/UTM parser, attribution
+session-storage reader/writer, auth redirect propagation, and explicit PostHog
+attribution properties. Existing product
+analytics, PostHog user/organization identity, and `/api/events` business facts
+remain. Marketing is the single URL boundary: it omits acquisition parameters
+from App links while preserving product deep links. App does not add a second
+sanitizer for arbitrary incoming query strings or a migration that cleans
+historical browser state.
+
 Coordinate the Marketing single-sender cutover with this App/API deployment.
 Verify the replacement App is live before setting a later client floor; an
-already-open old bundle can otherwise continue sending browser conversions.
+already-open old bundle can otherwise continue collecting browser attribution.
 This PR does not select a floor or change production provider settings.
 
 ## X resource protocol cleanup
@@ -2698,10 +2757,10 @@ The claim and proxy registry no longer carry `xResourceBilling` or its fixed
 `startDate`; date-based and absent-capability count producers are retired.
 The API retains its existing generic count-event and resource-event contracts.
 X writes, other connector counts, model and image events keep their shapes.
-The deduplication feature switch still chooses Q or N+R, and neither direction
-changes the producer protocol or the two-UTC-date retention window.
+Resource events always use N+R billing. This does not change the producer
+protocol or the two-UTC-date retention window.
 
-New Runners work with the preceding switch-based API: they ignore the old claim
+New Runners work with the preceding gated API: they ignore the old claim
 capability and that API accepts resource uploads. During normal API-before-Runner
 promotion, old Runners receiving the new claim select count-only reads. The
 unchanged generic ingestion path accepts those events and bills their full
@@ -2709,13 +2768,14 @@ quantity, so this overlap does not discard usage. Runs that already captured the
 preceding capability continue reporting resources.
 
 Count events carry no resource identities: reads from an old Runner in this
-overlap cannot populate the daily resource table or receive deduplication, even
-if the feature switch is enabled. Full producer coverage requires old Runner
-processes, Runs, streams and retained uploads to finish draining. If uninterrupted
-deduplication is required during the cutover, predeploy the unconditional Runner
-against the preceding API and verify that drain before promoting the API.
-The preceding switch-based API remains a compatible rollback target; rolling
-back the Runner can reduce resource coverage again.
+overlap cannot populate the daily resource table or receive deduplication. Full
+producer coverage requires old Runner processes, Runs, streams and retained
+uploads to finish draining. If uninterrupted deduplication is required during
+the cutover, predeploy the unconditional Runner against the preceding API and
+verify that drain before promoting the API.
+The preceding gated API remains a compatible rollback target, but it can restore
+full-count billing for accounts without an enabled override. Rolling back the
+Runner can reduce resource coverage again.
 
 This is a requested protocol retirement, not a database migration. No stored
 execution context contains the claim-only capability, and no historical usage

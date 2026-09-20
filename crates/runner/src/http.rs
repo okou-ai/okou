@@ -147,9 +147,9 @@ impl ApiRequestBuilder {
         Ok(FinalizedApiRequest { request, context })
     }
 
-    pub(crate) fn deferred_pi_reader(self) -> Self {
+    pub(crate) fn native_gpt_6_sol_reader(self) -> Self {
         Self {
-            builder: self.builder.header("X-Pi-Deferred-Sandbox", "1"),
+            builder: self.builder.header("X-Native-Gpt-6-Sol", "1"),
             ..self
         }
     }

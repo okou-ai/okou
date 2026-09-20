@@ -51,10 +51,14 @@ impl From<rfb_client::Error> for Failure {
             Error::InvalidInput => Self::InvalidInput,
             Error::StaleGeometry => Self::StaleGeometry,
             Error::SessionClosed | Error::Io(_) => Self::Disconnected,
-            Error::DeadlineExceeded => Self::TimedOut,
-            Error::InvalidPassword | Error::InvalidTrustRoots | Error::InvalidServerName => {
-                Self::InvalidCredential
+            Error::AuthenticationDeadlineExceeded { .. } | Error::DeadlineExceeded => {
+                Self::TimedOut
             }
+            Error::InvalidPassword
+            | Error::InvalidPlainUsername
+            | Error::InvalidPlainPassword
+            | Error::InvalidTrustRoots
+            | Error::InvalidServerName => Self::InvalidCredential,
             Error::AuthenticationFailed | Error::Tls(_) => Self::AuthenticationFailed,
             Error::UnsupportedSecurity | Error::UnsupportedRfbVersion => Self::UnsupportedProfile,
             Error::ResourceLimit | Error::ImageTooLarge => Self::ResourceExhausted,

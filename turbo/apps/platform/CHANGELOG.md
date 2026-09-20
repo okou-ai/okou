@@ -11,6 +11,207 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.927.1](https://github.com/okou-ai/okou/compare/app-v0.927.0...app-v0.927.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* export core user data with resumable background jobs ([#35486](https://github.com/okou-ai/okou/issues/35486)) ([e68c5ce](https://github.com/okou-ai/okou/commit/e68c5ce0cf7f07a64eb6397214e177e9226b7429))
+* **platform:** inset the workspace sheet beside the bare nav rail ([#35571](https://github.com/okou-ai/okou/issues/35571)) ([4d8c957](https://github.com/okou-ai/okou/commit/4d8c95714536ba5d048720bb32f07d4de0e2b81b))
+* **platform:** point custom template import at the dispatcher ([#35613](https://github.com/okou-ai/okou/issues/35613)) ([e7e590e](https://github.com/okou-ai/okou/commit/e7e590e22134d1d3c36315d7ac8a9c6a7c7caad0))
+* **ui:** delay user message spinner by 500ms ([#35607](https://github.com/okou-ai/okou/issues/35607)) ([f3f85b2](https://github.com/okou-ai/okou/commit/f3f85b26001b30166019bb19deca38b6e7113834))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/ui bumped to 1.10.4
+
+## [0.927.0](https://github.com/okou-ai/okou/compare/app-v0.926.0...app-v0.927.0) (2026-09-20)
+
+
+### Features
+
+* **api:** trigger a native morning brief on demand from settings debug ([#35596](https://github.com/okou-ai/okou/issues/35596)) ([c09e95b](https://github.com/okou-ai/okou/commit/c09e95bf7b724e7a32dfa6cdb01303b840c8fde6))
+* **app:** remove the deck import from the slash panel ([#35570](https://github.com/okou-ai/okou/issues/35570)) ([3908906](https://github.com/okou-ai/okou/commit/3908906ccd5f5fb183012da0448538272178db7d))
+* **core:** release the welcome thread to every workspace ([#35586](https://github.com/okou-ai/okou/issues/35586)) ([6bb62d1](https://github.com/okou-ai/okou/commit/6bb62d1157a83b416d91f77705bb448182196f64))
+* **platform:** drop the growth entry from the get started corner ([#35482](https://github.com/okou-ai/okou/issues/35482)) ([5258c8b](https://github.com/okou-ai/okou/commit/5258c8b6dfa97abd26582a17fe8a7d9550c1c9b8))
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### Bug Fixes
+
+* classify codex access-program rejections ([#35512](https://github.com/okou-ai/okou/issues/35512)) ([fc5e3a2](https://github.com/okou-ai/okou/commit/fc5e3a213970835ae0a5108f4943c0f34d1cadd2))
+* **platform:** hide the template gallery while a template is open over it ([#35593](https://github.com/okou-ai/okou/issues/35593)) ([1307f7c](https://github.com/okou-ai/okou/commit/1307f7cc581f7042a71917eb839d6980dc00d37f))
+* **platform:** offer continue after replacing an unsupported model ([#35583](https://github.com/okou-ai/okou/issues/35583)) ([7bd196f](https://github.com/okou-ai/okou/commit/7bd196fca07d5610e75c4fcdf7f37b87bb7fc630))
+* **platform:** remove connector authorization cancel buttons ([#35569](https://github.com/okou-ai/okou/issues/35569)) ([39cdd93](https://github.com/okou-ai/okou/commit/39cdd936e65536dd42ab8fc7ef8efc18b01e6eae))
+* **platform:** reuse resolved artifact identity for sharing ([#35595](https://github.com/okou-ai/okou/issues/35595)) ([52b66bc](https://github.com/okou-ai/okou/commit/52b66bcd8b3d0bc80d0c74db305d2f0a4e2269ef))
+
+
+### Refactoring
+
+* **app:** derive presentation template previews with computed ([#35449](https://github.com/okou-ai/okou/issues/35449)) ([5753733](https://github.com/okou-ai/okou/commit/57537338d1c12c02d643780e46b512574239f4f4))
+* **platform:** use css for agent row action visibility ([#35446](https://github.com/okou-ai/okou/issues/35446)) ([c3ce4b7](https://github.com/okou-ai/okou/commit/c3ce4b77511ece49cdcdc893a6fa8122b602e794))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.0
+    * @okouai/core bumped to 8.687.0
+    * @okouai/ui bumped to 1.10.3
+
+## [0.926.0](https://github.com/vm0-ai/okou/compare/app-v0.925.0...app-v0.926.0) (2026-09-20)
+
+
+### Features
+
+* **app:** give composer starting ideas a card and more air ([#35494](https://github.com/vm0-ai/okou/issues/35494)) ([04be54b](https://github.com/vm0-ai/okou/commit/04be54b1ad94864f0c98d7c6c1c6d48d70e04774))
+* **app:** remove the workflow type row from the slash panel ([#35556](https://github.com/vm0-ai/okou/issues/35556)) ([4354578](https://github.com/vm0-ai/okou/commit/4354578ff5a21e48fb57120a0ca51d66a810448f))
+
+
+### Bug Fixes
+
+* **platform:** align remote access copy ([#35553](https://github.com/vm0-ai/okou/issues/35553)) ([5456ab5](https://github.com/vm0-ai/okou/commit/5456ab5305eceddb3d665600ca8bb6dbf6ab90df))
+* **platform:** remove redundant vnc refresh action ([#35493](https://github.com/vm0-ai/okou/issues/35493)) ([668fc86](https://github.com/vm0-ai/okou/commit/668fc86f75542cc92275868636e54b38b65b34cb))
+
+
+### Refactoring
+
+* **app:** retire acquisition attribution ([#35324](https://github.com/vm0-ai/okou/issues/35324)) ([61618b1](https://github.com/vm0-ai/okou/commit/61618b151d9511f0317481976d35423072cf1dc8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+    * @okouai/connectors bumped to 3.14.2
+    * @okouai/core bumped to 8.686.0
+
+## [0.925.0](https://github.com/vm0-ai/okou/compare/app-v0.924.0...app-v0.925.0) (2026-09-20)
+
+
+### Features
+
+* **platform:** gate AgentPhone entry behind feature switch ([#35488](https://github.com/vm0-ai/okou/issues/35488)) ([37f2fa4](https://github.com/vm0-ai/okou/commit/37f2fa4a63c075cf895061d5138edb1a437d0f40))
+
+
+### Bug Fixes
+
+* **app:** give the artifact catalog, share menu and unpreviewable files a way out ([#35330](https://github.com/vm0-ai/okou/issues/35330)) ([0c851f5](https://github.com/vm0-ai/okou/commit/0c851f5af41ad294297500f7549447bd49d25918))
+* **platform:** close the template picker when a custom import starts ([#35443](https://github.com/vm0-ai/okou/issues/35443)) ([296665c](https://github.com/vm0-ai/okou/commit/296665c8590f75eacd56156b4bd7ee5df0893d9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.685.0
+
+## [0.924.0](https://github.com/vm0-ai/okou/compare/app-v0.923.1...app-v0.924.0) (2026-09-20)
+
+
+### Features
+
+* **platform:** align oauth consent with auth pages ([#35436](https://github.com/vm0-ai/okou/issues/35436)) ([7df89f9](https://github.com/vm0-ai/okou/commit/7df89f95e5ef418c1b759ab498ffb28073ef045d))
+
+
+### Bug Fixes
+
+* **app:** derive unread chat list from shared indicators ([#35438](https://github.com/vm0-ai/okou/issues/35438)) ([ac5d47a](https://github.com/vm0-ai/okou/commit/ac5d47aa708a1c08ec7ad6887cc590986bfefca1))
+* **app:** make artifact fullscreen enlarge media and stop offering a dead recovery action ([#35328](https://github.com/vm0-ai/okou/issues/35328)) ([cf7e8c3](https://github.com/vm0-ai/okou/commit/cf7e8c3d919a31712818da83d99c298a09e95c8d))
+* **platform:** reuse artifact preview credentials ([#35320](https://github.com/vm0-ai/okou/issues/35320)) ([72d6914](https://github.com/vm0-ai/okou/commit/72d6914ae5577544ed673cece31a6473a1c9fea6))
+* **templates:** center the open template dialog's close button on its header ([#35441](https://github.com/vm0-ai/okou/issues/35441)) ([ef7a703](https://github.com/vm0-ai/okou/commit/ef7a703d87d7b9d21e034ce21477292cdd83e07a))
+* **vnc:** align remote access defaults ([#35448](https://github.com/vm0-ai/okou/issues/35448)) ([08b7e4c](https://github.com/vm0-ai/okou/commit/08b7e4c9d5a641c665616f9bbbde2b2efe50294e))
+
+
+### Refactoring
+
+* **app:** move custom template import instructions out of the visible message ([#35300](https://github.com/vm0-ai/okou/issues/35300)) ([6cd1062](https://github.com/vm0-ai/okou/commit/6cd1062ff7890a2c1b256b61f3c4e9721a02f122))
+* **templates:** open every custom template in one dialog ([#35185](https://github.com/vm0-ai/okou/issues/35185)) ([86c22a9](https://github.com/vm0-ai/okou/commit/86c22a9022970439281cc7f16693a3a658f978b7))
+
+## [0.923.1](https://github.com/vm0-ai/okou/compare/app-v0.923.0...app-v0.923.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **platform:** unify artifact fullscreen portals and preserve reading position ([#35392](https://github.com/vm0-ai/okou/issues/35392)) ([1f8b094](https://github.com/vm0-ai/okou/commit/1f8b094f3b5e64871e7db919a302e29af93c3a3a))
+
+
+### Refactoring
+
+* **platform:** remove activity polling and automatic scrolling ([#35435](https://github.com/vm0-ai/okou/issues/35435)) ([5446387](https://github.com/vm0-ai/okou/commit/544638741e790f19e8faa9418eab595143d3ea22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.1
+    * @okouai/connectors bumped to 3.14.1
+    * @okouai/core bumped to 8.684.1
+    * @okouai/ui bumped to 1.10.2
+
+## [0.923.0](https://github.com/vm0-ai/okou/compare/app-v0.922.0...app-v0.923.0) (2026-09-19)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-sol run model ([#35391](https://github.com/vm0-ai/okou/issues/35391)) ([a1f2db4](https://github.com/vm0-ai/okou/commit/a1f2db4d50af3a79a6212f478c447b3d8ac6c6f9))
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+
+
+### Bug Fixes
+
+* **platform:** align vnc credential creation with ssh ([#35404](https://github.com/vm0-ai/okou/issues/35404)) ([e4607ee](https://github.com/vm0-ai/okou/commit/e4607ee6c49ee9bb74976f277e669097c666e575))
+* **platform:** expose ssh discovery load recovery ([#35405](https://github.com/vm0-ai/okou/issues/35405)) ([ab6b3ff](https://github.com/vm0-ai/okou/commit/ab6b3ffb9dd82fd9e0b1dba81d58b08b859fe50d))
+* **platform:** filter shared SSH access ([#35399](https://github.com/vm0-ai/okou/issues/35399)) ([c937583](https://github.com/vm0-ai/okou/commit/c9375839102071d35458e069412b22cc515d612b))
+* **platform:** host oauth consent in the app ([#35410](https://github.com/vm0-ai/okou/issues/35410)) ([5035dc2](https://github.com/vm0-ai/okou/commit/5035dc21ac39e9def104119894bef7e6a5bee029))
+* **platform:** recover ssh access after agent failures ([#35406](https://github.com/vm0-ai/okou/issues/35406)) ([9c08326](https://github.com/vm0-ai/okou/commit/9c08326ab0db46d3c33ed7cb54f7e052a5ca8807))
+* **platform:** wait for the error recovery classification before offering it ([#35390](https://github.com/vm0-ai/okou/issues/35390)) ([47adc45](https://github.com/vm0-ai/okou/commit/47adc4557a6eb53fc10492a1fc4239c9666a7026))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.0
+    * @okouai/connectors bumped to 3.14.0
+    * @okouai/core bumped to 8.684.0
+    * @okouai/ui bumped to 1.10.1
+
+## [0.922.0](https://github.com/vm0-ai/okou/compare/app-v0.921.0...app-v0.922.0) (2026-09-19)
+
+
+### Features
+
+* move paid tools into chat settings ([#35381](https://github.com/vm0-ai/okou/issues/35381)) ([3ac2ba5](https://github.com/vm0-ai/okou/commit/3ac2ba574a056d26870db201d0d88dceccba6028))
+* **platform:** add vnc settings and agent authorization ([#35310](https://github.com/vm0-ai/okou/issues/35310)) ([edf492a](https://github.com/vm0-ai/okou/commit/edf492aca6f667d87070511c1837ee3dc5c72145))
+* **platform:** explain a get started quest before handing it off ([#35259](https://github.com/vm0-ai/okou/issues/35259)) ([0fe450b](https://github.com/vm0-ai/okou/commit/0fe450b6a61c244996b23573209f43c119bda89b))
+* **platform:** spin beside user messages the server has not confirmed ([#35367](https://github.com/vm0-ai/okou/issues/35367)) ([0bb026f](https://github.com/vm0-ai/okou/commit/0bb026f1dbbb2cf76c39b4db38e2b2e750525826))
+* **platform:** split github automations into their own picker category ([#35376](https://github.com/vm0-ai/okou/issues/35376)) ([0b960b4](https://github.com/vm0-ai/okou/commit/0b960b4d1b41a26c27516061eb0393ef850afff2))
+
+
+### Bug Fixes
+
+* **app:** size the composer's controls against the composer, not the window ([#35354](https://github.com/vm0-ai/okou/issues/35354)) ([0f2aaf0](https://github.com/vm0-ai/okou/commit/0f2aaf097d5d33b3bcc9dfe791de57c0c150aca9))
+* **connectors:** complete mercury oauth compliance flow ([#35346](https://github.com/vm0-ai/okou/issues/35346)) ([ebbffbf](https://github.com/vm0-ai/okou/commit/ebbffbfad2da6af02b2ead54a0ff00a7f1ebda49))
+* **platform:** filter expected Clerk WebAuthn rejections ([#35351](https://github.com/vm0-ai/okou/issues/35351)) ([fc6e4f2](https://github.com/vm0-ai/okou/commit/fc6e4f2d391687ca81f3c54d03d2c33fe489bcf9))
+* **platform:** show every activity model route field ([#35379](https://github.com/vm0-ai/okou/issues/35379)) ([0da9f46](https://github.com/vm0-ai/okou/commit/0da9f463cc49d19db1e07f86ef2d7dfb7e8b5e21))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.475.0
+    * @okouai/core bumped to 8.683.0
+
 ## [0.921.0](https://github.com/vm0-ai/okou/compare/app-v0.920.2...app-v0.921.0) (2026-09-18)
 
 

@@ -26,7 +26,7 @@ import {
 } from "../external/teams-bot-client";
 import { nowDate } from "../../lib/time";
 import { userConfiguredAgentEnvironmentRequirements } from "./agent-execution-config";
-import { connectorList } from "./connector-data.service";
+import { builtinConnectorList } from "./connector-data.service";
 import { userSecrets, userVariables } from "./user-data.service";
 
 type TeamsInstallation = typeof teamsOrgInstallations.$inferSelect;
@@ -665,7 +665,7 @@ export function teamsConnectStatus(args: {
           },
           loadConnectorBindings: async () => {
             const connectors = await get(
-              connectorList({ orgId: args.orgId, userId: args.userId }),
+              builtinConnectorList({ orgId: args.orgId, userId: args.userId }),
             );
             return connectors.connectorProvidedBindings;
           },

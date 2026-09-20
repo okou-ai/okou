@@ -3,6 +3,7 @@ import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
+  type ArchiveConnectionAttempt,
   type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
   type RunnerResourceBudgetLeaseCountBucket,
@@ -14,8 +15,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { z } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -30,7 +29,6 @@ import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { settle } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -61,6 +59,7 @@ interface SandboxOperationDimensionInput {
   readonly outcome?: string;
   readonly reason?: string;
   readonly archive_size_mismatch?: ArchiveSizeMismatch;
+  readonly archive_connection_attempt?: ArchiveConnectionAttempt;
   readonly dns_readiness_attempt?: number;
   readonly dns_readiness_final_attempt?: boolean;
   readonly dns_readiness_guest_duration_ms?: number;
@@ -155,6 +154,25 @@ function dnsReadinessDimensions(
   };
 }
 
+function archiveConnectionAttemptDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, number | boolean> {
+  const attempt = op.archive_connection_attempt;
+  if (!attempt) {
+    return {};
+  }
+  return {
+    archive_connection_attempt_started: attempt.started,
+    archive_connection_attempt_succeeded: attempt.succeeded,
+    archive_connection_attempt_failed: attempt.failed,
+    archive_connection_attempt_dropped: attempt.dropped,
+    archive_connection_attempt_active_at_headers: attempt.active_at_headers,
+    archive_connection_attempt_terminal_duration_ms:
+      attempt.terminal_duration_ms,
+    archive_connection_attempt_saturated: attempt.saturated,
+  };
+}
+
 function sandboxOperationDimensions(
   op: SandboxOperationDimensionInput,
   runner: SandboxRunnerDimensionInput,
@@ -182,6 +200,7 @@ function sandboxOperationDimensions(
             op.archive_size_mismatch.content_encoding,
         }
       : {}),
+    ...archiveConnectionAttemptDimensions(op),
     ...dnsReadinessDimensions(op),
     ...(op.runner_startup_path
       ? { runner_startup_path: op.runner_startup_path }
@@ -371,14 +390,7 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
     })
   ) {
     const db = set(writeDb$);
-    const deduplicationEnabled = isFeatureEnabled(
-      FeatureSwitchKey.XResourceDeduplication,
-      await loadUserFeatureSwitchContext(db, auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    const result = await settle(
-      ingestXResourceUsage(db, body, auth, deduplicationEnabled, signal),
-    );
+    const result = await settle(ingestXResourceUsage(db, body, auth, signal));
     signal.throwIfAborted();
     if (!result.ok) {
       if (result.error instanceof XResourceUsageError) {

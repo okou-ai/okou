@@ -645,6 +645,55 @@
       "when": 1789796443637,
       "tag": "1169_rename_built_in_model_cooldown_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1170,
+      "version": "7",
+      "when": 1789807137528,
+      "tag": "1170_connector_mcp_automatic_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 1171,
+      "version": "7",
+      "when": 1789871766276,
+      "tag": "1171_hosted_publication_manifest_versions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1172,
+      "version": "7",
+      "when": 1789871783548,
+      "tag": "1172_hosted_publication_runtime_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 1173,
+      "version": "7",
+      "when": 1789872519523,
+      "tag": "1173_retire_hosted_publication_version_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1174,
+      "version": "7",
+      "when": 1789890162359,
+      "tag": "1174_serious_thena",
+      "breakpoints": true
+    },
+    {
+      "idx": 1175,
+      "version": "7",
+      "when": 1789897069111,
+      "tag": "1175_resumable_user_exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 1176,
+      "version": "7",
+      "when": 1789900303239,
+      "tag": "1176_retire_gemini_2_5_flash_image_pricing",
+      "breakpoints": true
     }
   ]
 }

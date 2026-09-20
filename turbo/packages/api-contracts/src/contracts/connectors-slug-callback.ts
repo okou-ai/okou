@@ -23,7 +23,7 @@ export type ConnectorOauthCallbackResult = z.infer<
   typeof connectorOauthCallbackResultSchema
 >;
 
-export const connectorsSlugCallbackContract = c.router({
+export const builtinConnectorsSlugCallbackContract = c.router({
   callback: {
     method: "GET",
     path: "/api/connectors/:connectorSlug/callback",
@@ -59,5 +59,5 @@ export const connectorsSlugCallbackContract = c.router({
   },
 });
 
-export type ConnectorsSlugCallbackContract =
-  typeof connectorsSlugCallbackContract;
+export type BuiltinConnectorsSlugCallbackContract =
+  typeof builtinConnectorsSlugCallbackContract;

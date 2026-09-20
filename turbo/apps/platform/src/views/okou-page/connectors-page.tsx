@@ -48,10 +48,10 @@ import {
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
-  connectConnectorOAuthAuthCodeAndSettle$,
-  connectConnectorNoAuth$,
-  connectFlowConnectorSlug$,
-  runConnectorConnectSuccess$,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  connectBuiltinConnectorNoAuth$,
+  builtinConnectFlowSlug$,
+  runBuiltinConnectorConnectSuccess$,
   connectorsSearch$,
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
@@ -59,11 +59,11 @@ import {
   setConnectorsCategoryFilter$,
   setConnectorsConnectionFilter$,
   setConnectorsSearch$,
-  pollingOAuthAuthCodeConnectorSlug$,
-  pollingOAuthDeviceAuthConnectorSlug$,
+  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthDeviceAuthSlug$,
   relatedCatalogItems$,
-  scopeReviewSelection$,
-  setScopeReviewSelection$,
+  builtinConnectorScopeReviewSelection$,
+  setBuiltinConnectorScopeReviewSelection$,
   type ConnectorsConnectionFilter,
 } from "../../signals/okou-page/settings/connectors.ts";
 import {
@@ -2044,21 +2044,23 @@ export function ConnectorsPage() {
     accountSummariesLoadable.state,
   );
   const finishAccountConnection = useSet(finishConnectorAccountConnection$);
-  const runConnectSuccess = useSet(runConnectorConnectSuccess$);
+  const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
   const managedAccountConnector = useGet(builtinAccountManager$);
   const accountConnect = useGet(builtinAccountConnectDialog$);
   const openAccountManager = useSet(openBuiltinAccountManager$);
   const closeAccountManager = useSet(closeBuiltinAccountManager$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
   const closeAccountConnect = useSet(closeBuiltinAccountConnectDialog$);
-  const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
-  const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const connect = useSet(connectConnectorOAuthAuthCodeAndSettle$);
-  const connectNoAuth = useSet(connectConnectorNoAuth$);
+  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
+  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const connect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
+  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const signal = useGet(pageSignal$);
-  const scopeReviewSelection = useGet(scopeReviewSelection$);
-  const setScopeReviewSelection = useSet(setScopeReviewSelection$);
+  const scopeReviewSelection = useGet(builtinConnectorScopeReviewSelection$);
+  const setScopeReviewSelection = useSet(
+    setBuiltinConnectorScopeReviewSelection$,
+  );
   const setManagedConnectorSlug = useSet(setManagedConnectorAccessSlug$);
   const activeTab = useGet(connectorsPageTab$);
   const setActiveTab = useSet(setConnectorsPageTab$);

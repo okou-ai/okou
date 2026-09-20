@@ -77,6 +77,8 @@ function catalogItem(
   slug: ConnectorSlug,
   label: string,
   grantKind: "auth-code" | "manual",
+  connected = false,
+  popularityRank?: number,
 ): PublicConnectorCatalogStatusItem {
   return {
     slug,
@@ -87,6 +89,7 @@ function catalogItem(
       invertInDarkMode: false,
     },
     category: "test",
+    popularityRank,
     generation: [],
     tags: [],
     authMethods: [
@@ -106,8 +109,8 @@ function catalogItem(
       hasDefaultPolicyOverrides: false,
     },
     connection: null,
-    connected: false,
-    connectionStatus: "not-connected",
+    connected,
+    connectionStatus: connected ? "connected" : "not-connected",
     scopeMismatch: false,
     authMethodSupportsRefresh: true,
     tokenExpiresAt: null,
@@ -251,6 +254,29 @@ async function openQuestPanel(): Promise<HTMLElement> {
   click(entry);
   return await screen.findByRole("menu");
 }
+
+test("Get started is the only control in the corner", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await expect(
+    screen.findByTestId("get-started-entry"),
+  ).resolves.toBeInTheDocument();
+
+  // Get started already carries inviting and Slack as its own rows, so the
+  // split control that used to sit beside it is gone.
+  expect(screen.queryByTestId("growth-entry")).toBeNull();
+  expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
+  expect(
+    queryAllByRoleFast("button").find((candidate) => {
+      return normalizedText(candidate) === "Invite humans 🤝";
+    }),
+  ).toBeUndefined();
+});
 
 test("An admin sees every step and what each one pays", async () => {
   configureQuestPage(context, "admin");
@@ -725,9 +751,7 @@ test("The connector step says what it costs the user before it hands them off", 
   });
   // The dialog says what the step is, and the list does the rest.
   expect(
-    within(dialog).getByText(
-      "Connect one of your tools so Okou can work in it.",
-    ),
+    within(dialog).getByText("Pick one and Okou starts working in it."),
   ).toBeInTheDocument();
   // Explaining is all it does: the destination is still the connector list.
   expect(pathname()).toBe(questChatPath());
@@ -775,6 +799,46 @@ test("Picking a connector in the dialog starts its authorization", async () => {
     expect(opened.join(" ")).toContain("gmail");
   });
   expect(pathname()).toBe(questChatPath());
+});
+
+test("The dialog leads with the connectors the step can still be completed with", async () => {
+  configureQuestPage(context, "admin");
+  // Slack is the better-ranked connector and is already connected, so the
+  // catalog order alone would put it first. The step can only be finished on
+  // Notion, so Notion is what the reader meets first in spite of that rank.
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, {
+      connectors: [
+        catalogItem("slack", "Slack", "auth-code", true, 1),
+        catalogItem("notion", "Notion", "auth-code", false, 2),
+      ],
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const picker = await screen.findByTestId("quest-connector-picker");
+
+  const notConnected = within(picker).getByRole("region", {
+    name: "Not connected",
+  });
+  const connected = within(picker).getByRole("region", { name: "Connected" });
+  expect(within(notConnected).getByText("Notion")).toBeInTheDocument();
+  expect(within(connected).getByText("Slack")).toBeInTheDocument();
+
+  // Reading order, not just membership: the unfinished half comes first.
+  expect(
+    notConnected.compareDocumentPosition(connected) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 test("Declining an introduced step costs the user nothing", async () => {

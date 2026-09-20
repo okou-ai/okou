@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 import flow_metadata_keys as metadata_keys
 from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
 
@@ -27,11 +29,42 @@ def test_skips_on_empty_run_id(x_usage, tmp_path, real_flow):
     assert x_usage.call_and_get_billing(flow, run_id="") == []
 
 
-def test_skips_when_not_billable(x_usage, tmp_path, real_flow):
-    """Firewalls with firewall_billable=False are not reported."""
-    flow = x_usage.make_flow(real_flow, tmp_path)
-    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
-    assert x_usage.call_and_get_billing(flow) == []
+@pytest.mark.parametrize(
+    "firewall_billable",
+    [
+        pytest.param(True, id="billable"),
+        pytest.param(False, id="not-billable"),
+        pytest.param(None, id="missing"),
+    ],
+)
+def test_connector_billing_requires_billable_metadata(
+    x_usage, tmp_path, real_flow, firewall_billable
+):
+    body = json.dumps({"data": [{"id": "1"}, {"id": "2"}]}).encode()
+    flow = x_usage.make_flow(real_flow, tmp_path, query="ids=1,2", body=body)
+    if firewall_billable is None:
+        flow.metadata.pop(metadata_keys.FIREWALL_BILLABLE)
+    else:
+        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = firewall_billable
+
+    events = x_usage.call_and_get_billing(flow)
+
+    if firewall_billable is not True:
+        assert events == []
+        return
+
+    [event] = events
+    assert {
+        "kind": event["kind"],
+        "provider": event["provider"],
+        "category": event["category"],
+        "quantity": event["quantity"],
+    } == {
+        "kind": "connector",
+        "provider": "x",
+        "category": "posts.read",
+        "quantity": 2,
+    }
 
 
 def test_skips_when_no_response(x_usage, tmp_path, real_flow):

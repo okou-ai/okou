@@ -70,17 +70,29 @@ large idle-only inflate/deflate cycle when a prepared sandbox is claimed.
 
 Reusable exact/session park inflates the balloon under the existing bounded
 reclamation policy, then requests target zero and completes deflation before
-pausing vCPUs. Deflation returns capacity to the Guest allocator without eagerly
-repopulating backing discarded by Firecracker; subsequent Guest accesses can
-fault that backing in again. Reclamation diagnostics and severe-retention
-rejection are decided against the original positive target before deflation.
-Background park allows up to 30 seconds for deflation convergence, including
-in-flight statistics requests, to tolerate slow deflation without discarding a
-reusable sandbox at the foreground deadline. This wait remains interruptible by
-an exact-successor handoff. The deadline starts after the target-zero PATCH
+pausing vCPUs. Inflation first settles for five seconds. A severe residual can
+receive fixed five-second extensions, up to a 30-second absolute settle limit,
+only while Firecracker reports the current target and progress between the two
+latest samples. Cached `MemFree` and `MemAvailable` can authorize an extension
+when they cover the residual and the additional 192 MiB reserve. When only
+cached `MemFree` is insufficient, every extension boundary instead requires a
+new quiesced Guest `/proc/meminfo` snapshot whose `MemAvailable` covers the same
+residual and reserve. A missing, failed, timed-out, or insufficient snapshot
+does not grant grace. Snapshot latency consumes the fixed schedule and absolute
+limit, and an exact-successor handoff can interrupt the request.
+
+Deflation returns capacity to the Guest allocator without eagerly repopulating
+backing discarded by Firecracker; subsequent Guest accesses can fault that
+backing in again. Reclamation diagnostics and severe-retention rejection are
+decided against the original positive target before deflation. Background park
+allows up to 30 seconds for deflation convergence, including in-flight
+statistics requests, to tolerate slow deflation without discarding a reusable
+sandbox at the foreground deadline. This wait remains interruptible by an
+exact-successor handoff. The deadline starts after the target-zero PATCH
 completes; it does not bound the whole park operation. A stalled sandbox retains
 its full resource budget until recovery destroys it. A longer park can delay
-hard-cancellation cleanup and local-provider completion, which wait for finalization.
+hard-cancellation cleanup and local-provider completion, which wait for
+finalization.
 
 Unpark of a completed reusable park resumes vCPUs and Guest operations without
 another balloon request or statistics query. Park already completed deflation,

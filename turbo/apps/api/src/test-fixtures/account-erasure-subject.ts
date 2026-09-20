@@ -19,6 +19,7 @@ import {
   createDeferredPromise,
   detach,
   Mechanism,
+  onRejection,
   settleIncludingAbort,
 } from "../signals/utils";
 
@@ -209,6 +210,17 @@ interface TransactionBarrierEntryDeferred {
   readonly settled: () => boolean;
 }
 
+function rejectBarrierEntry(
+  entered: TransactionBarrierEntryDeferred,
+  release: () => void,
+  error: unknown,
+): void {
+  if (!entered.settled()) {
+    entered.reject(error);
+  }
+  release();
+}
+
 function settleOwnedBarrierEntry<T>(promise: Promise<T>) {
   acknowledgeDetachedForTest(promise);
   return settleIncludingAbort(promise);
@@ -286,10 +298,7 @@ async function deliverPausedCallbackQuery(args: {
     })(),
   );
   if (!paused.ok) {
-    if (!args.entered.settled()) {
-      args.entered.reject(paused.error);
-    }
-    args.release();
+    rejectBarrierEntry(args.entered, args.release, paused.error);
     Reflect.apply(args.completion, args.receiver, [paused.error]);
     return;
   }
@@ -431,18 +440,23 @@ export async function withDatabaseTransactionBarrierFixture<T>(
         };
         return execute(interceptedArgs);
       }
-      return (async () => {
-        const executed: unknown = args.pauseAfter
-          ? await execute(queryArgs)
-          : undefined;
-        const settings = await readTransactionBarrierSettings(execute);
-        entered.resolve({
-          ...settings,
-          rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
-        });
-        await released.promise;
-        return args.pauseAfter ? executed : await execute(queryArgs);
-      })();
+      return onRejection(
+        (async () => {
+          const executed: unknown = args.pauseAfter
+            ? await execute(queryArgs)
+            : undefined;
+          const settings = await readTransactionBarrierSettings(execute);
+          entered.resolve({
+            ...settings,
+            rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
+          });
+          await released.promise;
+          return args.pauseAfter ? executed : await execute(queryArgs);
+        })(),
+        (error) => {
+          rejectBarrierEntry(entered, release, error);
+        },
+      );
     },
   });
   const result = await settleIncludingAbort(

@@ -2,13 +2,13 @@ import { Buffer } from "node:buffer";
 import { generateKeyPairSync } from "node:crypto";
 
 import type {
-  ConnectorExternalCodeSessionCompleteResponse,
-  ConnectorExternalCodeSessionStartResponse,
-  ConnectorListResponse,
-  ConnectorOauthDeviceAuthSessionPollResponse,
-  ConnectorOauthDeviceAuthSessionStartResponse,
-  ConnectorOauthStartResponse,
-  ConnectorResponse,
+  BuiltinConnectorExternalCodeSessionCompleteResponse,
+  BuiltinConnectorExternalCodeSessionStartResponse,
+  BuiltinConnectorListResponse,
+  BuiltinConnectorOauthDeviceAuthSessionPollResponse,
+  BuiltinConnectorOauthDeviceAuthSessionStartResponse,
+  BuiltinConnectorOauthStartResponse,
+  BuiltinConnectorResponse,
   ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import type {
@@ -20,7 +20,7 @@ import {
   type ConnectorAccountConnection,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { githubOauthContract } from "@okouai/api-contracts/contracts/github-oauth";
 import {
   integrationsGithubContract,
@@ -46,15 +46,15 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import {
-  connectorManualGrantContract,
-  connectorExternalCodeSessionContract,
-  connectorOauthDeviceAuthSessionContract,
-  connectorOauthStartContract,
-  connectorScopeDiffContract,
-  connectorsBySlugContract,
-  connectorsMainContract,
-  connectorsSearchContract,
-  type ConnectorSearchResponse,
+  builtinConnectorManualGrantContract,
+  builtinConnectorExternalCodeSessionContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
+  builtinConnectorOauthStartContract,
+  builtinConnectorScopeDiffContract,
+  builtinConnectorsBySlugContract,
+  builtinConnectorsMainContract,
+  builtinConnectorsSearchContract,
+  type BuiltinConnectorSearchResponse,
 } from "@okouai/api-contracts/contracts/connectors";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
@@ -69,14 +69,14 @@ import { server } from "../../../../mocks/server";
 import { createDeferredPromise } from "../../../utils";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
-import { connectorsSlugCallbackRoutes } from "../../connectors-slug-callback";
+import { builtinConnectorsSlugCallbackRoutes } from "../../connectors-slug-callback";
 import { githubOauthRoutes } from "../../github-oauth";
 import { integrationsGithubRoutes } from "../../integrations-github";
 import { agentsRoutes } from "../../agents";
 import { connectorAccountRoutes } from "../../connector-accounts";
-import { connectorsRoutes } from "../../connectors";
-import { connectorsExternalCodeRoutes } from "../../connectors-external-code";
-import { connectorsOauthDeviceAuthRoutes } from "../../connectors-oauth-device-auth";
+import { builtinConnectorsRoutes } from "../../connectors";
+import { builtinConnectorsExternalCodeRoutes } from "../../connectors-external-code";
+import { builtinConnectorsOauthDeviceAuthRoutes } from "../../connectors-oauth-device-auth";
 import { customConnectorsRoutes } from "../../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../../custom-connectors-delete";
 import { customConnectorsGetRoutes } from "../../custom-connectors-get";
@@ -93,14 +93,14 @@ const customConnectorByIdTestRoutes = Object.freeze([
 ]);
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...connectorsSlugCallbackRoutes,
+  ...builtinConnectorsSlugCallbackRoutes,
   ...githubOauthRoutes,
   ...integrationsGithubRoutes,
   ...agentsRoutes,
   ...connectorAccountRoutes,
-  ...connectorsExternalCodeRoutes,
-  ...connectorsOauthDeviceAuthRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsExternalCodeRoutes,
+  ...builtinConnectorsOauthDeviceAuthRoutes,
+  ...builtinConnectorsRoutes,
   ...customConnectorsRoutes,
   ...featureSwitchesRoutes,
 ]);
@@ -280,6 +280,12 @@ export function mockCustomConnectorOAuth2Provider(
 }
 
 interface AutomaticMcpOAuthProviderOptions {
+  readonly authorizationCodeErrors?: readonly (
+    | "invalid_client"
+    | "invalid_grant"
+    | "temporarily_unavailable"
+    | null
+  )[];
   readonly registration: "cimd" | "dcr" | "none";
   readonly authentication?: "invalid" | "none" | "oauth";
   readonly issuerParameterSupported?: boolean;
@@ -307,9 +313,15 @@ interface AutomaticMcpOAuthProviderOptions {
     | "invalid_grant"
     | "temporarily_unavailable"
   )[];
-  readonly refreshResponse?: (attempt: number) => Response | Promise<Response>;
+  readonly refreshResponse?: (
+    attempt: number,
+    signal: AbortSignal,
+  ) => Response | Promise<Response>;
   readonly initialExpiresIn?: number;
   readonly initialRefreshToken?: string;
+  readonly omitRefreshToken?: boolean;
+  readonly endpoint?: string;
+  readonly initialAccessToken?: string;
   readonly resource?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
@@ -335,9 +347,10 @@ export function mockAutomaticMcpOAuthProvider(
   context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
 ): AutomaticMcpOAuthProviderRecorder {
-  const endpoint = "https://automatic-mcp.example.test/server";
-  const resourceMetadataUrl =
-    "https://automatic-mcp.example.test/oauth-resource";
+  const endpoint =
+    options.endpoint ?? "https://automatic-mcp.example.test/server";
+  const endpointUrl = new URL(endpoint);
+  const resourceMetadataUrl = new URL("/oauth-resource", endpoint).href;
   const issuer = "https://automatic-issuer.example.test";
   const authorizationUrl = `${issuer}/authorize`;
   const tokenUrl = `${issuer}/token`;
@@ -370,7 +383,7 @@ export function mockAutomaticMcpOAuthProvider(
       : {}),
   };
   for (const hostname of [
-    "automatic-mcp.example.test",
+    endpointUrl.hostname,
     "automatic-issuer.example.test",
   ]) {
     context.mocks.dns.lookupOverrides.set(hostname, [
@@ -470,13 +483,16 @@ export function mockAutomaticMcpOAuthProvider(
           });
     }),
     http.get(
-      "https://automatic-mcp.example.test/.well-known/oauth-protected-resource/server",
+      new URL(
+        `/.well-known/oauth-protected-resource${endpointUrl.pathname}`,
+        endpoint,
+      ).href,
       () => {
         return new HttpResponse(null, { status: 404 });
       },
     ),
     http.get(
-      "https://automatic-mcp.example.test/.well-known/oauth-protected-resource",
+      new URL("/.well-known/oauth-protected-resource", endpoint).href,
       () => {
         return options.resourceMetadataStatus
           ? HttpResponse.json(
@@ -542,10 +558,23 @@ export function mockAutomaticMcpOAuthProvider(
       if (refresh) {
         refreshAttempts += 1;
         if (options.refreshResponse) {
-          return await options.refreshResponse(refreshAttempts);
+          return await options.refreshResponse(refreshAttempts, request.signal);
         }
       } else {
         authorizationCodeAttempts += 1;
+        const authorizationCodeError =
+          options.authorizationCodeErrors?.[authorizationCodeAttempts - 1];
+        if (authorizationCodeError) {
+          return HttpResponse.json(
+            { error: authorizationCodeError },
+            {
+              status:
+                authorizationCodeError === "temporarily_unavailable"
+                  ? 503
+                  : 400,
+            },
+          );
+        }
       }
       const refreshError = refresh
         ? (options.refreshErrors?.[refreshAttempts - 1] ?? options.refreshError)
@@ -561,8 +590,8 @@ export function mockAutomaticMcpOAuthProvider(
       return HttpResponse.json({
         access_token: refresh
           ? "automatic-refreshed-access-token"
-          : "automatic-initial-access-token",
-        ...(!refresh
+          : (options.initialAccessToken ?? "automatic-initial-access-token"),
+        ...(!refresh && !options.omitRefreshToken
           ? {
               refresh_token:
                 options.initialRefreshToken ?? "automatic-refresh-token",
@@ -1837,8 +1866,8 @@ export function createConnectorBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       statuses: readonly (200 | 401 | 403 | 500)[],
     ) {
-      const client = setupApp({ context, routes: connectorsRoutes })(
-        connectorsMainContract,
+      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsMainContract,
       );
       return await accept(
         client.list({ headers: authenticate(actor) }),
@@ -1846,7 +1875,9 @@ export function createConnectorBddApi(context: TestContext) {
       );
     },
 
-    async listConnectors(actor: ApiTestUser): Promise<ConnectorListResponse> {
+    async listBuiltinConnectors(
+      actor: ApiTestUser,
+    ): Promise<BuiltinConnectorListResponse> {
       const response = await api.requestListConnectors(actor, [200]);
       expectStatus(response, 200);
       return response.body;
@@ -1857,8 +1888,8 @@ export function createConnectorBddApi(context: TestContext) {
       keyword: string | undefined,
       statuses: readonly (200 | 401 | 403)[],
     ) {
-      const client = setupApp({ context, routes: connectorsRoutes })(
-        connectorsSearchContract,
+      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsSearchContract,
       );
       return await accept(
         client.search({ query: { keyword }, headers: authenticate(actor) }),
@@ -1869,7 +1900,7 @@ export function createConnectorBddApi(context: TestContext) {
     async searchConnectors(
       actor: ApiTestUser,
       keyword?: string,
-    ): Promise<ConnectorSearchResponse> {
+    ): Promise<BuiltinConnectorSearchResponse> {
       const response = await api.requestSearchConnectors(actor, keyword, [200]);
       expectStatus(response, 200);
       return response.body;
@@ -1880,8 +1911,8 @@ export function createConnectorBddApi(context: TestContext) {
       connectorSlug: ConnectorSlug,
       statuses: readonly (200 | 401 | 403 | 404)[],
     ) {
-      const client = setupApp({ context, routes: connectorsRoutes })(
-        connectorsBySlugContract,
+      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
       );
       return await accept(
         client.get({
@@ -1895,7 +1926,7 @@ export function createConnectorBddApi(context: TestContext) {
     async readConnectorBySlug(
       actor: ApiTestUser,
       connectorSlug: ConnectorSlug,
-    ): Promise<ConnectorResponse> {
+    ): Promise<BuiltinConnectorResponse> {
       const response = await api.requestReadConnectorBySlug(
         actor,
         connectorSlug,
@@ -2011,8 +2042,8 @@ export function createConnectorBddApi(context: TestContext) {
       connectorSlug: ConnectorSlug,
       statuses: readonly (200 | 401 | 403 | 404)[],
     ) {
-      const client = setupApp({ context, routes: connectorsRoutes })(
-        connectorScopeDiffContract,
+      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorScopeDiffContract,
       );
       return await accept(
         client.getScopeDiff({
@@ -2044,8 +2075,8 @@ export function createConnectorBddApi(context: TestContext) {
         readonly account?: ConnectorAccountMutationIntent;
       },
     ) {
-      const client = setupApp({ context, routes: connectorsRoutes })(
-        connectorManualGrantContract,
+      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorManualGrantContract,
       );
       return await accept(
         client.connect({
@@ -2072,7 +2103,7 @@ export function createConnectorBddApi(context: TestContext) {
         agentId?: string,
         account?: ConnectorAccountMutationIntent,
       ]
-    ): Promise<ConnectorResponse> {
+    ): Promise<BuiltinConnectorResponse> {
       const [agentId, account = { intent: "add" }] = options;
       const response = await api.requestManualGrant(
         actor,
@@ -2097,8 +2128,8 @@ export function createConnectorBddApi(context: TestContext) {
         readonly account?: ConnectorAccountMutationIntent;
       },
     ) {
-      const client = setupApp({ context, routes: connectorsRoutes })(
-        connectorOauthStartContract,
+      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorOauthStartContract,
       );
       return await accept(
         client.start({
@@ -2124,7 +2155,7 @@ export function createConnectorBddApi(context: TestContext) {
       authMethod: ConnectorAuthMethodId,
       agentId?: string,
       account?: ConnectorAccountMutationIntent,
-    ): Promise<ConnectorOauthStartResponse> {
+    ): Promise<BuiltinConnectorOauthStartResponse> {
       const response = await api.requestOauthStart(
         actor,
         connectorSlug,
@@ -2148,8 +2179,8 @@ export function createConnectorBddApi(context: TestContext) {
       const client = setupApp({
         baseUrl: options.baseUrl,
         context,
-        routes: connectorsSlugCallbackRoutes,
-      })(connectorsSlugCallbackContract);
+        routes: builtinConnectorsSlugCallbackRoutes,
+      })(builtinConnectorsSlugCallbackContract);
       return await accept(
         client.callback({
           params: { connectorSlug },
@@ -2166,8 +2197,8 @@ export function createConnectorBddApi(context: TestContext) {
     ) {
       const client = setupApp({
         context,
-        routes: connectorsSlugCallbackRoutes,
-      })(connectorsSlugCallbackContract);
+        routes: builtinConnectorsSlugCallbackRoutes,
+      })(builtinConnectorsSlugCallbackContract);
       const response = await accept(
         client.callback({
           params: { connectorSlug },
@@ -2305,8 +2336,8 @@ export function createConnectorBddApi(context: TestContext) {
       const [options, statuses, account = { intent: "add" }] = request;
       const client = setupApp({
         context,
-        routes: connectorsOauthDeviceAuthRoutes,
-      })(connectorOauthDeviceAuthSessionContract);
+        routes: builtinConnectorsOauthDeviceAuthRoutes,
+      })(builtinConnectorOauthDeviceAuthSessionContract);
       return await accept(
         client.create({
           params: { connectorSlug },
@@ -2323,7 +2354,7 @@ export function createConnectorBddApi(context: TestContext) {
       authMethod: ConnectorAuthMethodId,
       options?: Readonly<Record<string, string>>,
       account: ConnectorAccountMutationIntent = { intent: "add" },
-    ): Promise<ConnectorOauthDeviceAuthSessionStartResponse> {
+    ): Promise<BuiltinConnectorOauthDeviceAuthSessionStartResponse> {
       const response = await api.requestDeviceAuthStart(
         actor,
         connectorSlug,
@@ -2345,8 +2376,8 @@ export function createConnectorBddApi(context: TestContext) {
     ) {
       const client = setupApp({
         context,
-        routes: connectorsOauthDeviceAuthRoutes,
-      })(connectorOauthDeviceAuthSessionContract);
+        routes: builtinConnectorsOauthDeviceAuthRoutes,
+      })(builtinConnectorOauthDeviceAuthSessionContract);
       return await accept(
         client.poll({
           params: { connectorSlug, sessionId },
@@ -2362,7 +2393,7 @@ export function createConnectorBddApi(context: TestContext) {
       connectorSlug: ConnectorSlug,
       sessionId: string,
       sessionToken: string,
-    ): Promise<ConnectorOauthDeviceAuthSessionPollResponse> {
+    ): Promise<BuiltinConnectorOauthDeviceAuthSessionPollResponse> {
       const response = await api.requestDeviceAuthPoll(
         actor,
         connectorSlug,
@@ -2383,8 +2414,8 @@ export function createConnectorBddApi(context: TestContext) {
     ) {
       const client = setupApp({
         context,
-        routes: connectorsExternalCodeRoutes,
-      })(connectorExternalCodeSessionContract);
+        routes: builtinConnectorsExternalCodeRoutes,
+      })(builtinConnectorExternalCodeSessionContract);
       return await accept(
         client.create({
           params: { connectorSlug },
@@ -2407,8 +2438,8 @@ export function createConnectorBddApi(context: TestContext) {
     ) {
       const client = setupApp({
         context,
-        routes: connectorsExternalCodeRoutes,
-      })(connectorExternalCodeSessionContract);
+        routes: builtinConnectorsExternalCodeRoutes,
+      })(builtinConnectorExternalCodeSessionContract);
       return await accept(
         client.complete({
           params: { connectorSlug, sessionId: args.sessionId },
@@ -2424,7 +2455,7 @@ export function createConnectorBddApi(context: TestContext) {
       connectorSlug: ConnectorSlug,
       authMethod: ConnectorAuthMethodId,
       account?: ConnectorAccountMutationIntent,
-    ): Promise<ConnectorExternalCodeSessionStartResponse> {
+    ): Promise<BuiltinConnectorExternalCodeSessionStartResponse> {
       const response = await api.requestExternalCodeStart(
         actor,
         connectorSlug,
@@ -2444,7 +2475,7 @@ export function createConnectorBddApi(context: TestContext) {
         readonly sessionToken: string;
         readonly code: string;
       },
-    ): Promise<ConnectorExternalCodeSessionCompleteResponse> {
+    ): Promise<BuiltinConnectorExternalCodeSessionCompleteResponse> {
       const response = await api.requestExternalCodeComplete(
         actor,
         connectorSlug,

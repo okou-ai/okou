@@ -186,6 +186,37 @@ than inferring recovery from missing warnings. Old draining Runners can still
 emit the previous immediate warnings, so group evidence by deployed identity.
 This observation does not require or authorize production fault injection.
 
+### API heartbeat delivery recovery
+
+The Runner sends routine API heartbeats every 10s through one single-flight
+owner. In `starting`, `running` and `draining` modes, send timeouts, connect
+failures and a typed TCP connection reset participate in one Runner-local
+heartbeat degradation episode. The first failure is INFO. If delivery keeps
+failing for at least 30s after the first observed failure, the next failed
+attempt emits one `heartbeat delivery degraded` WARN; later eligible failures
+remain INFO with `degraded=true`. The threshold is an operational boundary
+evaluated when a failed request completes, not a new timer or retry deadline.
+
+The next successful heartbeat clears the episode and emits
+`heartbeat delivery recovered` at INFO with the failure count, elapsed time and
+whether the episode degraded. INFO remains local because Axiom ingests WARN+.
+Stopping-mode heartbeats and unsupported construction, HTTP status, body,
+decode, protocol, local and unclassified failures retain immediate WARN
+visibility and do not advance an eligible episode.
+
+This policy does not replay an ambiguously completed request. The next scheduled
+heartbeat sends fresh Runner state using the existing cadence, request timeout,
+single-flight ownership and freshness boundaries. Recovery proves that later
+heartbeat delivery resumed; it does not identify the reset initiator or prove
+whether an unlogged failed request reached server processing.
+
+Before closing [#35470](https://github.com/vm0-ai/okou/issues/35470), identify the
+deployed Runner release and commit and inspect a bounded real-traffic window for
+the exact reset, degradation and recovery signatures. Group older draining
+Runners separately because they retain the previous immediate warning policy.
+Missing WARN records alone do not prove recovery, and verification does not
+require or authorize production fault injection.
+
 ### Builtin firewall catalog refresh recovery
 
 Startup still requires a successful catalog fetch, validation and private cache

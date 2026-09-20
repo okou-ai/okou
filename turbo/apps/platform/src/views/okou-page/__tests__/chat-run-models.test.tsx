@@ -7,7 +7,10 @@ import {
   type OrgModelPolicy,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
+  CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { GetRunResponse } from "@okouai/api-contracts/contracts/runs";
@@ -32,6 +35,7 @@ import {
   completedEvent,
   context,
   findButton,
+  findEnabledButton,
   installRunChat,
   NEW_CHAT_PATH,
   promptEvent,
@@ -526,6 +530,11 @@ test.each([
     "provider_queue_timeout",
     "Oops, something went wrong. Please try again later.",
   ],
+  [
+    "Codex access program",
+    "codex_access_program_unavailable",
+    CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
+  ],
 ] as const)(
   "A terminal provider failure (%s) displays its message without a recovery action",
   async (_owner, failureReason, message) => {
@@ -880,12 +889,58 @@ test("Recover from a personal model account limit", async () => {
   await expect(findButton("Stop")).resolves.toBeVisible();
 });
 
+// The divider is the only place the transcript says a recovery switch took
+// effect, and it reads the run-model annotation on the input event. The
+// continue run therefore has to carry the selection the card just wrote:
+// without it the reader sees the new run start under the old model's history
+// and waits for the server's copy of the event to say otherwise.
+test("Announce a recovery model switch on the continue run", async () => {
+  const user = userEvent.setup({ delay: null });
+  const sentModels: (string | undefined)[] = [];
+  configureModelPolicies(["gpt-5.6-luna", "gpt-5.6-sol"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-luna",
+    chatEvents: failedRunEvents(
+      "Selected model is at capacity. Please try a different model.",
+      "gpt-5.6-luna",
+    ),
+    onRunCreate: (body) => {
+      const model = body.userMessage?.parts.find((part) => {
+        return part.type === "model";
+      });
+      sentModels.push(
+        model?.type === "model" ? model.selectedModel : undefined,
+      );
+    },
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  const recovery = await openRecoveryDetails();
+  await user.click(within(recovery).getByRole("combobox"));
+  await user.click(await screen.findByRole("option", { name: "GPT 5.6 Sol" }));
+
+  click(await findButton("Try again"));
+
+  await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText("Model changed to GPT 5.6 Sol"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(sentModels).toStrictEqual(["gpt-5.6-sol"]);
+  });
+});
+
 // The transcript's scroll result when this card resolves is a layout contract:
 // jsdom reports the scroller as zero-height, so `isAtBottom` is trivially true
 // here. `e2e/playwright/regressions/chat-card-scroll.ts` owns that result for
-// the recovery card in Chromium and WebKit. This case covers what the page
-// shows: the generic failure copy while the run detail is held, then the
-// resolved recovery copy in its place.
+// the recovery card in Chromium and WebKit, including that the card keeps one
+// mounted frame across this transition. This case covers what the page shows:
+// a spinner while the run detail is held, then the resolved recovery copy.
+// Showing the generic failure copy during the wait is what this replaced — it
+// offered a details dialog whose contents, and whose model switch, changed
+// once the classification landed.
 test("Replace the failure card copy when recovery resolves", async () => {
   configureModelPolicies(["gpt-5.6-luna"]);
   installRunChat({
@@ -920,21 +975,25 @@ test("Replace the failure card copy when recovery resolves", async () => {
 
   await readyChat();
   await detailRequested.promise;
+  const shell = await screen.findByTestId("assistant-error-card-shell");
   await expect(
-    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
-      "This run couldn't finish",
-    ),
+    within(shell).findByTestId("assistant-error-card-loading"),
   ).resolves.toBeInTheDocument();
+  // Neither copy is readable yet, and no dialog is reachable, so nothing the
+  // reader can act on changes when the classification lands.
+  expect(screen.queryByText("This run couldn't finish")).toBeNull();
+  expect(screen.queryByText("This model is busy right now")).toBeNull();
+  expect(queryButton("View details", shell)).toBeNull();
   expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
 
   releaseDetail.resolve();
 
-  await expect(
-    within(await screen.findByTestId("assistant-error-card-shell")).findByText(
-      "This model is busy right now",
-    ),
-  ).resolves.toBeInTheDocument();
+  const recovery = await within(shell).findByTestId("assistant-error-recovery");
+  expect(
+    within(recovery).getByText("This model is busy right now"),
+  ).toBeInTheDocument();
   expect(screen.queryByText("This run couldn't finish")).toBeNull();
+  expect(screen.queryByTestId("assistant-error-card-loading")).toBeNull();
 });
 
 test("Recover when a model is at capacity", async () => {
@@ -1261,7 +1320,11 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   await waitFor(() => {
     expect(reads).toStrictEqual([RUN_A]);
   });
-  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
+  // The card waits on this read rather than showing copy it would replace.
+  expect(
+    screen.getByTestId("assistant-error-card-loading"),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("This run couldn't finish")).toBeNull();
   detailGate.resolve();
   await expect(
     screen.findByText("Codex limit reached"),
@@ -1312,10 +1375,16 @@ test("Continue a run that reached its execution time limit", async () => {
 
   await waitFor(() => {
     expect(retriedPrompts).toStrictEqual(["continue"]);
+    // The continue run carries the thread's model the same way a composer
+    // message does, so the transcript can place it against the run history
+    // without waiting for the server's copy of the event.
     expect(retriedMessages).toStrictEqual([
       expect.objectContaining({
         version: 1,
-        parts: [{ type: "text", text: "continue" }],
+        parts: [
+          { type: "text", text: "continue" },
+          { type: "model", selectedModel: "gpt-5.6-sol" },
+        ],
       }),
     ]);
   });
@@ -1393,7 +1462,10 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
       expect(sentMessages).toStrictEqual([
         {
           version: 1,
-          parts: [{ type: "text", text: "continue" }],
+          parts: [
+            { type: "text", text: "continue" },
+            { type: "model", selectedModel: "gpt-5.6-sol" },
+          ],
         },
       ]);
     });
@@ -1459,7 +1531,9 @@ test("Preserve provider errors that have no guided recovery", async () => {
   });
 
   await readyChat();
-  expect(screen.getByText(providerError)).toBeVisible();
+  // The card spins until the classification settles, so the preserved provider
+  // text is what it settles on rather than what it starts from.
+  await expect(screen.findByText(providerError)).resolves.toBeInTheDocument();
   expect(
     screen.queryByText("This model is busy right now"),
   ).not.toBeInTheDocument();
@@ -1468,22 +1542,27 @@ test("Preserve provider errors that have no guided recovery", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("Switch away from a model rejected by the connected account", async () => {
+const UNSUPPORTED_MODEL_ERROR = JSON.stringify({
+  type: "error",
+  status: 400,
+  error: {
+    type: "invalid_request_error",
+    message:
+      "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.",
+  },
+});
+
+// The rejection is permanent for the model that produced it, so the card holds
+// the retry action back until the thread points at a different supported model.
+// Both halves of that transition are the contract: the picker alone while the
+// rejected model is still selected, and a working continue once it is not.
+test("Continue on a replacement model after the connected account rejects one", async () => {
   const user = userEvent.setup({ delay: null });
   const sentModels: (string | undefined)[] = [];
-  const unsupportedError = JSON.stringify({
-    type: "error",
-    status: 400,
-    error: {
-      type: "invalid_request_error",
-      message:
-        "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.",
-    },
-  });
   configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",
-    chatEvents: failedRunEvents(unsupportedError, "gpt-5.6-sol"),
+    chatEvents: failedRunEvents(UNSUPPORTED_MODEL_ERROR, "gpt-5.6-sol"),
     onRunCreate: (body) => {
       const model = body.userMessage?.parts.find((part) => {
         return part.type === "model";
@@ -1501,8 +1580,9 @@ test("Switch away from a model rejected by the connected account", async () => {
     screen.findByText("Selected model isn't available"),
   ).resolves.toBeVisible();
   expect(queryButton("Reset and try again")).toBeNull();
-  expect(queryButton("Continue")).toBeNull();
   const recovery = await openRecoveryDetails();
+  expect(queryButton("Try again", recovery)).toBeNull();
+
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   expect(
@@ -1511,16 +1591,34 @@ test("Switch away from a model rejected by the connected account", async () => {
   await user.click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
 
   expect(picker).toHaveTextContent("GPT 5.6 Luna");
-  expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);
   expect(sentModels).toHaveLength(0);
 
-  click(await findButton("Close"));
-  await sendText("Try a new instruction with Luna");
+  click(await findEnabledButton("Try again", recovery));
 
-  await expect(
-    screen.findByText("Try a new instruction with Luna"),
-  ).resolves.toBeVisible();
+  await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(sentModels).toStrictEqual(["gpt-5.6-luna"]);
   });
+});
+
+// A thread that never pinned a model is not a thread that switched away from
+// one: continuing would re-resolve the same default the run already failed on,
+// so a selection that merely differs from `failedModel` must not open the gate.
+test("Withhold continue while the rejected run has no replacement selection", async () => {
+  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: null,
+    chatEvents: failedRunEvents(UNSUPPORTED_MODEL_ERROR, "gpt-5.6-sol"),
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  await expect(
+    screen.findByText("Selected model isn't available"),
+  ).resolves.toBeVisible();
+  const recovery = await openRecoveryDetails();
+  expect(within(recovery).getByRole("combobox")).toBeVisible();
+  expect(queryButton("Try again", recovery)).toBeNull();
+  expect(queryButton("Reset and try again", recovery)).toBeNull();
 });

@@ -96,6 +96,16 @@ on recovery eligibility. Successful recovery, attempt timeout, cancellation and
 discarded late-result observations remain; a planned recovery alone does not
 prove that a Sandbox attempt occurred. The durable no-replay fence still applies.
 
+The winning canonical failure record uses the same persisted product route and
+credential-owner projection for Sandbox Pi, Codex, Claude Code and API-first.
+The completion input remains identical in responsibility across executors: it
+carries the canonical reason, not a rich execution diagnostic. Runner records
+Codex, Claude Code and Sandbox Pi execution diagnostics before forwarding that
+reason. API-first mirrors that boundary locally after its terminal transition
+wins, using INFO for classified provider outcomes and ERROR for unclassified
+failures. Its bounded category/status/transport evidence never becomes a
+Pi-only completion field or a persisted provider response.
+
 ## Durable producer mode
 
 `PiApiFirstTurnActivation` explicitly distinguishes `legacy-sandbox-race` from

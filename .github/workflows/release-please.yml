@@ -1,11 +1,11 @@
 name: release-please
 
-# Releases run straight off the push to main. Waiting for the Turbo run on main
+# Releases run straight off the push to main. Waiting for the Staging workflow
 # adds no artifact dependency: each queued pull request's merge-group Turbo run
 # uploads the canonical app and CLI artifacts under its merged commit SHA, and
 # the Desktop workflow does the same when its package version changes.
-# release-please deploys that same SHA as release_target. The Turbo push run
-# reuses its artifacts and only repoints the staging-app Pages alias.
+# release-please deploys that same SHA as release_target. Staging independently
+# reuses those artifacts to deploy and verify the shared staging environment.
 on:
   push:
     branches: ["main"]
@@ -101,7 +101,7 @@ jobs:
       app_worker_version: ${{ steps.release.outputs['turbo/apps/app-worker--version'] }}
       desktop_version: ${{ steps.release.outputs['turbo/apps/desktop--version'] }}
     steps:
-      - uses: vm0-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
+      - uses: okou-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -330,7 +330,7 @@ jobs:
         with:
           ref: main
 
-      - uses: vm0-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
+      - uses: okou-ai/release-please-action@3971df459631cdcf704dcbf86231cb26b790a7c8 # vm0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
@@ -964,7 +964,7 @@ jobs:
       group: deploy-host-worker-production
       cancel-in-progress: false
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     permissions:
       contents: read
     environment: production
@@ -1109,7 +1109,7 @@ jobs:
       needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     outputs:
       deployment_url: ${{ steps.deploy.outputs.url }}
       vercel_dashboard_url: ${{ steps.vercel-dashboard.outputs.url }}
@@ -1569,7 +1569,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     defaults:
       run:
         shell: bash
@@ -1957,7 +1957,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     defaults:
       run:
         shell: bash
@@ -1983,7 +1983,18 @@ jobs:
           . .github/scripts/runner-image-target.sh
           runner_image_validate_target "$TARGET_TRIPLE"
           cache_suffix=$(runner_image_cache_suffix "$TARGET_TRIPLE")
+          sccache_architecture=$(runner_image_sccache_architecture "$TARGET_TRIPLE")
           echo "cache_suffix=$cache_suffix" >> "$GITHUB_OUTPUT"
+          echo "sccache_architecture=$sccache_architecture" >> "$GITHUB_OUTPUT"
+
+      - name: Setup R2 sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ steps.target-metadata.outputs.sccache_architecture }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -2212,7 +2223,7 @@ jobs:
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     permissions:
       contents: read
     environment: production
@@ -2462,7 +2473,7 @@ jobs:
        needs.promote-api-production.result == 'success')
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     permissions:
       contents: read
     environment: production
@@ -2651,7 +2662,7 @@ jobs:
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     permissions:
       contents: read
     steps:

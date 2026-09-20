@@ -251,6 +251,8 @@ compositing layers can cause nearby content to flicker in Safari. Preserve their
 layout, focus visibility, touch behavior, and pointer-event rules. When other
 properties still animate, name those properties instead of using
 `transition-all`. This does not remove loading or popup lifecycle animations.
+The shared scrollbars follow Base UI's official fade behavior, documented under
+[Chat scrollbars](#chat-scrollbars).
 
 ## Token and variant governance
 
@@ -265,6 +267,15 @@ affected consumers and theme behavior. A rename or semantic change must update
 those consumers; deprecated names are removed when their consumers have
 migrated, rather than being copied into component-local registries. A change to
 ownership, naming, or theme mapping must update this guide in the same PR.
+
+`text-link` and `text-link-hover` carry the hyperlink colors for first-party
+body copy. They track what Markdown links already render, so a link a user
+typed and a link an Agent wrote read the same: colored with no underline, then
+underlined and a shade deeper on hover. Dark sits four lightness points above
+the Markdown value because that stop was tuned against the canvas and reads
+4.02:1 on the user bubble, while 74% is the first to clear 4.5:1. Markdown
+keeps its own rule in the App stylesheet; these tokens govern first-party
+markup.
 
 Large editable surfaces use `border-surface-focus` to emphasize their existing
 border on focus: neutral gray in light themes and muted amber in dark themes.
@@ -538,6 +549,14 @@ by the chat sidebar and message pane. Compose it with Base UI's
 `ScrollArea.Root`, `ScrollArea.Viewport`, and `ScrollArea.Content`. The vertical
 track is 10px wide with 1px padding, a transparent left border, and a flexible
 rounded `bg-border` thumb. Base UI hides it when content does not overflow.
+
+Visibility follows [Base UI's official Tailwind example](https://github.com/mui/base-ui/blob/v1.7.0/docs/src/app/%28docs%29/react/components/scroll-area/demos/hero/tailwind/index.tsx):
+idle scrollbars are transparent and ignore pointer events; `data-hovering` or
+`data-scrolling` makes them visible and interactive. `transition-opacity` fades
+them out, while `data-scrolling:duration-0` reveals them immediately on scroll.
+Base UI owns the interaction state and scroll timeout; the shared component
+owns these visibility utilities alongside the shadcn geometry and colors.
+
 Callers retain their viewport refs, scroll handlers, content layout, and
 scroll-position ownership; they do not add scrollbar width, color, or offset
 overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
@@ -597,9 +616,14 @@ The shared inner container protects vertical scrolling even when caller layout
 classes include `overflow-hidden`. Short panels must keep their footer actions
 reachable by scrolling; clipping the popup to its safe boundary is not enough.
 Use `showCloseButton` instead of CSS selectors that hide the close control.
-Business code must import the shared dialog rather than Base UI's dialog
-primitives; ESLint enforces this boundary. Preserve Base UI's focus, nested
-portal, outside-press, and animation-completion ownership when changing it.
+`hideWhenNestedOpen` takes the popup out of view for as long as a dialog opened
+from inside it is on top, reading Base UI's `data-nested-dialog-open` state on
+the popup. Take it where the nested dialog is the same surface seen closer and
+is narrower, so the uncovered edges would otherwise read as a second panel
+behind it; both dialogs keep their own backdrop either way. Business code must
+import the shared dialog rather than Base UI's dialog primitives; ESLint
+enforces this boundary. Preserve Base UI's focus, nested portal, outside-press,
+and animation-completion ownership when changing it.
 
 The windowed popup's radius is `rounded-2xl`, and a layer inset from one of its
 edges derives its own from that figure: inner radius = 16px minus the inset it
@@ -652,10 +676,12 @@ met it.
 ### Floating layers and portal ownership
 
 Portals belong to the shared primitives. Business components must not import
-`createPortal` from `react-dom`. `DialogContent`, `SheetContent`,
-`PopoverContent`, `SelectContent`, `DropdownMenuContent` and `TooltipContent`
-already own that relocation through Base UI's own `Portal`, together with the
-focus, outside-press, scroll-lock and `aria` ownership that arrives with it.
+`createPortal` from `react-dom`; `no-restricted-imports` in
+`turbo/apps/platform/eslint.config.js` enforces that. `DialogContent`,
+`SheetContent`, `PopoverContent`, `SelectContent`, `DropdownMenuContent` and
+`TooltipContent` already own that relocation through Base UI's own `Portal`,
+together with the focus, outside-press, scroll-lock and `aria` ownership that
+arrives with it.
 The portal there is not a rendering convenience: it is what lets a layer escape
 an ancestor's `overflow` clip or `transform` containing block, which is a DOM
 constraint rather than a state-location one. The toaster is the one surface
@@ -670,6 +696,29 @@ covers. `fixed` changes positioning, but does not escape an ancestor's stacking
 context. Establish the correct host before removing an existing portal.
 Swapping a subtree between a portal and its written position remounts it, which
 costs the scroll position and any DOM state it held.
+
+Artifact list and preview fullscreen surfaces use the shared `FullscreenPanel`
+primitive. It moves one stable portal container to `#root` in fullscreen and
+back into its inline slot on exit, escaping the workspace stacking context.
+The fullscreen surface participates in the isolated app root at `z-40`, above
+workspace and sidebar content and below body-level Base UI dialogs and menus.
+This also keeps it below the planned `z-50` primitives when root isolation is
+removed. Business components do not own this portal or its stacking utilities.
+
+Both modes render through the same portal container rather than switching
+between a portal and an in-place React subtree. This preserves React state.
+Native `moveBefore` also preserves scroll, iframe and media state; browsers
+without it use `appendChild` with explicit scroll restoration, but embedded
+frames/media may reload.
+
+Reflowing Markdown previews opt into `FullscreenPanel`'s `scrollAnchor` contract.
+The primitive captures the first visible content block and its viewport offset
+before React changes the fullscreen styles, then restores that reading position
+after moving the portal. It temporarily disables native scroll anchoring during
+the commit so browser compensation cannot compete with restoration. Each toggle
+captures the current reading position, including scrolling done in fullscreen.
+Retaining a DOM node and its numeric `scrollTop` alone does not preserve a
+document's reading position when its line wrapping changes.
 
 Safe-area insets are the surface's own responsibility whenever it is `fixed`
 and meets a viewport edge. `#root` carries the top and horizontal insets as

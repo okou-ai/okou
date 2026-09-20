@@ -18,14 +18,19 @@ An AWS administrator must provision or reconcile this exact role in account
 - Reuse the account's `token.actions.githubusercontent.com` OIDC provider if it
   already exists. Its URL is `https://token.actions.githubusercontent.com` and
   its client ID is `sts.amazonaws.com`; create it only if absent.
-- Apply [role-trust.json](role-trust.json). During the organization rename,
-  trust is restricted to `vm0-ai/okou` and `maxandzoe/okou` jobs in the
-  protected `production` environment and the STS audience. Keep that
+- Keep the GitHub organization's OIDC subject configuration pinned to the
+  verified immutable repository identity: organization ID `242540347`,
+  repository ID `1096175506`, `sub_claim_prefix` set to
+  `repo:okou-ai@242540347/okou@1096175506`, and `use_immutable_subject` set to
+  `true`.
+- Apply [role-trust.json](role-trust.json). Trust is restricted to the exact
+  subject
+  `repo:okou-ai@242540347/okou@1096175506:environment:production` and the STS
+  audience. Do not use the legacy name-only subject
+  `repo:okou-ai/okou:environment:production`. Keep the protected `production`
   environment's protected-branch and human-reviewer rules. Both migration
-  workflow jobs also require `refs/heads/main`. As soon as GitHub confirms the
-  rename, remove the old organization subject from the live role and this
-  policy before post-rename validation, as tracked in
-  [#35094](https://github.com/vm0-ai/okou/issues/35094).
+  workflow jobs also require `refs/heads/main`. The corrective trust update is
+  tracked in [#35094](https://github.com/okou-ai/okou/issues/35094).
 - Set the role's maximum session duration to 7,200 seconds and attach
   [role-permissions.json](role-permissions.json) as an inline policy. This
   allows decrypt and bidirectional rewrap only on the two production keys, and

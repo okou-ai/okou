@@ -3,7 +3,8 @@ import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materializ
 import { authMeRoutes } from "./routes/auth-me";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import type { RouteEntry } from "./route-entry";
-import { connectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
+import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
+import { builtinConnectorsAutomaticRoutes } from "./routes/connectors-automatic";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
 import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-event-search";
 import { cronSnapshotChatEventsRoutes } from "./routes/cron-snapshot-chat-events";
@@ -43,6 +44,7 @@ import { githubOauthRoutes } from "./routes/github-oauth";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runnersRoutes } from "./routes/runners";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
+import { cronProcessBackgroundJobsRoutes } from "./routes/cron-process-background-jobs";
 import { userExportRoutes } from "./routes/user-export";
 import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
@@ -91,9 +93,9 @@ import { computerUseRoutes } from "./routes/computer-use";
 import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
 import { connectorCheckRoutes } from "./routes/connector-check";
-import { connectorsExternalCodeRoutes } from "./routes/connectors-external-code";
-import { connectorsOauthDeviceAuthRoutes } from "./routes/connectors-oauth-device-auth";
-import { connectorsRoutes } from "./routes/connectors";
+import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-external-code";
+import { builtinConnectorsOauthDeviceAuthRoutes } from "./routes/connectors-oauth-device-auth";
+import { builtinConnectorsRoutes } from "./routes/connectors";
 import { connectorAccountRoutes } from "./routes/connector-accounts";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
 import { emailInboundRoutes } from "./routes/email-inbound";
@@ -160,6 +162,7 @@ import { morningBriefDeliveryPreviewRoutes } from "./routes/morning-brief-delive
 import { morningBriefGenerationPreviewRoutes } from "./routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
 import { morningBriefCompositionPreviewRoutes } from "./routes/morning-brief-composition-preview";
+import { morningBriefDebugTriggerRoutes } from "./routes/morning-brief-debug-trigger";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -232,6 +235,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...desktopUpdateRoutes,
   ...githubOauthRoutes,
   ...userExportRoutes,
+  ...cronProcessBackgroundJobsRoutes,
   ...webhooksClerkRoutes,
   ...webhooksBuiltInGenerationRoutes,
   ...webhooksGithubRoutes,
@@ -251,7 +255,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,
   ...webhooksAgentStorageRoutes,
-  ...connectorsSlugCallbackRoutes,
+  ...builtinConnectorsAutomaticRoutes,
+  ...builtinConnectorsSlugCallbackRoutes,
   ...cronCompactChatThreadSnapshotsRoutes,
   ...cronProjectChatEventSearchRoutes,
   ...cronSnapshotChatEventsRoutes,
@@ -312,9 +317,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...codexDeviceAuthRoutes,
   ...connectorCatalogRoutes,
   ...connectorCheckRoutes,
-  ...connectorsExternalCodeRoutes,
-  ...connectorsOauthDeviceAuthRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsExternalCodeRoutes,
+  ...builtinConnectorsOauthDeviceAuthRoutes,
+  ...builtinConnectorsRoutes,
   ...connectorAccountRoutes,
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
@@ -387,6 +392,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...morningBriefDebugTriggerRoutes,
   ...morningBriefCalendarCollectionPreviewRoutes,
   ...morningBriefCollectionPreviewRoutes,
   ...morningBriefGmailCollectionPreviewRoutes,

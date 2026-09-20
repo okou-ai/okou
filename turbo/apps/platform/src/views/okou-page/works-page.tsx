@@ -753,7 +753,9 @@ export function WorksPage() {
             <FeishuCard platform="lark" />
           ) : null}
           <TelegramCard />
-          <AgentPhoneCard />
+          {features[FeatureSwitchKey.AgentPhoneEntry] ? (
+            <AgentPhoneCard />
+          ) : null}
         </div>
       </main>
     </div>

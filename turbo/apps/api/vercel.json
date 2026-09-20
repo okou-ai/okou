@@ -4,6 +4,7 @@
   "framework": null,
   "installCommand": "cd ../.. && pnpm install",
   "crons": [
+    { "path": "/api/cron/process-background-jobs", "schedule": "* * * * *" },
     {
       "path": "/api/cron/cleanup-sandboxes",
       "schedule": "* * * * *"

@@ -1,4 +1,7 @@
-import { createAttachmentResourceUrl$ } from "../attachment-resource-url.ts";
+import {
+  attachmentPreviewSignalsFor,
+  type AttachmentPreviewSignals,
+} from "../attachment-resource-url.ts";
 import {
   command,
   computed,
@@ -168,6 +171,7 @@ export interface AnnotationTarget {
   readonly key: string;
   readonly filename: string;
   readonly url: string;
+  readonly preview?: AttachmentPreviewSignals;
   readonly annotations: ImageAnnotation | null;
   readonly commit: (
     annotations: ImageAnnotation | null,
@@ -719,7 +723,10 @@ function createAnnotationSessionSignals(viewport: AnnotationViewport) {
   });
   const annotationResourceUrl$ = computed(async (get) => {
     const target = get(annotationSessionTarget$);
-    return target ? await get(createAttachmentResourceUrl$(target.url)) : null;
+    if (!target) {
+      return null;
+    }
+    return await get(attachmentPreviewSignalsFor(target).resourceUrl$);
   });
 
   const openAnnotationEditor$ = command(({ set }, target: AnnotationTarget) => {

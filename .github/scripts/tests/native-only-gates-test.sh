@@ -15,7 +15,7 @@ def workflow(name):
     return json.loads(subprocess.check_output(
         ['yq', '-o=json', '.', str(root / f'.github/workflows/{name}.yml')], text=True))['jobs']
 
-turbo, security = workflow('turbo'), workflow('security')
+turbo, security, benchmark = workflow('turbo'), workflow('security'), workflow('benchmark')
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
            'test-other']
@@ -63,15 +63,20 @@ def gate(jobs, name, values, expected):
     assert (result.returncode == 0) == expected, result.stdout + result.stderr
 
 native = context()
-for job in ts_jobs + ['bench-api', 'bench-app', 'lint-runtime-api-compat'] + artifacts:
+for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
     assert not condition(turbo[job], native), job
+for job in ['bench-api', 'bench-app']:
+    assert not condition(benchmark[job], native), job
+    assert condition(benchmark[job], context(ios=False, ts=True)), job
+    assert condition(benchmark[job], context(ios=False, ts=True, event='push')), job
 for job in ['codeql', 'pnpm-audit']:
     assert not condition(security[job], native), job
 for job in ['semgrep', 'gitleaks', 'actionlint', 'pr-title']:
     assert condition(security[job], native), job
 for job in ts_jobs:
     assert condition(turbo[job], context(ios=False, ts=True)), job
-    assert condition(turbo[job], context(ios=False, ts=True, event='push')), job
+    assert condition(turbo[job], context(ios=False, ts=True, event='merge_group')), job
+    assert not condition(turbo[job], context(ios=False, ts=True, event='push')), job
     assert not condition(turbo[job], context(ios=False, ts=False)), job
 for job in artifacts:
     assert 'detect-turbo-ts-checks' in turbo[job]['needs']

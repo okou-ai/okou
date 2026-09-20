@@ -1,3 +1,4 @@
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -60,7 +61,7 @@ test("Integrations show current status and refresh after GitHub connects", async
   });
   const browserOpen = context.mocks.browser.open(providerWindow);
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { agentPhone: true });
 
   await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected (Okou HQ)")).toBeInTheDocument();
@@ -143,15 +144,34 @@ test("Open Telegram settings from Integrations", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("A user connects AgentPhone through the inbound message flow", async () => {
+test("Integrations hide AgentPhone when its feature switch is disabled", async () => {
+  await setupIntegrationsPage(context);
+
+  await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Phone")).not.toBeInTheDocument();
+});
+
+test("A user connects AgentPhone with a prefilled one-time code", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const code = "74290618";
+  const messageHref = `sms:+19039853128?body=${code}`;
   context.mocks.data.agentPhoneIntegration({
     linked: false,
     publicBrand: "okou",
     agentPhoneNumber: "+19039853128",
     configured: true,
   });
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    ({ respond }) => {
+      return respond(200, {
+        code,
+        expiresAt: "2026-09-20T15:10:00.000Z",
+      });
+    },
+  );
 
-  await setupIntegrationsPage(context);
+  await setupIntegrationsPage(context, { agentPhone: true });
 
   const phoneCard = await waitFor(() => {
     return getIntegrationCard("Phone");
@@ -161,24 +181,34 @@ test("A user connects AgentPhone through the inbound message flow", async () => 
 
   const dialog = await screen.findByRole("dialog", { name: "Connect phone" });
   expect(dialog).toHaveAccessibleDescription(
-    "Message this AgentPhone number from the phone you want to connect.",
+    "Scan the code or open Messages, then send the prefilled code.",
   );
   expect(
     within(dialog).getByText(
       "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
     ),
   ).toBeVisible();
-  expect(within(dialog).getByText("Send “hi”")).toBeVisible();
-  expect(within(dialog).getByText("Open our reply")).toBeVisible();
-  expect(
-    within(dialog).getByText(
-      "Tap the connection link within 10 minutes to finish.",
-    ),
-  ).toBeVisible();
+  expect(within(dialog).getByText("or send")).toBeVisible();
+  expect(within(dialog).getByText("to")).toBeVisible();
+  expect(within(dialog).getByText("Expires in 10 minutes")).toBeVisible();
+  expect(within(dialog).getByTestId("agentphone-link-qr")).toHaveAttribute(
+    "data-sms-href",
+    messageHref,
+  );
   expect(getAction("link", "Open Messages", dialog)).toHaveAttribute(
     "href",
-    "sms:+19039853128?body=hi",
+    messageHref,
   );
+
+  click(getAction("button", `Copy connection code ${code}`, dialog));
+  await expect(
+    screen.findByText("Connection code copied"),
+  ).resolves.toBeInTheDocument();
+  click(getAction("button", "Copy +1 (903) 985-3128", dialog));
+  await expect(
+    screen.findByText("Phone number copied"),
+  ).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([code, "+19039853128"]);
 
   publishPhoneLinked();
 

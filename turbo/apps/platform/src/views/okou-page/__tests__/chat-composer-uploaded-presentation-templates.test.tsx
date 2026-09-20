@@ -56,6 +56,25 @@ function observeTemplateSubscriptions() {
         : [];
     });
   };
+  const releasedScopes = () => {
+    const released = new Set(
+      messages.mock.calls.flatMap(([message]) => {
+        const parsed = sharedDatabaseClientMessageSchema.safeParse(message);
+        return parsed.success && parsed.data.type === "realtime-unsubscribe"
+          ? [parsed.data.subscriptionId]
+          : [];
+      }),
+    );
+    return new Set(
+      subscriptions()
+        .filter((subscription) => {
+          return released.has(subscription.subscriptionId);
+        })
+        .map((subscription) => {
+          return subscription.scope;
+        }),
+    );
+  };
   return {
     waitForSubscribed: async (scope: "user" | "org") => {
       await waitFor(() => {
@@ -73,6 +92,11 @@ function observeTemplateSubscriptions() {
             );
           }),
         ).toBeTruthy();
+      });
+    },
+    waitForReleased: async (scope: "user" | "org") => {
+      await waitFor(() => {
+        expect([...releasedScopes()]).toStrictEqual([scope]);
       });
     },
   };
@@ -151,22 +175,13 @@ test("A template subscription failure releases both scopes and leaves built-ins 
     within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
   ).toBeEnabled();
   expect(within(picker).queryByText("Retry")).not.toBeInTheDocument();
-  // Worker-side listener release has no separate page-visible surface. Check
-  // the external Ably boundary after the page has exposed the original failure.
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "user:test-user-123",
-        "presentationTemplatesChanged",
-      ),
-    ).toBeFalsy();
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "org:org_default",
-        "presentationTemplatesChanged",
-      ),
-    ).toBeFalsy();
-  });
+  // Worker-side listener release has no separate page-visible surface, and the
+  // channels themselves no longer answer for this catalog: the custom template
+  // catalog listens to the same topic and keeps its own subscriptions through
+  // this failure. Follow the subscriptions this catalog created instead. Only
+  // the scope that attached has a listener to release — the one that failed to
+  // subscribe never held one.
+  await observed.waitForReleased("user");
 });
 
 test("Retrying a failed catalog restores uploaded templates", async () => {

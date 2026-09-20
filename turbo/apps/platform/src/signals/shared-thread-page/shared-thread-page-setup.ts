@@ -16,7 +16,6 @@ import {
 } from "../../views/shared-thread-page/shared-thread-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { apiClient$ } from "../api-client.ts";
-import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { pathParams$ } from "../route.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -41,20 +40,14 @@ const sharedThread$ = computed((get) => {
     const message = {
       ...source,
       attachments: source.attachments?.map((attachment) => {
-        const kind = classifyChatAttachment(attachment);
         return {
           ...attachment,
-          ...(kind === "video" || kind === "html"
-            ? {
-                artifact: createSharedThreadArtifactSignals(
-                  { ...attachment, kind },
-                  artifactPreview,
-                ),
-              }
-            : {}),
-          preview: createAttachmentPreviewSignals(attachment.url, {
-            contentType: attachment.contentType,
-          }),
+          // Every prompt attachment is presented by this page, so each one
+          // owns the single resolution graph its card and dialog both read.
+          artifact: createSharedThreadArtifactSignals(
+            { ...attachment, kind: classifyChatAttachment(attachment) },
+            artifactPreview,
+          ),
         };
       }),
     };

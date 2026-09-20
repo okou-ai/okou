@@ -14,6 +14,7 @@ import {
 } from "./realtime.ts";
 import { i18n } from "../i18n/index.ts";
 import { setupBillingRealtime$ } from "./okou-page/billing.ts";
+import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-library.ts";
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribeCustomConnectorListChanged$ } from "./okou-page/settings/custom-connectors.ts";
 import { subscribeSshChanged$ } from "./ssh.ts";
@@ -44,6 +45,7 @@ const runAppRealtimeDaemons$ = command(
     set(setupModelPolicyRealtime$, signal);
     set(setupMorningBriefRealtime$, signal);
     set(subscribeCustomConnectorListChanged$, signal);
+    set(subscribeCustomTemplatesChanged$, signal);
     set(subscribeSshChanged$, signal);
   },
 );

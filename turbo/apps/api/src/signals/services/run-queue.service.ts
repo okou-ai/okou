@@ -1,13 +1,3 @@
-import {
-  consumeDeferredPiRun$,
-  settleDeferredPiTerminal$,
-  failWaitingPiCandidate,
-} from "./pi-deferred-sandbox.service";
-import {
-  listDeferredPiCandidates,
-  countEarlierDeferredDemand,
-} from "./pi-deferred-demand.service";
-import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { command } from "ccstate";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
@@ -37,7 +27,6 @@ import {
   publishThreadListChanged,
 } from "../external/realtime";
 import { logger } from "../../lib/log";
-import { legacySandboxRunPredicate } from "./pi-inference-lifecycle.service";
 import { decryptQueuedRunnerJobPayload } from "./agent-run-queue-payload.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -81,8 +70,8 @@ const QUEUED_RUN_LAUNCH_ORPHAN_REASON =
 async function effectiveOrgConcurrencyState(
   db: Pick<Db, "select">,
   orgId: string,
+  at: Date,
 ): Promise<{ readonly activeRunCount: number; readonly limit: number }> {
-  const at = nowDate();
   const state = await loadOrgConcurrencyState(db, {
     orgId,
     at,
@@ -227,7 +216,6 @@ interface QueuedRunPromotionFailure {
 }
 
 type QueuedRunPromotionResult =
-  | { readonly kind: "deferred"; readonly runId: string }
   | {
       readonly kind: "activation";
       readonly activation: PendingRunActivation;
@@ -336,7 +324,7 @@ async function loadDrainCandidates(
   db: Db,
   orgId: string,
 ): Promise<readonly QueueCandidate[]> {
-  const concurrency = await effectiveOrgConcurrencyState(db, orgId);
+  const concurrency = await effectiveOrgConcurrencyState(db, orgId, nowDate());
   if (concurrency.activeRunCount >= concurrency.limit) {
     return [];
   }
@@ -434,7 +422,6 @@ async function failQueuedRunAdmission(
     conditions: [
       eq(agentRuns.id, args.row.runId),
       eq(agentRuns.status, "queued"),
-      sql`(${legacySandboxRunPredicate()})`,
     ],
   });
   if (!failed) {
@@ -512,7 +499,6 @@ async function promoteAdmittedQueuedRun(
       args.row.prompt !== null
         ? {
             piApiFirstTurn: {
-              executionMode: "legacy-sandbox-race",
               runId: args.row.runId,
               runnerGroup: payload.runnerGroup,
               userId: args.row.userId,
@@ -570,14 +556,14 @@ async function promoteQueuedCandidateInTransaction(
     await stopClosedComputeCandidate(tx, admission);
     return complete({ status: "lost" });
   }
-  const concurrency = await effectiveOrgConcurrencyState(tx, args.orgId);
-  const earlierDeferredDemand = await countEarlierDeferredDemand(
+  // One observation instant for this locked admission.
+  const admissionAt = nowDate();
+  const concurrency = await effectiveOrgConcurrencyState(
     tx,
     args.orgId,
-    args.row.createdAt,
-    args.row.runId,
+    admissionAt,
   );
-  if (concurrency.activeRunCount + earlierDeferredDemand >= concurrency.limit) {
+  if (concurrency.activeRunCount >= concurrency.limit) {
     return complete({ status: "full" });
   }
 
@@ -761,41 +747,13 @@ export const promoteNextQueuedRun$ = command(
     const queueRows = await loadDrainCandidates(writeDb, args.orgId);
     signal.throwIfAborted();
 
-    const deferredRows = await listDeferredPiCandidates(writeDb, args.orgId);
-    signal.throwIfAborted();
-    const candidates = [
-      ...queueRows.map((row) => {
-        return { kind: "legacy" as const, row };
-      }),
-      ...deferredRows.map((row) => {
-        return { kind: "deferred" as const, row };
-      }),
-    ].sort((left, right) => {
+    const candidates = [...queueRows].sort((left, right) => {
       return (
-        left.row.createdAt.getTime() - right.row.createdAt.getTime() ||
-        left.row.runId.localeCompare(right.row.runId)
+        left.createdAt.getTime() - right.createdAt.getTime() ||
+        left.runId.localeCompare(right.runId)
       );
     });
-    for (const candidate of candidates) {
-      if (candidate.kind === "deferred") {
-        const result = await settle(
-          set(consumeDeferredPiRun$, candidate.row.runId, signal),
-        );
-        signal.throwIfAborted();
-        if (!result.ok) {
-          await failWaitingPiCandidate(writeDb, candidate.row.runId);
-          signal.throwIfAborted();
-          await set(settleDeferredPiTerminal$, candidate.row.runId, signal);
-          L.warn("Deferred Pi materialization awaits durable recovery", {
-            runId: candidate.row.runId,
-          });
-        }
-        if (result.ok && result.value) {
-          return { kind: "deferred", runId: candidate.row.runId };
-        }
-        continue;
-      }
-      const row = candidate.row;
+    for (const row of candidates) {
       const payloadResult =
         row.runStatus === "queued"
           ? await settle(decryptQueuedRunnerJobPayload(row.encryptedParams))
@@ -862,7 +820,6 @@ export const cleanupExpiredQueueEntries$ = command(
           and(
             inArray(agentRuns.id, expiredRunIds),
             eq(agentRuns.status, "queued"),
-            sql`(${legacySandboxRunPredicate()})`,
           ),
         )
         .orderBy(agentRuns.createdAt, agentRuns.id);
@@ -893,7 +850,6 @@ export const cleanupExpiredQueueEntries$ = command(
               conditions: [
                 inArray(agentRuns.id, candidateRunIds),
                 eq(agentRuns.status, "queued"),
-                sql`(${legacySandboxRunPredicate()})`,
                 inArray(agentRuns.id, expiredRunIds),
               ],
             });
@@ -970,7 +926,6 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         .where(
           and(
             eq(agentRuns.status, "queued"),
-            sql`(${legacySandboxRunPredicate()})`,
             lt(agentRuns.createdAt, cutoff),
             runIds === null ? undefined : inArray(agentRuns.id, runIds),
             notExists(
@@ -1010,7 +965,6 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         },
         conditions: [
           eq(agentRuns.status, "queued"),
-          sql`(${legacySandboxRunPredicate()})`,
           inArray(agentRuns.id, candidateRunIds),
           notExists(
             tx
@@ -1053,28 +1007,20 @@ export const staleQueueOrgIds$ = command(
         orgIds === null ? undefined : inArray(agentRunQueue.orgId, orgIds),
       );
     signal.throwIfAborted();
-
-    const deferredOrgs = await writeDb
-      .selectDistinct({ orgId: agentRuns.orgId })
-      .from(agentRunSandboxIntent)
-      .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
-      .where(
-        and(
-          eq(agentRunSandboxIntent.state, "waiting"),
-          orgIds === null ? undefined : inArray(agentRuns.orgId, orgIds),
-        ),
-      );
-    signal.throwIfAborted();
     const staleOrgIds: string[] = [];
     const orgsWithQueued = [
       ...new Set(
-        [...legacyOrgsWithQueued, ...deferredOrgs].map((row) => {
+        legacyOrgsWithQueued.map((row) => {
           return row.orgId;
         }),
       ),
     ];
     for (const orgId of orgsWithQueued) {
-      const capacity = await effectiveOrgConcurrencyState(writeDb, orgId);
+      const capacity = await effectiveOrgConcurrencyState(
+        writeDb,
+        orgId,
+        nowDate(),
+      );
       signal.throwIfAborted();
       if (capacity.activeRunCount < capacity.limit) {
         staleOrgIds.push(orgId);

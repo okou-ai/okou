@@ -52,14 +52,14 @@ jobs:
         with:
           app-id: ${{ vars.OKOU_CI_APP_ID }}
           private-key: ${{ steps.source-private-key.outputs.private-key }}
-          owner: vm0-ai
+          owner: ${{ github.repository_owner }}
           repositories: Template-artifact
           permission-contents: read
 
       - name: Check out latest Template-artifact main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: vm0-ai/Template-artifact
+          repository: ${{ github.repository_owner }}/Template-artifact
           ref: main
           path: template-artifact
           token: ${{ steps.source-token.outputs.token }}
@@ -75,8 +75,8 @@ jobs:
             exit 1
           fi
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
-          printf '### Source\n\n- [vm0-ai/Template-artifact@%s](https://github.com/vm0-ai/Template-artifact/commit/%s)\n' \
-            "$commit" "$commit" >> "$GITHUB_STEP_SUMMARY"
+          printf '### Source\n\n- [%s/Template-artifact@%s](https://github.com/%s/Template-artifact/commit/%s)\n' \
+            "$GITHUB_REPOSITORY_OWNER" "$commit" "$GITHUB_REPOSITORY_OWNER" "$commit" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7

@@ -82,6 +82,7 @@ export interface MessageListSignals {
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
   >;
+  readonly assistantErrorRecoveryEventId$: Computed<Promise<string | null>>;
   readonly retryAssistantError$: Command<Promise<boolean>, [AbortSignal]>;
   readonly resetCodexSubscriptionAndRetry$: Command<
     Promise<boolean>,
@@ -146,6 +147,7 @@ export interface ChatPanelSignals {
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
   >;
+  readonly assistantErrorRecoveryEventId$: Computed<Promise<string | null>>;
   readonly retryAssistantError$: Command<Promise<boolean>, [AbortSignal]>;
   readonly resetCodexSubscriptionAndRetry$: Command<
     Promise<boolean>,
@@ -202,11 +204,10 @@ export interface ChatPanelSignals {
   readonly headerAutomations: HeaderAutomationSignals;
   // -- Thread-owned utility sidebar -----------------------------------------
   readonly sidebar: ThreadSidebarSignals;
-  // -- Per-thread UI state --------------------------------------------------
-  readonly copiedEventId$: Computed<string | null>;
+  // -- Clipboard ------------------------------------------------------------
   readonly copyEvent$: Command<
-    Promise<void>,
-    [string, ChatClipboardPayload, AbortSignal]
+    Promise<boolean>,
+    [ChatClipboardPayload, AbortSignal]
   >;
   // -- Paged events (sole rendering path) ----------------------------------
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;

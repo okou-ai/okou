@@ -1,7 +1,7 @@
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   mailContract,
   type MailDraft,
@@ -143,7 +143,7 @@ function connectorResponse(args: {
   readonly email: string;
   readonly reconnectRequired: boolean;
   readonly updatedAt: string;
-}): ConnectorResponse {
+}): BuiltinConnectorResponse {
   return {
     id: args.connectionId,
     slug: "gmail",
@@ -238,7 +238,7 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
     const completedAttempts = mockOAuthCompletions(context);
     const oauthAccounts: ConnectorAccountMutationIntent[] = [];
     context.mocks.api(
-      connectorOauthStartContract.start,
+      builtinConnectorOauthStartContract.start,
       ({ body, respond }) => {
         oauthAccounts.push(body.account);
         return respond(200, {
@@ -272,24 +272,24 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
     };
   }
 
-  async function expectCancelledReconnect() {
+  async function expectClosedReconnect() {
     const progress = screen.getByRole("dialog", {
       name: "Connecting your account",
     });
-    click(await findControl("button", "Cancel", progress));
+    click(within(progress).getByLabelText("Close"));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.queryByText("Reconnecting…")).toBeNull();
     });
   }
 
-  it("cancelling reconnect clears progress for the required account", async () => {
+  it("closing reconnect clears progress for the required account", async () => {
     await prepareReconnect();
-    await expectCancelledReconnect();
+    await expectClosedReconnect();
     expect(screen.queryByText("Reconnecting…")).toBeNull();
   });
 
-  it("retrying a cancelled reconnect opens mail from the same required account", async () => {
+  it("retrying a closed reconnect opens mail from the same required account", async () => {
     const {
       subject,
       attempt,
@@ -297,7 +297,7 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
       completedAttempts,
       oauthAccounts,
     } = await prepareReconnect();
-    await expectCancelledReconnect();
+    await expectClosedReconnect();
     attempt.oauthAttemptId = crypto.randomUUID();
     attempt.authorization = openedAuthorizationWindow();
     click(await findMailCard(subject));

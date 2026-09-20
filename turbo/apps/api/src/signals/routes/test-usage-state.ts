@@ -21,7 +21,7 @@ import { secrets } from "@okouai/db/schema/secret";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
 import {
@@ -248,9 +248,12 @@ async function deleteUsageStateFixture(
   signal.throwIfAborted();
 
   await db
-    .delete(userConnectors)
+    .delete(userBuiltinConnectors)
     .where(
-      and(eq(userConnectors.orgId, orgId), eq(userConnectors.userId, userId)),
+      and(
+        eq(userBuiltinConnectors.orgId, orgId),
+        eq(userBuiltinConnectors.userId, userId),
+      ),
     );
   signal.throwIfAborted();
 

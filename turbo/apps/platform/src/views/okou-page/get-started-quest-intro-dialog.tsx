@@ -28,8 +28,8 @@ import { WorkflowConnectorIcon } from "../onboarding/onboarding-workflow-diagram
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import {
-  selectedConnectorSlug$,
-  setSelectedConnectorSlug$,
+  selectedBuiltinConnectorSlug$,
+  setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
@@ -774,7 +774,7 @@ export function GetStartedQuestIntroDialog({
 }) {
   const openKey = useGet(questIntroKey$);
   const setOpenKey = useSet(setQuestIntroKey$);
-  const setSelectedSlug = useSet(setSelectedConnectorSlug$);
+  const setSelectedSlug = useSet(setSelectedBuiltinConnectorSlug$);
   const introducedKey =
     openKey !== null && isIntroduced(openKey) ? openKey : null;
 
@@ -833,8 +833,8 @@ export function GetStartedQuestIntroDialog({
  * is not unmounted mid-authorization if the intro closes underneath it.
  */
 function QuestConnectModal() {
-  const selectedSlug = useGet(selectedConnectorSlug$);
-  const setSelectedSlug = useSet(setSelectedConnectorSlug$);
+  const selectedSlug = useGet(selectedBuiltinConnectorSlug$);
+  const setSelectedSlug = useSet(setSelectedBuiltinConnectorSlug$);
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const selected =
     selectedSlug !== null && catalogLoadable.state === "hasData"

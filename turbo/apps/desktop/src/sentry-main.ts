@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/electron/main";
 import type { ComputerUseNativeRuntimeErrorContext } from "./computer-use-native";
+import type { DesktopAuthRestoreFailure } from "./desktop-auth-session";
 import type { ComputerUsePermissionRecoveryDiagnostic } from "./computer-use-runtime-controller";
 
 declare const __DESKTOP_VERSION__: string;
@@ -86,6 +87,37 @@ export function captureDesktopNativeHelperError(
       stderrBytes: context.stderrBytes,
     });
     Sentry.captureException(error);
+  });
+}
+
+/**
+ * A silent session restore fails without any user-visible error, so an
+ * unreported failure leaves the desktop signed out with no production signal.
+ * An authoritative sign-out is expected and stays unreported.
+ */
+export function captureDesktopSessionRestoreFailure(failure: {
+  readonly classification: DesktopAuthRestoreFailure;
+  readonly cause: unknown;
+}): void {
+  if (!sentryDsn || failure.classification !== "unavailable") {
+    return;
+  }
+
+  Sentry.withScope((scope) => {
+    scope.setTags({
+      app: "desktop",
+      component: "auth-session",
+      authRestoreClassification: failure.classification,
+    });
+    scope.setFingerprint([
+      "{{ default }}",
+      `authRestore:${failure.classification}`,
+    ]);
+    Sentry.captureException(
+      failure.cause instanceof Error
+        ? failure.cause
+        : new Error("Desktop session restore was unavailable"),
+    );
   });
 }
 

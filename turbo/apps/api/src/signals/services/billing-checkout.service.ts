@@ -95,6 +95,7 @@ type CheckoutCompletionResult =
       readonly paidInvoice: StripeInvoice;
     }
   | { readonly status: "pending" }
+  | { readonly status: "expired" }
   | { readonly status: "customer_mismatch" }
   | {
       readonly status: "tier_conflict";
@@ -1335,6 +1336,10 @@ export const completeCheckoutSession$ = command(
     const customerId = stripeObjectId(session.customer);
     if (!org || !customerId || customerId !== org.stripeCustomerId) {
       return { status: "customer_mismatch" };
+    }
+
+    if (session.status === "expired") {
+      return { status: "expired" };
     }
 
     if (session.status !== "complete" || session.mode !== "subscription") {

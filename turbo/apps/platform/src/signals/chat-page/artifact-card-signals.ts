@@ -16,6 +16,7 @@ import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
+import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 
 export type ArtifactKind =
   | "image"
@@ -90,7 +91,7 @@ export function createArtifactCardSignalsRegistry(
 ): ArtifactCardSignalsRegistry {
   return createCardSignalsRegistry(
     (descriptor: ArtifactDescriptor) => {
-      return descriptor.url;
+      return publicAttachmentUrl(descriptor.url);
     },
     (descriptor) => {
       return createArtifactSignals(descriptor, previewImageUrlsByUrl$);

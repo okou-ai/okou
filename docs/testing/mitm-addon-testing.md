@@ -191,6 +191,7 @@ suites before committing the upgrade.
 | `test_codex_model_catalog_cache_responses.py`           | Codex catalog response cacheability, decoding, framing, validation, and replay                                       |
 | `test_request_handler_passthrough.py`                   | Request-hook ordinary and browser user-agent passthrough decisions                                                   |
 | `test_request_handler_authority_validation.py`          | Request-hook SNI and asserted HTTP authority validation and denial effects                                           |
+| `test_request_handler_builtin_catalog_auth.py`          | Built-in catalog-owned authentication behavior across catalog changes                                                |
 | `test_request_handler_builtin_host_policy.py`           | Request-hook runtime built-in host-policy enforcement and compiled-policy reuse                                      |
 | `test_request_handler_connector_admission.py`           | Request-hook connector destination admission, TLS evidence, test-endpoint bypass, and API binding interaction        |
 | `test_request_handler_api_admission.py`                 | Request-hook platform API auto-allow, port scoping, registry gate, and destination binding                           |
@@ -457,9 +458,19 @@ changes.
 - **Request routing**: correct handler called based on registry state
 - **Cache behavior**: token caching, expiry, invalidation on 401
 - **Registry loading**: valid JSON, missing file, cache refresh
+- **Auth transport**: addon-owned HTTP/TLS behavior against fixture-owned loopback servers, using
+  synthetic credentials and test certificate authorities. See the existing examples for
+  [certificate trust and hostname verification](../../crates/runner/mitm-addon/tests/test_firewall_auth_client.py)
+  (`test_https_trusted_matching_certificate_sends_and_caches_auth` and
+  `test_https_rejects_invalid_peer_without_sending_or_caching_auth`) and
+  [proxy CONNECT credential isolation](../../crates/runner/mitm-addon/tests/test_firewall_auth_client.py)
+  (`test_https_proxy_connect_preserves_origin_tls_and_isolates_credentials`).
+
+For request-routing tests that do not exercise the transport, keep stubbing the auth-service
+boundary as shown in [Mocking with patch](#mocking-with-patch).
 
 ## What NOT to Test
 
 - Real mitmproxy interception (requires running proxy)
-- Real HTTP calls to auth endpoint (mock with `patch`)
-- TLS certificate handling (mitmproxy internals)
+- Live external or production auth-service calls
+- TLS certificate and interception internals owned by mitmproxy rather than the addon

@@ -70,6 +70,7 @@ import {
   getShortcutLabel,
   getShortcutParts,
   Button,
+  CopyButton,
   Checkbox,
   Input,
   Skeleton,
@@ -96,6 +97,7 @@ import {
   BrandLangfuse,
   BrandSlack,
   ElapsedTime,
+  LazySpinner,
   ThinkingMessages,
   useMediaQuery,
 } from "@okouai/ui";
@@ -135,7 +137,10 @@ import {
   ChatVideoPreviewButton,
 } from "./chat-body-cards.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatConversationLocator } from "./chat-conversation-locator.tsx";
+import {
+  ChatConversationLandingHighlight,
+  ChatConversationLocator,
+} from "./chat-conversation-locator.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { isStandalonePwa } from "../../lib/keyboard-dismiss-gesture.ts";
 import {
@@ -248,6 +253,7 @@ import type { AgentReferenceSignals } from "../../signals/chat-page/agent-refere
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
+import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -329,12 +335,12 @@ import {
   CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
   CHAT_THREAD_RESPONSE_COMPACT_STACK_CLASS,
   CHAT_THREAD_RESPONSE_STACK_CLASS,
-  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS,
   CHAT_THREAD_WORK_HISTORY_TEXT_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
+import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -3734,7 +3740,7 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className={cn(
           "absolute inset-0 focus:outline-none [overflow-anchor:none]",
-          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
+          SCROLL_FADE_Y_END,
           standalonePwa && "overscroll-contain",
         )}
       >
@@ -4763,7 +4769,9 @@ const CHAT_NOTICE_DESCRIPTION_CLASS =
  * credits-available state replaces the whole body without one. Below the card's
  * 640px breakpoint the body is a column, so mounting that row late would add its
  * own height plus the container gap and resize the transcript. Every billing
- * state therefore keeps this slot, filled or empty, at the shared action height.
+ * state therefore keeps this slot, filled or empty, at the shared action height,
+ * and the error card's pending state reserves the same box for its own details
+ * trigger.
  */
 const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
 
@@ -5187,6 +5195,16 @@ interface AssistantErrorCardContent {
   readonly testId?: string;
 }
 
+/**
+ * The classification behind this card resolves over two chained requests, so
+ * `pending` is the state before either landed. It keeps the settled card's own
+ * frame and reserves the title, supporting-line, and action boxes at their
+ * settled heights: `docs/chat-cards.md` requires the resolution to swap what
+ * fills those boxes without moving the transcript. Withholding the details
+ * trigger is the point of the state — the settled card decides whether that
+ * dialog offers a model switch, and offering it early would show a dialog whose
+ * contents change under the reader.
+ */
 function AssistantErrorCard({
   icon: Icon,
   title,
@@ -5194,33 +5212,45 @@ function AssistantErrorCard({
   details,
   actions,
   testId,
-}: AssistantErrorCardContent) {
+  pending = false,
+}: AssistantErrorCardContent & { readonly pending?: boolean }) {
   return (
     <div
       role="status"
-      data-testid={testId}
+      data-testid={pending ? "assistant-error-card-loading" : testId}
       className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
-        <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        {pending ? (
+          <Loader2
+            size={16}
+            className="mt-1 shrink-0 animate-spin text-muted-foreground"
+          />
+        ) : (
+          <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        )}
         <div className="min-w-0">
-          <div className="truncate text-[0.9375rem] font-medium leading-6">
-            {title}
+          <div className="h-6 truncate text-[0.9375rem] font-medium leading-6">
+            {pending ? null : title}
           </div>
-          {description !== "" && (
+          {(pending || description !== "") && (
             <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-              {description}
+              {pending ? null : description}
             </div>
           )}
         </div>
       </div>
-      {(description !== "" ||
-        details !== undefined ||
-        actions !== undefined) && (
-        <ChatCardDetails title={title}>
-          {details ?? <p>{description}</p>}
-          {actions}
-        </ChatCardDetails>
+      {pending ? (
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
+      ) : (
+        (description !== "" ||
+          details !== undefined ||
+          actions !== undefined) && (
+          <ChatCardDetails title={title}>
+            {details ?? <p>{description}</p>}
+            {actions}
+          </ChatCardDetails>
+        )
       )}
     </div>
   );
@@ -5533,18 +5563,30 @@ function AssistantErrorState({
   thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
-  const resolved = useLastResolved(thread.assistantErrorRecovery$);
+  // `useLastLoadable` reports `loading` only for the first classification and
+  // keeps the settled value across later recomputations, so the spinner marks
+  // the one read the reader has to wait through instead of flashing on every
+  // appended event.
+  const loadable = useLastLoadable(thread.assistantErrorRecovery$);
+  const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
+  const fallback = assistantErrorFallbackContent(error, t);
+  if (fallback === null) {
+    return <InsufficientCreditsCard />;
+  }
+  const resolved = loadable.state === "hasData" ? loadable.data : null;
   const recovery = resolved?.sourceEventId === eventId ? resolved : null;
   // The classification resolves after the first paint and selects contents,
   // not a component: choosing between two card components here would remove
   // the mounted card and move the transcript by its height.
   const content = recovery
     ? assistantErrorRecoveryContent(recovery, thread, t)
-    : assistantErrorFallbackContent(error, t);
-  if (content === null) {
-    return <InsufficientCreditsCard />;
-  }
-  return <AssistantErrorCard {...content} />;
+    : fallback;
+  return (
+    <AssistantErrorCard
+      {...content}
+      pending={loadable.state === "loading" && pendingEventId === eventId}
+    />
+  );
 }
 
 function AssistantBubbleAvatar({ thread }: { thread: ChatPanelSignals }) {
@@ -5951,6 +5993,7 @@ function MessageAttachment({
           openVideoLightbox({
             url: a.url,
             filename: a.filename,
+            preview: a.signals,
           });
         }}
         posterClassName="h-full w-full"
@@ -5971,7 +6014,7 @@ function MessageAttachment({
         filename={a.filename}
         url={a.url}
         kind={a.kind}
-        preview={a.kind === "html" ? a.signals : undefined}
+        preview={a.signals}
         text$={a.signals.text$}
       />
     );
@@ -5982,6 +6025,7 @@ function MessageAttachment({
         filename={a.filename}
         url={a.url}
         contentType={a.contentType}
+        preview={a.signals}
       />
     );
   }
@@ -5990,6 +6034,7 @@ function MessageAttachment({
       filename={a.filename}
       url={a.url}
       contentType={a.contentType}
+      preview={a.signals}
     />
   );
 }
@@ -6057,12 +6102,10 @@ function UserMessageAttachments({
 // the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
   showCopy,
-  copied,
   onCopy,
 }: {
   showCopy: boolean;
-  copied: boolean;
-  onCopy: () => void;
+  onCopy: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
   return (
@@ -6071,20 +6114,28 @@ function UserMessageActions({
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
       {showCopy ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          iconSize="sm"
-          showTooltip
-          onClick={onCopy}
-          className="text-muted-foreground/60"
-          aria-label={t(($) => {
-            return $.chat.actions.copyMessage;
-          })}
-        >
-          {copied ? <Check /> : <Copy />}
-        </Button>
+        <CopyButton
+          copyAction={onCopy}
+          render={({ onClick, ref }, { copied }) => {
+            return (
+              <Button
+                ref={ref}
+                type="button"
+                variant="quiet"
+                size="icon-xs"
+                iconSize="sm"
+                showTooltip
+                onClick={onClick}
+                className="text-muted-foreground/60"
+                aria-label={t(($) => {
+                  return $.chat.actions.copyMessage;
+                })}
+              >
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            );
+          }}
+        />
       ) : null}
     </div>
   );
@@ -6500,6 +6551,7 @@ function UserMessageFileReference({
           openVideoLightbox({
             url: signals.url,
             filename: part.filenameSnapshot,
+            preview: signals,
           });
         }}
         posterClassName="h-full w-full"
@@ -6519,7 +6571,7 @@ function UserMessageFileReference({
         filename={part.filenameSnapshot}
         url={signals.url}
         kind={signals.kind}
-        preview={signals.kind === "html" ? signals : undefined}
+        preview={signals}
       />
     );
   } else if (signals.kind === "audio") {
@@ -6528,6 +6580,7 @@ function UserMessageFileReference({
         filename={part.filenameSnapshot}
         url={signals.url}
         contentType={part.contentType}
+        preview={signals}
       />
     );
   } else {
@@ -6535,6 +6588,7 @@ function UserMessageFileReference({
       <FileAttachmentChip
         contentType={part.contentType}
         filename={part.filenameSnapshot}
+        preview={signals}
         url={signals.url}
       />
     );
@@ -6647,7 +6701,7 @@ function UserMessageFeedbackNote({
             <UserMessageTemplateReference key={key} part={renderPart.part} />
           );
         }
-        return <span key={key}>{renderPart.part.text}</span>;
+        return <PlainTextWithLinks key={key} text={renderPart.part.text} />;
       })}
     </div>
   );
@@ -6790,7 +6844,7 @@ function UserMessagePartView({
   renderPart: UserMessageStandaloneRenderPart;
 }): ReactNode {
   if (renderPart.type === "text") {
-    return <span>{renderPart.part.text}</span>;
+    return <PlainTextWithLinks text={renderPart.part.text} />;
   }
   if (renderPart.type === "chat_thread") {
     return (
@@ -6962,9 +7016,12 @@ function UserMessageContent({
 
 function WorkflowUserMessage({
   event,
+  thread,
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
+  thread: ChatPanelSignals;
 }) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -6988,8 +7045,10 @@ function WorkflowUserMessage({
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
-      className="group"
+      className="relative group"
+      ref={turnOnRef}
     >
+      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
       <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
@@ -7003,9 +7062,12 @@ function WorkflowUserMessage({
 
 function GoalUserMessage({
   event,
+  thread,
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
+  thread: ChatPanelSignals;
 }) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -7019,8 +7081,10 @@ function GoalUserMessage({
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
-      className="group"
+      className="relative group"
+      ref={turnOnRef}
     >
+      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
       <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
@@ -7097,10 +7161,10 @@ function OptimisticSpinner({ eventId }: { eventId: string }) {
     >
       <span className="flex h-[1.7em] w-3.5 items-center">
         {optimisticEventIds.has(eventId) ? (
-          <Loader2
+          <LazySpinner
             size={14}
             data-optimistic-user-message
-            className="animate-spin text-muted-foreground"
+            className="text-muted-foreground"
           />
         ) : null}
       </span>
@@ -7117,6 +7181,7 @@ function PagedUserMessage({
   thread: ChatPanelSignals;
   stackedOnPrevious?: boolean;
 }) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const inputEvent = asInputChatEvent(event);
   const renderDocument = event.userMessageRenderDocument;
   const { canonicalUserMessage, clipboardAttachments, copyText } =
@@ -7133,8 +7198,6 @@ function PagedUserMessage({
       preview: attachment.signals,
     });
   };
-  const copiedId = useGet(thread.copiedEventId$);
-  const copied = copiedId === event.id;
   const copyEvent = useSet(thread.copyEvent$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const allAttachments = userMessageRenderAttachments(renderDocument);
@@ -7144,22 +7207,13 @@ function PagedUserMessage({
     clipboardAttachments.length > 0;
 
   const handleCopy = () => {
-    if (!canCopy) {
-      return;
-    }
-    detach(
-      copyEvent(
-        event.id,
-        {
-          text: copyText,
-          attachments: clipboardAttachments,
-          ...(canonicalUserMessage
-            ? { userMessage: canonicalUserMessage }
-            : {}),
-        },
-        pageSignal,
-      ),
-      Reason.DomCallback,
+    return copyEvent(
+      {
+        text: copyText,
+        attachments: clipboardAttachments,
+        ...(canonicalUserMessage ? { userMessage: canonicalUserMessage } : {}),
+      },
+      pageSignal,
     );
   };
 
@@ -7168,11 +7222,11 @@ function PagedUserMessage({
   }
 
   if (isWorkflowUserMessage(event)) {
-    return <WorkflowUserMessage event={event} />;
+    return <WorkflowUserMessage event={event} thread={thread} />;
   }
 
   if (isGoalUserMessage(event)) {
-    return <GoalUserMessage event={event} />;
+    return <GoalUserMessage event={event} thread={thread} />;
   }
 
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
@@ -7181,14 +7235,16 @@ function PagedUserMessage({
   return (
     <div
       id={inputPromptRunAnchor(inputEvent)}
+      ref={turnOnRef}
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
       className={cn(
-        "group",
+        "relative group",
         stackedOnPrevious && CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
       )}
     >
+      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
       <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex flex-col items-end w-full">
@@ -7209,7 +7265,6 @@ function PagedUserMessage({
                   still pulled up by the height this row holds. */}
               <UserMessageActions
                 showCopy={canCopy && sharingPhase === "idle"}
-                copied={copied}
                 onCopy={handleCopy}
               />
             </>
@@ -7491,6 +7546,7 @@ function PagedAssistantGroup({
   runIndicatorMode,
   statusTailEvents,
 }: PagedAssistantGroupProps) {
+  const turnOnRef = useSet(thread.locator.turnOnRef$);
   const hasRenderableEvent = group.events.some((event) => {
     return isRenderableAssistantEvent(event);
   });
@@ -7514,11 +7570,19 @@ function PagedAssistantGroup({
   return (
     <div
       id={groupElementId}
+      ref={turnOnRef}
       data-role="assistant"
       data-chat-run-id={runId}
       data-turn-created-at={group.events[0]?.createdAt}
       className={CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS}
     >
+      <ChatConversationLandingHighlight
+        thread={thread}
+        eventId={
+          runWorkSection?.anchorEventId ??
+          group.events.find(isRenderableAssistantEvent)?.id
+        }
+      />
       <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
         <AssistantBubbleAvatar thread={thread} />
         <div
@@ -7976,7 +8040,6 @@ function PagedGroupPrimaryActions({
   thread,
   hasContent,
   usage,
-  copied,
   onCopy,
   relatedArtifacts,
 }: {
@@ -7984,8 +8047,7 @@ function PagedGroupPrimaryActions({
   thread: ChatPanelSignals;
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
-  copied: boolean;
-  onCopy: () => void;
+  onCopy: () => Promise<boolean>;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
@@ -8040,34 +8102,42 @@ function PagedGroupPrimaryActions({
         <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
-        <TooltipProvider delayDuration={300}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                iconSize="sm"
-                onClick={onCopy}
-                className="text-muted-foreground/60"
-                aria-label={t(($) => {
-                  return $.chat.actions.copyMessage;
-                })}
-              >
-                {copied ? <Check /> : <Copy />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {copied
-                ? t(($) => {
-                    return $.chat.actions.copied;
-                  })
-                : t(($) => {
-                    return $.chat.actions.copyMessage;
-                  })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <CopyButton
+          copyAction={onCopy}
+          render={({ onClick, ref }, { copied }) => {
+            return (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      ref={ref}
+                      type="button"
+                      variant="quiet"
+                      size="icon-xs"
+                      iconSize="sm"
+                      onClick={onClick}
+                      className="text-muted-foreground/60"
+                      aria-label={t(($) => {
+                        return $.chat.actions.copyMessage;
+                      })}
+                    >
+                      {copied ? <Check /> : <Copy />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    {copied
+                      ? t(($) => {
+                          return $.chat.actions.copied;
+                        })
+                      : t(($) => {
+                          return $.chat.actions.copyMessage;
+                        })}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            );
+          }}
+        />
       )}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
@@ -8091,8 +8161,6 @@ function PagedGroupActions({
   embedded?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
-  const copiedId = useGet(thread.copiedEventId$);
-  const copied = copiedId === group.beginEventId;
   const copyEvent = useSet(thread.copyEvent$);
   const sharingPhase = useGet(thread.sharing.phase$);
   if (sharingPhase !== "idle") {
@@ -8106,17 +8174,7 @@ function PagedGroupActions({
   const hasContent = content.length > 0;
 
   const handleCopy = () => {
-    if (!content) {
-      return;
-    }
-    detach(
-      copyEvent(
-        group.beginEventId,
-        { text: content, attachments: [] },
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
+    return copyEvent({ text: content, attachments: [] }, pageSignal);
   };
 
   const actions = (
@@ -8126,7 +8184,6 @@ function PagedGroupActions({
         thread={thread}
         hasContent={hasContent}
         usage={usage}
-        copied={copied}
         onCopy={handleCopy}
         relatedArtifacts={relatedArtifacts}
       />

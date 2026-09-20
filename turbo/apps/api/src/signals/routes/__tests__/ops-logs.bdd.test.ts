@@ -1,18 +1,27 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
-import { gzipSync, zstdCompressSync } from "node:zlib";
-import AdmZip from "adm-zip";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
+import { gzipSync } from "node:zlib";
+import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  DeleteObjectsCommand,
+  PutObjectCommand,
+  UploadPartCommand,
+} from "@aws-sdk/client-s3";
+import type AdmZip from "adm-zip";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
   GenerationTemplateRequest,
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { agentInstructionsContract } from "@okouai/api-contracts/contracts/agents";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { env } from "../../../lib/env";
 import { clearMockNow, mockNow } from "../../../lib/time";
-import { testContext, accept } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -22,8 +31,14 @@ import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { commitMemoryVersion } from "./helpers/memory";
 import { createFixtureTracker } from "./helpers/route-test";
-import { agentInstructionsRoutes } from "../agent-instructions";
-import { seedPiMemoryPhase2ExportJobFixture } from "../../../test-fixtures/pi-memory-stage1-candidates";
+import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
+import {
+  installUserExportStorage,
+  readExportChatRows,
+  readExportJsonLines,
+  readExportText as zipText,
+  readUserExportZip,
+} from "./helpers/user-export-storage";
 import {
   readUserExportJobFixture,
   seedLegacyUserExportJobFixture,
@@ -99,19 +114,7 @@ function exportDownloadDispositions(exportKey: string): string[] {
 }
 
 function exportZip(exportKey: string): AdmZip {
-  const putInput = context.mocks.s3.send.mock.calls
-    .map(([command]) => {
-      return commandInput(command);
-    })
-    .find((input) => {
-      return input.Key === exportKey;
-    });
-
-  const body = putInput?.Body;
-  if (!Buffer.isBuffer(body)) {
-    throw new Error(`Expected export ZIP upload for ${exportKey}`);
-  }
-  return new AdmZip(body);
+  return readUserExportZip(context, exportKey);
 }
 
 function zipEntryNames(zip: AdmZip): string[] {
@@ -120,33 +123,24 @@ function zipEntryNames(zip: AdmZip): string[] {
   });
 }
 
-function zipText(zip: AdmZip, name: string): string {
-  const entry = zip.getEntry(name);
-  if (!entry) {
-    throw new Error(`Expected ZIP entry ${name}`);
-  }
-  return entry.getData().toString("utf8");
+interface ExportManifest {
+  readonly formatVersion: number;
+  readonly counts: {
+    readonly chatThreads: number;
+    readonly chatMessages: number;
+    readonly agents: number;
+    readonly workflows: number;
+    readonly memoryFiles: number;
+  };
+  readonly files: readonly {
+    readonly path: string;
+    readonly bytes: number;
+    readonly sha256: string;
+  }[];
 }
 
-function zipBytes(zip: AdmZip, name: string): Buffer {
-  const entry = zip.getEntry(name);
-  if (!entry) {
-    throw new Error(`Expected ZIP entry ${name}`);
-  }
-  return entry.getData();
-}
-
-function singleZipEntry(
-  names: readonly string[],
-  predicate: (name: string) => boolean,
-): string {
-  const matches = names.filter(predicate);
-  expect(matches).toHaveLength(1);
-  const [match] = matches;
-  if (!match) {
-    throw new Error("Expected one ZIP entry match");
-  }
-  return match;
+function readManifest(zip: AdmZip): ExportManifest {
+  return JSON.parse(zipText(zip, "export-manifest.json")) as ExportManifest;
 }
 
 const TAR_BLOCK_SIZE = 512;
@@ -181,12 +175,20 @@ function createTarEntry(filename: string, content: Buffer): Buffer {
 }
 
 function createTarGz(
-  files: readonly { readonly path: string; readonly content: string }[],
+  files: readonly {
+    readonly path: string;
+    readonly content: string | Buffer;
+  }[],
 ): Buffer {
   return gzipSync(
     Buffer.concat([
       ...files.map((file) => {
-        return createTarEntry(file.path, Buffer.from(file.content, "utf8"));
+        return createTarEntry(
+          file.path,
+          typeof file.content === "string"
+            ? Buffer.from(file.content, "utf8")
+            : file.content,
+        );
       }),
       Buffer.alloc(TAR_BLOCK_SIZE * 2),
     ]),
@@ -196,12 +198,15 @@ function createTarGz(
 function putMemoryArchive(
   misc: ReturnType<typeof createMiscRoutesApi>,
   s3Key: string,
-  files: readonly { readonly path: string; readonly content: string }[],
+  files: readonly {
+    readonly path: string;
+    readonly content: string | Buffer;
+  }[],
 ): void {
   const manifestFiles = files.map((file) => {
     return {
       path: file.path,
-      hash: `bdd-${file.path}`,
+      hash: createHash("sha256").update(file.content).digest("hex"),
       size: Buffer.byteLength(file.content, "utf8"),
     };
   });
@@ -280,6 +285,7 @@ describe("OPS-01: user data export", () => {
     });
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
+    installUserExportStorage(context);
     const pendingPut = await trackDeferredS3Put(
       Promise.resolve(api.deferS3PutOnce()),
     );
@@ -338,7 +344,7 @@ describe("OPS-01: user data export", () => {
       Bucket: "test-user-storages",
       ContentType: "application/zip",
     });
-    expect(putInput?.Body).toBeInstanceOf(Buffer);
+    expect(readManifest(exportZip(exportKey)).formatVersion).toBe(2);
 
     const limited = await api.requestPostUserExport(actor, [429]);
     expect(limited.body).toStrictEqual({
@@ -363,7 +369,7 @@ describe("OPS-01: user data export", () => {
     // auth-me refreshes the user email cache at the mocked time, so the
     // second export execution reads the fresh-cache arm instead of Clerk.
     await bdd.readMe(actor);
-    context.mocks.s3.send.mockResolvedValue({});
+    installUserExportStorage(context);
     const restarted = await api.requestPostUserExport(actor, [202]);
     expect(restarted.body.jobId).not.toBe(jobId);
 
@@ -399,7 +405,7 @@ describe("OPS-01: user data export", () => {
     const downloadUrl = "https://r2.example.com/bdd-okou-export.zip?sig=test";
 
     context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
-    context.mocks.s3.send.mockResolvedValue({});
+    installUserExportStorage(context);
 
     const started = await api.requestPostUserExport(actor, [202]);
     const exportKey = `exports/${actor.userId}/${started.body.jobId}.zip`;
@@ -432,10 +438,16 @@ describe("OPS-01: user data export", () => {
     ).resolves.toStrictEqual(historicalJob);
   });
 
-  it("exports the userMessage projection", async () => {
+  it("preserves thread metadata, empty threads, and canonical message identity and payloads", async () => {
     const api = createOpsLogsApi(context);
+    const bdd = createBddApi(context);
     const chat = createChatFilesBddApi(context);
     const { actor, agentId } = await entitledRunActor();
+    const emptyThread = await chat.createThread(actor, {
+      agentId,
+      title: "An empty thread worth keeping",
+    });
+    await chat.pinThread(actor, emptyThread.id, { pinOrder: "a0" });
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
       throw new Error("Expected a registered illustration style");
@@ -455,10 +467,12 @@ describe("OPS-01: user data export", () => {
         { type: "text", text: "Export the structured request" },
       ],
     };
+    const messageId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
       {
         agentId,
+        clientEventId: messageId,
         prompt: "stale export content",
         userMessage,
       },
@@ -467,12 +481,44 @@ describe("OPS-01: user data export", () => {
     if (sent.status !== 201) {
       throw new Error("Expected the structured message send to succeed");
     }
+    const recalledMessageId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: sent.body.threadId,
+        prompt: "A queued message that was recalled",
+        clientEventId: recalledMessageId,
+      },
+      [201],
+    );
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: sent.body.threadId,
+        revokesEventId: recalledMessageId,
+        clientEventId: randomUUID(),
+      },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const expectedRows = await chat.listThreadEventRows(
+      actor,
+      sent.body.threadId,
+    );
 
-    const exportStartAt = Date.UTC(2026, 4, 12, 5, 30);
-    mockNow(exportStartAt);
+    const peer = bdd.user({ orgId: actor.orgId });
+    const peerAgent = await bdd.createAgent(peer, { visibility: "private" });
+    const peerThread = await chat.createThread(peer, {
+      agentId: peerAgent.agentId,
+      title: "Another user's private thread",
+    });
+
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/bdd-structured-export.zip?sig=test",
     );
+    installUserExportStorage(context);
     const started = await api.requestPostUserExport(actor, [202]);
     const exportKey = `exports/${actor.userId}/${started.body.jobId}.zip`;
     await waitForUserExportJobStatus(
@@ -482,52 +528,266 @@ describe("OPS-01: user data export", () => {
       "completed",
     );
 
-    const messages = JSON.parse(
-      zipText(
-        exportZip(exportKey),
-        `conversations/chat-thread-${sent.body.threadId}.json`,
-      ),
-    ) as {
-      readonly role: string;
-      readonly content: string;
-      readonly userMessage?: UserMessageInputDocument;
-    }[];
-    expect(messages[0]).toMatchObject({
-      role: "user",
-      // Templates render inline in the text flow rather than as their own block.
-      content: `[Template: ${style.title}]Export the structured request`,
-      userMessage,
+    const zip = exportZip(exportKey);
+    const threads = readExportJsonLines(zip, "chat-threads.jsonl");
+    expect(threads).toHaveLength(2);
+    expect(threads).toContainEqual(
+      expect.objectContaining({
+        id: emptyThread.id,
+        title: emptyThread.title,
+        agentId,
+        orgId: actor.orgId,
+        createdAt: expect.any(String),
+        pinnedAt: expect.any(String),
+        pinOrder: "a0",
+      }),
+    );
+    expect(threads).toContainEqual(
+      expect.objectContaining({ id: sent.body.threadId, agentId }),
+    );
+    expect(zipText(zip, `chat-messages/${emptyThread.id}.jsonl`)).toBe("");
+    expect(zipEntryNames(zip)).not.toContain(
+      `chat-messages/${peerThread.id}.jsonl`,
+    );
+    const messages = readExportChatRows(zip, sent.body.threadId);
+    expect(messages).toStrictEqual(expectedRows);
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        id: messageId,
+        chatThreadId: sent.body.threadId,
+        seqId: expect.any(Number),
+        eventType: "input.prompt",
+        payload: expect.objectContaining({ userMessage }),
+        createdAt: expect.any(String),
+      }),
+    );
+    expect(messages).toContainEqual(
+      expect.objectContaining({
+        eventType: "control.revoke",
+        revokesEventId: recalledMessageId,
+      }),
+    );
+    expect(JSON.stringify(messages)).not.toContain("stale export content");
+    expect(readManifest(zip).counts).toMatchObject({
+      chatThreads: 2,
+      chatMessages: expectedRows.length,
     });
-    expect(messages[0]?.content).not.toContain("stale export content");
   });
 
-  it("exports only safe agent, workflow, and memory control-plane data", async () => {
+  it("exports readable shared instructions across current organizations without leaking private resources", async () => {
+    const bdd = createBddApi(context);
+    const misc = createMiscRoutesApi(context);
+    const actor = bdd.user({ orgRole: "org:member" });
+    if (!actor.orgId) {
+      throw new Error("Expected export actor organization");
+    }
+    const teammate = bdd.user({ orgId: actor.orgId, orgRole: "org:admin" });
+    const otherOrg = bdd.user();
+    const formerOrg = bdd.user({ userId: actor.userId });
+    if (!otherOrg.orgId) {
+      throw new Error("Expected secondary organization");
+    }
+    const currentActors = [actor, teammate, otherOrg];
+    const readableAgentIds: string[] = [];
+    const readableWorkflowIds: string[] = [];
+    for (const [index, owner] of currentActors.entries()) {
+      const agent = await bdd.createAgent(owner, {
+        displayName: `Readable agent ${index.toString()}`,
+        visibility: owner === actor ? "private" : "public",
+      });
+      await bdd.updateAgentInstructions(
+        owner,
+        agent.agentId,
+        `Readable agent instructions ${index.toString()}`,
+      );
+      readableAgentIds.push(agent.agentId);
+      const workflow = await misc.createWorkflow(
+        owner,
+        agent.agentId,
+        `readable-workflow-${index.toString()}`,
+        {
+          content: `Readable workflow instruction ${index.toString()}`,
+          visibility: owner === actor ? "private" : "public",
+        },
+        [201],
+      );
+      if (!("id" in workflow.body)) {
+        throw new Error("Expected readable workflow id");
+      }
+      readableWorkflowIds.push(workflow.body.id);
+    }
+    const sharedAgentId = readableAgentIds[1];
+    if (!sharedAgentId) {
+      throw new Error("Expected shared agent");
+    }
+    await misc.createWorkflow(
+      teammate,
+      sharedAgentId,
+      "private-workflow-on-shared-agent",
+      { content: "Hidden private workflow", visibility: "private" },
+      [201],
+    );
+    for (const owner of [teammate, formerOrg]) {
+      const agent = await bdd.createAgent(owner, { visibility: "private" });
+      await bdd.updateAgentInstructions(owner, agent.agentId, "Hidden agent");
+      await misc.createWorkflow(
+        owner,
+        agent.agentId,
+        "workflow-on-unreadable-agent",
+        { content: "Hidden workflow", visibility: "public" },
+        [201],
+      );
+    }
+    const api = createOpsLogsApi(context, {
+      organizationIds: [actor.orgId, otherOrg.orgId],
+    });
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/bdd-accessible-export.zip?sig=test",
+    );
+    installUserExportStorage(context);
+    const started = await api.requestPostUserExport(actor, [202]);
+    await waitForUserExportJobStatus(
+      api,
+      actor,
+      started.body.jobId,
+      "completed",
+    );
+    const zip = exportZip(`exports/${actor.userId}/${started.body.jobId}.zip`);
+    const agents = readExportJsonLines(zip, "agents.jsonl");
+    const workflows = readExportJsonLines(zip, "workflows.jsonl");
+    expect(
+      agents
+        .map((agent) => {
+          return agent.id;
+        })
+        .sort(),
+    ).toStrictEqual(readableAgentIds.sort());
+    expect(
+      workflows
+        .map((workflow) => {
+          return workflow.id;
+        })
+        .sort(),
+    ).toStrictEqual(readableWorkflowIds.sort());
+    for (const [index, owner] of currentActors.entries()) {
+      expect(agents).toContainEqual(
+        expect.objectContaining({
+          orgId: owner.orgId,
+          instructions: `Readable agent instructions ${index.toString()}`,
+        }),
+      );
+      expect(workflows).toContainEqual(
+        expect.objectContaining({
+          orgId: owner.orgId,
+          instruction: `Readable workflow instruction ${index.toString()}`,
+        }),
+      );
+    }
+    expect(readManifest(zip).counts).toMatchObject({ agents: 3, workflows: 3 });
+  });
+
+  it.each(["manifest entry", "archive file"])(
+    "fails when a required agent instruction %s is missing",
+    async (missing) => {
+      const api = createOpsLogsApi(context);
+      const bdd = createBddApi(context);
+      const misc = createMiscRoutesApi(context);
+      const actor = bdd.user();
+      const agent = await bdd.createAgent(actor, { visibility: "private" });
+      await bdd.updateAgentInstructions(
+        actor,
+        agent.agentId,
+        "Required instructions",
+      );
+      const manifestPut = context.mocks.s3.send.mock.calls
+        .map(([command]) => {
+          return command;
+        })
+        .filter((command): command is PutObjectCommand => {
+          return (
+            command instanceof PutObjectCommand &&
+            command.input.Key?.endsWith("/manifest.json") === true
+          );
+        })
+        .at(-1);
+      const manifestKey = manifestPut?.input.Key;
+      if (!manifestKey) {
+        throw new Error("Expected the instruction manifest upload");
+      }
+      // S3 is an external dependency: either its canonical manifest entry or
+      // its archived file can be lost after an otherwise successful write.
+      if (missing === "manifest entry") {
+        misc.putS3Object(
+          manifestKey,
+          JSON.stringify({
+            version: "corrupt-instructions",
+            createdAt: new Date(0).toISOString(),
+            files: [],
+            totalSize: 0,
+            fileCount: 0,
+          }),
+        );
+      } else {
+        misc.putS3Object(
+          manifestKey.replace(/manifest\.json$/, "archive.tar.gz"),
+          createTarGz([]),
+        );
+      }
+      installUserExportStorage(context);
+      const started = await api.requestPostUserExport(actor, [202]);
+      const status = await waitForUserExportJobStatus(
+        api,
+        actor,
+        started.body.jobId,
+        "failed",
+      );
+      expect(status.job).toMatchObject({
+        status: "failed",
+        error: expect.any(String),
+        downloadUrl: null,
+      });
+      expect(status.canExport).toBeTruthy();
+    },
+  );
+
+  it("preserves intentionally empty agent instructions", async () => {
+    const api = createOpsLogsApi(context);
+    const bdd = createBddApi(context);
+    createMiscRoutesApi(context);
+    const actor = bdd.user();
+    const agent = await bdd.createAgent(actor, { visibility: "private" });
+    await bdd.updateAgentInstructions(actor, agent.agentId, "");
+    installUserExportStorage(context);
+    const started = await api.requestPostUserExport(actor, [202]);
+    await waitForUserExportJobStatus(
+      api,
+      actor,
+      started.body.jobId,
+      "completed",
+    );
+    const zip = exportZip(`exports/${actor.userId}/${started.body.jobId}.zip`);
+    expect(readExportJsonLines(zip, "agents.jsonl")).toContainEqual(
+      expect.objectContaining({ id: agent.agentId, instructions: "" }),
+    );
+  });
+
+  it("exports current own memory and instruction bodies with a verifiable content manifest", async () => {
     const api = createOpsLogsApi(context);
     const bdd = createBddApi(context);
     const misc = createMiscRoutesApi(context);
     const actor = bdd.user();
-    const exportStartAt = Date.UTC(2026, 4, 12, 5);
-    const downloadUrl =
-      "https://r2.example.com/bdd-export-content.zip?sig=test";
     if (!actor.orgId) {
       throw new Error("Expected export test actor to have an org");
     }
-
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD Export Agent",
       visibility: "private",
     });
-    await accept(
-      setupApp({ context, routes: agentInstructionsRoutes })(
-        agentInstructionsContract,
-      ).update({
-        params: { id: agent.agentId },
-        headers: { authorization: "Bearer clerk-session" },
-        body: { content: "Use the exported agent instructions." },
-      }),
-      [200],
+    await bdd.updateAgentInstructions(
+      actor,
+      agent.agentId,
+      "Use the exported agent instructions.",
     );
-
     const workflow = await misc.createWorkflow(
       actor,
       agent.agentId,
@@ -535,468 +795,188 @@ describe("OPS-01: user data export", () => {
       {
         content: "Use the exported workflow instructions.",
         files: [
-          {
-            path: "notes/checklist.md",
-            content: "Workflow supporting file",
-          },
+          { path: "notes/checklist.md", content: "Excluded support file" },
         ],
       },
       [201],
     );
-    expect("id" in workflow.body).toBeTruthy();
     if (!("id" in workflow.body)) {
       throw new Error("Expected workflow creation to return a workflow id");
     }
-    const workflowId = workflow.body.id;
+    // Incompressible content crosses the multipart boundary after compression.
+    const memoryNote = randomBytes(6 * 1024 * 1024).toString("base64");
+    const binaryMemory = Buffer.from([0, 255, 254, 128, 10, 13, 0, 1, 2]);
     const memoryFiles = [
       { path: "MEMORY.md", content: "# Exported memory" },
-      {
-        path: "notes/profile.md",
-        content: "Memory supporting note",
-      },
+      { path: "notes/profile.md", content: memoryNote },
+      { path: "notes/data.bin", content: binaryMemory },
     ];
-    // Create the memory artifact head version through the product storage
-    // upload flow, then place the mocked archive at the S3 key the product
-    // assigned to it.
     createStoragesBddApi(context).mockStoragePresignedUrls();
+    const oldFiles = [{ path: "removed.md", content: "An old memory version" }];
+    const oldMemory = await commitMemoryVersion(context, actor, oldFiles);
+    putMemoryArchive(misc, oldMemory.s3Key, oldFiles);
     const memory = await commitMemoryVersion(context, actor, memoryFiles);
     putMemoryArchive(misc, memory.s3Key, memoryFiles);
-    const phase2Secrets = await seedPiMemoryPhase2ExportJobFixture({
-      memoryStorageId: memory.storageId,
-      orgId: actor.orgId,
-      userId: actor.userId,
-      currentTime: new Date(exportStartAt),
-    });
+    const peer = bdd.user({ orgId: actor.orgId });
+    const peerFiles = [
+      { path: "peer-secret.md", content: "Another user's memory" },
+    ];
+    const peerMemory = await commitMemoryVersion(context, peer, peerFiles);
+    putMemoryArchive(misc, peerMemory.s3Key, peerFiles);
 
-    mockNow(exportStartAt);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
+    installUserExportStorage(context);
     const started = await api.requestPostUserExport(actor, [202]);
-    const jobId = started.body.jobId;
-    const exportKey = `exports/${actor.userId}/${jobId}.zip`;
-
-    await waitForUserExportJobStatus(api, actor, jobId, "completed");
-    const zip = exportZip(exportKey);
-    const names = zipEntryNames(zip);
-
-    const agentClaude = singleZipEntry(names, (name) => {
-      return name.startsWith("agents/") && name.endsWith("/CLAUDE.md");
-    });
-    const agentCodex = singleZipEntry(names, (name) => {
-      return name.startsWith("agents/") && name.endsWith("/AGENTS.md");
-    });
-    expect(zipText(zip, agentClaude)).toContain(
-      "Use the exported agent instructions.",
-    );
-    expect(zipText(zip, agentCodex)).toContain(
-      "Use the exported agent instructions.",
-    );
-
-    const workflowPrefix = `workflows/bdd-export-workflow-${workflowId}/`;
-    const workflowSkill = singleZipEntry(names, (name) => {
-      return name.startsWith(workflowPrefix) && name.endsWith("/SKILL.md");
-    });
-    const workflowNote = `${workflowPrefix}notes/checklist.md`;
-    expect(zipText(zip, workflowSkill)).toContain(
-      "Use the exported workflow instructions.",
-    );
-    expect(zipText(zip, workflowNote)).toBe("Workflow supporting file");
-    expect(zipText(zip, `memory/${actor.orgId}/MEMORY.md`)).toBe(
-      "# Exported memory",
-    );
-    expect(zipText(zip, `memory/${actor.orgId}/notes/profile.md`)).toBe(
-      "Memory supporting note",
-    );
-    const phase2JobsText = zipText(zip, "memory/phase2-jobs.json");
-    const phase2Jobs = JSON.parse(phase2JobsText) as readonly Record<
-      string,
-      unknown
-    >[];
-    expect(phase2Jobs).toStrictEqual([
-      {
-        memoryStorageId: memory.storageId,
-        orgId: actor.orgId,
-        userId: actor.userId,
-        status: "leased",
-        inputRevision: 2,
-        completedRevision: 0,
-        reconciliationRevision: 0,
-        claimedRevision: 1,
-        claimedBaseVersionId: memory.versionId,
-        leaseExpiresAt: new Date(exportStartAt + 60 * 60 * 1000).toISOString(),
-        retryCount: 1,
-        retryAt: null,
-        lastErrorClass: null,
-        lastSucceededAt: new Date(
-          exportStartAt - 24 * 60 * 60 * 1000,
-        ).toISOString(),
-        claimedSelectedCount: 1,
-        claimedSelectedUtf8Bytes: 42,
-        lastObservedHeadVersionId: memory.versionId,
-        conflictCount: 0,
-        lastConflictAt: null,
-        lastConflictingHeadVersionId: null,
-        lastPublishedVersionId: null,
-        lastPublishedAt: null,
-        createdAt: new Date(exportStartAt - 2 * 60 * 60 * 1000).toISOString(),
-        updatedAt: new Date(exportStartAt).toISOString(),
-      },
-    ]);
-    expect(phase2JobsText).not.toContain(phase2Secrets.leaseToken);
-    expect(phase2JobsText).not.toContain(phase2Secrets.selectionDigest);
-    expect(
-      JSON.parse(zipText(zip, "memory/phase2-publication-provenance.json")),
-    ).toStrictEqual([
-      {
-        id: "00000000-0000-4000-8000-000000031258",
-        memoryStorageId: memory.storageId,
-        orgId: actor.orgId,
-        userId: actor.userId,
-        claimedRevision: 1,
-        inputRevision: 1,
-        reconciliationRevision: 0,
-        selectionDigest: phase2Secrets.selectionDigest,
-        selectedCount: 1,
-        selectedUtf8Bytes: 42,
-        baseVersionId: memory.versionId,
-        preparedVersionId: "b".repeat(64),
-        observedHeadVersionId: "c".repeat(64),
-        writer: "pi",
-        outcome: "conflicted",
-        size: 17,
-        archiveSize: 23,
-        fileCount: 2,
-        createdAt: new Date(exportStartAt - 30 * 60 * 1000).toISOString(),
-      },
-    ]);
-
-    const manifest = JSON.parse(zipText(zip, "export-manifest.json")) as {
-      readonly counts: {
-        readonly agentInstructionFiles: number;
-        readonly workflowFiles: number;
-        readonly memoryFiles: number;
-        readonly memoryStage1Candidates: number;
-        readonly memoryPhase2Jobs: number;
-        readonly memoryPhase2PublicationProvenance: number;
-        readonly conversationThreads: number;
-        readonly sessionHistories: number;
-      };
-    };
-    expect(manifest.counts).toStrictEqual({
-      agentInstructionFiles: 2,
-      workflowFiles: 2,
-      memoryFiles: 2,
-      memoryStage1Candidates: 0,
-      memoryPhase2Jobs: 1,
-      memoryPhase2PublicationProvenance: 1,
-      conversationThreads: 0,
-      sessionHistories: 0,
-    });
-    expect(names).not.toContain("artifacts-manifest.json");
-    expect(
-      names.some((name) => {
-        return name.endsWith(".tar.gz") || name.endsWith("-history.jsonl");
-      }),
-    ).toBeFalsy();
-  });
-
-  it("exports successfully when a session intentionally has no history", async () => {
-    const api = createOpsLogsApi(context);
-    const bdd = createBddApi(context);
-    createMiscRoutesApi(context);
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const actor = bdd.user();
-    const exportStartAt = Date.UTC(2026, 4, 12, 5, 45);
-    const downloadUrl =
-      "https://r2.example.com/bdd-export-historyless.zip?sig=test";
-
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Export Historyless Agent",
-      visibility: "private",
-    });
-    const run = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "checkpoint without resumable history",
-      modelProvider: "anthropic-api-key",
-    });
-    const claim = await runs.claimRunnerJob(run.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-export-historyless-${run.runId}`,
-          cliAgentSessionHistoryDisposition: "discarded_oversized",
-        },
-      },
-      headers,
-      [200],
-    );
-
-    mockNow(exportStartAt);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
-    const started = await api.requestPostUserExport(actor, [202]);
-    const exportKey = `exports/${actor.userId}/${started.body.jobId}.zip`;
-
     await waitForUserExportJobStatus(
       api,
       actor,
       started.body.jobId,
       "completed",
     );
-    const zip = exportZip(exportKey);
+    const zip = exportZip(`exports/${actor.userId}/${started.body.jobId}.zip`);
     const names = zipEntryNames(zip);
-    expect(
-      names.some((name) => {
-        return name.endsWith("-history.jsonl");
+    expect(readExportJsonLines(zip, "agents.jsonl")).toStrictEqual([
+      expect.objectContaining({
+        id: agent.agentId,
+        instructions: "Use the exported agent instructions.",
       }),
-    ).toBeFalsy();
-
-    const manifest = JSON.parse(zipText(zip, "export-manifest.json")) as {
-      readonly counts: {
-        readonly sessionHistories: number;
-      };
-    };
-    expect(manifest.counts.sessionHistories).toBe(0);
-  });
-
-  it("exports gzip-backed session history bytes as a jsonl conversation file", async () => {
-    const api = createOpsLogsApi(context);
-    const bdd = createBddApi(context);
-    const misc = createMiscRoutesApi(context);
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const actor = bdd.user();
-    const exportStartAt = Date.UTC(2026, 4, 12, 6);
-    const downloadUrl =
-      "https://r2.example.com/bdd-export-history.zip?sig=test";
-
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Export History Agent",
-      visibility: "private",
-    });
-    const run = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "checkpoint compressed history",
-      modelProvider: "anthropic-api-key",
-    });
-    const claim = await runs.claimRunnerJob(run.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-    const history = Buffer.concat([
-      Buffer.from(
-        `{"type":"init"}\n{"type":"human","text":"exported-${randomUUID()}"}\n`,
-        "utf8",
-      ),
-      Buffer.from([0xc3, 0x28, 0x0a]),
     ]);
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const compressedHistory = gzipSync(history);
-    const compressedKey = `blobs/${historyHash}.blob.gz`;
-
-    const prepared = await webhooks.requestAgentCheckpointPrepareHistory(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: history.length,
-        encodedSize: compressedHistory.length,
-        encoding: "gzip",
-      },
-      headers,
-      [200],
-    );
-    expect(prepared.body).toMatchObject({
-      existing: false,
-      encoding: "gzip",
-    });
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-export-session-${run.runId}`,
-          cliAgentSessionHistoryHash: historyHash,
-        },
-      },
-      headers,
-      [200],
-    );
-
-    mockNow(exportStartAt);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
-    misc.putS3Object(compressedKey, compressedHistory);
-
-    const started = await api.requestPostUserExport(actor, [202]);
-    const jobId = started.body.jobId;
-    const exportKey = `exports/${actor.userId}/${jobId}.zip`;
-
-    await waitForUserExportJobStatus(api, actor, jobId, "completed");
-    const zip = exportZip(exportKey);
-    const names = zipEntryNames(zip);
-    const historyEntry = singleZipEntry(names, (name) => {
-      return (
-        name.startsWith("conversations/") && name.endsWith("-history.jsonl")
-      );
-    });
-    expect(zipBytes(zip, historyEntry)).toStrictEqual(history);
-
-    const manifest = JSON.parse(zipText(zip, "export-manifest.json")) as {
-      readonly counts: {
-        readonly conversationThreads: number;
-        readonly sessionHistories: number;
-      };
-    };
-    expect(manifest.counts.conversationThreads).toBe(0);
-    expect(manifest.counts.sessionHistories).toBe(1);
-  });
-
-  it("exports zstd-backed session history bytes as a jsonl conversation file", async () => {
-    const api = createOpsLogsApi(context);
-    const bdd = createBddApi(context);
-    const misc = createMiscRoutesApi(context);
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const actor = bdd.user();
-    const exportStartAt = Date.UTC(2026, 4, 12, 6, 30);
-    const downloadUrl =
-      "https://r2.example.com/bdd-export-zstd-history.zip?sig=test";
-
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Export Zstd History Agent",
-      visibility: "private",
-    });
-    const run = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "checkpoint zstd compressed history",
-      modelProvider: "anthropic-api-key",
-    });
-    const claim = await runs.claimRunnerJob(run.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-    const history = Buffer.concat([
-      Buffer.from(
-        `{"type":"init"}\n{"type":"human","text":"zstd-exported-${randomUUID()}"}\n`,
-        "utf8",
-      ),
-      Buffer.from([0xc3, 0x28, 0x0a]),
+    expect(readExportJsonLines(zip, "workflows.jsonl")).toStrictEqual([
+      expect.objectContaining({
+        id: workflow.body.id,
+        instruction: "Use the exported workflow instructions.",
+      }),
     ]);
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const compressedHistory = zstdCompressSync(history);
-    const compressedKey = `blobs/${historyHash}.blob.zst`;
-
-    const prepared = await webhooks.requestAgentCheckpointPrepareHistory(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: history.length,
-        encodedSize: compressedHistory.length,
-        encoding: "zstd",
-      },
-      headers,
-      [200],
+    expect(zipText(zip, `memory/${actor.orgId}/MEMORY.md`)).toBe(
+      "# Exported memory",
     );
-    expect(prepared.body).toMatchObject({
-      existing: false,
-      encoding: "zstd",
+    expect(zipText(zip, `memory/${actor.orgId}/notes/profile.md`)).toBe(
+      memoryNote,
+    );
+    expect(
+      zip.getEntry(`memory/${actor.orgId}/notes/data.bin`)?.getData(),
+    ).toStrictEqual(binaryMemory);
+    const exportParts = context.mocks.s3.send.mock.calls.filter(([command]) => {
+      return command instanceof UploadPartCommand;
     });
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-export-zstd-session-${run.runId}`,
-          cliAgentSessionHistoryHash: historyHash,
-        },
-      },
-      headers,
-      [200],
+    expect(exportParts.length).toBeGreaterThan(1);
+    expect(names.sort()).toStrictEqual(
+      [
+        "agents.jsonl",
+        "chat-threads.jsonl",
+        "export-manifest.json",
+        `memory/${actor.orgId}/MEMORY.md`,
+        `memory/${actor.orgId}/notes/data.bin`,
+        `memory/${actor.orgId}/notes/profile.md`,
+        "workflows.jsonl",
+      ].sort(),
     );
-
-    mockNow(exportStartAt);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
-    misc.putS3Object(compressedKey, compressedHistory);
-
-    const started = await api.requestPostUserExport(actor, [202]);
-    const jobId = started.body.jobId;
-    const exportKey = `exports/${actor.userId}/${jobId}.zip`;
-
-    await waitForUserExportJobStatus(api, actor, jobId, "completed");
-    const zip = exportZip(exportKey);
-    const names = zipEntryNames(zip);
-    const historyEntry = singleZipEntry(names, (name) => {
-      return (
-        name.startsWith("conversations/") && name.endsWith("-history.jsonl")
+    const manifest = readManifest(zip);
+    expect(manifest.formatVersion).toBe(2);
+    expect(manifest.counts).toStrictEqual({
+      chatThreads: 0,
+      chatMessages: 0,
+      agents: 1,
+      workflows: 1,
+      memoryFiles: 3,
+    });
+    expect(
+      manifest.files
+        .map((file) => {
+          return file.path;
+        })
+        .sort(),
+    ).toStrictEqual(
+      names
+        .filter((name) => {
+          return name !== "export-manifest.json";
+        })
+        .sort(),
+    );
+    for (const file of manifest.files) {
+      const bytes = zip.getEntry(file.path)?.getData();
+      if (!bytes) {
+        throw new Error(`Expected manifest file ${file.path}`);
+      }
+      expect(file.bytes).toBe(bytes.length);
+      expect(file.sha256).toBe(
+        createHash("sha256").update(bytes).digest("hex"),
       );
-    });
-    expect(zipBytes(zip, historyEntry)).toStrictEqual(history);
-
-    const manifest = JSON.parse(zipText(zip, "export-manifest.json")) as {
-      readonly counts: {
-        readonly conversationThreads: number;
-        readonly sessionHistories: number;
-      };
-    };
-    expect(manifest.counts.conversationThreads).toBe(0);
-    expect(manifest.counts.sessionHistories).toBe(1);
+    }
   });
 
-  it("fails user export when gzip-backed session history does not match its hash", async () => {
+  it.each(["unavailable", "corrupted with the same size"])(
+    "fails instead of publishing incomplete data when current memory is %s",
+    async (failure) => {
+      const api = createOpsLogsApi(context);
+      const bdd = createBddApi(context);
+      const misc = createMiscRoutesApi(context);
+      const actor = bdd.user();
+      createStoragesBddApi(context).mockStoragePresignedUrls();
+      const files = [{ path: "MEMORY.md", content: "Original memory" }];
+      const memory = await commitMemoryVersion(context, actor, files);
+      // Object loss or corruption after a committed upload is an external
+      // storage failure, constructed at the mocked object-storage boundary.
+      if (failure !== "unavailable") {
+        putMemoryArchive(misc, memory.s3Key, files);
+        misc.putS3Object(
+          `${memory.s3Key}/archive.tar.gz`,
+          createTarGz([{ path: "MEMORY.md", content: "Tampered memory" }]),
+        );
+      }
+      installUserExportStorage(context);
+      const started = await api.requestPostUserExport(actor, [202]);
+      const status = await waitForUserExportJobStatus(
+        api,
+        actor,
+        started.body.jobId,
+        "failed",
+      );
+      expect(status.job).toMatchObject({
+        status: "failed",
+        error: expect.any(String),
+        downloadUrl: null,
+      });
+      expect(status.canExport).toBeTruthy();
+      const key = `exports/${actor.userId}/${started.body.jobId}.zip`;
+      expect(
+        context.mocks.s3.send.mock.calls.some(([command]) => {
+          return (
+            command instanceof CompleteMultipartUploadCommand &&
+            command.input.Key === key
+          );
+        }),
+      ).toBeFalsy();
+    },
+  );
+
+  it("completes the core-content export when old session history blobs are unavailable", async () => {
     const api = createOpsLogsApi(context);
     const bdd = createBddApi(context);
-    const misc = createMiscRoutesApi(context);
+    createMiscRoutesApi(context);
     const runs = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const actor = bdd.user();
-    const exportStartAt = Date.UTC(2026, 4, 12, 7);
-
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Export Corrupt History Agent",
-      visibility: "private",
-    });
+    const agent = await bdd.createAgent(actor, { visibility: "private" });
     const run = await runs.createRun(actor, {
       agentId: agent.agentId,
-      prompt: "checkpoint corrupt compressed history",
+      prompt: "checkpoint with later-expired session history",
       modelProvider: "anthropic-api-key",
     });
     const claim = await runs.claimRunnerJob(run.runId);
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-    const history = `{"type":"init"}\n{"type":"human","text":"exported-${randomUUID()}"}\n`;
-    const tamperedHistory = history.replace("exported-", "tampered-");
+    const history = `{"type":"init"}\n{"type":"human","text":"old history"}\n`;
     const historyHash = createHash("sha256").update(history).digest("hex");
-    const tamperedCompressedHistory = gzipSync(
-      Buffer.from(tamperedHistory, "utf8"),
-    );
-    const compressedKey = `blobs/${historyHash}.blob.gz`;
-
     await webhooks.requestAgentCheckpointPrepareHistory(
       {
         runId: run.runId,
         hash: historyHash,
         rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: tamperedCompressedHistory.length,
+        encodedSize: gzipSync(history).length,
         encoding: "gzip",
       },
       headers,
@@ -1008,185 +988,55 @@ describe("OPS-01: user data export", () => {
         exitCode: 0,
         checkpoint: {
           cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-export-corrupt-session-${run.runId}`,
+          cliAgentSessionId: `unavailable-history-${run.runId}`,
           cliAgentSessionHistoryHash: historyHash,
         },
       },
       headers,
       [200],
     );
-
-    mockNow(exportStartAt);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/bdd-export-corrupt-history.zip?sig=test",
-    );
-    misc.putS3Object(compressedKey, tamperedCompressedHistory);
-
+    // The object store contains no session blob. Export still preserves the
+    // user's instruction data without depending on runner resume artifacts.
+    const visibleAgents = await bdd.listAgents(actor);
+    installUserExportStorage(context);
     const started = await api.requestPostUserExport(actor, [202]);
-    const failedStatus = await waitForUserExportJobStatus(
+    await waitForUserExportJobStatus(
       api,
       actor,
       started.body.jobId,
-      "failed",
+      "completed",
     );
-    if (!failedStatus.job) {
-      throw new Error("Expected failed export job");
-    }
-    expect(failedStatus.job.error).toContain("session history hash mismatch");
-  });
-
-  it("fails user export when zstd-backed session history does not match its hash", async () => {
-    const api = createOpsLogsApi(context);
-    const bdd = createBddApi(context);
-    const misc = createMiscRoutesApi(context);
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const actor = bdd.user();
-    const exportStartAt = Date.UTC(2026, 4, 12, 7, 30);
-
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Export Corrupt Zstd History Agent",
-      visibility: "private",
+    const zip = exportZip(`exports/${actor.userId}/${started.body.jobId}.zip`);
+    expect(zipEntryNames(zip).sort()).toStrictEqual([
+      "agents.jsonl",
+      "chat-threads.jsonl",
+      "export-manifest.json",
+      "workflows.jsonl",
+    ]);
+    const exportedAgents = readExportJsonLines(zip, "agents.jsonl");
+    expect(exportedAgents).toContainEqual(
+      expect.objectContaining({ id: agent.agentId }),
+    );
+    expect(
+      exportedAgents
+        .map((exported) => {
+          return exported.id;
+        })
+        .sort(),
+    ).toStrictEqual(
+      visibleAgents
+        .map((visible) => {
+          return visible.agentId;
+        })
+        .sort(),
+    );
+    expect(readManifest(zip).counts).toStrictEqual({
+      chatThreads: 0,
+      chatMessages: 0,
+      agents: visibleAgents.length,
+      workflows: 0,
+      memoryFiles: 0,
     });
-    const run = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "checkpoint corrupt zstd compressed history",
-      modelProvider: "anthropic-api-key",
-    });
-    const claim = await runs.claimRunnerJob(run.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-    const history = `{"type":"init"}\n{"type":"human","text":"zstd-exported-${randomUUID()}"}\n`;
-    const tamperedHistory = history.replace("zstd-exported-", "zstd-tampered-");
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const tamperedCompressedHistory = zstdCompressSync(
-      Buffer.from(tamperedHistory, "utf8"),
-    );
-    const compressedKey = `blobs/${historyHash}.blob.zst`;
-
-    await webhooks.requestAgentCheckpointPrepareHistory(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: tamperedCompressedHistory.length,
-        encoding: "zstd",
-      },
-      headers,
-      [200],
-    );
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-export-corrupt-zstd-session-${run.runId}`,
-          cliAgentSessionHistoryHash: historyHash,
-        },
-      },
-      headers,
-      [200],
-    );
-
-    mockNow(exportStartAt);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/bdd-export-corrupt-zstd-history.zip?sig=test",
-    );
-    misc.putS3Object(compressedKey, tamperedCompressedHistory);
-
-    const started = await api.requestPostUserExport(actor, [202]);
-    const failedStatus = await waitForUserExportJobStatus(
-      api,
-      actor,
-      started.body.jobId,
-      "failed",
-    );
-    if (!failedStatus.job) {
-      throw new Error("Expected failed export job");
-    }
-    expect(failedStatus.job.error).toContain("session history hash mismatch");
-  });
-
-  it("fails user export when gzip-backed session history exceeds its encoded size", async () => {
-    const api = createOpsLogsApi(context);
-    const bdd = createBddApi(context);
-    const misc = createMiscRoutesApi(context);
-    const runs = createRunsApi(context);
-    const webhooks = createWebhookCallbackApi(context);
-    const actor = bdd.user();
-    const exportStartAt = Date.UTC(2026, 4, 12, 8);
-
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
-    await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD Export Oversized History Agent",
-      visibility: "private",
-    });
-    const run = await runs.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "checkpoint oversized compressed history",
-      modelProvider: "anthropic-api-key",
-    });
-    const claim = await runs.claimRunnerJob(run.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
-    const history = `{"type":"init"}\n{"type":"human","text":"exported-${randomUUID()}"}\n`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const compressedHistory = gzipSync(Buffer.from(history, "utf8"));
-    const compressedKey = `blobs/${historyHash}.blob.gz`;
-
-    await webhooks.requestAgentCheckpointPrepareHistory(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length,
-        encoding: "gzip",
-      },
-      headers,
-      [200],
-    );
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        checkpoint: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-export-oversized-session-${run.runId}`,
-          cliAgentSessionHistoryHash: historyHash,
-        },
-      },
-      headers,
-      [200],
-    );
-
-    mockNow(exportStartAt);
-    context.mocks.s3.getSignedUrl.mockResolvedValue(
-      "https://r2.example.com/bdd-export-oversized-history.zip?sig=test",
-    );
-    misc.putS3Object(
-      compressedKey,
-      Buffer.concat([compressedHistory, Buffer.from([0])]),
-    );
-
-    const started = await api.requestPostUserExport(actor, [202]);
-    const failedStatus = await waitForUserExportJobStatus(
-      api,
-      actor,
-      started.body.jobId,
-      "failed",
-    );
-    if (!failedStatus.job) {
-      throw new Error("Expected failed export job");
-    }
-    expect(failedStatus.job.error).toContain("S3 object is too large");
   });
 
   it("surfaces failed exports and allows an immediate retry", async () => {
@@ -1199,7 +1049,16 @@ describe("OPS-01: user data export", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/bdd-retry.zip?sig=test",
     );
-    context.mocks.s3.send.mockRejectedValueOnce(new Error("S3 upload failed"));
+    installUserExportStorage(context);
+    const storage = context.mocks.s3.send.getMockImplementation();
+    if (!storage) {
+      throw new Error("Expected export object storage mock");
+    }
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      return command instanceof UploadPartCommand
+        ? Promise.reject(new Error("S3 upload failed"))
+        : storage(command);
+    });
 
     const failedStart = await api.requestPostUserExport(actor, [202]);
 
@@ -1217,9 +1076,26 @@ describe("OPS-01: user data export", () => {
     });
     expect(failedStatus.canExport).toBeTruthy();
     expect(failedStatus.nextExportAt).toBeNull();
+    const failedKey = `exports/${actor.userId}/${failedStart.body.jobId}.zip`;
+    expect(
+      context.mocks.s3.send.mock.calls.some(([command]) => {
+        return (
+          command instanceof AbortMultipartUploadCommand &&
+          command.input.Key === failedKey
+        );
+      }),
+    ).toBeTruthy();
+    expect(
+      context.mocks.s3.send.mock.calls.some(([command]) => {
+        return (
+          command instanceof CompleteMultipartUploadCommand &&
+          command.input.Key === failedKey
+        );
+      }),
+    ).toBeFalsy();
 
     mockNow(failedStartAt + 60_000);
-    context.mocks.s3.send.mockResolvedValue({});
+    installUserExportStorage(context);
     const retried = await api.requestPostUserExport(actor, [202]);
     expect(retried.body.jobId).not.toBe(failedStart.body.jobId);
 
@@ -1234,6 +1110,101 @@ describe("OPS-01: user data export", () => {
     expect(retriedStatus.canExport).toBeFalsy();
   });
 
+  it("keeps a timed-out job failed and deletes a late upload without emailing it", async () => {
+    const api = createOpsLogsApi(context);
+    const actor = createBddApi(context).user();
+    createMiscRoutesApi(context);
+    installUserExportStorage(context);
+    const storage = context.mocks.s3.send.getMockImplementation();
+    if (!storage) {
+      throw new Error("Expected export object storage mock");
+    }
+    const completing = createDeferredPromise<void>(context.signal);
+    const deleted = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const pending = await trackDeferredS3Put(
+      Promise.resolve({
+        resolve: () => {
+          if (!release.settled()) {
+            release.resolve(undefined);
+          }
+        },
+      }),
+    );
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof CompleteMultipartUploadCommand) {
+        completing.resolve(undefined);
+        await release.promise;
+      }
+      const result = await storage(command);
+      if (
+        command instanceof DeleteObjectsCommand &&
+        command.input.Delete?.Objects?.some((object) => {
+          return object.Key?.startsWith(`exports/${actor.userId}/`);
+        })
+      ) {
+        deleted.resolve(undefined);
+      }
+      return result;
+    });
+    const startedAt = Date.UTC(2026, 4, 20, 9);
+    mockNow(startedAt);
+    const started = await api.requestPostUserExport(actor, [202]);
+    await completing.promise;
+    const running = await api.requestGetUserExport(actor, [200]);
+    expect(running.body.job).toMatchObject({
+      id: started.body.jobId,
+      status: "running",
+    });
+
+    mockNow(startedAt + 11 * 60_000);
+    const cleanup = await accept(
+      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+        testCronCleanupSandboxesStateContract,
+      ).cleanup({
+        body: {
+          chatThreadIds: [],
+          runIds: [],
+          orgIds: [],
+          exportJobIds: [started.body.jobId],
+        },
+      }),
+      [200],
+    );
+    expect(cleanup.body.exportJobsStuck).toBe(1);
+    pending.resolve();
+    await deleted.promise;
+    const status = await waitForUserExportJobStatus(
+      api,
+      actor,
+      started.body.jobId,
+      "failed",
+    );
+    expect(status.job).toMatchObject({
+      status: "failed",
+      error: "Export job timed out",
+      downloadUrl: null,
+    });
+    expect(status.canExport).toBeTruthy();
+    const key = `exports/${actor.userId}/${started.body.jobId}.zip`;
+    expect(
+      context.mocks.s3.send.mock.calls.some(([command]) => {
+        return (
+          command instanceof DeleteObjectsCommand &&
+          command.input.Delete?.Objects?.some((object) => {
+            return object.Key === key;
+          })
+        );
+      }),
+    ).toBeTruthy();
+    await expect(
+      createEmailOutboxStateApi(context).findItems({
+        toAddress: actor.email,
+        subject: "Your data export is ready",
+      }),
+    ).resolves.toStrictEqual([]);
+  });
+
   it("completes exports without an email for unsubscribed users", async () => {
     const api = createOpsLogsApi(context);
     const bdd = createBddApi(context);
@@ -1245,7 +1216,7 @@ describe("OPS-01: user data export", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/bdd-unsubscribed.zip?sig=test",
     );
-    context.mocks.s3.send.mockResolvedValue({});
+    installUserExportStorage(context);
     const started = await api.requestPostUserExport(actor, [202]);
 
     const status = await waitForUserExportJobStatus(

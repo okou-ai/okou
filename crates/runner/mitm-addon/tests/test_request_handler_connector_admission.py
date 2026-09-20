@@ -9,6 +9,7 @@ from mitmproxy import connection
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import platform_api
 import upstream_destination_binding
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import (
@@ -93,7 +94,12 @@ async def test_matching_sni_and_host_blocks_firewall_auth_when_upstream_is_unbou
 
 
 async def test_matching_sni_and_host_retargets_unconnected_firewall_auth(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    monkeypatch,
 ):
     reg_path = _write_github_firewall_registry(tmp_path)
     flow = real_flow(
@@ -104,6 +110,7 @@ async def test_matching_sni_and_host_retargets_unconnected_firewall_auth(
         path="/repos",
         request_headers=headers(("Host", "api.github.com")),
     )
+    monkeypatch.setattr(platform_api, "VERCEL_BYPASS", "preview-secret")
 
     with (
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
@@ -115,6 +122,7 @@ async def test_matching_sni_and_host_retargets_unconnected_firewall_auth(
     assert flow.server_conn.address == ("api.github.com", 443)
     assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
     assert flow.request.headers["Authorization"] == "Bearer x"
+    assert "x-vercel-protection-bypass" not in flow.request.headers
     binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
     assert binding.host == "api.github.com"
     assert binding.kinds == frozenset(("connector_auth",))

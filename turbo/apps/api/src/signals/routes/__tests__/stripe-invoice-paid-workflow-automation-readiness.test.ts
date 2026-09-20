@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   testStripeInvoicePaidFixtureContract,
@@ -47,7 +47,7 @@ interface StripeOAuthOptions {
 
 interface ConnectedStripeOAuth {
   readonly code: string;
-  readonly connector: ConnectorResponse;
+  readonly connector: BuiltinConnectorResponse;
   readonly provider: ReturnType<typeof mockStripeConnectorOAuth>;
 }
 
@@ -275,7 +275,9 @@ describe("Stripe invoice-paid workflow automation readiness", () => {
       "Bearer stripe-live-storage-v3-token",
     ]);
 
-    const listedConnectors = await connectors.listConnectors(scenario.actor);
+    const listedConnectors = await connectors.listBuiltinConnectors(
+      scenario.actor,
+    );
     expect(listedConnectors.connectorProvidedBindings).toContainEqual(
       expect.objectContaining({
         connectorSlug: "stripe",

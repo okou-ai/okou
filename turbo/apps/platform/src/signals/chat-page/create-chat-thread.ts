@@ -10,7 +10,6 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { timeout } from "signal-timers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -760,59 +759,18 @@ function createComputerUseHostSelection(
 function createThreadOwnedSignals(threadId: string) {
   return {
     headerAutomations: createHeaderAutomationSignals(threadId),
-    ...createThreadUIState(),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Sub-factory: per-thread UI state (copy)
-// ---------------------------------------------------------------------------
-
-function createThreadUIState() {
-  // Copy state with 2s auto-clear
-  const internalCopiedId$ = state<string | null>(null);
-  const resetCopiedSignal$ = resetSignal();
-
-  const copiedEventId$ = computed((get) => {
-    return get(internalCopiedId$);
-  });
-
-  const copyEvent$ = command(
-    async (
-      { get, set },
-      eventId: string,
-      payload: ChatClipboardPayload,
-      signal: AbortSignal,
-    ) => {
-      const ok = await writeChatMessageToClipboard(payload);
-      signal.throwIfAborted();
-      if (!ok) {
-        return;
-      }
-      const copiedSignal = set(resetCopiedSignal$, signal);
-      set(internalCopiedId$, eventId);
-      const clearCopiedId = () => {
-        if (get(internalCopiedId$) === eventId) {
-          set(internalCopiedId$, null);
-        }
-      };
-      copiedSignal.addEventListener("abort", clearCopiedId, { once: true });
-      timeout(
-        () => {
-          copiedSignal.removeEventListener("abort", clearCopiedId);
-          clearCopiedId();
-        },
-        2000,
-        { signal: copiedSignal },
-      );
-    },
-  );
-
-  return {
-    copiedEventId$,
     copyEvent$,
   };
 }
+
+const copyEvent$ = command(
+  async (_ctx, payload: ChatClipboardPayload, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const copied = await writeChatMessageToClipboard(payload);
+    signal.throwIfAborted();
+    return copied;
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Sub-factory: draft server sync (debounced PATCH)
@@ -3791,6 +3749,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
+    assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
     retryAssistantError$: events.retryAssistantError$,
     resetCodexSubscriptionAndRetry$: events.resetCodexSubscriptionAndRetry$,
     eventImageGroups$: events.eventImageGroups$,

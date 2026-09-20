@@ -3854,7 +3854,8 @@ fn idle_transition_error(
 /// Initial time to wait for balloon inflation before considering an extension.
 const BALLOON_SETTLE_INITIAL_TIMEOUT: Duration = Duration::from_secs(5);
 /// Additional wait when the balloon is still making progress and the
-/// guest reports enough unused memory to finish reclaiming safely.
+/// guest has enough immediately free or freshly observed available memory to
+/// finish reclaiming safely.
 const BALLOON_SETTLE_PROGRESS_GRACE: Duration = Duration::from_secs(5);
 /// Absolute upper bound for balloon inflation across all progress extensions.
 const BALLOON_SETTLE_MAX_TIMEOUT: Duration = Duration::from_secs(30);
@@ -3882,6 +3883,21 @@ const BALLOON_SEVERE_DEFICIT_MIN_MIB: u32 = 256;
 const BALLOON_PRESSURE_LIMITED_REASON: &str = "pressure_limited_partial_reclaim";
 const BYTES_PER_MIB: i64 = 1024 * 1024;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BalloonProgressExtensionDecision {
+    CachedMemory,
+    FreshGuestMemory,
+    Ineligible(&'static str),
+}
+
+enum FreshGuestMemorySnapshotResult {
+    Snapshot(GuestMemorySnapshot),
+    GuestUnavailable,
+    RequestFailed,
+    Deadline,
+    Handoff,
+}
+
 fn balloon_settle_tolerance_mib(target_mib: u32) -> u32 {
     BALLOON_SETTLE_TOLERANCE_CAP_MIB.min(target_mib / BALLOON_SETTLE_TOLERANCE_TARGET_DIVISOR)
 }
@@ -3907,6 +3923,9 @@ struct BalloonSettleSummary {
     last_major_faults: Option<i64>,
     last_minor_faults: Option<i64>,
     last_disk_caches_bytes: Option<i64>,
+    progress_extension_blocker: Option<&'static str>,
+    guest_memory_snapshot_attempted: bool,
+    guest_memory_snapshot: Option<GuestMemorySnapshot>,
 }
 
 impl BalloonSettleSummary {
@@ -3931,6 +3950,9 @@ impl BalloonSettleSummary {
             last_major_faults: None,
             last_minor_faults: None,
             last_disk_caches_bytes: None,
+            progress_extension_blocker: None,
+            guest_memory_snapshot_attempted: false,
+            guest_memory_snapshot: None,
         }
     }
 
@@ -4016,29 +4038,63 @@ impl BalloonSettleSummary {
                 .is_some_and(|deficit| deficit >= self.severe_deficit_threshold_mib())
     }
 
-    fn can_extend_for_progress(&self) -> bool {
-        let (
-            Some(previous_actual_mib),
-            Some(last_actual_mib),
-            Some(deficit_mib),
-            Some(free_mib),
-            Some(available_mib),
-        ) = (
+    fn progress_extension_decision(&self) -> BalloonProgressExtensionDecision {
+        if !self.is_severe_deficit() {
+            return BalloonProgressExtensionDecision::Ineligible("not_severe_deficit");
+        }
+
+        if self.last_observed_target_mib != Some(self.requested_target_mib) {
+            return BalloonProgressExtensionDecision::Ineligible("target_not_current");
+        }
+
+        let (Some(previous_actual_mib), Some(last_actual_mib), Some(deficit_mib)) = (
             self.previous_actual_mib,
             self.last_actual_mib,
             self.last_deficit_mib,
-            self.reported_free_mib(),
-            self.reported_available_mib(),
-        )
-        else {
-            return false;
+        ) else {
+            return BalloonProgressExtensionDecision::Ineligible("recent_progress_unavailable");
         };
 
-        self.is_severe_deficit()
-            && self.last_observed_target_mib == Some(self.requested_target_mib)
-            && last_actual_mib > previous_actual_mib
-            && free_mib >= i64::from(deficit_mib)
-            && available_mib >= i64::from(deficit_mib) + balloon::PRESSURE_AVAILABLE_MIB
+        if last_actual_mib <= previous_actual_mib {
+            return BalloonProgressExtensionDecision::Ineligible("actual_not_progressing");
+        }
+
+        let (Some(free_mib), Some(available_mib)) =
+            (self.reported_free_mib(), self.reported_available_mib())
+        else {
+            return BalloonProgressExtensionDecision::Ineligible("memory_stats_unavailable");
+        };
+
+        if available_mib < i64::from(deficit_mib) + balloon::PRESSURE_AVAILABLE_MIB {
+            return BalloonProgressExtensionDecision::Ineligible(
+                "cached_available_reserve_insufficient",
+            );
+        }
+
+        if free_mib >= i64::from(deficit_mib) {
+            BalloonProgressExtensionDecision::CachedMemory
+        } else {
+            BalloonProgressExtensionDecision::FreshGuestMemory
+        }
+    }
+
+    fn fresh_guest_memory_has_reserve(&self, snapshot: GuestMemorySnapshot) -> bool {
+        let Some(deficit_mib) = self.last_deficit_mib else {
+            return false;
+        };
+        let required_mib =
+            u64::from(deficit_mib).saturating_add(balloon::PRESSURE_AVAILABLE_MIB as u64);
+        snapshot.mem_available_bytes >= required_mib.saturating_mul(BYTES_PER_MIB as u64)
+    }
+
+    fn record_terminal_guest_memory_probe(
+        &mut self,
+        blocker: &'static str,
+        snapshot: Option<GuestMemorySnapshot>,
+    ) {
+        self.progress_extension_blocker = Some(blocker);
+        self.guest_memory_snapshot_attempted = true;
+        self.guest_memory_snapshot = snapshot;
     }
 
     fn park_outcome(&self) -> SandboxParkOutcome {
@@ -4050,6 +4106,7 @@ impl BalloonSettleSummary {
                     observed_target_mib: self.last_observed_target_mib,
                     target_observed: self.target_observed,
                     first_actual_mib: self.first_actual_mib,
+                    previous_actual_mib: self.previous_actual_mib,
                     actual_mib: self.last_actual_mib,
                     max_actual_mib: self.max_actual_mib,
                     deficit_mib: self.last_deficit_mib,
@@ -4064,7 +4121,9 @@ impl BalloonSettleSummary {
                     reported_major_faults: self.last_major_faults,
                     reported_minor_faults: self.last_minor_faults,
                     reported_disk_caches_bytes: self.last_disk_caches_bytes,
-                    guest_memory_snapshot: None,
+                    progress_extension_blocker: self.progress_extension_blocker,
+                    guest_memory_snapshot_attempted: self.guest_memory_snapshot_attempted,
+                    guest_memory_snapshot: self.guest_memory_snapshot,
                 }),
             ))
         } else {
@@ -4113,11 +4172,20 @@ fn log_balloon_settle_timeout(
                 observed_target_mib = ?summary.last_observed_target_mib,
                 target_observed = summary.target_observed,
                 first_actual_mib = ?summary.first_actual_mib,
+                previous_actual_mib = ?summary.previous_actual_mib,
                 max_actual_mib = ?summary.max_actual_mib,
                 actual_delta_mib = ?summary.actual_delta_mib(),
                 reported_free_mib = ?summary.reported_free_mib(),
                 reported_available_mib = ?summary.reported_available_mib(),
                 reported_total_mib = ?summary.reported_total_mib(),
+                progress_extension_blocker = ?summary.progress_extension_blocker,
+                guest_memory_snapshot_attempted = summary.guest_memory_snapshot_attempted,
+                guest_mem_free_bytes = summary
+                    .guest_memory_snapshot
+                    .map(|snapshot| snapshot.mem_free_bytes),
+                guest_mem_available_bytes = summary
+                    .guest_memory_snapshot
+                    .map(|snapshot| snapshot.mem_available_bytes),
                 reason = summary.reason(),
                 admission_action = park_admission_action(outcome),
                 "balloon inflate incomplete after {}s, pausing anyway",
@@ -4139,7 +4207,10 @@ fn log_balloon_settle_progress_grace(
     log_id: &str,
     target_mib: u32,
     progress_grace: Duration,
+    remaining_progress_grace: Duration,
     summary: &BalloonSettleSummary,
+    memory_evidence: &'static str,
+    fresh_guest_memory_snapshot: Option<GuestMemorySnapshot>,
 ) {
     info!(
         id = %log_id,
@@ -4151,9 +4222,98 @@ fn log_balloon_settle_progress_grace(
         previous_actual_mib = ?summary.previous_actual_mib,
         reported_free_mib = ?summary.reported_free_mib(),
         reported_available_mib = ?summary.reported_available_mib(),
+        memory_evidence,
+        guest_mem_free_bytes = fresh_guest_memory_snapshot
+            .map(|snapshot| snapshot.mem_free_bytes),
+        guest_mem_available_bytes = fresh_guest_memory_snapshot
+            .map(|snapshot| snapshot.mem_available_bytes),
         grace_ms = duration_ms(progress_grace),
+        remaining_grace_ms = duration_ms(remaining_progress_grace),
         "balloon inflation still progressing, extending settle deadline"
     );
+}
+
+fn balloon_settle_deadline_result(
+    log_id: &str,
+    target_mib: u32,
+    tolerance_mib: u32,
+    settle_timeout: Duration,
+    summary: &BalloonSettleSummary,
+) -> BalloonSettleWaitResult {
+    let outcome = summary.park_outcome();
+    log_balloon_settle_timeout(
+        log_id,
+        target_mib,
+        tolerance_mib,
+        settle_timeout,
+        summary,
+        &outcome,
+    );
+    BalloonSettleWaitResult::Settled(BalloonSettleResult {
+        park_outcome: outcome,
+        telemetry_outcome: SandboxFinalExecParkSubstageOutcome::Deadline,
+    })
+}
+
+async fn fresh_guest_memory_snapshot_for_progress(
+    guest: Option<&Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>>,
+    log_id: &str,
+    max_deadline: tokio::time::Instant,
+    handoff: Option<&SandboxFinalExecParkHandoff>,
+) -> FreshGuestMemorySnapshotResult {
+    let request = tokio::time::timeout_at(max_deadline, async {
+        let Some(guest) = guest else {
+            return FreshGuestMemorySnapshotResult::GuestUnavailable;
+        };
+        let Some(guest) = guest.lock().await.as_ref().cloned() else {
+            return FreshGuestMemorySnapshotResult::GuestUnavailable;
+        };
+        let request_timeout = GUEST_MEMORY_SNAPSHOT_TIMEOUT
+            .min(max_deadline.saturating_duration_since(tokio::time::Instant::now()));
+        if request_timeout.is_zero() {
+            return FreshGuestMemorySnapshotResult::Deadline;
+        }
+        match guest.memory_snapshot(request_timeout).await {
+            Ok(snapshot) => {
+                FreshGuestMemorySnapshotResult::Snapshot(guest_memory_snapshot(snapshot))
+            }
+            Err(error) => {
+                info!(
+                    id = %log_id,
+                    %error,
+                    "fresh guest memory snapshot unavailable for balloon progress extension"
+                );
+                FreshGuestMemorySnapshotResult::RequestFailed
+            }
+        }
+    });
+    tokio::pin!(request);
+
+    match handoff {
+        Some(handoff) => {
+            tokio::select! {
+                biased;
+                accepted = handoff.wait_and_accept() => {
+                    if accepted {
+                        FreshGuestMemorySnapshotResult::Handoff
+                    } else {
+                        match request.await {
+                            Ok(result) => result,
+                            Err(_) => FreshGuestMemorySnapshotResult::Deadline,
+                        }
+                    }
+                }
+                result = request.as_mut() => match result {
+                    Ok(result) => result,
+                    Err(_) => FreshGuestMemorySnapshotResult::Deadline,
+                },
+            }
+        }
+        None => match request.await {
+            Ok(result) => result,
+            Err(_) => FreshGuestMemorySnapshotResult::Deadline,
+        },
+    }
 }
 
 fn park_admission_action(outcome: &SandboxParkOutcome) -> &'static str {
@@ -4186,7 +4346,7 @@ enum PhysicalParkOutcome {
 /// the remaining deficit is within [`balloon_settle_tolerance_mib`],
 /// when guest pressure indicates further reclaim is unsafe, or after
 /// [`BALLOON_SETTLE_INITIAL_TIMEOUT`]. A severe deficit that is still progressing
-/// with enough unused guest memory gets repeated
+/// with enough cached or freshly observed guest memory gets repeated
 /// [`BALLOON_SETTLE_PROGRESS_GRACE`] extensions up to
 /// [`BALLOON_SETTLE_MAX_TIMEOUT`]. The returned outcome rejects only the existing
 /// severe-deficit classification. Errors from stats fetching are non-fatal —
@@ -4197,7 +4357,7 @@ async fn wait_for_balloon_with_outcome(
     target_mib: u32,
     log_id: &str,
 ) -> BalloonSettleResult {
-    match wait_for_balloon_with_optional_handoff(client, target_mib, log_id, None).await {
+    match wait_for_balloon_with_optional_handoff(client, target_mib, log_id, None, None).await {
         BalloonSettleWaitResult::Settled(result) => result,
         BalloonSettleWaitResult::Handoff => panic!("handoff signal was not provided"),
     }
@@ -4207,6 +4367,7 @@ async fn wait_for_balloon_with_optional_handoff(
     client: &ApiClient,
     target_mib: u32,
     log_id: &str,
+    guest: Option<&Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>>,
     handoff: Option<&SandboxFinalExecParkHandoff>,
 ) -> BalloonSettleWaitResult {
     let tolerance_mib = balloon_settle_tolerance_mib(target_mib);
@@ -4218,26 +4379,131 @@ async fn wait_for_balloon_with_optional_handoff(
     loop {
         let now = tokio::time::Instant::now();
         if now >= deadline {
-            if now < max_deadline && summary.can_extend_for_progress() {
-                let progress_grace = BALLOON_SETTLE_PROGRESS_GRACE.min(max_deadline - now);
-                deadline = now + progress_grace;
-                settle_timeout = deadline - summary.started_at;
-                log_balloon_settle_progress_grace(log_id, target_mib, progress_grace, &summary);
-            } else {
-                let outcome = summary.park_outcome();
-                log_balloon_settle_timeout(
+            if now >= max_deadline {
+                summary.progress_extension_blocker = Some("absolute_deadline");
+                return balloon_settle_deadline_result(
                     log_id,
                     target_mib,
                     tolerance_mib,
                     settle_timeout,
                     &summary,
-                    &outcome,
                 );
-                return BalloonSettleWaitResult::Settled(BalloonSettleResult {
-                    park_outcome: outcome,
-                    telemetry_outcome: SandboxFinalExecParkSubstageOutcome::Deadline,
-                });
             }
+
+            let (memory_evidence, fresh_guest_memory_snapshot) =
+                match summary.progress_extension_decision() {
+                    BalloonProgressExtensionDecision::CachedMemory => ("cached_firecracker", None),
+                    BalloonProgressExtensionDecision::FreshGuestMemory => {
+                        match fresh_guest_memory_snapshot_for_progress(
+                            guest,
+                            log_id,
+                            max_deadline,
+                            handoff,
+                        )
+                        .await
+                        {
+                            FreshGuestMemorySnapshotResult::Snapshot(snapshot)
+                                if summary.fresh_guest_memory_has_reserve(snapshot) =>
+                            {
+                                ("fresh_guest", Some(snapshot))
+                            }
+                            FreshGuestMemorySnapshotResult::Snapshot(snapshot) => {
+                                summary.record_terminal_guest_memory_probe(
+                                    "fresh_guest_available_reserve_insufficient",
+                                    Some(snapshot),
+                                );
+                                return balloon_settle_deadline_result(
+                                    log_id,
+                                    target_mib,
+                                    tolerance_mib,
+                                    settle_timeout,
+                                    &summary,
+                                );
+                            }
+                            FreshGuestMemorySnapshotResult::GuestUnavailable => {
+                                summary.record_terminal_guest_memory_probe(
+                                    "fresh_guest_unavailable",
+                                    None,
+                                );
+                                return balloon_settle_deadline_result(
+                                    log_id,
+                                    target_mib,
+                                    tolerance_mib,
+                                    settle_timeout,
+                                    &summary,
+                                );
+                            }
+                            FreshGuestMemorySnapshotResult::RequestFailed => {
+                                summary.record_terminal_guest_memory_probe(
+                                    "fresh_guest_snapshot_failed",
+                                    None,
+                                );
+                                return balloon_settle_deadline_result(
+                                    log_id,
+                                    target_mib,
+                                    tolerance_mib,
+                                    settle_timeout,
+                                    &summary,
+                                );
+                            }
+                            FreshGuestMemorySnapshotResult::Deadline => {
+                                summary.record_terminal_guest_memory_probe(
+                                    "fresh_guest_snapshot_deadline",
+                                    None,
+                                );
+                                return balloon_settle_deadline_result(
+                                    log_id,
+                                    target_mib,
+                                    tolerance_mib,
+                                    settle_timeout,
+                                    &summary,
+                                );
+                            }
+                            FreshGuestMemorySnapshotResult::Handoff => {
+                                return BalloonSettleWaitResult::Handoff;
+                            }
+                        }
+                    }
+                    BalloonProgressExtensionDecision::Ineligible(blocker) => {
+                        summary.progress_extension_blocker = Some(blocker);
+                        return balloon_settle_deadline_result(
+                            log_id,
+                            target_mib,
+                            tolerance_mib,
+                            settle_timeout,
+                            &summary,
+                        );
+                    }
+                };
+
+            let previous_deadline = deadline;
+            let next_deadline =
+                (previous_deadline + BALLOON_SETTLE_PROGRESS_GRACE).min(max_deadline);
+            let now = tokio::time::Instant::now();
+            if now >= next_deadline {
+                summary.progress_extension_blocker = Some("absolute_deadline");
+                return balloon_settle_deadline_result(
+                    log_id,
+                    target_mib,
+                    tolerance_mib,
+                    settle_timeout,
+                    &summary,
+                );
+            }
+            let progress_grace = next_deadline - previous_deadline;
+            let remaining_progress_grace = next_deadline - now;
+            deadline = next_deadline;
+            settle_timeout = deadline - summary.started_at;
+            summary.progress_extension_blocker = None;
+            log_balloon_settle_progress_grace(
+                log_id,
+                target_mib,
+                progress_grace,
+                remaining_progress_grace,
+                &summary,
+                memory_evidence,
+                fresh_guest_memory_snapshot,
+            );
         }
 
         let statistics = match handoff {
@@ -4345,6 +4611,7 @@ async fn wait_for_balloon_with_optional_handoff(
                 tracing::event!(tracing::Level::TRACE, "waiting for balloon");
             }
             Ok(Err(e)) => {
+                summary.progress_extension_blocker = Some("balloon_stats_unavailable");
                 let outcome = summary.park_outcome();
                 warn!(
                     id = %log_id,
@@ -4375,19 +4642,19 @@ async fn wait_for_balloon_with_optional_handoff(
                 });
             }
             Err(_) => {
-                let outcome = summary.park_outcome();
-                log_balloon_settle_timeout(
+                summary.progress_extension_blocker =
+                    Some(if tokio::time::Instant::now() >= max_deadline {
+                        "absolute_deadline"
+                    } else {
+                        "balloon_stats_deadline"
+                    });
+                return balloon_settle_deadline_result(
                     log_id,
                     target_mib,
                     tolerance_mib,
                     settle_timeout,
                     &summary,
-                    &outcome,
                 );
-                return BalloonSettleWaitResult::Settled(BalloonSettleResult {
-                    park_outcome: outcome,
-                    telemetry_outcome: SandboxFinalExecParkSubstageOutcome::Deadline,
-                });
             }
         }
 
@@ -4573,8 +4840,14 @@ async fn park_inner_with_guest_and_handoff<'observer>(
             // process the inflate — pausing immediately would negate the memory
             // savings.
             let balloon_settle_started = Instant::now();
-            let settle_result =
-                wait_for_balloon_with_optional_handoff(&client, target, log_id, handoff).await;
+            let settle_result = wait_for_balloon_with_optional_handoff(
+                &client,
+                target,
+                log_id,
+                Some(&guest),
+                handoff,
+            )
+            .await;
             match settle_result {
                 BalloonSettleWaitResult::Handoff => {
                     events.record(
@@ -4595,8 +4868,11 @@ async fn park_inner_with_guest_and_handoff<'observer>(
                         SandboxParkOutcome::NonReusable(
                             SandboxParkNonReusableReason::SevereMemoryRetention(diagnostics),
                         ) => {
-                            diagnostics.guest_memory_snapshot =
-                                terminal_guest_memory_snapshot(&guest, log_id).await;
+                            if diagnostics.guest_memory_snapshot.is_none() {
+                                diagnostics.guest_memory_snapshot_attempted = true;
+                                diagnostics.guest_memory_snapshot =
+                                    terminal_guest_memory_snapshot(&guest, log_id).await;
+                            }
                         }
                         SandboxParkOutcome::Reusable => {}
                     }

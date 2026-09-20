@@ -40,9 +40,9 @@ import * as variableSchema from "./schema/variable";
 import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
 import * as chatThreadConnectorSelectionSchema from "./schema/chat-thread-connector-selection";
-import * as connectorExternalCodeSessionSchema from "./schema/connector-external-code-session";
+import * as builtinConnectorExternalCodeSessionSchema from "./schema/connector-external-code-session";
 import * as modelProviderAuthSessionSchema from "./schema/model-provider-auth-session";
-import * as connectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
+import * as builtinConnectorOauthDeviceAuthorizationSessionSchema from "./schema/connector-oauth-device-authorization-session";
 import * as connectorOauthStateSchema from "./schema/connector-oauth-state";
 import * as usageEventSchema from "./schema/usage-event";
 import * as xResourceUsageSchema from "./schema/x-resource-usage";
@@ -90,6 +90,8 @@ import * as orgMembersSchema from "./schema/org-members-metadata";
 import * as orgMembersCacheSchema from "./schema/org-members-cache";
 import * as userCacheSchema from "./schema/user-cache";
 import * as exportJobSchema from "./schema/export-job";
+import * as backgroundJobSchema from "./schema/background-job";
+import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as skillSchema from "./schema/skill";
 import * as usagePricingSchema from "./schema/usage-pricing";
@@ -118,7 +120,9 @@ import * as orgCustomConnectorSchema from "./schema/org-custom-connector";
 import * as orgCustomConnectorOauthConfigSchema from "./schema/org-custom-connector-oauth-config";
 import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-connector-dcr-registration";
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
-import * as hostedSiteSchema from "./schema/hosted-site";
+import * as builtinConnectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
+import * as builtinConnectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
+import * as hostedSiteSchema from "./runtime/hosted-site";
 import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";
@@ -209,9 +213,9 @@ export const schema = {
   ...composeJobSchema,
   ...connectorSchema,
   ...chatThreadConnectorSelectionSchema,
-  ...connectorExternalCodeSessionSchema,
+  ...builtinConnectorExternalCodeSessionSchema,
   ...modelProviderAuthSessionSchema,
-  ...connectorOauthDeviceAuthorizationSessionSchema,
+  ...builtinConnectorOauthDeviceAuthorizationSessionSchema,
   ...connectorOauthStateSchema,
   ...billingRunAttributionSchema,
   ...usageEventSchema,
@@ -245,6 +249,8 @@ export const schema = {
   ...orgMembersCacheSchema,
   ...userCacheSchema,
   ...exportJobSchema,
+  ...backgroundJobSchema,
+  ...userExportEntrySchema,
   ...emailSuppressionSchema,
   ...skillSchema,
   ...usagePricingSchema,
@@ -273,6 +279,8 @@ export const schema = {
   ...orgCustomConnectorOauthConfigSchema,
   ...orgCustomConnectorDcrRegistrationSchema,
   ...customConnectorAccountOauthBindingSchema,
+  ...builtinConnectorDcrRegistrationSchema,
+  ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
   ...artifactSchema,
   ...sharedThreadSchema,

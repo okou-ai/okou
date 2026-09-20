@@ -33,6 +33,13 @@ const LANGFUSE_PARENT = {
   sandboxWaitStartedAt: 1_000,
 } as const;
 const H0_HASH = "b".repeat(64);
+const API_USAGE = {
+  schemaVersion: 1,
+  state: "observed",
+  sampledAt: 1_250,
+  coverage: "partial",
+  tokens: { input: 7, cacheRead: 0, cacheCreation: null, output: 3 },
+} as const;
 const temporaryDirectories: string[] = [];
 
 function sessionJsonl(sessionId = SESSION_ID, pendingTool = true): string {
@@ -304,7 +311,10 @@ describe("Pi API first-turn handoff loader", () => {
     const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-loader-"));
     temporaryDirectories.push(sessionDir);
     const jsonl = HANDOFF_SESSION_JSONL;
-    const pointer = manifest(jsonl, { langfuseParent: LANGFUSE_PARENT });
+    const pointer = manifest(jsonl, {
+      langfuseParent: LANGFUSE_PARENT,
+      apiUsage: API_USAGE,
+    });
     let now = 1_000;
     let manifestRequests = 0;
     const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
@@ -347,6 +357,7 @@ describe("Pi API first-turn handoff loader", () => {
     });
     expect(restored.ownershipTransferMode).toBe("pending-tool-continuation");
     expect(restored.langfuseParent).toStrictEqual(LANGFUSE_PARENT);
+    expect(restored.apiUsage).toStrictEqual(API_USAGE);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 

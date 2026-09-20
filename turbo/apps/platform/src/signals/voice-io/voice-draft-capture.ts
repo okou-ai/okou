@@ -40,7 +40,6 @@ export function createVoiceDraftCaptureSignals() {
   const samples$ = state<readonly VoiceLevelSample[]>([]);
   const acquisition$ = state<VoiceDraftAcquisition | null>(null);
   const resetAcquisition$ = resetSignal();
-  const resetStartupWait$ = resetSignal();
   const capture$ = computed((get) => {
     return get(acquisition$)?.capture ?? null;
   });
@@ -84,19 +83,10 @@ export function createVoiceDraftCaptureSignals() {
           if (!stream) {
             return null;
           }
-          const startupSignal = set(resetStartupWait$, signal);
-          const pcm = await withCleanup(
-            startVoiceDraftPcmCapture(
-              stream,
-              persistence,
-              startupSignal,
-              signal,
-            ),
-            () => {
-              if (get(acquisition$)?.signal === signal) {
-                set(resetStartupWait$);
-              }
-            },
+          const pcm = await startVoiceDraftPcmCapture(
+            stream,
+            persistence,
+            signal,
           );
           signal.throwIfAborted();
           const startedAt = now();

@@ -72,6 +72,8 @@ async fn reads_typed_snapshots_and_rejects_incoherent_payloads() {
         ("/observedResponses", json!(4097)),
         ("/observedResponses", json!(0)),
         ("/sampledAtMs", json!(0)),
+        ("/sampledAtMs", json!((1_u64 << 53))),
+        ("/revision", json!((1_u64 << 53))),
         (
             "/totals",
             json!({"input": 1_u64 << 53, "cacheRead": 0, "cacheCreation": 0,

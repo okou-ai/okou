@@ -1,8 +1,8 @@
 import {
-  loadMemberModelRouteContext,
+  prepareMemberModelRouteContext,
   providerTypeForSurfaceProtocol,
   resolveEffectivePolicyRoute,
-  type MemberModelRouteContext,
+  type PreparedMemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
 } from "./effective-model-route.service";
 import {
@@ -19,6 +19,7 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
@@ -26,12 +27,15 @@ import {
   modelProviderSurfaces,
 } from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
 import { and, eq, or } from "drizzle-orm";
 
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import type { Db } from "../external/db";
-import { ensureOrgModelPolicies } from "./model-policy.service";
+import {
+  ensureOrgModelPolicyFacts,
+  loadOrgModelPolicyFacts,
+  type OrgModelPolicyRow,
+} from "./model-policy.service";
 import {
   checkOrgCreditsForRunAdmission,
   checkOrgPlanRunAdmission,
@@ -67,6 +71,25 @@ interface PersistedModelFirstRouteResolution {
   readonly route: ResolvedModelFirstPolicyRoute | null;
   readonly selectedModelChanged: boolean;
   readonly orgPlanCapabilities: OrgPlanCapabilities | null;
+}
+
+const modelRoutingFactsSource = Symbol("modelRoutingFactsSource");
+
+/**
+ * Immutable facts for one selection decision. Identity plus the private DB
+ * provenance make the scope explicit; callers receive resolved pins, never a
+ * cacheable facts object. A null capability or policy field is authoritative.
+ */
+interface ModelRoutingFacts {
+  readonly identity: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly selectedModel: string | null;
+  };
+  readonly orgPlanCapabilities: OrgPlanCapabilities | null;
+  readonly policies: readonly OrgModelPolicyRow[];
+  readonly member: PreparedMemberModelRouteContext;
+  readonly [modelRoutingFactsSource]: Db;
 }
 
 export type ExternalModelProviderPlanCapabilitiesSource =
@@ -133,10 +156,48 @@ function modelProviderAllowedForOrgPlan(args: {
   );
 }
 
-async function resolveValidPolicyRoute(params: {
+async function prepareModelRoutingFacts(params: {
   readonly db: Db;
   readonly orgId: string;
-  readonly member: MemberModelRouteContext;
+  readonly userId: string;
+  readonly selectedModel: string | null;
+  readonly featureSwitchContext?: FeatureSwitchContext;
+}): Promise<ModelRoutingFacts> {
+  const policyFactsPromise =
+    params.userId === "__no_preference__"
+      ? loadOrgModelPolicyFacts(params.db, params.orgId)
+      : ensureOrgModelPolicyFacts(params.db, params.orgId, params.userId);
+  const [policyFacts, member] = await Promise.all([
+    policyFactsPromise,
+    prepareMemberModelRouteContext(
+      params.db,
+      params.orgId,
+      params.userId,
+      params.featureSwitchContext,
+    ),
+  ]);
+  return Object.freeze({
+    identity: Object.freeze({
+      orgId: params.orgId,
+      userId: params.userId,
+      selectedModel: params.selectedModel,
+    }),
+    orgPlanCapabilities:
+      policyFacts.orgPlanCapabilities === null
+        ? null
+        : Object.freeze({ ...policyFacts.orgPlanCapabilities }),
+    policies: Object.freeze(
+      policyFacts.policies.map((policy) => {
+        return Object.freeze({ ...policy });
+      }),
+    ),
+    member,
+    [modelRoutingFactsSource]: params.db,
+  });
+}
+
+async function resolveValidPolicyRoute(params: {
+  readonly facts: ModelRoutingFacts;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
@@ -146,37 +207,34 @@ async function resolveValidPolicyRoute(params: {
   if (!isSupportedRunModel(params.selectedModel)) {
     return null;
   }
-  const [policy] = await params.db
-    .select({
-      model: orgModelPolicies.model,
-      defaultProviderType: orgModelPolicies.defaultProviderType,
-      credentialScope: orgModelPolicies.credentialScope,
-      modelProviderId: orgModelPolicies.modelProviderId,
-      modelProviderSurfaceId: orgModelPolicies.modelProviderSurfaceId,
-    })
-    .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, params.orgId),
-        eq(orgModelPolicies.model, params.selectedModel),
-      ),
-    )
-    .limit(1);
-  return policy ? resolveEffectivePolicyRoute({ ...params, policy }) : null;
+  const policy = params.facts.policies.find((candidate) => {
+    return candidate.model === params.selectedModel;
+  });
+  return policy
+    ? await resolveEffectivePolicyRoute({
+        db: params.facts[modelRoutingFactsSource],
+        orgId: params.facts.identity.orgId,
+        member: params.facts.member,
+        capabilities: params.capabilities,
+        policy,
+      })
+    : null;
 }
 
 export async function resolveDefaultModelFirstPin(
   db: Db,
   orgId: string,
   userId: string,
+  options?: { readonly featureSwitchContext?: FeatureSwitchContext },
 ): Promise<DefaultModelFirstPin> {
-  if (userId !== "__no_preference__") {
-    await ensureOrgModelPolicies(db, orgId, userId);
-  }
-  const member = await loadMemberModelRouteContext(db, orgId, userId);
-  const capabilities = modelRouteCapabilities(
-    await loadOrgPlanCapabilities(db, orgId),
-  );
+  const facts = await prepareModelRoutingFacts({
+    db,
+    orgId,
+    userId,
+    selectedModel: null,
+    featureSwitchContext: options?.featureSwitchContext,
+  });
+  const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   if (userId !== "__no_preference__") {
     const [preference] = await db
       .select({
@@ -193,10 +251,8 @@ export async function resolveDefaultModelFirstPin(
       .limit(1);
     if (preference?.selectedModel) {
       const preferredRoute = await resolveValidPolicyRoute({
-        db,
-        orgId,
+        facts,
         capabilities,
-        member,
         selectedModel: preference.selectedModel,
       });
       if (preferredRoute) {
@@ -213,10 +269,8 @@ export async function resolveDefaultModelFirstPin(
   }
 
   const route = await resolveWorkspaceDefaultModelFirstRoute({
-    db,
-    orgId,
+    facts,
     capabilities,
-    member,
   });
   return route
     ? { ...modelFirstPinFromRoute(route), serviceTier: null }
@@ -230,34 +284,22 @@ export async function resolveDefaultModelFirstPin(
 }
 
 async function resolveWorkspaceDefaultModelFirstRoute(params: {
-  readonly member: MemberModelRouteContext;
-  readonly db: Db;
-  readonly orgId: string;
+  readonly facts: ModelRoutingFacts;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
-  const [policy] = await params.db
-    .select({ model: orgModelPolicies.model })
-    .from(orgModelPolicies)
-    .where(
-      and(
-        eq(orgModelPolicies.orgId, params.orgId),
-        eq(orgModelPolicies.isDefault, true),
-      ),
-    )
-    .limit(1);
-  if (!policy) {
-    return null;
-  }
-  return resolveValidPolicyRoute({
-    db: params.db,
-    orgId: params.orgId,
-    capabilities: params.capabilities,
-    member: params.member,
-    selectedModel: policy.model,
+  const policy = params.facts.policies.find((candidate) => {
+    return candidate.isDefault;
   });
+  return policy
+    ? await resolveValidPolicyRoute({
+        facts: params.facts,
+        capabilities: params.capabilities,
+        selectedModel: policy.model,
+      })
+    : null;
 }
 
 export async function resolvePersistedModelFirstRoute(params: {
@@ -265,24 +307,14 @@ export async function resolvePersistedModelFirstRoute(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly selectedModel: string | null;
+  readonly featureSwitchContext?: FeatureSwitchContext;
 }): Promise<PersistedModelFirstRouteResolution> {
-  await ensureOrgModelPolicies(params.db, params.orgId, params.userId);
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(
-    params.db,
-    params.orgId,
-  );
-  const member = await loadMemberModelRouteContext(
-    params.db,
-    params.orgId,
-    params.userId,
-  );
-  const capabilities = modelRouteCapabilities(orgPlanCapabilities);
+  const facts = await prepareModelRoutingFacts(params);
+  const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   const currentRoute = params.selectedModel
     ? await resolveValidPolicyRoute({
-        db: params.db,
-        orgId: params.orgId,
+        facts,
         capabilities,
-        member,
         selectedModel: params.selectedModel,
       })
     : null;
@@ -290,22 +322,20 @@ export async function resolvePersistedModelFirstRoute(params: {
     return {
       route: currentRoute,
       selectedModelChanged: false,
-      orgPlanCapabilities,
+      orgPlanCapabilities: facts.orgPlanCapabilities,
     };
   }
 
   const defaultRoute = await resolveWorkspaceDefaultModelFirstRoute({
-    db: params.db,
-    orgId: params.orgId,
+    facts,
     capabilities,
-    member,
   });
   return {
     route: defaultRoute,
     selectedModelChanged:
       defaultRoute !== null &&
       defaultRoute.selectedModel !== params.selectedModel,
-    orgPlanCapabilities,
+    orgPlanCapabilities: facts.orgPlanCapabilities,
   };
 }
 
@@ -337,6 +367,7 @@ export async function resolveModelSelectionPin(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly modelSelection: ModelSelectionRequest;
+  readonly featureSwitchContext?: FeatureSwitchContext;
 }): Promise<
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>
@@ -346,10 +377,8 @@ export async function resolveModelSelectionPin(params: {
   if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
-  const member = await loadMemberModelRouteContext(db, orgId, userId);
-  const capabilities = modelRouteCapabilities(
-    await loadOrgPlanCapabilities(db, orgId),
-  );
+  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
+  const capabilities = modelRouteCapabilities(orgPlanCapabilities);
   if (
     !modelAllowedForOrgPlan({
       capabilities,
@@ -394,12 +423,16 @@ export async function resolveModelSelectionPin(params: {
     return badRequestMessage("Invalid model selection");
   }
 
-  await ensureOrgModelPolicies(db, orgId, userId);
-  const route = await resolveValidPolicyRoute({
+  const facts = await prepareModelRoutingFacts({
     db,
     orgId,
-    capabilities,
-    member,
+    userId,
+    selectedModel: modelSelection.selectedModel,
+    featureSwitchContext: params.featureSwitchContext,
+  });
+  const route = await resolveValidPolicyRoute({
+    facts,
+    capabilities: modelRouteCapabilities(facts.orgPlanCapabilities),
     selectedModel: modelSelection.selectedModel,
   });
   return route

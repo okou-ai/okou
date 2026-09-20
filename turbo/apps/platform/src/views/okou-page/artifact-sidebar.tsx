@@ -21,6 +21,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  FullscreenPanel,
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -74,10 +75,6 @@ import { isOfficeFilePreview } from "./office-file-preview.ts";
 // layout.
 // ---------------------------------------------------------------------------
 
-const ARTIFACT_FULLSCREEN_SHELL_CLASSNAME =
-  "fixed inset-0 flex min-h-0 flex-col bg-background pt-[var(--sat)] pb-[var(--sab)]";
-const ARTIFACT_FULLSCREEN_DEFAULT_LAYER_CLASSNAME = "z-[100]";
-
 type ArtifactSidebarFullscreenState = {
   readonly active: boolean;
   readonly toggle: () => void;
@@ -89,7 +86,7 @@ type ArtifactSidebarProps = {
   readonly markdownTree$?: MarkdownPreviewTreeComputed;
   readonly onBack?: () => void;
   readonly onClose: () => void;
-  readonly onNavigateImage: (url: string) => void;
+  readonly onNavigateImage: (item: ImageArtifactNavigationItem) => void;
   readonly text$?: TextPreviewComputed;
   readonly thread: ChatPanelSignals;
 };
@@ -151,7 +148,7 @@ export function ArtifactSidebar({
       return undefined;
     }
     return () => {
-      onNavigateImage(navigationItem.url);
+      onNavigateImage(navigationItem);
     };
   };
 
@@ -274,7 +271,18 @@ function ArtifactSidebarResolvedContent({
   toggleFullscreen,
 }: ArtifactSidebarResolvedContentProps) {
   return (
-    <ArtifactSidebarSurface fullscreen={fullscreen}>
+    <FullscreenPanel
+      fullscreen={fullscreen}
+      data-testid="artifact-sidebar"
+      scrollAnchor={
+        display.kind === "markdown"
+          ? {
+              viewportSelector: '[data-slot="artifact-scroll-viewport"]',
+              anchorSelector: "h1, h2, h3, h4, h5, h6, p, pre, li, tr",
+            }
+          : undefined
+      }
+    >
       <ArtifactSidebarHeader
         shareUrl={shareUrl}
         title={display.filename}
@@ -304,31 +312,7 @@ function ArtifactSidebarResolvedContent({
           text$={text$}
         />
       </div>
-    </ArtifactSidebarSurface>
-  );
-}
-
-function ArtifactSidebarSurface({
-  children,
-  fullscreen,
-}: {
-  children: ReactNode;
-  fullscreen: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        fullscreen
-          ? cn(
-              ARTIFACT_FULLSCREEN_SHELL_CLASSNAME,
-              ARTIFACT_FULLSCREEN_DEFAULT_LAYER_CLASSNAME,
-            )
-          : "flex h-full w-full min-h-0 flex-col border-l border-border/60 bg-background xl:border-l-0",
-      )}
-      data-testid="artifact-sidebar"
-    >
-      {children}
-    </div>
+    </FullscreenPanel>
   );
 }
 
@@ -848,6 +832,7 @@ function ArtifactStageShell({
         scrollable ? "overflow-auto" : "overflow-hidden",
       )}
       data-testid="artifact-sidebar-stage"
+      data-slot="artifact-scroll-viewport"
     >
       <div
         className={cn(

@@ -258,83 +258,89 @@ export function VncCredentialSelection({
   const choose = useSet(chooseVncCredential$);
   const retry = useSet(invalidateVnc$);
   return (
-    <div className="grid gap-3">
-      <label htmlFor="vnc-credential" className="text-sm">
-        {t(($) => {
-          return $.vnc.credential.label;
-        })}
-      </label>
-      {credentials.state === "hasError" ? (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 text-sm"
-        >
-          <p>
+    <fieldset className="grid min-w-0 gap-4">
+      <legend className="mb-3 text-sm font-semibold">
+        <label htmlFor="vnc-credential">
+          {t(($) => {
+            return $.vnc.credential.label;
+          })}
+        </label>
+      </legend>
+      <div className="grid gap-2">
+        {credentials.state === "hasError" ? (
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-3 text-sm"
+          >
+            <p>
+              {t(($) => {
+                return $.vnc.loadFailed;
+              })}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                retry();
+              }}
+            >
+              {t(($) => {
+                return $.vnc.retry;
+              })}
+            </Button>
+          </div>
+        ) : credentials.state === "loading" ? (
+          <p role="status" className="text-sm">
             {t(($) => {
-              return $.vnc.loadFailed;
+              return $.vnc.loading;
             })}
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              retry();
-            }}
-          >
+        ) : credentials.data === null ? (
+          <p role="alert" className="text-sm">
             {t(($) => {
-              return $.vnc.retry;
+              return $.vnc.unavailable;
             })}
-          </Button>
-        </div>
-      ) : credentials.state === "loading" ? (
-        <p role="status" className="text-sm">
-          {t(($) => {
-            return $.vnc.loading;
-          })}
-        </p>
-      ) : credentials.data === null ? (
-        <p role="alert" className="text-sm">
-          {t(($) => {
-            return $.vnc.unavailable;
-          })}
-        </p>
-      ) : (
-        <Select
-          value={editor.selection}
-          onValueChange={choose}
-          disabled={disabled}
-        >
-          <SelectTrigger id="vnc-credential" className="min-w-0">
-            <SelectValue
-              placeholder={t(($) => {
-                return $.vnc.credential.select;
+          </p>
+        ) : (
+          <Select
+            value={editor.selection}
+            onValueChange={choose}
+            disabled={disabled}
+          >
+            <SelectTrigger id="vnc-credential" className="min-w-0">
+              <SelectValue
+                placeholder={t(($) => {
+                  return $.vnc.credential.select;
+                })}
+              />
+            </SelectTrigger>
+            <SelectContent className="w-(--anchor-width)">
+              {credentials.data.map((credential) => {
+                return (
+                  <SelectItem
+                    key={credential.id}
+                    value={credential.id}
+                    className="break-all"
+                  >
+                    {credential.name}
+                  </SelectItem>
+                );
               })}
-            />
-          </SelectTrigger>
-          <SelectContent className="w-(--anchor-width)">
-            {credentials.data.map((credential) => {
-              return (
-                <SelectItem
-                  key={credential.id}
-                  value={credential.id}
-                  className="break-all"
-                >
-                  {credential.name}
-                </SelectItem>
-              );
-            })}
-            <SelectItem value="new">
-              {t(($) => {
-                return $.vnc.credential.createNew;
-              })}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      )}
+              <SelectItem value="new">
+                {t(($) => {
+                  return $.vnc.credential.createNew;
+                })}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       {editor.selection === "new" && (
-        <VncCredentialFields credential={null} disabled={disabled} />
+        <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
+          <VncCredentialFields credential={null} disabled={disabled} />
+        </div>
       )}
-    </div>
+    </fieldset>
   );
 }
 

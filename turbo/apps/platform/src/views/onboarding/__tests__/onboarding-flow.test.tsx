@@ -24,8 +24,8 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  connectorManualGrantContract,
-  connectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   onboardingCompleteContract,
@@ -814,7 +814,7 @@ test("Custom workflow onboarding preserves an explicit assistant mention", async
   );
 });
 
-test("Onboarding OAuth can be cancelled and retried", async () => {
+test("Onboarding OAuth can be closed and retried", async () => {
   mockOAuthCompletions(context);
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
@@ -823,7 +823,7 @@ test("Onboarding OAuth can be cancelled and retried", async () => {
   });
   context.mocks.browser.open(authWindow);
   context.mocks.api(
-    connectorOauthStartContract.start,
+    builtinConnectorOauthStartContract.start,
     ({ params, respond }) => {
       expect(params.connectorSlug).toBe("github");
       return respond(200, {
@@ -848,7 +848,7 @@ test("Onboarding OAuth can be cancelled and retried", async () => {
   const progress = screen.getByRole("dialog", {
     name: "Connecting your account",
   });
-  click(within(progress).getByText("Cancel", { selector: "button" }));
+  click(within(progress).getByLabelText("Close"));
   await waitFor(() => {
     expect(connectButton).toBeEnabled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -903,7 +903,7 @@ test("An existing account connection is recognized during onboarding", async () 
 
 test("Ahrefs can be connected for the default agent during onboarding", async () => {
   context.mocks.api(
-    connectorManualGrantContract.connect,
+    builtinConnectorManualGrantContract.connect,
     ({ body, params, respond }) => {
       expect(params.connectorSlug).toBe("ahrefs");
       expect(body.authMethod).toBe("api-token");

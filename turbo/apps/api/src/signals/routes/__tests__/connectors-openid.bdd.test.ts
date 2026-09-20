@@ -4,15 +4,15 @@ import {
 } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
-import { connectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import {
   connectorAccountsContract,
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorAccountRoutes } from "../connector-accounts";
 import {
-  connectorOpenIdStartContract,
-  connectorsBySlugContract,
+  builtinConnectorOpenIdStartContract,
+  builtinConnectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { http, HttpResponse } from "msw";
@@ -23,9 +23,9 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createRouteMocks } from "./helpers/route-test";
-import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
+import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -66,8 +66,8 @@ async function startSteamOpenId(
 }> {
   mockSession(actor);
   const response = await accept(
-    setupApp({ context, routes: connectorsRoutes })(
-      connectorOpenIdStartContract,
+    setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorOpenIdStartContract,
     ).start({
       params: { connectorSlug: "steam" },
       headers: authHeaders(),
@@ -162,8 +162,8 @@ async function completeSteamOpenIdCallback(
 ): Promise<void> {
   mockSteamOpenIdVerification();
   await accept(
-    setupApp({ context, routes: connectorsSlugCallbackRoutes })(
-      connectorsSlugCallbackContract,
+    setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
+      builtinConnectorsSlugCallbackContract,
     ).callback({
       params: { connectorSlug: "steam" },
       query: steamCallbackQuery(authorizationUrl),
@@ -220,8 +220,8 @@ describe("Steam OpenID connector", () => {
 
     mockSession(actor);
     const connector = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorsBySlugContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
       ).get({
         params: { connectorSlug: "steam" },
         headers: authHeaders(),
@@ -263,8 +263,8 @@ describe("Steam OpenID connector", () => {
 
     mockSession(actor);
     const initial = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorsBySlugContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
       ).get({
         params: { connectorSlug: "steam" },
         headers: authHeaders(),
@@ -283,8 +283,8 @@ describe("Steam OpenID connector", () => {
     });
     expect(pending.status).toBe(404);
     const whilePending = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorsBySlugContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
       ).get({
         params: { connectorSlug: "steam" },
         headers: authHeaders(),
@@ -296,8 +296,8 @@ describe("Steam OpenID connector", () => {
     mockSteamOpenIdVerification(false);
 
     const response = await accept(
-      setupApp({ context, routes: connectorsSlugCallbackRoutes })(
-        connectorsSlugCallbackContract,
+      setupApp({ context, routes: builtinConnectorsSlugCallbackRoutes })(
+        builtinConnectorsSlugCallbackContract,
       ).callback({
         params: { connectorSlug: "steam" },
         query: steamCallbackQuery(authorizationUrl),
@@ -313,8 +313,8 @@ describe("Steam OpenID connector", () => {
 
     mockSession(actor);
     const connector = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorsBySlugContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
       ).get({
         params: { connectorSlug: "steam" },
         headers: authHeaders(),
@@ -331,8 +331,8 @@ describe("Steam OpenID connector", () => {
     await completeSteamOpenIdCallback(replacementAuthorizationUrl);
     mockSession(actor);
     const replaced = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorsBySlugContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
       ).get({
         params: { connectorSlug: "steam" },
         headers: authHeaders(),
@@ -348,8 +348,8 @@ describe("Steam OpenID connector", () => {
     mockSession(actor);
 
     const response = await accept(
-      setupApp({ context, routes: connectorsRoutes })(
-        connectorOpenIdStartContract,
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorOpenIdStartContract,
       ).start({
         params: { connectorSlug: "github" },
         headers: authHeaders(),

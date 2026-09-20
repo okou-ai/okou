@@ -16,7 +16,6 @@ import {
   type BrandName,
 } from "../../signals/branding.ts";
 import { currentUserInfo$ } from "../../signals/auth.ts";
-import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type {
   SharedThreadRichContentSignals,
   SharedThreadArtifactSignals,
@@ -25,6 +24,7 @@ import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
+import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import {
   ChatAssistantMessageBody,
@@ -39,10 +39,10 @@ import {
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
-  CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
+import { SCROLL_FADE_Y_END } from "../okou-page/scroll-fade.ts";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
@@ -55,8 +55,7 @@ import type { SharedThreadArtifactPreviewSignals } from "../../signals/shared-th
  * view consumes them.
  */
 export type SharedDisplayAttachment = SharedMessageAttachment & {
-  readonly preview: AttachmentPreviewSignals;
-  readonly artifact?: SharedThreadArtifactSignals;
+  readonly artifact: SharedThreadArtifactSignals;
 };
 
 export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
@@ -205,7 +204,7 @@ function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
                     ) : null}
                     {message.content.length > 0 ? (
                       <div className="whitespace-pre-wrap">
-                        {message.content}
+                        <PlainTextWithLinks text={message.content} />
                       </div>
                     ) : null}
                   </div>
@@ -494,7 +493,7 @@ function SharedThreadTranscript({
         tabIndex={-1}
         className={cn(
           "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
-          CHAT_THREAD_SCROLL_EDGE_FADE_CLASS,
+          SCROLL_FADE_Y_END,
         )}
       >
         <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>

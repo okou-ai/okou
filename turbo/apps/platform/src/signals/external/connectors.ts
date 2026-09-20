@@ -1,5 +1,5 @@
 import { command, computed, state, type Computed } from "ccstate";
-import { connectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogDiscoveryResponse,
@@ -14,21 +14,21 @@ import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts"
  * Reload trigger for connector signals.
  * Increment to force recomputation of connectors$.
  */
-const internalReloadConnectors$ = state(0);
+const internalReloadBuiltinConnectors$ = state(0);
 
-export const connectorsReloadVersion$ = computed((get) => {
-  return get(internalReloadConnectors$);
+export const builtinConnectorsReloadVersion$ = computed((get) => {
+  return get(internalReloadBuiltinConnectors$);
 });
 
 /**
  * Current user's connectors.
  */
-export const connectors$ = computed(async (get) => {
-  get(connectorsReloadVersion$);
+export const builtinConnectors$ = computed(async (get) => {
+  get(builtinConnectorsReloadVersion$);
   get(featureSwitch$);
 
   const createClient = get(apiClient$);
-  const client = createClient(connectorsMainContract);
+  const client = createClient(builtinConnectorsMainContract);
   const result = await accept(client.list(), [200]);
   return result.body;
 });
@@ -37,7 +37,7 @@ export const connectors$ = computed(async (get) => {
  * Public connector catalog metadata joined with the current user's connector status.
  */
 export const connectorCatalogStatus$ = computed(async (get) => {
-  get(connectorsReloadVersion$);
+  get(builtinConnectorsReloadVersion$);
   get(featureSwitch$);
 
   const createClient = get(apiClient$);
@@ -65,7 +65,7 @@ export function relatedConnectorCatalog(
   category$?: Computed<string | null>,
 ): Computed<Promise<PublicConnectorCatalogDiscoveryResponse>> {
   return computed(async (get) => {
-    get(connectorsReloadVersion$);
+    get(builtinConnectorsReloadVersion$);
     get(featureSwitch$);
     const keyword = get(keyword$).trim();
     const category = category$ ? get(category$) : null;
@@ -88,7 +88,7 @@ export function connectorCatalogItemBySlug(
   connectorSlug: ConnectorSlug,
 ): Computed<Promise<PlatformConnectorCatalogStatusItem | null>> {
   return computed(async (get) => {
-    get(connectorsReloadVersion$);
+    get(builtinConnectorsReloadVersion$);
     get(featureSwitch$);
     const createClient = get(apiClient$);
     const client = createClient(connectorCatalogContract);
@@ -124,8 +124,8 @@ export const loadConnectorCatalogItem$ = command(
 /**
  * Trigger a reload of connectors data.
  */
-export const reloadConnectors$ = command(({ set }) => {
-  set(internalReloadConnectors$, (x) => {
+export const reloadBuiltinConnectors$ = command(({ set }) => {
+  set(internalReloadBuiltinConnectors$, (x) => {
     return x + 1;
   });
 });

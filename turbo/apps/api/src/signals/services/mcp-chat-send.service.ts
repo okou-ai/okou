@@ -117,7 +117,12 @@ export const sendMcpChatMessage$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!thread) {
-      return { kind: "error", message: "Conversation not found." };
+      return {
+        kind: "error",
+        code: "not_found",
+        message: "Conversation not found.",
+        retryable: false,
+      };
     }
     const identity = { requestId: input.requestId, text: input.text };
     const owner = {
@@ -131,15 +136,19 @@ export const sendMcpChatMessage$ = command(
     if (resolved.kind === "conflict") {
       return {
         kind: "error",
+        code: "request_id_conflict",
         message:
           "requestId is already in use for a different submission. Retry with the original thread and exact text.",
+        retryable: false,
       };
     }
     if (resolved.kind === "expired") {
       return {
         kind: "error",
+        code: "request_expired",
         message:
           "The 24-hour retry window has expired. Inspect the original conversation and input before intentionally submitting new work; this request was not sent again.",
+        retryable: false,
       };
     }
     if (resolved.kind === "missing") {
@@ -172,10 +181,12 @@ export const sendMcpChatMessage$ = command(
       if (resolved.kind !== "accepted") {
         return {
           kind: "error",
+          code: "submission_unavailable",
           message:
             result.status === 201
               ? "Submission could not be resolved. Retry the identical requestId, thread and text."
               : result.body.error.message,
+          retryable: true,
         };
       }
     }

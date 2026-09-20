@@ -24,7 +24,6 @@ import {
   noneGrantSourceSchema,
   automaticGrantSourceSchema,
   connectorMcpSchema,
-  connectorReplacementSchema,
   validateConnectorProtocolSemantics,
 } from "./source";
 import { isConnectorCatalogIconKey } from "./icon";
@@ -196,7 +195,6 @@ export const connectorCatalogArtifactConnectorSchema = z
     generation: z.array(z.string().min(1)),
     tags: z.array(z.string().min(1)),
     mcp: connectorMcpSchema.optional(),
-    replaces: connectorReplacementSchema.optional(),
     authMethods: z.array(connectorCatalogAuthMethodSchema).min(1),
     icon: connectorCatalogIconSchema,
     skill: connectorCatalogSkillSchema,
@@ -205,14 +203,11 @@ export const connectorCatalogArtifactConnectorSchema = z
   .strict()
   .superRefine((connector, context) => {
     try {
-      validateConnectorProtocolSemantics({
-        connectorSlug: connector.slug,
-        ...connector,
-      });
+      validateConnectorProtocolSemantics(connector);
     } catch {
       context.addIssue({
         code: "custom",
-        message: "Invalid MCP authentication or replacement contract",
+        message: "Invalid MCP authentication contract",
       });
     }
     if (connector.mcp !== undefined && connector.skill.kind !== "none") {
@@ -251,9 +246,11 @@ export const connectorCatalogArtifactConnectorSchema = z
     }
   });
 
-const connectorCatalogArtifactBaseSchema = z
+export const connectorCatalogArtifactSchema = z
   .object({
-    artifactSchemaVersion: z.union([z.literal(3), z.literal(4)]),
+    artifactSchemaVersion: z.literal(
+      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+    ),
     catalogVersion: connectorCatalogVersionSchema,
     categoryMetadata: catalogSourceSchema.shape.categoryMetadata,
     connectors: z.array(connectorCatalogArtifactConnectorSchema).min(1),
@@ -272,59 +269,10 @@ const connectorCatalogArtifactBaseSchema = z
         path: ["connectors"],
       });
     }
-    const owners = new Set<string>();
-    for (const connector of artifact.connectors) {
-      const predecessor = connector.replaces?.connectorSlug;
-      if (predecessor === undefined) {
-        continue;
-      }
-      if (owners.has(predecessor) || slugs.has(predecessor)) {
-        context.addIssue({
-          code: "custom",
-          message: "Replacement must have one owner and omit its predecessor",
-          path: ["connectors"],
-        });
-      }
-      owners.add(predecessor);
-    }
-  });
-
-export const connectorCatalogArtifactSchema =
-  connectorCatalogArtifactBaseSchema.safeExtend({
-    artifactSchemaVersion: z.literal(
-      SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-    ),
-  });
-
-// Read-only rollout bridge for already accepted v3 snapshots. Candidate loading
-// remains v4-only. Remove after the v4 bootstrap window closes (#34913).
-export const retainedV3ConnectorCatalogArtifactSchema =
-  connectorCatalogArtifactBaseSchema.safeExtend({
-    artifactSchemaVersion: z.literal(3),
-    connectors: z
-      .array(
-        connectorCatalogArtifactConnectorSchema.safeExtend({
-          mcp: z.never().optional(),
-          replaces: z.never().optional(),
-          authMethods: z
-            .array(
-              connectorCatalogAuthMethodSchema.refine((method) => {
-                return (
-                  method.grant.kind !== "none" &&
-                  method.grant.kind !== "automatic" &&
-                  method.access.kind !== "none" &&
-                  method.access.kind !== "automatic"
-                );
-              }, "V3 authentication cannot contain v4 capabilities"),
-            )
-            .min(1),
-        }),
-      )
-      .min(1),
   });
 
 export type ConnectorCatalogArtifact = z.infer<
-  typeof connectorCatalogArtifactBaseSchema
+  typeof connectorCatalogArtifactSchema
 >;
 export type ConnectorCatalogArtifactConnector = z.infer<
   typeof connectorCatalogArtifactConnectorSchema

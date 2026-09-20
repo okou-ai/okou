@@ -651,6 +651,7 @@ async fn finalize_sandbox_for_completion_inner(
                         observed_target_mib = diagnostics.observed_target_mib,
                         target_observed = diagnostics.target_observed,
                         first_actual_mib = diagnostics.first_actual_mib,
+                        previous_actual_mib = diagnostics.previous_actual_mib,
                         actual_mib = diagnostics.actual_mib,
                         max_actual_mib = diagnostics.max_actual_mib,
                         deficit_mib = diagnostics.deficit_mib,
@@ -666,6 +667,9 @@ async fn finalize_sandbox_for_completion_inner(
                         reported_major_faults = diagnostics.reported_major_faults,
                         reported_minor_faults = diagnostics.reported_minor_faults,
                         reported_disk_caches_bytes = diagnostics.reported_disk_caches_bytes,
+                        progress_extension_blocker = diagnostics.progress_extension_blocker,
+                        guest_memory_snapshot_attempted =
+                            diagnostics.guest_memory_snapshot_attempted,
                         guest_memory_snapshot_available = guest.is_some(),
                         guest_mem_total_bytes = guest.map(|snapshot| snapshot.mem_total_bytes),
                         guest_mem_free_bytes = guest.map(|snapshot| snapshot.mem_free_bytes),
@@ -1334,6 +1338,7 @@ mod tests {
             observed_target_mib: Some(3584),
             target_observed: true,
             first_actual_mib: Some(2074),
+            previous_actual_mib: Some(2300),
             actual_mib: Some(2448),
             max_actual_mib: Some(2448),
             deficit_mib: Some(1136),
@@ -1348,6 +1353,8 @@ mod tests {
             reported_major_faults: Some(13),
             reported_minor_faults: Some(14),
             reported_disk_caches_bytes: Some(15),
+            progress_extension_blocker: Some("fresh_guest_available_reserve_insufficient"),
+            guest_memory_snapshot_attempted: true,
             guest_memory_snapshot: Some(sandbox::GuestMemorySnapshot {
                 mem_total_bytes: 101,
                 mem_free_bytes: 102,
@@ -1785,8 +1792,15 @@ mod tests {
         );
         assert_event_field(event, "requested_target_mib", "3584");
         assert_event_field(event, "first_actual_mib", "2074");
+        assert_event_field(event, "previous_actual_mib", "2300");
         assert_event_field(event, "actual_mib", "2448");
         assert_event_field(event, "deficit_mib", "1136");
+        assert_event_field(
+            event,
+            "progress_extension_blocker",
+            "fresh_guest_available_reserve_insufficient",
+        );
+        assert_event_field(event, "guest_memory_snapshot_attempted", "true");
         assert_event_field(event, "reported_swap_in_bytes", "11");
         assert_event_field(event, "reported_disk_caches_bytes", "15");
         assert_event_field(event, "guest_memory_snapshot_available", "true");

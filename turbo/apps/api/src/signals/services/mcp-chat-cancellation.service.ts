@@ -192,7 +192,12 @@ export const cancelMcpRun$ = command(
       signal,
     );
     if (!("alreadyCancelled" in result)) {
-      return { kind: "error", message: result.body.error.message };
+      return {
+        kind: "error",
+        code: "cancellation_failed",
+        message: result.body.error.message,
+        retryable: false,
+      };
     }
     if (shouldDispatchCancelSideEffects(result)) {
       waitUntil(

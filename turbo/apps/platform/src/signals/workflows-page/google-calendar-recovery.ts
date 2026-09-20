@@ -1,6 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { timeout } from "signal-timers";
-import { now } from "../../lib/time.ts";
 import { dismissConnectorConnectionProgress$ } from "../connector-connection-progress.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../connector-domain.ts";
 import {
@@ -10,12 +8,7 @@ import {
   finishConnectorAccountConnection$,
   openBuiltinAccountManager$,
 } from "../okou-page/settings/connector-account-dialogs.ts";
-import {
-  createDeferredPromise,
-  resetSignal,
-  waitLoopUntil,
-  withCleanup,
-} from "../utils.ts";
+import { resetSignal, waitLoopUntil } from "../utils.ts";
 import {
   currentWorkflowId$,
   isGoogleCalendarWorkflowAutomation,
@@ -32,7 +25,6 @@ interface CalendarRecoveryTarget {
 
 const internalRecoveryTarget$ = state<CalendarRecoveryTarget | null>(null);
 const resetConfirmation$ = resetSignal();
-const resetConfirmationWork$ = resetSignal();
 export const googleCalendarRecoveryTarget$ = computed((get) => {
   return get(internalRecoveryTarget$);
 });
@@ -81,74 +73,31 @@ export const closeGoogleCalendarReconnect$ = command(
 const confirmRecovery$ = command(
   async ({ get, set }, target: CalendarRecoveryTarget, signal: AbortSignal) => {
     signal.throwIfAborted();
-    const deadline = now() + 30_000;
-    const workSignal = set(resetConfirmationWork$, signal);
-    const expired = createDeferredPromise<never>(workSignal);
-    timeout(
-      () => {
-        if (workSignal.aborted) {
-          return;
-        }
-        expired.reject(
-          new DOMException(
-            "Calendar recovery confirmation expired",
-            "TimeoutError",
-          ),
-        );
-      },
-      30_000,
-      { signal: workSignal },
-    );
-    let attempts = 0;
     let recovered = false;
-    // At most 10 serial GETs, 2s after each completed pending read, and a 30s
-    // total deadline including hung requests. No transport or OAuth retries.
-    await withCleanup(
-      Promise.race([
-        expired.promise,
-        waitLoopUntil(
-          async () => {
-            if (now() >= deadline || attempts >= 10) {
-              return true;
-            }
-            if (get(currentWorkflowId$) !== target.workflowId) {
-              return true;
-            }
-            attempts++;
-            const detail = await set(reloadCurrentWorkflowDetail$, workSignal);
-            if (now() >= deadline) {
-              return true;
-            }
-            const automation = detail?.automations.find((candidate) => {
-              return candidate.id === target.automationId;
-            });
-            if (
-              detail?.id !== target.workflowId ||
-              !automation ||
-              !isGoogleCalendarWorkflowAutomation(automation) ||
-              automation.eventType !== target.eventType
-            ) {
-              return true;
-            }
-            recovered = automation.warning === undefined;
-            return (
-              recovered ||
-              automation.warning !== "reconnect_required" ||
-              attempts >= 10
-            );
-          },
-          2000,
-          workSignal,
-          { retryTransientErrors: false },
-        ),
-      ]),
-      () => {
-        // Timeout keeps its classification while cleanup stops a hung read.
-        // An older attempt may settle after replacement has already started.
-        if (!workSignal.aborted) {
-          set(resetConfirmationWork$);
+    await waitLoopUntil(
+      async () => {
+        if (get(currentWorkflowId$) !== target.workflowId) {
+          return true;
         }
+        const detail = await set(reloadCurrentWorkflowDetail$, signal);
+        signal.throwIfAborted();
+        const automation = detail?.automations.find((candidate) => {
+          return candidate.id === target.automationId;
+        });
+        if (
+          detail?.id !== target.workflowId ||
+          !automation ||
+          !isGoogleCalendarWorkflowAutomation(automation) ||
+          automation.eventType !== target.eventType
+        ) {
+          return true;
+        }
+        recovered = automation.warning === undefined;
+        return recovered || automation.warning !== "reconnect_required";
       },
+      2000,
+      signal,
+      { retryTransientErrors: false },
     );
     signal.throwIfAborted();
     return recovered;

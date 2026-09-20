@@ -16,6 +16,7 @@ import {
   mockClerkUsers,
 } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
+import { installUserExportStorage } from "./helpers/user-export-storage";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -30,6 +31,10 @@ function actor() {
   const orgId = `org_${randomUUID()}`;
   const email = `${userId}@example.test`;
   createRouteMocks(context).clerk.session(userId, orgId);
+  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: [{ organization: { id: orgId }, role: "org:member" }],
+    totalCount: 1,
+  });
   mockClerkUsers(context, [
     {
       id: userId,
@@ -43,7 +48,7 @@ function actor() {
       imageUrl: "https://images.example.test/export-user.png",
     },
   ]);
-  context.mocks.s3.send.mockResolvedValue({});
+  installUserExportStorage(context);
   context.mocks.resend.send.mockResolvedValue({
     data: { id: `resend_${randomUUID()}` },
     error: null,

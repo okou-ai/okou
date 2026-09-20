@@ -146,7 +146,8 @@ test("sidebar scrollbar thumb meets the workspace edge without a mobile inset", 
       });
     })
     .toBe(true);
-  await expect(scrollbar).toBeVisible();
+  await scrollViewport.hover();
+  await expect(scrollbar).toHaveCSS("opacity", "1");
   await expect(scrollbarThumb).toBeVisible();
 
   const [chatListBox, scrollbarBox, scrollbarThumbBox, workspaceBox] =
@@ -280,6 +281,12 @@ test("send a long reply through the deployed runner and scroll its messages", as
   const viewport = threadPage.locator("[data-scroll-container]");
   const scrollbar = threadPage.getByTestId("chat-message-scrollbar");
   const thumb = scrollbar.locator('[data-slot="scroll-area-thumb"]');
+  await composer.hover();
+  await expect(scrollbar).toHaveCSS("opacity", "0");
+  await expect(scrollbar).toHaveCSS("pointer-events", "none");
+  await viewport.hover();
+  await expect(scrollbar).toHaveCSS("opacity", "1");
+  await expect(scrollbar).toHaveCSS("pointer-events", "auto");
   await expect(thumb).toBeVisible();
   await expect
     .poll(async () => {
@@ -317,6 +324,10 @@ test("send a long reply through the deployed runner and scroll its messages", as
       });
     })
     .toBeLessThan(scrollTopBeforeDrag);
+
+  await composer.hover();
+  await expect(scrollbar).toHaveCSS("opacity", "0");
+  await expect(scrollbar).toHaveCSS("pointer-events", "none");
 
   const scrollToBottom = threadPage.locator("[data-scroll-to-bottom]");
   await expect(scrollToBottom).toBeVisible();

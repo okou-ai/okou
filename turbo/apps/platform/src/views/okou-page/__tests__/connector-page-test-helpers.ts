@@ -12,7 +12,7 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   type CreateCustomConnectorBody,
   type CustomConnectorHttpResponse,
@@ -135,12 +135,12 @@ export function mockConnectors(
     readonly connectorSlug: ConnectorSlug;
     readonly authMethod?: ConnectorAuthMethodId;
     readonly externalUsername?: string;
-    readonly connectionStatus?: ConnectorResponse["connectionStatus"];
-    readonly reconnectReason?: ConnectorResponse["reconnectReason"];
+    readonly connectionStatus?: BuiltinConnectorResponse["connectionStatus"];
+    readonly reconnectReason?: BuiltinConnectorResponse["reconnectReason"];
     readonly oauthScopes?: readonly string[];
     readonly tokenExpiresAt?: string | null;
   }[],
-): ConnectorResponse[] {
+): BuiltinConnectorResponse[] {
   const responses = connectors.map((connector) => {
     return {
       id: crypto.randomUUID(),
@@ -155,7 +155,7 @@ export function mockConnectors(
       tokenExpiresAt: connector.tokenExpiresAt ?? null,
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
-    } satisfies ConnectorResponse;
+    } satisfies BuiltinConnectorResponse;
   });
   context.mocks.data.connectors(responses);
   return responses;

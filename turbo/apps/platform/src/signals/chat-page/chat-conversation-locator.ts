@@ -8,9 +8,9 @@
  *
  * Everything the rail draws is derived. The DOM contributes exactly one thing:
  * a viewport reading taken by `measure$`, which reports where the reader is as
- * two ratios plus the id of the turn they are looking at. Nothing else reads or
- * writes the DOM, and no element is held in a signal other than the scroll
- * container the reading is taken from.
+ * two ratios plus the id of the turn they are looking at. Layout samples no
+ * other DOM geometry, and no element is held in a signal other than the scroll
+ * container. A turn's ref only clears its CSS landing hint when it detaches.
  *
  * The reading is taken only when the reader moves the viewport: on scroll and
  * on resize. Content arriving during a run does not take one, because a reader
@@ -27,12 +27,12 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { timeout } from "signal-timers";
 import { logger } from "../log.ts";
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
-import { resetSignal } from "../utils.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ScrollToEventOptions } from "./chat-thread-scroll.ts";
+import { buildRunWorkFolding } from "./run-work-folding.ts";
 
 const L = logger("ConversationLocator");
 
@@ -54,8 +54,6 @@ const MAGNIFY_SIGMA_RATIO = 2.6;
 const HIT_INTERVAL_RATIO = 1.1;
 /** Padding around the viewport band, relative to one tick interval. */
 const BAND_PADDING_INTERVAL_RATIO = 0.8;
-/** How long a jumped-to turn stays marked. */
-const LANDED_MARK_MS = 1200;
 /** Resting length and magnification of a tick. */
 const TICK_BASE_WIDTH_PX = 7;
 const TICK_GROW_RATIO = 3.1;
@@ -111,6 +109,11 @@ export interface LocatorPreview {
   readonly pointerClientY: number;
 }
 
+interface LocatorLanding {
+  readonly eventId: string | null;
+  readonly revision: number;
+}
+
 /** What `measure$` reads off the scroll container, and nothing more. */
 interface LocatorViewportReading {
   /** Top of the viewport within the scrollable range, 0..1. */
@@ -152,6 +155,8 @@ export interface LocatorViewportSignals {
 export interface ChatConversationLocatorSignals {
   readonly layout$: Computed<LocatorLayout>;
   readonly preview$: Computed<LocatorPreview | null>;
+  readonly landing$: Computed<LocatorLanding>;
+  readonly turnOnRef$: Command<(() => void) | undefined, [HTMLElement | null]>;
   /** True while the pointer is over the rail. */
   readonly engaged$: Computed<boolean>;
   /** The sampled turn sequence the ticks are drawn from. */
@@ -209,9 +214,9 @@ function userPreviewText(event: EnrichedChatEvent): string {
 }
 
 /**
- * Every user turn in the thread, in order. Assistant turns are deliberately
- * absent: a run is located by the request that started it, and one mark per
- * exchange keeps the scale even.
+ * Every visible user turn in the thread, in order. Assistant turns are
+ * deliberately absent: a run is located by the request that started it, and
+ * one mark per exchange keeps the scale even.
  */
 function userTurns(groups: readonly ChatEventGroup[]): LocatorTurn[] {
   const turns: LocatorTurn[] = [];
@@ -259,7 +264,17 @@ function createSampledTurns(
   allChatGroups$: Computed<readonly ChatEventGroup[]>,
 ): Computed<readonly LocatorTurn[]> {
   return computed((get): readonly LocatorTurn[] => {
-    return sampleTurns(userTurns(get(allChatGroups$)));
+    const activeGroups = get(allChatGroups$).flatMap((group) => {
+      const events = group.events.filter((event) => {
+        return !event.isQueued;
+      });
+      return events.length === 0 ? [] : [{ ...group, events }];
+    });
+    // Match the transcript's visible projection: folded continuation inputs
+    // have no rendered anchor, while independent goals retain a context row.
+    return sampleTurns(
+      userTurns(buildRunWorkFolding(activeGroups).visibleGroups),
+    );
   });
 }
 
@@ -489,6 +504,29 @@ function createHitIndex(
   });
 }
 
+function createTurnOnRef(landing$: State<LocatorLanding>) {
+  return onRef(
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      // Only user turns are jump targets. Assistant group refs have no direct
+      // event anchor and therefore own no locator landing to clear.
+      const eventId = element.dataset.chatScrollAnchorEventId;
+      if (!eventId) {
+        return;
+      }
+      signal.addEventListener(
+        "abort",
+        () => {
+          const landing = get(landing$);
+          if (landing.eventId === eventId) {
+            set(landing$, { ...landing, eventId: null });
+          }
+        },
+        { once: true },
+      );
+    }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -511,6 +549,10 @@ export function createChatConversationLocatorSignals({
   const previewLeft$ = state(0);
   const pointerClientY$ = state(0);
   const engaged$ = state(false);
+  const internalLanding$ = state<LocatorLanding>({
+    eventId: null,
+    revision: 0,
+  });
   const resetLandedSignal$ = resetSignal();
 
   const sampledTurns$ = createSampledTurns(allChatGroups$);
@@ -554,11 +596,13 @@ export function createChatConversationLocatorSignals({
     set(pointerFraction$, null);
   });
 
+  const turnOnRef$ = createTurnOnRef(internalLanding$);
+
   const jumpToTurn$ = command(
     async (
       { get, set },
       turnIndex: number,
-      signal: AbortSignal,
+      parentSignal: AbortSignal,
     ): Promise<void> => {
       const turn = get(sampledTurns$).find((candidate) => {
         return candidate.turnIndex === turnIndex;
@@ -567,6 +611,7 @@ export function createChatConversationLocatorSignals({
       if (!turn || !container) {
         return;
       }
+      const signal = set(resetLandedSignal$, parentSignal);
       L.debug("jump to turn", { threadId, turnIndex, eventId: turn.eventId });
       await set(
         scrollToEvent$,
@@ -579,25 +624,19 @@ export function createChatConversationLocatorSignals({
         signal,
       );
       signal.throwIfAborted();
-      const landed = get(viewport.container$)?.querySelector<HTMLElement>(
-        `[data-chat-scroll-anchor-event-id="${CSS.escape(turn.eventId)}"]`,
-      );
-      if (!landed) {
-        return;
-      }
-      const landedSignal = set(resetLandedSignal$, signal);
-      landed.dataset.locatorLanded = "";
-      const clearLanded = () => {
-        delete landed.dataset.locatorLanded;
-      };
-      landedSignal.addEventListener("abort", clearLanded, { once: true });
-      timeout(
+      // The target may join the DOM in the pending React commit. Publishing
+      // its identity lets that committed turn own the CSS highlight as well.
+      set(internalLanding$, (previous) => {
+        return { eventId: turn.eventId, revision: previous.revision + 1 };
+      });
+      signal.addEventListener(
+        "abort",
         () => {
-          landedSignal.removeEventListener("abort", clearLanded);
-          clearLanded();
+          set(internalLanding$, (previous) => {
+            return { ...previous, eventId: null };
+          });
         },
-        LANDED_MARK_MS,
-        { signal: landedSignal },
+        { once: true },
       );
     },
   );
@@ -615,6 +654,10 @@ export function createChatConversationLocatorSignals({
   return {
     layout$,
     preview$,
+    landing$: computed((get) => {
+      return get(internalLanding$);
+    }),
+    turnOnRef$,
     engaged$: computed((get) => {
       return get(engaged$);
     }),

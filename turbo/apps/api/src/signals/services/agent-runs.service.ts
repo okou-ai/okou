@@ -24,7 +24,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import {
@@ -46,13 +45,10 @@ import {
   nullableDriverValueDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { now } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
-import {
-  sandboxCapacityPredicate,
-  readPiInferenceLifecycle,
-} from "./pi-inference-lifecycle.service";
+import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 import {
   activePaidConcurrencySlots,
   cappedBaseConcurrencyLimit,
@@ -60,7 +56,6 @@ import {
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
-import { eligibleDeferredPiDemandPredicate } from "./pi-deferred-demand.service";
 
 const PENDING_RUN_TTL_MS = 15 * 60 * 1000;
 const RECENT_RUNS_FOR_ETA = 10;
@@ -135,9 +130,9 @@ async function concurrencyUsage(
   orgId: string,
 ): Promise<{
   readonly memberUsage: ConcurrencyMemberUsage[];
-  readonly waiting: number;
 }> {
-  const staleThreshold = new Date(now() - PENDING_RUN_TTL_MS);
+  const observedAt = nowDate();
+  const staleThreshold = new Date(observedAt.getTime() - PENDING_RUN_TTL_MS);
   const active = count().as("active");
   const activeMembers = db
     .select({
@@ -156,28 +151,15 @@ async function concurrencyUsage(
     )
     .groupBy(agentRuns.userId, userCache.name, userCache.email)
     .as("active_member_usage");
-  const waitingDemand = db
-    .select({ count: count().as("waiting") })
-    .from(agentRunSandboxIntent)
-    .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
-    .where(eligibleDeferredPiDemandPredicate(db, orgId))
-    .as("waiting_deferred_pi_demand");
   const rows = await db
     .select({
       userId: activeMembers.userId,
       name: activeMembers.name,
       email: activeMembers.email,
       active: activeMembers.active,
-      waiting: waitingDemand.count,
     })
-    .from(waitingDemand)
-    .leftJoin(activeMembers, sql`true`)
+    .from(activeMembers)
     .orderBy(desc(activeMembers.active), asc(activeMembers.userId));
-
-  const summary = rows[0];
-  if (!summary) {
-    throw new Error("Concurrency usage aggregate returned no row");
-  }
 
   return {
     memberUsage: rows.flatMap((row) => {
@@ -191,7 +173,6 @@ async function concurrencyUsage(
             },
           ];
     }),
-    waiting: Number(summary.waiting),
   };
 }
 
@@ -443,7 +424,6 @@ export function agentRunById(args: {
       return null;
     }
 
-    await readPiInferenceLifecycle(get(db$), run.id, run.launchSnapshot);
     const source = await persistedRunSource(get(db$), run, args);
 
     const langfuseConfig = run.langfuseTraceEnabled
@@ -667,7 +647,7 @@ export function agentRunQueueStatus(args: {
       activePaidConcurrencySlots(db, args.orgId),
       loadOrgPlanCapabilities(db, args.orgId),
     ]);
-    const { memberUsage, waiting } = usage;
+    const { memberUsage } = usage;
     const limit = effectiveConcurrencyLimit(
       capabilities?.baseConcurrencyLimit ?? 0,
       paidSlots,
@@ -682,8 +662,7 @@ export function agentRunQueueStatus(args: {
         tier: args.orgTier,
         limit,
         active,
-        waiting,
-        available: limit === 0 ? -1 : Math.max(0, limit - active - waiting),
+        available: limit === 0 ? -1 : Math.max(0, limit - active),
         memberUsage,
       },
       queue: queuedRuns.map((run, index) => {

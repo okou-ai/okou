@@ -74,6 +74,7 @@ import {
   readOfficialWorkflowQueueInputFixture,
   readOfficialWorkflowQueueRunFixture,
 } from "../../../test-fixtures/official-workflow-queue";
+import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import { verifyOkouToken } from "../../auth/tokens";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
@@ -84,10 +85,14 @@ import { holdUnjournaledCallbackAfterLineageReadFixture } from "../../../test-fi
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
 import { holdMorningBriefReconfigurationAfterPersist } from "../../../test-fixtures/morning-brief-reconciliation";
 import {
+  holdMorningBriefFirstMaterialization,
+  holdSelectedMorningBriefAutomationRow,
   readLegacyAutomation,
   readNativeOccurrences,
   readNativeSchedule,
+  removeMorningBriefNativeScheduleForMigrationFixture,
 } from "../../../test-fixtures/morning-brief-native-schedule";
+import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import {
   countAgentStableContextPublicationsFixture,
   countUserStableContextGenerationsFixture,
@@ -116,6 +121,13 @@ import {
 } from "../../../test-fixtures/workflow-queue";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import {
+  installUserExportStorage,
+  readExportJsonLines,
+  readUserExportZip,
+} from "./helpers/user-export-storage";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
@@ -199,6 +211,7 @@ const NOTION_FIRST_PAGE_URL = `https://www.notion.so/First-${NOTION_FIRST_PAGE_I
 const NOTION_SECOND_PAGE_ID = "22222222-2222-4222-8222-222222222222";
 const NOTION_SECOND_PAGE_URL = `https://www.notion.so/Second-${NOTION_SECOND_PAGE_ID.replaceAll("-", "")}`;
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+serializeOfficialWorkflowCatalogTests();
 
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,
@@ -5401,6 +5414,69 @@ describe("Official Workflow installations", () => {
       [200],
     );
     expect(customStorage.body.storage_state).toBeNull();
+  });
+
+  it("exports the accepted Official Workflow instruction after a catalog revision", async () => {
+    const { actor, definitionName, headers, installed, zeroBlueprintName } =
+      await installOfficialWorkflowLifecycleScenario();
+    // The setup helper acknowledges agent writes without retaining reads.
+    // Replay those exact external uploads into a readable object store.
+    const uploads = context.mocks.s3.send.mock.calls
+      .map(([command]) => {
+        return command;
+      })
+      .filter((command): command is PutObjectCommand => {
+        return command instanceof PutObjectCommand;
+      });
+    const objects = createMiscRoutesApi(context);
+    for (const upload of uploads) {
+      objects.putS3Object(
+        requiredS3ObjectKey(upload.input.Key),
+        s3BodyBuffer(upload.input.Body),
+      );
+    }
+    const instruction = "Use the newly accepted official instruction.";
+    await syncCatalog(
+      catalog([
+        activeDefinition(
+          definitionName,
+          [scheduledBlueprint(true), onceBlueprint(), loopBlueprint()],
+          instruction,
+        ),
+        activeDefinition(zeroBlueprintName, []),
+      ]),
+    );
+    const current = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    expect(current.body.workflow.instruction).toBe(instruction);
+
+    const exports = createOpsLogsApi(context);
+    installUserExportStorage(context);
+    const started = await exports.requestPostUserExport(actor, [202]);
+    await flushWaitUntilForTest();
+    const status = await exports.requestGetUserExport(actor, [200]);
+    expect(status.body.job).toMatchObject({
+      id: started.body.jobId,
+      status: "completed",
+    });
+    const zip = readUserExportZip(
+      context,
+      `exports/${actor.userId}/${started.body.jobId}.zip`,
+    );
+    expect(readExportJsonLines(zip, "workflows.jsonl")).toContainEqual(
+      expect.objectContaining({
+        id: current.body.workflow.id,
+        officialDefinitionName: definitionName,
+        displayName: current.body.workflow.displayName,
+        description: current.body.workflow.description,
+        instruction,
+      }),
+    );
   });
 
   it("rejects duplicate Official Workflow installation on the same agent", async () => {
@@ -13679,7 +13755,8 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await flushWaitUntilForTest();
   }
 
-  async function failRunForInsufficientCredits(
+  /** Report the real insufficient-credits completion without dispatching it. */
+  async function reportInsufficientCreditsCompletion(
     brief: JournaledBrief,
     runId: string,
   ): Promise<void> {
@@ -13701,6 +13778,13 @@ describe("Morning Brief legacy schedule claim journal", () => {
       { authorization: `Bearer ${sandboxToken}` },
       [200],
     );
+  }
+
+  async function failRunForInsufficientCredits(
+    brief: JournaledBrief,
+    runId: string,
+  ): Promise<void> {
+    await reportInsufficientCreditsCompletion(brief, runId);
     await flushWaitUntilForTest();
   }
 
@@ -14932,5 +15016,482 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(
       readMorningBriefScheduleClaimsFixture(kept.automationId),
     ).resolves.toHaveLength(1);
+  });
+
+  describe("first native materialization", () => {
+    interface PreMaterializationOwner {
+      readonly orgId: string;
+      readonly userId: string;
+    }
+
+    function briefOwner(brief: JournaledBrief): PreMaterializationOwner {
+      if (!brief.actor.orgId) {
+        throw new Error("Expected an organization-scoped Morning Brief owner");
+      }
+      return { orgId: brief.actor.orgId, userId: brief.actor.userId };
+    }
+
+    /**
+     * Put the member back into the state the bootstrap scan exists for: an
+     * installed legacy brief, with its real automation and any journaled
+     * occurrence intact, that has never been materialized.
+     *
+     * Every current creation route materializes on enrollment, so no external
+     * entry point can produce it. Removing the durable row after the real
+     * routes committed is the only way to reach the pre-migration owner the
+     * first-materialization boundary is about.
+     */
+    async function reconstructPreMaterializationOwner(
+      owner: PreMaterializationOwner,
+    ): Promise<void> {
+      await removeMorningBriefNativeScheduleForMigrationFixture(owner);
+    }
+
+    /**
+     * Start the real bootstrap and stop it at the statement that publishes the
+     * first row.
+     *
+     * The tick holds the owner key and has already sampled the legacy state it
+     * is about to publish, so whatever a selected legacy writer does next has to
+     * be ordered against it. The returned pid is what the next observation
+     * chains onto.
+     */
+    async function holdBootstrapAtFirstInsert(
+      brief: JournaledBrief,
+      owner: PreMaterializationOwner,
+    ): Promise<{
+      readonly bootstrapPid: number;
+      readonly finish: () => Promise<void>;
+    }> {
+      const materialization = await holdMorningBriefFirstMaterialization(
+        owner,
+        context.signal,
+      );
+      const tick = tickNativeMorningBrief(brief.actor);
+      const bootstrapPid = await materialization.waitForBlocked();
+      return {
+        bootstrapPid,
+        finish: async () => {
+          await materialization.release();
+          await tick;
+        },
+      };
+    }
+
+    /** The one durable obligation a subsequent real legacy claim consumes. */
+    async function consumeDurableObligation(
+      brief: JournaledBrief,
+      owner: PreMaterializationOwner,
+      nextRunAt: Date,
+      expectedClaims: number,
+    ): Promise<void> {
+      await pollAt(brief.automationId, nextRunAt.getTime() + 60_000);
+      const claims = await readMorningBriefScheduleClaimsFixture(
+        brief.automationId,
+      );
+      expect(claims).toHaveLength(expectedClaims);
+      expect(claims[expectedClaims - 1]?.scheduledAnchorAt).toStrictEqual(
+        nextRunAt,
+      );
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        nextRunAt: null,
+        scheduleOwner: null,
+      });
+    }
+
+    /** One real journaled occurrence, left in flight with nothing scheduled. */
+    async function startPreMaterializationOccurrence(
+      brief: JournaledBrief,
+      owner: PreMaterializationOwner,
+      anchor: number,
+    ): Promise<string> {
+      await pollAt(brief.automationId, anchor + 60_000);
+      const threadId = await briefThreadId(brief.actor, brief.workflowId);
+      const runIds = await briefRunIds(threadId);
+      const runId = runIds[runIds.length - 1];
+      if (!runId) {
+        throw new Error("Expected the occurrence to start a run");
+      }
+      await expect(
+        readLegacyAutomation(brief.automationId),
+      ).resolves.toMatchObject({ enabled: true, nextRunAt: null });
+      await reconstructPreMaterializationOwner(owner);
+      return runId;
+    }
+
+    it("orders a journaled completion behind the first materialization it raced", async () => {
+      const brief = await installJournaledBrief();
+      const owner = briefOwner(brief);
+      const runId = await startPreMaterializationOccurrence(
+        brief,
+        owner,
+        brief.anchor,
+      );
+
+      const bootstrap = await holdBootstrapAtFirstInsert(brief, owner);
+      const callback = deliverBriefCallback(runId);
+
+      // The completion cannot settle under the absent-parent authority it would
+      // have read: it waits on the owner key the pending insert holds.
+      await waitForDeferredBlocker(bootstrap.bootstrapPid);
+      await expect(readNativeSchedule(owner)).resolves.toBeUndefined();
+
+      await bootstrap.finish();
+      await callback;
+
+      // The settlement owed the row that appeared while it waited, so both
+      // authorities carry the same single successor.
+      const legacy = await readLegacyAutomation(brief.automationId);
+      expect(legacy).toMatchObject({
+        enabled: true,
+        consecutiveFailures: 0,
+        nextRunAt: expect.any(Date),
+      });
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        phase: "legacy",
+        ownerEpoch: 1,
+        nextRunAt: legacy?.nextRunAt,
+        scheduleOwner: "legacy",
+        legacyWorkflowId: brief.workflowId,
+        legacyAutomationId: brief.automationId,
+      });
+      const claims = await readMorningBriefScheduleClaimsFixture(
+        brief.automationId,
+      );
+      expect(claims).toHaveLength(1);
+      expect(claims[0]?.settlement).toBe("completed");
+      if (!legacy?.nextRunAt) {
+        throw new Error("Expected one coherent successor");
+      }
+      await consumeDurableObligation(brief, owner, legacy.nextRunAt, 2);
+    });
+
+    it("orders the first materialization behind an unjournaled completion that read the absent owner", async () => {
+      const brief = await installJournaledBrief();
+      const owner = briefOwner(brief);
+      const runId = await startUnjournaledCompatibilityRun(brief, brief.anchor);
+      await reconstructPreMaterializationOwner(owner);
+
+      const held = await holdSelectedMorningBriefAutomationRow(
+        brief.automationId,
+        context.signal,
+      );
+      await runs.requestCancelRun(brief.actor, runId, [200]);
+      const callback = flushWaitUntilForTest();
+      // The compatibility callback has classified the absent owner and is
+      // waiting on the held legacy row while it holds the owner key.
+      const callbackPid = await held.waitForBlocked();
+
+      const tick = tickNativeMorningBrief(brief.actor);
+      await waitForDeferredBlocker(callbackPid);
+      await expect(readNativeSchedule(owner)).resolves.toBeUndefined();
+
+      await held.release();
+      await callback;
+      await tick;
+
+      // Bootstrap published the committed successor, never the empty slot it
+      // would have sampled before that callback.
+      const legacy = await readLegacyAutomation(brief.automationId);
+      expect(legacy).toMatchObject({
+        enabled: true,
+        consecutiveFailures: 1,
+        nextRunAt: expect.any(Date),
+      });
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        phase: "legacy",
+        ownerEpoch: 1,
+        nextRunAt: legacy?.nextRunAt,
+        scheduleOwner: "legacy",
+        legacyWorkflowId: brief.workflowId,
+        legacyAutomationId: brief.automationId,
+      });
+      if (!legacy?.nextRunAt) {
+        throw new Error("Expected one coherent successor");
+      }
+      await consumeDurableObligation(brief, owner, legacy.nextRunAt, 1);
+    });
+
+    it("orders a real claim behind the first materialization it raced", async () => {
+      const brief = await installJournaledBrief();
+      const owner = briefOwner(brief);
+      await reconstructPreMaterializationOwner(owner);
+
+      const bootstrap = await holdBootstrapAtFirstInsert(brief, owner);
+      // The real poller claims the same occurrence bootstrap sampled. It must
+      // consume the obligation the insert publishes, not a stale ordinary copy.
+      mockNow(brief.anchor + 60_000);
+      const poll = accept(
+        automationExecutionClient().execute({
+          body: { automation_id: brief.automationId },
+        }),
+        [200],
+      );
+      await waitForDeferredBlocker(bootstrap.bootstrapPid);
+      await expect(readNativeSchedule(owner)).resolves.toBeUndefined();
+
+      await bootstrap.finish();
+      await poll;
+
+      const claims = await readMorningBriefScheduleClaimsFixture(
+        brief.automationId,
+      );
+      expect(claims).toHaveLength(1);
+      expect(claims[0]?.scheduledAnchorAt.getTime()).toBe(brief.anchor);
+      expect(claims[0]?.settlement).toBe("unsettled");
+      await expect(
+        readLegacyAutomation(brief.automationId),
+      ).resolves.toMatchObject({ enabled: true, nextRunAt: null });
+      // No unowned obligation survives: the claim consumed the exact anchor the
+      // first materialization published.
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        phase: "legacy",
+        ownerEpoch: 1,
+        nextRunAt: null,
+        scheduleOwner: null,
+      });
+
+      const threadId = await briefThreadId(brief.actor, brief.workflowId);
+      const [runId] = await briefRunIds(threadId);
+      if (!runId) {
+        throw new Error("Expected the claimed occurrence to start a run");
+      }
+      await deliverBriefCallback(runId);
+      const legacy = await readLegacyAutomation(brief.automationId);
+      expect(legacy?.nextRunAt).toStrictEqual(expect.any(Date));
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        nextRunAt: legacy?.nextRunAt,
+        scheduleOwner: "legacy",
+      });
+    });
+
+    it("pauses both authorities when the third failure races the first materialization", async () => {
+      const brief = await installJournaledBrief();
+      const owner = briefOwner(brief);
+      let anchor = brief.anchor;
+      for (let failure = 1; failure <= 2; failure += 1) {
+        await pollAt(brief.automationId, anchor + 60_000);
+        const threadId = await briefThreadId(brief.actor, brief.workflowId);
+        const runIds = await briefRunIds(threadId);
+        const runId = runIds[runIds.length - 1];
+        if (!runId) {
+          throw new Error("Expected the failing occurrence to start a run");
+        }
+        await cancelRunAndFlush(brief.actor, runId);
+        const advanced = await readLegacyAutomation(brief.automationId);
+        expect(advanced).toMatchObject({
+          enabled: true,
+          consecutiveFailures: failure,
+        });
+        if (!advanced?.nextRunAt) {
+          throw new Error("Expected the failed occurrence to recur");
+        }
+        anchor = advanced.nextRunAt.getTime();
+      }
+      const runId = await startPreMaterializationOccurrence(
+        brief,
+        owner,
+        anchor,
+      );
+
+      const bootstrap = await holdBootstrapAtFirstInsert(brief, owner);
+      await runs.requestCancelRun(brief.actor, runId, [200]);
+      const callback = flushWaitUntilForTest();
+      await waitForDeferredBlocker(bootstrap.bootstrapPid);
+      await bootstrap.finish();
+      await callback;
+
+      await expect(
+        readLegacyAutomation(brief.automationId),
+      ).resolves.toMatchObject({
+        enabled: false,
+        officialIntendedEnabled: false,
+        consecutiveFailures: 3,
+        nextRunAt: null,
+      });
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: false,
+        phase: "legacy",
+        nextRunAt: null,
+        scheduleOwner: null,
+      });
+
+      // A later cutover admits nothing for a paused owner, so no provider call
+      // and no further Run can follow it.
+      const threadId = await briefThreadId(brief.actor, brief.workflowId);
+      const runIdsBefore = await briefRunIds(threadId);
+      await setSimpleMorningBriefEnabled(brief.actor, true);
+      await tickNativeMorningBrief(brief.actor);
+      await expect(readNativeOccurrences(owner)).resolves.toHaveLength(0);
+      await expect(briefRunIds(threadId)).resolves.toStrictEqual(runIdsBefore);
+    });
+
+    it("keeps insufficient credits non-pausing across the first materialization", async () => {
+      const brief = await installJournaledBrief();
+      const owner = briefOwner(brief);
+      const runId = await startPreMaterializationOccurrence(
+        brief,
+        owner,
+        brief.anchor,
+      );
+
+      const bootstrap = await holdBootstrapAtFirstInsert(brief, owner);
+      await reportInsufficientCreditsCompletion(brief, runId);
+      const callback = flushWaitUntilForTest();
+      await waitForDeferredBlocker(bootstrap.bootstrapPid);
+      await bootstrap.finish();
+      await callback;
+
+      const legacy = await readLegacyAutomation(brief.automationId);
+      expect(legacy).toMatchObject({
+        enabled: true,
+        officialIntendedEnabled: true,
+        consecutiveFailures: 0,
+        nextRunAt: expect.any(Date),
+      });
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        phase: "legacy",
+        ownerEpoch: 1,
+        nextRunAt: legacy?.nextRunAt,
+        scheduleOwner: "legacy",
+      });
+    });
+
+    it("lets the current Settings choice win over the first materialization it raced", async () => {
+      const brief = await installJournaledBrief();
+      const owner = briefOwner(brief);
+      await reconstructPreMaterializationOwner(owner);
+      const headers = authHeaders(brief.actor);
+
+      const bootstrap = await holdBootstrapAtFirstInsert(brief, owner);
+      const paused = accept(
+        morningBriefPreferenceClient().update({
+          headers,
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await waitForDeferredBlocker(bootstrap.bootstrapPid);
+      await bootstrap.finish();
+      expect((await paused).body).toMatchObject({
+        enabled: false,
+        nextRunAt: null,
+      });
+
+      await expect(
+        readLegacyAutomation(brief.automationId),
+      ).resolves.toMatchObject({
+        enabled: false,
+        officialIntendedEnabled: false,
+        nextRunAt: null,
+      });
+      const disabled = await readNativeSchedule(owner);
+      expect(disabled).toMatchObject({
+        enabled: false,
+        phase: "legacy",
+        ownerEpoch: 2,
+        nextRunAt: null,
+        scheduleOwner: null,
+      });
+
+      // The durable choice is authority from here: a later tick never resamples
+      // the installation it was materialized from.
+      await tickNativeMorningBrief(brief.actor);
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: false,
+        ownerEpoch: 2,
+        nextRunAt: null,
+        scheduleOwner: null,
+        materializedAt: disabled?.materializedAt,
+        membershipId: disabled?.membershipId,
+      });
+
+      const resumed = await accept(
+        morningBriefPreferenceClient().update({
+          headers,
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      expect(resumed.body).toMatchObject({ enabled: true });
+      const legacy = await readLegacyAutomation(brief.automationId);
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        phase: "legacy",
+        ownerEpoch: 3,
+        nextRunAt: legacy?.nextRunAt,
+        scheduleOwner: "legacy",
+      });
+    });
+
+    it("keeps a timezone-only edit that raced the first materialization", async () => {
+      const brief = await installJournaledBrief();
+      const owner = briefOwner(brief);
+      const runId = await startPreMaterializationOccurrence(
+        brief,
+        owner,
+        brief.anchor,
+      );
+
+      const bootstrap = await holdBootstrapAtFirstInsert(brief, owner);
+      const edit = bdd.updateUserTimezone(brief.actor, "America/Los_Angeles");
+      await waitForDeferredBlocker(bootstrap.bootstrapPid);
+      await bootstrap.finish();
+      await edit;
+
+      // The edit is not a revocation: the epoch is untouched and the in-flight
+      // occurrence still owns the empty slot it consumed.
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        phase: "legacy",
+        ownerEpoch: 1,
+        timezone: "America/Los_Angeles",
+        nextRunAt: null,
+        scheduleOwner: null,
+      });
+      await expect(
+        readLegacyAutomation(brief.automationId),
+      ).resolves.toMatchObject({
+        enabled: true,
+        timezone: "America/Los_Angeles",
+        nextRunAt: null,
+      });
+
+      await deliverBriefCallback(runId);
+      const legacy = await readLegacyAutomation(brief.automationId);
+      expect(legacy?.nextRunAt).toStrictEqual(
+        briefOccurrenceAfter(
+          "0 7 * * *",
+          "America/Los_Angeles",
+          new Date(now()),
+        ),
+      );
+      const settled = await readNativeSchedule(owner);
+      expect(settled).toMatchObject({
+        ownerEpoch: 1,
+        timezone: "America/Los_Angeles",
+        nextRunAt: legacy?.nextRunAt,
+        scheduleOwner: "legacy",
+      });
+
+      // An existing materialized row is authority: a later tick returns it
+      // rather than publishing another sample of the installation.
+      await tickNativeMorningBrief(brief.actor);
+      await expect(readNativeSchedule(owner)).resolves.toMatchObject({
+        enabled: true,
+        ownerEpoch: 1,
+        timezone: "America/Los_Angeles",
+        nextRunAt: settled?.nextRunAt,
+        scheduleOwner: "legacy",
+        materializedAt: settled?.materializedAt,
+        membershipId: settled?.membershipId,
+      });
+    });
   });
 });

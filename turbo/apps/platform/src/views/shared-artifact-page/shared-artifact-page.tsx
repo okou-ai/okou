@@ -30,7 +30,10 @@ import {
   ArtifactDownloadMenu,
 } from "../okou-page/artifact-actions.tsx";
 import { ArtifactShareMenu } from "../okou-page/artifact-share-menu.tsx";
-import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
+import {
+  artifactFallbackSubtitle,
+  artifactSupportsFullscreen,
+} from "../okou-page/artifact-display.ts";
 import { copyAttachmentLinkToClipboard } from "../okou-page/attachment-url.ts";
 
 function ArtifactViewerActions({
@@ -99,22 +102,24 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
-      <Button
-        ref={enterButtonRef}
-        variant="quiet"
-        size="icon-sm"
-        iconSize="md"
-        showTooltip
-        disabled={enterLoadable.state === "loading"}
-        aria-label={t(($) => {
-          return $.artifacts.actions.enterFullscreen;
-        })}
-        onClick={() => {
-          detach(enterFullscreen(pageSignal), Reason.DomCallback);
-        }}
-      >
-        <Maximize2 aria-hidden />
-      </Button>
+      {artifactSupportsFullscreen(artifact.preview.kind) && (
+        <Button
+          ref={enterButtonRef}
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          showTooltip
+          disabled={enterLoadable.state === "loading"}
+          aria-label={t(($) => {
+            return $.artifacts.actions.enterFullscreen;
+          })}
+          onClick={() => {
+            detach(enterFullscreen(pageSignal), Reason.DomCallback);
+          }}
+        >
+          <Maximize2 aria-hidden />
+        </Button>
+      )}
       <ArtifactActionSeparator />
       <Button
         size="sm"
@@ -153,17 +158,25 @@ function ArtifactAccessPage() {
             })}
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            {t(($) => {
-              return $.artifacts.access.description;
-            })}
+            {user
+              ? t(($) => {
+                  return $.artifacts.access.signedInDescription;
+                })
+              : t(($) => {
+                  return $.artifacts.access.description;
+                })}
             <br />
             {t(($) => {
               return $.artifacts.access.help;
             })}
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
+            {/* The API answers every denial with one status so artifacts cannot
+                be enumerated, so a signed-in visitor's next step is a guess.
+                Only offer a primary action when it is known to help. */}
             <Button
               type="button"
+              variant={user ? "outline" : "default"}
               disabled={accessLoadable.state === "loading"}
               aria-busy={accessLoadable.state === "loading"}
               onClick={() => {
@@ -295,12 +308,24 @@ export function SharedArtifactPage({
       </header>
       <main
         ref={containerRef}
-        className={`relative min-h-0 flex-1 bg-muted/30 ${artifact === null ? "overflow-y-auto" : "overflow-hidden"}`}
+        // This element is the one handed to requestFullscreen, so it paints
+        // over the browser's black backdrop with nothing behind it. A
+        // translucent surface would let that backdrop through as an
+        // undefined grey, so fullscreen takes the opaque surface instead.
+        className={cn(
+          "relative min-h-0 flex-1",
+          fullscreen ? "bg-muted" : "bg-muted/30",
+          artifact === null ? "overflow-y-auto" : "overflow-hidden",
+        )}
       >
         {artifact !== null ? (
           <ArtifactPreviewBody
             artifact={undefined}
-            fullscreen={false}
+            // Escape leaves fullscreen through a document listener, which a
+            // cross-origin frame would swallow, so the frame keeps the focus
+            // it took on mount instead of claiming it again on the switch.
+            focusHtmlOnMount={!fullscreen}
+            fullscreen={fullscreen}
             imageCanvasSignals={viewer.imageCanvas}
             preview={artifact.preview}
           />

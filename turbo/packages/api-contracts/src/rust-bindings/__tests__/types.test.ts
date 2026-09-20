@@ -80,16 +80,6 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["runners", "runs"],
-    rustTypeName: "PiDeferredLaunchConfig",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "jobs", "pi_handoff"],
-    rustTypeName: "Response",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
     direction: "response",
   },

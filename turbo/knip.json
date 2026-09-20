@@ -43,6 +43,8 @@
       "project": ["**/*.{ts,tsx}"],
       "ignoreDependencies": [
         "@sentry/cli",
+        "@solana/web3.js",
+        "bs58",
         "idb",
         "tailwindcss",
         "typescript-eslint"

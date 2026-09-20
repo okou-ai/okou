@@ -2,13 +2,172 @@ name: Turbo
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
   merge_group:
+  # Staging calls the deployment/E2E jobs without repeating code validation.
+  workflow_call:
+    # Include credentials rendered indirectly by web-api-env for preview API.
+    secrets:
+      ABLY_API_KEY:
+        required: false
+      AGENTPHONE_API_KEY:
+        required: false
+      AGENTPHONE_WEBHOOK_SECRET:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_METAL_RUNNER_HOSTS:
+        required: false
+      AWS_METAL_RUNNER_SSH_KEY:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AXIOM_TOKEN_SESSIONS:
+        required: false
+      AXIOM_TOKEN_TELEMETRY:
+        required: false
+      BYTEPLUS_API_KEY:
+        required: false
+      BYTEPLUS_STT_API_KEY:
+        required: false
+      CF_ACCESS_CLIENT_ID:
+        required: false
+      CF_ACCESS_CLIENT_SECRET:
+        required: false
+      CF_API_WORKER_DEPLOY_API_TOKEN:
+        required: false
+      CI_ANTHROPIC_API_KEY:
+        required: false
+      CLERK_SECRET_KEY:
+        required: false
+      CLERK_WEBHOOK_SIGNING_SECRET:
+        required: false
+      CODECOV_TOKEN:
+        required: false
+      CRON_SECRET:
+        required: false
+      DEEPSEEK_API_KEY:
+        required: false
+      FAL_KEY:
+        required: false
+      FINICITY_APP_KEY:
+        required: false
+      FINICITY_APP_SECRET:
+        required: false
+      GOOGLE_ADS_DEVELOPER_TOKEN:
+        required: false
+      GOOGLE_ADS_LOGIN_CUSTOMER_ID:
+        required: false
+      HEYGEN_API_KEY:
+        required: false
+      JOGGAI_API_KEY:
+        required: false
+      JOGGAI_WEBHOOK_SECRET:
+        required: false
+      LANGFUSE_PUBLIC_KEY:
+        required: false
+      LANGFUSE_SECRET_KEY:
+        required: false
+      MICROSOFT_TEAMS_BOT_APP_PASSWORD:
+        required: false
+      MINIMAX_API_KEY:
+        required: false
+      MOONSHOT_API_KEY:
+        required: false
+      NEON_API_KEY:
+        required: false
+      OFFICIAL_RUNNER_SECRET:
+        required: false
+      OKOU_BROWSER_USE_API_KEY:
+        required: false
+      OKOU_FINANCE_APIDOJO_TOKEN:
+        required: false
+      OKOU_GITHUB_APP_CLIENT_SECRET:
+        required: false
+      OKOU_GITHUB_APP_PRIVATE_KEY:
+        required: false
+      OKOU_GITHUB_APP_WEBHOOK_SECRET:
+        required: false
+      OKOU_MACHINE_SECRET_KEY:
+        required: false
+      OKOU_MAPS_GOOGLE_MAPS_TOKEN:
+        required: false
+      OKOU_SCRAPE_FIRECRAWL_TOKEN:
+        required: false
+      OKOU_SEO_DATAFORSEO_LOGIN:
+        required: false
+      OKOU_SEO_DATAFORSEO_PASSWORD:
+        required: false
+      OKOU_SOCIAL_SOCIALKIT_TOKEN:
+        required: false
+      OKOU_WEATHER_GOOGLE_WEATHER_TOKEN:
+        required: false
+      OKOU_WEB_SEARCH_PERPLEXITY_TOKEN:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      OPENROUTER_API_KEY:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_HOSTED_SITES_ACCESS_KEY_ID:
+        required: false
+      R2_HOSTED_SITES_SECRET_ACCESS_KEY:
+        required: false
+      R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV:
+        required: false
+      R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY_DEV:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+      R2_STATIC_ACCESS_KEY_ID:
+        required: false
+      R2_STATIC_SECRET_ACCESS_KEY:
+        required: false
+      R2_USER_ARTIFACTS_ACCESS_KEY_ID:
+        required: false
+      R2_USER_ARTIFACTS_SECRET_ACCESS_KEY:
+        required: false
+      RESEND_API_KEY:
+        required: false
+      RESEND_WEBHOOK_SECRET:
+        required: false
+      SECRETS_ENCRYPTION_KEY:
+        required: false
+      SECRETS_KMS_KEY_ID:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
+      SENTRY_DSN:
+        required: false
+      SENTRY_DSN_API:
+        required: false
+      SENTRY_DSN_WEB:
+        required: false
+      SLACK_SIGNING_SECRET:
+        required: false
+      STEAM_WEB_API_KEY:
+        required: false
+      STRIPE_AUTOMATION_WEBHOOK_SECRET:
+        required: false
+      STRIPE_SECRET_KEY:
+        required: false
+      STRIPE_WEBHOOK_SECRET:
+        required: false
+      TELEGRAM_OFFICIAL_BOT_TOKEN:
+        required: false
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET:
+        required: false
+      VAPID_PRIVATE_KEY:
+        required: false
+      VERCEL_AUTOMATION_BYPASS_SECRET:
+        required: false
+      VERCEL_TOKEN:
+        required: false
 
+# The staging caller holds its lock through E2E and cleanup. This per-run group
+# must not contend with that caller lock. PR/merge-group behavior is unchanged.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'merge_group' && format('merge-queue-{0}', github.run_id) || 'staging') }}
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'merge_group' && format('merge-queue-{0}', github.run_id) || format('staging-run-{0}', github.run_id)) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -146,7 +305,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     outputs:
       job-ref: ${{ steps.set-job-ref.outputs.job-ref }}
       runner-image-job-ref: ${{ steps.set-job-ref.outputs.runner-image-job-ref }}
@@ -226,7 +385,7 @@ jobs:
             echo "crates-changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+          if printf '%s\n' "$CHANGED_FILES" | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image)\.yml$|^\.github/actions/(setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
             echo "CI workflow changes detected"
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -340,8 +499,8 @@ jobs:
     needs: [detect-release]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Skip for release-please PRs, commits, and merge queue entries
-    if: needs.detect-release.outputs.skip != 'true'
+    # Code checks are already required on the merge-group SHA before main.
+    if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true'
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -381,9 +540,9 @@ jobs:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -408,9 +567,9 @@ jobs:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -424,9 +583,9 @@ jobs:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -443,11 +602,11 @@ jobs:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -502,11 +661,11 @@ jobs:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     env:
       TSC_CHECKERS: "2"
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -561,9 +720,9 @@ jobs:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -575,9 +734,9 @@ jobs:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -586,103 +745,17 @@ jobs:
         run: pnpm knip
 
   # Test jobs - split into 4 parallel jobs by project
-  bench-api:
-    needs: [detect-turbo-ts-checks, prepare]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Run on every PR commit and on pushes to main (baseline). Skipped in the
-    # merge queue: benches only report numbers, they must not delay merges.
-    if: |
-      needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true' && (
-        github.event_name == 'pull_request' ||
-        (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      )
-    container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
-    services:
-      postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 5
-          --health-start-period 3s
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: ./.github/actions/toolchain-init
-      - name: Run Database Migrations
-        working-directory: turbo
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm --filter @okouai/db db:migrate
-      - name: Bench API
-        working-directory: turbo
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm -F api exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
-      - name: Print bench summary
-        if: success() || failure()
-        working-directory: turbo/apps/api
-        run: node scripts/print-bench-summary.mjs bench-results-p90.json
-      - name: Upload bench results
-        if: success() || failure()
-        continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: bench-api-results
-          path: |
-            turbo/apps/api/bench-results.json
-            turbo/apps/api/bench-results-p90.json
-          if-no-files-found: warn
-
-  bench-app:
-    needs: [detect-turbo-ts-checks, prepare]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Run on every PR commit and on pushes to main (baseline). Skipped in the
-    # merge queue: benches only report numbers, they must not delay merges.
-    if: |
-      needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true' && (
-        github.event_name == 'pull_request' ||
-        (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      )
-    container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/toolchain-init
-      - name: Bench App
-        working-directory: turbo
-        run: pnpm -F @okouai/app exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
-      - name: Print bench summary
-        if: success() || failure()
-        working-directory: turbo/apps/platform
-        run: node scripts/print-bench-summary.mjs bench-results-p90.json
-      - name: Upload bench results
-        if: success() || failure()
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: bench-app-results
-          path: |
-            turbo/apps/platform/bench-results.json
-            turbo/apps/platform/bench-results-p90.json
-          if-no-files-found: warn
-
   test-migrate:
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 12
     # Only run when migration, schema, persistent JSONB contract, or database script files changed
-    if: needs.prepare.outputs.migration-changed == 'true'
+    if: github.event_name != 'push' && needs.prepare.outputs.migration-changed == 'true'
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     services:
       postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
         options: >-
           --health-cmd pg_isready
           --health-interval 2s
@@ -781,11 +854,11 @@ jobs:
 
   test-cli:
     needs: [detect-turbo-ts-checks]
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -814,14 +887,14 @@ jobs:
 
   test-app:
     needs: [detect-turbo-ts-checks]
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -850,17 +923,17 @@ jobs:
 
   test-api:
     needs: [detect-turbo-ts-checks]
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     strategy:
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8]
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     services:
       postgres:
-        image: ghcr.io/vm0-ai/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
         options: >-
           --health-cmd pg_isready
           --health-interval 2s
@@ -908,11 +981,11 @@ jobs:
 
   test-other:
     needs: [detect-turbo-ts-checks]
-    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    if: github.event_name != 'push' && needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/toolchain-init
@@ -953,7 +1026,7 @@ jobs:
       group: deploy-api-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     needs: [prepare]
     # Deploy if job-ref is set (PR or main), not a release-please commit, and anything
     # that needs a live API preview or E2E API token changed.
@@ -1288,7 +1361,7 @@ jobs:
       group: deploy-app-${{ github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     if: >-
       ${{
         !cancelled() &&
@@ -2073,7 +2146,7 @@ jobs:
       group: deploy-cli-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       cancel-in-progress: false
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     if: >-
       ${{
         !cancelled() &&
@@ -2293,19 +2366,8 @@ jobs:
     concurrency:
       group: cli-e2e-01-serial-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
-    needs:
-      [
-        prepare,
-        deploy-cli,
-        lint-eslint,
-        lint-style,
-        lint-types,
-        lint-format,
-        lint-knip,
-        test-cli,
-        test-app,
-        test-other,
-      ]
+    # Code checks remain required by ci-gate-turbo, independently of E2E.
+    needs: [prepare, deploy-cli]
     if: |
       (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: release')) &&
       needs.prepare.outputs.job-ref != '' && (
@@ -3087,11 +3149,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     needs: [detect-release, detect-turbo-ts-checks]
-    if: needs.detect-release.outputs.skip != 'true' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false'
+    if: github.event_name != 'push' && needs.detect-release.outputs.skip != 'true' && needs.detect-turbo-ts-checks.outputs.ios-only == 'false'
     # Report-only: this surfaces schema generation/compat issues without blocking CI.
     continue-on-error: true
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     permissions:
       contents: read
     steps:
@@ -3154,8 +3216,9 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # Lighthouse CI audit for web homepage (failure blocks merge, skip is allowed)
+  # Preserve the required merge check; reusable staging runs report separately.
   ci-gate-turbo:
+    name: ${{ github.event_name == 'push' && 'staging-result' || 'ci-gate-turbo' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Runner cleanup is handled by cleanup.yml (pull_request_target:closed).
@@ -3222,8 +3285,15 @@ jobs:
           echo "::group::CI Gate Results"
           FAILED=0
           TS_CHECK_SKIP_ALLOWED=""
+          FILE_SIZE_SKIP_ALLOWED=""
           if [ "${{ needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed }}" = "false" ]; then
             TS_CHECK_SKIP_ALLOWED="skipped"
+          fi
+          if [ "$EVENT_NAME" = "push" ]; then
+            # Main was validated by the protected merge queue. Only deployment
+            # and environment verification run under the staging caller.
+            TS_CHECK_SKIP_ALLOWED="skipped"
+            FILE_SIZE_SKIP_ALLOWED="skipped"
           fi
           RUNNER_DEPLOY_SKIP_ALLOWED="true"
           if [ "${{ needs.prepare.outputs.turbo-runner-consumer-needed }}" = "true" ] ||
@@ -3265,13 +3335,15 @@ jobs:
             fi
           }
 
-          # Required foundation jobs: only 'success' is acceptable.
+          # Required foundation jobs: only 'success' is acceptable. File-size
+          # validation is already complete for staging's merge-group SHA.
           check_result "detect-release" "${{ needs.detect-release.result }}" ""
           check_result "detect-turbo-ts-checks" "${{ needs.detect-turbo-ts-checks.result }}" ""
           check_result "prepare" "${{ needs.prepare.result }}" ""
-          check_result "file-size-check" "${{ needs.file-size-check.result }}" ""
+          check_result "file-size-check" "${{ needs.file-size-check.result }}" "$FILE_SIZE_SKIP_ALLOWED"
           # Turbo checks: only 'success' is acceptable unless
-          # detection confirmed a pure crates-only or iOS-only change set.
+          # detection confirmed a pure native change set, or staging is reusing
+          # the merge group's completed code validation.
           check_result "lint-eslint" "${{ needs.lint-eslint.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "lint-style" "${{ needs.lint-style.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "lint-types" "${{ needs.lint-types.result }}" "$TS_CHECK_SKIP_ALLOWED"

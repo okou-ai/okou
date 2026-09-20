@@ -33,11 +33,11 @@ emitting that record.
 - `sourceId` identifies the storage authority, bucket and snapshot generation.
   It is not a candidate identifier: equal source IDs do not establish equal
   catalog versions or contents.
-- `schemaVersion` identifies the sync target generation. New APIs sync only v4,
-  but can temporarily serve retained accepted v3 before the first accepted v4
-  snapshot. Cold v4 diagnostics therefore do not necessarily mean connectors
-  are unavailable. Old APIs keep their separate v3 state. See
-  [v4 consumption](connector-catalog-v4.md) for bootstrap and rollback boundaries.
+- `schemaVersion` identifies the sync target generation. Current APIs sync and
+  serve only accepted v4 snapshots. Cold v4 diagnostics mean connectors are
+  unavailable until normal sync succeeds. Older APIs keep their separate v3
+  state and reader. See [v4 consumption](connector-catalog-v4.md) for bootstrap
+  and rollback boundaries.
 
 Fine-grained rules are not persisted. Cache-only observations therefore omit
 them; the API does not download or revalidate unchanged rejected content just to

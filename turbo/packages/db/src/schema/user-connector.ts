@@ -16,7 +16,7 @@ import { agents } from "./agent";
  * org→user connection is tracked in the `connectors` table.
  * This table tracks which of those connections a user has enabled for a specific agent.
  */
-export const userConnectors = pgTable(
+export const userBuiltinConnectors = pgTable(
   "user_connectors",
   {
     id: uuid("id").defaultRandom().primaryKey(),

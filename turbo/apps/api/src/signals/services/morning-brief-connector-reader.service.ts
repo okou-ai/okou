@@ -39,11 +39,11 @@ import {
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-runtime.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
@@ -250,26 +250,16 @@ export async function withMorningBriefDatabaseDeadline<T>(
         }
         const transactionTimeout = `${transactionRemaining.toString()}ms`;
         await tx.execute(sql`SELECT
-            set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, transactionRemaining).toString()}ms`}, true),
-            set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, transactionRemaining).toString()}ms`}, true),
+            set_config('lock_timeout', ${`${args.caps.lockTimeoutMs.toString()}ms`}, true),
+            set_config('statement_timeout', ${`${args.caps.statementTimeoutMs.toString()}ms`}, true),
             set_config('transaction_timeout', ${transactionTimeout}, true)`);
 
-        const beforeStatement = async (): Promise<void> => {
-          signal.throwIfAborted();
-          if (applicationRemaining() === 0) {
-            throw new MorningBriefDatabaseDeadlineExceededError();
-          }
-          const statementRemaining = ioRemaining();
-          if (statementRemaining === 0) {
-            throw new MorningBriefDatabaseDeadlineExceededError();
-          }
-          await tx.execute(sql`SELECT
-              set_config('lock_timeout', ${`${Math.min(args.caps.lockTimeoutMs, statementRemaining).toString()}ms`}, true),
-              set_config('statement_timeout', ${`${Math.min(args.caps.statementTimeoutMs, statementRemaining).toString()}ms`}, true)`);
+        const beforeStatement = (): Promise<void> => {
           signal.throwIfAborted();
           if (applicationRemaining() === 0 || ioRemaining() === 0) {
             throw new MorningBriefDatabaseDeadlineExceededError();
           }
+          return Promise.resolve();
         };
 
         await beforeStatement();
@@ -1039,7 +1029,7 @@ async function loadCredential(
   const connectorId = request.selection.connectorId;
   const snapshot = await loadConnectorRuntimeSnapshot(db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db,
     snapshot,
     orgId: scope.orgId,
@@ -1055,14 +1045,14 @@ async function loadCredential(
     return { kind: "unavailable", reason: "reconnect-required" };
   }
   const connection = loaded.connection;
-  const valueRef = connectorCredentialRuntimeValueRef(
+  const valueRef = builtinConnectorCredentialRuntimeValueRef(
     connection,
     request.environmentName,
   );
   if (valueRef === null) {
     return { kind: "unavailable", reason: "reconnect-required" };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db,
     valueRefs: [valueRef],
@@ -1080,7 +1070,7 @@ async function loadCredential(
   if (!credentialNeedsRefresh(connection.tokenExpiresAt)) {
     return { kind: "ok", credential: { accessToken: storedToken, pinned } };
   }
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection,
       db,

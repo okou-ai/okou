@@ -7,7 +7,10 @@ import {
   type ChatThreadVirtualListScrollAlign,
 } from "../okou-page/sidebar-state.ts";
 import {
+  currentChatThreadId$,
+  currentChatThreadListIds$,
   currentChatThreadListSignals$,
+  unreadChatThreads$,
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
 import {
@@ -19,6 +22,20 @@ const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
 const SCROLL_VIEWPORT_LAYOUT_EVENT = "okou-sidebar-layout-change";
 
+export const unreadSidebarChatThreadList$ = computed(async (get) => {
+  const threads = await get(unreadChatThreads$);
+  const threadIds = threads.map((thread) => {
+    return thread.id;
+  });
+  const currentThreadId = get(currentChatThreadId$);
+  return {
+    items: get(sidebarChatThreadItemSignalsRegistry$).reconcile(threadIds),
+    currentThreadListed: currentThreadId
+      ? threadIds.includes(currentThreadId)
+      : false,
+  };
+});
+
 export interface SidebarChatThreadWindow {
   readonly startIndex: number;
   readonly items: readonly SidebarChatThreadItemSignals[];
@@ -28,7 +45,6 @@ export interface SidebarChatThreadListSignals {
   readonly count$: Computed<number>;
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
-  readonly threadIds$: Computed<readonly string[]>;
   readonly window$: Computed<SidebarChatThreadWindow>;
 }
 
@@ -257,12 +273,11 @@ function createSidebarChatThreadViewportSignals(
     count$: list.count$,
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
-    threadIds$: list.threadIds$,
     window$,
   };
 }
 
-function createScrollVirtualListToIndexCommand(
+function createScrollListToIndexCommand(
   domSignals: SidebarChatThreadDomSignals,
 ) {
   return command(
@@ -317,8 +332,7 @@ function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals 
     const list = await get(currentChatThreadListSignals$);
     return createSidebarChatThreadViewportSignals(domSignals, list);
   });
-  const scrollVirtualListToIndex$ =
-    createScrollVirtualListToIndexCommand(domSignals);
+  const scrollListToIndex$ = createScrollListToIndexCommand(domSignals);
   const scrollToThread$ = command(
     async (
       { get, set },
@@ -327,15 +341,15 @@ function createSidebarChatThreadScrollSignals(): SidebarChatThreadScrollSignals 
     ) => {
       const threadId = typeof request === "string" ? request : request.threadId;
       const align = typeof request === "string" ? "top" : request.align;
-      const list = await get(list$);
+      const threadIds = await get(currentChatThreadListIds$);
       signal.throwIfAborted();
 
-      const index = get(list.threadIds$).indexOf(threadId);
+      const index = threadIds.indexOf(threadId);
       if (index === -1) {
         return false;
       }
 
-      return set(scrollVirtualListToIndex$, index, align);
+      return set(scrollListToIndex$, index, align);
     },
   );
   const scrollCurrentChatThreadOnRef$ = onRef(

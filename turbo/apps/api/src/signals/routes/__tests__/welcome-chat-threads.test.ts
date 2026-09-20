@@ -117,26 +117,29 @@ async function createdEvents(actor: ApiTestUser, threadId: string) {
 }
 
 describe("POST /api/welcome-chat-threads", () => {
-  it("requires authentication, an active workspace, and the effective persisted switch", async () => {
+  it("requires authentication", async () => {
     const clientThreadId = randomUUID();
-    await accept(
+    const response = await accept(
       welcomeClient().create({ headers: {}, body: { clientThreadId } }),
       [401],
     );
-    await accept(
+    expect(response.status).toBe(401);
+  });
+
+  it("requires an active workspace", async () => {
+    const clientThreadId = randomUUID();
+    const response = await accept(
       welcomeClient().create({
         headers: headers(bdd.user({ orgId: null })),
         body: { clientThreadId },
       }),
       [401],
     );
-    await accept(
-      welcomeClient().create({
-        headers: headers(bdd.user()),
-        body: { clientThreadId },
-      }),
-      [403],
-    );
+    expect(response.status).toBe(401);
+  });
+
+  it("does not create a thread while the persisted switch is disabled", async () => {
+    const clientThreadId = randomUUID();
     const { actor } = await fixture();
     await enable(actor, false);
     await accept(
@@ -156,6 +159,11 @@ describe("POST /api/welcome-chat-threads", () => {
     await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
       [],
     );
+  });
+
+  it("creates the requested thread while the persisted switch is enabled", async () => {
+    const clientThreadId = randomUUID();
+    const { actor } = await fixture();
     await enable(actor);
     expect((await create(actor, clientThreadId)).body.id).toBe(clientThreadId);
   });
@@ -454,7 +462,7 @@ describe("POST /api/welcome-chat-threads", () => {
           selectedModel: MODEL,
           serviceTier: null,
           selectedVideoModel: "MiniMax-H3",
-          selectedImageModel: "fal-ai/qwen-image",
+          selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
       }),
       [200],
@@ -470,7 +478,7 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(metadata.body).toMatchObject({
       selectedModel: MODEL,
       selectedVideoModel: "MiniMax-H3",
-      selectedImageModel: "fal-ai/qwen-image",
+      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
   });
 });

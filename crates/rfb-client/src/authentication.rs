@@ -2,24 +2,30 @@
 // ab684d009d767c968af2f7559576334038623124 (MIT; see ../LICENSE-vnc-rs).
 // DES is supplied by RustCrypto, not the upstream custom implementation.
 
+use std::future::Future;
+
 use des::cipher::{Block, BlockCipherEncrypt, KeyInit};
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::time::Instant;
 use tokio_rustls::TlsConnector;
 use zeroize::Zeroizing;
 
-use crate::{Authenticated, Error, TrustRoots, VncPassword};
+use crate::{
+    Authenticated, AuthenticationStage, Error, PlainCredentials, TrustRoots, VncPassword,
+    X509Authentication,
+};
 
 const RFB_VERSION: &[u8; 12] = b"RFB 003.008\n";
 const VENCRYPT: u8 = 19;
-const X509_VNC: u32 = 261;
 const MAX_ERROR_BYTES: u32 = 4096;
 
 pub(crate) async fn authenticate<S>(
     mut stream: S,
     server_name: &str,
-    password: VncPassword,
+    authentication: X509Authentication,
     roots: TrustRoots,
+    deadline: Instant,
 ) -> Result<Authenticated<S>, Error>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -28,6 +34,61 @@ where
         .map_err(|_| Error::InvalidServerName)?
         .to_owned();
     let config = roots.into_config()?;
+
+    phase(
+        AuthenticationStage::RfbVersion,
+        deadline,
+        exchange_version(&mut stream),
+    )
+    .await?;
+    let subtype = authentication.subtype();
+    phase(
+        AuthenticationStage::SecurityNegotiation,
+        deadline,
+        negotiate_security(&mut stream, subtype),
+    )
+    .await?;
+    let mut stream = phase(AuthenticationStage::TlsHandshake, deadline, async {
+        TlsConnector::from(config)
+            .connect(server_name, stream)
+            .await
+            .map_err(Error::Tls)
+    })
+    .await?;
+    let stage = authentication.stage();
+    phase(
+        stage,
+        deadline,
+        authenticate_x509(&mut stream, authentication),
+    )
+    .await?;
+
+    Ok(Authenticated { stream })
+}
+
+async fn phase<T>(
+    stage: AuthenticationStage,
+    deadline: Instant,
+    future: impl Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    let expired = || Error::AuthenticationDeadlineExceeded { stage };
+    // timeout_at polls a ready future before its timer, so check both boundaries.
+    if deadline <= Instant::now() {
+        return Err(expired());
+    }
+    let value = tokio::time::timeout_at(deadline, future)
+        .await
+        .map_err(|_| expired())??;
+    if deadline <= Instant::now() {
+        return Err(expired());
+    }
+    Ok(value)
+}
+
+async fn exchange_version<S>(stream: &mut S) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut version = [0; 12];
     stream.read_exact(&mut version).await?;
     if &version != RFB_VERSION {
@@ -35,10 +96,16 @@ where
     }
     stream.write_all(RFB_VERSION).await?;
     stream.flush().await?;
+    Ok(())
+}
 
+async fn negotiate_security<S>(stream: &mut S, subtype: u32) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let count = stream.read_u8().await?;
     if count == 0 {
-        discard_reason(&mut stream).await?;
+        discard_reason(stream).await?;
         return Err(Error::ServerRejected);
     }
     let mut types = vec![0; usize::from(count)];
@@ -63,21 +130,40 @@ where
     let count = stream.read_u8().await?;
     let mut offered = false;
     for _ in 0..count {
-        offered |= stream.read_u32().await? == X509_VNC;
+        offered |= stream.read_u32().await? == subtype;
     }
     if !offered {
         return Err(Error::UnsupportedSecurity);
     }
-    stream.write_u32(X509_VNC).await?;
+    stream.write_u32(subtype).await?;
     stream.flush().await?;
     if stream.read_u8().await? != 1 {
         return Err(Error::NegotiationRejected);
     }
+    Ok(())
+}
 
-    let mut stream = TlsConnector::from(config)
-        .connect(server_name, stream)
-        .await
-        .map_err(Error::Tls)?;
+async fn authenticate_x509<S>(
+    stream: &mut tokio_rustls::client::TlsStream<S>,
+    authentication: X509Authentication,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    match authentication {
+        X509Authentication::None => read_security_result(stream).await,
+        X509Authentication::VncPassword(password) => authenticate_vnc(stream, password).await,
+        X509Authentication::Plain(credentials) => authenticate_plain(stream, credentials).await,
+    }
+}
+
+async fn authenticate_vnc<S>(
+    stream: &mut tokio_rustls::client::TlsStream<S>,
+    password: VncPassword,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut challenge = [0; 16];
     stream.read_exact(&mut challenge).await?;
     // Erase password and DES key before awaiting the write or SecurityResult.
@@ -86,10 +172,38 @@ where
     stream.flush().await?;
     drop(response);
 
+    read_security_result(stream).await
+}
+
+async fn authenticate_plain<S>(
+    stream: &mut tokio_rustls::client::TlsStream<S>,
+    credentials: PlainCredentials,
+) -> Result<(), Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let username_length =
+        u32::try_from(credentials.username.len()).map_err(|_| Error::InvalidPlainUsername)?;
+    let password_length =
+        u32::try_from(credentials.password.len()).map_err(|_| Error::InvalidPlainPassword)?;
+    stream.write_u32(username_length).await?;
+    stream.write_u32(password_length).await?;
+    stream.write_all(&credentials.username).await?;
+    stream.write_all(&credentials.password).await?;
+    stream.flush().await?;
+    // Erase both fields before waiting for a potentially silent peer result.
+    drop(credentials);
+    read_security_result(stream).await
+}
+
+async fn read_security_result<S>(stream: &mut S) -> Result<(), Error>
+where
+    S: AsyncRead + Unpin,
+{
     match stream.read_u32().await? {
-        0 => Ok(Authenticated { stream }),
+        0 => Ok(()),
         1 => {
-            discard_reason(&mut stream).await?;
+            discard_reason(stream).await?;
             Err(Error::AuthenticationFailed)
         }
         _ => Err(Error::InvalidAuthenticationResult),

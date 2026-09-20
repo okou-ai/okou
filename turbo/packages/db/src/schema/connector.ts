@@ -32,6 +32,10 @@ export const connectors = pgTable(
     displayName: varchar("display_name", { length: 255 }),
     isDefault: boolean("is_default").default(true).notNull(),
     authMethod: varchar("auth_method", { length: 50 }).notNull(), // "oauth"
+    // Builtin Automatic keeps the catalog method ID and records its resolution separately.
+    automaticAuthType: varchar("automatic_auth_type", { length: 8 }).$type<
+      "none" | "oauth"
+    >(),
     storageVersion: bigint("storage_version", { mode: "number" }).notNull(),
 
     // External account info (from OAuth)
@@ -108,6 +112,14 @@ export const connectors = pgTable(
       check(
         "chk_connectors_storage_version_positive",
         sql`${table.storageVersion} > 0`,
+      ),
+      check(
+        "chk_connectors_automatic_auth_type",
+        sql`${table.automaticAuthType} IS NULL OR (
+          ${table.connectorSlug} IS NOT NULL
+          AND ${table.automaticAuthType} IN ('none', 'oauth')
+          AND (${table.automaticAuthType} <> 'none' OR ${table.tokenExpiresAt} IS NULL)
+        )`,
       ),
     ];
   },

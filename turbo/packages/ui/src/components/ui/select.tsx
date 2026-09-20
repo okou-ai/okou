@@ -230,7 +230,6 @@ type SelectContentProps = SelectPrimitive.Popup.Props &
   SelectPositionerProps & {
     hideScrollButtons?: boolean;
     position?: "item-aligned" | "popper";
-    portalContainer?: HTMLElement | null;
     viewportClassName?: string;
   };
 
@@ -247,7 +246,6 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       collisionBoundary,
       collisionPadding,
       hideScrollButtons = false,
-      portalContainer,
       position = "popper",
       positionMethod = "fixed",
       side = "bottom",
@@ -263,7 +261,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       alignItemWithTrigger ?? position === "item-aligned";
 
     return (
-      <SelectPrimitive.Portal container={portalContainer}>
+      <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
           align={align}
           alignItemWithTrigger={resolvedAlignItemWithTrigger}

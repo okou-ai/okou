@@ -65,6 +65,8 @@ surface; the index does not replace their detailed rules.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
   dated sink/copy inventory, provider capability gaps, and the parent-worker
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
+- [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
+  scope, canonical chat history, checksum semantics, and download compatibility.
 - [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
   account-erasure admission, retained thread/run identity, SQL cost inventory
   and failure boundaries for minting cloud-browser authorization links.
@@ -102,7 +104,7 @@ surface; the index does not replace their detailed rules.
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.
 - [Connector catalog v4 consumption](./connector-catalog-v4.md): v4 sync, the
-  temporary accepted-v3 read bridge, capability filtering and rollback boundaries.
+  v4-only accepted-snapshot reader, capability filtering and rollback boundaries.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
@@ -139,8 +141,9 @@ surface; the index does not replace their detailed rules.
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
   identities, API configuration, Oregon-first model routing, and rollout gates.
-- [Google Ads browser routing](./google-ads-browser-routing.md): verified account
-  ownership, conversion actions, rollout compatibility, and historical recovery.
+- [Retired App browser attribution](./google-ads-browser-routing.md): the
+  Marketing-owned boundary, App cleanup, rollout compatibility, and historical
+  field inventory.
 - [Connector inspection JSON](./connector-inspection-json.md): command output
   contracts, current versus run evidence, account identity, and next actions.
 - [Social collection output](./social-collection-output.md): aggregate and
@@ -156,7 +159,6 @@ surface; the index does not replace their detailed rules.
   thread-scoped card signals, and rendering rich interactive cards.
 - [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
   ordering, delayed events, visibility, and the newest-20 boundary.
-- [Durable Pi Sandbox consumer](./pi-deferred-sandbox-consumer.md): captured objects, demand admission, continuation readers and release proof.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):

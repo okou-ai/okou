@@ -115,9 +115,7 @@ test("An unavailable activity shows a clear not-found page", async () => {
     });
   });
 
-  await expect(
-    setupPage({ context, path: `/activities/${RUN_ID}` }),
-  ).rejects.toThrow("Log not found");
+  await setupPage({ context, path: `/activities/${RUN_ID}` });
 
   await expect(
     screen.findByRole("heading", { name: "Log not found" }),

@@ -74,7 +74,13 @@ and 64 KiB; do not paste private keys or leaf server certificates. The server
 certificate must identify the configured hostname or IP address. Saving a host
 records configuration; it does not test reachability or authenticate a session.
 
-Grant VNC access explicitly using the card's Agent access control or the Agent's
+Adding the first VNC host automatically grants access to every Agent currently
+visible to the owner, including another workspace member's public Agents. The
+host and grants commit atomically. Adding later hosts preserves manual revocations
+and does not grant Agents created afterward. After every host is deleted, adding
+one again repeats this onboarding default for the Agents visible at that time.
+
+Manage VNC access explicitly using the card's Agent access control or the Agent's
 authorization tab. This grant is independent of SSH and permits access to the
 owner's current and future configured VNC hosts. Agents select shared or exclusive
 mode when opening each session; the server decides admission and may override
@@ -193,9 +199,10 @@ the verified Runner enforcement in #34780.
 ## Verification
 
 Route integration tests exercise auth, current membership, owner isolation,
-rejoined owner access, secret-free output, validation, live-resource retries, recreation
-after deletion, optimistic concurrency, rotation, inline rollback and scoped
-cleanup through production HTTP boundaries.
+rejoined owner access, secret-free output, validation, zero-to-one Agent grants,
+concurrent first-host creation, live-resource retries, recreation after deletion,
+optimistic concurrency, rotation, inline rollback and scoped cleanup through
+production HTTP boundaries.
 The dedicated migration test validates database ownership and version/trust
 constraints on a disposable schema. Broader API tests and required checks run
 in the PR pipeline.

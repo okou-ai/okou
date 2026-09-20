@@ -14,6 +14,33 @@ and Agent/model discovery and empty conversation creation in #35102.
 Results include both structured content and a
 JSON text representation.
 
+## Tool errors and CLI exit status
+
+MCP server-declared tool failures use `isError: true` and content for human
+inspection; MCP does not require structured error metadata. Okou chat tools also
+return the optional `structuredContent.error` extension with a stable `code`,
+human-readable `message`, explicit `retryable` boolean, and optional bounded
+validation `issues` containing field paths, issue codes and messages. Invalid
+tool arguments use `invalid_arguments`; an idempotency key reused for a different
+request uses `request_id_conflict`. A retryable value is metadata, not permission
+to automatically replay a tool call.
+
+For `okou mcp call`, a successful invocation exits `0`. A server result with
+`isError: true`, a protocol failure, a transport failure, or an action-level
+client failure exits nonzero. Successful `--json` output remains the raw MCP
+result. Failed `--json` output uses `{status:"error", error:{kind,code,message,retryable}}`;
+server-declared tool failures also preserve the complete raw MCP result under
+`result`. When the optional Okou extension is absent or invalid, the CLI reports
+`tool` / `tool_error` with a fixed generic message; it does not infer machine
+fields from human text. Without `--json`, tool errors continue to print the
+complete raw result for inspection before exiting nonzero. Commander syntax and
+option-conflict errors occur before the action and retain the CLI's standard
+error format.
+
+The CLI never automatically retries a tool call. A timeout, connection failure,
+or error result does not prove that a remote side effect did not happen; follow
+the tool's documented idempotency and inspection guidance before retrying.
+
 ## Starting a conversation
 
 Call `list_agents` and `list_models` before `create_chat_thread`. Discovery
@@ -180,8 +207,7 @@ archive-complete unread history. Missing activity does not prove a run succeeded
 `unread: false` does not prove every historical result was read.
 
 Listing and reading never mark a thread read, change recency or reconcile model
-settings. The MCP catalog replaces `get_indicators` with these two tools; the
-first-party indicators API and its existing sparse semantics remain unchanged.
+settings.
 
 ## Message history
 
@@ -627,24 +653,26 @@ consent or token issuance. Do not treat their success as completing this gate.
 
 ### Login and consent return
 
-Keep Clerk's default Account Portal OAuth consent page. The App derives its
-trusted Account Portal origin from the active Clerk publishable key and preserves
-only that instance's HTTPS `/oauth-consent` return. This origin is shared with
-Clerk's redirect validation; client callback URLs are not App login destinations.
-The original consent query survives login, registration and switching between
-them. A fully active session on a root auth route continues through
-`clerk.redirectWithAuth()`, which carries development browser authentication
-across origins. Pending session tasks, factor routes and explicit authentication
-or account-selection intents remain with Clerk's forms. Consent and organization
-selection still happen on Clerk's hosted page.
+Host Clerk's prebuilt `<OAuthConsent />` on the App's `/oauth-consent` route.
+The component keeps Clerk's consent metadata, organization selection, scope
+rendering, allow/deny submission and redirect validation while avoiding the
+Account Portal's separately challenged static assets. The App accepts only its
+own exact HTTPS `/oauth-consent` URL as a completed-session consent continuation;
+client callback URLs are not App login destinations. The original consent query
+survives login, registration and switching between them. A fully active session
+on a root auth route continues through `clerk.redirectWithAuth()`. Pending
+session tasks, factor routes and explicit authentication or account-selection
+intents remain with Clerk's forms.
 
 In the development Clerk Dashboard **Paths**, point sign-in and sign-up to the
 local App (`https://app.vm7.ai:8443/sign-in` and
-`https://app.vm7.ai:8443/sign-up`). The Marketing service does not host these
-pages. Keep OAuth consent on the default Account Portal. Production uses
+`https://app.vm7.ai:8443/sign-up`) and set **OAuth consent** to
+`/oauth-consent`; Clerk resolves that path on the configured local development
+host. The Marketing service does not host these pages. Production uses
 `https://app.okou.ai/sign-in`, `https://app.okou.ai/sign-up` and
-`https://accounts.okou.ai/oauth-consent`. No additional App environment variable
-is needed for the default hosted consent page.
+`https://app.okou.ai/oauth-consent`. Deploy the App route before changing either
+Clerk instance's path, then verify one allow and one deny flow in that environment.
+No additional App environment variable is required.
 
 ## HTTP behavior
 
@@ -677,16 +705,16 @@ metadata supports public cross-origin discovery.
 ## Acceptance evidence
 
 Automated route tests use real Hono routing, SDK transport, RSA signature checks,
-the membership service, feature overrides and the indicators projection. Only
-external provider/network boundaries are simulated. They cover both protocol
-eras, complete response consumption, invalid grants, scope/membership isolation,
-Origin checks and provider outages.
+the membership service and feature overrides. Only external provider/network
+boundaries are simulated. They cover both protocol eras, complete response
+consumption, invalid grants, scope/membership isolation, Origin checks and
+provider outages.
 
 Before enabling broader access, record a generic MCP client/Inspector check
 against a real hosted preview or staging endpoint, including complete JSON and
-SSE response delivery. Then record basic OAuth, discovery and indicators results
-for Claude, ChatGPT, Claude Code and Codex, with client version/account conditions.
-Local HTTP tests do not establish hosted-client reachability. OAuth foundation
-and discovery shipped separately in #34931 and #34932. The client matrix for the
-full tool set remains #34936; the new message-reader tests do not establish that
-broader hosted acceptance.
+SSE response delivery. Then record basic OAuth, discovery and current-tool
+workflow results for Claude, ChatGPT, Claude Code and Codex, with client
+version/account conditions. Local HTTP tests do not establish hosted-client
+reachability. OAuth foundation and discovery shipped separately in #34931 and
+#34932. The client matrix for the full tool set remains #34936; the new
+message-reader tests do not establish that broader hosted acceptance.

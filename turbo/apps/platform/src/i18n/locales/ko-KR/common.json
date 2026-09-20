@@ -114,6 +114,7 @@
         "time": "시간"
       },
       "log": "로그",
+      "manualReloadNotice": "최신 활동 로그를 보려면 이 페이지를 새로고침하세요.",
       "modelProvidedBy": "{{provider}}에서 제공하는 {{model}}",
       "networkEmpty": {
         "description": "이 실행에 대한 네트워크 트래픽이 기록되지 않았습니다.",
@@ -444,6 +445,7 @@
       "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
       "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
       "signedInAs": "{{email}} 계정으로 로그인됨",
+      "signedInDescription": "존재하지 않거나 다른 계정 또는 조직에 공유되었을 수 있습니다.",
       "signIn": "로그인",
       "signInFailed": "로그인 화면을 열 수 없습니다. 다시 시도해 주세요.",
       "switchAccount": "계정 전환",
@@ -503,7 +505,7 @@
       "description": "여기에서 생성한 모든 항목을 탐색하세요.",
       "emptyDescription": "아티팩트가 준비되면 여기에 표시됩니다.",
       "emptyTitle": "아티팩트를 찾을 수 없습니다",
-      "error": "아티팩트를 불러올 수 없습니다. 나중에 다시 시도하세요.",
+      "error": "아티팩트를 불러올 수 없습니다.",
       "filters": {
         "avatar": "아바타",
         "avatarAria": "아바타 아티팩트 표시",
@@ -522,7 +524,8 @@
         "websiteAria": "웹사이트 아티팩트 표시"
       },
       "kindIcon": "{{kind}} 아티팩트",
-      "loading": "아티팩트 로딩 중"
+      "loading": "아티팩트 로딩 중",
+      "retry": "다시 시도"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -601,6 +604,7 @@
       "onlyMeDescription": "나만 이 아티팩트를 볼 수 있습니다",
       "organization": "조직",
       "organizationDescription": "링크가 있는 {{organization}} 구성원",
+      "organizationDescriptionUnnamed": "링크가 있는 조직 내 모든 사용자",
       "permissionsUpdated": "액세스 권한이 업데이트되었습니다",
       "publicAccess": "공개 액세스",
       "publicDescription": "링크가 있는 모든 사람이 볼 수 있습니다",
@@ -644,7 +648,6 @@
       "importedSlides_other": "{{count}}장",
       "importFile": "내 파일 가져오기",
       "importFileHint": "파일의 디자인을 재사용",
-      "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
       "multiAccent": "다중 악센트",
       "needPro": "Pro 필요",
       "nextSlide": "다음 슬라이드 미리보기",
@@ -656,7 +659,6 @@
       "previewSlide": "슬라이드 {{slideNumber}} 미리보기",
       "previewVoice": "음성 {{title}} 미리 듣기",
       "previewWebsite": "웹사이트 템플릿 {{title}} 미리보기",
-      "previousHtmlPreview": "{{title}} 이전 HTML 미리보기",
       "previousSlide": "이전 슬라이드 미리보기",
       "recommended": "추천",
       "renameImportedTemplate": "템플릿 이름 바꾸기",
@@ -1444,7 +1446,9 @@
           },
           "connector": {
             "confirm": "모든 커넥터 보기",
-            "description": "쓰던 도구를 연결해 {{assistantName}}가 그 안에서 일하게 하세요.",
+            "connected": "연결됨",
+            "description": "하나를 선택하면 {{assistantName}}이(가) 그 안에서 작업을 시작합니다.",
+            "notConnected": "연결 안 됨",
             "pickerFailed": "커넥터를 불러오지 못했습니다. 커넥터 페이지에서 다시 시도하세요.",
             "pickerLoading": "커넥터 불러오는 중…",
             "title": "{{assistantName}}는 이미 쓰고 있는 도구 안에서 일합니다"
@@ -3147,7 +3151,6 @@
       "device": {
         "checking": "승인 확인 중...",
         "connect": "{{connector}} 연결",
-        "copyThenOpen": "이 코드를 복사한 후 인증 페이지를 열어 접근 권한을 승인하세요.",
         "description": "제공자의 인증 페이지를 열고 이 인증 코드를 입력하여 접근 권한을 승인하세요.",
         "intro": "인증 코드를 받으려면 연결하고, 제공자의 인증 페이지에서 사용하여 접근 권한을 승인하세요.",
         "openPage": "인증 페이지 열기",
@@ -3474,21 +3477,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "승인된 발신자",
+        "codeExpiry": "10분 후 만료",
         "connectAria": "전화 연결",
-        "connectDescription": "연결하려는 휴대폰에서 이 AgentPhone 번호로 메시지를 보내세요.",
+        "connectDescription": "코드를 스캔하거나 메시지 앱을 연 다음, 미리 입력된 코드를 보내세요.",
         "connectTitle": "전화 연결",
         "copyAria": "{{phone}} 복사",
+        "copyCodeAria": "연결 코드 {{code}} 복사",
+        "copyCodeError": "연결 코드를 복사하지 못했습니다",
+        "copyCodeSuccess": "연결 코드를 복사했습니다",
         "copyError": "전화번호 복사 실패",
         "copySuccess": "전화번호가 복사되었습니다",
+        "createCodeError": "연결 코드를 만들지 못했습니다. 다시 시도하세요.",
+        "creatingCode": "연결 코드 만드는 중…",
         "description": "{{assistantName}}에 문자 메시지 접근",
         "destination": "iMessage 또는 SMS 수신처",
-        "messageInstruction": "“hi” 보내기",
+        "manualSend": "또는",
+        "manualSendTo": "코드를 다음 번호로 전송:",
         "openMessages": "메시지 열기",
         "options": "전화 옵션",
         "phoneLabel": "전화",
-        "replyInstruction": "10분 안에 연결 링크를 열어 완료하세요.",
-        "replyTitle": "답장 열기",
-        "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다."
+        "qrTitle": "스캔하여 연결 코드가 미리 입력된 메시지 앱 열기",
+        "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다.",
+        "tryAgain": "다시 시도"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -4125,6 +4135,489 @@
       "checkingPlan": "플랜 확인 중",
       "runNow": "지금 실행",
       "upgradePro": "실행하려면 Pro로 업그레이드하세요"
+    },
+    "sourcesFirst": {
+      "common": {
+        "back": "뒤로",
+        "cancel": "취소",
+        "continue": "계속",
+        "finish": "설정 완료",
+        "notNow": "나중에",
+        "skip": "지금은 건너뛰기"
+      },
+      "documentTitles": {
+        "experience": "AI 사용 경험",
+        "industry": "분야 선택",
+        "ready": "Okou 준비 완료",
+        "skills": "스킬 가져오기",
+        "slack": "Slack에 Okou 추가",
+        "sources": "업무 연결",
+        "team": "팀원 초대"
+      },
+      "experience": {
+        "copy": "이미 쓰고 있는 플랜을 연결하면 Okou 크레딧이 아니라 그 플랜에서 실행됩니다.",
+        "no": "아니요, 처음입니다",
+        "noCopy": "Okou가 첫 작업을 골라 드립니다.",
+        "title": "Codex나 Claude Code를 써 본 적 있나요?"
+      },
+      "industries": {
+        "coaching": {
+          "name": "코칭·교육",
+          "summary": "코칭, 강의, 교육"
+        },
+        "consulting": {
+          "name": "독립 컨설팅",
+          "summary": "경영·인사·IT 자문"
+        },
+        "design": {
+          "name": "디자인·크리에이티브",
+          "summary": "그래픽, 웹사이트, 크리에이티브 작업"
+        },
+        "finance": {
+          "name": "회계·기장",
+          "summary": "장부, 보고서, 대사"
+        },
+        "investing": {
+          "name": "투자·시장 조사",
+          "summary": "투자, 시장, 포트폴리오"
+        },
+        "marketing": {
+          "name": "마케팅·콘텐츠",
+          "summary": "소셜 미디어, 콘텐츠, 브랜드"
+        },
+        "operations": {
+          "name": "경영·운영",
+          "summary": "사업주, 어시스턴트, 운영 담당"
+        },
+        "other": {
+          "name": "기타 / 아직 탐색 중",
+          "summary": "다른 분야이거나 아직 탐색 중"
+        },
+        "research": {
+          "name": "리서치·학습",
+          "summary": "조사, 학습, 연구"
+        },
+        "sales": {
+          "name": "영업·고객 개발",
+          "summary": "잠재 고객 발굴, 영업, 고객 성장"
+        },
+        "software": {
+          "name": "소프트웨어·앱",
+          "summary": "앱, 게임, 개발"
+        }
+      },
+      "industry": {
+        "copy": "첫 작업과 그 작업이 시작할 소스를 고르는 데 사용합니다.",
+        "title": "어떤 일을 하시나요?"
+      },
+      "skills": {
+        "confirm": "가져오고 계속",
+        "copy": "SKILL.md를 가져오면 Okou의 워크플로가 되어 /로 바로 실행할 수 있습니다.",
+        "import": "파일 선택",
+        "importedCopy": "Okou 워크플로로 가져왔습니다.",
+        "importedTitle": "워크플로가 준비됐습니다",
+        "panelCopy": "Codex, Claude Code 또는 SKILL.md를 작성하는 어떤 에이전트에서든.",
+        "panelTitle": "여기에 SKILL.md를 놓으세요",
+        "previewCopy": "Okou 워크플로로 가져옵니다. 공유하기 전까지는 본인만 사용할 수 있습니다.",
+        "previewTitle": "스킬 확인",
+        "replace": "다른 파일 선택",
+        "title": "이미 써 둔 스킬을 그대로 가져오세요."
+      },
+      "slack": {
+        "add": "Slack에 추가",
+        "connectedCopy": "Slack에서 @Okou을 멘션해 일을 맡기세요.",
+        "connectedStatus": "워크스페이스에 추가됨",
+        "connectedTitle": "Slack이 연결됐습니다",
+        "copy": "한 번만 추가하면, 일이 오가는 곳에서 @Okou을 부르기만 하면 됩니다.",
+        "otherAdded": "추가됨",
+        "otherImessage": "iMessage",
+        "othersLabel": "지금 추가해도, 나중에 해도 됩니다",
+        "otherTeams": "Teams",
+        "otherTelegram": "Telegram",
+        "previewAppBadge": "APP",
+        "previewAsk": "지난주 가입을 소스별로 뽑아서 광고 계정과 대조하고, 표를 시트에 정리해 줘.",
+        "previewAskAuthor": "Mia Chen",
+        "previewChannel": "# growth",
+        "previewChannelGeneral": "# general",
+        "previewChannelLaunch": "# launch",
+        "previewChannelsLabel": "채널",
+        "previewChannelTopic": "주간 지표와 다음 출시 내용",
+        "previewComposer": "#growth에 메시지 보내기",
+        "previewContext": "이사회가 목요일인데 지난주 숫자를 아직 못 드렸어요.",
+        "previewContextAuthor": "Dan Rivera",
+        "previewContextTime": "9:06 AM",
+        "previewDirectMessagesLabel": "다이렉트 메시지",
+        "previewMention": "@Okou",
+        "previewReplies": "댓글 3개",
+        "previewReply": "지난주 가입은 1,284건으로 1,088건 대비 18% 늘었습니다. 시트는 스레드에 있습니다.",
+        "previewReplyAuthor": "Okou",
+        "previewReplyTime": "9:16 AM",
+        "previewTime": "9:14 AM",
+        "previewWorkspace": "Northwind",
+        "rowCopy": "추가한 채널이면 어디서든 동작합니다.",
+        "rowTitle": "Okou for Slack",
+        "title": "Slack을 떠나지 않고 Okou에게 일을 맡기세요."
+      },
+      "sources": {
+        "copy": "클라우드에서, 팀이 이미 쓰는 도구로 일합니다. 성과는 10배, 운영 부담은 더 적게, 비용은 더 낮게. 소스를 하나 연결해 시작하세요.",
+        "note": "어떤 계정을 연결할지는 직접 고릅니다.",
+        "searchAction": "업무에 쓸 소스 찾기",
+        "searchCopy": "작업이나 앱 이름으로 전체 카탈로그를 검색하세요.",
+        "searchEmpty": "일치하는 소스가 없습니다",
+        "searchPlaceholder": "작업 또는 앱 이름으로 검색",
+        "searchTitle": "업무에 쓸 소스 찾기",
+        "title": "Okou는 당신의 것이자, 팀 전체가 함께 쓰는 것입니다."
+      },
+      "startingPrompt": {
+        "exact": {
+          "finance_quickbooks": {
+            "outcome": "이번 달 마감 현황",
+            "question": "어느 회사의 어느 보고 월을 볼까요?",
+            "text": "QuickBooks에서 지난달 수입, 지출, 연체 청구서를 정리해 줘. 확인할 항목을 짧은 목록으로 줘."
+          },
+          "finance_xero": {
+            "outcome": "이번 달 마감 현황",
+            "question": "어느 조직의 어느 보고 월을 볼까요?",
+            "text": "Xero에서 지난달 수입, 지출, 연체 청구서를 정리해 줘. 확인할 항목을 짧은 목록으로 줘."
+          },
+          "marketing_google_ads": {
+            "outcome": "다음 캠페인 테스트 아이디어 3가지",
+            "question": "어느 계정, 캠페인, 목표에 집중할까요?",
+            "text": "지난주 Google Ads 결과를 보고 다음에 살펴보거나 테스트할 것을 3가지 제안해 줘. 변경은 제안으로만 남겨 줘."
+          },
+          "marketing_google_analytics": {
+            "outcome": "트래픽에서 찾은 기회 3가지",
+            "question": "어느 속성과 전환 목표를 쓸까요?",
+            "text": "지난주 Google Analytics 트래픽을 보고 콘텐츠나 랜딩 페이지를 개선할 기회를 3가지 제안해 줘."
+          },
+          "marketing_google_search_console": {
+            "outcome": "진행할 콘텐츠 개선 5가지",
+            "question": "어느 사이트의 어느 기간을 볼까요?",
+            "text": "최근 Google Search Console 결과를 보고 검색어와 페이지를 근거로 콘텐츠 개선안 5가지를 제안해 줘."
+          },
+          "marketing_meta_ads": {
+            "outcome": "다음 크리에이티브 테스트 아이디어 3가지",
+            "question": "어느 캠페인과 오디언스에 집중할까요?",
+            "text": "지난주 Meta Ads 결과를 보고 다음에 테스트할 크리에이티브 아이디어를 3가지 제안해 줘. 변경은 제안으로만 남겨 줘."
+          },
+          "marketing_tiktok_ads": {
+            "outcome": "다음 크리에이티브 테스트 아이디어 3가지",
+            "question": "어느 캠페인과 오디언스에 집중할까요?",
+            "text": "지난주 TikTok Ads 결과를 보고 다음에 테스트할 크리에이티브 아이디어를 3가지 제안해 줘. 변경은 제안으로만 남겨 줘."
+          },
+          "marketing_youtube": {
+            "outcome": "다음 영상 아이디어 5가지",
+            "question": "어느 채널의 어떤 영상을 볼까요?",
+            "text": "최근 YouTube 영상을 보고 성과와 시청자 반응을 근거로 이어서 다룰 주제를 5가지 제안해 줘."
+          },
+          "sales_google_contacts": {
+            "outcome": "다시 연락할 사람들",
+            "question": "어떤 잠재 고객과 다시 연락하고 싶나요?",
+            "text": "Google 주소록을 보고 영업을 위해 다시 연락할 사람을 추려 줘. 좋은 잠재 고객의 조건을 먼저 물어봐."
+          },
+          "sales_hubspot": {
+            "outcome": "진전시킬 거래 5건",
+            "question": "어느 파이프라인이나 담당자에 집중할까요?",
+            "text": "HubSpot의 진행 중인 거래를 보고 이번 주에 챙길 후속 작업 5건을 이유와 함께 제안해 줘."
+          },
+          "software_github": {
+            "outcome": "고객이 읽을 수 있는 릴리스 노트",
+            "question": "어느 저장소의 어느 릴리스부터 시작할까요?",
+            "text": "지난주 GitHub 변경 사항을 고객용 릴리스 노트로 정리해 줘. 어느 저장소를 쓸지 물어봐."
+          },
+          "software_linear": {
+            "outcome": "프로젝트 진행 상황을 한곳에",
+            "question": "Linear의 어느 프로젝트에 집중할까요?",
+            "text": "Linear의 현재 작업을 완료된 것, 막힌 것, 다음 우선순위로 정리해 줘. 어느 프로젝트인지 물어봐."
+          }
+        },
+        "fallback": {
+          "calendar": {
+            "outcome": "다가오는 회의 준비 완료",
+            "question": "어느 캘린더의 어떤 회의를 준비할까요?",
+            "text": "{{source}}에 있는 다가오는 {{short}} 회의를 보고 짧은 준비 체크리스트를 만들어 줘. 어느 캘린더를 쓸지 물어봐."
+          },
+          "generic": {
+            "outcome": "{{source}}로 시작하는 첫 작업",
+            "question": "이 소스로 무엇을 이루고 싶나요?",
+            "text": "{{short}} 업무에서 {{source}}를 활용하도록 도와줘. 먼저 무엇을 이루고 싶은지 묻고, 거기 있는 정보로 할 수 있는 작업을 하나 제안해 줘."
+          },
+          "noSource": {
+            "question": "먼저 무엇에 집중할까요?"
+          },
+          "projects": {
+            "outcome": "다음 프로젝트 우선순위",
+            "question": "어느 프로젝트나 워크스페이스부터 시작할까요?",
+            "text": "{{source}}에 있는 내 {{short}} 업무를 보고 열린 작업, 막힌 부분, 다음 단계를 정리해 줘. 어느 프로젝트인지 물어봐."
+          }
+        },
+        "family": {
+          "coaching_calendar": {
+            "outcome": "다가오는 세션 준비 완료",
+            "question": "어느 캘린더와 어떤 세션 목표를 쓸까요?",
+            "text": "{{source}}의 이번 주 코칭 세션을 보고 세션마다 아젠다를 준비하도록 도와줘. 세션 목표를 물어봐."
+          },
+          "coaching_documents": {
+            "outcome": "고객을 위한 실행 계획",
+            "question": "어느 세션 노트를 실행 계획으로 만들까요?",
+            "text": "{{source}}의 세션 노트를 연습 3가지와 다음 세션의 초점이 담긴 고객 실행 계획으로 만들어 줘. 어느 노트를 쓸지 물어봐."
+          },
+          "coaching_email": {
+            "outcome": "다음 세션 아젠다",
+            "question": "어느 고객을 준비할까요?",
+            "text": "코칭 고객의 최근 {{source}} 메일을 보고 그들의 질문과 목표를 중심으로 다음 세션 아젠다를 작성해 줘."
+          },
+          "coaching_sheets": {
+            "outcome": "점검이 필요한 학습자 목록",
+            "question": "어느 학습자 진도 시트를 쓸까요?",
+            "text": "{{source}}의 학습자 진도 시트를 보고 누구를 챙겨야 하고 무엇을 다뤄야 할지 제안해 줘. 어느 시트인지 물어봐."
+          },
+          "consulting_documents": {
+            "outcome": "고객 브리프로 만든 제안서",
+            "question": "어느 고객 브리프를 제안서로 만들까요?",
+            "text": "{{source}}의 고객 브리프를 범위, 산출물, 미해결 질문이 담긴 제안서 개요로 만들어 줘. 어느 브리프인지 물어봐."
+          },
+          "consulting_email": {
+            "outcome": "다음 고객 후속 연락",
+            "question": "어느 고객 대화를 쓸까요?",
+            "text": "{{source}}의 최근 고객 대화를 보고 합의된 다음 단계와 확인할 질문을 담은 후속 메일을 작성해 줘."
+          },
+          "consulting_sheets": {
+            "outcome": "고객에게 보낼 진행 보고",
+            "question": "어느 고객 프로젝트 트래커부터 볼까요?",
+            "text": "{{source}}의 고객 프로젝트 트래커를 보고 리스크와 다음 단계가 담긴 짧은 진행 보고를 써 줘. 어느 시트인지 물어봐."
+          },
+          "design_documents": {
+            "outcome": "명확한 크리에이티브 방향",
+            "question": "어느 프로젝트 폴더나 브리프부터 시작할까요?",
+            "text": "{{source}}의 프로젝트 폴더나 브리프를 바탕으로 크리에이티브 방향, 에셋 체크리스트, 다음 단계를 정리해 줘. 어느 프로젝트인지 물어봐."
+          },
+          "design_email": {
+            "outcome": "고객 피드백에서 만든 브리프",
+            "question": "어느 고객 대화를 브리프로 만들까요?",
+            "text": "{{source}}의 최근 고객 대화를 목표, 산출물, 미해결 질문이 담긴 크리에이티브 브리프로 만들어 줘."
+          },
+          "design_sheets": {
+            "outcome": "다음 디자인 우선순위",
+            "question": "어느 프로젝트 트래커를 볼까요?",
+            "text": "{{source}}의 프로젝트 트래커를 디자인 우선순위, 마감일, 빠진 에셋 목록으로 만들어 줘. 어느 시트인지 물어봐."
+          },
+          "finance_documents": {
+            "outcome": "월말 마감 체크리스트",
+            "question": "어느 월말 메모를 기준으로 할까요?",
+            "text": "{{source}}의 월말 메모를 누락된 자료, 미해결 질문, 고객 확인 사항 체크리스트로 만들어 줘. 어느 메모인지 물어봐."
+          },
+          "finance_email": {
+            "outcome": "누락 자료 요청 목록",
+            "question": "어느 고객의 어느 기간에 집중할까요?",
+            "text": "{{source}}에서 누락된 청구서나 자료에 관한 최근 고객 메일을 찾아 기장용 후속 요청 목록을 만들어 줘."
+          },
+          "finance_sheets": {
+            "outcome": "대사 검토 결과",
+            "question": "어느 대사 시트와 어느 기간을 쓸까요?",
+            "text": "{{source}}의 대사 시트를 보고 일치하지 않는 기록, 차이, 확인할 항목을 표시해 줘. 어느 시트인지 물어봐."
+          },
+          "investing_documents": {
+            "outcome": "정리된 투자 논리",
+            "question": "어느 기업이나 투자 메모를 볼까요?",
+            "text": "{{source}}의 투자 메모를 논리, 근거, 리스크, 미해결 질문이 담긴 브리프로 만들어 줘. 어느 메모인지 물어봐."
+          },
+          "investing_email": {
+            "outcome": "최근 리서치 요약",
+            "question": "어느 시장이나 리서치 메일에 집중할까요?",
+            "text": "{{source}}의 최근 시장 리서치 메일을 핵심 주제, 날짜가 있는 출처, 더 알아볼 질문으로 정리해 줘."
+          },
+          "investing_sheets": {
+            "outcome": "다음에 조사할 것",
+            "question": "어느 관심 종목과 어느 기록 기간을 쓸까요?",
+            "text": "{{source}}의 관심 종목을 보고 빠진 데이터와 기록된 수치의 변화를 짚은 뒤, 다음에 조사할 것을 3가지 제안해 줘."
+          },
+          "marketing_documents": {
+            "outcome": "브랜드 브리프로 만든 게시물 5개",
+            "question": "어느 브랜드 브리프와 어떤 오디언스부터 시작할까요?",
+            "text": "{{source}}의 브랜드 브리프를 다음 주에 올릴 소셜 게시물 5개로 만들어 줘. 어느 브리프와 오디언스인지 물어봐."
+          },
+          "marketing_email": {
+            "outcome": "고객 질문에서 나온 게시물 아이디어 5개",
+            "question": "어느 제품이나 고객 대화에 집중할까요?",
+            "text": "지난 한 주 {{source}} 메일에서 반복되는 고객 질문을 찾아 소셜 게시물 아이디어 5개로 만들어 줘."
+          },
+          "marketing_sheets": {
+            "outcome": "다음 주에 시도할 아이디어 5개",
+            "question": "콘텐츠 성과는 어느 시트에 있나요?",
+            "text": "{{source}}의 콘텐츠 성과를 보고 다음 주에 시도할 게시물 5개를 제안해 줘. 어느 시트인지 물어봐."
+          },
+          "operations_calendar": {
+            "outcome": "계획된 한 주",
+            "question": "어느 캘린더를 기준으로 계획할까요?",
+            "text": "{{source}}의 이번 주 일정을 보고 마감과 비워 둬야 할 시간을 포함한 준비 목록을 만들어 줘."
+          },
+          "operations_documents": {
+            "outcome": "팀이 따라 할 수 있는 프로세스",
+            "question": "어느 프로세스 문서를 체크리스트로 만들까요?",
+            "text": "{{source}}의 프로세스 문서를 담당자, 마감, 빠진 단계가 담긴 실용적인 체크리스트로 만들어 줘. 어느 프로세스인지 물어봐."
+          },
+          "operations_email": {
+            "outcome": "오늘 챙겨야 할 일",
+            "question": "어느 고객이나 공급업체 대화를 우선할까요?",
+            "text": "{{source}}의 오늘 고객·공급업체 메일을 정리해 줘. 급한 요청, 마감, 먼저 처리할 답장을 뽑아 줘."
+          },
+          "operations_sheets": {
+            "outcome": "다음 우선순위 3가지",
+            "question": "어느 운영 트래커를 볼까요?",
+            "text": "{{source}}의 운영 트래커를 보고 지연된 일, 막힌 부분, 다음 우선순위 3가지를 짚어 줘. 어느 시트인지 물어봐."
+          },
+          "other_documents": {
+            "outcome": "문서의 핵심만",
+            "question": "어느 문서부터 시작할까요?",
+            "text": "{{source}}의 문서를 짧은 요약과 쓸모 있는 다음 단계 3가지로 만들어 줘. 어느 문서인지 물어봐."
+          },
+          "other_email": {
+            "outcome": "받은 편지함 우선순위",
+            "question": "어느 대화에 집중할까요?",
+            "text": "{{source}}의 오늘 업무 메일을 정리하고 답장이나 결정이 필요한 것을 알려 줘."
+          },
+          "other_sheets": {
+            "outcome": "한눈에 보는 진행 상황",
+            "question": "어느 트래커를 볼까요?",
+            "text": "{{source}}의 트래커를 짧은 진행 보고와 챙겨야 할 항목 목록으로 만들어 줘. 어느 시트인지 물어봐."
+          },
+          "research_documents": {
+            "outcome": "한 장으로 정리한 리서치",
+            "question": "어느 노트나 리서치 주제에 집중할까요?",
+            "text": "{{source}}의 리서치 노트를 핵심 발견, 출처, 미해결 질문이 담긴 한 장짜리 브리프로 만들어 줘. 어느 노트인지 물어봐."
+          },
+          "research_email": {
+            "outcome": "리서치 논의 요약",
+            "question": "어느 리서치 대화를 요약할까요?",
+            "text": "{{source}}의 리서치 논의를 발견, 참고 자료, 미해결 질문으로 정리해 줘. 어느 대화인지 물어봐."
+          },
+          "research_sheets": {
+            "outcome": "리서치에서 보이는 패턴",
+            "question": "어느 데이터와 어떤 리서치 질문부터 시작할까요?",
+            "text": "{{source}}의 리서치 데이터를 보고 패턴, 빠진 정보, 더 살펴볼 만한 질문을 정리해 줘."
+          },
+          "sales_calendar": {
+            "outcome": "준비된 영업 미팅",
+            "question": "어느 영업 미팅부터 준비할까요?",
+            "text": "{{source}}의 다가오는 영업 미팅을 보고 잠재 고객마다 준비 체크리스트를 만들어 줘."
+          },
+          "sales_documents": {
+            "outcome": "다음 영업 미팅 준비 완료",
+            "question": "어느 잠재 고객을 준비할까요?",
+            "text": "{{source}}의 잠재 고객 브리프를 다음 영업 미팅용 질문과 짧은 피치로 만들어 줘. 어느 고객인지 물어봐."
+          },
+          "sales_email": {
+            "outcome": "거래를 진전시킬 후속 연락 3건",
+            "question": "어느 잠재 고객이나 메일 스레드부터 볼까요?",
+            "text": "{{source}}의 최근 잠재 고객 대화를 보고 그들의 질문과 다음 단계에 맞춘 후속 메일을 3건 작성해 줘."
+          },
+          "sales_sheets": {
+            "outcome": "후속 연락할 잠재 고객 5명",
+            "question": "어느 리드 목록과 어떤 고객 기준을 쓸까요?",
+            "text": "{{source}}의 리드 목록을 보고 시트에 이미 있는 정보만으로 후속 연락할 잠재 고객 5명을 추려 줘."
+          },
+          "software_documents": {
+            "outcome": "범위가 분명해진 기능",
+            "question": "어느 기능 브리프를 기준으로 할까요?",
+            "text": "{{source}}의 기능 브리프를 명확한 범위, 수용 기준, 미해결 질문으로 정리해 줘. 어느 브리프인지 물어봐."
+          },
+          "software_email": {
+            "outcome": "먼저 살펴볼 피드백 주제 3가지",
+            "question": "어느 제품·고객 피드백 스레드를 쓸까요?",
+            "text": "{{source}}의 최근 제품 피드백을 주제별로 묶고 먼저 살펴볼 이슈 3가지를 제안해 줘."
+          },
+          "software_sheets": {
+            "outcome": "릴리스를 막는 요소를 한곳에",
+            "question": "어느 버그·릴리스 트래커를 볼까요?",
+            "text": "{{source}}의 버그나 릴리스 트래커를 보고 막힌 요소, 담당자, 다음 단계를 정리해 줘. 어느 시트인지 물어봐."
+          }
+        },
+        "profile": {
+          "coaching": {
+            "firstTaskPrompt": "학습 목표, 활동, 마무리 과제가 있는 실전 교육 세션을 구성해 줘. 먼저 학습자와 주제를 물어봐.",
+            "firstTaskTitle": "교육 세션 구성하기",
+            "short": "코칭·교육"
+          },
+          "consulting": {
+            "firstTaskPrompt": "잠재 고객사에 대해 사업 내용, 최근 소식, 첫 미팅용 질문을 출처와 함께 정리해 줘. 회사 이름을 물어봐.",
+            "firstTaskTitle": "잠재 고객사 조사하기",
+            "short": "컨설팅"
+          },
+          "design": {
+            "firstTaskPrompt": "오디언스, 메시지, 산출물, 비주얼 방향이 담긴 크리에이티브 브리프를 함께 써 줘. 먼저 프로젝트에 대해 물어봐.",
+            "firstTaskTitle": "크리에이티브 브리프 만들기",
+            "short": "크리에이티브 작업"
+          },
+          "finance": {
+            "firstTaskPrompt": "내 기장 업무를 위한 월말 마감 체크리스트를 함께 만들어 줘. 먼저 사업과 보고 요건을 물어봐.",
+            "firstTaskTitle": "월말 체크리스트 준비하기",
+            "short": "회계"
+          },
+          "investing": {
+            "firstTaskPrompt": "사업 모델, 최근 공시, 주요 리스크, 날짜가 있는 출처가 담긴 기업 리서치 브리프를 만들어 줘. 어느 기업인지 물어봐.",
+            "firstTaskTitle": "기업 조사하기",
+            "short": "투자 리서치"
+          },
+          "marketing": {
+            "firstTaskPrompt": "경쟁사 세 곳의 공개 콘텐츠를 비교하고 우리 브랜드를 위한 관점 3가지를 제안해 줘. 어느 브랜드와 오디언스에 집중할지 물어봐.",
+            "firstTaskTitle": "경쟁사 조사하기",
+            "short": "마케팅"
+          },
+          "operations": {
+            "firstTaskPrompt": "우선순위, 마감, 회의를 중심으로 한 주 계획을 함께 세워 줘. 무엇이 가장 중요한지, 무엇이 이미 정해졌는지 물어봐.",
+            "firstTaskTitle": "이번 주 계획 세우기",
+            "short": "운영"
+          },
+          "other": {
+            "firstTaskPrompt": "업무 목표를 우선순위와 다음 단계가 있는 실행 계획으로 바꾸도록 도와줘. 목표, 마감, 제약을 물어봐.",
+            "firstTaskTitle": "목표를 계획으로 바꾸기",
+            "short": "업무"
+          },
+          "research": {
+            "firstTaskPrompt": "믿을 만한 출처, 핵심 발견, 미해결 질문이 담긴 리서치 브리프를 만들어 줘. 주제와 알고 싶은 것을 물어봐.",
+            "firstTaskTitle": "주제 조사하기",
+            "short": "리서치"
+          },
+          "sales": {
+            "firstTaskPrompt": "이상적인 고객상에 맞는 기업을 조사해 공개 출처와 적합한 이유를 담은 후보 목록을 만들어 줘. 내 제품과 타깃 시장을 물어봐.",
+            "firstTaskTitle": "잠재 고객 찾기",
+            "short": "영업"
+          },
+          "software": {
+            "firstTaskPrompt": "사용자 문제, 기대 동작, 수용 기준, 미해결 질문이 담긴 기능 브리프를 함께 써 줘. 먼저 그 기능에 대해 물어봐.",
+            "firstTaskTitle": "기능 브리프 쓰기",
+            "short": "소프트웨어"
+          }
+        }
+      },
+      "subscription": {
+        "claudeCode": "Claude Code",
+        "codex": "Codex",
+        "rowCopy": "Okou 크레딧이 아니라 이 플랜에서 실행됩니다."
+      },
+      "team": {
+        "copy": "지금 팀원을 초대하거나, 나중에 워크스페이스 메뉴에서 초대하세요.",
+        "invite": "초대 보내기",
+        "invited": "초대함",
+        "label": "팀원 이메일",
+        "note": "이 워크스페이스에 합류합니다. 각자의 계정은 각자의 것으로 남습니다.",
+        "panelTitle": "팀원 초대",
+        "placeholder": "teammate@company.com",
+        "points": {
+          "accounts": "연결한 계정은 각자의 것이며, 본인 없이는 아무것도 공유되지 않습니다.",
+          "workflows": "여기 있는 누구나 이 워크스페이스의 워크플로를 실행할 수 있습니다.",
+          "workspace": "방금 연결한 소스와 함께 이 워크스페이스로 들어옵니다."
+        },
+        "title": "이 일을 함께하는 사람들을 불러오세요."
+      },
+      "welcome": {
+        "copy": "방금 연결한 업무에 맞춰 고른 첫 작업으로 시작하세요.",
+        "offerTitle": "첫 1시간 컨설팅은 무료, 크레딧도 최대 100 —",
+        "promptLabel": "시작 프롬프트",
+        "start": "Okou로 시작하기",
+        "title": "Okou가 준비됐습니다"
+      }
     },
     "templatePicker": {
       "image": {
@@ -5478,7 +5971,7 @@
         "starting": "내보내기 시작 중"
       },
       "backToAssistant": "{{assistantName}}로 돌아가기",
-      "description": "{{assistantName}}에서 생성한 파일과 텍스트 기록을 다운로드하세요.",
+      "description": "{{assistantName}}에서 내 대화와 메모리, 접근할 수 있는 에이전트 및 워크플로의 지침을 다운로드하세요.",
       "documentTitle": "데이터 내보내기",
       "duration": {
         "soon": "곧"
@@ -5489,11 +5982,12 @@
         "startFailed": "내보내기 시작 실패"
       },
       "scope": {
-        "agentInstructions": "에이전트 지침 문서",
-        "artifactsExcluded": "아티팩트는 이 내보내기에 포함되지 않습니다.",
-        "chatMessages": "사용자 및 AI 팀원 텍스트 채팅 메시지",
-        "memoryFiles": "메모리 파일",
-        "workflowInstructions": "워크플로 SKILL.md 지침 및 파일"
+        "agentInstructions": "접근할 수 있는 에이전트의 지침",
+        "chatMessages": "내 채팅 메시지",
+        "chatThreads": "내 채팅 스레드",
+        "filesExcluded": "아티팩트, 첨부 파일 및 워크플로 보조 파일은 포함되지 않습니다.",
+        "memoryFiles": "현재 메모리 파일",
+        "workflowInstructions": "접근할 수 있는 워크플로의 지침"
       },
       "status": {
         "checkingDescription": "최근 내보내기 상태가 여기에 표시됩니다.",
@@ -5951,6 +6445,14 @@
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
+        "morningBriefTrigger": {
+          "description": "실제 Morning Brief를 지금 실행합니다. 내 다음 실행을 일반 스케줄러 대기열에 넣으며, 1분 이내에 실제 브리프와 실제 이메일이 전송됩니다. 매일 전송 시각 이전에 실행하면 그날 아침에 브리프를 두 번 받게 됩니다.",
+          "failed": "Morning Brief를 대기열에 추가하지 못했습니다. 다시 시도하세요.",
+          "queued": "대기열에 추가했습니다. 스케줄러가 1분 이내에 브리프를 전송합니다.",
+          "title": "Morning Brief",
+          "trigger": "Morning Brief 지금 실행",
+          "triggering": "대기열에 추가하는 중…"
+        },
         "voiceInput": {
           "default": "기본값 ({{model}})",
           "description": "음성 입력 v2 모델을 선택하세요. 음성 인식 모델은 {{model}}로 텍스트를 다듬습니다.",
@@ -6245,32 +6747,32 @@
     "chooseFile": "파일 선택",
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "cloudflare": {
-      "add": "Access 구성 추가",
-      "changed": "편집 중 이 Access 구성이 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
+      "add": "Cloudflare Access 추가",
+      "changed": "편집 중 이 Cloudflare Access가 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
       "clientId": "Service Token 클라이언트 ID",
       "clientSecret": "Service Token 클라이언트 시크릿",
-      "configuration": "Access 구성",
-      "createNew": "새 구성 만들기",
-      "delete": "구성 삭제",
-      "deleteHelp": "사용하지 않는 이 Access 구성을 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
+      "configuration": "Cloudflare Access",
+      "createNew": "새 Cloudflare Access 만들기",
+      "delete": "Cloudflare Access 삭제",
+      "deleteHelp": "사용하지 않는 이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
       "direct": "직접 연결",
-      "edit": "Access 구성 편집",
-      "empty": "아직 Access 구성이 없습니다. Service Token을 추가하여 Cloudflare Access로 보호된 SSH 호스트에 연결하세요.",
-      "inUse": "호스트가 이 Access 구성을 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
-      "inUseHelp": "이 구성을 삭제하기 전에 해당 호스트에 다른 Access 구성을 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
+      "edit": "Cloudflare Access 편집",
+      "empty": "아직 Cloudflare Access가 없습니다. Service Token을 추가하여 보호된 SSH 호스트에 연결하세요.",
+      "inUse": "호스트가 이 Cloudflare Access를 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
+      "inUseHelp": "이 Cloudflare Access를 삭제하기 전에 해당 호스트에 다른 Cloudflare Access를 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
       "keepChanges": "이 버전에 내 변경 사항 적용",
       "latest": "최근 저장된 설정",
-      "loadFailed": "Access 구성을 불러오지 못했습니다. 다시 시도하세요.",
-      "loading": "Access 구성 불러오는 중…",
-      "missing": "이 Access 구성은 더 이상 사용할 수 없습니다. 다른 구성을 선택하거나 새로 만드세요.",
+      "loadFailed": "Cloudflare Access를 불러오지 못했습니다. 다시 시도하세요.",
+      "loading": "Cloudflare Access 불러오는 중…",
+      "missing": "이 Cloudflare Access는 더 이상 사용할 수 없습니다. 다른 항목을 선택하거나 새로 만드세요.",
       "mode": "연결",
-      "name": "구성 이름",
+      "name": "이름",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "공개 호스트 이름",
       "replace": "Service Token 교체",
       "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
-      "select": "구성 선택",
-      "summary_other": "Access 구성 {{count}}개 설정됨",
+      "select": "Cloudflare Access 선택",
+      "summary_other": "Cloudflare Access {{count}}개 설정됨",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH 애플리케이션의 Service Auth 정책에서 허용하는 Service Token을 사용하세요. SSH 로그인 정보와는 별개입니다.",
       "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
@@ -6464,7 +6966,6 @@
     "add": "호스트 추가",
     "cancel": "취소",
     "close": "닫기",
-    "configurationHelp": "호스트를 저장해도 연결을 테스트하지 않습니다. Agent가 세션 시작 시 공유 또는 독점 모드를 선택하며, VNC 서버가 접속을 허용할지 결정합니다.",
     "configured": "구성됨",
     "credential": {
       "add": "자격 증명 추가",
@@ -6486,6 +6987,7 @@
       "select": "인증 정보 선택",
       "sharedHelp_one": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 해당 호스트에 영향을 줍니다.",
       "sharedHelp_other": "호스트 {{count}}개에서 사용 중입니다. 비밀번호 변경은 모두에 영향을 줍니다.",
+      "summary_other": "자격 증명 {{count}}개 구성됨",
       "unused": "사용 중인 호스트가 없습니다."
     },
     "credentialsTab": "자격 증명",
@@ -6518,7 +7020,6 @@
     "loadingAccess": "에이전트 접근 권한을 불러오는 중…",
     "manage": "VNC 관리",
     "port": "포트",
-    "refresh": "새로 고침",
     "retry": "다시 시도",
     "save": "저장",
     "saveRecovery": {

@@ -92,7 +92,7 @@ async function createFixture(privateArtifacts: boolean) {
     configured: [
       {
         kind: "image",
-        provider: "fal-ai/qwen-image",
+        provider: "fal-ai/flux-pro/v1.1",
         category: "output_megapixel",
         unitPrice: 24,
         unitSize: 1,
@@ -218,7 +218,7 @@ async function queueImage(
       headers,
       body: {
         prompt: "A private landscape",
-        model: "qwen-image",
+        model: "flux-pro-1.1",
         imageUrls,
         ...(requirePrivateArtifact ? { requirePrivateArtifact: true } : {}),
       },
@@ -491,7 +491,7 @@ describe("managed artifact privacy", () => {
     const response = await fixture.api(imageIoGenerateContract).post({
       headers,
       body: {
-        model: "qwen-image",
+        model: "flux-pro-1.1",
         prompt: "Use reference",
         imageUrls: [image.url],
       },

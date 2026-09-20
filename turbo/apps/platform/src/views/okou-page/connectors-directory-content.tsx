@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import { reloadConnectors$ } from "../../signals/external/connectors.ts";
+import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import {
   connectorDirectoryCustomScope$,
@@ -203,7 +203,7 @@ export function ConnectorsDirectoryContent({
   const custom = useLoadable(filteredDirectoryCustomConnectors$);
   const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
   const showCreated = useSet(showCreatedDirectoryConnector$);
-  const retryCatalog = useSet(reloadConnectors$);
+  const retryCatalog = useSet(reloadBuiltinConnectors$);
   const connectors = custom.state === "hasData" ? custom.data : [];
   // Custom is its own scope now, so the catalog no longer carries it as a
   // trailing block. Browsing is scoped; searching is not, so a keyword still

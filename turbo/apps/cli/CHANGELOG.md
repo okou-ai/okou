@@ -1,5 +1,114 @@
 # Changelog
 
+## [9.348.1](https://github.com/okou-ai/okou/compare/cli-v9.348.0...cli-v9.348.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/pi-agent-runtime bumped to 1.33.28
+
+## [9.348.0](https://github.com/okou-ai/okou/compare/cli-v9.347.0...cli-v9.348.0) (2026-09-20)
+
+
+### Features
+
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### Bug Fixes
+
+* **cli:** surface failed mcp calls ([#35562](https://github.com/okou-ai/okou/issues/35562)) ([f92d366](https://github.com/okou-ai/okou/commit/f92d3665968bb3a9e03bb1a8d579c5b1405fb586))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.0
+    * @okouai/core bumped to 8.687.0
+    * @okouai/pi-agent-runtime bumped to 1.33.27
+
+## [9.347.0](https://github.com/vm0-ai/okou/compare/cli-v9.346.1...cli-v9.347.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.477.0
+    * @okouai/connectors bumped to 3.14.2
+    * @okouai/core bumped to 8.686.0
+    * @okouai/pi-agent-runtime bumped to 1.33.26
+
+## [9.346.1](https://github.com/vm0-ai/okou/compare/cli-v9.346.0...cli-v9.346.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.685.0
+
+## [9.346.0](https://github.com/vm0-ai/okou/compare/cli-v9.345.0...cli-v9.346.0) (2026-09-20)
+
+
+### Features
+
+* **vnc:** retain authentication timeout stages ([#35423](https://github.com/vm0-ai/okou/issues/35423)) ([6628561](https://github.com/vm0-ai/okou/commit/662856111e607397edd681142fc6af42287bfba5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.476.1
+    * @okouai/connectors bumped to 3.14.1
+    * @okouai/core bumped to 8.684.1
+    * @okouai/pi-agent-runtime bumped to 1.33.25
+
+## [9.345.0](https://github.com/vm0-ai/okou/compare/cli-v9.344.0...cli-v9.345.0) (2026-09-19)
+
+
+### Features
+
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+* **contracts:** prepare handoff readers for api usage ([#35384](https://github.com/vm0-ai/okou/issues/35384)) ([f105098](https://github.com/vm0-ai/okou/commit/f105098d105126215ef209cd43ba487242f8a28d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.476.0
+    * @okouai/connectors bumped to 3.14.0
+    * @okouai/core bumped to 8.684.0
+    * @okouai/pi-agent-runtime bumped to 1.33.24
+
+## [9.344.0](https://github.com/vm0-ai/okou/compare/cli-v9.343.3...cli-v9.344.0) (2026-09-19)
+
+
+### Features
+
+* move paid tools into chat settings ([#35381](https://github.com/vm0-ai/okou/issues/35381)) ([3ac2ba5](https://github.com/vm0-ai/okou/commit/3ac2ba574a056d26870db201d0d88dceccba6028))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.475.0
+    * @okouai/core bumped to 8.683.0
+    * @okouai/pi-agent-runtime bumped to 1.33.23
+
 ## [9.343.3](https://github.com/vm0-ai/okou/compare/cli-v9.343.2...cli-v9.343.3) (2026-09-18)
 
 

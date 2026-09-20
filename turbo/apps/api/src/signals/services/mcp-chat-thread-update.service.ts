@@ -66,16 +66,39 @@ export const updateMcpChatThread$ = command(
     }
     const update = result.value;
     if (update.kind === "not_found") {
-      return { kind: "error", message: "Chat thread not found." };
+      return {
+        kind: "error",
+        code: "not_found",
+        message: "Chat thread not found.",
+        retryable: false,
+      };
     }
     if (update.kind === "closed") {
-      return { kind: "error", message: "Account content is closed." };
+      return {
+        kind: "error",
+        code: "account_closed",
+        message: "Account content is closed.",
+        retryable: false,
+      };
     }
     if (update.kind === "conflict" || update.kind === "expired") {
-      return { kind: "error", message: update.message };
+      return {
+        kind: "error",
+        code:
+          update.kind === "conflict"
+            ? "request_id_conflict"
+            : "request_expired",
+        message: update.message,
+        retryable: false,
+      };
     }
     if (update.kind === "response") {
-      return { kind: "error", message: responseMessage(update.response) };
+      return {
+        kind: "error",
+        code: "selection_unavailable",
+        message: responseMessage(update.response),
+        retryable: false,
+      };
     }
 
     const models = await mcpChatThreadModels(set(writeDb$), args.principal, [

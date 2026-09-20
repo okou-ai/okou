@@ -1,14 +1,11 @@
 import { command, computed, state, type Computed } from "ccstate";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 import { comparePinnedThreads } from "@okouai/core/chat-thread-pin-order";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentById, currentAgentId$, defaultAgentId$ } from "./agent.ts";
-import { apiClient$ } from "./api-client.ts";
-import { accept } from "../lib/accept.ts";
 import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
-import { reloadChatIndicatorsCounter$ } from "./chat-thread-list-reload.ts";
+import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import { chatThreadShowArchived$ } from "./chat-page/chat-thread-show-archived.ts";
 import { isChatThreadArchived } from "./chat-page/chat-thread-title.ts";
@@ -103,8 +100,18 @@ export interface ChatThreadListSignals {
 interface ChatThreadListFilter {
   readonly archiveEnabled: boolean;
   readonly showArchived: boolean;
-  readonly unreadOnly: boolean;
-  readonly unreadThreadIds: ReadonlySet<string> | null;
+}
+
+function sortChatThreads(threads: EventDrivenChatThread[]) {
+  return threads.sort((left, right) => {
+    if (left.pinnedAt === null) {
+      return right.pinnedAt === null ? 0 : 1;
+    }
+    if (right.pinnedAt === null) {
+      return -1;
+    }
+    return comparePinnedThreads(left, right);
+  });
 }
 
 function createChatThreadListSignals(
@@ -126,22 +133,9 @@ function createChatThreadListSignals(
         filter.archiveEnabled &&
         !filter.showArchived &&
         isChatThreadArchived(thread.title);
-      if (filter.unreadOnly) {
-        return (
-          !hiddenArchived && (filter.unreadThreadIds?.has(thread.id) ?? false)
-        );
-      }
       return !hiddenArchived || thread.id === currentThreadId;
     });
-    return threads.sort((left, right) => {
-      if (left.pinnedAt === null) {
-        return right.pinnedAt === null ? 0 : 1;
-      }
-      if (right.pinnedAt === null) {
-        return -1;
-      }
-      return comparePinnedThreads(left, right);
-    });
+    return sortChatThreads(threads);
   });
   const threadIds$ = computed((get): readonly string[] => {
     return get(threads$).map((thread) => {
@@ -177,40 +171,47 @@ function createChatThreadListSignals(
 // Thread events can update the returned signals without replacing this Promise.
 export const currentChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
-    const unreadOnly = get(chatThreadOnlyUnread$);
     const archiveEnabled =
       get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] ?? false;
     const showArchived = archiveEnabled && get(chatThreadShowArchived$);
-    if (unreadOnly) {
-      get(reloadChatIndicatorsCounter$);
-    }
 
     const agentId = get(currentChatAgentScope$) ?? (await get(defaultAgentId$));
-    let unreadThreadIds: ReadonlySet<string> | null = null;
-    if (unreadOnly && agentId) {
-      const client = get(apiClient$)(chatThreadsContract);
-      const result = await accept(
-        client.unreads({ query: { agentId } }),
-        [200],
-      );
-      unreadThreadIds = new Set(
-        result.body.unreads.map((unread) => {
-          return unread.threadId;
-        }),
-      );
-    }
 
     return createChatThreadListSignals(agentId, {
       archiveEnabled,
       showArchived,
-      unreadOnly,
-      unreadThreadIds,
     });
+  },
+);
+
+// Indicators bound the unread list. Keep their asynchronous dependency out of
+// the all-chats projection and its synchronous virtual window.
+export const unreadChatThreads$ = computed(
+  async (get): Promise<EventDrivenChatThread[]> => {
+    const agentId = await get(currentChatAgentId$);
+    if (!agentId) {
+      return [];
+    }
+    const indicators = await get(chatThreadIndicatorsFromWorker$);
+    const archiveEnabled =
+      get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] ?? false;
+    const showArchived = archiveEnabled && get(chatThreadShowArchived$);
+    const threads = get(eventDrivenChatThreads$).filter((thread) => {
+      return (
+        thread.agentId === agentId &&
+        indicators.threads[thread.id] === "unread" &&
+        (!archiveEnabled || showArchived || !isChatThreadArchived(thread.title))
+      );
+    });
+    return sortChatThreads(threads);
   },
 );
 
 export const chatThreads$ = computed(
   async (get): Promise<EventDrivenChatThread[]> => {
+    if (get(chatThreadOnlyUnread$)) {
+      return await get(unreadChatThreads$);
+    }
     const list = await get(currentChatThreadListSignals$);
     return get(list.threads$);
   },
@@ -218,7 +219,8 @@ export const chatThreads$ = computed(
 
 export const currentChatThreadListIds$ = computed(
   async (get): Promise<readonly string[]> => {
-    const list = await get(currentChatThreadListSignals$);
-    return get(list.threadIds$);
+    return (await get(chatThreads$)).map((thread) => {
+      return thread.id;
+    });
   },
 );

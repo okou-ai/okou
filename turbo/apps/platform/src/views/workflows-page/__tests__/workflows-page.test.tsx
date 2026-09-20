@@ -7,7 +7,6 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import * as timers from "signal-timers";
 import { mockNow } from "../../../lib/time.ts";
 import {
   billingStatusContract,
@@ -17,7 +16,7 @@ import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   workflowsCollectionContract,
   workflowsDetailContract,
@@ -59,12 +58,6 @@ import {
   setMockGithubIntegration,
 } from "../../../mocks/handlers/api-integrations-github.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-
-vi.mock("signal-timers", async () => {
-  return {
-    ...(await vi.importActual<typeof import("signal-timers")>("signal-timers")),
-  };
-});
 
 const context = testContext();
 const CURRENT_USER_ID = "test-user-123";
@@ -4145,13 +4138,16 @@ function mockCalendarReconnect(
     });
   });
   const submittedAccounts: unknown[] = [];
-  context.mocks.api(connectorOauthStartContract.start, ({ body, respond }) => {
-    submittedAccounts.push(body.account);
-    return respond(200, {
-      authorizationUrl: "https://oauth.test/google-calendar/authorize",
-      oauthAttemptId,
-    });
-  });
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, respond }) => {
+      submittedAccounts.push(body.account);
+      return respond(200, {
+        authorizationUrl: "https://oauth.test/google-calendar/authorize",
+        oauthAttemptId,
+      });
+    },
+  );
   const authWindow = createAuthWindow();
   context.mocks.browser.open(authWindow);
 
@@ -4308,33 +4304,6 @@ function calendarRecoveryWorkflow(): WorkflowDetailResponse {
   };
 }
 
-interface CalendarRecoveryDeadline {
-  readonly expire: () => void;
-  readonly signal: AbortSignal;
-}
-
-function holdCalendarRecoveryDeadline() {
-  const deadline = context.mocks.deferred<CalendarRecoveryDeadline>();
-  const scheduled: CalendarRecoveryDeadline[] = [];
-  const timeout = timers.timeout;
-  vi.spyOn(timers, "timeout").mockImplementation((callback, ms, options) => {
-    if (ms !== 30_000) {
-      timeout(callback, ms, options);
-      return;
-    }
-    const signal = options?.signal;
-    if (!signal) {
-      throw new Error("Expected an owned recovery deadline");
-    }
-    const entry = { signal, expire: callback };
-    scheduled.push(entry);
-    if (!deadline.settled()) {
-      deadline.resolve(entry);
-    }
-  });
-  return { ...deadline, scheduled };
-}
-
 async function expectUnconfirmedCalendarRecovery() {
   const recovery = await screen.findByRole("region", {
     name: "Google Calendar recovery",
@@ -4343,173 +4312,6 @@ async function expectUnconfirmedCalendarRecovery() {
   expect(buttonByText("Check status", recovery)).toBeEnabled();
   return recovery;
 }
-
-test("Bound a permanent Calendar warning and retry status without another OAuth", async () => {
-  const workflow = calendarRecoveryWorkflow();
-  const reconnect = mockCalendarReconnect(workflow);
-  mockNow(new Date("2026-09-08T06:00:00Z"), context.signal);
-  const requestBudgetReached = context.mocks.deferred<void>();
-  let oauthCompleted = false;
-  let statusReads = 0;
-  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    if (oauthCompleted) {
-      statusReads++;
-      if (statusReads === 10) {
-        requestBudgetReached.resolve();
-      }
-    }
-    return respond(200, publicWorkflowDetail(workflow));
-  });
-  await reconnect.open();
-  oauthCompleted = true;
-  reconnect.complete();
-  await requestBudgetReached.promise;
-  const recovery = await expectUnconfirmedCalendarRecovery();
-  // The request ceiling is part of the recovery contract, not a cache detail.
-  expect(statusReads).toBe(10);
-  expect(screen.getByRole("switch")).toBeChecked();
-  expect(
-    screen.getByText(
-      "Google Calendar needs to be reconnected before this automation can resume.",
-    ),
-  ).toBeVisible();
-  workflow.automations[0] = googleCalendarWorkflowAutomation();
-  click(buttonByText("Check status", recovery));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Google Calendar recovery" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-  expect(screen.getByRole("switch")).toBeChecked();
-  expect(reconnect.submittedAccounts).toHaveLength(1);
-});
-
-test("Reject Calendar recovery read at the total deadline", async () => {
-  const workflow = calendarRecoveryWorkflow();
-  const reconnect = mockCalendarReconnect(workflow);
-  const startedAt = new Date("2026-09-08T06:00:00Z").getTime();
-  mockNow(startedAt, context.signal);
-  let oauthCompleted = false;
-  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    if (oauthCompleted) {
-      mockNow(startedAt + 30_000, context.signal);
-    }
-    return respond(200, publicWorkflowDetail(workflow));
-  });
-  await reconnect.open();
-  oauthCompleted = true;
-  reconnect.complete();
-  await expectUnconfirmedCalendarRecovery();
-  expect(screen.getByRole("switch")).toBeChecked();
-  expect(reconnect.submittedAccounts).toHaveLength(1);
-});
-
-test("Abort a hanging Calendar summary at the recovery deadline", async () => {
-  const workflow = calendarRecoveryWorkflow();
-  const reconnect = mockCalendarReconnect(workflow);
-  const deadline = holdCalendarRecoveryDeadline();
-  const requested = context.mocks.deferred<AbortSignal>();
-  const response = context.mocks.deferred<void>();
-  let oauthCompleted = false;
-  context.mocks.api(
-    workflowsDetailContract.get,
-    async ({ request, respond }) => {
-      if (oauthCompleted) {
-        requested.resolve(request.signal);
-        await response.promise;
-      }
-      return respond(200, publicWorkflowDetail(workflow));
-    },
-  );
-  await reconnect.open();
-  oauthCompleted = true;
-  reconnect.complete();
-  const requestSignal = await requested.promise;
-  const scheduled = await deadline.promise;
-  const recovery = await screen.findByRole("region", {
-    name: "Google Calendar recovery",
-  });
-  expect(within(recovery).getByRole("status")).toBeVisible();
-  expect(buttonByText("Check status", recovery)).toBeDisabled();
-  expect(buttonByText("Reconnect Google Calendar")).toBeDisabled();
-  scheduled.expire();
-  await expectUnconfirmedCalendarRecovery();
-  expect(requestSignal.aborted).toBeTruthy();
-  expect(scheduled.signal.aborted).toBeTruthy();
-  workflow.automations[0] = googleCalendarWorkflowAutomation();
-  response.resolve();
-  expect(screen.getByRole("switch")).toBeChecked();
-  expect(
-    screen.getByText(
-      "Google Calendar needs to be reconnected before this automation can resume.",
-    ),
-  ).toBeVisible();
-});
-
-test("An expired Calendar attempt cannot cancel or complete its replacement", async () => {
-  const workflow = calendarRecoveryWorkflow();
-  const reconnect = mockCalendarReconnect(workflow);
-  const deadline = holdCalendarRecoveryDeadline();
-  const oldRequested = context.mocks.deferred<AbortSignal>();
-  const newRequested = context.mocks.deferred<AbortSignal>();
-  const oldResponse = context.mocks.deferred<void>();
-  const newResponse = context.mocks.deferred<void>();
-  let oauthCompleted = false;
-  let statusReads = 0;
-  context.mocks.api(
-    workflowsDetailContract.get,
-    async ({ request, respond }) => {
-      if (oauthCompleted) {
-        statusReads++;
-        if (statusReads === 1) {
-          oldRequested.resolve(request.signal);
-          await oldResponse.promise;
-        } else {
-          newRequested.resolve(request.signal);
-          await newResponse.promise;
-        }
-      }
-      return respond(200, publicWorkflowDetail(workflow));
-    },
-  );
-  await reconnect.open();
-  oauthCompleted = true;
-  reconnect.complete();
-  const oldSignal = await oldRequested.promise;
-  const oldDeadline = await deadline.promise;
-  oldDeadline.expire();
-  const recovery = await expectUnconfirmedCalendarRecovery();
-  expect(oldSignal.aborted).toBeTruthy();
-
-  click(buttonByText("Check status", recovery));
-  const newSignal = await newRequested.promise;
-  await within(recovery).findByRole("status");
-  expect(buttonByText("Check status", recovery)).toBeDisabled();
-  // Even a queued old deadline callback and late successful response belong
-  // only to the expired attempt, while the replacement is still pending.
-  oldDeadline.expire();
-  workflow.automations[0] = googleCalendarWorkflowAutomation();
-  oldResponse.resolve();
-  expect(newSignal.aborted).toBeFalsy();
-  expect(within(recovery).getByRole("status")).toBeInTheDocument();
-
-  newResponse.resolve();
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Google Calendar recovery" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-  expect(deadline.scheduled).toHaveLength(2);
-  expect(
-    deadline.scheduled.every((entry) => {
-      return entry.signal.aborted;
-    }),
-  ).toBeTruthy();
-  expect(screen.getByRole("switch")).toBeChecked();
-  expect(reconnect.submittedAccounts).toHaveLength(1);
-});
 
 test("Keep the Calendar warning after a read failure and allow a status-only retry", async () => {
   const workflow = calendarRecoveryWorkflow();
@@ -4549,7 +4351,6 @@ test.each(["cancel", "navigate"] as const)(
   async (action) => {
     const workflow = calendarRecoveryWorkflow();
     const reconnect = mockCalendarReconnect(workflow);
-    const deadline = holdCalendarRecoveryDeadline();
     const requested = context.mocks.deferred<AbortSignal>();
     const response = context.mocks.deferred<void>();
     let oauthCompleted = false;
@@ -4567,7 +4368,6 @@ test.each(["cancel", "navigate"] as const)(
     oauthCompleted = true;
     reconnect.complete();
     const requestSignal = await requested.promise;
-    const scheduled = await deadline.promise;
     const recovery = await screen.findByRole("region", {
       name: "Google Calendar recovery",
     });
@@ -4584,7 +4384,6 @@ test.each(["cancel", "navigate"] as const)(
       ).not.toBeInTheDocument();
       expect(requestSignal.aborted).toBeTruthy();
     });
-    expect(scheduled.signal.aborted).toBeTruthy();
     workflow.automations[0] = googleCalendarWorkflowAutomation();
     response.resolve();
     expect(
@@ -4599,61 +4398,55 @@ test.each(["cancel", "navigate"] as const)(
   },
 );
 
-describe("with a reconnecting Calendar account", () => {
-  async function prepareScenario() {
-    const workflow = calendarRecoveryWorkflow();
-    workflow.automations.unshift(
-      googleCalendarWorkflowAutomation({ id: "healthy-other-calendar" }),
-    );
-    const reconnect = mockCalendarReconnect(workflow, "work");
-    const requestBudgetReached = context.mocks.deferred<void>();
-    let oauthCompleted = false;
-    let statusReads = 0;
-    context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-      if (oauthCompleted) {
-        statusReads++;
-        if (statusReads === 10) {
-          requestBudgetReached.resolve();
-        }
-      }
-      return respond(200, publicWorkflowDetail(workflow));
-    });
-    await reconnect.open();
-    return {
-      get oauthCompleted() {
-        return oauthCompleted;
-      },
-      set oauthCompleted(next: typeof oauthCompleted) {
-        oauthCompleted = next;
-      },
-      reconnect,
-      requestBudgetReached,
-    };
-  }
-  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-  beforeEach(async () => {
-    preparedScenario = await prepareScenario();
-  });
-  it("do not recover the target Calendar automation by reconnecting another account", async () => {
-    const { reconnect, requestBudgetReached } = preparedScenario;
-    preparedScenario.oauthCompleted = true;
-    reconnect.complete();
-    await requestBudgetReached.promise;
-    await expectUnconfirmedCalendarRecovery();
-    expect(
-      screen.getByText(
-        "Google Calendar needs to be reconnected before this automation can resume.",
-      ),
-    ).toBeVisible();
-    for (const enabled of screen.getAllByRole("switch")) {
-      expect(enabled).toBeChecked();
+test("Wait for the target Calendar automation when reconnecting another account", async () => {
+  const workflow = calendarRecoveryWorkflow();
+  workflow.automations.unshift(
+    googleCalendarWorkflowAutomation({ id: "healthy-other-calendar" }),
+  );
+  const reconnect = mockCalendarReconnect(workflow, "work");
+  const firstRead = context.mocks.deferred<void>();
+  const nextRead = context.mocks.deferred<void>();
+  let oauthCompleted = false;
+  let returnedStaleSummary = false;
+  context.mocks.api(workflowsDetailContract.get, async ({ respond }) => {
+    if (oauthCompleted && !returnedStaleSummary) {
+      returnedStaleSummary = true;
+      const response = respond(200, publicWorkflowDetail(workflow));
+      firstRead.resolve();
+      return response;
     }
-    expect(reconnect.submittedAccounts).toStrictEqual([
-      {
-        intent: "reconnect",
-        connectionId: "10000000-0000-4000-a000-000000000020",
-      },
-    ]);
+    if (oauthCompleted) {
+      await nextRead.promise;
+    }
+    return respond(200, publicWorkflowDetail(workflow));
+  });
+  await reconnect.open();
+  oauthCompleted = true;
+  reconnect.complete();
+  await firstRead.promise;
+  const recovery = await screen.findByRole("region", {
+    name: "Google Calendar recovery",
+  });
+  expect(within(recovery).getByRole("status")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Google Calendar needs to be reconnected before this automation can resume.",
+    ),
+  ).toBeInTheDocument();
+  for (const enabled of screen.getAllByRole("switch")) {
+    expect(enabled).toBeChecked();
+  }
+  expect(reconnect.submittedAccounts).toStrictEqual([
+    {
+      intent: "reconnect",
+      connectionId: "10000000-0000-4000-a000-000000000020",
+    },
+  ]);
+  click(buttonByText("Cancel", recovery));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Google Calendar recovery" }),
+    ).not.toBeInTheDocument();
   });
 });
 

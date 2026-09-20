@@ -72,10 +72,13 @@ A writer that touches both the legacy automation and the native row takes:
 
 1. the member's Morning Brief preference/admission **advisory lock** when the
    operation has one (`morning_brief_preference:<org>:<user>`),
-2. the `morning_brief_native_schedules` row `FOR UPDATE`,
-3. the selected `workflow_automations` row `FOR UPDATE`,
-4. the exact S7a claim, Run, or callback row when the operation owns one,
-5. any `morning_brief_native_occurrences` row `FOR UPDATE`.
+2. the owner-key **advisory lock**
+   (`morning-brief-native-owner:<org>:<user>`) while the member has no
+   `morning_brief_native_schedules` row,
+3. the `morning_brief_native_schedules` row `FOR UPDATE`,
+4. the selected `workflow_automations` row `FOR UPDATE`,
+5. the exact S7a claim, Run, or callback row when the operation owns one,
+6. any `morning_brief_native_occurrences` row `FOR UPDATE`.
 
 Nothing else is permitted. External preflight — Clerk, Slack, the model
 provider — happens **outside** short transactions, and the transaction
@@ -83,19 +86,68 @@ re-reads every predicate it depends on before it commits. Each mutation's
 `WHERE` carries the epoch (and, for transitions, the phase) it read, so a stale
 compensation cannot restore an older epoch's state over a newer writer.
 
+### The owner key covers the member's first row
+
+`SELECT ... FOR UPDATE` locks rows, so it locks nothing for a member who has no
+durable row yet: reading that absence inside a transaction is not a lock on it.
+First materialization and every writer that classifies the selected legacy
+automation therefore take the owner key when they find no row, then re-read it
+under that key. A writer either observes the first row that committed while it
+waited and continues under it, or it holds the key and no first row can appear
+until it commits. An `ordinary` classification can never be carried across a
+concurrent first insert, and bootstrap can never publish a legacy snapshot a
+selected writer is still changing.
+
+Step 2 costs nothing once the member is materialized: the row lock in step 3 is
+the fence from then on, and an existing durable row is never resampled.
+
 ## Writers
 
-| Writer                                    | Effect on the native row                                      |
-| ----------------------------------------- | ------------------------------------------------------------- |
-| Settings enable / disable                 | Logical choice; `enabled` change bumps the epoch (revocation) |
-| Settings / system timezone update         | `timezone` only. **No epoch bump, no revocation**             |
-| Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**      |
-| Enrollment adoption / materialization     | Bootstrap insert only; an existing row is authority           |
-| Generic automation enable/disable/update  | Logical choice, same rules as Settings                        |
-| Official reconciliation pause / restore   | Configuration/readiness only; durable choice is preserved     |
-| Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded    |
-| Native cron claim                         | Takes the obligation; owes exactly one settlement             |
-| Native settlement                         | Installs the next obligation from the **current** recurrence  |
+| Writer                                    | Effect on the native row                                           |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| Settings enable / disable                 | Logical choice; `enabled` change bumps the epoch (revocation)      |
+| Settings / system timezone update         | `timezone` only. **No epoch bump, no revocation**                  |
+| Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**           |
+| Enrollment adoption / materialization     | Bootstrap insert under the owner key; an existing row is authority |
+| Generic automation enable/disable/update  | Logical choice, same rules as Settings                             |
+| Official reconciliation pause / restore   | Configuration/readiness only; durable choice is preserved          |
+| Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded         |
+| Native cron claim                         | Takes the obligation; owes exactly one settlement                  |
+| Native settlement                         | Installs the next obligation from the **current** recurrence       |
+| Settings > Debug on-demand trigger        | Moves `next_run_at` to now. **No epoch bump, no execution**        |
+
+### The on-demand trigger only moves the obligation
+
+`POST /api/debug/morning-brief-trigger` exists so a migrated owner can verify
+the pipeline without waiting for tomorrow's cron instant. It is owner-scoped:
+nothing in the request can name another member.
+
+It executes nothing. It moves the caller's own `next_run_at` to the current
+instant under `lockMorningBriefNativeScheduleForWrite` with the usual epoch
+revalidation, and the ordinary per-minute cron then claims that instant through
+the same claim, execution, settlement, delivery and recovery code a scheduled
+brief uses. An inline execution path would bypass the claim and with it the
+epoch/lease/attempt CAS that keeps one logical slot to at most one model
+request, one Chat receipt and one logical email.
+
+Three consequences follow from the existing rules rather than from new state:
+
+- The claim freezes `scheduled_for` at `next_run_at`, so the moved instant is a
+  different slot from the scheduled one and cannot collide with it.
+- The settlement recomputes the successor from the settlement clock, so a daily
+  cron triggered **after** that day's instant reinstalls the same next-morning
+  instant that was already pending. The scheduled delivery is not lost.
+- Triggering **before** that day's instant instead leaves the successor later
+  the same morning, so the owner receives the debug brief and then the scheduled
+  one. Two briefs, never a lost one. The card's copy says so.
+
+It refuses, with distinguishable outcomes and zero provider calls, when the row
+is absent, the phase is not `native`, the owner is disabled, the live membership
+generation does not match, an unsettled occurrence already exists, or the
+minimum interval since the most recent `claimed_at` has not elapsed. Refusing on
+an unsettled occurrence is what makes a repeated press safe: without it a second
+press would reset `next_run_at` underneath a running execution, and that
+obligation would then be discarded by its settlement.
 
 ### Selected legacy writers are schedule-first
 

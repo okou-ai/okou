@@ -544,26 +544,8 @@ export function chatThreadArtifacts(args: {
       const db = get(db$);
       const rows = await loadChatThreadArtifactRows(db, args);
 
-      const hostedArtifactRunIds = new Set(
-        rows
-          .filter((row) => {
-            return (
-              row.runId !== null &&
-              parseHostedArtifactKindFromMetadata(row.metadata) !== undefined
-            );
-          })
-          .flatMap((row) => {
-            return row.runId ? [row.runId] : [];
-          }),
-      );
       const visibleRows = rows.filter((row) => {
-        if (!row.runId) {
-          return false;
-        }
-        const artifactKind = parseHostedArtifactKindFromMetadata(row.metadata);
-        return (
-          !hostedArtifactRunIds.has(row.runId) || artifactKind !== undefined
-        );
+        return row.runId !== null;
       });
 
       const rowsByUrl = new Map<string, (typeof visibleRows)[number]>();

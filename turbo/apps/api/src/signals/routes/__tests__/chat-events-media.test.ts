@@ -102,7 +102,7 @@ describe("CHAT-02: run media model snapshot precedence", () => {
     await chat.updateThreadImageModel(
       actor,
       anchor.threadId,
-      "fal-ai/qwen-image",
+      "fal-ai/flux-pro/v1.1",
     );
     const videoFallback = await sendChatRun(actor, {
       agentId,
@@ -114,7 +114,7 @@ describe("CHAT-02: run media model snapshot precedence", () => {
     );
     await expect(
       readRunImageModelSnapshotFixture(videoFallback.runId),
-    ).resolves.toBe("fal-ai/qwen-image");
+    ).resolves.toBe("fal-ai/flux-pro/v1.1");
     await cancelChatRun(actor, videoFallback.runId);
   }, 90_000);
 });
@@ -348,7 +348,7 @@ describe("CHAT-02: run image model snapshot", () => {
     ).resolves.toBe(DEFAULT_IMAGE_MODEL);
     await cancelChatRun(actor, globalDefault.runId);
 
-    await chat.updateUserModelPreference(actor, null, "fal-ai/qwen-image");
+    await chat.updateUserModelPreference(actor, null, "fal-ai/flux-pro/v1.1");
 
     // The thread was pinned when it was created, so the new member default
     // does not reach back into it.
@@ -368,7 +368,7 @@ describe("CHAT-02: run image model snapshot", () => {
     });
     await expect(
       readRunImageModelSnapshotFixture(memberDefault.runId),
-    ).resolves.toBe("fal-ai/qwen-image");
+    ).resolves.toBe("fal-ai/flux-pro/v1.1");
     await cancelChatRun(actor, memberDefault.runId);
 
     const initialThreadPin = "fal-ai/bytedance/seedream/v4/text-to-image";
@@ -498,7 +498,7 @@ describe("CHAT-02: run image model snapshot", () => {
 
   it("persists the resolved image model on a queued run", async () => {
     const { actor, agentId } = await imageModelSnapshotActor();
-    await chat.updateUserModelPreference(actor, null, "fal-ai/qwen-image");
+    await chat.updateUserModelPreference(actor, null, "fal-ai/flux-pro/v1.1");
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
 
     const blocker = await chat.requestSendEvent(
@@ -522,7 +522,7 @@ describe("CHAT-02: run image model snapshot", () => {
     expect(queued.body.status).toBe("queued");
     await expect(
       readRunImageModelSnapshotFixture(queued.body.runId),
-    ).resolves.toBe("fal-ai/qwen-image");
+    ).resolves.toBe("fal-ai/flux-pro/v1.1");
 
     await cancelChatRun(actor, queued.body.runId);
     await cancelChatRun(actor, blocker.body.runId);
