@@ -332,9 +332,10 @@ test("Number filtered threads and give the search dialog priority over the list"
     caseId: 43,
     threads: [first, second],
   });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      unreads: [{ threadId: first.id, unreadAt: "2026-08-01T01:00:00.000Z" }],
+      agents: { [CHAT_LIST_AGENT_ID]: "unread" },
+      threads: { [first.id]: "unread" },
     });
   });
   await setupPage({
