@@ -519,7 +519,7 @@ test("Connect and authorize an agent to use a no-auth connector", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("Leave an agent unauthorized when OAuth is cancelled", async () => {
+test("Leave an agent unauthorized when OAuth progress is closed", async () => {
   const { authWindow } = mockConnectorOauthStart();
   let updateCalls = 0;
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
@@ -555,7 +555,7 @@ test("Leave an agent unauthorized when OAuth is cancelled", async () => {
     name: "Connecting your account",
   });
 
-  click(within(progress).getByText("Cancel"));
+  click(within(progress).getByLabelText("Close"));
   expect(authWindow.closed).toBeTruthy();
 
   await screen.findByText("Authorize Okou");

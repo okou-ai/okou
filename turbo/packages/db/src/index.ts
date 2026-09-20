@@ -120,7 +120,7 @@ import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-co
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
 import * as builtinConnectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
 import * as builtinConnectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
-import * as hostedSiteSchema from "./schema/hosted-site";
+import * as hostedSiteSchema from "./runtime/hosted-site";
 import * as artifactSchema from "./schema/artifact";
 import * as sharedThreadSchema from "./schema/shared-thread";
 import * as userArtifactFavoriteSchema from "./schema/user-artifact-favorite";

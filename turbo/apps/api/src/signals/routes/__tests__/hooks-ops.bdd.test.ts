@@ -201,46 +201,66 @@ describe("OPS-01: feature switch routes", () => {
         headers: headersFor(owner),
         body: {
           switches: {
-            [FeatureSwitchKey.PiLoop]: true,
+            [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+            [FeatureSwitchKey.PiLoop]: false,
             [FeatureSwitchKey.Dummy]: false,
           },
         },
       }),
       [200],
     );
-    expect(ownerUpdate.body.switches[FeatureSwitchKey.PiLoop]).toBeTruthy();
+    expect(
+      ownerUpdate.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+    ).toBeTruthy();
+    expect(ownerUpdate.body.switches[FeatureSwitchKey.PiLoop]).toBeFalsy();
     expect(ownerUpdate.body.switches[FeatureSwitchKey.Dummy]).toBeFalsy();
 
     const peerRead = await accept(
       featureSwitchesClient().get({ headers: headersFor(peer) }),
       [200],
     );
-    expect(peerRead.body.switches[FeatureSwitchKey.PiLoop]).toBeTruthy();
+    expect(
+      peerRead.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+    ).toBeTruthy();
+    expect(peerRead.body.switches[FeatureSwitchKey.PiLoop]).toBeUndefined();
     expect(peerRead.body.switches[FeatureSwitchKey.Dummy]).toBeUndefined();
 
     const outsiderRead = await accept(
       featureSwitchesClient().get({ headers: headersFor(outsider) }),
       [200],
     );
+    expect(
+      outsiderRead.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+    ).toBeUndefined();
     expect(outsiderRead.body.switches[FeatureSwitchKey.PiLoop]).toBeUndefined();
+
     const peerUpdate = await accept(
       featureSwitchesClient().update({
         headers: headersFor(peer),
         body: {
           switches: {
-            [FeatureSwitchKey.PiLoop]: false,
+            [FeatureSwitchKey.PersonalSubscriptionPriority]: false,
+            [FeatureSwitchKey.PiLoop]: true,
           },
         },
       }),
       [200],
     );
-    expect(peerUpdate.body.switches[FeatureSwitchKey.PiLoop]).toBeFalsy();
+    expect(
+      peerUpdate.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+    ).toBeFalsy();
+    expect(peerUpdate.body.switches[FeatureSwitchKey.PiLoop]).toBeTruthy();
     expect(peerUpdate.body.switches[FeatureSwitchKey.Dummy]).toBeUndefined();
 
     const ownerReadAfterPeerUpdate = await accept(
       featureSwitchesClient().get({ headers: headersFor(owner) }),
       [200],
     );
+    expect(
+      ownerReadAfterPeerUpdate.body.switches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeFalsy();
     expect(
       ownerReadAfterPeerUpdate.body.switches[FeatureSwitchKey.PiLoop],
     ).toBeFalsy();
@@ -259,8 +279,13 @@ describe("OPS-01: feature switch routes", () => {
       [200],
     );
     expect(
-      peerReadAfterDelete.body.switches[FeatureSwitchKey.PiLoop],
+      peerReadAfterDelete.body.switches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
     ).toBeUndefined();
+    expect(
+      peerReadAfterDelete.body.switches[FeatureSwitchKey.PiLoop],
+    ).toBeTruthy();
     expect(
       peerReadAfterDelete.body.switches[FeatureSwitchKey.Dummy],
     ).toBeUndefined();

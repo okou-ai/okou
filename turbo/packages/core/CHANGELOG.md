@@ -1,5 +1,27 @@
 # Changelog
 
+## [8.686.0](https://github.com/vm0-ai/okou/compare/core-v8.685.0...core-v8.686.0) (2026-09-20)
+
+
+### Features
+
+* **cli:** query current run usage ([#35541](https://github.com/vm0-ai/okou/issues/35541)) ([2be9088](https://github.com/vm0-ai/okou/commit/2be908850eb21a47c31b930b5f19e7991daf8ff9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.477.0
+
+## [8.685.0](https://github.com/vm0-ai/okou/compare/core-v8.684.1...core-v8.685.0) (2026-09-20)
+
+
+### Features
+
+* **connectors:** gate monday mcp discovery ([#35525](https://github.com/vm0-ai/okou/issues/35525)) ([a7384c6](https://github.com/vm0-ai/okou/commit/a7384c6f34b5841a424676418e5f57178b21da06))
+* **platform:** gate AgentPhone entry behind feature switch ([#35488](https://github.com/vm0-ai/okou/issues/35488)) ([37f2fa4](https://github.com/vm0-ai/okou/commit/37f2fa4a63c075cf895061d5138edb1a437d0f40))
+
 ## [8.684.1](https://github.com/vm0-ai/okou/compare/core-v8.684.0...core-v8.684.1) (2026-09-20)
 
 

@@ -265,12 +265,13 @@ fixture exception. Removing the automation/destination comparisons or the
 post-Clerk local transaction makes the corresponding route regression release
 stale content again. The limits worth stating:
 
-- The database budget case stages real PostgreSQL waits at candidate discovery,
-  the Agent lock and the final active-Run query. Each arrives and is released in
-  order. Their cumulative controlled-clock cost reaches the candidate boundary,
-  and a query-level observer proves the body SELECT did not start. A fresh
-  request then reaches that exact SELECT and exposes `2s` lock, `5s` statement
-  and `12s` transaction settings, so the absence check is not vacuous.
+- The database budget case stages real PostgreSQL waits on the uniquely owned
+  Agent and Chat-thread rows, in the same order as the production transaction.
+  Their cumulative controlled-clock cost reaches the candidate boundary, and a
+  thread-scoped query observer proves the body SELECT did not start without
+  pausing a failed negative case. A fresh request then reaches a separately armed
+  barrier for that exact SELECT and exposes `2s` lock, `5s` statement and `12s`
+  transaction settings, so the absence check is not vacuous.
 - A separate case starts the per-thread transaction with one second remaining,
   still strictly below either individual statement cap. A
   driver-boundary barrier observes its exact Agent query and the installed

@@ -412,6 +412,15 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/agent-run-failure-log.service.ts"],
+    rules: {
+      // Guest root filesystem exhaustion is already a classified, bounded
+      // execution condition. Preserve the canonical INFO behavior without
+      // allowing unrelated completion messages to bypass the noise gate.
+      "api/no-logger-info": ["error", { allowedMessages: ["Run failed"] }],
+    },
+  },
+  {
     files: ["src/signals/services/pi-api-first-turn.service.ts"],
     rules: {
       // Recovery, discarded late results and attempt timeouts are the only
@@ -422,6 +431,17 @@ export default [
       "api/no-logger-info": [
         "error",
         { allowedMessages: ["Pi API first-turn outcome"] },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/services/pi-api-first-turn-failure-log.service.ts"],
+    rules: {
+      // Classified provider outcomes mirror Runner's bounded execution
+      // diagnostic at INFO; unclassified structural failures remain ERROR.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Pi API first-turn execution failed"] },
       ],
     },
   },

@@ -343,11 +343,17 @@ test("Empty search follows the current agent and unread filter", async () => {
     caseId: 25,
     threads: [first, second, third, foreign],
   });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      unreads: [second, third].map((thread) => {
-        return { threadId: thread.id, unreadAt: "2026-08-01T01:00:00.000Z" };
-      }),
+      agents: {
+        [CHAT_LIST_AGENT_ID]: "unread",
+        [foreign.agentId]: "unread",
+      },
+      threads: {
+        [second.id]: "unread",
+        [third.id]: "unread",
+        [foreign.id]: "unread",
+      },
     });
   });
   await setupPage({

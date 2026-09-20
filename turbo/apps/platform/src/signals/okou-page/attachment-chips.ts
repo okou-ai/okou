@@ -1,5 +1,5 @@
 import {
-  createAttachmentPreviewSignals,
+  attachmentPreviewSignalsFor,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state } from "ccstate";
@@ -51,7 +51,7 @@ export type AttachmentArtifactMetadata = {
 interface AttachmentNamedLightboxBase {
   readonly url: string;
   readonly filename: string;
-  /** Reuse the initiating thread artifact's already resolved credential. */
+  /** Reuse the initiating surface's already resolved credential. */
   readonly preview?: AttachmentPreviewSignals;
   readonly artifact?: AttachmentArtifactMetadata;
   readonly shareAvailable?: boolean;
@@ -81,7 +81,7 @@ type AttachmentPreviewSource =
   | { readonly url?: string; readonly file: File };
 
 type AttachmentImageLightboxInput = AttachmentPreviewSource & {
-  /** Reuse the initiating thread image's already resolved credential. */
+  /** Reuse the initiating surface's already resolved credential. */
   readonly preview?: AttachmentPreviewSignals;
   /**
    * Present only for an image the viewer is allowed to mark up — a composer
@@ -131,18 +131,13 @@ type AttachmentLightboxInput =
   | AttachmentImageLightboxState
   | AttachmentDocumentLightboxState
   | AttachmentFileLightboxInput
-  | {
-      kind: "audio" | "video";
-      url: string;
-      filename: string;
-      artifact?: AttachmentArtifactMetadata;
-      shareAvailable?: boolean;
-      showSizeInSubtitle?: boolean;
-      splitViewAvailable?: boolean;
-    };
+  | (AttachmentNamedLightboxBase & { readonly kind: "audio" | "video" });
 
 export type AttachmentLightboxState = AttachmentLightboxInput &
-  ReturnType<typeof createAttachmentPreviewSignals>;
+  AttachmentPreviewSignals & {
+    /** The owner passed into every subsequent preview surface. */
+    readonly preview: AttachmentPreviewSignals;
+  };
 
 const internalLightboxState$ = state<AttachmentLightboxState | null>(null);
 const internalLightboxDialogVisible$ = state(false);
@@ -248,22 +243,18 @@ export function attachmentSidebarRef(
   if (value.file) {
     return { file: value.file, ...share };
   }
-  if (value.filename) {
-    const contentType =
-      value.contentType ??
-      previewAttachmentFromUrl(value.url, value.filename).contentType;
-    return {
-      url: value.url,
-      filename: value.filename,
-      ...(contentType ? { contentType } : {}),
-      // The caller's preview content rides along, so the sidebar reuses the
-      // already-fetched text instead of fetching its own copy.
-      ...(value.text$ ? { text$: value.text$ } : {}),
-      ...(value.preview ? { preview: value.preview } : {}),
-      ...share,
-    };
-  }
-  return value.url;
+  const attachment = previewAttachmentFromUrl(value.url, value.filename);
+  const contentType = value.contentType ?? attachment.contentType;
+  return {
+    url: value.url,
+    filename: value.filename ?? attachment.filename,
+    ...(contentType ? { contentType } : {}),
+    // The caller's preview content rides along, so the sidebar reuses the
+    // already-fetched text instead of fetching its own copy.
+    ...(value.text$ ? { text$: value.text$ } : {}),
+    ...(value.preview ? { preview: value.preview } : {}),
+    ...share,
+  };
 }
 
 const routeToOpenArtifactSidebar$ = command(
@@ -309,10 +300,8 @@ export const openImageLightbox$ = command(
     const image = imageLightboxState(input, previewSignal);
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
-    set(internalLightboxState$, {
-      ...image,
-      ...(input.preview ?? createAttachmentPreviewSignals(image.url)),
-    });
+    const preview = attachmentPreviewSignalsFor(image);
+    set(internalLightboxState$, { ...image, preview, ...preview });
   },
 );
 
@@ -337,10 +326,12 @@ export const navigateImageLightbox$ = command(
   ) => {
     set(attachmentLightboxImageCanvasSignals.reset$);
     set(resetLightboxPreviewSignal$, get(rootSignal$));
+    const preview = attachmentPreviewSignalsFor(value);
     set(internalLightboxState$, {
       kind: "image",
       ...value,
-      ...(value.preview ?? createAttachmentPreviewSignals(value.url)),
+      preview,
+      ...preview,
     });
   },
 );
@@ -357,7 +348,7 @@ export const openDocumentLightbox$ = command(
     set(resetLightboxPreviewSignal$, get(rootSignal$));
     set(internalLightboxDialogVisible$, true);
     set(internalLightboxDialogFullscreen$, false);
-    const preview = value.preview ?? createAttachmentPreviewSignals(value.url);
+    const preview = attachmentPreviewSignalsFor(value);
     if (isAttachmentTextDocumentLightboxInput(value)) {
       const text$ =
         value.text$ ??
@@ -366,6 +357,7 @@ export const openDocumentLightbox$ = command(
         set(internalLightboxState$, {
           ...value,
           kind: "markdown",
+          preview,
           ...preview,
           text$,
           markdownTree$: createMarkdownPreviewTree(text$),
@@ -376,11 +368,12 @@ export const openDocumentLightbox$ = command(
         ...value,
         kind: value.kind,
         text$,
+        preview,
         ...preview,
       });
       return;
     }
-    set(internalLightboxState$, { ...value, ...preview });
+    set(internalLightboxState$, { ...value, preview, ...preview });
   },
 );
 
@@ -393,10 +386,12 @@ function createSimpleLightboxOpener(kind: "audio" | "file" | "video") {
       set(resetLightboxPreviewSignal$, get(rootSignal$));
       set(internalLightboxDialogVisible$, true);
       set(internalLightboxDialogFullscreen$, false);
+      const preview = attachmentPreviewSignalsFor(value);
       set(internalLightboxState$, {
         kind,
         ...value,
-        ...createAttachmentPreviewSignals(value.url),
+        preview,
+        ...preview,
       });
     },
   );

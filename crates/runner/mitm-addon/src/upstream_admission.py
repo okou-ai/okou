@@ -21,6 +21,9 @@ TLS_ADMISSION_INVALID_REGISTRY_SANDBOX: Final = "invalid_registry_sandbox"
 TLS_ADMISSION_REGISTRY_UNAVAILABLE: Final = "registry_unavailable"
 
 _TEST_ENDPOINT_PATH_PREFIX: Final = "/api/test/"
+_PLATFORM_CONNECTOR_AUTH_PATH_ALLOWLIST: Final = frozenset(("/mcp",))
+_PLATFORM_CONNECTOR_AUTH_PATH_DENYLIST: Final = frozenset(("/api",))
+_PLATFORM_CONNECTOR_AUTH_PATH_DENY_PREFIXES: Final = ("/api/", "/mcp/")
 _TEST_ENDPOINT_BYPASS_HEADER: Final = "x-okou-test-endpoint-bypass"
 _UPSTREAM_BINDING_DIAGNOSTICS = "_upstream_binding_diagnostics"
 
@@ -30,6 +33,7 @@ TlsAdmissionKind = Literal[
     "registry_unavailable",
 ]
 PlatformRequestPathDecision = Literal["api_allow", "firewall", "deny"]
+PlatformConnectorAuthPathDecision = Literal["allow", "deny"]
 _tls_admissions: dict[str, "TlsAdmission"] = {}
 
 
@@ -142,6 +146,20 @@ def platform_request_path_decision(path: str) -> PlatformRequestPathDecision:
     if pathname.startswith(_TEST_ENDPOINT_PATH_PREFIX):
         return "firewall"
     return "api_allow"
+
+
+def platform_connector_auth_path_decision(path: str) -> PlatformConnectorAuthPathDecision:
+    """Apply the fail-closed allowlist/denylist for platform connector auth."""
+    pathname = strip_url_query_and_fragment(path)
+    if path_security.has_unsafe_path(pathname):
+        return "deny"
+    if pathname in _PLATFORM_CONNECTOR_AUTH_PATH_DENYLIST or any(
+        pathname.startswith(prefix) for prefix in _PLATFORM_CONNECTOR_AUTH_PATH_DENY_PREFIXES
+    ):
+        return "deny"
+    if pathname in _PLATFORM_CONNECTOR_AUTH_PATH_ALLOWLIST:
+        return "allow"
+    return "deny"
 
 
 def api_destination_matches(
@@ -526,15 +544,18 @@ def ensure_bound_destination(
     *,
     kind: upstream_destination_binding.BindingKind,
     api_url: str,
+    platform_connector_auth: bool = False,
 ) -> bool:
     """Admit the flow's trusted authority for one privileged binding kind.
 
     ``flow`` must already carry validated trusted-authority metadata and the
     request, client, and server connection state to bind. ``kind`` selects the
     privileged purpose, while ``api_url`` identifies the platform API origin.
-    ``api_allow`` requires the current scheme and authority to match that origin;
-    ``connector_auth`` on that origin requires the gated test-endpoint bypass
-    before either binding or reusing a destination.
+    ``api_allow`` requires the current scheme and authority to match that origin.
+    ``connector_auth`` on that origin requires either the gated test-endpoint
+    bypass or a classification-owned authorization whose current path is still
+    allowed by the platform connector-auth allowlist/denylist before binding or
+    reuse.
 
     A direct server binding may be reused, extended with ``kind``, or refreshed
     only while its authority and current destination remain valid. Otherwise an
@@ -573,16 +594,17 @@ def ensure_bound_destination(
     )
     if kind == "api_allow" and not is_api_destination:
         return False
-    # Synthetic test providers live on the platform API preview host but
-    # intentionally exercise connector auth injection instead of API auto-allow.
-    # Keep this path limited to test endpoints gated by the same internal
-    # bypass secret that the API route validates.
-    if (
-        kind == "connector_auth"
-        and is_api_destination
-        and not _request_has_platform_test_endpoint_bypass(flow)
-    ):
-        return False
+    # Two connector-auth paths intentionally share the platform API authority:
+    # test providers require their internal bypass secret, while the MCP resource
+    # requires an explicit proof from successful connector-owner classification.
+    if kind == "connector_auth" and is_api_destination:
+        has_test_endpoint_bypass = _request_has_platform_test_endpoint_bypass(flow)
+        has_platform_connector_authorization = (
+            platform_connector_auth
+            and platform_connector_auth_path_decision(flow.request.path) == "allow"
+        )
+        if not (has_test_endpoint_bypass or has_platform_connector_authorization):
+            return False
 
     allowed_kinds = frozenset((kind,))
     has_bound = upstream_destination_binding.flow_matches_normalized_destination(

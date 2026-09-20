@@ -85,6 +85,12 @@ type ComposerEditorSignals = Pick<
   | "replacePromptText$"
 > & {
   readonly singleLineOnMobile: boolean;
+  /**
+   * The forward dialog reuses the start page's composer signals, so
+   * "not docked under a thread" is not enough to identify the start page. Its
+   * shell stays compact while the start page's opens taller.
+   */
+  readonly forwardComposer: boolean;
 };
 
 type ComposerWorkflowEditorSignals = Pick<
@@ -238,9 +244,16 @@ interface ComposerSubmissionSignals {
   readonly sending$: Computed<Promise<boolean>>;
   readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
+  /**
+   * Sends what the composer currently holds. The second argument is agent-only
+   * context for this one send: it reaches the run's prompt through the
+   * message's additional_info part and never the text the member reads, which
+   * is how a caller states how the run should be carried out without spending
+   * the member's own message on instructions addressed to it.
+   */
   readonly submitCurrentInput$: Command<
     Promise<boolean>,
-    [ComposerPrimaryAction, AbortSignal]
+    [ComposerPrimaryAction, string | undefined, AbortSignal]
   >;
   readonly activatePrimaryAction$: Command<
     Promise<boolean>,
@@ -306,7 +319,7 @@ interface CreateComposerSignalsOptions {
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
-  readonly forwardComposer?: boolean;
+  readonly forwardComposer: boolean;
   readonly modelSelection$: ComposerModelSignals["modelSelection$"];
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
@@ -351,10 +364,14 @@ function createComposerFileInputSignals() {
 
 function composerEditorSignals(
   composer: WorkflowComposerSignals,
-  singleLineOnMobile: boolean,
+  options: Pick<
+    CreateComposerSignalsOptions,
+    "singleLineOnMobile" | "forwardComposer"
+  >,
 ): ComposerEditorSignals {
   return {
-    singleLineOnMobile,
+    singleLineOnMobile: options.singleLineOnMobile,
+    forwardComposer: options.forwardComposer,
     editor: composer.editor,
     setContainerRef$: composer.setContainerRef$,
     focus$: composer.focus$,
@@ -665,7 +682,7 @@ export function createComposerSignals(
     paidToolHints$: createPaidToolHints(create, draft, workflowComposer),
     create,
     taskChips,
-    editor: composerEditorSignals(workflowComposer, options.singleLineOnMobile),
+    editor: composerEditorSignals(workflowComposer, options),
     voice,
     feedback: workflowComposer.feedback,
     workflow: {
@@ -875,6 +892,22 @@ function createComposerPrimaryActionSignal(args: {
   });
 }
 
+/**
+ * One message carries one additional_info part, so a caller's context for this
+ * send and the composer's own selections are joined into it rather than one
+ * replacing the other.
+ */
+function joinAdditionalInfo(
+  ...blocks: readonly (string | undefined)[]
+): string | undefined {
+  const text = blocks
+    .filter((block): block is string => {
+      return block !== undefined && block.length > 0;
+    })
+    .join("\n\n");
+  return text.length > 0 ? text : undefined;
+}
+
 function createSubmitCurrentInput({
   options,
   workflowComposer,
@@ -900,6 +933,7 @@ function createSubmitCurrentInput({
     async (
       { get, set },
       action: ComposerPrimaryAction,
+      callerAdditionalInfo: string | undefined,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
@@ -932,7 +966,7 @@ function createSubmitCurrentInput({
         : undefined;
       signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
-      const additionalInfo = get(create.enabled$)
+      const composerAdditionalInfo = get(create.enabled$)
         ? buildComposerAdditionalInfo(
             mode,
             videoRunOptions,
@@ -942,6 +976,10 @@ function createSubmitCurrentInput({
               : undefined,
           )
         : undefined;
+      const additionalInfo = joinAdditionalInfo(
+        callerAdditionalInfo,
+        composerAdditionalInfo,
+      );
       const editorDocument = additionalInfo
         ? createEditorDocumentSnapshot(
             workflowComposer.editor.schema.nodeFromJSON(
@@ -954,7 +992,11 @@ function createSubmitCurrentInput({
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
-        videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+        // Read from the composer's own block rather than the joined text: the
+        // video parameters are only inside that one, so a caller's context
+        // must not be what drops the structured field a composer outside the
+        // rollout still depends on.
+        videoRunOptions: composerAdditionalInfo ? undefined : videoRunOptions,
         taskSelection: {
           task: get(taskChips.task$) ?? mode,
           presentationSlideCount: get(create.presentationSlideCount$),
@@ -1033,7 +1075,9 @@ function createComposerSubmissionSignals(
         await set(options.cancelRun$, signal);
         return true;
       }
-      return await set(submitCurrentInput$, action, signal);
+      // A member pressing the composer's own button asks for exactly what they
+      // typed, so this send adds no context of its own.
+      return await set(submitCurrentInput$, action, undefined, signal);
     },
   );
 

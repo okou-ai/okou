@@ -1,6 +1,11 @@
 import {
   Client,
   InsufficientScopeError,
+  ProtocolError,
+  ProtocolErrorCode,
+  SdkError,
+  SdkErrorCode,
+  SdkHttpError,
   StreamableHTTPClientTransport,
   type CallToolResult,
   type FetchLike,
@@ -24,9 +29,32 @@ const MAX_DISCOVERY_BYTES = 16 * 1024 * 1024;
 const MAX_DISCOVERY_PAGES = 100;
 const MAX_DISCOVERY_TOOLS = 2_000;
 
-class McpCommandError extends Error {}
-class McpDeadlineError extends McpCommandError {}
-class McpResponseLimitError extends McpCommandError {}
+export type McpCallFailureKind = "client" | "protocol" | "transport";
+
+export class McpCallFailure extends Error {
+  constructor(
+    readonly kind: McpCallFailureKind,
+    readonly code: string,
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+  }
+}
+
+class McpCommandError extends McpCallFailure {
+  constructor(code: string, message: string) {
+    super("client", code, message, false);
+  }
+}
+
+class McpDeadlineError extends Error {}
+
+class McpResponseLimitError extends McpCommandError {
+  constructor(message: string) {
+    super("response_limit", message);
+  }
+}
 
 interface McpOperationResult<T> {
   readonly value: T;
@@ -181,10 +209,15 @@ async function insufficientScopeError(
   connector: McpConnector,
   error: InsufficientScopeError,
   deadlineSignal: AbortSignal,
-): Promise<Error> {
+): Promise<McpCallFailure> {
   const scopes = parseRequiredScopes(error);
   if (!scopes) {
-    return new Error("MCP server request failed");
+    return new McpCallFailure(
+      "transport",
+      "insufficient_scope",
+      "MCP server request failed",
+      false,
+    );
   }
   try {
     const authorization = await reauthorizeRunMcpConnectorOAuth(
@@ -192,7 +225,9 @@ async function insufficientScopeError(
       scopes,
       deadlineSignal,
     );
-    return new Error(
+    return new McpCallFailure(
+      "transport",
+      "insufficient_scope",
       [
         "This MCP connector needs additional authorization for future runs:",
         `[Authorize MCP connector](${authorization.authorizationUrl})`,
@@ -201,15 +236,53 @@ async function insufficientScopeError(
           : []),
         "The failed MCP request was not retried. Start a new run after authorization.",
       ].join("\n"),
+      false,
     );
   } catch (reauthorizationError) {
     if (reauthorizationError instanceof ApiRequestError) {
-      return new Error(
+      return new McpCallFailure(
+        "transport",
+        "reauthorization_failed",
         `MCP scope reauthorization failed: ${reauthorizationError.message}. The failed MCP request was not retried.`,
+        false,
       );
     }
-    return new Error("MCP server request failed");
+    return new McpCallFailure(
+      "transport",
+      "reauthorization_failed",
+      "MCP server request failed",
+      false,
+    );
   }
+}
+
+function protocolErrorCode(code: number): string {
+  switch (code) {
+    case ProtocolErrorCode.ParseError:
+      return "parse_error";
+    case ProtocolErrorCode.InvalidRequest:
+      return "invalid_request";
+    case ProtocolErrorCode.MethodNotFound:
+      return "method_not_found";
+    case ProtocolErrorCode.InvalidParams:
+      return "invalid_params";
+    case ProtocolErrorCode.InternalError:
+      return "internal_error";
+    case ProtocolErrorCode.ResourceNotFound:
+      return "resource_not_found";
+    case ProtocolErrorCode.MissingRequiredClientCapability:
+      return "missing_required_client_capability";
+    case ProtocolErrorCode.UnsupportedProtocolVersion:
+      return "unsupported_protocol_version";
+    case ProtocolErrorCode.UrlElicitationRequired:
+      return "url_elicitation_required";
+    default:
+      return "protocol_error";
+  }
+}
+
+function sdkErrorCode(code: SdkErrorCode): string {
+  return code.toLowerCase();
 }
 
 async function safeMcpError(
@@ -218,13 +291,18 @@ async function safeMcpError(
   deadlineSignal: AbortSignal,
   deadlineAt: number,
   timeoutSeconds: number,
-): Promise<Error> {
+): Promise<McpCallFailure> {
   if (
     deadlineSignal.aborted ||
     Date.now() >= deadlineAt ||
     error instanceof McpDeadlineError
   ) {
-    return new Error(`MCP command timed out after ${timeoutSeconds}s`);
+    return new McpCallFailure(
+      "transport",
+      "timeout",
+      `MCP command timed out after ${timeoutSeconds}s`,
+      false,
+    );
   }
   if (error instanceof InsufficientScopeError) {
     const reauthorizationError = await insufficientScopeError(
@@ -233,13 +311,52 @@ async function safeMcpError(
       deadlineSignal,
     );
     return deadlineSignal.aborted || Date.now() >= deadlineAt
-      ? new Error(`MCP command timed out after ${timeoutSeconds}s`)
+      ? new McpCallFailure(
+          "transport",
+          "timeout",
+          `MCP command timed out after ${timeoutSeconds}s`,
+          false,
+        )
       : reauthorizationError;
   }
   if (error instanceof McpCommandError) {
-    return new Error(error.message);
+    return error;
   }
-  return new Error("MCP server request failed");
+  if (error instanceof ProtocolError) {
+    return new McpCallFailure(
+      "protocol",
+      protocolErrorCode(error.code),
+      "MCP server returned a protocol error",
+      false,
+    );
+  }
+  if (error instanceof SdkHttpError) {
+    return new McpCallFailure(
+      "transport",
+      sdkErrorCode(error.code),
+      "MCP server request failed",
+      false,
+    );
+  }
+  if (error instanceof SdkError) {
+    const protocolFailure =
+      error.code === SdkErrorCode.InvalidResult ||
+      error.code === SdkErrorCode.UnsupportedResultType;
+    return new McpCallFailure(
+      protocolFailure ? "protocol" : "transport",
+      sdkErrorCode(error.code),
+      protocolFailure
+        ? "MCP server returned an invalid response"
+        : "MCP server request failed",
+      false,
+    );
+  }
+  return new McpCallFailure(
+    "transport",
+    "request_failed",
+    "MCP server request failed",
+    false,
+  );
 }
 
 async function runMcpOperation<T>(
@@ -255,7 +372,10 @@ async function runMcpOperation<T>(
   try {
     endpoint = new URL(connector.endpoint);
   } catch {
-    throw new Error("MCP connector definition has an invalid endpoint");
+    throw new McpCommandError(
+      "invalid_endpoint",
+      "MCP connector definition has an invalid endpoint",
+    );
   }
 
   const deadlineController = new AbortController();
@@ -351,18 +471,23 @@ async function discoverMcpTools(
     discoveryBytes += Buffer.byteLength(JSON.stringify(page), "utf8");
     if (discoveryBytes > MAX_DISCOVERY_BYTES) {
       throw new McpCommandError(
+        "discovery_limit",
         "MCP tool discovery exceeds the 16 MiB aggregate limit",
       );
     }
     if (tools.length + page.tools.length > MAX_DISCOVERY_TOOLS) {
       throw new McpCommandError(
+        "discovery_limit",
         "MCP tool discovery exceeds the 2,000 tool limit",
       );
     }
 
     for (const tool of page.tools) {
       if (toolNames.has(tool.name)) {
-        throw new McpCommandError("MCP server returned duplicate tool names");
+        throw new McpCommandError(
+          "invalid_discovery",
+          "MCP server returned duplicate tool names",
+        );
       }
       toolNames.add(tool.name);
       tools.push(tool);
@@ -373,11 +498,15 @@ async function discoverMcpTools(
     }
     if (pageNumber === MAX_DISCOVERY_PAGES) {
       throw new McpCommandError(
+        "discovery_limit",
         "MCP tool discovery exceeds the 100 page limit",
       );
     }
     if (cursors.has(page.nextCursor)) {
-      throw new McpCommandError("MCP server repeated a tool page cursor");
+      throw new McpCommandError(
+        "invalid_discovery",
+        "MCP server repeated a tool page cursor",
+      );
     }
     cursors.add(page.nextCursor);
     cursor = page.nextCursor;
@@ -414,7 +543,10 @@ export async function callMcpTool(
         return candidate.name === toolName;
       });
       if (!tool) {
-        throw new McpCommandError(`MCP tool "${toolName}" was not found`);
+        throw new McpCommandError(
+          "tool_not_found",
+          `MCP tool "${toolName}" was not found`,
+        );
       }
 
       return client.callTool(

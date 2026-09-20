@@ -6,6 +6,7 @@ export const CAPABILITIES = [
   "agent:write",
   "agent:delete",
   "agent-run:read",
+  "run-usage:read",
   "github:read",
   "github:write",
   "slack:read",
@@ -72,6 +73,10 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "agent:write": { group: "Agent", label: "Create & update agents" },
   "agent:delete": { group: "Agent", label: "Delete agents" },
   "agent-run:read": { group: "Agent Runs", label: "View runs & telemetry" },
+  "run-usage:read": {
+    group: "Agent Runs",
+    label: "View current Run token usage",
+  },
   "github:read": {
     group: "Integrations",
     label: "Download GitHub files",

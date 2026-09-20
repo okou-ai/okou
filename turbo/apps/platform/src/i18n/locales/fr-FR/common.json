@@ -459,6 +459,7 @@
       "description": "Il est peut-être privé ou n’est plus disponible.",
       "help": "Demandez à la personne qui a partagé ce lien de vérifier l’accès.",
       "signedInAs": "Connecté en tant que {{email}}",
+      "signedInDescription": "Il n’existe peut-être pas, ou il est partagé avec un autre compte ou une autre organisation.",
       "signIn": "Se connecter",
       "signInFailed": "Impossible d’ouvrir la connexion. Réessayez.",
       "switchAccount": "Changer de compte",
@@ -520,7 +521,7 @@
       "description": "Parcourez tout ce que vous avez créé ici.",
       "emptyDescription": "Les artéfacts apparaîtront ici lorsqu'ils seront disponibles.",
       "emptyTitle": "Aucun artéfact trouvé",
-      "error": "Impossible de charger les artéfacts. Réessayez plus tard.",
+      "error": "Impossible de charger les artéfacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Afficher les artéfacts d'avatar",
@@ -539,7 +540,8 @@
         "websiteAria": "Afficher les artéfacts du site web"
       },
       "kindIcon": "Artéfact {{kind}}",
-      "loading": "Chargement des artéfacts"
+      "loading": "Chargement des artéfacts",
+      "retry": "Réessayer"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -621,6 +623,7 @@
       "onlyMeDescription": "Vous seul pouvez voir cet artefact",
       "organization": "Organisation",
       "organizationDescription": "Toute personne de {{organization}} disposant du lien",
+      "organizationDescriptionUnnamed": "Toute personne de votre organisation disposant du lien",
       "permissionsUpdated": "Accès mis à jour",
       "publicAccess": "Accès public",
       "publicDescription": "Toute personne disposant du lien peut le voir",
@@ -665,7 +668,6 @@
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer votre propre fichier",
       "importFileHint": "Réutilisez le design de votre fichier",
-      "importUnsupported": "Choisissez un fichier {{formats}} pour créer un modèle.",
       "multiAccent": "Multi-accents",
       "needPro": "Pro requis",
       "nextSlide": "Aperçu de la diapositive suivante",
@@ -1470,7 +1472,9 @@
           },
           "connector": {
             "confirm": "Voir tous les connecteurs",
-            "description": "Connectez un de vos outils pour que {{assistantName}} puisse y travailler.",
+            "connected": "Connecté",
+            "description": "Choisissez-en un et {{assistantName}} commence à y travailler.",
+            "notConnected": "Non connecté",
             "pickerFailed": "Impossible de charger les connecteurs. Ouvrez la page des connecteurs pour réessayer.",
             "pickerLoading": "Chargement des connecteurs…",
             "title": "{{assistantName}} travaille dans les outils que vous utilisez déjà"
@@ -6611,7 +6615,6 @@
     "loadingAccess": "Chargement des accès des agents…",
     "manage": "Gérer VNC",
     "port": "Port",
-    "refresh": "Actualiser",
     "retry": "Réessayer",
     "save": "Enregistrer",
     "saveRecovery": {

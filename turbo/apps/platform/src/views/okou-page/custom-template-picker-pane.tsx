@@ -293,9 +293,11 @@ function CustomTemplateCard({
 function CustomTemplateFileInput({
   signals,
   label,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
   readonly label: string;
+  readonly onImported: () => void;
 }) {
   const rootSignal = useGet(rootSignal$);
   const importDeck = useSet(importPresentationTemplateDeck$);
@@ -312,6 +314,10 @@ function CustomTemplateFileInput({
         if (!file) {
           return;
         }
+        // The import attaches the file and sends, so the member is answered in
+        // the thread rather than here; a picker left over that thread hides
+        // the run they were just handed.
+        onImported();
         detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
       }}
     />
@@ -327,8 +333,10 @@ function CustomTemplateFileInput({
  */
 function CustomTemplateUploadCard({
   signals,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
+  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
@@ -338,9 +346,8 @@ function CustomTemplateUploadCard({
   // where every other tile carries its meta, so it is read down a column of
   // "who can see this"; the accept list read as prose was both a different
   // kind of line and longer than the tile, and it grew by one extension every
-  // time the import learned a format. Which files are allowed stays enforced
-  // by the input's `accept` and spelled out by `importUnsupported` when a
-  // member reaches for one that is not.
+  // time the import learned a format. Which files are allowed stays with the
+  // input's `accept`, which is where the file chooser reads it.
   const hint = t(($) => {
     return $.artifacts.templates.importFileHint;
   });
@@ -357,7 +364,11 @@ function CustomTemplateUploadCard({
           strokeWidth={1.5}
           aria-hidden
         />
-        <CustomTemplateFileInput signals={signals} label={label} />
+        <CustomTemplateFileInput
+          signals={signals}
+          label={label}
+          onImported={onImported}
+        />
       </span>
       <span className="flex flex-col gap-0.5">
         <span className="truncate text-sm font-medium text-foreground">
@@ -379,8 +390,10 @@ function CustomTemplateUploadCard({
  */
 function CustomTemplatesEmpty({
   signals,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
+  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
@@ -405,7 +418,11 @@ function CustomTemplatesEmpty({
           return $.templates.empty.description;
         })}
       </span>
-      <CustomTemplateFileInput signals={signals} label={label} />
+      <CustomTemplateFileInput
+        signals={signals}
+        label={label}
+        onImported={onImported}
+      />
     </label>
   );
 }
@@ -418,9 +435,11 @@ function CustomTemplatesEmpty({
 export function CustomTemplatePickerPane({
   signals,
   onSelect,
+  onImported,
 }: {
   readonly signals: ComposerSignals;
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+  readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
@@ -447,11 +466,11 @@ export function CustomTemplatePickerPane({
       hasQuery ? (
         <TemplateEmptyPanel />
       ) : (
-        <CustomTemplatesEmpty signals={signals} />
+        <CustomTemplatesEmpty signals={signals} onImported={onImported} />
       )
     ) : (
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
-        <CustomTemplateUploadCard signals={signals} />
+        <CustomTemplateUploadCard signals={signals} onImported={onImported} />
         {templates.map((template) => {
           return (
             <CustomTemplateCard

@@ -344,7 +344,7 @@ test("An untrusted redirect URL does not control the auth brand", async () => {
   );
 });
 
-test("Ad-attributed sign-ups continue to onboarding with their attribution", async () => {
+test("Default sign-up redirects do not propagate acquisition parameters", async () => {
   await setupSignedOutPage(
     "/sign-up?gclid=click-123&utm_campaign=summer#/verify?step=code",
   );
@@ -352,11 +352,7 @@ test("Ad-attributed sign-ups continue to onboarding with their attribution", asy
   const redirectUrl = new URL(
     screen.getByTestId("clerk-sign-up").dataset.clerkForceRedirectUrl ?? "",
   );
-  expect(redirectUrl.origin).toBe("https://app.okou.ai");
-  expect(redirectUrl.pathname).toBe("/onboarding");
-  expect(redirectUrl.searchParams.get("gclid")).toBe("click-123");
-  expect(redirectUrl.searchParams.get("utm_campaign")).toBe("summer");
-  expect(redirectUrl.searchParams.get("vm0_source")).toBe("homepage");
+  expect(redirectUrl.toString()).toBe("https://app.okou.ai/onboarding");
 });
 
 test("Sign-up redirects to sibling origins of the current host are kept", async () => {

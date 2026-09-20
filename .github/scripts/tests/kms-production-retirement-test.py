@@ -247,8 +247,8 @@ class RetirementCliTest(unittest.TestCase):
     def test_renamed_repository_reads_proof_from_the_new_api_namespace(self):
         result, provider, report = self.invoke(
             overrides={
-                "GITHUB_REPOSITORY": "maxandzoe/okou",
-                "GITHUB_WORKFLOW_REF": "maxandzoe/okou/.github/workflows/kms-production-retire.yml@refs/heads/main",
+                "GITHUB_REPOSITORY": "okou-ai/okou",
+                "GITHUB_WORKFLOW_REF": "okou-ai/okou/.github/workflows/kms-production-retire.yml@refs/heads/main",
             }
         )
         self.assertEqual(result.returncode, 0, result.stderr)

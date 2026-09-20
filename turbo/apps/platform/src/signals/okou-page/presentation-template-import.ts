@@ -4,9 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-templates";
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { toast } from "@okouai/ui/components/ui/sonner";
 
-import { i18n } from "../../i18n/index.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
@@ -63,17 +61,6 @@ export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
  */
 export const CUSTOM_TEMPLATE_IMPORT_ACCEPT = acceptList(USER_TEMPLATE_KINDS);
 
-function importedTemplateKind(file: File): UserTemplateKind | null {
-  const name = file.name.toLowerCase();
-  return (
-    USER_TEMPLATE_KINDS.find((kind) => {
-      return TEMPLATE_IMPORT_EXTENSIONS[kind].some((extension) => {
-        return name.endsWith(extension);
-      });
-    }) ?? null
-  );
-}
-
 /**
  * The message the deck is sent with.
  *
@@ -93,43 +80,63 @@ function presentationTemplateImportPrompt(): string {
  * The same request, aimed at the custom template catalog.
  *
  * One sentence for every kind, because the guide already sorts them: the
- * `reverse-template` skill decides whether the file is a deck, a Word
- * document, a PDF document or artwork and follows the branch that matches.
+ * `reverse-template` skill reads the file and follows the branch that matches.
  * Repeating that decision here would give the run two answers that can
  * disagree, and the one in the guide is the one that read the file.
  *
- * Naming the catalog is what this message does have to carry. The guide's
- * presentation branch ends at `okou presentation-template publish`, which
- * writes to the presentation table; a template published there never reaches
- * the Custom pane, which reads the user template catalog. Its document branch
- * already publishes here and adds `--kind document` itself, so saying the
- * command once covers both without this message claiming a kind.
+ * Which skill reads the file and which command publishes it are absent for the
+ * same reason the deck's message leaves out the guide: they describe how the
+ * run works, not what the member asked for, and a message reciting them reads
+ * as a script written for someone else in the member's own thread.
+ * `customTemplateImportGuidance` carries them where only the run sees them.
  */
 function customTemplateImportPrompt(): string {
-  return "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
+  return "Analyse this file and save it as a reusable template.";
 }
 
 /**
- * Which message this file is sent with, or null if it cannot become one.
+ * What the run has to be told and the member does not, sent as the message's
+ * `additional_info` part, which reaches the agent's prompt and never the
+ * thread's visible text.
  *
- * The switch-off answer does not read the file at all. That path is the one
- * every existing import already takes, and it has always sent the same
- * sentence for whatever the input accepted, so inspecting the file here could
- * only start refusing something it accepts today.
+ * Only the catalog is worth saying. The guide's own publish step is
+ * `okou presentation-template publish`, which writes to the presentation
+ * table, and a template published there never reaches the Custom pane, which
+ * reads the user template catalog. How to read the file, which branch to take
+ * and what the package must contain are all in the guide, and restating any of
+ * it here would only give the run a second answer to disagree with.
  */
-function templateImportPrompt(args: {
-  readonly file: File;
-  readonly customTemplates: boolean;
-}): string | null {
-  if (!args.customTemplates) {
-    return presentationTemplateImportPrompt();
-  }
-  // The kind still decides whether the file can become a template at all, even
-  // though the message no longer names it: a source matching no kind is one
-  // this catalog cannot compile, and refusing it here costs the member nothing.
-  return importedTemplateKind(args.file) === null
-    ? null
-    : customTemplateImportPrompt();
+function customTemplateImportGuidance(): string {
+  return "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
+}
+
+/** One import's message: what the member reads, and what only the run reads. */
+interface TemplateImportMessage {
+  readonly prompt: string;
+  readonly additionalInfo: string | undefined;
+}
+
+/**
+ * Which message an import is sent with.
+ *
+ * Neither answer reads the file. Which formats can become a template is what
+ * the input's `accept` states and the file chooser applies, so re-reading the
+ * extension here could only refuse a file the chooser already handed over,
+ * and what to make of the one that arrives is the `reverse-template` guide's
+ * decision rather than this function's.
+ */
+function templateImportMessage(
+  customTemplates: boolean,
+): TemplateImportMessage {
+  return customTemplates
+    ? {
+        prompt: customTemplateImportPrompt(),
+        additionalInfo: customTemplateImportGuidance(),
+      }
+    : {
+        prompt: presentationTemplateImportPrompt(),
+        additionalInfo: undefined,
+      };
 }
 
 /**
@@ -156,23 +163,9 @@ export const importPresentationTemplateDeck$ = command(
     // while the switch is off would publish templates into a pane that member
     // cannot open, and take them out of the Presentation grid where they
     // currently appear.
-    const customTemplates =
-      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
-    // Decided before the upload so a file that cannot become a template is
-    // refused while the user still has the picker open, rather than after the
-    // bytes have been spent and a run has started.
-    const prompt = templateImportPrompt({ file, customTemplates });
-    if (prompt === null) {
-      toast.error(
-        i18n.t(
-          ($) => {
-            return $.artifacts.templates.importUnsupported;
-          },
-          { formats: CUSTOM_TEMPLATE_IMPORT_ACCEPT.split(",").join(", ") },
-        ),
-      );
-      return false;
-    }
+    const message = templateImportMessage(
+      get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true,
+    );
 
     const before = new Set(get(signals.draft.attachments$));
     await set(signals.draft.uploadAttachment$, file, signal);
@@ -186,10 +179,15 @@ export const importPresentationTemplateDeck$ = command(
     if (!attached) {
       return false;
     }
-    set(signals.draft.setDraftInput$, prompt);
+    set(signals.draft.setDraftInput$, message.prompt);
 
     const action = await get(signals.submission.primaryAction$);
     signal.throwIfAborted();
-    return await set(signals.submission.submitCurrentInput$, action, signal);
+    return await set(
+      signals.submission.submitCurrentInput$,
+      action,
+      message.additionalInfo,
+      signal,
+    );
   },
 );

@@ -120,9 +120,9 @@ XURL_VERSION="1.3.1"
 AGENT_BROWSER_VERSION="0.33.0-vm0.1"
 AGENT_BROWSER_LINUX_X64_SHA256="a9e3fbe24c537960b9ac0d1f358224a10eb70d87a619aec7bcb1175222a46a18"
 AGENT_BROWSER_LINUX_ARM64_SHA256="6a74dba04c299a69d564eae5aff67adc2ffc6fda5ddf672994ff75b73d64a9fe"
-PNPM_VERSION="12.4.2"
-CHROMIUM_VERSION="153.0.8010.47-2~deb12u1"
-CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20260919T072609Z"
+PNPM_VERSION="12.5.1"
+CHROMIUM_VERSION="153.0.8010.52-1~deb12u1"
+CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20260920T022435Z"
 
 # ---------------------------------------------------------------------------
 # Dependency checks

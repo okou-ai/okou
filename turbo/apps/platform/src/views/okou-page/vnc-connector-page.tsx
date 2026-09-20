@@ -1,12 +1,11 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Monitor, Plug, Plus, RefreshCw } from "lucide-react";
+import { Monitor, Plug, Plus } from "lucide-react";
 import { Button, SegmentControl, SegmentControlItem } from "@okouai/ui";
 import type { VncConnectionResponse } from "@okouai/api-contracts/contracts/vnc-connections";
 import type { VncCredentialResponse } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
   changeVncView$,
-  invalidateVnc$,
   openVncDialog$,
   vncConnections$,
   vncCredentials$,
@@ -323,12 +322,11 @@ export function VncConnectorPage() {
   const { t } = useTranslation();
   const view = useGet(vncView$);
   const changeView = useSet(changeVncView$);
-  const refresh = useSet(invalidateVnc$);
   return (
     <DetailPageShell>
       <VncPageHeader />
       <DetailPageMain constrainContent>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-5">
           <SegmentControl
             value={view}
             onValueChange={changeView}
@@ -347,17 +345,6 @@ export function VncConnectorPage() {
               })}
             </SegmentControlItem>
           </SegmentControl>
-          <Button
-            variant="outline"
-            onClick={() => {
-              refresh();
-            }}
-          >
-            <RefreshCw size={14} aria-hidden="true" />
-            {t(($) => {
-              return $.vnc.refresh;
-            })}
-          </Button>
         </div>
         {view === "hosts" ? <VncHosts /> : <VncCredentials />}
         <VncDialog />

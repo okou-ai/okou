@@ -445,6 +445,7 @@
       "description": "Es ist möglicherweise privat oder nicht mehr verfügbar.",
       "help": "Bitte die Person, die diesen Link geteilt hat, den Zugriff zu prüfen.",
       "signedInAs": "Angemeldet als {{email}}",
+      "signedInDescription": "Es existiert möglicherweise nicht oder wurde für ein anderes Konto oder eine andere Organisation freigegeben.",
       "signIn": "Anmelden",
       "signInFailed": "Die Anmeldung konnte nicht geöffnet werden. Bitte versuche es erneut.",
       "switchAccount": "Konto wechseln",
@@ -505,7 +506,7 @@
       "description": "Durchsuchen Sie alles, was Sie hier erstellt haben.",
       "emptyDescription": "Artefakte werden hier angezeigt, sobald sie verfügbar sind.",
       "emptyTitle": "Keine Artefakte gefunden",
-      "error": "Artefakte konnten nicht geladen werden. Versuchen Sie es später noch einmal.",
+      "error": "Artefakte konnten nicht geladen werden.",
       "filters": {
         "avatar": "Avatare",
         "avatarAria": "Avatar-Artefakte anzeigen",
@@ -524,7 +525,8 @@
         "websiteAria": "Website-Artefakte anzeigen"
       },
       "kindIcon": "{{kind}} Artefakt",
-      "loading": "Artefakte werden geladen"
+      "loading": "Artefakte werden geladen",
+      "retry": "Erneut versuchen"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -603,6 +605,7 @@
       "onlyMeDescription": "Nur du kannst dieses Artefakt ansehen",
       "organization": "Organisation",
       "organizationDescription": "Alle in {{organization}} mit dem Link",
+      "organizationDescriptionUnnamed": "Alle in Ihrer Organisation mit dem Link",
       "permissionsUpdated": "Zugriff aktualisiert",
       "publicAccess": "Öffentlicher Zugriff",
       "publicDescription": "Alle mit dem Link können es ansehen",
@@ -646,7 +649,6 @@
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Eigene Datei importieren",
       "importFileHint": "Design Ihrer Datei wiederverwenden",
-      "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
       "multiAccent": "Multi-Akzent",
       "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
@@ -1446,7 +1448,9 @@
           },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
-            "description": "Verbinden Sie eines Ihrer Tools, damit {{assistantName}} darin arbeiten kann.",
+            "connected": "Verbunden",
+            "description": "Wählen Sie eines aus, und {{assistantName}} beginnt darin zu arbeiten.",
+            "notConnected": "Nicht verbunden",
             "pickerFailed": "Konnektoren konnten nicht geladen werden. Bitte auf der Konnektoren-Seite erneut versuchen.",
             "pickerLoading": "Konnektoren werden geladen …",
             "title": "{{assistantName}} arbeitet in den Tools, die Sie ohnehin nutzen"
@@ -6539,7 +6543,6 @@
     "loadingAccess": "Agent-Zugriff wird geladen…",
     "manage": "VNC verwalten",
     "port": "Port",
-    "refresh": "Aktualisieren",
     "retry": "Erneut versuchen",
     "save": "Speichern",
     "saveRecovery": {

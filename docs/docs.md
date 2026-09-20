@@ -139,8 +139,9 @@ surface; the index does not replace their detailed rules.
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
   identities, API configuration, Oregon-first model routing, and rollout gates.
-- [Google Ads browser routing](./google-ads-browser-routing.md): verified account
-  ownership, conversion actions, rollout compatibility, and historical recovery.
+- [Retired App browser attribution](./google-ads-browser-routing.md): the
+  Marketing-owned boundary, App cleanup, rollout compatibility, and historical
+  field inventory.
 - [Connector inspection JSON](./connector-inspection-json.md): command output
   contracts, current versus run evidence, account identity, and next actions.
 - [Social collection output](./social-collection-output.md): aggregate and

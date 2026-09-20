@@ -1541,6 +1541,17 @@ fn cli_failure_reason_rejects_untrusted_or_near_miss_unsupported_model_envelopes
 }
 
 #[test]
+fn cli_failure_reason_does_not_classify_access_program_message_from_stderr() {
+    let reason = super::classify_cli_failure_reason(
+        AgentFramework::Codex,
+        FailureDetailSource::Stderr,
+        "The access_programs parameter is not enabled for this organization.",
+    );
+
+    assert_eq!(reason, None);
+}
+
+#[test]
 fn cli_failure_reason_classifies_codex_model_capacity() {
     let reason = classify_cli_failure_reason(
         AgentFramework::Codex,
