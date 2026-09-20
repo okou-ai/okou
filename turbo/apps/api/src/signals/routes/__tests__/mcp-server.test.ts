@@ -1278,7 +1278,6 @@ describe("MCP chat discovery and creation", () => {
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
       { ...args, orgId: f.auth.orgId },
-      { ...args, model: "not-a-supported-model" },
     ]) {
       const result = await callTool(token, "create_chat_thread", invalid);
       expect(structuredToolError(result)).toMatchObject({
@@ -1287,6 +1286,14 @@ describe("MCP chat discovery and creation", () => {
         issues: expect.any(Array),
       });
     }
+    const unavailableModel = await callTool(token, "create_chat_thread", {
+      ...args,
+      model: "not-a-supported-model",
+    });
+    expect(structuredToolError(unavailableModel)).toMatchObject({
+      code: "selection_unavailable",
+      retryable: false,
+    });
     expect((await listThreads(token)).threads).toStrictEqual([]);
     const invalidLimit = await callTool(token, "list_agents", { limit: 51 });
     expect(structuredToolError(invalidLimit)).toMatchObject({
