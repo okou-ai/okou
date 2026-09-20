@@ -1940,8 +1940,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
     const suspendedPrompt = `suspended direct ${randomUUID()}`;
     const rejected = await api.requestDirectRun(
@@ -5235,7 +5239,7 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     },
   );
 
-  it("rejects runs for onboarded organizations that never gained an entitlement", async () => {
+  it("rejects runs for onboarded organizations with suspended entitlements", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
@@ -5251,15 +5255,19 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "BDD suspended-org agent",
-      description: "Covers the pro-suspend admission branch.",
+      description: "Covers the suspended entitlement admission branch.",
       visibility: "private",
     });
     const byokPrompt = `suspended BYOK ${randomUUID()}`;
     const builtInPrompt = `suspended built-in ${randomUUID()}`;
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
 
     const rejected = await api.requestCreateRun(
@@ -10408,8 +10416,12 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 20_000,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
     const deniedRefresh = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },

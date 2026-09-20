@@ -55,6 +55,7 @@ import {
   seedOrgMetadata,
   setOnboardingPaymentPendingFixture,
 } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createBddApi } from "./helpers/api-bdd";
 import {
@@ -13291,8 +13292,12 @@ describe("usage pack allocation management", () => {
       orgInviteContract,
     );
 
-    for (const tier of ["pro-suspend"] as const) {
+    for (const tier of ["pro"] as const) {
       await seedOrgMetadata({ orgId: fixture.orgId, tier, credits: 0 });
+      await upsertOrgPlanEntitlementFixture({
+        orgId: fixture.orgId,
+        status: "suspended",
+      });
       const blocked = await accept(
         client.invite({
           headers: { authorization: "Bearer clerk-session" },

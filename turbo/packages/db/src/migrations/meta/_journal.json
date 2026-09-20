@@ -694,6 +694,13 @@
       "when": 1789900303239,
       "tag": "1176_retire_gemini_2_5_flash_image_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 1177,
+      "version": "7",
+      "when": 1789902350454,
+      "tag": "1177_retire_pro_suspend_tier",
+      "breakpoints": true
     }
   ]
 }

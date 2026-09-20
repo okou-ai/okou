@@ -11,6 +11,7 @@ import {
   seedOrgMetadata,
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import {
   createBddApi,
   expectApiError,
@@ -613,7 +614,8 @@ describe("Usage Allowance", () => {
       agentId,
       "admitted before suspension",
     );
-    await seedOrgMetadata({ orgId, tier: "pro-suspend", credits: 1 });
+    await seedOrgMetadata({ orgId, tier: "pro", credits: 1 });
+    await upsertOrgPlanEntitlementFixture({ orgId, status: "suspended" });
     const client = setupApp({
       context,
       routes: webhooksAgentFirewallAuthRoutes,

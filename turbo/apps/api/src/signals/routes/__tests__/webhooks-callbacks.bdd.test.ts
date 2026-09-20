@@ -5893,8 +5893,8 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(restored.cancelAtPeriodEnd).toBeFalsy();
     expect(restored.scheduledChange).toBeNull();
 
-    // A downgrade-purpose setup checkout (string setup intent refreshed via
-    // session retrieve) schedules the cancellation again.
+    // A setup Checkout Session created by the previous App can still finish
+    // after rollout. Its retired target is normalized before cancellation.
     context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValueOnce({
       id: `cs_bdd_downgrade_${suffix}`,
       setup_intent: { payment_method: "pm_bdd_downgrade" },
@@ -5936,7 +5936,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
             purpose: "billing_downgrade",
             orgId,
             subscriptionId: granted.subscriptionId,
-            targetTier: "limited-free-1",
+            targetTier: "pro-suspend",
           },
         },
       }),
@@ -5952,7 +5952,12 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     );
     const downgraded = await billing.readBillingStatus(actor);
     expect(downgraded.cancelAtPeriodEnd).toBeTruthy();
-    expect(downgraded.scheduledChange?.type).toBe("cancel");
+    expect(downgraded.scheduledChange).toStrictEqual(
+      expect.objectContaining({
+        type: "cancel",
+        targetTier: "limited-free-1",
+      }),
+    );
 
     // A schedule-managed cancellation syncs the final schedule end.
     const scheduleId = `sched_bdd_${suffix}`;
@@ -6653,7 +6658,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
       })
-      .toStrictEqual(["pro-suspend", null, false]);
+      .toStrictEqual(["limited-free-1", null, false]);
   });
 
   it("preserves org data when a deleted user leaves an uncached Clerk member", async () => {
@@ -6756,7 +6761,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         const status = await billing.readBillingStatus(actor);
         return [status.tier, status.subscriptionStatus, status.hasSubscription];
       })
-      .toStrictEqual(["pro-suspend", null, false]);
+      .toStrictEqual(["limited-free-1", null, false]);
   });
 
   describe("verified user.deleted cleanup", () => {

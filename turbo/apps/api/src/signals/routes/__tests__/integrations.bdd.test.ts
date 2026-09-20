@@ -32,6 +32,7 @@ import {
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
@@ -5369,8 +5370,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.configureSlackRunModelPolicies(actor);
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
+      canBuyCredits: false,
     });
     const agentB = await bdd.createAgent(actor, {
       displayName: "BDD Slack Failing Override",

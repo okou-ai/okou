@@ -412,8 +412,7 @@ export const setRevokeInvitationDialogTarget$ = command(
 // org-billing-tab: DowngradeConfirmDialog selectedTarget
 // ---------------------------------------------------------------------------
 
-type BillingCancellationTargetTier = "limited-free-1" | "pro-suspend";
-type BillingDowngradeTargetTier = BillingCancellationTargetTier | "pro";
+type BillingDowngradeTargetTier = "limited-free-1" | "pro";
 
 const internalSelectedTarget$ =
   state<BillingDowngradeTargetTier>("limited-free-1");

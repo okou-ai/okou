@@ -17,6 +17,7 @@ import {
 import { now } from "../../../lib/time";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settle } from "../../utils";
@@ -479,7 +480,7 @@ describe("FW-3: billable firewall lease", () => {
     expect(leased.body.expiresAt ?? 0).toBeLessThanOrEqual(before + 35);
   });
 
-  it("denies billable auth for pro-suspend workspaces even with credits", async () => {
+  it("denies billable auth for suspended workspaces even with credits", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
     if (!actor.orgId) {
@@ -487,8 +488,12 @@ describe("FW-3: billable firewall lease", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId ?? "",
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 20_000,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
 
     const denied = await fw.requestFirewallAuth(
@@ -503,7 +508,7 @@ describe("FW-3: billable firewall lease", () => {
       [402],
     );
     if (denied.status !== 402) {
-      throw new Error("Expected pro-suspend billable auth to be denied");
+      throw new Error("Expected suspended billable auth to be denied");
     }
     expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
   });
@@ -531,8 +536,12 @@ describe("FW-3: billable firewall lease", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 20_000,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
 
     const denied = await fw.requestFirewallAuth(

@@ -1200,9 +1200,6 @@
       "namedPlan": "{{plan}} योजना",
       "noActivePlan": "कोई सक्रिय योजना नहीं",
       "noActiveSubscription": "कोई सक्रिय सदस्यता नहीं",
-      "noPlan": {
-        "name": "कोई योजना नहीं"
-      },
       "perMonth": "/महीना",
       "pricePerMonth": "{{price}}/माह",
       "pro": {
@@ -5837,7 +5834,6 @@
       "custom": "कस्टम",
       "free": "मुक्त",
       "limitedFree": "सीमित मुफ़्त",
-      "noPlan": "कोई योजना नहीं",
       "pro": "प्रो",
       "team": "टीम"
     },

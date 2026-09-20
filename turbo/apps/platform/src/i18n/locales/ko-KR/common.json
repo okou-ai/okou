@@ -1199,9 +1199,6 @@
       "namedPlan": "{{plan}} 플랜",
       "noActivePlan": "활성 플랜 없음",
       "noActiveSubscription": "활성 구독 없음",
-      "noPlan": {
-        "name": "플랜 없음"
-      },
       "perMonth": "/월",
       "pricePerMonth": "{{price}}/월",
       "pro": {
@@ -5824,7 +5821,6 @@
       "custom": "맞춤형",
       "free": "무료",
       "limitedFree": "제한된 무료",
-      "noPlan": "플랜 없음",
       "pro": "프로",
       "team": "팀"
     },
