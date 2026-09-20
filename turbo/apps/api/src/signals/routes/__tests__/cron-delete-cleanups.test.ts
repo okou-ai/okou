@@ -17,7 +17,7 @@ import {
 } from "../test-cron-delete-cleanups-state";
 import { cronTelegramCleanupRoutes } from "../cron-telegram-cleanup";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const CRON_SECRET = "test-delete-cleanups-secret";
 const CONNECTOR_EXPIRED_COUNT = 11;
 // One more than the test delete batch size, so the cleanup loop runs a full

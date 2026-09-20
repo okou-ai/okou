@@ -228,7 +228,7 @@ export function AutoRechargeSection({
       </section>
       {dirty && (
         <UnsavedBar
-          anchor="settings-dialog"
+          pinning="scrollport"
           onDiscard={discard}
           onSave={handleSave}
           saving={saving}

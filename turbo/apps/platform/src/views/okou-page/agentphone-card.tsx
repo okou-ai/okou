@@ -47,14 +47,31 @@ import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
 const imessageIconImg = settingsIconAssetUrl("imessage");
 
+const agentPhoneNumberPattern = /^\+1(\d{3})(\d{3})(\d{4})$/u;
+
+/** Vanity spelling of the shared Okou number, and the subscriber digits it
+ *  spells on a phone keypad. */
+const agentPhoneVanity = "GET-OKOU";
+const agentPhoneVanityDigits = "4386568";
+
 /** Render a US/Canada E.164 number as `+1 (NXX) NXX-XXXX`; other formats are
  *  returned unchanged. */
 function formatAgentPhoneNumber(raw: string): string {
-  const match = /^\+1(\d{3})(\d{3})(\d{4})$/u.exec(raw);
+  const match = agentPhoneNumberPattern.exec(raw);
   if (!match) {
     return raw;
   }
   return `+1 (${match[1]}) ${match[2]}-${match[3]}`;
+}
+
+/** Render the number with its vanity spelling, but only while the subscriber
+ *  digits still dial it; another `AGENTPHONE_PHONE_NUMBER` keeps its digits. */
+function spellAgentPhoneNumber(raw: string): string {
+  const match = agentPhoneNumberPattern.exec(raw);
+  if (!match || `${match[2]}${match[3]}` !== agentPhoneVanityDigits) {
+    return formatAgentPhoneNumber(raw);
+  }
+  return `+1 (${match[1]}) ${agentPhoneVanity}`;
 }
 
 function CopyTextButton({
@@ -122,7 +139,9 @@ function PhoneNumberCopyButton({
   return (
     <CopyTextButton
       value={phoneNumber}
-      label={formatted}
+      label={spellAgentPhoneNumber(phoneNumber)}
+      // The tooltip and accessible name keep the digits the vanity spelling
+      // hides, so the dialable number stays reachable without copying it.
       ariaLabel={t(
         ($) => {
           return $.connectors.providerSettings.agentphone.copyAria;

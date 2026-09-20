@@ -1,5 +1,37 @@
 # Changelog
 
+## [9.348.3](https://github.com/okou-ai/okou/compare/cli-v9.348.2...cli-v9.348.3) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.3
+    * @okouai/core bumped to 8.688.1
+    * @okouai/pi-agent-runtime bumped to 1.33.30
+
+## [9.348.2](https://github.com/okou-ai/okou/compare/cli-v9.348.1...cli-v9.348.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* align cloudflare access naming ([#35632](https://github.com/okou-ai/okou/issues/35632)) ([708ac2e](https://github.com/okou-ai/okou/commit/708ac2e7cec6250eef99bdae13ce272ea2fff6e9))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.2
+    * @okouai/core bumped to 8.688.0
+    * @okouai/pi-agent-runtime bumped to 1.33.29
+
 ## [9.348.1](https://github.com/okou-ai/okou/compare/cli-v9.348.0...cli-v9.348.1) (2026-09-20)
 
 

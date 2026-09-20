@@ -2429,7 +2429,7 @@ mod tests {
                     "server": "github",
                     "tool": "listIssues",
                     "durationMs": 50,
-                    "arguments": {"owner": "vm0-ai", "nested": {"ignored": true}},
+                    "arguments": {"owner": "okou-ai", "nested": {"ignored": true}},
                     "large": [1, 2, 3]
                 }
             }),
@@ -2440,7 +2440,7 @@ mod tests {
         assert_eq!(event["item"]["type"], "mcp_tool_call");
         assert_eq!(event["item"]["status"], "completed");
         assert_eq!(event["item"]["duration_ms"], 50);
-        assert_eq!(event["item"]["arguments"], json!({"owner": "vm0-ai"}));
+        assert_eq!(event["item"]["arguments"], json!({"owner": "okou-ai"}));
         assert_eq!(event["item"]["large"], json!([1, 2, 3]));
     }
 

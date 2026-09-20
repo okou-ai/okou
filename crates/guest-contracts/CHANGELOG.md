@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.23](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.22...guest-contracts-v0.14.23) (2026-09-20)
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+
+
+### Performance Improvements
+
+* **runner:** observe storage history overlap eligibility ([#35567](https://github.com/okou-ai/okou/issues/35567)) ([14a43e3](https://github.com/okou-ai/okou/commit/14a43e3202e1f74771be2e88821982983c200e9f))
+
 ## [0.14.22](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.21...guest-contracts-v0.14.22) (2026-09-20)
 
 

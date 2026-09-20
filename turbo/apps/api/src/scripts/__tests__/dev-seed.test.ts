@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import rawDevSeedSkillVolumes from "../dev-seed-skill-volumes.json";
 import { buildBuiltInModelKeys } from "../dev-seed";
 
 function readEnvFrom(
@@ -20,6 +21,21 @@ function buildVendorKeys(
     return key.vendor === vendor;
   });
 }
+
+describe("official skill volume seeds", () => {
+  it("uses the current registry owner without renaming stored objects", () => {
+    for (const volume of rawDevSeedSkillVolumes) {
+      expect(volume.url).toMatch(
+        /^https:\/\/github\.com\/okou-ai\/vm0-skills\/tree\/main\//,
+      );
+      expect(volume.fullPath).toMatch(/^okou-ai\/vm0-skills\/tree\/main\//);
+      expect(volume.s3Key).toContain("agent-skills@vm0-ai/vm0-skills/");
+      expect(volume.s3Prefix).toContain("agent-skills@vm0-ai/vm0-skills/");
+      expect(volume.storageName).toContain("agent-skills@vm0-ai/vm0-skills/");
+      expect(volume.message).toMatch(/^Synced from vm0-ai\/vm0-skills@/);
+    }
+  });
+});
 
 describe("buildBuiltInModelKeys", () => {
   it("falls back to ANTHROPIC_API_KEY for Anthropic dev seed rows", () => {

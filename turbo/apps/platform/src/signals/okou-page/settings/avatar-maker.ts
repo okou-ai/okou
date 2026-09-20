@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { delay } from "signal-timers";
 import {
   updateAvatarComposerConfig,
   type AvatarComposerSelection,
@@ -65,37 +64,32 @@ export const avatarMakerStepIdx$ = computed((get) => {
   return get(avatarMakerSteps$).indexOf(get(internalStep$));
 });
 
-const internalJustPicked$ = state<string | null>(null);
-export const avatarMakerJustPicked$ = computed((get) => {
-  return get(internalJustPicked$);
+const internalPreviewRevision$ = state(0);
+export const avatarMakerPreviewRevision$ = computed((get) => {
+  return get(internalPreviewRevision$);
 });
 
-const internalShowSparkles$ = state(false);
-export const avatarMakerShowSparkles$ = computed((get) => {
-  return get(internalShowSparkles$);
-});
-
-const internalShuffling$ = state(false);
-export const avatarMakerShuffling$ = computed((get) => {
-  return get(internalShuffling$);
+const internalShuffleRevision$ = state(0);
+export const avatarMakerShuffleRevision$ = computed((get) => {
+  return get(internalShuffleRevision$);
 });
 
 const releaseAvatarMakerSession$ = command(({ set }) => {
   set(internalDialogSignal$, null);
   set(internalOpen$, false);
-  set(internalJustPicked$, null);
-  set(internalShowSparkles$, false);
-  set(internalShuffling$, false);
+  set(internalPreviewRevision$, 0);
+  set(internalShuffleRevision$, 0);
 });
 
-export const shuffleAvatar$ = command(async ({ set }, signal: AbortSignal) => {
+export const shuffleAvatar$ = command(({ set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   set(internalConfig$, randomAvatarSvgConfig());
-  set(internalShuffling$, true);
-  set(internalShowSparkles$, true);
-  await delay(600, { signal });
-  set(internalShuffling$, false);
-  set(internalShowSparkles$, false);
+  set(internalPreviewRevision$, (revision) => {
+    return revision + 1;
+  });
+  set(internalShuffleRevision$, (revision) => {
+    return revision + 1;
+  });
 });
 
 /**
@@ -123,28 +117,21 @@ export const openAvatarMaker$ = command(
     set(internalConfig$, config);
     set(internalStep$, "face");
     set(internalEditing$, current !== null);
-    set(internalJustPicked$, null);
-    set(internalShowSparkles$, false);
-    set(internalShuffling$, false);
+    set(internalPreviewRevision$, 0);
+    set(internalShuffleRevision$, 0);
     set(internalOpen$, true);
   },
 );
 
 export const selectAvatarOption$ = command(
-  async (
-    { get, set },
-    selection: AvatarComposerSelection,
-    signal: AbortSignal,
-  ) => {
+  ({ get, set }, selection: AvatarComposerSelection, signal: AbortSignal) => {
     signal.throwIfAborted();
     const previous = get(internalConfig$);
     set(internalConfig$, updateAvatarComposerConfig(previous, selection));
 
-    set(internalJustPicked$, `${selection.field}-${selection.value}`);
-    set(internalShowSparkles$, true);
-    await delay(350, { signal });
-    set(internalJustPicked$, null);
-    set(internalShowSparkles$, false);
+    set(internalPreviewRevision$, (revision) => {
+      return revision + 1;
+    });
   },
 );
 

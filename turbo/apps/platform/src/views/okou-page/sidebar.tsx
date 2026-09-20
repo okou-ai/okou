@@ -233,7 +233,7 @@ function ExpandedSidebar() {
         // `isolate` keeps that `-z-1` layer inside this element rather than
         // letting it fall behind the page. The drawer's own scrim spells the
         // same standalone extension inline in `sidebar-layout.tsx`.
-        "isolate before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:bg-sidebar before:content-[''] before:[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]",
+        "isolate before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:bg-sidebar before:content-[''] before:[@media(display-mode:standalone)]:-bottom-safe",
         // A fixed mobile drawer escapes the page shell, so its content owns an
         // immutable safe-area boundary.
         "max-md:box-border max-md:p-safe",

@@ -894,6 +894,7 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
         // `apply_connector_runtime_update`.
         let previous_firewalls = sandbox.firewalls.clone();
         let previous_network_policies = sandbox.network_policies.clone();
+        let previous_omitted_builtin_firewalls = sandbox.omitted_builtin_firewalls.clone();
         let previous_omitted_custom_connector_ids = sandbox.omitted_custom_connector_ids.clone();
         let previous_connector_routing_variables = sandbox.connector_routing_variables.clone();
         let accepted = updates
@@ -912,6 +913,7 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
         )?;
         if previous_firewalls == sandbox.firewalls
             && previous_network_policies == sandbox.network_policies
+            && previous_omitted_builtin_firewalls == sandbox.omitted_builtin_firewalls
             && previous_omitted_custom_connector_ids == sandbox.omitted_custom_connector_ids
             && previous_connector_routing_variables == sandbox.connector_routing_variables
         {
@@ -1897,6 +1899,64 @@ mod tests {
                 ("github".to_string(), github_policy),
                 ("slack".to_string(), restored_policy),
             ])
+        );
+    }
+
+    #[tokio::test]
+    async fn builtin_absence_persists_when_omission_is_the_only_change() {
+        let harness = RegistryHarness::new().await;
+        let firewalls = vec![FirewallEntry::Builtin {
+            name: "slack".to_string(),
+            base_url_vars: None,
+            source_id: None,
+        }];
+        let runtime_targets = builtin_runtime_targets(&["slack"]);
+        harness
+            .handle
+            .register_sandbox(
+                "10.200.0.2",
+                &SandboxRegistration {
+                    firewalls: Some(&firewalls),
+                    connector_runtime_targets: Some(&runtime_targets),
+                    ..base_registration()
+                },
+            )
+            .await
+            .unwrap();
+        let before = registry_file_state(harness.registry_path()).await;
+
+        assert_eq!(
+            harness
+                .handle
+                .apply_connector_runtime_updates_if_run_matches(
+                    "10.200.0.2",
+                    "run-test",
+                    &[ConnectorRuntimeRegistryUpdate::BuiltinAbsent {
+                        connector_slug: "slack".to_string(),
+                    }],
+                )
+                .await
+                .unwrap(),
+            Some(vec![true])
+        );
+
+        let after = registry_file_state(harness.registry_path()).await;
+        assert_ne!(after.inode, before.inode);
+        let registry = read_registry(harness.registry_path()).await.unwrap();
+        let sandbox = &registry.sandboxes["10.200.0.2"];
+        assert_eq!(
+            sandbox.omitted_builtin_firewalls,
+            HashSet::from(["slack".to_string()])
+        );
+        assert_eq!(
+            sandbox
+                .firewalls
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(firewall_name)
+                .collect::<Vec<_>>(),
+            ["slack"]
         );
     }
 

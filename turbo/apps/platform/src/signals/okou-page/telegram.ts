@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { timeout } from "signal-timers";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   integrationsTelegramContract,
@@ -12,7 +11,6 @@ import { accept } from "../../lib/accept.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { writeToClipboard } from "./clipboard.ts";
 import { i18n } from "../../i18n/index.ts";
-import { resetSignal } from "../utils.ts";
 
 export type TelegramAddSetupStep = "token" | "domain" | "privacy" | "create";
 export type TelegramSetupCheckTarget = "token" | "domain" | "privacy";
@@ -41,8 +39,6 @@ const internalTelegramRegisteredBotId$ = state<string | null>(null);
 const internalTelegramAddSetupState$ = state<TelegramAddSetupState>(
   initialTelegramAddSetupState(),
 );
-const internalTelegramCopiedValue$ = state<string | null>(null);
-const resetTelegramCopySignal$ = resetSignal();
 const internalTelegramFailedAvatarKeys$ = state<Record<string, boolean>>({});
 const internalTelegramSavingBotId$ = state<string | null>(null);
 const internalTelegramUnlinkingBotId$ = state<string | null>(null);
@@ -131,10 +127,6 @@ export const telegramAddSetupState$ = computed((get) => {
   return get(internalTelegramAddSetupState$);
 });
 
-export const telegramCopiedValue$ = computed((get) => {
-  return get(internalTelegramCopiedValue$);
-});
-
 export const telegramFailedAvatarKeys$ = computed((get) => {
   return get(internalTelegramFailedAvatarKeys$);
 });
@@ -221,29 +213,11 @@ export const markTelegramAvatarFailed$ = command(
 );
 
 export const copyTelegramValue$ = command(
-  async ({ get, set }, value: string, signal: AbortSignal) => {
+  async (_ctx, value: string, signal: AbortSignal) => {
+    signal.throwIfAborted();
     const copied = await writeToClipboard(value);
     signal.throwIfAborted();
-    if (!copied) {
-      return;
-    }
-
-    const copySignal = set(resetTelegramCopySignal$, signal);
-    set(internalTelegramCopiedValue$, value);
-    const clearCopiedValue = () => {
-      if (get(internalTelegramCopiedValue$) === value) {
-        set(internalTelegramCopiedValue$, null);
-      }
-    };
-    copySignal.addEventListener("abort", clearCopiedValue, { once: true });
-    timeout(
-      () => {
-        copySignal.removeEventListener("abort", clearCopiedValue);
-        clearCopiedValue();
-      },
-      1500,
-      { signal: copySignal },
-    );
+    return copied;
   },
 );
 

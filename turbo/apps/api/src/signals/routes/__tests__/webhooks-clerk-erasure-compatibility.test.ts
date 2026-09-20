@@ -49,7 +49,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -759,15 +759,20 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
   await expect
     .poll(
       async () => {
-        return await stableContextBackendBlockedByFixture({
+        const blocked = await stableContextBackendBlockedByFixture({
           blockedPid: cleanupPid,
           blockerPid: gcPid,
         });
+        if (blocked && !releaseGc.settled()) {
+          // Release in the same poll iteration that proves the real block. A
+          // later statement can consume the 100 ms production lock deadline.
+          releaseGc.resolve();
+        }
+        return blocked;
       },
       { interval: 5, timeout: 500 },
     )
     .toBe(true);
-  releaseGc.resolve();
   await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
   await flushWaitUntilForTest();
   await expect(

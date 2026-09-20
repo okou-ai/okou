@@ -2,9 +2,12 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import {
+  artifactSharesContract,
+  type ArtifactShareStatus,
+} from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { beforeEach, expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
@@ -421,6 +424,27 @@ test("A shared Markdown artifact displays its diagram", async () => {
   }
   expect(browser.blobForUrl(imageUrl)?.type).toBe("image/svg+xml");
   expect(action("button", "Expand diagram")).toBeEnabled();
+
+  click(action("button", "Expand diagram"));
+
+  const dialog = await screen.findByRole("dialog");
+  // The expanded copy mounts its own image, so it owns a separate object URL
+  // for the same rendered diagram.
+  const expanded = await within(dialog).findByTestId(
+    "attachment-lightbox-image",
+  );
+  const expandedUrl = expanded.getAttribute("src");
+  if (!expandedUrl) {
+    throw new Error("Expected the expanded diagram to have a source");
+  }
+  expect(browser.blobForUrl(expandedUrl)?.type).toBe("image/svg+xml");
+  expect(within(dialog).getByText("diagram.svg")).toBeInTheDocument();
+  // A diagram drawn in this browser has no address worth copying.
+  expect(
+    queryAllByRoleFast("button", dialog).map((button) => {
+      return button.getAttribute("aria-label") ?? button.textContent?.trim();
+    }),
+  ).not.toContain("Copy link");
 });
 
 test.each([
@@ -447,3 +471,90 @@ test.each([
     expect(action("button", "Download options")).toBeInTheDocument();
   },
 );
+
+test.each([
+  ["private", "Only me"],
+  ["organization", "Organization"],
+  ["public", "Public access"],
+] as const)(
+  "the viewer names who can reach the artifact without opening the share menu: %s",
+  async (audience, label) => {
+    context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+      return respond(200, {
+        ownerUrl: `https://app.okou.ai${imagePath}`,
+        shareId: audience === "private" ? null : artifactId,
+        audience,
+        organization: { id: "org_test", name: "Acme" },
+        selectedTarget: null,
+        selectedVersion: null,
+        candidateVersion: null,
+        url: audience === "private" ? null : `https://app.okou.ai${imagePath}`,
+        shortUrl:
+          audience === "private" ? null : `https://app.okou.ai${imagePath}`,
+      });
+    });
+    await openViewer();
+
+    // The audience is a standing fact about the artifact, so it belongs beside
+    // the kind rather than behind a menu. The subtitle composes the two from
+    // separate nodes, so the match is on the rendered line.
+    await expect(
+      screen.findByText((_content, element) => {
+        return (
+          element?.tagName === "P" && element.textContent === `Image · ${label}`
+        );
+      }),
+    ).resolves.toBeVisible();
+  },
+);
+
+test("the audience stays unstated until the share read answers", async () => {
+  const requested = context.mocks.deferred<void>();
+  const answer = context.mocks.deferred<ArtifactShareStatus>();
+  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
+    requested.resolve();
+    return respond(200, await answer.promise);
+  });
+  await openViewer();
+  await expect(
+    screen.findByRole("heading", { name: "launch.png" }),
+  ).resolves.toBeInTheDocument();
+
+  // Holding the response open makes "unresolved" a state the test controls
+  // rather than a race: the read has certainly started and certainly has not
+  // answered, so an audience printed here would be invented.
+  await requested.promise;
+  expect(screen.getByText("Image")).toBeInTheDocument();
+  for (const label of ["Only me", "Organization", "Public access"]) {
+    expect(
+      screen.queryByText((_content, element) => {
+        return (
+          element?.tagName === "P" && element.textContent === `Image · ${label}`
+        );
+      }),
+    ).not.toBeInTheDocument();
+  }
+
+  answer.resolve({
+    ownerUrl: `https://app.okou.ai${imagePath}`,
+    shareId: null,
+    audience: "private",
+    organization: { id: "org_test", name: "Acme" },
+    selectedTarget: null,
+    selectedVersion: null,
+    candidateVersion: null,
+    url: null,
+    shortUrl: null,
+  });
+
+  // Releasing the read is the positive completion point: the same line that
+  // stayed silent now names the audience, so the silence above was the
+  // pending state and not a label that never works.
+  await expect(
+    screen.findByText((_content, element) => {
+      return (
+        element?.tagName === "P" && element.textContent === "Image · Only me"
+      );
+    }),
+  ).resolves.toBeVisible();
+});

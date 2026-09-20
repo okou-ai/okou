@@ -211,7 +211,7 @@ def test_plain_ascii_path_bypasses_compatibility_pipeline():
             wraps=path_security.unicodedata.normalize,
         ) as unicode_normalize,
     ):
-        unsafe = path_security.has_unsafe_path("/repos/vm0-ai/vm0/issues/24254.json;view=full")
+        unsafe = path_security.has_unsafe_path("/repos/okou-ai/okou/issues/24254.json;view=full")
 
     assert unsafe is False
     percent_decode.assert_not_called()

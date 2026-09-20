@@ -58,7 +58,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
  * its requests is that the cases below prove when a request is *not* made.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";

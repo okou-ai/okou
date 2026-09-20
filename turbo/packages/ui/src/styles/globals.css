@@ -108,6 +108,8 @@
   --color-secondary-foreground: hsl(var(--secondary-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-link: hsl(var(--link));
+  --color-link-hover: hsl(var(--link-hover));
   --color-interrupt: hsl(var(--interrupt));
   --color-interrupt-foreground: hsl(var(--interrupt-foreground));
   --color-muted: hsl(var(--muted));
@@ -368,6 +370,180 @@
   --shadow-segment-selected: var(--segment-selected-shadow);
 }
 
+/* ===================================
+ * Safe-area utilities
+ *
+ * A `fixed` box is laid out against the viewport, so it inherits none of the
+ * padding the app shell applies and owns its own inset wherever it meets a
+ * viewport edge. These utilities are the single place that decision is spelled.
+ *
+ * Naming follows the ecosystem convention (`tailwindcss-safe-area`, which
+ * NativeWind ships and the Tailwind `@utility` recipe in tailwindlabs/tailwindcss
+ * discussion #16938 reproduces), so the side is carried by the property prefix
+ * rather than repeated in a token name:
+ *
+ *   `*-safe`             the inset itself
+ *   `*-safe-or-{n}`      `max(inset, n)` — a design gutter and the system
+ *                        reserve are the same visual blank, so take the larger
+ *   `*-safe-offset-{n}`  `calc(inset + n)` — the content must clear the system
+ *                        reserve and then keep its own margin
+ *
+ * The app defines `--sat/--sar/--sab/--sal` and the keyboard-aware
+ * `--okou-safe-b`; `env()` is the fallback so a primitive still behaves without
+ * them. Bottom-edge avoidance reads `--okou-safe-b`, which collapses while the
+ * software keyboard covers the home indicator. Only the negative extension,
+ * which paints a fill past the viewport edge, reads the raw `--sab`.
+ * =================================== */
+
+@utility p-safe {
+  padding: var(--sat, env(safe-area-inset-top, 0px))
+    var(--sar, env(safe-area-inset-right, 0px))
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px))
+    var(--sal, env(safe-area-inset-left, 0px));
+}
+
+@utility p-safe-offset-* {
+  padding: calc(
+      var(--sat, env(safe-area-inset-top, 0px)) + --spacing(--value(integer))
+    )
+    calc(
+      var(--sar, env(safe-area-inset-right, 0px)) + --spacing(--value(integer))
+    )
+    calc(
+      var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+        --spacing(--value(integer))
+    )
+    calc(
+      var(--sal, env(safe-area-inset-left, 0px)) + --spacing(--value(integer))
+    );
+  padding: calc(
+      var(--sat, env(safe-area-inset-top, 0px)) + --value([length], [*])
+    )
+    calc(var(--sar, env(safe-area-inset-right, 0px)) + --value([length], [*]))
+    calc(
+      var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+        --value([length], [*])
+    )
+    calc(var(--sal, env(safe-area-inset-left, 0px)) + --value([length], [*]));
+}
+
+@utility pt-safe-offset-* {
+  padding-top: calc(
+    var(--sat, env(safe-area-inset-top, 0px)) + --spacing(--value(integer))
+  );
+  padding-top: calc(
+    var(--sat, env(safe-area-inset-top, 0px)) + --value([length], [*])
+  );
+}
+
+@utility pr-safe-offset-* {
+  padding-right: calc(
+    var(--sar, env(safe-area-inset-right, 0px)) + --spacing(--value(integer))
+  );
+  padding-right: calc(
+    var(--sar, env(safe-area-inset-right, 0px)) + --value([length], [*])
+  );
+}
+
+@utility pl-safe-offset-* {
+  padding-left: calc(
+    var(--sal, env(safe-area-inset-left, 0px)) + --spacing(--value(integer))
+  );
+  padding-left: calc(
+    var(--sal, env(safe-area-inset-left, 0px)) + --value([length], [*])
+  );
+}
+
+@utility pb-safe {
+  padding-bottom: var(--okou-safe-b, env(safe-area-inset-bottom, 0px));
+}
+
+@utility pb-safe-offset-* {
+  padding-bottom: calc(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+      --spacing(--value(integer))
+  );
+  padding-bottom: calc(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+      --value([length], [*])
+  );
+}
+
+@utility pb-safe-or-* {
+  padding-bottom: max(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)),
+    --spacing(--value(integer))
+  );
+  padding-bottom: max(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)),
+    --value([length], [*])
+  );
+}
+
+/* Pairs with `pb-safe-offset-*` where a scrollport bleeds out to its
+   container's padding edge and re-applies that padding inside itself. */
+@utility -mb-safe-offset-* {
+  margin-bottom: calc(
+    (
+        var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+          --spacing(--value(integer))
+      ) *
+      -1
+  );
+  margin-bottom: calc(
+    (
+        var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+          --value([length], [*])
+      ) *
+      -1
+  );
+}
+
+@utility bottom-safe-or-* {
+  bottom: max(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)),
+    --spacing(--value(integer))
+  );
+  bottom: max(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)),
+    --value([length], [*])
+  );
+}
+
+@utility bottom-safe-offset-* {
+  bottom: calc(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+      --spacing(--value(integer))
+  );
+  bottom: calc(
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+      --value([length], [*])
+  );
+}
+
+@utility top-safe-offset-* {
+  top: calc(
+    var(--sat, env(safe-area-inset-top, 0px)) + --spacing(--value(integer))
+  );
+  top: calc(var(--sat, env(safe-area-inset-top, 0px)) + --value([length], [*]));
+}
+
+@utility right-safe-offset-* {
+  right: calc(
+    var(--sar, env(safe-area-inset-right, 0px)) + --spacing(--value(integer))
+  );
+  right: calc(
+    var(--sar, env(safe-area-inset-right, 0px)) + --value([length], [*])
+  );
+}
+
+/* Extends a fill past the viewport edge so it reaches the physical screen in a
+   standalone PWA. The surface still owes the real reserve, so this reads the
+   raw inset rather than the keyboard-aware one. */
+@utility -bottom-safe {
+  bottom: calc(var(--sab, env(safe-area-inset-bottom, 0px)) * -1);
+}
+
 @layer base {
   :root {
     --surface-shadow:
@@ -470,6 +646,8 @@
     --destructive-foreground: var(
       --on-filled
     ); /* on-filled - white text on destructive */
+    --link: 222 64% 45%; /* #2955BC - tracks the Markdown link color */
+    --link-hover: 222 65% 39%; /* #234AA4 - tracks the Markdown link hover */
 
     /* Interrupting a run is not destruction -- nothing is lost and the work is
        resumable -- so it steps two stops up the same Coral ramp: still clearly
@@ -642,6 +820,10 @@
        stop to stay legible, and that stop flips the label to Ink (7.21:1). */
     --destructive: 13.1 100% 72.2%; /* #FF9071 - Coral 400 */
     --destructive-foreground: 40 4.3% 13.5%; /* #242321 - Ink */
+    /* Four lightness points above the Markdown link's 70%: that stop reads
+       4.02:1 on the user bubble, and 74% is the first that clears 4.5:1. */
+    --link: 222 72% 74%; /* #8DAAEC */
+    --link-hover: 222 80% 88%; /* #C8D7F9 - tracks the Markdown link hover */
 
     /* Coral 500 does not flip the way `--destructive` does: it already clears
        5.23:1 against the dark page, so the pause control keeps one fill and one

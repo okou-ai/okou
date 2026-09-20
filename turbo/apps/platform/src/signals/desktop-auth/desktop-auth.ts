@@ -12,7 +12,7 @@ import { clerk$, clerkUser$, resolveAppAuthUrl } from "../auth.ts";
 import { updatePage$ } from "../react-router.ts";
 import { replaceState } from "../location.ts";
 import { searchParams$ } from "../route.ts";
-import { setDaemon, waitLoopUntil, settle } from "../utils.ts";
+import { detach, Reason, waitLoopUntil, settle } from "../utils.ts";
 import {
   callbackScheme,
   completeDesktopSession$,
@@ -24,9 +24,6 @@ import {
   waitForDesktopOperation,
   type DesktopAuthRoute,
 } from "./protocol.ts";
-
-/** One second apart, so the budget matches the callback attempt's deadline. */
-const CALLBACK_POLL_LIMIT = 120;
 
 type DesktopAuthPhase =
   | "connecting"
@@ -219,16 +216,8 @@ function createDesktopCallback(
     set(callbackUrl$, handoff.callbackUrl);
     set(phase$, "pending");
     location.assign(handoff.callbackUrl);
-    // The deadline on the caller's signal only stops the work: `settle`
-    // rethrows aborts, so an aborted attempt never reaches the failed phase.
-    // Keep a poll budget so the timeout surfaces as an ordinary error the page
-    // can turn into the retry prompt.
-    let polls = 0;
     await waitLoopUntil(
       async (loopSignal) => {
-        if (polls++ >= CALLBACK_POLL_LIMIT) {
-          throw new Error("Desktop sign-in timed out");
-        }
         const status = await accept(
           client.status({
             params: { handoffId: handoff.handoffId },
@@ -333,16 +322,15 @@ function createDesktopSelection(
         return;
       }
       set(selectedOrganization$, organizationId);
-      const attempt = AbortSignal.any([signal, AbortSignal.timeout(25_000)]);
       const result = await settle(
         waitForDesktopOperation(
           set(
             activateDesktopOrganization$,
             organizationId,
             handoffParams(params),
-            attempt,
+            signal,
           ),
-          attempt,
+          signal,
         ),
         signal,
       );
@@ -390,21 +378,21 @@ function createDesktopAuthSignals(
 
   const initialize$ = command(({ set }, signal: AbortSignal): void => {
     // The page is ready while the cancellable native sign-in flow is pending.
-    setDaemon(async (ownerSignal) => {
-      const attempt = AbortSignal.any([
-        ownerSignal,
-        AbortSignal.timeout(mode === "callback" ? 120_000 : 25_000),
-      ]);
-      const result = await settle(
-        waitForDesktopOperation(set(run$, attempt), attempt),
-        ownerSignal,
-      );
-      if (!result.ok) {
-        // Deliberately discard API/Clerk errors: their text can contain secrets.
-        set(callbackUrl$, null);
-        set(phase$, "failed");
-      }
-    }, signal);
+    detach(
+      (async (ownerSignal: AbortSignal): Promise<void> => {
+        const result = await settle(
+          waitForDesktopOperation(set(run$, ownerSignal), ownerSignal),
+          ownerSignal,
+        );
+        if (!result.ok) {
+          // Deliberately discard API/Clerk errors: their text can contain secrets.
+          set(callbackUrl$, null);
+          set(phase$, "failed");
+        }
+      })(signal),
+      Reason.Daemon,
+      "desktop auth initialize",
+    );
   });
 
   const selectOrganization$ = createDesktopSelection(

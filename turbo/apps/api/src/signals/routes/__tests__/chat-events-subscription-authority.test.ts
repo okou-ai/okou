@@ -33,7 +33,7 @@ import {
   readCodexRequestJson,
 } from "./helpers/pi-responses";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const {
   api,
   chat,

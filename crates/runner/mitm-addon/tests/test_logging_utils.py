@@ -504,7 +504,7 @@ class TestAddFirewallMetadata:
         flow = real_flow(with_response=False)
         flow.metadata.update(
             {
-                metadata_keys.FIREWALL_PARAMS: {"owner": "vm0-ai", "branch": None},
+                metadata_keys.FIREWALL_PARAMS: {"owner": "okou-ai", "branch": None},
                 metadata_keys.AUTH_RESOLVED_SECRETS: ["GITHUB_TOKEN", None],
                 metadata_keys.AUTH_REFRESHED_CONNECTORS: "github",
                 metadata_keys.AUTH_REFRESHED_SECRETS: [1],

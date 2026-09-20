@@ -231,7 +231,7 @@ impl GuestPaths {
     /// does not create, validate, or otherwise access the file. See the canonical
     /// [agent log path helper][agent_log_file] for the shared runtime layout.
     ///
-    /// [Codex normalization policy]: https://github.com/vm0-ai/vm0/blob/main/crates/guest-agent/src/cli/codex_app_server_events.rs
+    /// [Codex normalization policy]: https://github.com/okou-ai/okou/blob/main/crates/guest-agent/src/cli/codex_app_server_events.rs
     /// [agent_log_file]: guest_contracts::runtime_paths::agent_log_file
     pub fn agent_log_file(&self) -> &str {
         &self.agent_log_file

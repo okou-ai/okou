@@ -24,7 +24,7 @@ import {
   createSharedThreadArtifactSignals,
   createSharedThreadRichContentSignals,
 } from "./shared-thread-rich-content.ts";
-import { createSharedThreadArtifactPreviewSignals } from "./shared-thread-artifact-preview.ts";
+import { createPublicArtifactPreviewSignals } from "../public-artifact-preview.ts";
 import { classifyChatAttachment } from "../chat-page/parse-body-blocks.ts";
 
 const sharedThreadResponse$ = state<SharedThreadResponse | null>(null);
@@ -33,7 +33,7 @@ const sharedThread$ = computed((get) => {
   if (!response) {
     return null;
   }
-  const artifactPreview = createSharedThreadArtifactPreviewSignals();
+  const artifactPreview = createPublicArtifactPreviewSignals();
   const messages: SharedDisplayThread["messages"][number][] = [];
   const richMessages: SharedThreadResponse["messages"][number][] = [];
   for (const source of response.messages) {

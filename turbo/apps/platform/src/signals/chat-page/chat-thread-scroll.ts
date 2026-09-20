@@ -34,10 +34,11 @@ export interface ReadyScrollAfterRenderRequest {
 }
 
 export interface ChatThreadScrollSignals {
-  readonly scrollContainerOnRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
+  /**
+   * Binds the scroll container. Unwrapped so the thread factory can give the
+   * element one `onRef` lifetime shared with the locator's reading.
+   */
+  readonly attachScrollContainer$: Command<void, [HTMLElement, AbortSignal]>;
   readonly scrollContentOnRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -669,98 +670,96 @@ function createRenderScrollSignals(
 
 type ScrollNavigationSignals = ReturnType<typeof createScrollNavigationSignals>;
 
-function createScrollContainerOnRef(
+function createAttachScrollContainer(
   threadId: string,
   scroll: InternalScrollSignals,
   navigation: ScrollNavigationSignals,
   runtime: ScrollRuntime,
 ) {
-  return onRef(
-    command(({ set }, container: HTMLElement, signal: AbortSignal) => {
-      set(scroll.bindScrollContainer$, container);
-      L.debug("container bound", {
-        threadId,
-        initialized: runtime.initialized,
-      });
+  return command(({ set }, container: HTMLElement, signal: AbortSignal) => {
+    set(scroll.bindScrollContainer$, container);
+    L.debug("container bound", {
+      threadId,
+      initialized: runtime.initialized,
+    });
 
-      const handleScroll = onDomEventFn((event: Event) => {
-        if (!runtime.initialized) {
-          L.debug("pre-initialization scroll ignored", { threadId });
-          return;
-        }
-        if (event.target !== container) {
-          // The listener runs in the capture phase, so nested scrollers (wide
-          // diagrams, code blocks, tables) deliver their scroll events here
-          // too. Where they sit says nothing about where the thread sits.
-          return;
-        }
-        const programmatic = isProgrammaticScroll(runtime, container);
-        if (!programmatic) {
-          // The container has left the offset this module wrote, so the reader
-          // moved it. Until that happens the offset is still ours no matter how
-          // many events describe it, and content growing every frame delivers
-          // more of them than the restores that wrote them.
-          runtime.programmaticScrollTop = null;
-        }
-        return set(
-          scroll.syncThreadScrollPosition$,
-          container,
-          !programmatic,
-          signal,
-        );
-      });
-      const restoreLayout = onDomEventFn(() => {
-        return set(navigation.restoreScrollPosition$, signal);
-      });
-      const handleScrollEnd = (event: Event) => {
-        if (
-          event.target === container &&
-          runtime.programmaticSmoothScrollTop !== null
-        ) {
-          // A fractional target can produce one near-terminal integer scroll
-          // offset before the browser reports its final rounded offset. Keep
-          // the whole animation programmatic until scrollend, then carry the
-          // actual terminal offset into the ordinary duplicate-event guard.
-          runtime.programmaticScrollTop = container.scrollTop;
-          runtime.programmaticSmoothScrollTop = null;
-        }
-      };
-      const view = container.ownerDocument.defaultView;
-
-      container.addEventListener("scroll", handleScroll, {
-        capture: true,
-        passive: true,
-      });
-      container.addEventListener("scrollend", handleScrollEnd, {
-        passive: true,
-      });
-      view?.addEventListener("resize", restoreLayout, { signal });
-      container.ownerDocument.fonts?.addEventListener(
-        "loadingdone",
-        restoreLayout,
-        { signal },
-      );
-      view?.visualViewport?.addEventListener("resize", restoreLayout, {
+    const handleScroll = onDomEventFn((event: Event) => {
+      if (!runtime.initialized) {
+        L.debug("pre-initialization scroll ignored", { threadId });
+        return;
+      }
+      if (event.target !== container) {
+        // The listener runs in the capture phase, so nested scrollers (wide
+        // diagrams, code blocks, tables) deliver their scroll events here
+        // too. Where they sit says nothing about where the thread sits.
+        return;
+      }
+      const programmatic = isProgrammaticScroll(runtime, container);
+      if (!programmatic) {
+        // The container has left the offset this module wrote, so the reader
+        // moved it. Until that happens the offset is still ours no matter how
+        // many events describe it, and content growing every frame delivers
+        // more of them than the restores that wrote them.
+        runtime.programmaticScrollTop = null;
+      }
+      return set(
+        scroll.syncThreadScrollPosition$,
+        container,
+        !programmatic,
         signal,
-      });
-
-      signal.addEventListener(
-        "abort",
-        () => {
-          container.removeEventListener("scroll", handleScroll, {
-            capture: true,
-          });
-          container.removeEventListener("scrollend", handleScrollEnd);
-          set(scroll.clearScrollContainer$, container);
-          runtime.initialized = false;
-          runtime.programmaticScrollTop = null;
-          runtime.programmaticSmoothScrollTop = null;
-          L.debug("container unbound", { threadId });
-        },
-        { once: true },
       );
-    }),
-  );
+    });
+    const restoreLayout = onDomEventFn(() => {
+      return set(navigation.restoreScrollPosition$, signal);
+    });
+    const handleScrollEnd = (event: Event) => {
+      if (
+        event.target === container &&
+        runtime.programmaticSmoothScrollTop !== null
+      ) {
+        // A fractional target can produce one near-terminal integer scroll
+        // offset before the browser reports its final rounded offset. Keep
+        // the whole animation programmatic until scrollend, then carry the
+        // actual terminal offset into the ordinary duplicate-event guard.
+        runtime.programmaticScrollTop = container.scrollTop;
+        runtime.programmaticSmoothScrollTop = null;
+      }
+    };
+    const view = container.ownerDocument.defaultView;
+
+    container.addEventListener("scroll", handleScroll, {
+      capture: true,
+      passive: true,
+    });
+    container.addEventListener("scrollend", handleScrollEnd, {
+      passive: true,
+    });
+    view?.addEventListener("resize", restoreLayout, { signal });
+    container.ownerDocument.fonts?.addEventListener(
+      "loadingdone",
+      restoreLayout,
+      { signal },
+    );
+    view?.visualViewport?.addEventListener("resize", restoreLayout, {
+      signal,
+    });
+
+    signal.addEventListener(
+      "abort",
+      () => {
+        container.removeEventListener("scroll", handleScroll, {
+          capture: true,
+        });
+        container.removeEventListener("scrollend", handleScrollEnd);
+        set(scroll.clearScrollContainer$, container);
+        runtime.initialized = false;
+        runtime.programmaticScrollTop = null;
+        runtime.programmaticSmoothScrollTop = null;
+        L.debug("container unbound", { threadId });
+      },
+      { once: true },
+    );
+  });
 }
 
 /** Native resource and disclosure events run after their layout changes. */
@@ -811,7 +810,7 @@ export function createChatThreadScrollSignals(
     runtime,
     render.pendingScrollAfterRenderRequest$,
   );
-  const scrollContainerOnRef$ = createScrollContainerOnRef(
+  const attachScrollContainer$ = createAttachScrollContainer(
     threadId,
     scroll,
     navigation,
@@ -875,7 +874,7 @@ export function createChatThreadScrollSignals(
   );
 
   return {
-    scrollContainerOnRef$,
+    attachScrollContainer$,
     scrollContentOnRef$,
     scrollCommitOnRef$: render.scrollCommitOnRef$,
     pendingScrollAfterRenderRequest$: render.pendingScrollAfterRenderRequest$,

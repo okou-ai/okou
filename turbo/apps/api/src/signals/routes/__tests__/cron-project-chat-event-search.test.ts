@@ -30,6 +30,11 @@ import {
   transferAgentOwnerFixture,
 } from "../../../test-fixtures/account-erasure-subject";
 import { withChatSearchProjectionBarrierFixture } from "../../../test-fixtures/chat-search-erasure";
+import {
+  createChatSearchGinFixture,
+  withChatSearchStatementFailureFixture,
+} from "../../../test-fixtures/chat-search-gin";
+import { settleIncludingAbort } from "../../utils";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { createBddApi } from "./helpers/api-bdd";
@@ -49,13 +54,22 @@ function cronClient() {
   })(cronProjectChatEventSearchContract);
 }
 
-async function projectOwnedChatEventSearch(chatThreadIds: readonly string[]) {
+async function projectOwnedChatEventSearch(
+  chatThreadIds: readonly string[],
+  ginIndexName?: string,
+) {
   const client = setupApp({
     context,
     routes: testChatEventSearchProjectionRoutes,
+    rethrowErrors: true,
   })(testChatEventSearchProjectionContract);
   const response = await accept(
-    client.project({ body: { chat_thread_ids: [...chatThreadIds] } }),
+    client.project({
+      body: {
+        chat_thread_ids: [...chatThreadIds],
+        gin_index_name: ginIndexName,
+      },
+    }),
     [200],
   );
   return response.body;
@@ -311,6 +325,211 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const projection = await readChatEventSearchProjectionFixture(threadId);
     expect(projection.indexedSeqId).toBe(projection.lastChatEventSeqId);
     expect(projection.messages).toHaveLength(2);
+  });
+
+  it("rolls back a statement timeout, continues other threads and retries next tick", async () => {
+    const fixtures = [
+      await createProjectionFixture(),
+      await createProjectionFixture(),
+    ];
+    const [first, second] = fixtures.sort((a, b) => {
+      return a.threadId.localeCompare(b.threadId);
+    });
+    if (!first || !second) {
+      throw new Error("Expected two owned projection threads");
+    }
+    await seedProjectionContent(first.threadId, `timeout ${randomUUID()}`);
+    await seedProjectionContent(second.threadId, `continuing ${randomUUID()}`);
+    const deferred = await withChatSearchStatementFailureFixture(
+      first.threadId,
+      "timeout",
+      async () => {
+        return await projectOwnedChatEventSearch([
+          first.threadId,
+          second.threadId,
+        ]);
+      },
+    );
+    expect(deferred).toMatchObject({
+      threads: 1,
+      indexedEvents: 2,
+      deferredThreads: 1,
+      closedThreads: 0,
+      convergence: { eligibleThreads: 2, durableCaughtUpThreads: 1 },
+    });
+    await expectNoProjection(first.threadId);
+    expect(
+      (await readChatEventSearchProjectionFixture(second.threadId)).messages,
+    ).toHaveLength(2);
+
+    const retry = await projectOwnedChatEventSearch([
+      first.threadId,
+      second.threadId,
+    ]);
+    expect(retry).toMatchObject({
+      threads: 1,
+      indexedEvents: 2,
+      deferredThreads: 0,
+      convergence: { eligibleThreads: 2, durableCaughtUpThreads: 2 },
+    });
+    const repeated = await projectOwnedChatEventSearch([
+      first.threadId,
+      second.threadId,
+    ]);
+    expect(repeated).toMatchObject({
+      threads: 0,
+      indexedEvents: 0,
+      deferredThreads: 0,
+    });
+    expect(
+      (await readChatEventSearchProjectionFixture(first.threadId)).messages,
+    ).toHaveLength(2);
+  }, 20_000);
+
+  it("propagates server cancellation and rolls back the interrupted projection", async () => {
+    const { threadId } = await createProjectionFixture();
+    await seedProjectionContent(threadId, `cancel ${randomUUID()}`);
+    const result = await withChatSearchStatementFailureFixture(
+      threadId,
+      "cancel",
+      async () => {
+        return await settleIncludingAbort(
+          projectOwnedChatEventSearch([threadId]),
+        );
+      },
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        cause: {
+          code: "57014",
+          message: "canceling statement due to user request",
+        },
+      },
+    });
+    await expectNoProjection(threadId);
+  });
+
+  it("drains a GIN backlog at tick start but preserves a small pending list", async () => {
+    const gin = await createChatSearchGinFixture();
+    const { threadId } = await createProjectionFixture();
+    await seedProjectionContent(threadId, `smallgin ${randomUUID()}`);
+    await gin.insert(10);
+    const small = await gin.pendingPages();
+    expect(small).toBeGreaterThan(0);
+    expect(small).toBeLessThan(64);
+    await expect(
+      projectOwnedChatEventSearch([threadId], gin.indexName),
+    ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
+    await expect(gin.pendingPages()).resolves.toBe(small);
+
+    await gin.insert(600);
+    await expect(gin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
+    await insertSearchablePromptFixture({
+      chatThreadId: threadId,
+      text: `largegin ${randomUUID()}`,
+    });
+    await expect(
+      projectOwnedChatEventSearch([threadId], gin.indexName),
+    ).resolves.toMatchObject({
+      threads: 1,
+      indexedEvents: 1,
+      deferredThreads: 0,
+    });
+    await expect(gin.pendingPages()).resolves.toBe(0);
+  });
+
+  it("checks the pending list again between thread transactions", async () => {
+    const gin = await createChatSearchGinFixture();
+    const fixtures = [
+      await createProjectionFixture(),
+      await createProjectionFixture(),
+    ];
+    const [first, second] = fixtures.sort((a, b) => {
+      return a.threadId.localeCompare(b.threadId);
+    });
+    if (!first || !second) {
+      throw new Error("Expected two owned projection threads");
+    }
+    await seedProjectionContent(first.threadId, `beforegin ${randomUUID()}`);
+    await seedProjectionContent(second.threadId, `aftergin ${randomUUID()}`);
+    const projected = await withChatSearchProjectionBarrierFixture(
+      {
+        chatThreadId: first.threadId,
+        stopAt: "commit",
+        work: async ({ entered, release }) => {
+          const tick = projectOwnedChatEventSearch(
+            [first.threadId, second.threadId],
+            gin.indexName,
+          );
+          await entered;
+          await gin.insert(600);
+          await expect(gin.pendingPages()).resolves.toBeGreaterThanOrEqual(64);
+          release();
+          return await tick;
+        },
+      },
+      context.signal,
+    );
+    expect(projected).toMatchObject({
+      threads: 2,
+      indexedEvents: 4,
+      deferredThreads: 0,
+    });
+    await expect(gin.pendingPages()).resolves.toBe(0);
+  });
+
+  it("keeps projecting while another worker owns GIN maintenance", async () => {
+    const gin = await createChatSearchGinFixture();
+    await gin.insert(600);
+    const pending = await gin.pendingPages();
+    expect(pending).toBeGreaterThanOrEqual(64);
+    const { threadId } = await createProjectionFixture();
+    await seedProjectionContent(threadId, `busymaintainer ${randomUUID()}`);
+    const release = await gin.hold("maintenance", context.signal);
+    await expect(
+      projectOwnedChatEventSearch([threadId], gin.indexName),
+    ).resolves.toMatchObject({ threads: 1, deferredThreads: 0 });
+    await expect(gin.pendingPages()).resolves.toBe(pending);
+    await release();
+    await insertSearchablePromptFixture({
+      chatThreadId: threadId,
+      text: `released ${randomUUID()}`,
+    });
+    await projectOwnedChatEventSearch([threadId], gin.indexName);
+    await expect(gin.pendingPages()).resolves.toBe(0);
+  });
+
+  it("defers the remaining candidates once maintenance hits its lock deadline", async () => {
+    const gin = await createChatSearchGinFixture();
+    const first = await createProjectionFixture();
+    const second = await createProjectionFixture();
+    await seedProjectionContent(first.threadId, `ginlocka ${randomUUID()}`);
+    await seedProjectionContent(second.threadId, `ginlockb ${randomUUID()}`);
+    const release = await gin.hold("index", context.signal);
+    const deferred = await projectOwnedChatEventSearch(
+      [first.threadId, second.threadId],
+      gin.indexName,
+    );
+    expect(deferred).toMatchObject({
+      threads: 0,
+      indexedEvents: 0,
+      deferredThreads: 2,
+      convergence: { eligibleThreads: 2, durableCaughtUpThreads: 0 },
+    });
+    await expectNoProjection(first.threadId);
+    await expectNoProjection(second.threadId);
+    await release();
+    await expect(
+      projectOwnedChatEventSearch(
+        [first.threadId, second.threadId],
+        gin.indexName,
+      ),
+    ).resolves.toMatchObject({
+      threads: 2,
+      indexedEvents: 4,
+      deferredThreads: 0,
+    });
   });
 
   it("holds thread deletion until the projector transaction commits", async () => {

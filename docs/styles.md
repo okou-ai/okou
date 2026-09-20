@@ -268,6 +268,15 @@ those consumers; deprecated names are removed when their consumers have
 migrated, rather than being copied into component-local registries. A change to
 ownership, naming, or theme mapping must update this guide in the same PR.
 
+`text-link` and `text-link-hover` carry the hyperlink colors for first-party
+body copy. They track what Markdown links already render, so a link a user
+typed and a link an Agent wrote read the same: colored with no underline, then
+underlined and a shade deeper on hover. Dark sits four lightness points above
+the Markdown value because that stop was tuned against the canvas and reads
+4.02:1 on the user bubble, while 74% is the first to clear 4.5:1. Markdown
+keeps its own rule in the App stylesheet; these tokens govern first-party
+markup.
+
 Large editable surfaces use `border-surface-focus` to emphasize their existing
 border on focus: neutral gray in light themes and muted amber in dark themes.
 Keep the border width constant across interaction states. A shadow-only focus
@@ -667,10 +676,12 @@ met it.
 ### Floating layers and portal ownership
 
 Portals belong to the shared primitives. Business components must not import
-`createPortal` from `react-dom`. `DialogContent`, `SheetContent`,
-`PopoverContent`, `SelectContent`, `DropdownMenuContent` and `TooltipContent`
-already own that relocation through Base UI's own `Portal`, together with the
-focus, outside-press, scroll-lock and `aria` ownership that arrives with it.
+`createPortal` from `react-dom`; `no-restricted-imports` in
+`turbo/apps/platform/eslint.config.js` enforces that. `DialogContent`,
+`SheetContent`, `PopoverContent`, `SelectContent`, `DropdownMenuContent` and
+`TooltipContent` already own that relocation through Base UI's own `Portal`,
+together with the focus, outside-press, scroll-lock and `aria` ownership that
+arrives with it.
 The portal there is not a rendering convenience: it is what lets a layer escape
 an ancestor's `overflow` clip or `transform` containing block, which is a DOM
 constraint rather than a state-location one. The toaster is the one surface
@@ -708,6 +719,15 @@ the commit so browser compensation cannot compete with restoration. Each toggle
 captures the current reading position, including scrolling done in fullscreen.
 Retaining a DOM node and its numeric `scrollTop` alone does not preserve a
 document's reading position when its line wrapping changes.
+
+An anchored surface's collision boundary is the one safe-area decision CSS
+cannot reach, because Base UI's positioner is a JavaScript engine measuring
+against the raw viewport. `PopoverContent`, `SelectContent`,
+`DropdownMenuContent` and `TooltipContent` therefore default `collisionPadding`
+to the insets plus a gap, read once inside `@okouai/ui`. A caller asking for a
+larger gap widens that boundary per side rather than replacing it: a request for
+more room is not a request for less protection, and replacing it would silently
+strip the insets from the few surfaces that state a gap of their own.
 
 Safe-area insets are the surface's own responsibility whenever it is `fixed`
 and meets a viewport edge. `#root` carries the top and horizontal insets as
@@ -966,11 +986,47 @@ is not `h-dvh`, because standalone moves the variable to `100lvh`. A percentage
 would not do either: `h-full` on a fixed element resolves against the viewport
 rather than the height the rest of the app measures.
 
-`p-safe` is an `@utility` instead of a theme entry because its four sides carry
-four different values, which no single spacing token can express. Registering it
+`p-safe` belongs to the safe-area utility family in `@okouai/ui`, which is where
+a surface reaches an inset. Naming follows the ecosystem convention, so the side
+is carried by the property prefix rather than repeated in a token name:
+
+| Form                | Emits             | Use when                                               |
+| ------------------- | ----------------- | ------------------------------------------------------ |
+| `*-safe`            | the inset         | the surface owes exactly the system reserve            |
+| `*-safe-or-{n}`     | `max(inset, n)`   | a design gutter and the reserve are the same blank     |
+| `*-safe-offset-{n}` | `calc(inset + n)` | the content must clear the reserve and keep its margin |
+
+Pick between the last two by asking whether the gutter and the reserve are one
+visual blank. A page's bottom scroll gutter is: on a device with no indicator it
+still wants the gutter, and on one with an indicator that strip is already
+empty, so take the larger. A dialog's margin is not: the panel has an edge and a
+shadow, so it clears the reserve and then keeps its own inset.
+
+These are `@utility` rather than `@theme` entries for two reasons. `p-safe`'s
+four sides carry four different values, which no single spacing token can
+express; and a spacing token can only name a length, so it cannot reach the
+`max()` and `calc()` forms that most call sites actually need. Registering them
 is not an exception to the selector boundary: `@utility` emits into
 `@layer utilities` and declares no class selector, so the policy does not see a
 selector to reject.
+
+Every one of them falls back to `env()`, so a primitive behaves in a host that
+never declared the properties, and no call site repeats that decision.
+
+Bottom-edge utilities read `--okou-safe-b`, not the raw `--sab`. The two differ
+while the software keyboard is up: the keyboard covers the home indicator, so a
+surface resting above the keyboard owes nothing there and the reserved strip
+would show as a gap. The app collapses `--okou-safe-b` from
+`:root[data-keyboard-open="true"]`, on the document root rather than a subtree,
+so a body-level portal inherits the correction without any component needing
+JavaScript for it. `-bottom-safe` is the exception: it extends a fill past the
+viewport edge instead of keeping content clear of the indicator, so it reads the
+physical `--sab` and is unaffected by the keyboard.
+
+A class the class merger cannot classify conflicts with nothing, so both copies
+survive and stylesheet order — not the caller — decides. The shared `cn()`
+therefore registers `safe` as a spacing value and gives the `-or-` / `-offset-`
+forms their own group validators.
 
 `position: fixed` changes where a box is laid out, not where it sits in the DOM,
 so a shell's custom properties still inherit into a fixed cover.

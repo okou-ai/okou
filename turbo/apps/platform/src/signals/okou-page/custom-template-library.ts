@@ -13,7 +13,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { retryTransientLoad, waitForOperation } from "../utils.ts";
+import { waitForOperation } from "../utils.ts";
 
 const catalogVersion$ = state(0);
 
@@ -35,9 +35,7 @@ export const customTemplateCatalog$ = computed(
       return [];
     }
     const client = get(apiClient$)(userTemplatesContract);
-    const result = await retryTransientLoad(() => {
-      return accept(client.list(), [200]);
-    });
+    const result = await accept(client.list(), [200]);
     return result.body;
   },
 );
@@ -188,9 +186,7 @@ export const openCustomTemplateDetail$ = computed(
     }
     get(catalogVersion$);
     const client = get(apiClient$)(userTemplatesContract);
-    const result = await retryTransientLoad(() => {
-      return accept(client.get({ params: { templateId } }), [200]);
-    });
+    const result = await accept(client.get({ params: { templateId } }), [200]);
     return result.body;
   },
 );

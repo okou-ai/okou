@@ -399,7 +399,7 @@ export function AgentChatPage() {
             instead of holding the floor. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:flex-none sm:gap-10 sm:pt-[20vh] sm:pb-[max(10vh,var(--sab))]"
+          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:flex-none sm:gap-10 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
         >
           {/* The greeting keeps the space the composer left behind rather than
               staying pinned under the header with a screen-deep hole under it.
@@ -427,15 +427,15 @@ export function AgentChatPage() {
             </h2>
           </div>
 
-          {/* `data-chat-composer` is the hook the thread page's footer already
-              carries: it names the box the soft keyboard has to reveal, and it
-              is what resolves `--okou-composer-safe-bottom` to the home
-              indicator's inset while the keyboard is closed and to nothing
-              while it is open, so the card clears the gesture bar without
-              floating above the keyboard. */}
+          {/* The same two the thread page's footer carries.
+              `data-chat-composer` names the box the soft keyboard has to
+              reveal, and `pb-safe-or-2` takes the larger of the gutter and the
+              home indicator's reserve — the reserve being keyboard-aware, so
+              the card clears the gesture bar without floating above the
+              keyboard. */}
           <div
             data-chat-composer
-            className="order-3 pb-[max(0.5rem,var(--okou-composer-safe-bottom))] sm:order-none sm:pb-0"
+            className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
           >
             <ChatComposer signals={composerSignals} />
           </div>

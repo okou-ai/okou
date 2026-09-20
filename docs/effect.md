@@ -249,12 +249,11 @@ Use `waitLoopUntil` or `waitAbly*LoopUntil$` when subsequent work depends on a
 loop finishing. These return the internal promise and propagate cancellation
 and failure. Both entry points share the same loop, retry, and cleanup logic.
 
-Do not add `detach()` to feature commands or wrap the background starters in
-another detach. `setDaemon(operation, signal)` is the shared primitive in
-`signals/utils.ts` that owns daemon detachment. Use it for an explicitly
-background, non-periodic process such as Desktop sign-in or realtime startup;
-keep ordinary finite command composition awaited. Other detached work belongs
-at an actual outer boundary, such as a React DOM callback.
+Do not wrap the background starters in another detach. An explicitly
+background, non-periodic process such as Desktop sign-in or realtime startup
+calls `detach(operation(signal), Reason.Daemon, description)` with its owner
+signal; keep ordinary finite command composition awaited. Other detached work
+belongs at an actual outer boundary, such as a React DOM callback.
 
 ### Separate loading state from business state
 

@@ -1,4 +1,4 @@
-import { surfaceVariants } from "@okouai/ui";
+import { CopyButton, surfaceVariants } from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
@@ -89,7 +89,6 @@ import {
   telegramBotAgentForm$,
   telegramBots$,
   telegramBotTokenForm$,
-  telegramCopiedValue$,
   telegramFailedAvatarKeys$,
   telegramReinstallDialogBotId$,
   telegramReinstallDialogOpen$,
@@ -348,35 +347,44 @@ function getTelegramLoginOrigin(): string {
 
 function CopyableTelegramValue({ value }: { value: string }) {
   const { t } = useTranslation();
-  const copiedValue = useGet(telegramCopiedValue$);
   const copyValueCommand = useSet(copyTelegramValue$);
   const pageSignal = useGet(pageSignal$);
 
   const copyValue = () => {
-    detach(copyValueCommand(value, pageSignal), Reason.DomCallback);
+    return copyValueCommand(value, pageSignal);
   };
 
   return (
-    <button
-      type="button"
-      className={TELEGRAM_COMMAND_CLASS}
-      aria-label={t(
-        ($) => {
-          return $.connectors.providerSettings.telegram.copyAria;
-        },
-        { value },
-      )}
-      title={t(($) => {
-        return $.connectors.providerSettings.telegram.copyTitle;
-      })}
-      onClick={copyValue}
-    >
-      {copiedValue === value
-        ? t(($) => {
-            return $.connectors.providerSettings.telegram.copied;
-          })
-        : value}
-    </button>
+    <CopyButton
+      key={value}
+      copyAction={copyValue}
+      resetDelay={1500}
+      render={({ onClick, ref }, { copied }) => {
+        return (
+          <button
+            ref={ref}
+            type="button"
+            className={TELEGRAM_COMMAND_CLASS}
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings.telegram.copyAria;
+              },
+              { value },
+            )}
+            title={t(($) => {
+              return $.connectors.providerSettings.telegram.copyTitle;
+            })}
+            onClick={onClick}
+          >
+            {copied
+              ? t(($) => {
+                  return $.connectors.providerSettings.telegram.copied;
+                })
+              : value}
+          </button>
+        );
+      }}
+    />
   );
 }
 
@@ -2261,7 +2269,7 @@ export function TelegramSettingsPage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto px-4 pb-[max(2rem,var(--sab))] pt-3 sm:px-6">
+      <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 sm:px-6">
         <div className="mx-auto flex max-w-[900px] flex-col gap-4">
           {hasError ? (
             <div

@@ -80,5 +80,7 @@ export enum FeatureSwitchKey {
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
+  OnboardingSourcesFirst = "onboardingSourcesFirst",
   OptimisticMessageSpinner = "optimisticMessageSpinner",
+  UserMessageLinks = "userMessageLinks",
 }

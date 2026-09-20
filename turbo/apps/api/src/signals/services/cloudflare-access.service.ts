@@ -37,17 +37,17 @@ const failures = {
   notFound: {
     kind: "not_found",
     code: SSH_ERROR_CODES.ACCESS_NOT_FOUND,
-    message: "Cloudflare Access configuration not found",
+    message: "Cloudflare Access not found",
   },
   conflict: {
     kind: "conflict",
     code: SSH_ERROR_CODES.ACCESS_REVISION_CONFLICT,
-    message: "Cloudflare Access configuration was modified by another request",
+    message: "Cloudflare Access was modified by another request",
   },
   inUse: {
     kind: "conflict",
     code: SSH_ERROR_CODES.ACCESS_IN_USE,
-    message: "Cloudflare Access configuration is used by an SSH host",
+    message: "Cloudflare Access is used by an SSH host",
   },
 } as const;
 export function cloudflareAccessFailure(reason: keyof typeof failures) {

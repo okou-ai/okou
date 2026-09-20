@@ -17,7 +17,7 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { agentsRoutes } from "../agents";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const connectors = createConnectorBddApi(context);

@@ -16,7 +16,6 @@ import { accept } from "../../lib/accept.ts";
 import { agentById, currentAgentId$ } from "../agent.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { retryTransientLoad } from "../utils.ts";
 import { resolveActiveUserPermissionGrantPolicy } from "../user-permission-grants.ts";
 import { parseUserPermissionGrantExpiresIn } from "./permission-grant-expiration.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -142,14 +141,7 @@ export function userPermissionGrantsByAgent(
   return computed(async (get) => {
     get(internalUserPermissionGrantsReload$);
     const client = get(apiClient$)(userPermissionGrantsContract);
-    const result = await retryTransientLoad(() => {
-      return accept(
-        client.list({
-          query: params,
-        }),
-        [200],
-      );
-    });
+    const result = await accept(client.list({ query: params }), [200]);
     return result.body;
   });
 }
@@ -160,14 +152,7 @@ export function userPermissionGrantsByAgentIfExists(
   return computed(async (get) => {
     get(internalUserPermissionGrantsReload$);
     const client = get(apiClient$)(userPermissionGrantsContract);
-    const result = await retryTransientLoad(() => {
-      return accept(
-        client.list({
-          query: params,
-        }),
-        [200, 404],
-      );
-    });
+    const result = await accept(client.list({ query: params }), [200, 404]);
     return result.status === 404 ? null : result.body;
   });
 }

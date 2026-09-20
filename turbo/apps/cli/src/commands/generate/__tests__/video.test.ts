@@ -88,8 +88,7 @@ function stubBillingStatus(
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
       scheduledChange: null,
-      hasSubscription:
-        tier !== "free" && tier !== "limited-free-1" && tier !== "pro-suspend",
+      hasSubscription: tier !== "free" && tier !== "limited-free-1",
       autoRecharge: {
         enabled: false,
         threshold: null,
@@ -507,7 +506,7 @@ describe("okou generate video command", () => {
     );
     expect(stdout).toContain('"videoTemplates": [');
     expect(stdout).toContain('"id": "video-template:epic-grandeur"');
-    expect(stdout).toContain("vm0-ai/vm0-skills");
+    expect(stdout).toContain("okou-ai/vm0-skills");
     expect(stdout).not.toContain("nexu-io/open-design");
     expect(stdout).not.toContain("skill:presentation-deck-tools");
     expect(stdout).not.toContain("image-style:");

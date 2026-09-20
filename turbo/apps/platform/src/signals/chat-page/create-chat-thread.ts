@@ -10,7 +10,6 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { timeout } from "signal-timers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -24,7 +23,7 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import { i18n } from "../../i18n/index.ts";
-import { onRejection, resetSignal, settle } from "../utils.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import { createHeaderAutomationSignals } from "./header-automation-menu.ts";
 import { createThreadSidebarSignals } from "./thread-sidebar.ts";
 import {
@@ -147,6 +146,7 @@ import {
   embedMermaidSignals,
   type MermaidDiagramRegistry,
 } from "../mermaid-diagram.ts";
+import { openDiagramLightbox$ } from "../okou-page/attachment-chips.ts";
 import { embedMarkdownArtifacts$ } from "./markdown-artifacts.ts";
 import {
   createImageLoadRegistry,
@@ -234,7 +234,10 @@ import {
   createRunDetailSignalsRegistry,
   type RunDetailSignals,
 } from "./run-detail.ts";
-import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import {
+  createChatConversationLocatorSignals,
+  createLocatorViewportSignals,
+} from "./chat-conversation-locator.ts";
 import {
   createChatEventSignals,
   type ChatEventSignals,
@@ -757,59 +760,18 @@ function createComputerUseHostSelection(
 function createThreadOwnedSignals(threadId: string) {
   return {
     headerAutomations: createHeaderAutomationSignals(threadId),
-    ...createThreadUIState(),
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Sub-factory: per-thread UI state (copy)
-// ---------------------------------------------------------------------------
-
-function createThreadUIState() {
-  // Copy state with 2s auto-clear
-  const internalCopiedId$ = state<string | null>(null);
-  const resetCopiedSignal$ = resetSignal();
-
-  const copiedEventId$ = computed((get) => {
-    return get(internalCopiedId$);
-  });
-
-  const copyEvent$ = command(
-    async (
-      { get, set },
-      eventId: string,
-      payload: ChatClipboardPayload,
-      signal: AbortSignal,
-    ) => {
-      const ok = await writeChatMessageToClipboard(payload);
-      signal.throwIfAborted();
-      if (!ok) {
-        return;
-      }
-      const copiedSignal = set(resetCopiedSignal$, signal);
-      set(internalCopiedId$, eventId);
-      const clearCopiedId = () => {
-        if (get(internalCopiedId$) === eventId) {
-          set(internalCopiedId$, null);
-        }
-      };
-      copiedSignal.addEventListener("abort", clearCopiedId, { once: true });
-      timeout(
-        () => {
-          copiedSignal.removeEventListener("abort", clearCopiedId);
-          clearCopiedId();
-        },
-        2000,
-        { signal: copiedSignal },
-      );
-    },
-  );
-
-  return {
-    copiedEventId$,
     copyEvent$,
   };
 }
+
+const copyEvent$ = command(
+  async (_ctx, payload: ChatClipboardPayload, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const copied = await writeChatMessageToClipboard(payload);
+    signal.throwIfAborted();
+    return copied;
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Sub-factory: draft server sync (debounced PATCH)
@@ -2185,7 +2147,7 @@ function createPagedEventResources({
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
-  const mermaidDiagrams = createMermaidDiagramRegistry();
+  const mermaidDiagrams = createMermaidDiagramRegistry(openDiagramLightbox$);
   const imageLoads = createImageLoadRegistry();
 
   const registerChatEvent$ = command(
@@ -4074,6 +4036,7 @@ export function createChatPanelSignals(
   agentId: string,
   draft: DraftSignals,
 ): ChatPanelSignals {
+  const locatorViewport = createLocatorViewportSignals();
   const chatEvents = createChatEventSignals(threadId);
   const artifact = createArtifacts(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
@@ -4124,10 +4087,9 @@ export function createChatPanelSignals(
   );
   const locator = createChatConversationLocatorSignals({
     threadId,
-    scrollContainer$: messages.scroll.scrollContainer$,
-    scrollToEvent$: messages.scroll.scrollToEvent$,
+    viewport: locatorViewport,
     allChatGroups$: messagePipeline.allChatGroups$,
-    threadScrollPosition$: messages.scroll.threadScrollPosition$,
+    scrollToEvent$: messages.scroll.scrollToEvent$,
   });
   const runTracking = createRunTracking({
     threadId,
@@ -4149,7 +4111,14 @@ export function createChatPanelSignals(
     threadDraft$,
     threadMeta$,
     ...threadTitle,
-    scrollContainerOnRef$: messages.scroll.scrollContainerOnRef$,
+    // The transcript and the locator both bind this element, so it gets one
+    // ref and one lifetime rather than a ref each.
+    scrollContainerOnRef$: onRef(
+      command(({ set }, container: HTMLElement, signal: AbortSignal) => {
+        set(messages.scroll.attachScrollContainer$, container, signal);
+        set(locatorViewport.attachContainer$, container, signal);
+      }),
+    ),
     scrollContentOnRef$: messages.scroll.scrollContentOnRef$,
     composerLayoutOnRef$: createChatComposerLayoutOnRef(
       composer.editor.editor,

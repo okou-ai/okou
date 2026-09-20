@@ -1276,7 +1276,7 @@ describe("GET /api/billing/status", () => {
       [200],
     );
 
-    expect(response.body.tier).toBe("pro-suspend");
+    expect(response.body.tier).toBe("limited-free-1");
     expect(response.body.status).toBe("suspended");
     expect(response.body.credits).toBe(0);
     expect(response.body.hasSubscription).toBeFalsy();

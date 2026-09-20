@@ -15,7 +15,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { API_TEST_CONNECTOR_FIREWALL_CONFIGS } from "../../../test-fixtures/connector-catalog";
 import { runnersRoutes } from "../runners";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 const OPENAI_API_KEY_AUTH_HEADER = [

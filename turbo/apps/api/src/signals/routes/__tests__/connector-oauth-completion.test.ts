@@ -23,7 +23,7 @@ import {
   testCronDeleteCleanupsStateRoutes,
 } from "../test-cron-delete-cleanups-state";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);

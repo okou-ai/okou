@@ -10,7 +10,7 @@ import { apiClient$ } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import { resetSignal, setDaemon, waitForOperation } from "../utils.ts";
+import { detach, Reason, resetSignal, waitForOperation } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 
@@ -234,21 +234,25 @@ const refreshGetStartedFromRealtime$ = command(
 /** An authenticated app daemon; reward availability never delays route readiness. */
 export const setupGetStartedRewards$ = command(
   ({ get, set }, signal: AbortSignal): void => {
-    setDaemon(async (ownerSignal) => {
-      const switches = await get(featureSwitches$);
-      ownerSignal.throwIfAborted();
-      if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-        return;
-      }
-      set(
-        setAblyLoop$,
-        {
-          topic: GET_STARTED_REWARDS_CHANGED_EVENT,
-          loopCommand$: refreshGetStartedFromRealtime$,
-          options: { runOnSubscribe: true },
-        },
-        ownerSignal,
-      );
-    }, signal);
+    detach(
+      (async (ownerSignal: AbortSignal): Promise<void> => {
+        const switches = await get(featureSwitches$);
+        ownerSignal.throwIfAborted();
+        if (!switches[FeatureSwitchKey.GetStartedQuests]) {
+          return;
+        }
+        set(
+          setAblyLoop$,
+          {
+            topic: GET_STARTED_REWARDS_CHANGED_EVENT,
+            loopCommand$: refreshGetStartedFromRealtime$,
+            options: { runOnSubscribe: true },
+          },
+          ownerSignal,
+        );
+      })(signal),
+      Reason.Daemon,
+      "get started",
+    );
   },
 );

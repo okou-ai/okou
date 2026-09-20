@@ -646,12 +646,10 @@ test("Opening an illustration template shows the source picture itself", async (
 });
 
 test("A template whose detail will not load can be asked for again", async () => {
+  let unavailable = true;
   mockCustomTemplateStore([customTemplate()], {
-    // A 500 is transient, so the detail load spends its two further attempts
-    // before it settles as an error. The click is requests one through three;
-    // the retry is the fourth.
-    detail: (call) => {
-      return call <= 3 ? "fail" : undefined;
+    detail: () => {
+      return unavailable ? "fail" : undefined;
     },
   });
 
@@ -667,6 +665,7 @@ test("A template whose detail will not load can be asked for again", async () =>
   expect(alert).toHaveTextContent("Couldn't load templates.");
   const preview = previewDialogAround(alert);
 
+  unavailable = false;
   click(buttonByName("Retry", preview)!);
 
   // Asking again is the same request, so the template arrives on the surface

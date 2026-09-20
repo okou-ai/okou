@@ -410,7 +410,7 @@ function artifactDialogMetadataFromItem(params: {
 
 function ArtifactDialogLoadingBody() {
   return (
-    <div className="flex h-full items-center justify-center p-6 text-muted-foreground">
+    <div className="flex flex-1 items-center justify-center p-6 text-muted-foreground">
       <Loader2 size={20} className="animate-spin" />
     </div>
   );
@@ -419,7 +419,7 @@ function ArtifactDialogLoadingBody() {
 function ArtifactDialogUnavailableBody({ label }: { label: string }) {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
       <span>
         {t(
           ($) => {
@@ -615,12 +615,14 @@ function ArtifactDialogTextBody({
 
 function ArtifactDialogImageStage({
   filename,
+  fullscreen,
   imageCanvasSignals,
   imageNavigation,
   preview,
   resourceUrl,
 }: {
   filename: string;
+  fullscreen: boolean;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
@@ -676,6 +678,7 @@ function ArtifactDialogImageStage({
                   <ArtifactImageZoomControls
                     controls={controls}
                     nativeTitle
+                    placement={fullscreen ? "bottom" : "top"}
                     testIdPrefix="artifact-dialog"
                   />
                 );
@@ -694,11 +697,13 @@ function ArtifactDialogImageStage({
 
 function ArtifactDialogImageBody({
   filename,
+  fullscreen,
   imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   filename: string;
+  fullscreen: boolean;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
@@ -707,6 +712,7 @@ function ArtifactDialogImageBody({
   return (
     <ArtifactDialogImageStage
       filename={filename}
+      fullscreen={fullscreen}
       imageCanvasSignals={imageCanvasSignals}
       imageNavigation={imageNavigation}
       preview={preview}
@@ -826,6 +832,7 @@ function ArtifactDialogDocumentFrameBody({
         className="flex h-full min-h-0 w-full flex-1 overflow-hidden"
         data-testid="artifact-dialog-document-frame"
       >
+        {src === null && <ArtifactDialogLoadingBody />}
         {src !== null && (
           <iframe
             src={src}
@@ -960,6 +967,7 @@ export function ArtifactPreviewBody({
     return (
       <ArtifactDialogImageBody
         filename={filename}
+        fullscreen={fullscreen}
         imageCanvasSignals={imageCanvasSignals}
         imageNavigation={imageNavigation}
         preview={preview}
@@ -1046,11 +1054,16 @@ function ArtifactDialogHtmlBody({
   const isPresentationHtml = artifact?.artifactKind === "presentation-html";
 
   if (src === null) {
+    // A blank panel is indistinguishable from an artifact that rendered
+    // nothing, so the unresolved frame shows the same spinner every other
+    // preview uses while it waits.
     return (
       <div
-        className="h-full w-full bg-background"
+        className="flex h-full w-full items-center justify-center bg-background"
         data-testid="artifact-dialog-site-frame"
-      />
+      >
+        <ArtifactDialogLoadingBody />
+      </div>
     );
   }
 
@@ -1424,7 +1437,7 @@ function ArtifactPreviewDialogContent({
         showCloseButton={false}
         // The backdrop is fixed, so a standalone PWA clips it above the bottom
         // safe inset; extending `bottom` keeps it covering the screen edge.
-        overlayClassName="[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))] bg-gray-900/45 dark:bg-gray-900/45"
+        overlayClassName="[@media(display-mode:standalone)]:-bottom-safe bg-gray-900/45 dark:bg-gray-900/45"
         maxWidth={1440}
         height={1000}
         surface="canvas"

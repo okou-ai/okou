@@ -4,7 +4,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import {
@@ -261,8 +261,48 @@ describe("AUTH-02: desktop auth handoff", () => {
     expect(consumed.body).toStrictEqual({ token: "ticket_okou_desktop_bdd" });
   });
 
-  it("tracks handoff status through consume and complete for the creating user only", async () => {
+  it("makes an unused handoff unavailable when its one-time code expires", async () => {
+    const startedAt = new Date("2026-09-20T00:00:00Z").getTime();
+    mockNow(startedAt);
+    const actor = bdd.user();
+    const handoff = await authDevice.requestDesktopHandoff(actor, {}, [200]);
+    if (handoff.status !== 200) {
+      throw new Error(
+        `Expected desktop handoff to succeed, got ${handoff.status}`,
+      );
+    }
+
+    mockNow(startedAt + 59_999);
+    const pending = await authDevice.requestDesktopHandoffStatus(
+      actor,
+      handoff.body.handoffId,
+      [200],
+    );
+    expect(pending.body).toStrictEqual({ status: "pending" });
+
+    mockNow(startedAt + 60_000);
+    const expired = await authDevice.requestDesktopHandoffStatus(
+      actor,
+      handoff.body.handoffId,
+      [404],
+    );
+    expectApiError(expired.body);
+    expect(expired.body.error.code).toBe("NOT_FOUND");
+
+    const rejected = await authDevice.requestDesktopConsume(
+      authDevice.callbackCode(handoff.body.callbackUrl),
+      [400],
+    );
+    expectApiError(rejected.body);
+    expect(rejected.body.error.message).toBe(
+      "Desktop sign-in link is invalid or expired.",
+    );
+  });
+
+  it("tracks a consumed handoff through completion for its owner after code expiry", async () => {
     authDevice.mockDesktopSignInToken("ticket_desktop_status_bdd");
+    const startedAt = new Date("2026-09-20T00:00:00Z").getTime();
+    mockNow(startedAt);
 
     const actor = bdd.user();
     const handoff = await authDevice.requestDesktopHandoff(actor, {}, [200]);
@@ -302,6 +342,7 @@ describe("AUTH-02: desktop auth handoff", () => {
       token: "ticket_desktop_status_bdd",
     });
 
+    mockNow(startedAt + 60_000);
     const consumedStatus = await authDevice.requestDesktopHandoffStatus(
       actor,
       handoffId,

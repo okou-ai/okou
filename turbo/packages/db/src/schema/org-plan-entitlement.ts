@@ -19,6 +19,10 @@ export const orgPlanEntitlements = pgTable(
       index("idx_org_plan_entitlements_status").on(table.status),
       index("idx_org_plan_entitlements_source").on(table.source),
       index("idx_org_plan_entitlements_expires").on(table.expiresAt),
+      check(
+        "chk_org_plan_entitlements_plan_key_not_pro_suspend",
+        sql`${table.planKey} <> 'pro-suspend'`,
+      ),
       check("chk_org_plan_entitlements_plan_rank", sql`${table.planRank} >= 0`),
       check(
         "chk_org_plan_entitlements_base_concurrency",

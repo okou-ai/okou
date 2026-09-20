@@ -17,6 +17,110 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Slack ingress failed status retirement (2026-09-20)
+
+Migration `1179_retire_slack_ingress_failed_status` rewrites every
+`slack_chat_ingress` row still held at the legacy `failed` status to `terminal`
+with `last_error_class = 'legacy_terminal_failure'` and a cleared `retry_at`,
+then re-adds `chk_slack_chat_ingress_status` without `'failed'`. The conversion
+runs inside the same migration and before `ADD CONSTRAINT`, so the validating
+scan has no row left to reject and any row written during the deploy window is
+absorbed. `slack_chat_ingress` is not exposed through the masked production
+gateway, so the residual count cannot be measured in advance; the in-migration
+conversion removes that dependency. `retry_count`, the `attempts_exhausted`
+conversion, the constraint name and `idx_slack_chat_ingress_retry_sweep` are
+unchanged.
+
+Old API/new DB is compatible. #35193 removed the last writer of `'failed'`; the
+serving API classifies failures into `retryable` and `terminal` only, and it
+reads the converted rows as ordinary terminal rows. New API/old DB is also
+compatible: the new API neither writes nor reads `'failed'` and does not require
+the tightened constraint, so it is safe before the migration is visible to it.
+
+**API rollback floor: `29dfab0ba2bdc20979635596ccfa5c78809426c0`** (#35193's
+merge commit). An API artifact that predates it still writes `'failed'`, and
+after this migration that write fails with SQLSTATE `23514` instead of being
+handled — worse than the bounded-retry behaviour it replaced. Rolling the API
+back does not restore the previous constraint. Every rollback target must
+contain that commit; verify with
+`gh api repos/okou-ai/okou/compare/29dfab0ba2bdc20979635596ccfa5c78809426c0...<artifact-sha> --jq .status`
+and require `ahead` or `identical`.
+
+The floor was established before merge from `api_commit_sha` in the
+`vm0-sandbox-op-log-prod` Axiom dataset: all 17 distinct production API
+artifacts observed from 2026-09-18T07:37:39Z, when #35193 first reached
+production, through 2026-09-20T11:57:25Z report `ahead`. No production artifact
+has been able to write `'failed'` since that first appearance.
+
+## Durable Pi inference table retirement (2026-09-20)
+
+Migration `1180_retire_durable_pi_inference` drops `agent_run_inference`,
+`agent_run_sandbox_intent`, `agent_run_sandbox_lease`,
+`agent_run_inference_objects` and `pi_inference_objects`. It must ship in a
+**later release than the code removal**, not alongside it. Migrations run
+before API promotion, so a combined release would have executed this migration
+while the previous backend was still serving. In that backend, run creation
+reached `checkRunConcurrencyLimit` → `loadOrgConcurrencyAdmissionState`, which
+cross-joined `earlierDeferredDemandTotals` into its admission aggregate in a
+single statement. That subquery read `agent_run_sandbox_intent` and
+`agent_run_inference_objects` with no `schemaVersion` or feature-switch gate,
+so every run creation would have failed. The remaining three tables were
+reached only by the durable surface itself and by the conversation-history
+erasure path, both removed by #35559.
+
+The writers were removed by #35559 and are live in `api-v1.642.2`. Before this
+migration ran, only `3ba83ad99700` and `b96c4458caa2` had served since
+11:53:45Z, and both contain that removal; the pre-removal commit
+`26f1b0acf73a` last served at 11:47:47Z. Old backend/new schema is therefore
+not a serving combination for this contraction, which is the only reason the
+drop is safe. New backend/old schema remains compatible: the current API never
+references these tables.
+
+**This contraction sets a rollback floor.** Once the tables are gone, the API
+cannot be rolled back to any build at or before `api-v1.642.1`, because run
+creation in those builds reads `agent_run_sandbox_intent` and
+`agent_run_inference_objects` unconditionally. A rollback must stay at or above
+the release carrying #35559.
+
+The tables held only internal test records: 24, 16, 16, 91 and 90 rows
+respectively, measured directly against production on 2026-09-20 before this
+migration shipped, matching the 24 durable-inference runs recorded on
+2026-09-17 and 2026-09-19. `piDeferredSandbox` shipped `enabled: false` with no org hashes and
+never carried real traffic. No backfill is performed and none is required; the
+migration comment records that as a decision. There are no browser, Runner, or
+API response changes.
+
+## Chat search GIN maintenance (2026-09-20)
+
+Apply `1178_chat_search_gin_statistics` before promoting the API that calls
+`public.pgstatginindex`. The migration only installs `pgstattuple` in `public`;
+it does not change indexes, drain the pending list, or backfill messages. The
+API database role must be able to execute `public.pgstatginindex(regclass)`
+and own the search index for `gin_clean_pending_list`. The Neon branch
+experiment verified these operations with the branch's database owner.
+
+Old API/new DB remains compatible. New API/old DB is not a serving combination:
+the release must complete the additive migration before API promotion. Rollback
+keeps the extension installed and rolls back only the API. There are no browser,
+Runner, or search-response changes. The existing cron `deferredThreads` count
+now also includes statement deadlines and candidates postponed by GIN maintenance.
+
+Maintenance runs before the first candidate and between committed per-thread
+transactions, under a nonblocking index-specific advisory lock. It drains at
+512 KiB while retaining `fastupdate` and the default 4 MiB foreground threshold.
+One tick shares a 30-second maintenance budget and a 1-second lock timeout;
+exhaustion or a maintenance deadline defers untouched candidates to the next
+tick. A projection statement timeout rolls back just that thread and continues
+with other candidates. User cancellation and unrelated failures still propagate.
+
+Branch experiments covered 4,400 synthetic messages across 316 INSERTs with
+at most 14 messages per INSERT, plus 22 successful cleanups. This does not bound
+a production-sized 1,000-event thread batch or a cold cache. A pre-existing
+4.3 MiB backlog exceeded the 30-second cleanup budget in the branch; rollout
+must inspect pending size and arrange a separately authorized initial drain if
+needed. This migration performs no such drain. Monitor pending-list growth and
+cron convergence after release; a deferred watermark is never advanced.
+
 ## Pi stable-context schema rollout and rollback
 
 Migration 1168, following retained main migrations through
@@ -577,6 +681,35 @@ Backend changes must be safe with:
 - old runner -> new backend
 - new runner -> old backend, if traffic propagation or non-production
   deployment order can expose that pairing
+
+#### Pro-suspend plan retirement
+
+Migration `1177_retire_pro_suspend_tier` rewrites persisted `pro-suspend`
+organization tiers, pending cancellation targets, and entitlement snapshots to
+`limited-free-1`. The entitlement rewrite applies the complete canonical
+limited-free capability set and active status while preserving balances,
+subscription and period fields, source metadata, and other billing provenance.
+Validated constraints prevent the retired value from being persisted again.
+
+The outgoing API already writes `limited-free-1` for cancellations and can read
+the migrated state, so it remains compatible while the migration runs before
+API promotion. The current App emits only `limited-free-1`, and current API
+responses never expose `pro-suspend`. Three input-only compatibility aliases
+remain. A new API still accepts the previous App's cancellation request literal
+and normalizes it before service execution; Stripe setup completion applies the
+same normalization to checkout metadata created before the rollout; and the
+replacement App normalizes a `vm0:billing:downgrade-payment-pending`
+sessionStorage entry that the previous build wrote before redirecting to
+Stripe. None of them is an organization tier or a stored plan value.
+
+Remove the App-request alias only after the replacement App is live and the
+web-client floor excludes the previous build. Remove the Stripe metadata alias
+only after every setup Checkout Session created by the previous build is
+terminal or expired. Remove the sessionStorage alias only after every tab
+session started on the previous build has ended; sessionStorage cannot outlive
+its tab, so that window closes once the replacement App is live and no
+pre-rollout tab remains open. No alias permits the retired value to pass the
+persistence constraints.
 
 ### Commit-addressed CLI artifacts
 

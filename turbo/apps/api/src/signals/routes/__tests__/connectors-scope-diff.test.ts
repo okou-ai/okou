@@ -18,7 +18,7 @@ import {
 import { seedConnectorStorageRow } from "./helpers/connector-credential-storage-state";
 import { builtinConnectorsRoutes } from "../connectors";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 

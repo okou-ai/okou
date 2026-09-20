@@ -18,7 +18,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
-import { onRejection, retryTransientLoad, waitForOperation } from "../utils.ts";
+import { onRejection, waitForOperation } from "../utils.ts";
 
 export type { PresentationTemplateDetail, PresentationTemplateSummary };
 
@@ -70,8 +70,8 @@ const importedPresentationTemplateCatalog$ = computed(
       return { templates: [] };
     }
     const client = get(apiClient$)(presentationTemplatesContract);
-    const result = await retryTransientLoad(() => {
-      return accept(client.list(), [200], undefined, { showErrorToast: false });
+    const result = await accept(client.list(), [200], undefined, {
+      showErrorToast: false,
     });
     return { templates: result.body };
   },

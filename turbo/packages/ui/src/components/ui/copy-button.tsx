@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRender } from "@base-ui/react/use-render";
 import { Check, Copy } from "lucide-react";
 import { cn } from "../../lib/utils";
 import {
@@ -10,65 +11,95 @@ import {
   TooltipTrigger,
 } from "./tooltip";
 
-export interface CopyButtonProps extends Omit<
-  React.ButtonHTMLAttributes<HTMLButtonElement>,
+export type CopyButtonProps = Omit<
+  useRender.ComponentProps<"button", { copied: boolean }>,
   "children"
-> {
-  text: string;
+> & {
   resetDelay?: number;
   showTooltip?: boolean;
-}
+} & (
+    | { text: string; copyAction?: never }
+    | { text?: never; copyAction: () => Promise<boolean> }
+  );
 
 const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
   (
-    { text, resetDelay = 2000, showTooltip = true, className, ...props },
+    {
+      text,
+      copyAction,
+      resetDelay = 2000,
+      showTooltip = true,
+      render,
+      className,
+      ...props
+    },
     ref,
   ) => {
-    const [copied, setCopied] = React.useState(false);
+    const [copiedRequest, setCopiedRequest] = React.useState<number | null>(
+      null,
+    );
+    const copyRequest = React.useRef(0);
+    const copied = copiedRequest !== null;
 
     React.useEffect(() => {
-      if (!copied) return;
+      return () => {
+        copyRequest.current += 1;
+      };
+    }, []);
+
+    React.useEffect(() => {
+      if (copiedRequest === null) return;
 
       const timer = setTimeout(() => {
-        setCopied(false);
+        setCopiedRequest(null);
       }, resetDelay);
 
       return () => {
         return clearTimeout(timer);
       };
-    }, [copied, resetDelay]);
+    }, [copiedRequest, resetDelay]);
 
     const handleCopy = () => {
-      navigator.clipboard.writeText(text).then(
-        () => {
-          return setCopied(true);
-        },
-        () => {
-          // Clipboard API not available or failed
-        },
-      );
+      const request = ++copyRequest.current;
+      const finishCopy = (success: boolean) => {
+        if (copyRequest.current === request) {
+          setCopiedRequest(success ? request : null);
+        }
+      };
+      const copy = async () => {
+        if (copyAction) {
+          return await copyAction();
+        }
+        await navigator.clipboard.writeText(text);
+        return true;
+      };
+      copy().then(finishCopy, () => {
+        finishCopy(false);
+      });
     };
 
-    const button = (
-      <button
-        ref={ref}
-        onClick={handleCopy}
-        className={cn(
+    const button = useRender({
+      defaultTagName: "button",
+      render,
+      ref,
+      state: { copied },
+      props: {
+        onClick: handleCopy,
+        className: cn(
           "p-2 hover:bg-state-hover rounded-md transition-colors shrink-0 group",
           className,
-        )}
-        aria-label={copied ? "Copied" : "Copy to clipboard"}
-        {...props}
-      >
-        {copied ? (
+        ),
+        "aria-label": copied ? "Copied" : "Copy to clipboard",
+        ...props,
+        children: copied ? (
           <Check className="h-4 w-4 text-green-500" />
         ) : (
           <Copy className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-        )}
-      </button>
-    );
+        ),
+      },
+    });
 
-    if (!showTooltip) {
+    if (render || !showTooltip) {
       return button;
     }
 

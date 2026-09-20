@@ -35,7 +35,7 @@ import {
   type EntitledChatActor,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const {
   api,
   chat,

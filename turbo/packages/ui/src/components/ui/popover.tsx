@@ -6,6 +6,7 @@ import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { asChildRender } from "../../lib/base-ui-compat";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
+import { resolveCollisionPadding } from "../../lib/safe-area";
 
 function Popover(props: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
@@ -80,7 +81,6 @@ type PopoverContentProps = PopoverPrimitive.Popup.Props &
   PopoverPositionerProps & {
     avoidCollisions?: boolean;
     hideWhenDetached?: boolean;
-    portalContainer?: HTMLElement | null;
     updatePositionStrategy?: "always" | "optimized";
   };
 
@@ -98,7 +98,6 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
       collisionPadding,
       disableAnchorTracking,
       hideWhenDetached = false,
-      portalContainer,
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
@@ -120,7 +119,7 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
         : undefined);
 
     return (
-      <PopoverPrimitive.Portal container={portalContainer}>
+      <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
@@ -128,7 +127,7 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
           className={cn(hideWhenDetached && "data-anchor-hidden:invisible")}
           collisionAvoidance={resolvedCollisionAvoidance}
           collisionBoundary={collisionBoundary}
-          collisionPadding={collisionPadding}
+          collisionPadding={resolveCollisionPadding(collisionPadding)}
           disableAnchorTracking={
             disableAnchorTracking ?? updatePositionStrategy === "optimized"
           }

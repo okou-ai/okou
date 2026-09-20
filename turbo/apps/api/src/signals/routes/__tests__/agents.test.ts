@@ -13,7 +13,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 
 describe("GET /api/agents/:id/user-connectors", () => {

@@ -713,7 +713,7 @@ describe("POST /api/video-io/generate", () => {
     });
   });
 
-  it.each(["limited-free-1", "pro-suspend"] as const)(
+  it.each(["limited-free-1"] as const)(
     "returns 402 with the paid-plan upgrade message for %s orgs",
     async (tier) => {
       const fixture = await seedVideoFixture({

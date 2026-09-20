@@ -123,7 +123,7 @@ class DownloadTests(unittest.TestCase):
             "R2_BUCKET_NAME": "fixture-bucket",
             "AWS_ACCESS_KEY_ID": "fixture-access",
             "AWS_SECRET_ACCESS_KEY": SECRET,
-            "REPO": "vm0-ai/vm0",
+            "REPO": "okou-ai/okou",
             "CURRENT_RUN_ID": "100",
             "GITHUB_OUTPUT": "",
             "RUNNER_TEMP": str(self.root),
@@ -179,7 +179,7 @@ class DownloadTests(unittest.TestCase):
                 "sizeBytes": (self.root / "binary.zst").stat().st_size,
             },
             "producer": {
-                "repository": "vm0-ai/vm0",
+                "repository": "okou-ai/okou",
                 "workflowPath": ".github/workflows/runner-image.yml",
                 "runId": 100,
                 "runAttempt": 1,

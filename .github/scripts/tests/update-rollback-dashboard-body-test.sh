@@ -18,7 +18,7 @@ cat >"${fake_bin}/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 [ "${1:-}" = "api" ]
-release_prefix=repos/vm0-ai/vm0/releases/tags/
+release_prefix=repos/okou-ai/okou/releases/tags/
 [[ "${2:-}" == "${release_prefix}"* ]]
 release_tag=${2#"$release_prefix"}
 jq -e --arg release_tag "$release_tag" \
@@ -33,7 +33,7 @@ chmod +x "${fake_bin}/gh"
 body_file="${tmp_dir}/body.md"
 output_file="${tmp_dir}/output.md"
 releases_file="${tmp_dir}/releases.json"
-rollback_url=https://github.com/vm0-ai/vm0/actions/workflows/rollback-production.yml
+rollback_url=https://github.com/okou-ai/okou/actions/workflows/rollback-production.yml
 
 release_tags_from_file() {
   jq -c '[.[].tag_name]' "$releases_file"
@@ -85,42 +85,42 @@ jq -n --arg target "$target_commit" '[
   {
     tag_name: "zeta-v2.0.0",
     target_commitish: $target,
-    html_url: "https://github.com/vm0-ai/vm0/releases/tag/zeta-v2.0.0",
+    html_url: "https://github.com/okou-ai/okou/releases/tag/zeta-v2.0.0",
     published_at: "2026-07-22T23:39:32Z",
     body: "## [2.0.0](https://example.test/zeta) (2026-07-22)\n\n### Features\n\n* zeta feature"
   },
   {
     tag_name: "core-v8.452.0",
     target_commitish: $target,
-    html_url: "https://github.com/vm0-ai/vm0/releases/tag/core-v8.452.0",
+    html_url: "https://github.com/okou-ai/okou/releases/tag/core-v8.452.0",
     published_at: "2026-07-22T23:39:31Z",
     body: "## [8.452.0](https://example.test/core) (2026-07-22)\n\n### Dependencies\n\n* core dependency"
   },
   {
     tag_name: "runner-rs-v0.147.2",
     target_commitish: $target,
-    html_url: "https://github.com/vm0-ai/vm0/releases/tag/runner-rs-v0.147.2",
+    html_url: "https://github.com/okou-ai/okou/releases/tag/runner-rs-v0.147.2",
     published_at: "2026-07-22T23:39:40Z",
     body: "## [0.147.2](https://example.test/runner) (2026-07-22)\n\n### Performance Improvements\n\n* runner improvement"
   },
   {
     tag_name: "api-v1.303.0",
     target_commitish: $target,
-    html_url: "https://github.com/vm0-ai/vm0/releases/tag/api-v1.303.0",
+    html_url: "https://github.com/okou-ai/okou/releases/tag/api-v1.303.0",
     published_at: "2026-07-22T23:39:33Z",
     body: "## [1.303.0](https://example.test/api) (2026-07-22)\n\n### Features\n\n* api feature"
   },
   {
     tag_name: "app-v0.618.0",
     target_commitish: $target,
-    html_url: "https://github.com/vm0-ai/vm0/releases/tag/app-v0.618.0",
+    html_url: "https://github.com/okou-ai/okou/releases/tag/app-v0.618.0",
     published_at: "2026-07-22T23:39:34Z",
     body: "## [0.618.0](https://example.test/app) (2026-07-22)\n\n### Features\n\n* app feature\n\n### Dependencies\n\n* app dependency"
   },
   {
     tag_name: "okou-desktop-v0.618.0",
     target_commitish: $target,
-    html_url: "https://github.com/vm0-ai/vm0/releases/tag/okou-desktop-v0.618.0",
+    html_url: "https://github.com/okou-ai/okou/releases/tag/okou-desktop-v0.618.0",
     published_at: "2026-07-22T23:39:35Z",
     body: "Signed and notarized Okou release"
   },
@@ -134,7 +134,7 @@ jq -n --arg target "$target_commit" '[
 ]' >"$releases_file"
 
 PATH="${fake_bin}:$PATH" \
-  GITHUB_REPOSITORY=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=okou-ai/okou \
   MOCK_RELEASES_FILE="$releases_file" \
   "$TARGET" "$body_file" "$target_commit" "$rollback_url" \
   "$(release_tags_for_target "$target_commit")" >"$output_file"
@@ -144,12 +144,12 @@ grep -Fqx -- "App Worker versions are rolled back manually in Cloudflare." "$out
 grep -Fqx -- "<summary>07-23-2026 07:39:40 SGT</summary>" "$output_file"
 grep -Fqx -- "* RevertId: \`${target_commit}\`" "$output_file"
 grep -Fqx -- "* PDT 07-22-2026 16:39:40" "$output_file"
-grep -Fqx -- "### [app](https://github.com/vm0-ai/vm0/releases/tag/app-v0.618.0): \`0.618.0\`" "$output_file"
-grep -Fqx -- "### [api](https://github.com/vm0-ai/vm0/releases/tag/api-v1.303.0): \`1.303.0\`" "$output_file"
-grep -Fqx -- "### [runner-rs](https://github.com/vm0-ai/vm0/releases/tag/runner-rs-v0.147.2): \`0.147.2\`" "$output_file"
-grep -Fqx -- "### [okou-desktop](https://github.com/vm0-ai/vm0/releases/tag/okou-desktop-v0.618.0): \`0.618.0\`" "$output_file"
-grep -Fqx -- "### [core](https://github.com/vm0-ai/vm0/releases/tag/core-v8.452.0): \`8.452.0\`" "$output_file"
-grep -Fqx -- "### [zeta](https://github.com/vm0-ai/vm0/releases/tag/zeta-v2.0.0): \`2.0.0\`" "$output_file"
+grep -Fqx -- "### [app](https://github.com/okou-ai/okou/releases/tag/app-v0.618.0): \`0.618.0\`" "$output_file"
+grep -Fqx -- "### [api](https://github.com/okou-ai/okou/releases/tag/api-v1.303.0): \`1.303.0\`" "$output_file"
+grep -Fqx -- "### [runner-rs](https://github.com/okou-ai/okou/releases/tag/runner-rs-v0.147.2): \`0.147.2\`" "$output_file"
+grep -Fqx -- "### [okou-desktop](https://github.com/okou-ai/okou/releases/tag/okou-desktop-v0.618.0): \`0.618.0\`" "$output_file"
+grep -Fqx -- "### [core](https://github.com/okou-ai/okou/releases/tag/core-v8.452.0): \`8.452.0\`" "$output_file"
+grep -Fqx -- "### [zeta](https://github.com/okou-ai/okou/releases/tag/zeta-v2.0.0): \`2.0.0\`" "$output_file"
 grep -Fqx -- "#### Features" "$output_file"
 grep -Fqx -- "* app feature" "$output_file"
 grep -Fqx -- "* api feature" "$output_file"
@@ -237,7 +237,7 @@ for digit in 2 3 4 5 6 7 8; do
   commit=$(printf '%040d' "$digit")
   write_single_release "$commit" "2026-07-22T23:39:4${digit}Z"
   PATH="${fake_bin}:$PATH" \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     MOCK_RELEASES_FILE="$releases_file" \
     "$TARGET" "$output_file" "$commit" "$rollback_url" \
     "$(release_tags_for_target "$commit")" >"${output_file}.next"
@@ -261,7 +261,7 @@ fi
 
 write_single_release "$latest_commit" "2026-07-22T23:39:48Z"
 PATH="${fake_bin}:$PATH" \
-  GITHUB_REPOSITORY=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=okou-ai/okou \
   MOCK_RELEASES_FILE="$releases_file" \
   "$TARGET" "$output_file" "$latest_commit" "$rollback_url" \
   "$(release_tags_for_target "$latest_commit")" >"${output_file}.next"
@@ -278,7 +278,7 @@ for digit in 1 2 3 4 5 6 7; do
   commit=$(printf '%040d' "$digit")
   write_single_release "$commit" "2026-07-22T23:40:0${digit}Z" 15000
   PATH="${fake_bin}:$PATH" \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     MOCK_RELEASES_FILE="$releases_file" \
     "$TARGET" "$body_file" "$commit" "$rollback_url" \
     "$(release_tags_for_target "$commit")" >"${body_file}.next"
@@ -308,7 +308,7 @@ jq -n '[{
   body: "other target"
 }]' >"$releases_file"
 if PATH="${fake_bin}:$PATH" \
-  GITHUB_REPOSITORY=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=okou-ai/okou \
   MOCK_RELEASES_FILE="$releases_file" \
   "$TARGET" "$body_file" "$target_commit" "$rollback_url" \
   "$(release_tags_from_file)" \
@@ -318,7 +318,7 @@ fi
 grep -Fq "Release artifacts do not all target ${target_commit}" "${tmp_dir}/missing.err"
 
 if PATH="${fake_bin}:$PATH" \
-  GITHUB_REPOSITORY=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=okou-ai/okou \
   MOCK_RELEASES_FILE="$releases_file" \
   MOCK_RETURNED_RELEASE_TAG=other-v1.2.3 \
   "$TARGET" "$body_file" \
@@ -339,7 +339,7 @@ for invalid_release_tags in \
   '["app-v1.2.3","app-v1.2.3"]' \
   'not-json'; do
   if PATH="${fake_bin}:$PATH" \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     MOCK_RELEASES_FILE="$releases_file" \
     "$TARGET" "$body_file" "$target_commit" "$rollback_url" \
     "$invalid_release_tags" \
@@ -352,7 +352,7 @@ for invalid_release_tags in \
 done
 
 if PATH="${fake_bin}:$PATH" \
-  GITHUB_REPOSITORY=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=okou-ai/okou \
   MOCK_RELEASES_FILE="$releases_file" \
   "$TARGET" "$body_file" "$target_commit" "$rollback_url" \
   '["app-v1.2.3","missing-v1.0.0"]' \

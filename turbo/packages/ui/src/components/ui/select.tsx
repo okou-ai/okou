@@ -7,6 +7,7 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
+import { resolveCollisionPadding } from "../../lib/safe-area";
 
 interface InferredSelectItem<Value> {
   label: React.ReactNode;
@@ -230,7 +231,6 @@ type SelectContentProps = SelectPrimitive.Popup.Props &
   SelectPositionerProps & {
     hideScrollButtons?: boolean;
     position?: "item-aligned" | "popper";
-    portalContainer?: HTMLElement | null;
     viewportClassName?: string;
   };
 
@@ -247,7 +247,6 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       collisionBoundary,
       collisionPadding,
       hideScrollButtons = false,
-      portalContainer,
       position = "popper",
       positionMethod = "fixed",
       side = "bottom",
@@ -263,7 +262,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       alignItemWithTrigger ?? position === "item-aligned";
 
     return (
-      <SelectPrimitive.Portal container={portalContainer}>
+      <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
           align={align}
           alignItemWithTrigger={resolvedAlignItemWithTrigger}
@@ -271,7 +270,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
           anchor={anchor}
           collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}
-          collisionPadding={collisionPadding}
+          collisionPadding={resolveCollisionPadding(collisionPadding)}
           positionMethod={positionMethod}
           side={side}
           sideOffset={sideOffset}

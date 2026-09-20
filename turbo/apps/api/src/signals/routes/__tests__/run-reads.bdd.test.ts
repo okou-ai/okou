@@ -53,7 +53,7 @@ import {
 const UTF8_ENCODING = ["utf", "8"].join("-");
 const HOUR_MS = 60 * 60 * 1000;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
@@ -1909,7 +1909,7 @@ function networkHardeningRows(
       port: "443",
       status: "200",
       browser_user_agent: "true",
-      firewall_params: { owner: "vm0-ai", broken: 5 },
+      firewall_params: { owner: "okou-ai", broken: 5 },
       connector_diagnostic_env_names: ["FAL_TOKEN", 5],
       connector_route_candidates: ["primary", 5],
       auth_resolved_secrets: ["TOKEN", null],
@@ -2132,7 +2132,7 @@ describe("RUN-04: agent run telemetry families", () => {
       {
         timestamp: "2026-06-10T12:00:00Z",
         type: "http",
-        firewall_params: { owner: "vm0-ai" },
+        firewall_params: { owner: "okou-ai" },
         request_headers: { host: "api.example.com" },
         response_body_encoding: "binary",
       },
@@ -2714,7 +2714,7 @@ describe("RUN-04: agent run telemetry families", () => {
             latency_ms: 150,
             request_size: 100,
             response_size: 2048,
-            firewall_params: { owner: "vm0-ai", broken: 5 },
+            firewall_params: { owner: "okou-ai", broken: 5 },
             connector_diagnostic_slug: "fal",
             connector_diagnostic_reason: "not_configured_for_run",
             connector_diagnostic_env_names: ["FAL_TOKEN"],
@@ -3055,7 +3055,7 @@ describe("RUN-04: agent run telemetry families", () => {
             latency_ms: 150,
             request_size: 100,
             response_size: 2048,
-            firewall_params: { owner: "vm0-ai", broken: 5 },
+            firewall_params: { owner: "okou-ai", broken: 5 },
             connector_diagnostic_slug: "fal",
             connector_diagnostic_reason: "not_configured_for_run",
             connector_diagnostic_env_names: ["FAL_TOKEN"],
@@ -3136,7 +3136,7 @@ describe("RUN-04: agent run telemetry families", () => {
       latency_ms: 150,
       request_size: 100,
       response_size: 2048,
-      firewall_params: { owner: "vm0-ai" },
+      firewall_params: { owner: "okou-ai" },
       connector_diagnostic_slug: "fal",
       connector_diagnostic_reason: "not_configured_for_run",
       connector_diagnostic_env_names: ["FAL_TOKEN"],

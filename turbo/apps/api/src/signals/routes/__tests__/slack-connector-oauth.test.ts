@@ -26,7 +26,7 @@ import {
   setGetStartedEnabled,
 } from "./helpers/get-started";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const API_ORIGIN = "https://api.okou.ai";
 const headers = { authorization: "Bearer clerk-session" } as const;

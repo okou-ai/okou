@@ -13,7 +13,7 @@ import {
 import { createGithubBddApi } from "./helpers/api-bdd-github";
 import { setConnectorExternalIdState } from "./helpers/connector-credential-storage-state";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const github = createGithubBddApi(context);

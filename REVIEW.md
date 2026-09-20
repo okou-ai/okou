@@ -11,8 +11,8 @@ marker-comment mode, use the full normal PR comment described below instead.
 2. Read the title, body, author, URL, `headRefName`, and full `headRefOid`:
 
    ```bash
-   gh pr view <PR_NUMBER> --repo vm0-ai/vm0 --json title,body,author,url,headRefName,headRefOid
-   gh pr diff <PR_NUMBER> --repo vm0-ai/vm0
+   gh pr view <PR_NUMBER> --repo okou-ai/okou --json title,body,author,url,headRefName,headRefOid
+   gh pr diff <PR_NUMBER> --repo okou-ai/okou
    ```
 
 3. Read the complete diff and relevant callers, tests, and contracts. Distinguish
@@ -27,7 +27,7 @@ marker-comment mode, use the full normal PR comment described below instead.
 A contents API read can fetch a guide at the recorded practice SHA:
 
 ```bash
-gh api 'repos/vm0-ai/vm0/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.content' | base64 -d
+gh api 'repos/okou-ai/okou/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.content' | base64 -d
 ```
 
 | Changed behavior                                                              | Guidance                                                                                                           |
@@ -144,7 +144,7 @@ anchored to the inspected commit even if another push races the final read.
 
 For caller-requested pr-auto marker-comment mode:
 
-- Post the complete review with `gh pr comment <PR_NUMBER> --repo vm0-ai/vm0
+- Post the complete review with `gh pr comment <PR_NUMBER> --repo okou-ai/okou
 --body-file <REVIEW_BODY_FILE>`.
 - Keep the verdict on the first line and the caller-provided marker lines near
   the top of the same comment; retain all findings and conditional fallbacks.

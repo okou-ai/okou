@@ -45,9 +45,10 @@ test("Returning from concurrency checkout confirms purchased capacity", async ()
   );
 });
 
-test("A confirmed subscription completes checkout and clears its return parameters", async () => {
+test("A pending subscription completes checkout and clears its return parameters after confirmation", async () => {
+  const completionStates = [false, false, true];
   context.mocks.api(billingCheckoutContract.complete, ({ respond }) => {
-    return respond(200, { completed: true });
+    return respond(200, { completed: completionStates.shift() === true });
   });
 
   await setupPage({

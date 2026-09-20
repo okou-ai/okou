@@ -9,7 +9,7 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { feishuOauthRoutes } from "../feishu-oauth";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const NOW = Date.parse("2026-08-25T00:00:00.000Z");
 const NOW_SECONDS = Math.floor(NOW / 1000);
 const SECRET = "a".repeat(64);

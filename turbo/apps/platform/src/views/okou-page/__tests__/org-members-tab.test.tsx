@@ -838,12 +838,12 @@ test.each(PAID_INVITATION_SCENARIOS)(
   },
 );
 
-test.each([
-  { tier: "pro", status: "suspended" },
-  { tier: "pro-suspend" },
-] as const)("Block invitations on suspended plans ($tier)", async (plan) => {
+test("Block invitations on suspended plans", async () => {
   mockMembersStory();
-  mockMemberInviteEntitlement(false, plan);
+  mockMemberInviteEntitlement(false, {
+    tier: "pro",
+    status: "suspended",
+  });
   mockUsagePackCatalog();
 
   await setupPage({

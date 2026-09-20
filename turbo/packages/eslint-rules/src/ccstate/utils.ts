@@ -15,7 +15,7 @@ interface RuleDocs {
 }
 
 export const createRule = ESLintUtils.RuleCreator<RuleDocs>(
-  (name) => `https://github.com/vm0-ai/vm0/blob/main/docs/eslint/${name}.md`,
+  (name) => `https://github.com/okou-ai/okou/blob/main/docs/eslint/${name}.md`,
 );
 
 export interface TypeRefPath {

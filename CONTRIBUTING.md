@@ -1,6 +1,6 @@
 # Contributing to Okou
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/vm0-ai/vm0?quickstart=1)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/okou-ai/okou?quickstart=1)
 
 ## Development Setup
 

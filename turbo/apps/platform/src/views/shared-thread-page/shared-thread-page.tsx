@@ -24,6 +24,7 @@ import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
+import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import {
   ChatAssistantMessageBody,
@@ -45,8 +46,8 @@ import { SCROLL_FADE_Y_END } from "../okou-page/scroll-fade.ts";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
-import { SharedThreadArtifactLightbox } from "./shared-thread-artifact-lightbox.tsx";
-import type { SharedThreadArtifactPreviewSignals } from "../../signals/shared-thread-page/shared-thread-artifact-preview.ts";
+import { PublicArtifactLightbox } from "../components/public-artifact-lightbox.tsx";
+import type { PublicArtifactPreviewSignals } from "../../signals/public-artifact-preview.ts";
 
 /**
  * A shared message with an optional prepared plain tree. Rich bodies leave the
@@ -65,7 +66,7 @@ export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];
   readonly richContent?: SharedThreadRichContentSignals;
-  readonly artifactPreview?: SharedThreadArtifactPreviewSignals;
+  readonly artifactPreview?: PublicArtifactPreviewSignals;
 };
 
 interface SharedMessageGroup {
@@ -203,7 +204,7 @@ function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
                     ) : null}
                     {message.content.length > 0 ? (
                       <div className="whitespace-pre-wrap">
-                        {message.content}
+                        <PlainTextWithLinks text={message.content} />
                       </div>
                     ) : null}
                   </div>
@@ -317,10 +318,7 @@ function SharedThreadHandoff({
   return (
     <footer
       data-shared-thread-handoff=""
-      className="relative shrink-0"
-      style={{
-        paddingBottom: "max(0.5rem, var(--sab))",
-      }}
+      className="relative shrink-0 pb-safe-or-2"
     >
       <div className="pb-2 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6">
         <div className="mx-auto max-w-[900px]">
@@ -611,7 +609,7 @@ export function SharedThreadPage({
         )}
       </WorkspaceInset>
       {sharedThread?.artifactPreview ? (
-        <SharedThreadArtifactLightbox signals={sharedThread.artifactPreview} />
+        <PublicArtifactLightbox signals={sharedThread.artifactPreview} />
       ) : null}
     </div>
   );

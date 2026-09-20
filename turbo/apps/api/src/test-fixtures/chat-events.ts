@@ -463,7 +463,7 @@ const annotationProjectionInputs = [
     text: "github issue comment linked",
     context: {
       githubContext: {
-        repo: "vm0-ai/vm0",
+        repo: "okou-ai/okou",
         subjectNumber: 24_218,
         subjectKind: "issue",
         triggerCommentId: "123456",
@@ -479,7 +479,7 @@ const annotationProjectionInputs = [
     text: "github pull request linked",
     context: {
       githubContext: {
-        repo: "vm0-ai/vm0",
+        repo: "okou-ai/okou",
         subjectNumber: 24_219,
         subjectKind: "pull_request",
         triggerCommentId: null,
@@ -567,7 +567,7 @@ export async function seedChatEventAnnotationProjectionFixture(
         text: "claimed annotation",
         nonContentPart: createChatEventSourcePart({
           kind: "github",
-          repo: "vm0-ai/vm0",
+          repo: "okou-ai/okou",
           subjectNumber: 24_218,
           subjectKind: "issue",
           triggerCommentId: "654321",
@@ -575,7 +575,7 @@ export async function seedChatEventAnnotationProjectionFixture(
       }),
       runId: null,
       githubContext: {
-        repo: "vm0-ai/vm0",
+        repo: "okou-ai/okou",
         subjectNumber: 24_218,
         subjectKind: "issue",
         triggerCommentId: "654321",
@@ -593,7 +593,7 @@ export async function seedChatEventAnnotationProjectionFixture(
         text: "claimed annotation",
         nonContentPart: createChatEventSourcePart({
           kind: "github",
-          repo: "vm0-ai/vm0",
+          repo: "okou-ai/okou",
           subjectNumber: 24_218,
           subjectKind: "issue",
           triggerCommentId: "654321",

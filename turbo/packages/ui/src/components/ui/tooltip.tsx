@@ -6,6 +6,7 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { asChildRender } from "../../lib/base-ui-compat";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
+import { resolveCollisionPadding } from "../../lib/safe-area";
 
 interface TooltipProviderProps extends Omit<
   TooltipPrimitive.Provider.Props,
@@ -76,9 +77,7 @@ type TooltipPositionerProps = Pick<
 >;
 
 type TooltipContentProps = TooltipPrimitive.Popup.Props &
-  TooltipPositionerProps & {
-    portalContainer?: HTMLElement | null;
-  };
+  TooltipPositionerProps;
 
 const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
   (
@@ -90,7 +89,6 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
       collisionAvoidance,
       collisionBoundary,
       collisionPadding,
-      portalContainer,
       positionMethod = "fixed",
       side = "top",
       sideOffset = 4,
@@ -100,13 +98,13 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
     ref,
   ) => {
     return (
-      <TooltipPrimitive.Portal container={portalContainer}>
+      <TooltipPrimitive.Portal>
         <TooltipPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
           collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}
-          collisionPadding={collisionPadding}
+          collisionPadding={resolveCollisionPadding(collisionPadding)}
           positionMethod={positionMethod}
           side={side}
           sideOffset={sideOffset}

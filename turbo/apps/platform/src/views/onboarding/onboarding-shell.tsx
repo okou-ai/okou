@@ -193,7 +193,7 @@ export function OnboardingShell({
   readonly preview?: ReactNode;
 }) {
   return (
-    <div className="relative box-border h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) text-foreground">
+    <div className="relative box-border h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-safe text-foreground">
       <SettingsDialogMount />
       <div className="fixed left-4 top-4 z-20 hidden w-60 sm:left-6 sm:top-6 sm:block">
         <OrgSwitcher />
@@ -201,10 +201,10 @@ export function OnboardingShell({
       <div className="fixed left-4 top-4 z-20 sm:hidden">
         <OrgSwitcherCompact />
       </div>
-      <div className="fixed bottom-[max(1.5rem,var(--sab))] left-4 z-20 hidden w-60 sm:block">
+      <div className="fixed bottom-safe-or-6 left-4 z-20 hidden w-60 sm:block">
         <OnboardingAccount collapsed={false} />
       </div>
-      <div className="fixed bottom-[max(2rem,var(--sab))] left-6 z-20 sm:hidden">
+      <div className="fixed bottom-safe-or-8 left-6 z-20 sm:hidden">
         <OnboardingAccount collapsed />
       </div>
 
