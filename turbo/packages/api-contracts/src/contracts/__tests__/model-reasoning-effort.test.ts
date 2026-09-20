@@ -32,7 +32,16 @@ describe("chat reasoning effort capabilities", () => {
       "max",
       "ultracode",
     ]);
+    expect(getModelReasoningEfforts("gpt-6-sol")).toStrictEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+      "ultra",
+    ]);
     expect(defaultModelReasoningEffort("gpt-5.6-sol")).toBe("max");
+    expect(defaultModelReasoningEffort("gpt-6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("deepseek-v4-flash")).toBe("high");
   });
 

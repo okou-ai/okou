@@ -1,0 +1,10 @@
+export const AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME =
+  "MCP_ACCESS_TOKEN";
+
+export const AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE = `Bearer \${{ secrets.${AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME} }}`;
+
+export const AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH = Object.freeze({
+  headers: Object.freeze({
+    Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
+  }),
+});

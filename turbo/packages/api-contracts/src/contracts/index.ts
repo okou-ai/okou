@@ -292,8 +292,8 @@ export {
   type EmailUnsubscribeResponse,
 } from "./email-unsubscribe";
 export {
-  connectorsSlugCallbackContract,
-  type ConnectorsSlugCallbackContract,
+  builtinConnectorsSlugCallbackContract,
+  type BuiltinConnectorsSlugCallbackContract,
 } from "./connectors-slug-callback";
 export {
   testComputerUseStateContract,
@@ -774,8 +774,8 @@ export {
 
 export {
   connectorResponseConnectionStatusSchema,
-  connectorResponseSchema,
-  connectorListResponseSchema,
+  builtinConnectorResponseSchema,
+  builtinConnectorListResponseSchema,
   guaranteedConnectorProvidedBindingNames,
   connectorProvidedBindingNamespaceSchema,
   connectorProvidedBindingSchema,
@@ -783,8 +783,8 @@ export {
   scopeDiffResponseSchema,
   type ConnectorResponseConnectionStatus,
   type ScopeDiffResponse,
-  type ConnectorResponse,
-  type ConnectorListResponse,
+  type BuiltinConnectorResponse,
+  type BuiltinConnectorListResponse,
   type ConnectorProvidedBinding,
   type ConnectorProvidedBindingNamespace,
 } from "./connector-schemas";
@@ -1032,10 +1032,10 @@ export {
   type OfficialWorkflowInstallationsContract,
 } from "./official-workflows";
 export {
-  userConnectorsContract,
-  userConnectorEnabledSlugsSchema,
-  type UserConnectorEnabledSlugs,
-  type UserConnectorsContract,
+  userBuiltinConnectorsContract,
+  userBuiltinConnectorEnabledSlugsSchema,
+  type UserBuiltinConnectorEnabledSlugs,
+  type UserBuiltinConnectorsContract,
 } from "./user-connectors";
 export {
   userPermissionGrantsContract,
@@ -1056,20 +1056,20 @@ export {
   type UserPermissionGrantsContract,
 } from "./user-permission-grants";
 export {
-  connectorsMainContract,
-  connectorsBySlugContract,
-  connectorScopeDiffContract,
-  connectorManualGrantContract,
-  connectorNoAuthGrantContract,
-  connectorOauthDeviceAuthSessionContract,
-  connectorsSearchContract,
-  type ConnectorsMainContract,
-  type ConnectorsBySlugContract,
-  type ConnectorScopeDiffContract,
-  type ConnectorManualGrantContract,
-  type ConnectorNoAuthGrantContract,
-  type ConnectorOauthDeviceAuthSessionContract,
-  type ConnectorsSearchContract,
+  builtinConnectorsMainContract,
+  builtinConnectorsBySlugContract,
+  builtinConnectorScopeDiffContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
+  builtinConnectorsSearchContract,
+  type BuiltinConnectorsMainContract,
+  type BuiltinConnectorsBySlugContract,
+  type BuiltinConnectorScopeDiffContract,
+  type BuiltinConnectorManualGrantContract,
+  type BuiltinConnectorNoAuthGrantContract,
+  type BuiltinConnectorOauthDeviceAuthSessionContract,
+  type BuiltinConnectorsSearchContract,
 } from "./connectors";
 export {
   CONNECTOR_CATALOG_MAX_RAW_BYTES,

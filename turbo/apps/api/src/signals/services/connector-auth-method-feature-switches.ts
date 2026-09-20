@@ -27,6 +27,7 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "neon\0oauth": FeatureSwitchKey.NeonConnector,
   "netsuite\0api-token": FeatureSwitchKey.NetSuiteConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,
+  "plaud-mcp\0automatic": FeatureSwitchKey.PlaudConnector,
   "ramp\0oauth": FeatureSwitchKey.RampConnector,
   "reddit\0oauth": FeatureSwitchKey.RedditConnector,
   "spotify\0oauth": FeatureSwitchKey.SpotifyConnector,

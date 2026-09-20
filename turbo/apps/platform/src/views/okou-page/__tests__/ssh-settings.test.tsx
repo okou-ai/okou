@@ -5,6 +5,7 @@ import {
 import { HttpResponse } from "msw";
 import {
   agentsByIdContract,
+  agentsMainContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
@@ -1136,6 +1137,76 @@ test("A localized load error is retryable and distinct from feature unavailabili
   click(getAction("button", "Réessayer"));
   await screen.findByText("0 hôte configuré");
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("SSH retry refreshes Agent access data before returning to Connectors", async () => {
+  const initialAgent: AgentResponse = {
+    isDefaultAgent: false,
+    agentId,
+    ownerId: auth.user.id,
+    displayName: "Research",
+    description: null,
+    sound: null,
+    avatarUrl: null,
+    modelProviderId: null,
+    selectedModel: null,
+    preferPersonalProvider: false,
+    visibility: "private",
+  };
+  let visibleAgent: AgentResponse = initialAgent;
+  context.mocks.api(agentsMainContract.list, ({ respond }) => {
+    return respond(200, [visibleAgent]);
+  });
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 1 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  let failed = true;
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return failed
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "SSH credentials unavailable",
+          },
+        })
+      : respond(200, { credentials: [credential] });
+  });
+  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
+    return respond(200, { enabled: true });
+  });
+
+  await page("/connectors?keywords=ssh");
+  await expect(
+    screen.findByTestId("connector-card-access-names"),
+  ).resolves.toHaveTextContent("Research");
+  click(
+    await waitFor(() => {
+      return getAction("link", "Manage SSH hosts");
+    }),
+  );
+  await screen.findByText("Deployment");
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await within(dialog).findByText("Could not load SSH settings. Try again.");
+  visibleAgent = { ...initialAgent, displayName: "Recovered" };
+  failed = false;
+  click(getAction("button", "Retry", dialog));
+  await within(dialog).findByText("Deployment login · deploy");
+  click(getAction("button", "Cancel", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+  click(getAction("link", "Connectors", breadcrumb));
+  await screen.findByText("1 host configured");
+  await waitFor(() => {
+    expect(screen.getByTestId("connector-card-access-names")).toHaveTextContent(
+      "Recovered",
+    );
+  });
 });
 
 test("Invalid host errors preserve credentials so the host can be corrected and saved", async () => {

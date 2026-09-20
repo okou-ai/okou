@@ -2,9 +2,9 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import type {
-  ConnectorExternalCodeSessionCompleteResponse,
-  ConnectorExternalCodeSessionStartResponse,
-  ConnectorResponse,
+  BuiltinConnectorExternalCodeSessionCompleteResponse,
+  BuiltinConnectorExternalCodeSessionStartResponse,
+  BuiltinConnectorResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -23,7 +23,7 @@ import {
   type ConnectorAuthProviderGrantResult,
 } from "@okouai/connectors/auth-providers";
 import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
-import { connectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
+import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
 import { command } from "ccstate";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 
@@ -37,8 +37,8 @@ import {
   encryptPersistentSecretValue,
 } from "./crypto.utils";
 import {
-  parseConnectorExternalCodeProviderState,
-  serializeConnectorExternalCodeProviderState,
+  parseBuiltinConnectorExternalCodeProviderState,
+  serializeBuiltinConnectorExternalCodeProviderState,
 } from "./connector-authorization-provider-state";
 import {
   connectorActionResolver,
@@ -47,9 +47,9 @@ import {
   type ResolvedConnectorActionMethod,
 } from "./connector-action-resolver.service";
 import {
-  connectorById,
+  builtinConnectorById,
   connectorConnectionWriteRejection,
-  upsertConnectorTokenConnection$,
+  upsertBuiltinConnectorTokenConnection$,
 } from "./connector-data.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 import {
@@ -68,31 +68,35 @@ const PROVIDER_STATE_MAX_BYTES = 16 * 1024;
 const COMPLETING_SESSION_STALE_AFTER_MS = 30 * 60 * 1000;
 
 const externalCodeSessionSelection = Object.freeze({
-  id: connectorExternalCodeSessions.id,
-  orgId: connectorExternalCodeSessions.orgId,
-  userId: connectorExternalCodeSessions.userId,
-  agentId: connectorExternalCodeSessions.agentId,
-  authorizeAgent: connectorExternalCodeSessions.authorizeAgent,
-  connectorSlug: connectorExternalCodeSessions.connectorSlug,
-  authMethod: connectorExternalCodeSessions.authMethod,
-  status: connectorExternalCodeSessions.status,
-  sessionTokenHash: connectorExternalCodeSessions.sessionTokenHash,
-  encryptedProviderState: connectorExternalCodeSessions.encryptedProviderState,
+  id: builtinConnectorExternalCodeSessions.id,
+  orgId: builtinConnectorExternalCodeSessions.orgId,
+  userId: builtinConnectorExternalCodeSessions.userId,
+  agentId: builtinConnectorExternalCodeSessions.agentId,
+  authorizeAgent: builtinConnectorExternalCodeSessions.authorizeAgent,
+  connectorSlug: builtinConnectorExternalCodeSessions.connectorSlug,
+  authMethod: builtinConnectorExternalCodeSessions.authMethod,
+  status: builtinConnectorExternalCodeSessions.status,
+  sessionTokenHash: builtinConnectorExternalCodeSessions.sessionTokenHash,
+  encryptedProviderState:
+    builtinConnectorExternalCodeSessions.encryptedProviderState,
   accountMutation: storedConnectorAccountMutationSelection(
-    connectorExternalCodeSessions.accountMutation,
+    builtinConnectorExternalCodeSessions.accountMutation,
   ),
-  completedConnectorId: connectorExternalCodeSessions.completedConnectorId,
-  authorizationUrl: connectorExternalCodeSessions.authorizationUrl,
-  oauthRequestedScopes: connectorExternalCodeSessions.oauthRequestedScopes,
-  errorCode: connectorExternalCodeSessions.errorCode,
-  errorMessage: connectorExternalCodeSessions.errorMessage,
-  createdAt: connectorExternalCodeSessions.createdAt,
-  updatedAt: connectorExternalCodeSessions.updatedAt,
-  expiresAt: connectorExternalCodeSessions.expiresAt,
-  completedAt: connectorExternalCodeSessions.completedAt,
+  completedConnectorId:
+    builtinConnectorExternalCodeSessions.completedConnectorId,
+  authorizationUrl: builtinConnectorExternalCodeSessions.authorizationUrl,
+  oauthRequestedScopes:
+    builtinConnectorExternalCodeSessions.oauthRequestedScopes,
+  errorCode: builtinConnectorExternalCodeSessions.errorCode,
+  errorMessage: builtinConnectorExternalCodeSessions.errorMessage,
+  createdAt: builtinConnectorExternalCodeSessions.createdAt,
+  updatedAt: builtinConnectorExternalCodeSessions.updatedAt,
+  expiresAt: builtinConnectorExternalCodeSessions.expiresAt,
+  completedAt: builtinConnectorExternalCodeSessions.completedAt,
 });
 
-type ExternalCodeSessionRow = typeof connectorExternalCodeSessions.$inferSelect;
+type BuiltinConnectorExternalCodeSessionRow =
+  typeof builtinConnectorExternalCodeSessions.$inferSelect;
 
 function externalCodeRequestedOauthScopes(
   storedScopes: string | null,
@@ -104,21 +108,21 @@ function externalCodeRequestedOauthScopes(
   );
 }
 
-type ExternalCodeSessionOwner = {
+type BuiltinConnectorExternalCodeSessionOwner = {
   readonly connectorSlug: ConnectorSlug;
   readonly authMethod: ConnectorAuthMethodId;
   readonly orgId: string;
   readonly userId: string;
 };
 
-type ResolvedExternalCodeClient = {
+type ResolvedBuiltinConnectorExternalCodeClient = {
   readonly resolvedMethod: ResolvedConnectorActionMethod;
   readonly authClient: ConnectorAuthClient;
 };
 
 type CompleteSuccess = {
   readonly status: 200;
-  readonly body: ConnectorExternalCodeSessionCompleteResponse;
+  readonly body: BuiltinConnectorExternalCodeSessionCompleteResponse;
 };
 
 const connectorExternalCodeDisabled = Object.freeze({
@@ -210,7 +214,9 @@ function connectorMissingExternalCodeGrantMessage(
 
 function resolveRequiredAuthClient(
   resolvedMethod: ResolvedConnectorActionMethod,
-): ResolvedExternalCodeClient | ReturnType<typeof internalServerError> {
+):
+  | ResolvedBuiltinConnectorExternalCodeClient
+  | ReturnType<typeof internalServerError> {
   if (
     resolvedMethod.method.grant.kind !== "external-code" ||
     resolvedMethod.method.client === undefined
@@ -252,7 +258,7 @@ async function resolveStoredExternalCodeMethod(args: {
 }
 
 async function lockExternalCodeSessionOwner(
-  args: ExternalCodeSessionOwner & {
+  args: BuiltinConnectorExternalCodeSessionOwner & {
     readonly writeDb: Db;
   },
 ): Promise<void> {
@@ -262,13 +268,13 @@ async function lockExternalCodeSessionOwner(
 }
 
 async function markPendingSessionsSuperseded(
-  args: ExternalCodeSessionOwner & {
+  args: BuiltinConnectorExternalCodeSessionOwner & {
     readonly writeDb: Db;
     readonly now: Date;
   },
 ): Promise<void> {
   await args.writeDb
-    .update(connectorExternalCodeSessions)
+    .update(builtinConnectorExternalCodeSessions)
     .set({
       status: "error",
       errorCode: SUPERSEDED_SESSION_ERROR_CODE,
@@ -278,11 +284,14 @@ async function markPendingSessionsSuperseded(
     })
     .where(
       and(
-        eq(connectorExternalCodeSessions.orgId, args.orgId),
-        eq(connectorExternalCodeSessions.userId, args.userId),
-        eq(connectorExternalCodeSessions.connectorSlug, args.connectorSlug),
-        eq(connectorExternalCodeSessions.authMethod, args.authMethod),
-        inArray(connectorExternalCodeSessions.status, [
+        eq(builtinConnectorExternalCodeSessions.orgId, args.orgId),
+        eq(builtinConnectorExternalCodeSessions.userId, args.userId),
+        eq(
+          builtinConnectorExternalCodeSessions.connectorSlug,
+          args.connectorSlug,
+        ),
+        eq(builtinConnectorExternalCodeSessions.authMethod, args.authMethod),
+        inArray(builtinConnectorExternalCodeSessions.status, [
           ...SUPERSEDABLE_EXTERNAL_CODE_SESSION_STATUSES,
         ]),
       ),
@@ -299,18 +308,21 @@ async function loadOwnedSession(
     readonly sessionToken: string;
   },
   signal: AbortSignal,
-): Promise<ExternalCodeSessionRow | null> {
+): Promise<BuiltinConnectorExternalCodeSessionRow | null> {
   const [session] = await args.writeDb
     .select(externalCodeSessionSelection)
-    .from(connectorExternalCodeSessions)
+    .from(builtinConnectorExternalCodeSessions)
     .where(
       and(
-        eq(connectorExternalCodeSessions.id, args.sessionId),
-        eq(connectorExternalCodeSessions.orgId, args.orgId),
-        eq(connectorExternalCodeSessions.userId, args.userId),
-        eq(connectorExternalCodeSessions.connectorSlug, args.connectorSlug),
+        eq(builtinConnectorExternalCodeSessions.id, args.sessionId),
+        eq(builtinConnectorExternalCodeSessions.orgId, args.orgId),
+        eq(builtinConnectorExternalCodeSessions.userId, args.userId),
         eq(
-          connectorExternalCodeSessions.sessionTokenHash,
+          builtinConnectorExternalCodeSessions.connectorSlug,
+          args.connectorSlug,
+        ),
+        eq(
+          builtinConnectorExternalCodeSessions.sessionTokenHash,
           sessionTokenHash(args.sessionToken),
         ),
       ),
@@ -321,7 +333,7 @@ async function loadOwnedSession(
 }
 
 async function parseEncryptedProviderState(args: {
-  readonly session: ExternalCodeSessionRow;
+  readonly session: BuiltinConnectorExternalCodeSessionRow;
   readonly method: ResolvedConnectorActionMethod;
 }): Promise<string> {
   const decrypted = await decryptPersistentSecretValue(
@@ -331,7 +343,7 @@ async function parseEncryptedProviderState(args: {
       userId: args.session.userId,
     },
   );
-  return parseConnectorExternalCodeProviderState({
+  return parseBuiltinConnectorExternalCodeProviderState({
     serializedState: decrypted,
     connectorSlug: args.method.connectorSlug,
     authMethod: args.method.authMethodId,
@@ -341,13 +353,13 @@ async function parseEncryptedProviderState(args: {
 async function expireSession(
   args: {
     readonly writeDb: Db;
-    readonly session: ExternalCodeSessionRow;
+    readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly now: Date;
   },
   signal: AbortSignal,
 ): Promise<ReturnType<typeof badRequestMessage>> {
   await args.writeDb
-    .update(connectorExternalCodeSessions)
+    .update(builtinConnectorExternalCodeSessions)
     .set({
       status: "expired",
       errorCode: "expired_token",
@@ -357,10 +369,10 @@ async function expireSession(
     })
     .where(
       and(
-        eq(connectorExternalCodeSessions.id, args.session.id),
+        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
         or(
-          eq(connectorExternalCodeSessions.status, "pending"),
-          eq(connectorExternalCodeSessions.status, "completing"),
+          eq(builtinConnectorExternalCodeSessions.status, "pending"),
+          eq(builtinConnectorExternalCodeSessions.status, "completing"),
         ),
       ),
     );
@@ -368,12 +380,15 @@ async function expireSession(
   return badRequestMessage("External-code authorization session expired");
 }
 
-function isSessionExpired(session: ExternalCodeSessionRow, now: Date): boolean {
+function isSessionExpired(
+  session: BuiltinConnectorExternalCodeSessionRow,
+  now: Date,
+): boolean {
   return now > session.expiresAt;
 }
 
 function isCompletingSessionStale(
-  session: ExternalCodeSessionRow,
+  session: BuiltinConnectorExternalCodeSessionRow,
   now: Date,
 ): boolean {
   return (
@@ -385,18 +400,18 @@ function isCompletingSessionStale(
 async function claimSession(
   args: {
     readonly writeDb: Db;
-    readonly session: ExternalCodeSessionRow;
+    readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
   },
   signal: AbortSignal,
-): Promise<ExternalCodeSessionRow | null> {
+): Promise<BuiltinConnectorExternalCodeSessionRow | null> {
   const [claimedSession] = await args.writeDb
-    .update(connectorExternalCodeSessions)
+    .update(builtinConnectorExternalCodeSessions)
     .set({ status: "completing", updatedAt: args.claimStartedAt })
     .where(
       and(
-        eq(connectorExternalCodeSessions.id, args.session.id),
-        eq(connectorExternalCodeSessions.status, "pending"),
+        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
+        eq(builtinConnectorExternalCodeSessions.status, "pending"),
       ),
     )
     .returning(externalCodeSessionSelection);
@@ -414,11 +429,11 @@ async function claimStillCurrent(
 ): Promise<boolean> {
   const [currentClaim] = await args.writeDb
     .select({
-      status: connectorExternalCodeSessions.status,
-      updatedAt: connectorExternalCodeSessions.updatedAt,
+      status: builtinConnectorExternalCodeSessions.status,
+      updatedAt: builtinConnectorExternalCodeSessions.updatedAt,
     })
-    .from(connectorExternalCodeSessions)
-    .where(eq(connectorExternalCodeSessions.id, args.sessionId))
+    .from(builtinConnectorExternalCodeSessions)
+    .where(eq(builtinConnectorExternalCodeSessions.id, args.sessionId))
     .limit(1);
   signal.throwIfAborted();
 
@@ -431,14 +446,14 @@ async function claimStillCurrent(
 async function markClaimPending(
   args: {
     readonly writeDb: Db;
-    readonly session: ExternalCodeSessionRow;
+    readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
     readonly errorMessage?: string;
   },
   signal: AbortSignal,
 ): Promise<void> {
   await args.writeDb
-    .update(connectorExternalCodeSessions)
+    .update(builtinConnectorExternalCodeSessions)
     .set({
       status: "pending",
       errorCode: args.errorMessage ? "provider_rejected" : null,
@@ -447,9 +462,9 @@ async function markClaimPending(
     })
     .where(
       and(
-        eq(connectorExternalCodeSessions.id, args.session.id),
-        eq(connectorExternalCodeSessions.status, "completing"),
-        eq(connectorExternalCodeSessions.updatedAt, args.claimStartedAt),
+        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
+        eq(builtinConnectorExternalCodeSessions.status, "completing"),
+        eq(builtinConnectorExternalCodeSessions.updatedAt, args.claimStartedAt),
       ),
     );
   signal.throwIfAborted();
@@ -458,7 +473,7 @@ async function markClaimPending(
 async function markClaimError(
   args: {
     readonly writeDb: Db;
-    readonly session: ExternalCodeSessionRow;
+    readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
     readonly errorMessage: string;
   },
@@ -466,7 +481,7 @@ async function markClaimError(
 ): Promise<void> {
   const completedAt = nowDate();
   await args.writeDb
-    .update(connectorExternalCodeSessions)
+    .update(builtinConnectorExternalCodeSessions)
     .set({
       status: "error",
       errorCode: "complete_failed",
@@ -476,9 +491,9 @@ async function markClaimError(
     })
     .where(
       and(
-        eq(connectorExternalCodeSessions.id, args.session.id),
-        eq(connectorExternalCodeSessions.status, "completing"),
-        eq(connectorExternalCodeSessions.updatedAt, args.claimStartedAt),
+        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
+        eq(builtinConnectorExternalCodeSessions.status, "completing"),
+        eq(builtinConnectorExternalCodeSessions.updatedAt, args.claimStartedAt),
       ),
     );
   signal.throwIfAborted();
@@ -487,15 +502,15 @@ async function markClaimError(
 async function markClaimComplete(
   args: {
     readonly writeDb: Db;
-    readonly session: ExternalCodeSessionRow;
+    readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
-    readonly connector: ConnectorResponse;
+    readonly connector: BuiltinConnectorResponse;
   },
   signal: AbortSignal,
 ): Promise<CompleteSuccess> {
   const completedAt = nowDate();
   const [completedSession] = await args.writeDb
-    .update(connectorExternalCodeSessions)
+    .update(builtinConnectorExternalCodeSessions)
     .set({
       status: "complete",
       completedConnectorId: args.connector.id,
@@ -506,12 +521,12 @@ async function markClaimComplete(
     })
     .where(
       and(
-        eq(connectorExternalCodeSessions.id, args.session.id),
-        eq(connectorExternalCodeSessions.status, "completing"),
-        eq(connectorExternalCodeSessions.updatedAt, args.claimStartedAt),
+        eq(builtinConnectorExternalCodeSessions.id, args.session.id),
+        eq(builtinConnectorExternalCodeSessions.status, "completing"),
+        eq(builtinConnectorExternalCodeSessions.updatedAt, args.claimStartedAt),
       ),
     )
-    .returning({ id: connectorExternalCodeSessions.id });
+    .returning({ id: builtinConnectorExternalCodeSessions.id });
   signal.throwIfAborted();
 
   if (!completedSession) {
@@ -524,18 +539,18 @@ async function markClaimComplete(
 }
 
 async function persistClaimedConnector(
-  args: ExternalCodeSessionOwner & {
+  args: BuiltinConnectorExternalCodeSessionOwner & {
     readonly writeDb: Db;
     readonly orgId: string;
     readonly userId: string;
-    readonly session: ExternalCodeSessionRow;
+    readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
     readonly token: ConnectorAuthProviderGrantResult;
     readonly persistConnector: (
       args: { readonly token: ConnectorAuthProviderGrantResult },
       signal: AbortSignal,
     ) => Promise<
-      | { readonly ok: true; readonly connector: ConnectorResponse }
+      | { readonly ok: true; readonly connector: BuiltinConnectorResponse }
       | { readonly ok: false; readonly message: string }
     >;
   },
@@ -591,7 +606,9 @@ async function persistClaimedConnector(
   });
 }
 
-function terminalErrorResponse(session: ExternalCodeSessionRow) {
+function terminalErrorResponse(
+  session: BuiltinConnectorExternalCodeSessionRow,
+) {
   switch (session.status) {
     case "expired": {
       return badRequestMessage(
@@ -613,7 +630,7 @@ function terminalErrorResponse(session: ExternalCodeSessionRow) {
 
 async function completeSessionResponse(
   args: {
-    readonly connectorLoader: () => Promise<ConnectorResponse | null>;
+    readonly connectorLoader: () => Promise<BuiltinConnectorResponse | null>;
   },
   signal: AbortSignal,
 ): Promise<CompleteSuccess> {
@@ -631,7 +648,7 @@ const authorizeExternalCodeSessionConnector$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly session: ExternalCodeSessionRow;
+      readonly session: BuiltinConnectorExternalCodeSessionRow;
       readonly connectorSlug: ConnectorSlug;
     },
     signal: AbortSignal,
@@ -661,7 +678,7 @@ const completedExternalCodeSessionResponse$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly session: ExternalCodeSessionRow;
+      readonly session: BuiltinConnectorExternalCodeSessionRow;
       readonly method: ResolvedConnectorActionMethod;
     },
     signal: AbortSignal,
@@ -675,7 +692,7 @@ const completedExternalCodeSessionResponse$ = command(
             );
           }
           return get(
-            connectorById({
+            builtinConnectorById({
               orgId: args.orgId,
               userId: args.userId,
               connectorSlug: args.method.connectorSlug,
@@ -697,18 +714,18 @@ const completedExternalCodeSessionResponse$ = command(
 );
 
 async function completeClaimedExternalCodeSession(
-  args: ResolvedExternalCodeClient & {
+  args: ResolvedBuiltinConnectorExternalCodeClient & {
     readonly writeDb: Db;
     readonly orgId: string;
     readonly userId: string;
     readonly code: string;
-    readonly session: ExternalCodeSessionRow;
+    readonly session: BuiltinConnectorExternalCodeSessionRow;
     readonly claimStartedAt: Date;
     readonly persistConnector: (
       args: { readonly token: ConnectorAuthProviderGrantResult },
       signal: AbortSignal,
     ) => Promise<
-      | { readonly ok: true; readonly connector: ConnectorResponse }
+      | { readonly ok: true; readonly connector: BuiltinConnectorResponse }
       | { readonly ok: false; readonly message: string }
     >;
   },
@@ -880,7 +897,7 @@ async function createExternalCodeSession(
       now: args.now,
     });
     const [session] = await tx
-      .insert(connectorExternalCodeSessions)
+      .insert(builtinConnectorExternalCodeSessions)
       .values({
         orgId: args.orgId,
         userId: args.userId,
@@ -898,7 +915,7 @@ async function createExternalCodeSession(
         updatedAt: args.now,
         expiresAt: args.expiresAt,
       })
-      .returning({ id: connectorExternalCodeSessions.id });
+      .returning({ id: builtinConnectorExternalCodeSessions.id });
     if (!session) {
       throw new Error("Failed to create external-code authorization session");
     }
@@ -906,7 +923,7 @@ async function createExternalCodeSession(
   });
 }
 
-export const startConnectorExternalCodeSession$ = command(
+export const startBuiltinConnectorExternalCodeSession$ = command(
   async (
     { get, set },
     args: {
@@ -962,7 +979,7 @@ export const startConnectorExternalCodeSession$ = command(
     const now = nowDate();
     const expiresAt = new Date(now.getTime() + startResult.expiresIn * 1000);
     const encryptedProviderState = await encryptPersistentSecretValue(
-      serializeConnectorExternalCodeProviderState({
+      serializeBuiltinConnectorExternalCodeProviderState({
         connectorSlug: resolved.connectorSlug,
         authMethod: resolved.authMethodId,
         providerState: providerStateWithinLimit(startResult.providerState),
@@ -1005,7 +1022,7 @@ export const startConnectorExternalCodeSession$ = command(
           );
     }
 
-    const body: ConnectorExternalCodeSessionStartResponse = {
+    const body: BuiltinConnectorExternalCodeSessionStartResponse = {
       sessionId: sessionResult.session.id,
       sessionToken,
       connectorSlug: resolved.connectorSlug,
@@ -1031,7 +1048,7 @@ const persistExternalCodeConnector$ = command(
     signal: AbortSignal,
   ) => {
     const connectorResult = await set(
-      upsertConnectorTokenConnection$,
+      upsertBuiltinConnectorTokenConnection$,
       {
         orgId: args.orgId,
         userId: args.userId,
@@ -1057,7 +1074,7 @@ const persistExternalCodeConnector$ = command(
   },
 );
 
-export const completeConnectorExternalCodeSession$ = command(
+export const completeBuiltinConnectorExternalCodeSession$ = command(
   async (
     { get, set },
     args: {

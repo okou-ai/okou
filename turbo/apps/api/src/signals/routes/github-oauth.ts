@@ -44,7 +44,7 @@ import {
   verifyGithubConnectSignature,
 } from "../services/github-oauth.service";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
-import { upsertConnectorTokenConnection$ } from "../services/connector-data.service";
+import { upsertBuiltinConnectorTokenConnection$ } from "../services/connector-data.service";
 import { settle } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
@@ -184,7 +184,7 @@ const writeGithubConnectorConnection$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const result = await set(
-      upsertConnectorTokenConnection$,
+      upsertBuiltinConnectorTokenConnection$,
       {
         orgId: args.orgId,
         userId: args.userId,

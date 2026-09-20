@@ -7,7 +7,7 @@ import type {
 } from "@okouai/connectors/firewall-metadata/policy";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -273,16 +273,16 @@ async function queryRunBootstrapMetadataSnapshot(
         .mapWith(bootstrapMetadataRowKindDecoder)
         .as("kind"),
       ...emptyBootstrapMetadataFields(),
-      name: sql`${userConnectors.connectorSlug}`
+      name: sql`${userBuiltinConnectors.connectorSlug}`
         .mapWith(nullableTextDecoder)
         .as("name"),
     })
-    .from(userConnectors)
+    .from(userBuiltinConnectors)
     .where(
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, args.agentId),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
       ),
     );
   const customConnectorQuery = agentRunCustomConnectorMetadataQuery(db, args);

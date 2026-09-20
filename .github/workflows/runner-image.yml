@@ -128,7 +128,7 @@ jobs:
             crates_changed=false
           fi
 
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
             ci_changed=true
           else
             ci_changed=false
@@ -164,7 +164,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/|^ansible/"; then
             ci_changed=true
           else
             ci_changed=false
@@ -203,7 +203,7 @@ jobs:
           set -euo pipefail
 
           runner_image_ci_changed=false
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-download|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-download|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
             runner_image_ci_changed=true
           fi
 
@@ -317,42 +317,14 @@ jobs:
         shell: bash
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Setup R2 sccache
+        uses: ./.github/actions/setup-r2-sccache
         with:
-          version: "v0.15.0"
-
-      - name: Configure sccache
-        shell: bash
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          SCCACHE_BUCKET: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-          SCCACHE_REGION: auto
-          SCCACHE_S3_KEY_PREFIX: runner-sccache/${{ matrix.id }}/
-          SCCACHE_GHA_ENABLED: "false"
-          SCCACHE_IDLE_TIMEOUT: "0"
-        run: |
-          : "${AWS_ACCESS_KEY_ID:?missing R2 access key}"
-          : "${AWS_SECRET_ACCESS_KEY:?missing R2 secret key}"
-          : "${R2_ACCOUNT_ID:?missing R2 account}"
-          : "${SCCACHE_BUCKET:?missing R2 bucket}"
-          export SCCACHE_ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          SCCACHE_CONF_PATH="${RUNNER_TEMP:-/tmp}/sccache.toml"
-          cat > "$SCCACHE_CONF_PATH" <<'EOF'
-          server_startup_timeout_ms = 60000
-          EOF
-
-          # Share compiler outputs across PR and merge-group refs without the
-          # GitHub cache quota. Keep the server alive for this job: a restart
-          # from a build step would not inherit the startup-only credentials.
-          SCCACHE_CONF="$SCCACHE_CONF_PATH" ${SCCACHE_PATH:-sccache} --start-server
-
-          {
-            echo "CARGO_INCREMENTAL=0"
-            echo "SCCACHE_CONF=$SCCACHE_CONF_PATH"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+          architecture: ${{ matrix.id }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
 
       - uses: Swatinem/rust-cache@v2
         with:

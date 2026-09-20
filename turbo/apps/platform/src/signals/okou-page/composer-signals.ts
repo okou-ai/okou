@@ -238,9 +238,16 @@ interface ComposerSubmissionSignals {
   readonly sending$: Computed<Promise<boolean>>;
   readonly primaryAction$: Computed<Promise<ComposerPrimaryAction>>;
   readonly hasCurrentInvocation$: Computed<boolean>;
+  /**
+   * Sends what the composer currently holds. The second argument is agent-only
+   * context for this one send: it reaches the run's prompt through the
+   * message's additional_info part and never the text the member reads, which
+   * is how a caller states how the run should be carried out without spending
+   * the member's own message on instructions addressed to it.
+   */
   readonly submitCurrentInput$: Command<
     Promise<boolean>,
-    [ComposerPrimaryAction, AbortSignal]
+    [ComposerPrimaryAction, string | undefined, AbortSignal]
   >;
   readonly activatePrimaryAction$: Command<
     Promise<boolean>,
@@ -875,6 +882,22 @@ function createComposerPrimaryActionSignal(args: {
   });
 }
 
+/**
+ * One message carries one additional_info part, so a caller's context for this
+ * send and the composer's own selections are joined into it rather than one
+ * replacing the other.
+ */
+function joinAdditionalInfo(
+  ...blocks: readonly (string | undefined)[]
+): string | undefined {
+  const text = blocks
+    .filter((block): block is string => {
+      return block !== undefined && block.length > 0;
+    })
+    .join("\n\n");
+  return text.length > 0 ? text : undefined;
+}
+
 function createSubmitCurrentInput({
   options,
   workflowComposer,
@@ -900,6 +923,7 @@ function createSubmitCurrentInput({
     async (
       { get, set },
       action: ComposerPrimaryAction,
+      callerAdditionalInfo: string | undefined,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
@@ -932,7 +956,7 @@ function createSubmitCurrentInput({
         : undefined;
       signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
-      const additionalInfo = get(create.enabled$)
+      const composerAdditionalInfo = get(create.enabled$)
         ? buildComposerAdditionalInfo(
             mode,
             videoRunOptions,
@@ -942,6 +966,10 @@ function createSubmitCurrentInput({
               : undefined,
           )
         : undefined;
+      const additionalInfo = joinAdditionalInfo(
+        callerAdditionalInfo,
+        composerAdditionalInfo,
+      );
       const editorDocument = additionalInfo
         ? createEditorDocumentSnapshot(
             workflowComposer.editor.schema.nodeFromJSON(
@@ -954,7 +982,11 @@ function createSubmitCurrentInput({
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
-        videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+        // Read from the composer's own block rather than the joined text: the
+        // video parameters are only inside that one, so a caller's context
+        // must not be what drops the structured field a composer outside the
+        // rollout still depends on.
+        videoRunOptions: composerAdditionalInfo ? undefined : videoRunOptions,
         taskSelection: {
           task: get(taskChips.task$) ?? mode,
           presentationSlideCount: get(create.presentationSlideCount$),
@@ -1033,7 +1065,9 @@ function createComposerSubmissionSignals(
         await set(options.cancelRun$, signal);
         return true;
       }
-      return await set(submitCurrentInput$, action, signal);
+      // A member pressing the composer's own button asks for exactly what they
+      // typed, so this send adds no context of its own.
+      return await set(submitCurrentInput$, action, undefined, signal);
     },
   );
 

@@ -4,7 +4,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import type { PlatformConnectorPermissionMetadata } from "./connector-domain.ts";
-import { connectorsReloadVersion$ } from "./external/connectors.ts";
+import { builtinConnectorsReloadVersion$ } from "./external/connectors.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 
 interface FirewallPermissionMetadataParams {
@@ -19,7 +19,7 @@ export function firewallPermissionMetadataByConnector(
     if (!connectorSlugSchema.safeParse(key).success) {
       return null;
     }
-    get(connectorsReloadVersion$);
+    get(builtinConnectorsReloadVersion$);
     get(featureSwitch$);
 
     const createClient = get(apiClient$);

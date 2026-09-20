@@ -279,6 +279,16 @@ interface BuildStorageManifestEntriesArgs {
   readonly stats?: StorageManifestBuildStats;
 }
 
+type UnindexedStorageManifestEntriesArgs = Omit<
+  BuildStorageManifestEntriesArgs,
+  "storageIndex"
+>;
+
+interface PreparedRequestStorageResolution {
+  readonly input: UnindexedStorageManifestEntriesArgs;
+  readonly requests: readonly StorageRequest[];
+}
+
 interface StorageManifestEntryPhaseTimings {
   readonly compose: StorageManifestEntryPhaseTiming;
   readonly additional: StorageManifestEntryPhaseTiming;
@@ -2871,6 +2881,21 @@ function assertUniquePersistedMountPaths(
   }
 }
 
+function persistedStorageMountRequests(
+  mounts: readonly PersistedStorageMount[],
+): readonly StorageRequest[] {
+  return mounts.map((mount) => {
+    return {
+      lookup: {
+        orgId: mount.orgId,
+        userId: mount.userId,
+        name: mount.name,
+      },
+      version: mount.version,
+    };
+  });
+}
+
 async function resolvePersistedStorageMounts(args: {
   readonly db: Db;
   readonly index: StorageIndex;
@@ -2956,58 +2981,76 @@ function resolveEntriesFromPersistedStorageMounts(args: {
 }): Computed<Promise<ResolvedStorageEntries>> {
   return computed(async () => {
     assertUniquePersistedMountPaths(args.mounts);
+    const requests = persistedStorageMountRequests(args.mounts);
     const storageIndex = await loadTimedStorageIndex({
       db: args.db,
-      requests: args.mounts.map((mount) => {
-        return {
-          lookup: {
-            orgId: mount.orgId,
-            userId: mount.userId,
-            name: mount.name,
-          },
-          version: mount.version,
-        };
-      }),
+      requests,
       timing: args.timing,
     });
-    const phaseTimings = createStorageManifestEntryPhaseTimings(args);
-    return await (async () => {
-      const input: BuildStorageManifestEntriesArgs = {
-        db: args.db,
-        bucket: args.bucket,
-        storageIndex,
-        agentOrgId: "",
-        runtimeOrgId: "",
-        userId: "",
-        composeVolumes: [],
-        additionalVolumes: undefined,
-        additionalVolumeSources: undefined,
-        artifacts: [],
-        timing: args.timing,
-        stats: args.stats,
-      };
-      const resolved = await resolvePersistedStorageMounts({
-        db: args.db,
-        index: storageIndex,
-        mounts: args.mounts,
-      });
-      args.stats?.recordResolvedEntry(
-        "additional",
-        "unknown",
-        resolved.additionalPlans.length,
-      );
-      args.stats?.recordResolvedEntry(
-        "artifact",
-        "artifact",
-        resolved.artifactInputs.length,
-      );
-      return { input, phaseTimings, resolved };
-    })().finally(() => {
-      phaseTimings.compose.flushResolve();
-      phaseTimings.additional.flushResolve();
-      phaseTimings.artifact.flushResolve();
+    return await resolveValidatedPersistedStorageMounts({
+      ...args,
+      storageIndex,
     });
   });
+}
+
+async function resolveValidatedPersistedStorageMounts(args: {
+  readonly db: Db;
+  readonly bucket: string;
+  readonly storageIndex: StorageIndex;
+  readonly mounts: readonly PersistedStorageMount[];
+  readonly timing?: ApiDispatchTimingCollector;
+  readonly stats?: StorageManifestBuildStats;
+}): Promise<ResolvedStorageEntries> {
+  const phaseTimings = createStorageManifestEntryPhaseTimings(args);
+  return await (async () => {
+    const input: BuildStorageManifestEntriesArgs = {
+      db: args.db,
+      bucket: args.bucket,
+      storageIndex: args.storageIndex,
+      agentOrgId: "",
+      runtimeOrgId: "",
+      userId: "",
+      composeVolumes: [],
+      additionalVolumes: undefined,
+      additionalVolumeSources: undefined,
+      artifacts: [],
+      timing: args.timing,
+      stats: args.stats,
+    };
+    const resolved = await resolvePersistedStorageMounts({
+      db: args.db,
+      index: args.storageIndex,
+      mounts: args.mounts,
+    });
+    args.stats?.recordResolvedEntry(
+      "additional",
+      "unknown",
+      resolved.additionalPlans.length,
+    );
+    args.stats?.recordResolvedEntry(
+      "artifact",
+      "artifact",
+      resolved.artifactInputs.length,
+    );
+    return { input, phaseTimings, resolved };
+  })().finally(() => {
+    phaseTimings.compose.flushResolve();
+    phaseTimings.additional.flushResolve();
+    phaseTimings.artifact.flushResolve();
+  });
+}
+
+async function resolveSessionWritebackStorageMounts(args: {
+  readonly db: Db;
+  readonly bucket: string;
+  readonly storageIndex: StorageIndex;
+  readonly mounts: readonly PersistedStorageMount[];
+  readonly timing?: ApiDispatchTimingCollector;
+  readonly stats?: StorageManifestBuildStats;
+}): Promise<ResolvedStorageEntries> {
+  assertUniquePersistedMountPaths(args.mounts);
+  return await resolveValidatedPersistedStorageMounts(args);
 }
 
 function combinePreparedStorageEntries<
@@ -3141,64 +3184,40 @@ function resolveSessionStorageOverlay(args: {
   return { canonicalWritebackMounts, remainingArtifacts };
 }
 
-function resolveStorageEntriesForRequest(
+function prepareRequestStorageResolution(
   args: PrepareAgentRunStorageManifestArgs,
   bucket: string,
   composeVolumes: readonly ResolvedVolume[],
   artifacts: readonly ContextArtifact[],
-): Computed<Promise<ResolvedStorageEntries>> {
-  return computed(async (get) => {
-    const additionalVolumeSources = normalizeAdditionalVolumeSources({
-      volumes: args.additionalVolumes,
-      sources: args.additionalVolumeSources,
-    });
-    args.stats?.recordRequestedInputs({
-      composeCount: composeVolumes.length,
-      additionalCount: args.additionalVolumes?.length ?? 0,
-      artifactCount: args.artifacts.length,
-      dedupedArtifactCount: artifacts.length,
-    });
-
-    await get(
-      ensureStorageManifestArtifacts({
-        db: args.db,
-        runtimeOrgId: args.runtimeOrgId,
-        userId: args.userId,
-        artifacts,
-        timing: args.timing,
-        stats: args.stats,
-      }),
-    );
-
-    const storageIndex = await loadTimedStorageIndex({
-      db: args.db,
-      requests: storageManifestRequests({
-        agentOrgId: args.agentOrgId,
-        runtimeOrgId: args.runtimeOrgId,
-        userId: args.userId,
-        composeVolumes,
-        additionalVolumes: args.additionalVolumes,
-        additionalVolumeSources,
-        artifacts,
-      }),
-      timing: args.timing,
-    });
-
-    return await resolveStorageEntries({
-      db: args.db,
-      bucket,
-      storageIndex,
-      agentOrgId: args.agentOrgId,
-      runtimeOrgId: args.runtimeOrgId,
-      userId: args.userId,
-      composeVolumes,
-      additionalVolumes: args.additionalVolumes,
-      additionalVolumeSources,
-      artifacts,
-      timing: args.timing,
-      stats: args.stats,
-    });
+): PreparedRequestStorageResolution {
+  const additionalVolumeSources = normalizeAdditionalVolumeSources({
+    volumes: args.additionalVolumes,
+    sources: args.additionalVolumeSources,
   });
+  args.stats?.recordRequestedInputs({
+    composeCount: composeVolumes.length,
+    additionalCount: args.additionalVolumes?.length ?? 0,
+    artifactCount: args.artifacts.length,
+    dedupedArtifactCount: artifacts.length,
+  });
+
+  const input: UnindexedStorageManifestEntriesArgs = {
+    db: args.db,
+    bucket,
+    agentOrgId: args.agentOrgId,
+    runtimeOrgId: args.runtimeOrgId,
+    userId: args.userId,
+    composeVolumes,
+    additionalVolumes: args.additionalVolumes,
+    additionalVolumeSources,
+    artifacts,
+    timing: args.timing,
+    stats: args.stats,
+  };
+  return {
+    input,
+    requests: storageManifestRequests(input),
+  };
 }
 
 function resolveStorageWithSessionOverlay(
@@ -3213,26 +3232,46 @@ function resolveStorageWithSessionOverlay(
         artifacts,
         persistedStorageMounts: args.persistedStorageMounts,
       });
-    const requestedEntriesPromise = get(
-      resolveStorageEntriesForRequest(
-        args,
-        bucket,
-        composeVolumes,
-        remainingArtifacts,
-      ),
+    const request = prepareRequestStorageResolution(
+      args,
+      bucket,
+      composeVolumes,
+      remainingArtifacts,
     );
+    await get(
+      ensureStorageManifestArtifacts({
+        db: args.db,
+        runtimeOrgId: args.runtimeOrgId,
+        userId: args.userId,
+        artifacts: remainingArtifacts,
+        timing: args.timing,
+        stats: args.stats,
+      }),
+    );
+
+    const storageIndex = await loadTimedStorageIndex({
+      db: args.db,
+      requests: [
+        ...request.requests,
+        ...persistedStorageMountRequests(canonicalWritebackMounts),
+      ],
+      timing: args.timing,
+    });
+    const requestedEntriesPromise = resolveStorageEntries({
+      ...request.input,
+      storageIndex,
+    });
     const sessionWritebackEntriesPromise =
       canonicalWritebackMounts.length === 0
         ? Promise.resolve(undefined)
-        : get(
-            resolveEntriesFromPersistedStorageMounts({
-              db: args.db,
-              bucket,
-              mounts: canonicalWritebackMounts,
-              timing: args.timing,
-              stats: args.stats,
-            }),
-          );
+        : resolveSessionWritebackStorageMounts({
+            db: args.db,
+            bucket,
+            storageIndex,
+            mounts: canonicalWritebackMounts,
+            timing: args.timing,
+            stats: args.stats,
+          });
     const [requestedEntriesResult, sessionWritebackEntriesResult] =
       await Promise.allSettled([
         requestedEntriesPromise,

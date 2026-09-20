@@ -4,9 +4,9 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
-  connectConnectorOAuthAuthCodeAndSettle$,
-  connectFlowConnectorSlug$,
-  getOnlyAvailableStatusBrowserAuthMethodDetail,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+  builtinConnectFlowSlug$,
+  getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
@@ -15,14 +15,14 @@ export function useGmailReconnect(
   onSuccess: () => void | Promise<void>,
 ) {
   const catalogBySlug = useLastResolved(connectorCatalogStatusBySlug$);
-  const connectFlowConnectorSlug = useGet(connectFlowConnectorSlug$);
+  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
   const [connection, connect] = useLoadableSet(
-    connectConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
   const signal = useGet(pageSignal$);
   const connector = catalogBySlug?.get("gmail");
   const authMethod = connector
-    ? getOnlyAvailableStatusBrowserAuthMethodDetail(connector)
+    ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(connector)
     : null;
   const reconnecting =
     connectFlowConnectorSlug === "gmail" || connection.state === "loading";

@@ -6,7 +6,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
 import { writeDb$, type Db } from "../external/db";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
-import { updateUserConnectors } from "./user-connectors.service";
+import { updateUserBuiltinConnectors } from "./user-connectors.service";
 
 interface AuthorizableAgent {
   readonly id: string;
@@ -141,7 +141,7 @@ export const authorizeConnectedConnector$ = command(
       };
     }
 
-    const updated = await updateUserConnectors(writeDb, {
+    const updated = await updateUserBuiltinConnectors(writeDb, {
       orgId: args.orgId,
       userId: args.userId,
       agentId: agent.id,

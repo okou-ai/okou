@@ -38,11 +38,11 @@ import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-runtime.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -481,7 +481,7 @@ async function resolveNotionAccess(
   const currentTime = nowDate();
   const snapshot = await loadConnectorRuntimeSnapshot(args.db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,
     snapshot,
     orgId: args.orgId,
@@ -503,7 +503,7 @@ async function resolveNotionAccess(
     };
   }
   const connection = loaded.connection;
-  const accessTokenValueRef = connectorCredentialRuntimeValueRef(
+  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
     connection,
     NOTION_ACCESS_TOKEN_ENVIRONMENT_NAME,
   );
@@ -513,7 +513,7 @@ async function resolveNotionAccess(
       message: "Reconnect Notion before using Notion event automations",
     };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db: args.db,
     valueRefs: [accessTokenValueRef],
@@ -535,7 +535,7 @@ async function resolveNotionAccess(
       },
     };
   }
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection,
       db: args.db,

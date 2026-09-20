@@ -1,12 +1,12 @@
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import {
-  connectorManualGrantContract,
-  connectorNoAuthGrantContract,
-  connectorOpenIdStartContract,
-  connectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOpenIdStartContract,
+  builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
@@ -20,7 +20,7 @@ import {
   type CustomConnectorHttpResponse,
   type CustomConnectorMcpResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
@@ -188,10 +188,10 @@ function publicNoAuthConnectorStatus(args: {
 }
 
 function connectedConnectorResponse(args: {
-  readonly slug: ConnectorResponse["slug"];
+  readonly slug: BuiltinConnectorResponse["slug"];
   readonly authMethod: string;
   readonly updatedAt: string;
-}): ConnectorResponse {
+}): BuiltinConnectorResponse {
   return {
     id: "00000000-0000-4000-8000-000000000001",
     slug: args.slug,
@@ -335,7 +335,7 @@ function mockConnectorOauthStart(args?: {
   });
 
   context.mocks.api(
-    connectorOauthStartContract.start,
+    builtinConnectorOauthStartContract.start,
     ({ body, params, respond }) => {
       args?.onStart?.(body.agentId, body.authorizeAgent);
       return respond(200, {
@@ -363,7 +363,7 @@ function mockConnectorOpenIdStart(args: {
   });
 
   context.mocks.api(
-    connectorOpenIdStartContract.start,
+    builtinConnectorOpenIdStartContract.start,
     ({ params, respond }) => {
       args?.onStart?.();
       return respond(200, {
@@ -372,7 +372,7 @@ function mockConnectorOpenIdStart(args: {
       });
     },
   );
-  context.mocks.api(connectorOauthStartContract.start, ({ never }) => {
+  context.mocks.api(builtinConnectorOauthStartContract.start, ({ never }) => {
     return never();
   });
   context.mocks.browser.open(authWindow);
@@ -1022,7 +1022,7 @@ test("Connect a no-auth connector and continue the originating chat", async () =
   const callbackPrompt = "Re-check Stripe, then continue";
   let continuationPrompt: string | null = null;
   context.mocks.api(
-    connectorNoAuthGrantContract.connect,
+    builtinConnectorNoAuthGrantContract.connect,
     ({ body, params, respond }) => {
       connectCalls += 1;
       expect(params.connectorSlug).toBe("stripe");
@@ -1057,12 +1057,15 @@ test("Connect a no-auth connector and continue the originating chat", async () =
       threadId,
     });
   });
-  context.mocks.api(userConnectorsContract.update, ({ body, respond }) => {
-    visibleAgentAuthorizationUpdates += 1;
-    return respond(200, {
-      enabledConnectorSlugs: [...body.enabledConnectorSlugs],
-    });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    ({ body, respond }) => {
+      visibleAgentAuthorizationUpdates += 1;
+      return respond(200, {
+        enabledConnectorSlugs: [...body.enabledConnectorSlugs],
+      });
+    },
+  );
   await setupPage({
     context,
     path: `/connectors/stripe/connect?agentId=${AGENT_ID}&threadId=${threadId}&callbackPrompt=${encodeURIComponent(callbackPrompt)}`,
@@ -1111,7 +1114,7 @@ test("Complete OpenID and continue the originating chat", async () => {
     },
   });
   mockPublicConnectorStatus(steamOpenIdConnectorStatus());
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: ["steam"] });
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
@@ -1196,7 +1199,7 @@ test("Reconnect the expired public OAuth account shown on the page", async () =>
   let startedConnectionId: string | null = null;
   mockOAuthCompletions(context);
   context.mocks.api(
-    connectorOauthStartContract.start,
+    builtinConnectorOauthStartContract.start,
     ({ body, params, respond }) => {
       oauthStarted = true;
       startedConnectorSlug = params.connectorSlug;
@@ -1254,7 +1257,7 @@ test("Connect a manual grant and continue the originating chat", async () => {
   const callbackPrompt = "Re-check Axiom, then continue";
   let continuationPrompt: string | null = null;
   context.mocks.api(
-    connectorManualGrantContract.connect,
+    builtinConnectorManualGrantContract.connect,
     ({ body, params, respond }) => {
       expect(params.connectorSlug).toBe("axiom");
       expect(body.agentId).toBe(AGENT_ID);

@@ -10,32 +10,34 @@ const c = initContract();
  * Sparse model: only connector slugs explicitly enabled by the user for this
  * agent.
  */
-export const userConnectorEnabledSlugsSchema = z.object({
+export const userBuiltinConnectorEnabledSlugsSchema = z.object({
   enabledConnectorSlugs: z.array(connectorSlugSchema),
 });
-export type UserConnectorEnabledSlugs = z.infer<
-  typeof userConnectorEnabledSlugsSchema
+export type UserBuiltinConnectorEnabledSlugs = z.infer<
+  typeof userBuiltinConnectorEnabledSlugsSchema
 >;
 
-export const userConnectorUpdateSchema = z
+export const userBuiltinConnectorUpdateSchema = z
   .object({
     enabledConnectorSlugs: z.array(connectorSlugSchema),
     operation: z.enum(["replace", "add", "remove"]).optional(),
   })
   .strict();
-export type UserConnectorUpdate = z.infer<typeof userConnectorUpdateSchema>;
+export type UserBuiltinConnectorUpdate = z.infer<
+  typeof userBuiltinConnectorUpdateSchema
+>;
 
 /**
  * Contract for GET/PUT /api/agents/:id/user-connectors
  */
-export const userConnectorsContract = c.router({
+export const userBuiltinConnectorsContract = c.router({
   get: {
     method: "GET",
     path: "/api/agents/:id/user-connectors",
     headers: authHeadersSchema,
     pathParams: z.object({ id: z.string().uuid() }),
     responses: {
-      200: userConnectorEnabledSlugsSchema,
+      200: userBuiltinConnectorEnabledSlugsSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
@@ -47,9 +49,9 @@ export const userConnectorsContract = c.router({
     path: "/api/agents/:id/user-connectors",
     headers: authHeadersSchema,
     pathParams: z.object({ id: z.string().uuid() }),
-    body: userConnectorUpdateSchema,
+    body: userBuiltinConnectorUpdateSchema,
     responses: {
-      200: userConnectorEnabledSlugsSchema,
+      200: userBuiltinConnectorEnabledSlugsSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -58,4 +60,5 @@ export const userConnectorsContract = c.router({
     summary: "Update enabled connector slugs for user on agent",
   },
 });
-export type UserConnectorsContract = typeof userConnectorsContract;
+export type UserBuiltinConnectorsContract =
+  typeof userBuiltinConnectorsContract;

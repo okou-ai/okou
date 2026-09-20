@@ -76,10 +76,7 @@ import {
 } from "./connector-client-invalidation.service";
 import { mcpOAuthSafeFetch } from "./mcp-oauth-safe-fetch.service";
 import {
-  CustomConnectorAutomaticOAuthError,
   customConnectorAutomaticOAuthErrorCode,
-  isAutomaticOAuthInvalidClient,
-  isAutomaticOAuthInvalidGrant,
   prepareCustomConnectorAutomaticOAuthAuthorization,
   prepareCustomConnectorAutomaticOAuthReauthorization,
   readCustomConnectorAutomaticOAuthBinding,
@@ -88,6 +85,11 @@ import {
   type CustomConnectorAutomaticOAuthBinding,
   type CustomConnectorCanonicalAutomaticOAuthStateContext as PreparedCustomConnectorAutomaticOAuthStateContext,
 } from "./custom-connector-automatic-oauth.service";
+import {
+  McpAutomaticOAuthError,
+  isAutomaticOAuthInvalidClient,
+  isAutomaticOAuthInvalidGrant,
+} from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 
 const TOKEN_REFRESH_LEEWAY_MS = 60 * 1000;
@@ -200,7 +202,7 @@ const oauthTokenErrorResponseSchema = z.object({
   error_subtype: z.string().min(1).optional(),
 });
 
-export interface OAuthTokenResult {
+export interface CustomConnectorOAuthTokenResult {
   readonly accessToken: string;
   readonly refreshToken: string | null;
   readonly idToken: string | null;
@@ -265,9 +267,9 @@ function customConnectorOAuth2AuthorizationScopes(
 }
 
 export function customConnectorOAuth2EffectiveInitialToken(
-  token: OAuthTokenResult,
+  token: CustomConnectorOAuthTokenResult,
   authorizationUrl: string | null,
-): OAuthTokenResult {
+): CustomConnectorOAuthTokenResult {
   return token.scopes === null
     ? {
         ...token,
@@ -276,7 +278,9 @@ export function customConnectorOAuth2EffectiveInitialToken(
     : token;
 }
 
-function tokenResult(response: PublicHttpsResponse): OAuthTokenResult {
+function tokenResult(
+  response: PublicHttpsResponse,
+): CustomConnectorOAuthTokenResult {
   if (response.status < 200 || response.status >= 300) {
     const parsed = oauthTokenErrorResponseSchema.safeParse(
       tokenResponseData(response),
@@ -336,7 +340,7 @@ async function requestToken(
     readonly form: URLSearchParams;
   },
   signal: AbortSignal,
-): Promise<OAuthTokenResult> {
+): Promise<CustomConnectorOAuthTokenResult> {
   const authorization = tokenRequestAuthentication(args);
   const fetched = await mcpOAuthSafeFetch(args.config.tokenUrl, {
     method: "POST",
@@ -361,7 +365,7 @@ function feishuOAuthTokenResult(token: {
   readonly accessToken: string;
   readonly refreshToken: string | null;
   readonly expiresInSeconds: number;
-}): OAuthTokenResult {
+}): CustomConnectorOAuthTokenResult {
   if (hasHttpHeaderControlCharacter(token.accessToken)) {
     throw new Error("OAuth token response contains an invalid access token");
   }
@@ -414,7 +418,7 @@ export async function exchangeCustomConnectorOAuth2Code(
     readonly redirectUri: string;
   },
   signal: AbortSignal,
-): Promise<OAuthTokenResult> {
+): Promise<CustomConnectorOAuthTokenResult> {
   if (args.config.providerAdapter === "feishu") {
     const result = await settle(
       exchangeFeishuOAuthCode(
@@ -452,7 +456,7 @@ async function refreshCustomConnectorOAuth2Token(
     readonly refreshToken: string;
   },
   signal: AbortSignal,
-): Promise<OAuthTokenResult> {
+): Promise<CustomConnectorOAuthTokenResult> {
   if (args.config.providerAdapter === "feishu") {
     const result = await settle(
       refreshFeishuOAuthToken(
@@ -690,7 +694,7 @@ async function prepareAutomaticOAuthStart(
   );
   if (!automatic.ok) {
     const error = automatic.error;
-    if (!(error instanceof CustomConnectorAutomaticOAuthError)) {
+    if (!(error instanceof McpAutomaticOAuthError)) {
       throw error;
     }
     const code = customConnectorAutomaticOAuthErrorCode(error);
@@ -1042,7 +1046,7 @@ function automaticOAuthReauthorizationScopes(
 }
 
 function automaticOAuthReauthorizationFailure(error: unknown) {
-  if (!(error instanceof CustomConnectorAutomaticOAuthError)) {
+  if (!(error instanceof McpAutomaticOAuthError)) {
     throw error;
   }
   const code = customConnectorAutomaticOAuthErrorCode(error);
@@ -1253,7 +1257,7 @@ export async function decryptCustomConnectorOAuth2Credentials(
 }
 
 async function encryptTokenValues(args: {
-  readonly token: OAuthTokenResult;
+  readonly token: CustomConnectorOAuthTokenResult;
   readonly fallbackRefreshToken?: string;
   readonly fallbackEncryptedIdToken?: string;
   readonly featureContext: FeatureSwitchContext;
@@ -1327,7 +1331,7 @@ async function replaceConnectionTokens(args: {
   readonly connectionId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly token: OAuthTokenResult;
+  readonly token: CustomConnectorOAuthTokenResult;
   readonly fallbackRefreshToken?: string;
   readonly fallbackEncryptedIdToken?: string;
   readonly featureContext: FeatureSwitchContext;
@@ -1413,7 +1417,7 @@ export async function storeCustomConnectorOAuth2Connection(
     readonly userId: string;
     readonly connectorId: string;
     readonly storageVersion: number;
-    readonly token: OAuthTokenResult;
+    readonly token: CustomConnectorOAuthTokenResult;
     readonly featureContext: FeatureSwitchContext;
     readonly account: ConnectorAccountMutationIntent;
     readonly insertConnectionId?: string;
@@ -1836,7 +1840,7 @@ async function handleAutomaticOAuthRefreshFailure(args: {
   if (
     isAutomaticOAuthInvalidGrant(args.error) ||
     isAutomaticOAuthInvalidClient(args.error) ||
-    (args.error instanceof CustomConnectorAutomaticOAuthError &&
+    (args.error instanceof McpAutomaticOAuthError &&
       args.error.kind === "binding-drift")
   ) {
     await markCustomConnectorNeedsReconnect(
@@ -1847,7 +1851,7 @@ async function handleAutomaticOAuthRefreshFailure(args: {
     return { kind: "reconnect-required" };
   }
   if (
-    args.error instanceof CustomConnectorAutomaticOAuthError &&
+    args.error instanceof McpAutomaticOAuthError &&
     args.error.kind === "temporary"
   ) {
     throw new CustomConnectorOAuth2TokenRefreshError(args.error);

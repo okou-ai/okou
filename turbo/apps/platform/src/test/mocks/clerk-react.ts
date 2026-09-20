@@ -8,7 +8,11 @@ import {
   useContext,
 } from "react";
 import { vi } from "vitest";
-import type { BrowserClerk, ClerkOptions } from "@clerk/shared/types";
+import type {
+  BrowserClerk,
+  ClerkAppearanceTheme,
+  ClerkOptions,
+} from "@clerk/shared/types";
 
 const MockClerkContext = createContext<BrowserClerk | null>(null);
 
@@ -20,6 +24,21 @@ export function useClerk(): BrowserClerk {
     throw new Error("Clerk hook requires its provider");
   }
   return clerk;
+}
+
+export function Show({
+  children,
+  fallback = null,
+  when,
+}: {
+  readonly children: ReactNode;
+  readonly fallback?: ReactNode;
+  readonly when: "signed-in" | "signed-out";
+}) {
+  const clerk = useClerk();
+  const signedIn = Boolean(clerk.user);
+  const visible = when === "signed-in" ? signedIn : !signedIn;
+  return visible ? children : fallback;
 }
 
 const CLERK_AUTH_COMPONENT_MOUNT_EVENT = "okou:test-clerk-auth-component-mount";
@@ -174,6 +193,34 @@ export function SignUp(props: ClerkAuthComponentProps) {
     componentName: "SignUp",
     testId: "clerk-sign-up",
   });
+}
+
+export function OAuthConsent({
+  appearance,
+  fallback,
+}: {
+  appearance?: ClerkAppearanceTheme;
+  fallback?: ReactNode;
+}) {
+  const mounted = useSyncExternalStore(
+    subscribeToClerkAuthComponent,
+    getClerkAuthComponentMounted,
+  );
+  return createElement(
+    Fragment,
+    null,
+    mounted ? null : fallback,
+    createElement("div", {
+      "data-client-id": new URLSearchParams(location.search).get("client_id"),
+      "data-clerk-logo-link-url": appearance?.options?.logoLinkUrl,
+      "data-clerk-primary-color": appearance?.variables?.colorPrimary,
+      "data-clerk-primary-foreground":
+        appearance?.variables?.colorPrimaryForeground,
+      "data-clerk-theme": appearance?.theme,
+      "data-testid": "clerk-oauth-consent",
+      hidden: !mounted,
+    }),
+  );
 }
 
 interface GoogleOneTapProps {

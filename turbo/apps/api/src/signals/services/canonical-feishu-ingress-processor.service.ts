@@ -164,7 +164,6 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       botName: feishuOrgInstallations.botName,
       messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
       publicBrand: feishuChatIngress.publicBrand,
-      installationPublicBrand: feishuOrgInstallations.publicBrand,
     })
     .from(feishuChatIngress)
     .innerJoin(
@@ -184,12 +183,10 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
 function resolveFeishuIngressPublicBrand(
   ingress: NonNullable<Awaited<ReturnType<typeof loadClaimedIngress>>>,
 ): PublicBrand {
-  // #27750 rollout fallback: the migration is applied before API promotion,
-  // so the previous API can leave this column null during the DB/API skew or
-  // rollback window. Remove after legacy null ingress rows are drained and the
-  // previous API is outside rollback; new webhook writers always set the Host
-  // brand explicitly.
-  return ingress.publicBrand ?? ingress.installationPublicBrand;
+  if (ingress.publicBrand === null) {
+    throw new Error("Canonical Feishu ingress has no public brand");
+  }
+  return ingress.publicBrand;
 }
 
 function parseMatchingMessage(

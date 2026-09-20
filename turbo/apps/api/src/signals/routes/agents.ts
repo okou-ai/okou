@@ -9,7 +9,7 @@ import {
   type AgentResponse,
   type AgentVisibility,
 } from "@okouai/api-contracts/contracts/agents";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
@@ -47,7 +47,7 @@ import {
   writeAgentInstructionsStorage$,
 } from "../services/agent-instructions-storage.service";
 import {
-  updateUserConnectors,
+  updateUserBuiltinConnectors,
   updateUserCustomConnectors,
 } from "../services/user-connectors.service";
 import { onRejection } from "../utils";
@@ -446,7 +446,7 @@ const getAgentInner$ = computed(async (get) => {
 
 const getAgentUserConnectorsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(userConnectorsContract.get));
+  const params = get(pathParamsOf(userBuiltinConnectorsContract.get));
   const exists = await get(
     agentExists({
       orgId: auth.orgId,
@@ -823,13 +823,13 @@ const updateAgentCustomConnectorsInner$ = command(
 );
 
 const updateAgentUserConnectorsBody$ = bodyResultOf(
-  userConnectorsContract.update,
+  userBuiltinConnectorsContract.update,
 );
 
 const updateAgentUserConnectorsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const params = get(pathParamsOf(userConnectorsContract.update));
+    const params = get(pathParamsOf(userBuiltinConnectorsContract.update));
     const body = await get(updateAgentUserConnectorsBody$);
     signal.throwIfAborted();
     if (!body.ok) {
@@ -879,7 +879,7 @@ const updateAgentUserConnectorsInner$ = command(
       }
     }
 
-    const updated = await updateUserConnectors(writeDb, {
+    const updated = await updateUserBuiltinConnectors(writeDb, {
       orgId: auth.orgId,
       userId: auth.userId,
       agentId: params.id,
@@ -945,7 +945,7 @@ export const agentsRoutes: readonly RouteEntry[] = [
     handler: authRoute(agentDeleteAuth, deleteAgentInner$),
   },
   {
-    route: userConnectorsContract.get,
+    route: userBuiltinConnectorsContract.get,
     handler: authRoute(agentReadAuth, getAgentUserConnectorsInner$),
   },
   {
@@ -957,7 +957,7 @@ export const agentsRoutes: readonly RouteEntry[] = [
     handler: authRoute(agentReadAuth, updateAgentCustomConnectorsInner$),
   },
   {
-    route: userConnectorsContract.update,
+    route: userBuiltinConnectorsContract.update,
     handler: authRoute(agentReadAuth, updateAgentUserConnectorsInner$),
   },
 ];

@@ -22,7 +22,7 @@ writer already selected another deployment, retrying the original immutable
 publication must not reclaim the alias. Unmarked historical uploads retain the
 old ordered completion rule, including when a newer upload finishes first.
 
-`deploymentVersion=1` and `nextDeploymentVersion=2` are temporarily written as
+`deploymentVersion=1` in each new manifest and physical column defaults are
 compatibility projections, not allocated identity. The latter prevents a retained
 old writer from trying to insert version 1 again. The private deployment table
 also still requires a non-null version. Old API responses, history and version
@@ -34,6 +34,59 @@ without a version suffix.
 
 Manifest `version`, pointer `version`, policy format versions, snapshot formats
 and execution-context protocol versions remain unchanged.
+
+## Runtime version-column retirement
+
+The next release removes publication-version columns from the application
+mapping, including implicit `SELECT` and `RETURNING` lists. The canonical
+runtime tables share the physical schema's column factories; only the physical
+DDL retains the four compatibility columns during this release:
+
+- `hosted_sites.next_deployment_version`
+- `hosted_sites.active_deployment_version`
+- `hosted_deployments.deployment_version`
+- `private_hosted_deployments.deployment_version`
+
+Historical `?version` lookups, upload completion ordering and wire fields read
+`manifest.deploymentVersion`. New publications keep the fixed value `1` in that
+metadata for retained readers, while deployment IDs remain content identity.
+The active version is derived from the public row selected by
+`active_deployment_id`; it is no longer independently stored by the API.
+
+The migration copies each existing relational version into its manifest and
+removes the manifest key when the old public version is null. It updates only
+mismatches and rotates their `manifest_hash` compare-and-swap tokens so an
+in-flight dependency collector cannot restore pre-migration metadata. Manifest
+files, dependency hashes, object prefixes, IDs, ownership and policies stay
+unchanged. An inconsistent public pointer, active version or manifest shape
+aborts the transaction. Expression indexes preserve unique historical lookup
+and avoid scanning all deployments for a version.
+
+Three column defaults support new inserts while the previous API can still
+read the physical columns. The temporary
+`mirror_hosted_site_active_version` trigger projects an updated public pointer
+into the previous API's active-version column. This bridge exists only because
+production migrations run before API promotion; remove it together with the
+four columns after the runtime-cleanup release is serving and is the oldest
+supported API rollback target. No application query depends on the trigger's
+output.
+
+| API binary                                 | Expanded schema                              | Schema after version-column removal                          |
+| ------------------------------------------ | -------------------------------------------- | ------------------------------------------------------------ |
+| Preceding API with physical version fields | Supported by defaults and pointer projection | Unsupported: implicit column lists still name removed fields |
+| Runtime-cleanup API                        | Supported                                    | Supported: queries and inserts use canonical columns only    |
+
+The physical-drop PR is a separate release. Merging both changes into one
+production release would not satisfy this boundary. Confirm the runtime-cleanup
+API is serving and older API artifacts have left supported rollback targets
+before admitting that PR for release. The current CLI and App already use
+artifact identities; retained historical selectors can continue without these
+physical columns.
+
+This duplicate-field cleanup does not reparent deployments or consolidate
+tables, so it needs no R2 object or policy migration. Full DB/R2 reconciliation
+below remains required for changing site/catalog/share identities or table
+isolation. It is not a blocker for this metadata-only migration.
 
 ## Reader and writer inventory
 
@@ -146,6 +199,7 @@ this preparation change.
    and rollback targets are gone. Production migration precedes API promotion;
    migration and incompatible old code must not overlap.
 
-The current preparation PR changes code and supplies the read-only audit. It
-does not promote production, migrate historical rows, change permissions, or
-claim that these release gates have passed.
+The preparation PR supplied the read-only audit. Runtime version-column
+retirement additionally normalizes duplicate database metadata without moving
+content or identities. Neither step promotes production, changes permissions,
+or establishes the physical-drop release gate.

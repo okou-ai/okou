@@ -261,13 +261,21 @@ beforeEach(() => {
   mockNow(new Date(MOCK_NOW), context.signal);
 });
 
-test("Review workspace credit balance, allowances, and additions", async () => {
+async function setupCreditBalanceReview() {
   mockUsageStory();
   await openCreditBalance();
-
   await waitFor(() => {
     expect(screen.getByText("12,000")).toBeInTheDocument();
   });
+}
+
+test("Review the workspace credit balance", async () => {
+  await setupCreditBalanceReview();
+  expect(screen.queryByText("Team usage")).toBeNull();
+});
+
+test("Review workspace credit allowances", async () => {
+  await setupCreditBalanceReview();
   const allowance = screen.getByTestId("usage-allowance-section");
   expect(allowance).toBeInTheDocument();
   expect(screen.getByText("Usage allowance")).toBeInTheDocument();
@@ -282,9 +290,10 @@ test("Review workspace credit balance, allowances, and additions", async () => {
     screen.getByText(expectedAllowanceResetText(WEEKLY_ALLOWANCE_RESET)),
   ).toBeInTheDocument();
   expect(within(allowance).getAllByRole("progressbar")).toHaveLength(2);
+});
 
-  // The compact additions table keeps only the three values needed for
-  // scanning; source and expiry details are available from each row tooltip.
+test("Review workspace credit additions", async () => {
+  await setupCreditBalanceReview();
   const grants = screen.getByTestId("credit-grants-section");
   expect(within(grants).getByText("Date")).toBeInTheDocument();
   expect(within(grants).getByText("Credits")).toBeInTheDocument();
@@ -296,9 +305,6 @@ test("Review workspace credit balance, allowances, and additions", async () => {
   expect(screen.queryByTestId("credit-grants-toggle")).toBeNull();
   expect(screen.queryByText("Pro credits")).toBeNull();
   expect(screen.queryByText("Purchased credits")).toBeNull();
-
-  // Usage records moved to their own section.
-  expect(screen.queryByText("Team usage")).toBeNull();
 });
 
 test("Move from workspace credit balance to usage records", async () => {
@@ -373,16 +379,20 @@ test("Explain the composition of a workspace credit balance", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Review credit usage by workspace member and period", async () => {
+async function setupTeamCreditUsage() {
   const user = userEvent.setup();
   const requests = mockUsageStory();
   await openCreditUsage();
-
   selectTeamUsage();
   await waitFor(() => {
     expect(screen.getByText("Alice Admin")).toBeInTheDocument();
     expect(screen.getByText("bob@example.com")).toBeInTheDocument();
   });
+  return { requests, user };
+}
+
+test("Review credit usage by workspace member", async () => {
+  const { requests } = await setupTeamCreditUsage();
   expect(screen.getByText("7,500")).toBeInTheDocument();
   expect(screen.getByText("2,100")).toBeInTheDocument();
   expect(requests.teamUsageRanges).toContain("billingPeriod");
@@ -395,7 +405,10 @@ test("Review credit usage by workspace member and period", async () => {
   expect(
     screen.getByTestId("member-usage-kind-user-bob-model"),
   ).toBeInTheDocument();
+});
 
+test("Explain a member's model credit usage", async () => {
+  const { user } = await setupTeamCreditUsage();
   const modelSegment = screen.getByTestId(
     "member-usage-kind-test-user-123-model",
   );
@@ -404,8 +417,10 @@ test("Review credit usage by workspace member and period", async () => {
     screen.findByText("Models - 6,000"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("GPT 5.6 Sol")).toBeInTheDocument();
-  await user.unhover(modelSegment);
+});
 
+test("Review workspace credit usage for the last seven days", async () => {
+  const { requests, user } = await setupTeamCreditUsage();
   click(screen.getByText("Billing period"));
   click(await screen.findByText("Last 7 days"));
   await waitFor(() => {
@@ -413,7 +428,6 @@ test("Review credit usage by workspace member and period", async () => {
     expect(screen.getByText("7,600")).toBeInTheDocument();
     expect(screen.getByText("2,200")).toBeInTheDocument();
   });
-
   await user.hover(screen.getByTestId("member-usage-kind-test-user-123-model"));
   await expect(
     screen.findByText("Models - 6,100"),

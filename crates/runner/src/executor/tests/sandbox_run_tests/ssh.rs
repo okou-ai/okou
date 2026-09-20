@@ -2,6 +2,7 @@ use super::*;
 use async_trait::async_trait;
 use std::{
     io,
+    os::unix::fs::PermissionsExt,
     path::Path,
     pin::Pin,
     sync::Mutex,
@@ -211,8 +212,12 @@ impl Sandbox for RpcSandbox {
 async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_cleanup() {
     for reused in [false, true] {
         for enabled in [false, true] {
-            let dir = tempfile::tempdir().unwrap();
+            let dir = tempfile::Builder::new()
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir()
+                .unwrap();
             let mut config = test_executor_config(dir.path()).await;
+            crate::log_file::ensure_log_dir(config.log_paths.dir()).unwrap();
             let identity =
                 crate::runner_process_identity::RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1)
                     .unwrap();

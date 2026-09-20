@@ -1,31 +1,31 @@
 /* eslint-disable no-restricted-imports, no-restricted-syntax -- #34243 intentionally ships no API producer. Immutable H1 publication, cross-process waiting, captured credentials, private maintenance expiry and locked-transaction races cannot be created through production endpoints until #34244. Fixtures own these infrastructure states; actual Runner poll/claim/chunk/release and legacy create/cancel endpoints verify external execution behavior. */
-import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
-import { createDeferredPromise } from "../../utils";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
-import { createRunReadsApi } from "../../routes/__tests__/helpers/api-bdd-run-reads";
+import { createBddApi } from "../../../routes/__tests__/helpers/api-bdd";
+import { createDeferredPromise } from "../../../utils";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { createRunsApi } from "../../../routes/__tests__/helpers/api-bdd-runs";
+import { createRunReadsApi } from "../../../routes/__tests__/helpers/api-bdd-run-reads";
 import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
 import { http, HttpResponse } from "msw";
-import { server } from "../../../mocks/server";
-import { withMockNowForTest } from "../../../lib/time";
+import { server } from "../../../../mocks/server";
+import { withMockNowForTest } from "../../../../lib/time";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { encryptPersistentSecretValue } from "../crypto.utils";
+import { encryptPersistentSecretValue } from "../../crypto.utils";
 import {
   captureDeferredMaintenance,
   captureDeferredMaintenanceCheckpoint,
-} from "../../../test-fixtures/pi-deferred-maintenance";
+} from "../../../../test-fixtures/pi-deferred-maintenance";
 import {
   holdDeferredRow,
   waitForDeferredBlocker,
-} from "../../../test-fixtures/pi-deferred-lock";
+} from "../../../../test-fixtures/pi-deferred-lock";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
-import { captureDeferredStorage } from "../../../test-fixtures/pi-deferred-storage";
+import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
+import { captureDeferredStorage } from "../../../../test-fixtures/pi-deferred-storage";
 import {
   captureDeferredPersonalProvider,
   captureDeferredGateway,
-} from "../../../test-fixtures/pi-deferred-provider";
+} from "../../../../test-fixtures/pi-deferred-provider";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { projectErasureDecision } from "@okouai/db/operations/account-erasure";
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
@@ -34,15 +34,15 @@ import {
   failWaitingPiCandidate,
   publishPiSandboxDemand,
   consumeDeferredPiRun$,
-} from "../pi-deferred-sandbox.service";
-import { promoteNextQueuedRun$ } from "../run-queue.service";
-import { drainOrgQueueToCapacity$ } from "../agent-run-lifecycle.service";
+} from "../../pi-deferred-sandbox.service";
+import { promoteNextQueuedRun$ } from "../../run-queue.service";
+import { drainOrgQueueToCapacity$ } from "../../agent-run-lifecycle.service";
 import { setTimeout as delay } from "node:timers/promises";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { runsCancelRoutes } from "../../routes/runs-cancel";
-import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
+import { runsCancelRoutes } from "../../../routes/runs-cancel";
+import { testCronCleanupSandboxesStateRoutes } from "../../../routes/test-cron-cleanup-sandboxes-state";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
@@ -50,14 +50,14 @@ import {
   seedPiInferenceFixture,
   removePiInferenceFixture,
   readPiInferenceFixture,
-} from "../../../test-fixtures/pi-inference-lifecycle";
+} from "../../../../test-fixtures/pi-inference-lifecycle";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createStore } from "ccstate";
 import { eq, inArray, sql } from "drizzle-orm";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { expect, onTestFinished } from "vitest";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -78,16 +78,16 @@ import {
   runnersJobClaimContract,
   PI_DEFERRED_SANDBOX_HEADER,
 } from "@okouai/api-contracts/contracts/runners";
-import { testContext, accept } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { db } from "../../../lib/db";
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { testContext, accept } from "../../../../__tests__/test-context";
+import { setupApp } from "../../../../__tests__/test-helpers";
+import { db } from "../../../../lib/db";
+import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import {
   piDeferredConfigurationSchema,
   piDeferredContextSchema,
   piDeferredH1Schema,
   piDeferredSecretsSchema,
-} from "../pi-deferred-sandbox-contract";
+} from "../../pi-deferred-sandbox-contract";
 import {
   publishPiInferenceObject,
   deletePiObjectOrphansForOwner,
@@ -95,22 +95,24 @@ import {
   reclaimPiInferenceObjects,
   retainPiInferenceObject,
   retainPiInferenceObjects,
-} from "../pi-inference-object.service";
-import { runnersRoutes } from "../../routes/runners";
-import { generateSandboxToken } from "../../auth/tokens";
-import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
-import { recordPiMemoryPhase2Checkpoint } from "../pi-memory-phase2-checkpoint.service";
+} from "../../pi-inference-object.service";
+import { runnersRoutes } from "../../../routes/runners";
+import { generateSandboxToken } from "../../../auth/tokens";
+import { createRouteMocks } from "../../../routes/__tests__/helpers/route-test";
+import { recordPiMemoryPhase2Checkpoint } from "../../pi-memory-phase2-checkpoint.service";
 import {
   handlePiMemoryPhase2MaintenanceCallback,
   settlePiMemoryPhase2Checkpoint,
-} from "../pi-memory-phase2-maintenance.service";
+} from "../../pi-memory-phase2-maintenance.service";
+
+type DefineTest = (typeof import("vitest"))["test"];
 
 const context = testContext();
 const execute = promisify(execFile);
 const commit = "a".repeat(40);
 const publisher = fileURLToPath(
   new URL(
-    "../../../__tests__/fixtures/pi-deferred-publisher.ts",
+    "../../../../__tests__/fixtures/pi-deferred-publisher.ts",
     import.meta.url,
   ),
 );
@@ -455,7 +457,7 @@ async function grantPaidConcurrency(orgId: string, slots = 1): Promise<void> {
   });
 }
 
-describe("durable deferred Pi consumer through actual PostgreSQL and Runner routes", () => {
+export const registerDurabilityTests = (it: DefineTest): void => {
   it("restores a large H1 after its publisher exits and more than 55 seconds of waiting", async () => {
     const f = await fixture({ large: true });
     const blocker = await seedPiInferenceFixture({
@@ -601,7 +603,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         await accept(
           handoffApp(runnersJobClaimContract).handoff({
             params: { id: f.runId, offset: String(offset) },
-            headers: { authorization: `Bearer ${response.body.sandboxToken}` },
+            headers: {
+              authorization: `Bearer ${response.body.sandboxToken}`,
+            },
           }),
           [200],
         );
@@ -633,7 +637,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     expect(release.body.outcome).toBe("released");
     expect((await readRequiredPiFixture(f)).lease?.state).toBe("released");
   }, 150_000);
+};
 
+export const registerAdmissionTests = (it: DefineTest): void => {
   it("revalidates captured ownership at actual claim and preserves the unclaimed lease", async () => {
     const f = await fixture();
     await expect(
@@ -777,7 +783,10 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
 
   it("serializes demand fairly, holds expired claimed capacity and releases only with the exact proof", async () => {
     const first = await fixture();
-    const second = await fixture({ orgId: first.orgId, userId: first.userId });
+    const second = await fixture({
+      orgId: first.orgId,
+      userId: first.userId,
+    });
     await db()
       .update(orgPlanEntitlements)
       .set({ baseConcurrencyLimit: 1 })
@@ -847,7 +856,12 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
           headers: {
             authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
           },
-          body: { runnerId, ownerEpoch: 2, generation: 1, proof: "destroyed" },
+          body: {
+            runnerId,
+            ownerEpoch: 2,
+            generation: 1,
+            proof: "destroyed",
+          },
         }),
         [200],
       );
@@ -1230,6 +1244,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     expect((await readRequiredPiFixture(f)).lease?.state).toBe("released");
     expect((await readRequiredPiFixture(f)).inference.phase).toBe("terminal");
   }, 45_000);
+};
+
+export const registerAuthorizationTests = (it: DefineTest): void => {
   it.each(["before-reservation", "after-publication"] as const)(
     "fences retained demand when closure commits %s",
     async (stage) => {
@@ -1555,7 +1572,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     },
     45_000,
   );
+};
 
+export const registerCompatibilityTests = (it: DefineTest): void => {
   it("lets the older real legacy queue job run before later v4 demand under one slot", async () => {
     const api = createRunsApi(context);
     const bdd = createBddApi(context);
@@ -1851,7 +1870,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     expect((await readRequiredPiFixture(f)).inference.usageSettled).toBeFalsy();
     await accept(claim(f.runId, true, randomUUID()), [404]);
   }, 60_000);
+};
 
+export const registerCapacityTests = (it: DefineTest): void => {
   it.each(["deferred-first", "legacy-first"] as const)(
     "bounds fresh legacy admission and duplicate consumers with %s lock order",
     async (order) => {
@@ -2465,7 +2486,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     },
     60_000,
   );
+};
 
+export const registerLifecycleTests = (it: DefineTest): void => {
   it("recovers pending terminal delivery after real maintenance failure retirement", async () => {
     const f = await fixture({ maintenance: true });
     const maintenance = f.maintenance;
@@ -2917,4 +2940,4 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         .where(eq(agentRunCallbacks.runId, f.runId)),
     ).resolves.toStrictEqual([{ status: "pending" }]);
   }, 45_000);
-});
+};

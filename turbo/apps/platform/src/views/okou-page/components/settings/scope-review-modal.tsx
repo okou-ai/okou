@@ -9,15 +9,15 @@ import {
 import { useTranslation } from "react-i18next";
 import { ConnectorIcon } from "./connector-icons.tsx";
 import {
-  scopeDiff$,
-  type ConnectorScopeReviewSelection,
+  builtinConnectorScopeDiff$,
+  type BuiltinConnectorScopeReviewSelection,
 } from "../../../../signals/okou-page/settings/connectors.ts";
 import { connectorCatalogStatus$ } from "../../../../signals/external/connectors.ts";
 
 interface ScopeReviewModalProps {
-  selection: ConnectorScopeReviewSelection;
+  selection: BuiltinConnectorScopeReviewSelection;
   onClose: () => void;
-  onReconnect: (selection: ConnectorScopeReviewSelection) => void;
+  onReconnect: (selection: BuiltinConnectorScopeReviewSelection) => void;
 }
 
 function ScopeDiffContent({
@@ -27,11 +27,11 @@ function ScopeDiffContent({
   onClose,
   onReconnect,
 }: {
-  selection: ConnectorScopeReviewSelection;
+  selection: BuiltinConnectorScopeReviewSelection;
   addedScopes: readonly string[];
   removedScopes: readonly string[];
   onClose: () => void;
-  onReconnect: (selection: ConnectorScopeReviewSelection) => void;
+  onReconnect: (selection: BuiltinConnectorScopeReviewSelection) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -120,7 +120,7 @@ export function ScopeReviewModal({
   onReconnect,
 }: ScopeReviewModalProps) {
   const { t } = useTranslation();
-  const scopeDiffLoadable = useLoadable(scopeDiff$);
+  const scopeDiffLoadable = useLoadable(builtinConnectorScopeDiff$);
   const connectorCatalog = useLastResolved(connectorCatalogStatus$);
   const loading = scopeDiffLoadable.state === "loading";
   const scopeDiff =

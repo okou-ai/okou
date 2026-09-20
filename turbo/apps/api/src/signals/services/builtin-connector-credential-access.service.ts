@@ -34,7 +34,7 @@ const log = logger("api:connector-credential-access");
  * does not participate in this access boundary: disabling discovery must not
  * invalidate an already compatible stored connection.
  */
-export interface ConnectorCredentialAccess {
+export interface BuiltinConnectorCredentialAccess {
   readonly authMethodId: string;
   readonly connectorId: string;
   readonly connectorSlug: string;
@@ -44,12 +44,13 @@ export interface ConnectorCredentialAccess {
   readonly userId: string;
 }
 
-type ConnectorCredentialAccessResult =
-  | { readonly kind: "ok"; readonly access: ConnectorCredentialAccess }
+type BuiltinConnectorCredentialAccessResult =
+  | { readonly kind: "ok"; readonly access: BuiltinConnectorCredentialAccess }
   | { readonly kind: "unavailable" }
   | { readonly kind: "incompatible" };
 
-interface ConnectorCredentialStoredIdentity {
+interface BuiltinConnectorCredentialStoredIdentity {
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly authMethodId: string;
   readonly connectorId: string;
   readonly connectorSlug: string;
@@ -58,8 +59,8 @@ interface ConnectorCredentialStoredIdentity {
   readonly userId: string;
 }
 
-export interface ConnectorCredentialReadGroup {
-  readonly access: ConnectorCredentialAccess;
+export interface BuiltinConnectorCredentialReadGroup {
+  readonly access: BuiltinConnectorCredentialAccess;
   /**
    * Multi-phase readers may pin the connector row they originally observed.
    * Single-statement and connector-locked callers do not need this condition.
@@ -68,22 +69,25 @@ export interface ConnectorCredentialReadGroup {
   readonly names: readonly string[];
 }
 
-const credentialAccessConnector = alias(
+const builtinCredentialAccessConnector = alias(
   connectors,
   "credential_access_connector",
 );
 
-export function connectorCredentialStorageIsCompatible(args: {
+export function builtinConnectorCredentialStorageIsCompatible(args: {
   readonly runtimeMethod: ConnectorRuntimeMethod;
+  readonly automaticAuthType?: "none" | "oauth" | null;
   readonly storageVersion: number;
 }): boolean {
   return (
     args.runtimeMethod.method.grant.kind === "none" ||
+    (args.runtimeMethod.method.grant.kind === "automatic" &&
+      args.automaticAuthType === "none") ||
     args.storageVersion === args.runtimeMethod.method.storage.version
   );
 }
 
-export function resolveStoredConnectorRuntimeMethod(args: {
+export function resolveStoredBuiltinConnectorRuntimeMethod(args: {
   readonly snapshot: ConnectorRuntimeSelection;
   readonly stored: {
     readonly authMethodId: string;
@@ -121,11 +125,11 @@ export function resolveStoredConnectorRuntimeMethod(args: {
   return runtimeMethod;
 }
 
-export function resolveConnectorCredentialAccess(args: {
+export function resolveBuiltinConnectorCredentialAccess(args: {
   readonly snapshot: ConnectorRuntimeSelection;
-  readonly stored: ConnectorCredentialStoredIdentity;
-}): ConnectorCredentialAccessResult {
-  const runtimeMethod = resolveStoredConnectorRuntimeMethod({
+  readonly stored: BuiltinConnectorCredentialStoredIdentity;
+}): BuiltinConnectorCredentialAccessResult {
+  const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
     snapshot: args.snapshot,
     stored: args.stored,
   });
@@ -133,9 +137,10 @@ export function resolveConnectorCredentialAccess(args: {
     return { kind: "unavailable" };
   }
   if (
-    !connectorCredentialStorageIsCompatible({
+    !builtinConnectorCredentialStorageIsCompatible({
       runtimeMethod,
       storageVersion: args.stored.storageVersion,
+      automaticAuthType: args.stored.automaticAuthType,
     })
   ) {
     return { kind: "incompatible" };
@@ -155,7 +160,7 @@ export function resolveConnectorCredentialAccess(args: {
 }
 
 function assertDeclaredNames(args: {
-  readonly access: ConnectorCredentialAccess;
+  readonly access: BuiltinConnectorCredentialAccess;
   readonly kind: "secret" | "variable";
   readonly names: readonly string[];
 }): void {
@@ -175,26 +180,32 @@ function assertDeclaredNames(args: {
 
 function connectorIdentityExists(
   db: ReadonlyDb,
-  access: ConnectorCredentialAccess,
+  access: BuiltinConnectorCredentialAccess,
   connectorStateRevision: bigint | undefined,
 ): SQL {
   return exists(
     db
-      .select({ connectorId: credentialAccessConnector.id })
-      .from(credentialAccessConnector)
+      .select({ connectorId: builtinCredentialAccessConnector.id })
+      .from(builtinCredentialAccessConnector)
       .where(
         and(
-          eq(credentialAccessConnector.id, access.connectorId),
-          eq(credentialAccessConnector.orgId, access.orgId),
-          eq(credentialAccessConnector.userId, access.userId),
-          eq(credentialAccessConnector.connectorSlug, access.connectorSlug),
-          eq(credentialAccessConnector.authMethod, access.authMethodId),
-          eq(credentialAccessConnector.storageVersion, access.storageVersion),
+          eq(builtinCredentialAccessConnector.id, access.connectorId),
+          eq(builtinCredentialAccessConnector.orgId, access.orgId),
+          eq(builtinCredentialAccessConnector.userId, access.userId),
+          eq(
+            builtinCredentialAccessConnector.connectorSlug,
+            access.connectorSlug,
+          ),
+          eq(builtinCredentialAccessConnector.authMethod, access.authMethodId),
+          eq(
+            builtinCredentialAccessConnector.storageVersion,
+            access.storageVersion,
+          ),
           connectorStateRevision === undefined
             ? undefined
             : eq(
                 sql`(
-                  EXTRACT(EPOCH FROM ${credentialAccessConnector.updatedAt})
+                  EXTRACT(EPOCH FROM ${builtinCredentialAccessConnector.updatedAt})
                   * 1000000
                 )::bigint`,
                 connectorStateRevision,
@@ -204,9 +215,9 @@ function connectorIdentityExists(
   );
 }
 
-export function connectorCredentialSecretReadCondition(args: {
+export function builtinConnectorCredentialSecretReadCondition(args: {
   readonly db: ReadonlyDb;
-  readonly groups: readonly ConnectorCredentialReadGroup[];
+  readonly groups: readonly BuiltinConnectorCredentialReadGroup[];
 }): SQL | undefined {
   const conditions = args.groups.flatMap((group) => {
     const names = [...new Set(group.names)];
@@ -236,9 +247,9 @@ export function connectorCredentialSecretReadCondition(args: {
   return conditions.length === 0 ? isNull(secrets.id) : or(...conditions);
 }
 
-export function connectorCredentialVariableReadCondition(args: {
+export function builtinConnectorCredentialVariableReadCondition(args: {
   readonly db: ReadonlyDb;
-  readonly groups: readonly ConnectorCredentialReadGroup[];
+  readonly groups: readonly BuiltinConnectorCredentialReadGroup[];
 }): SQL | undefined {
   const conditions = args.groups.flatMap((group) => {
     const names = [...new Set(group.names)];

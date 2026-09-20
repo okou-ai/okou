@@ -14,7 +14,7 @@ import {
   officialWorkflowDefinitionRevisions,
 } from "@okouai/db/schema/official-workflow-catalog";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 
@@ -124,12 +124,32 @@ export async function readAcceptedOfficialWorkflowDefinition(
   );
 }
 
-export async function readAcceptedOfficialWorkflowRevision(
+interface OfficialWorkflowRevisionIdentity {
+  readonly name: string;
+  readonly revision: string;
+}
+
+function officialWorkflowRevisionIdentityKey(
+  identity: OfficialWorkflowRevisionIdentity,
+): string {
+  return JSON.stringify([identity.name, identity.revision]);
+}
+
+/**
+ * Read exact immutable revisions in one statement. The returned array preserves
+ * the caller's order, duplicates and missing entries so callers retain their
+ * existing fail-closed semantics.
+ */
+export async function readAcceptedOfficialWorkflowRevisions(
   db: ReadonlyDb,
-  args: { readonly name: string; readonly revision: string },
+  identities: readonly OfficialWorkflowRevisionIdentity[],
   signal?: AbortSignal,
-): Promise<OfficialWorkflowAcceptedRevision | null> {
-  const [row] = await db
+): Promise<readonly (OfficialWorkflowAcceptedRevision | null)[]> {
+  if (identities.length === 0) {
+    signal?.throwIfAborted();
+    return [];
+  }
+  const rows = await db
     .select({
       definitionName: officialWorkflowDefinitionRevisions.definitionName,
       revision: officialWorkflowDefinitionRevisions.revision,
@@ -162,17 +182,54 @@ export async function readAcceptedOfficialWorkflowRevision(
       ),
     )
     .where(
-      and(
-        eq(officialWorkflowDefinitionRevisions.definitionName, args.name),
-        eq(officialWorkflowDefinitionRevisions.revision, args.revision),
+      or(
+        ...identities.map((identity) => {
+          return and(
+            eq(
+              officialWorkflowDefinitionRevisions.definitionName,
+              identity.name,
+            ),
+            eq(officialWorkflowDefinitionRevisions.revision, identity.revision),
+          );
+        }),
       ),
     )
-    .limit(1);
+    .orderBy(
+      asc(officialWorkflowDefinitionRevisions.definitionName),
+      asc(officialWorkflowDefinitionRevisions.revision),
+    );
   signal?.throwIfAborted();
-  if (!row) {
-    return null;
-  }
-  return acceptedRevisionFromRow(row);
+  const revisionByIdentity = new Map(
+    rows.map((row) => {
+      const revision = acceptedRevisionFromRow(row);
+      return [
+        officialWorkflowRevisionIdentityKey({
+          name: row.definitionName,
+          revision: row.revision,
+        }),
+        revision,
+      ] as const;
+    }),
+  );
+  return identities.map((identity) => {
+    return (
+      revisionByIdentity.get(officialWorkflowRevisionIdentityKey(identity)) ??
+      null
+    );
+  });
+}
+
+export async function readAcceptedOfficialWorkflowRevision(
+  db: ReadonlyDb,
+  args: OfficialWorkflowRevisionIdentity,
+  signal?: AbortSignal,
+): Promise<OfficialWorkflowAcceptedRevision | null> {
+  const [revision] = await readAcceptedOfficialWorkflowRevisions(
+    db,
+    [args],
+    signal,
+  );
+  return revision ?? null;
 }
 
 export async function readAllCurrentSchemaOfficialWorkflowRevisions(

@@ -1,5 +1,49 @@
 # Changelog
 
+## [8.684.1](https://github.com/vm0-ai/okou/compare/core-v8.684.0...core-v8.684.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.1
+
+## [8.684.0](https://github.com/vm0-ai/okou/compare/core-v8.683.0...core-v8.684.0) (2026-09-19)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-sol run model ([#35391](https://github.com/vm0-ai/okou/issues/35391)) ([a1f2db4](https://github.com/vm0-ai/okou/commit/a1f2db4d50af3a79a6212f478c447b3d8ac6c6f9))
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+
+
+### Refactoring
+
+* remove x-resource-deduplication feature switch ([#35417](https://github.com/vm0-ai/okou/issues/35417)) ([1540115](https://github.com/vm0-ai/okou/commit/1540115106d6dca6031dbdc83fdcf7a7189f50d4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.0
+
+## [8.683.0](https://github.com/vm0-ai/okou/compare/core-v8.682.0...core-v8.683.0) (2026-09-19)
+
+
+### Features
+
+* **platform:** explain a get started quest before handing it off ([#35259](https://github.com/vm0-ai/okou/issues/35259)) ([0fe450b](https://github.com/vm0-ai/okou/commit/0fe450b6a61c244996b23573209f43c119bda89b))
+* **platform:** spin beside user messages the server has not confirmed ([#35367](https://github.com/vm0-ai/okou/issues/35367)) ([0bb026f](https://github.com/vm0-ai/okou/commit/0bb026f1dbbb2cf76c39b4db38e2b2e750525826))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.475.0
+
 ## [8.682.0](https://github.com/vm0-ai/okou/compare/core-v8.681.4...core-v8.682.0) (2026-09-18)
 
 

@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import {
-  connectorsSlugCallbackContract,
+  builtinConnectorsSlugCallbackContract,
   type ConnectorOauthCallbackResult,
 } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import {
@@ -44,7 +44,7 @@ import {
 } from "../services/connector-catalog-runtime.service";
 import {
   connectorConnectionWriteFailureMessage,
-  upsertConnectorTokenConnection$,
+  upsertBuiltinConnectorTokenConnection$,
 } from "../services/connector-data.service";
 import { resolveOAuthRequestedScopeSnapshot } from "../services/connector-oauth-scope-snapshot.service";
 import {
@@ -55,8 +55,8 @@ import { safeJsonParse, tapError } from "../utils";
 import { SLACK_CONNECTOR_OAUTH_STATE_PREFIX } from "../services/slack-connector-oauth-state";
 import type { RouteEntry } from "../route-entry";
 import {
-  getConnectorOAuthCanonicalRedirectUrlForMethods,
-  getConnectorOAuthOrigin,
+  getBuiltinConnectorOAuthCanonicalRedirectUrlForMethods,
+  getBuiltinConnectorOAuthOrigin,
 } from "./connector-oauth-origin";
 import {
   clearConnectorOAuthCookies,
@@ -576,7 +576,7 @@ const completeOAuthCallback$ = command(
     signal.throwIfAborted();
 
     const result = await set(
-      upsertConnectorTokenConnection$,
+      upsertBuiltinConnectorTokenConnection$,
       {
         orgId: args.identity.orgId,
         userId: args.identity.userId,
@@ -682,7 +682,7 @@ const completeOpenIdCallback$ = command(
     signal.throwIfAborted();
 
     const result = await set(
-      upsertConnectorTokenConnection$,
+      upsertBuiltinConnectorTokenConnection$,
       {
         orgId: args.identity.orgId,
         userId: args.identity.userId,
@@ -1003,16 +1003,17 @@ async function authCodeCallbackPreflight(
   if (args.query.responseMode === "json") {
     return null;
   }
-  const canonicalRedirectUrl = getConnectorOAuthCanonicalRedirectUrlForMethods(
-    args.request,
-    [...connectorResult.connector.methods.values()]
-      .filter((runtimeMethod) => {
-        return runtimeMethod.executable;
-      })
-      .map((runtimeMethod) => {
-        return runtimeMethod.method;
-      }),
-  );
+  const canonicalRedirectUrl =
+    getBuiltinConnectorOAuthCanonicalRedirectUrlForMethods(
+      args.request,
+      [...connectorResult.connector.methods.values()]
+        .filter((runtimeMethod) => {
+          return runtimeMethod.executable;
+        })
+        .map((runtimeMethod) => {
+          return runtimeMethod.method;
+        }),
+    );
   if (!canonicalRedirectUrl) {
     return null;
   }
@@ -1224,14 +1225,14 @@ const handleAuthCodeConnectorCallback$ = command(
   },
 );
 
-const callbackConnectorInner$ = command(
+const callbackBuiltinConnectorInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const { connectorSlug } = get(
-      pathParamsOf(connectorsSlugCallbackContract.callback),
+      pathParamsOf(builtinConnectorsSlugCallbackContract.callback),
     );
-    const query = get(queryOf(connectorsSlugCallbackContract.callback));
+    const query = get(queryOf(builtinConnectorsSlugCallbackContract.callback));
     const request = get(request$).raw;
-    const origin = getConnectorOAuthOrigin(request);
+    const origin = getBuiltinConnectorOAuthOrigin(request);
     const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
     signal.throwIfAborted();
 
@@ -1271,9 +1272,9 @@ const callbackConnectorInner$ = command(
   },
 );
 
-export const connectorsSlugCallbackRoutes: readonly RouteEntry[] = [
+export const builtinConnectorsSlugCallbackRoutes: readonly RouteEntry[] = [
   {
-    route: connectorsSlugCallbackContract.callback,
-    handler: callbackConnectorInner$,
+    route: builtinConnectorsSlugCallbackContract.callback,
+    handler: callbackBuiltinConnectorInner$,
   },
 ];
