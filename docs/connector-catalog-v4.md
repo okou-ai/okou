@@ -154,13 +154,15 @@ Automatic MCP connectors do not inherit this switch.
 ## Rollback and remaining integration
 
 Terminal builtin absence has an explicit reader-first deployment boundary. First
-deploy the Runner consumer from [#35542](https://github.com/vm0-ai/okou/pull/35542)
+deploy the Runner consumer from [#35542](https://github.com/okou-ai/okou/pull/35542)
 to every serving Runner group. The API producer in
-[#35598](https://github.com/vm0-ai/okou/pull/35598) must remain undeployed until
-incompatible Runner processes and their active sandboxes have drained and the
-supported Runner rollback floor excludes artifacts without that reader. This
-ordering replaces capability headers, Runner version checks and response
-downgrades; a merged Runner PR or elapsed time alone is not deployment evidence.
+[#35598](https://github.com/okou-ai/okou/pull/35598) must remain undeployed until
+incompatible Runner processes and their active sandboxes have drained. Per the
+maintainer decision on 2026-09-20, rollback to Runner artifacts without that
+reader is outside this rollout's supported compatibility boundary; recovery
+after activation must use a reader-capable Runner. This ordering replaces
+capability headers, Runner version checks and response downgrades; a merged
+Runner PR or elapsed time alone is not deployment evidence.
 
 Live Plaud acceptance and same-service replacement remain work under
 [#34157](https://github.com/vm0-ai/okou/issues/34157).
