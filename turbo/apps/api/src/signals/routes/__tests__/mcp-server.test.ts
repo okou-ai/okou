@@ -101,6 +101,7 @@ const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
   "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
+// Full-scope tools/list before this optimization on main at 67a701ca94c6.
 const fullCatalogBaselineBytes = 43_997;
 const fullCatalogMaximumBytes = Math.floor(fullCatalogBaselineBytes * 0.8);
 
@@ -5619,20 +5620,23 @@ describe("external MCP entry", () => {
         const safetyTerms = {
           get_chat_messages: [
             /nextContentCursor/iu,
+            /UTF-16/iu,
             /does not mark read/iu,
             /8 MiB/iu,
           ],
           search_chat_messages: [
             /scanLimited/iu,
+            /do not prove absence/iu,
             /does not mark read/iu,
             /32 MiB/iu,
           ],
           get_chat_status: [
             /retryAfterMs/iu,
+            /ready means current materialized output/iu,
             /neither marks read nor changes or cancels/iu,
           ],
           list_agents: [/24 hours/iu, /visibility/iu],
-          list_models: [/admission/iu, /does not repair/iu],
+          list_models: [/admission/iu, /does not repair/iu, /model settings/iu],
           list_chat_threads: [/does not mark read/iu, /not run completion/iu],
           get_chat_thread: [
             /neither reads messages nor marks read/iu,

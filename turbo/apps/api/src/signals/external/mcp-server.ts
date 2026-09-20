@@ -497,7 +497,7 @@ function registerMessageTool(
     "get_chat_messages",
     {
       description:
-        "Read visible conversation messages (latest 20 by default) in run-turn order. Filter by runId or center the first page on a real eventId/seqId with around. Continue page cursors with the same filters and no around; use nextContentCursor to finish truncated text/files. History changes invalidate page cursors. Reading does not mark read or bypass artifact authorization. Histories over 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, or 15 seconds fail explicitly.",
+        "Read visible conversation messages (latest 20 by default) in run-turn order. Filter by runId or center the first page on a real eventId/seqId with around. Continue page cursors with the same filters and no around; use nextContentCursor to finish truncated text/files. Offsets count UTF-16 text units and file entries. History changes invalidate page cursors. Reading does not mark read or bypass artifact authorization. Histories over 8 MiB gzip, 32 MiB decoded plus tail, 50,000 events, or 15 seconds fail explicitly.",
       inputSchema: mcpGetChatMessagesInputSchema,
       outputSchema: mcpGetChatMessagesOutputSchema,
       annotations: readAnnotations,
@@ -782,7 +782,7 @@ function registerDiscoveryTools(
     "list_models",
     {
       description:
-        "List the current model catalog and member/workspace default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration. Use a selectable model id with create_chat_thread.",
+        "List the current model catalog and member/workspace default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with create_chat_thread.",
       inputSchema: mcpListModelsInputSchema,
       outputSchema: mcpListModelsOutputSchema,
       annotations: readAnnotations,
@@ -817,7 +817,7 @@ function registerSearchAndStatusTools(
     "search_chat_messages",
     {
       description:
-        "Search visible message text using whole words or CJK phrases of 2+ characters; every query group must match. Filter by thread, Agent, role, and source time. Results are newest first with bounded excerpts and real refs; use around with get_chat_messages for full context. Continue nextCursor with identical inputs (default 20, max 50). Empty pages may continue; scanLimited marks the 100-candidate budget. Indexing is asynchronous, search does not mark read, and 32 MiB/50,000-event/15-second history limits fail explicitly.",
+        "Search visible message text using whole words or CJK phrases of 2+ characters; every query group must match. Filter by thread, Agent, role, and source time. Results are newest first with bounded excerpts and real refs; use around with get_chat_messages for full context. Continue nextCursor with identical inputs (default 20, max 50). Empty pages may continue; scanLimited marks the 100-candidate budget. Indexing is asynchronous; empty results do not prove absence. Search does not mark read, and 32 MiB/50,000-event/15-second history limits fail explicitly.",
       inputSchema: mcpSearchChatMessagesInputSchema,
       outputSchema: mcpSearchChatMessagesOutputSchema,
       annotations: readAnnotations,
