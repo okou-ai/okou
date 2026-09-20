@@ -47,10 +47,6 @@ export const IMAGE_MODEL_CONFIGS = {
     alias: "flux-2-pro",
     label: "FLUX.2 Pro",
   },
-  "fal-ai/qwen-image": {
-    alias: "qwen-image",
-    label: "Qwen Image",
-  },
   "alibaba/qwen-image-3/text-to-image": {
     alias: "qwen-image-3",
     label: "Qwen Image 3",
@@ -92,9 +88,9 @@ export const IMAGE_MODELS: readonly ImageModel[] = IMAGE_MODEL_IDS;
 /**
  * Catalog models offered by the user-facing picker, in display order. The
  * picker presents the current entry for each family rather than every catalog
- * entry: Seedream 4, both Flux 1.1 variants, Seedream 5 Lite, and the
- * superseded Qwen Image are all deliberately absent. Every one of them stays
- * generatable through its alias and through defaults that already point at it.
+ * entry: Seedream 4, both Flux 1.1 variants, and Seedream 5 Lite are all
+ * deliberately absent. Every one of them stays generatable through its alias
+ * and through defaults that already point at it.
  * Nano Banana 2 Lite is the exception: it is offered beside Nano Banana 2
  * because it is the cheaper way to reach the same family.
  */
@@ -119,7 +115,6 @@ export const IMAGE_MODEL_ALIASES = {
   "flux-pro-1.1": "fal-ai/flux-pro/v1.1",
   "flux-pro-1.1-ultra": "fal-ai/flux-pro/v1.1-ultra",
   "flux-2-pro": "fal-ai/flux-2-pro",
-  "qwen-image": "fal-ai/qwen-image",
   "qwen-image-3": "alibaba/qwen-image-3/text-to-image",
   "ideogram-4": "ideogram/v4",
   seedream4: "fal-ai/bytedance/seedream/v4/text-to-image",

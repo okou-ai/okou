@@ -287,6 +287,7 @@ const cleanupExportJobs$ = command(
         and(
           inArray(exportJobs.status, ["pending", "running"]),
           lt(exportJobs.createdAt, stuckCutoffTime),
+          isNull(exportJobs.executionMode),
           exportJobIds === null
             ? undefined
             : inArray(exportJobs.id, exportJobIds),

@@ -183,12 +183,12 @@ function imageEndpoint(): GenerationModelEndpoint {
     barrierStop: "image-model-update",
     pinKey: "selectedImageModel",
     baselineModel: "gpt-image-2",
-    nextModel: "fal-ai/qwen-image",
+    nextModel: "fal-ai/flux-pro/v1.1",
     async pinNext(actor, threadId, options) {
       await chat.updateThreadImageModel(
         actor,
         threadId,
-        "fal-ai/qwen-image",
+        "fal-ai/flux-pro/v1.1",
         options,
       );
     },
@@ -196,7 +196,7 @@ function imageEndpoint(): GenerationModelEndpoint {
       return await chat.requestUpdateThreadImageModel(
         actor,
         threadId,
-        "fal-ai/qwen-image",
+        "fal-ai/flux-pro/v1.1",
         statuses,
         options,
       );
@@ -207,7 +207,7 @@ function imageEndpoint(): GenerationModelEndpoint {
     async pinNextWithOperationSignal(signal, actor, threadId) {
       return await chat
         .generationModelWritesWithOperationSignal(signal)
-        .updateImageModel(actor, threadId, "fal-ai/qwen-image");
+        .updateImageModel(actor, threadId, "fal-ai/flux-pro/v1.1");
     },
     pinOf(pins) {
       return pins.selectedImageModel;

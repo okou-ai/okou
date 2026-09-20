@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
-import { gunzipSync, gzipSync } from "node:zlib";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
-import AdmZip from "adm-zip";
+import { gunzipSync } from "node:zlib";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import { beforeEach, describe, expect, it } from "vitest";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
@@ -30,6 +32,12 @@ import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import {
+  installUserExportStorage,
+  readExportChatRows,
+  readUserExportZip,
+} from "./helpers/user-export-storage";
 import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -42,67 +50,28 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const routeMocks = createRouteMocks(context);
 
-function exportedZip(): AdmZip {
-  for (const [command] of context.mocks.s3.send.mock.calls) {
-    if (
-      typeof command !== "object" ||
-      command === null ||
-      !("input" in command)
-    ) {
-      continue;
-    }
-    const input = command.input;
-    if (
-      typeof input !== "object" ||
-      input === null ||
-      !("Key" in input) ||
-      !("Body" in input)
-    ) {
-      continue;
-    }
-    if (
-      typeof input.Key === "string" &&
-      input.Key.endsWith(".zip") &&
-      Buffer.isBuffer(input.Body)
-    ) {
-      return new AdmZip(input.Body);
-    }
-  }
-  throw new Error("Expected user export ZIP");
-}
-
 describe("retired Goal logical history", () => {
   const puts: RecordedChatEventPut[] = [];
   beforeEach(() => {
     puts.length = 0;
     mockEnv("GIT_COMMIT_SHA", "b".repeat(40));
     installFakeChatEventR2(context, puts);
-    const handleSnapshot = context.mocks.s3.send.getMockImplementation();
-    if (handleSnapshot === undefined) {
-      throw new Error("Expected fake snapshot store");
+    const snapshots = context.mocks.s3.send.getMockImplementation();
+    createMiscRoutesApi(context);
+    const objects = context.mocks.s3.send.getMockImplementation();
+    if (!snapshots || !objects) {
+      throw new Error("Expected snapshot and instruction storage mocks");
     }
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (
-        command instanceof GetObjectCommand &&
+        (command instanceof GetObjectCommand ||
+          command instanceof HeadObjectCommand ||
+          command instanceof PutObjectCommand) &&
         !command.input.Key?.startsWith("chat-events/")
       ) {
-        const bytes = command.input.Key?.endsWith("/manifest.json")
-          ? Buffer.from(
-              JSON.stringify({
-                version: "fixture",
-                createdAt: new Date(0).toISOString(),
-                files: [],
-                totalSize: 0,
-                fileCount: 0,
-              }),
-            )
-          : gzipSync(Buffer.alloc(1024));
-        return Promise.resolve({
-          Body: Readable.from([bytes]),
-          ContentLength: bytes.length,
-        });
+        return objects(command);
       }
-      return handleSnapshot(command);
+      return snapshots(command);
     });
   });
 
@@ -323,7 +292,13 @@ describe("retired Goal logical history", () => {
         }),
       ).toBeTruthy();
 
+      const continuedRows = await chat.listThreadEventRows(
+        actor,
+        thread.id,
+        cursor,
+      );
       const exports = createOpsLogsApi(context);
+      installUserExportStorage(context);
       const started = await exports.requestPostUserExport(actor, [202]);
       await flushWaitUntilForTest();
       const exportStatus = await exports.requestGetUserExport(actor, [200]);
@@ -331,24 +306,22 @@ describe("retired Goal logical history", () => {
         id: started.body.jobId,
         status: "completed",
       });
-      const entry = exportedZip().getEntry(
-        `conversations/chat-thread-${thread.id}.json`,
+      const zip = readUserExportZip(
+        context,
+        `exports/${actor.userId}/${started.body.jobId}.zip`,
       );
-      expect(entry).not.toBeNull();
-      const messages = JSON.parse(entry!.getData().toString("utf8")) as {
-        role: string;
-        content: string;
-      }[];
+      const rows = readExportChatRows(zip, thread.id);
+      expect(rows).toStrictEqual([...snapshotRows, ...continuedRows]);
       expect(
-        messages.filter((message) => {
-          return message.content === archives[0]?.content;
+        rows.filter((row) => {
+          return row.id === archive.id;
         }),
       ).toHaveLength(1);
       expect(
-        messages.some((message) => {
-          return message.content === "Continue with a regular message";
-        }),
-      ).toBeTruthy();
+        rows.find((row) => {
+          return row.id === archive.id;
+        })?.payload?.content,
+      ).toBe(archive.content);
     },
     60_000,
   );

@@ -434,8 +434,8 @@ export function StartCards({
   const setTemplateSearch = useSet(
     composerSignals.template.setTemplatePickerSearch$,
   );
-  const setTemplatePreviewSlug = useSet(
-    composerSignals.template.setTemplatePickerPreviewSlug$,
+  const clearPresentationPreviews = useSet(
+    composerSignals.template.clearPresentationTemplatePreviews$,
   );
   const setTemplateReferenceValue = useSet(
     composerSignals.template.setTemplatePickerReferenceValue$,
@@ -452,7 +452,7 @@ export function StartCards({
 
   const openTemplates = (kind: StartCardKind) => {
     setTemplateSearch("");
-    setTemplatePreviewSlug(null);
+    clearPresentationPreviews();
     setTemplateReferenceValue(null);
     setTemplateCategory(kind);
     setTemplateOpen(true);

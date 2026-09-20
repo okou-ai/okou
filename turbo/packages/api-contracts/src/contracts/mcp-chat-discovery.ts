@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const mcpChatModelIdSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/\S/u, "Provide a nonblank model id");
+
 export const mcpListAgentsInputSchema = z.strictObject({
   limit: z.number().int().min(1).max(50).default(20),
   cursor: z.string().min(1).max(4096).optional(),
@@ -25,7 +31,7 @@ export const mcpListModelsInputSchema = z.strictObject({});
 export const mcpListModelsOutputSchema = z.strictObject({
   models: z.array(
     z.strictObject({
-      id: z.string().max(255),
+      id: mcpChatModelIdSchema,
       name: z.string().max(512),
       selectable: z.boolean(),
       availability: z.enum([
@@ -39,7 +45,7 @@ export const mcpListModelsOutputSchema = z.strictObject({
     }),
   ),
   defaultModel: z.strictObject({
-    model: z.string().max(255).nullable(),
+    model: mcpChatModelIdSchema.nullable(),
     source: z.enum(["member_default", "org_default"]).nullable(),
   }),
   admission: z.literal("checked_on_send"),

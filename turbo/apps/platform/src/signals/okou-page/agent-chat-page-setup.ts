@@ -94,7 +94,7 @@ export const setupAgentChatPage$ = command(
     if (templatePicker) {
       const composerSignals = get(agentChatComposerSignals$);
       set(composerSignals.template.setTemplatePickerSearch$, "");
-      set(composerSignals.template.setTemplatePickerPreviewSlug$, null);
+      set(composerSignals.template.clearPresentationTemplatePreviews$);
       set(composerSignals.template.setTemplatePickerReferenceValue$, null);
       set(composerSignals.template.setTemplatePickerCategory$, templatePicker);
       set(composerSignals.template.setTemplatePickerOpen$, true);

@@ -22,7 +22,6 @@ import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type {
-  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
@@ -184,10 +183,8 @@ import {
 } from "../../lib/composer-voice-input-shortcut.ts";
 import {
   contrastRatio,
-  previewPresentationHtml,
   previewTextColorOn,
   safePreviewGround,
-  type PresentationPreviewDraft,
 } from "./presentation-html-preview.ts";
 import {
   type IllustrationTemplateItem,
@@ -328,7 +325,6 @@ import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission
 import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
 import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import type { TemplateCardHtmlPreviewState } from "../../signals/okou-page/chat-composer.ts";
 import type {
   ComposerPendingEvent,
   ComposerPrimaryAction,
@@ -2200,359 +2196,6 @@ function presentationTemplateThemeCss(
   `;
 }
 
-function themedPreviewPresentationHtml(params: {
-  readonly activeSlideId: string;
-  readonly draft: PresentationPreviewDraft;
-  readonly theme: PresentationTemplateThemeOption;
-}): string {
-  return previewPresentationHtml({
-    activeSlideId: params.activeSlideId,
-    additionalHeadStyle: presentationTemplateThemeCss(params.theme),
-    html: params.draft.html,
-  });
-}
-
-function schedulePresentationTemplateCardSlideIndex(params: {
-  readonly apply: (index: number) => void;
-  readonly embedUrl: string;
-  readonly index: number;
-  readonly runtime: TemplatePreviewRuntime;
-}): void {
-  const cache = params.runtime.presentation;
-  cache.pendingSlideIndexes.set(params.embedUrl, params.index);
-  if (cache.pendingSlideAnimationFrames.has(params.embedUrl)) {
-    return;
-  }
-
-  const frameId = window.requestAnimationFrame(() => {
-    const nextIndex = cache.pendingSlideIndexes.get(params.embedUrl);
-    cache.pendingSlideAnimationFrames.delete(params.embedUrl);
-    cache.pendingSlideIndexes.delete(params.embedUrl);
-    if (nextIndex === undefined) {
-      return;
-    }
-    cache.activeIndexes.set(params.embedUrl, nextIndex);
-    params.apply(nextIndex);
-  });
-  cache.pendingSlideAnimationFrames.set(params.embedUrl, frameId);
-}
-
-function cancelPresentationTemplateCardSlideIndex(
-  runtime: TemplatePreviewRuntime,
-  embedUrl: string,
-): void {
-  const cache = runtime.presentation;
-  const frameId = cache.pendingSlideAnimationFrames.get(embedUrl);
-  if (frameId !== undefined) {
-    window.cancelAnimationFrame(frameId);
-  }
-  cache.pendingSlideAnimationFrames.delete(embedUrl);
-  cache.pendingSlideIndexes.delete(embedUrl);
-}
-
-function revokePresentationTemplateHtmlPreviewUrl(url: string | null): void {
-  if (url !== null) {
-    URL.revokeObjectURL(url);
-  }
-}
-
-type PresentationTemplateThemeVariables = CSSProperties &
-  Record<`--${string}`, string>;
-
-function presentationTemplateThemeVariables(
-  theme: PresentationTemplateThemeOption,
-): PresentationTemplateThemeVariables {
-  const [bg, surface, ink, soft, accent, s1, s2, s3, ph] = theme.colors;
-  const [g0, t0] = safePreviewGround(accent);
-  const [g1, t1] = safePreviewGround(s1);
-  const [g2, t2] = safePreviewGround(s2);
-  const [g3, t3] = safePreviewGround(s3);
-  return {
-    "--bg": bg,
-    "--surface": surface,
-    "--ink": ink,
-    "--soft": soft,
-    "--ph": ph,
-    "--accent": accent,
-    "--s1": s1,
-    "--s2": s2,
-    "--s3": s3,
-    "--oa": previewTextColorOn(accent),
-    "--o1": previewTextColorOn(s1),
-    "--o2": previewTextColorOn(s2),
-    "--o3": previewTextColorOn(s3),
-    "--ka": contrastRatio(accent, bg) >= 4.5 ? accent : ink,
-    "--kad": contrastRatio(accent, ink) >= 4.5 ? accent : bg,
-    "--k1": contrastRatio(s1, bg) >= 4.5 ? s1 : ink,
-    "--k2": contrastRatio(s2, bg) >= 4.5 ? s2 : ink,
-    "--k3": contrastRatio(s3, bg) >= 4.5 ? s3 : ink,
-    "--g0": g0,
-    "--t0": t0,
-    "--g1": g1,
-    "--t1": t1,
-    "--g2": g2,
-    "--t2": t2,
-    "--g3": g3,
-    "--t3": t3,
-  };
-}
-
-function applyPresentationTemplateThumbnailTheme(
-  host: HTMLDivElement,
-  themeVariables: PresentationTemplateThemeVariables,
-): void {
-  const root = host.shadowRoot?.querySelector<HTMLElement>(
-    ".presentation-template-shadow-preview-root",
-  );
-  if (root === undefined || root === null) {
-    return;
-  }
-
-  for (const [name, value] of Object.entries(themeVariables)) {
-    if (name.startsWith("--")) {
-      root.style.setProperty(name, value);
-    }
-  }
-}
-
-function renderPresentationTemplateShadowThumbnail(
-  runtime: TemplatePreviewRuntime,
-  host: HTMLDivElement,
-  html: string,
-  themeVariables: PresentationTemplateThemeVariables,
-): void {
-  const htmlByHost = runtime.presentation.thumbnailHtmlByHost;
-  if (htmlByHost.get(host) === html) {
-    applyPresentationTemplateThumbnailTheme(host, themeVariables);
-    return;
-  }
-  htmlByHost.set(host, html);
-
-  const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  shadow.replaceChildren();
-
-  const resetStyle = document.createElement("style");
-  resetStyle.textContent = `
-    :host {
-      all: initial;
-      contain: strict;
-      display: block;
-      height: 100%;
-      overflow: hidden;
-      position: relative;
-      width: 100%;
-    }
-    .presentation-template-shadow-preview-root {
-      background: #fff;
-      height: 100%;
-      inset: 0;
-      overflow: hidden;
-      pointer-events: none;
-      position: absolute;
-      user-select: none;
-      width: 100%;
-    }
-    .presentation-template-shadow-preview-root *,
-    .presentation-template-shadow-preview-root *:hover,
-    .presentation-template-shadow-preview-root *:focus,
-    .presentation-template-shadow-preview-root *:focus-visible {
-      caret-color: transparent !important;
-      outline: 0 !important;
-      pointer-events: none !important;
-      user-select: none !important;
-    }
-  `;
-  shadow.append(resetStyle);
-  for (const node of Array.from(doc.head.childNodes)) {
-    const clone = node.cloneNode(true);
-    if (clone instanceof HTMLStyleElement && clone.textContent !== null) {
-      clone.textContent = clone.textContent.replaceAll(
-        ":root",
-        ":host, .presentation-template-shadow-preview-root",
-      );
-    }
-    shadow.append(clone);
-  }
-  const root = document.createElement("div");
-  root.className = "presentation-template-shadow-preview-root";
-  root.append(
-    ...Array.from(doc.body.childNodes).map((node) => {
-      return node.cloneNode(true);
-    }),
-  );
-  for (const element of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
-    element.removeAttribute("contenteditable");
-    element.removeAttribute("tabindex");
-  }
-  shadow.append(root);
-  applyPresentationTemplateThumbnailTheme(host, themeVariables);
-}
-
-function PresentationTemplateShadowThumbnail({
-  draft,
-  imageUrl,
-  runtime,
-  slideId,
-  themeVariables,
-  title,
-}: {
-  readonly draft: PresentationPreviewDraft | undefined;
-  readonly imageUrl: string;
-  readonly runtime: TemplatePreviewRuntime;
-  readonly slideId: string | null;
-  readonly themeVariables: PresentationTemplateThemeVariables;
-  readonly title: string;
-}) {
-  const hasHtmlThumbnail = draft !== undefined && slideId !== null;
-  return (
-    <>
-      <img
-        src={imageUrl}
-        alt=""
-        loading="lazy"
-        className="absolute inset-0 h-full w-full object-cover"
-      />
-      {hasHtmlThumbnail ? (
-        <div
-          ref={(node) => {
-            if (node !== null) {
-              renderPresentationTemplateShadowThumbnail(
-                runtime,
-                node,
-                previewPresentationHtml({
-                  activeSlideId: slideId,
-                  html: draft.html,
-                }),
-                themeVariables,
-              );
-            }
-          }}
-          aria-label={title}
-          className="pointer-events-none absolute inset-0"
-          style={themeVariables}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function createPresentationTemplateHtmlPreviewState(params: {
-  readonly draft: PresentationPreviewDraft;
-  readonly index: number;
-  readonly item: PresentationTemplateItem;
-  readonly previousFrameUrl: string | null;
-  readonly theme: PresentationTemplateThemeOption;
-}): TemplateCardHtmlPreviewState | null {
-  const slide =
-    params.draft.slides[Math.min(params.index, params.draft.slides.length - 1)];
-  if (slide === undefined) {
-    return null;
-  }
-
-  revokePresentationTemplateHtmlPreviewUrl(params.previousFrameUrl);
-  const frameUrl = URL.createObjectURL(
-    new Blob(
-      [
-        themedPreviewPresentationHtml({
-          activeSlideId: slide.id,
-          draft: params.draft,
-          theme: params.theme,
-        }),
-      ],
-      { type: "text/html;charset=utf-8" },
-    ),
-  );
-
-  return {
-    slug: params.item.slug,
-    embedUrl: params.item.embedUrl,
-    themeId: params.theme.id,
-    loading: false,
-    frameUrl,
-    slideCount: params.draft.slides.length,
-  };
-}
-
-function createPresentationTemplateCardHtmlPreviewState(params: {
-  readonly draft: PresentationPreviewDraft;
-  readonly index: number;
-  readonly item: PresentationTemplateItem;
-  readonly previousFrameUrl: string | null;
-  readonly theme: PresentationTemplateThemeOption;
-}): TemplateCardHtmlPreviewState | null {
-  if (params.index === 0) {
-    revokePresentationTemplateHtmlPreviewUrl(params.previousFrameUrl);
-    return null;
-  }
-  return createPresentationTemplateHtmlPreviewState(params);
-}
-
-function presentationTemplateCardFrameUrls(params: {
-  readonly currentFrameUrl: string | null;
-  readonly loadedFrameUrl: string | null;
-}): {
-  readonly overlayFrameUrl: string | null;
-  readonly primaryFrameUrl: string | null;
-} {
-  if (
-    params.currentFrameUrl === null ||
-    params.loadedFrameUrl === null ||
-    params.loadedFrameUrl === params.currentFrameUrl
-  ) {
-    return {
-      overlayFrameUrl: null,
-      primaryFrameUrl: params.currentFrameUrl,
-    };
-  }
-
-  return {
-    overlayFrameUrl: params.currentFrameUrl,
-    primaryFrameUrl: params.loadedFrameUrl,
-  };
-}
-
-function revokeLoadedTemplateCardFrameAfterReplacement(params: {
-  readonly frameUrl: string;
-  readonly previousLoadedFrameUrl: string | null;
-}): void {
-  if (
-    params.previousLoadedFrameUrl === null ||
-    params.previousLoadedFrameUrl === params.frameUrl
-  ) {
-    return;
-  }
-  revokePresentationTemplateHtmlPreviewUrl(params.previousLoadedFrameUrl);
-}
-
-function presentationTemplateCardActiveFrameUrlForImmediateRevocation(params: {
-  readonly activeFrameUrl: string | null;
-  readonly loadedFrameUrl: string | null;
-}): string | null {
-  if (
-    params.activeFrameUrl === null ||
-    params.activeFrameUrl === params.loadedFrameUrl
-  ) {
-    return null;
-  }
-  return params.activeFrameUrl;
-}
-
-function revealTemplatePreviewFrameAfterPaint(params: {
-  readonly frame: HTMLIFrameElement;
-  readonly frameUrl: string;
-  readonly onFrameLoad: (frameUrl: string) => void;
-}): void {
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-      if (!params.frame.isConnected) {
-        return;
-      }
-      params.onFrameLoad(params.frameUrl);
-    });
-  });
-}
-
 function startProgressiveTemplatePreviewImageLoad(
   lowResolutionImage: HTMLImageElement,
 ): void {
@@ -2641,292 +2284,83 @@ function ProgressiveTemplatePreviewImage({
   );
 }
 
-function TemplatePreviewFrames({
-  highResolutionImageUrl,
-  loadedFrameUrl,
-  loading,
-  lowResolutionImageUrl,
-  onFrameLoad,
-  overlayFrameUrl,
-  primaryFrameUrl,
+function PresentationTemplateHtmlFrame({
+  html,
   title,
+  dataTestId,
+  className,
+  loading,
 }: {
-  readonly highResolutionImageUrl: string;
-  readonly loadedFrameUrl: string | null;
-  readonly loading: boolean;
-  readonly lowResolutionImageUrl: string;
-  readonly onFrameLoad: (frameUrl: string) => void;
-  readonly overlayFrameUrl: string | null;
-  readonly primaryFrameUrl: string | null;
+  readonly html: string | null;
   readonly title: string;
+  readonly dataTestId?: string;
+  readonly className?: string;
+  readonly loading?: "eager" | "lazy";
 }) {
-  const { t } = useTranslation();
-  const frameUrls: readonly string[] =
-    primaryFrameUrl === null
-      ? []
-      : [
-          primaryFrameUrl,
-          ...(overlayFrameUrl === null ? [] : [overlayFrameUrl]),
-        ];
-
+  if (html === null) {
+    return null;
+  }
   return (
-    <>
-      <ProgressiveTemplatePreviewImage
-        alt=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-        dataTestId={`${title} card image preview`}
-        fetchPriority="high"
-        highResolutionUrl={highResolutionImageUrl}
-        loading="eager"
-        lowResolutionUrl={lowResolutionImageUrl}
-      />
-      {frameUrls.map((frameUrl) => {
-        return (
-          <iframe
-            key={frameUrl}
-            title={
-              frameUrl === overlayFrameUrl
-                ? t(
-                    ($) => {
-                      return $.artifacts.templates.activeHtmlPreview;
-                    },
-                    { title },
-                  )
-                : t(
-                    ($) => {
-                      return $.artifacts.templates.htmlPreview;
-                    },
-                    { title },
-                  )
-            }
-            data-testid={
-              frameUrl === overlayFrameUrl || overlayFrameUrl === null
-                ? `${title} card HTML preview`
-                : undefined
-            }
-            data-loaded={frameUrl === loadedFrameUrl ? "true" : undefined}
-            src={frameUrl}
-            sandbox="allow-same-origin"
-            tabIndex={-1}
-            className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-background opacity-0 data-[loaded=true]:opacity-100"
-            onLoad={(event) => {
-              revealTemplatePreviewFrameAfterPaint({
-                frame: event.currentTarget,
-                frameUrl,
-                onFrameLoad,
-              });
-            }}
-          />
-        );
-      })}
-      {loading ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-0.5 overflow-hidden bg-muted">
-          <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
-        </div>
-      ) : null}
-    </>
+    <iframe
+      key={html}
+      title={title}
+      data-testid={dataTestId}
+      srcDoc={html}
+      sandbox="allow-same-origin"
+      tabIndex={-1}
+      loading={loading}
+      className={cn(
+        "pointer-events-none absolute inset-0 h-full w-full border-0 bg-background opacity-0 data-[loaded=true]:opacity-100",
+        className,
+      )}
+      onLoad={(event) => {
+        event.currentTarget.dataset.loaded = "true";
+      }}
+    />
   );
 }
 
 function TemplatePreview({
   item,
   onPreview,
-  runtime,
   signals,
   theme,
 }: {
   item: PresentationTemplateItem;
   onPreview: (item: PresentationTemplateItem, slideIndex?: number) => void;
-  runtime: TemplatePreviewRuntime;
   signals: ComposerSignals;
   theme?: PresentationTemplateThemeOption;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const hover = useGet(signals.template.templateCardHover$);
-  const setHover = useSet(signals.template.setTemplateCardHover$);
-  const htmlPreview = useGet(signals.template.templateCardHtmlPreview$);
-  const setHtmlPreview = useSet(signals.template.setTemplateCardHtmlPreview$);
-  const loadedHtmlFrameUrls = useGet(
-    signals.template.templateCardLoadedHtmlFrameUrls$,
-  );
-  const setLoadedHtmlFrameUrl = useSet(
-    signals.template.setTemplateCardLoadedHtmlFrameUrl$,
-  );
-  const slideCount = presentationTemplateSlideCount(item);
-  const hoverSlideIndex = Math.max(
-    0,
-    Math.min(hover?.slug === item.slug ? hover.index : 0, slideCount - 1),
-  );
+  const previewId = useGet(signals.template.previewTemplateId$);
+  const selection = useGet(signals.template.previewTemplateSelection$);
+  const template = useLoadable(signals.template.previewTemplate$);
+  const html = useLoadable(signals.template.previewTemplateHtml$);
+  const selectPreview = useSet(signals.template.selectPreviewTemplate$);
+  const clearPreview = useSet(signals.template.clearPreviewTemplate$);
+  const active = previewId === item.slug;
+  const loadedTemplate =
+    template.state === "hasData" && template.data?.item.slug === item.slug
+      ? template.data
+      : null;
+  const slideCount =
+    loadedTemplate?.draft.slides.length ?? presentationTemplateSlideCount(item);
+  const slideIndex = active
+    ? Math.min(selection?.index ?? 0, slideCount - 1)
+    : 0;
   const previewTheme =
     theme ??
     findPresentationTemplateTheme(defaultPresentationTemplateThemeId(item));
-  const lowResolutionImageUrl = presentationTemplateCardSlideImage(
-    item,
-    hoverSlideIndex,
-    previewTheme,
-  );
-  const highResolutionImageUrl = presentationTemplateHighResolutionSlideImage(
-    item,
-    hoverSlideIndex,
-    previewTheme,
-    TEMPLATE_HIGH_RESOLUTION_PREVIEW_SIZE,
-  );
-  const activeHtmlPreview =
-    htmlPreview?.slug === item.slug &&
-    htmlPreview.embedUrl === item.embedUrl &&
-    htmlPreview.themeId === previewTheme.id
-      ? htmlPreview
-      : null;
-  const loadedHtmlFrameKey = `card:${item.embedUrl}:${previewTheme.id}:loaded`;
-  const loadedFrameUrl = loadedHtmlFrameUrls[loadedHtmlFrameKey] ?? null;
-  const previousActiveFrameUrlForImmediateRevocation =
-    presentationTemplateCardActiveFrameUrlForImmediateRevocation({
-      activeFrameUrl: activeHtmlPreview?.frameUrl ?? null,
-      loadedFrameUrl,
-    });
-  const scrubSlideCount = activeHtmlPreview?.slideCount ?? slideCount;
-  const currentPreviewSlideIndex = () => {
-    const cache = runtime.presentation;
-    const index =
-      cache.pendingSlideIndexes.get(item.embedUrl) ??
-      cache.activeIndexes.get(item.embedUrl) ??
-      hoverSlideIndex;
-    return Math.max(0, Math.min(index, scrubSlideCount - 1));
-  };
-  const currentFrameUrl =
-    currentPreviewSlideIndex() === 0
-      ? null
-      : (activeHtmlPreview?.frameUrl ?? null);
-  const { overlayFrameUrl, primaryFrameUrl } =
-    presentationTemplateCardFrameUrls({
-      currentFrameUrl,
-      loadedFrameUrl,
-    });
-  const openPreview = () => {
-    onPreview(item, currentPreviewSlideIndex());
-  };
-  const handleFrameLoad = (frameUrl: string) => {
-    revokeLoadedTemplateCardFrameAfterReplacement({
-      frameUrl,
-      previousLoadedFrameUrl: loadedFrameUrl,
-    });
-    setLoadedHtmlFrameUrl(loadedHtmlFrameKey, frameUrl);
-  };
-
-  const startHtmlPreviewLoad = () => {
-    const cache = runtime.presentation;
-    const activeIndex = cache.activeIndexes.get(item.embedUrl) ?? 0;
-    const cachedDraft = cache.drafts.get(item.embedUrl);
-    if (cachedDraft !== undefined) {
-      const previewState = createPresentationTemplateCardHtmlPreviewState({
-        draft: cachedDraft,
-        index: activeIndex,
-        item,
-        previousFrameUrl: previousActiveFrameUrlForImmediateRevocation,
-        theme: previewTheme,
-      });
-      setHtmlPreview(previewState);
-      return;
-    }
-
-    if (cache.failed.has(item.embedUrl)) {
-      setHtmlPreview({
-        slug: item.slug,
-        embedUrl: item.embedUrl,
-        themeId: previewTheme.id,
-        loading: false,
-        frameUrl: null,
-        slideCount,
-      });
-      return;
-    }
-
-    let pendingLoad = cache.pendingLoads.get(item.embedUrl);
-    if (pendingLoad === undefined) {
-      pendingLoad = signals.template.loadPresentationTemplateHtmlPreview(
-        {
-          item,
-        },
-        pageSignal,
-      );
-      cache.pendingLoads.set(item.embedUrl, pendingLoad);
-    }
-
-    const activeToken = Symbol(item.embedUrl);
-    cache.activeTokens.set(item.embedUrl, activeToken);
-    setHtmlPreview({
-      slug: item.slug,
-      embedUrl: item.embedUrl,
+  const selectSlide = (index: number) => {
+    selectPreview({
+      item,
+      index,
       themeId: previewTheme.id,
-      loading: true,
-      frameUrl: null,
-      slideCount,
+      themeCss: presentationTemplateThemeCss(previewTheme),
     });
-    detach(
-      (async () => {
-        const result = await tapError(
-          pendingLoad.finally(() => {
-            if (cache.pendingLoads.get(item.embedUrl) === pendingLoad) {
-              cache.pendingLoads.delete(item.embedUrl);
-            }
-          }),
-        );
-
-        if (result === undefined || result === null) {
-          cache.failed.add(item.embedUrl);
-          if (cache.activeTokens.get(item.embedUrl) === activeToken) {
-            setHtmlPreview({
-              slug: item.slug,
-              embedUrl: item.embedUrl,
-              themeId: previewTheme.id,
-              loading: false,
-              frameUrl: null,
-              slideCount,
-            });
-          }
-          return;
-        }
-
-        cache.drafts.set(item.embedUrl, result);
-        if (cache.activeTokens.get(item.embedUrl) === activeToken) {
-          setHtmlPreview(
-            createPresentationTemplateCardHtmlPreviewState({
-              draft: result,
-              index: cache.activeIndexes.get(item.embedUrl) ?? 0,
-              item,
-              previousFrameUrl: previousActiveFrameUrlForImmediateRevocation,
-              theme: previewTheme,
-            }),
-          );
-        }
-      })(),
-      Reason.DomCallback,
-    );
   };
-
-  const applySlideIndex = (index: number) => {
-    const cachedDraft = runtime.presentation.drafts.get(item.embedUrl);
-    setHover({ slug: item.slug, index });
-    if (cachedDraft !== undefined) {
-      setHtmlPreview(
-        createPresentationTemplateCardHtmlPreviewState({
-          draft: cachedDraft,
-          index,
-          item,
-          previousFrameUrl: previousActiveFrameUrlForImmediateRevocation,
-          theme: previewTheme,
-        }),
-      );
-    }
-  };
-
   const handleMouseMove = (event: ReactMouseEvent<HTMLDivElement>) => {
-    const cache = runtime.presentation;
-    if (!cache.drafts.has(item.embedUrl)) {
-      return;
-    }
-    if (scrubSlideCount < 2) {
+    if (!active || loadedTemplate === null || slideCount < 2) {
       return;
     }
     const rect = event.currentTarget.getBoundingClientRect();
@@ -2937,58 +2371,61 @@ function TemplatePreview({
       rect.width - 1,
       Math.max(0, event.clientX - rect.left),
     );
-    const nextIndex = Math.min(
-      scrubSlideCount - 1,
-      Math.round((offsetX / rect.width) * (scrubSlideCount - 1)),
+    const index = Math.min(
+      slideCount - 1,
+      Math.round((offsetX / rect.width) * (slideCount - 1)),
     );
-    const currentIndex =
-      cache.pendingSlideIndexes.get(item.embedUrl) ??
-      currentPreviewSlideIndex();
-    if (nextIndex === currentIndex) {
-      return;
+    if (index !== slideIndex) {
+      selectSlide(index);
     }
-    schedulePresentationTemplateCardSlideIndex({
-      apply: applySlideIndex,
-      embedUrl: item.embedUrl,
-      index: nextIndex,
-      runtime,
-    });
-    event.currentTarget.dataset.targetSlideIndex = String(nextIndex);
   };
-
   return (
     <div
+      aria-busy={active && template.state === "loading"}
       className="relative aspect-[16/9] shrink-0 overflow-hidden bg-muted"
       onMouseEnter={() => {
-        cancelPresentationTemplateCardSlideIndex(runtime, item.embedUrl);
-        runtime.presentation.activeIndexes.set(item.embedUrl, 0);
-        setHover({ slug: item.slug, index: 0 });
-        startHtmlPreviewLoad();
+        selectSlide(0);
       }}
       onMouseMove={handleMouseMove}
-      onMouseLeave={(event) => {
-        delete event.currentTarget.dataset.targetSlideIndex;
-        const cache = runtime.presentation;
-        cancelPresentationTemplateCardSlideIndex(runtime, item.embedUrl);
-        cache.activeIndexes.delete(item.embedUrl);
-        cache.activeTokens.delete(item.embedUrl);
-        setHover(null);
-        revokePresentationTemplateHtmlPreviewUrl(
-          previousActiveFrameUrlForImmediateRevocation,
-        );
-        setHtmlPreview(null);
-      }}
+      onMouseLeave={clearPreview}
     >
-      <TemplatePreviewFrames
-        highResolutionImageUrl={highResolutionImageUrl}
-        loadedFrameUrl={loadedFrameUrl}
-        loading={activeHtmlPreview?.loading === true}
-        lowResolutionImageUrl={lowResolutionImageUrl}
-        onFrameLoad={handleFrameLoad}
-        overlayFrameUrl={overlayFrameUrl}
-        primaryFrameUrl={primaryFrameUrl}
-        title={item.title}
+      <ProgressiveTemplatePreviewImage
+        alt=""
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        fetchPriority="high"
+        highResolutionUrl={presentationTemplateHighResolutionSlideImage(
+          item,
+          slideIndex,
+          previewTheme,
+          TEMPLATE_HIGH_RESOLUTION_PREVIEW_SIZE,
+        )}
+        lowResolutionUrl={presentationTemplateCardSlideImage(
+          item,
+          slideIndex,
+          previewTheme,
+        )}
       />
+      <PresentationTemplateHtmlFrame
+        html={
+          active && slideIndex > 0 && html.state === "hasData"
+            ? html.data
+            : null
+        }
+        title={t(
+          ($) => {
+            return $.artifacts.templates.activeHtmlPreview;
+          },
+          {
+            title: item.title,
+          },
+        )}
+        dataTestId={`${item.title} card HTML preview`}
+      />
+      {active && template.state === "loading" ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-0.5 overflow-hidden bg-muted">
+          <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
+        </div>
+      ) : null}
       <button
         type="button"
         aria-label={t(
@@ -3000,7 +2437,9 @@ function TemplatePreview({
           },
         )}
         className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        onClick={openPreview}
+        onClick={() => {
+          onPreview(item, slideIndex);
+        }}
       />
     </div>
   );
@@ -3056,95 +2495,6 @@ function handleTemplateDetailTabKeyDown(
   candidates[nextIndex]?.focus();
 }
 
-function TemplateDetailPreviewFrame({
-  frameLoaded,
-  frameUrl,
-  onFrameLoad,
-  previousFrameSlideIndex,
-  previousFrameUrl,
-  slideIndex,
-  title,
-}: {
-  readonly frameLoaded: boolean;
-  readonly frameUrl: string | null;
-  readonly onFrameLoad: (frameUrl: string) => void;
-  readonly previousFrameSlideIndex: number | null;
-  readonly previousFrameUrl: string | null;
-  readonly slideIndex: number;
-  readonly title: string;
-}) {
-  const { t } = useTranslation();
-  const frames: readonly {
-    readonly active: boolean;
-    readonly slideIndex: number;
-    readonly url: string;
-  }[] = [
-    ...(previousFrameUrl === null || previousFrameUrl === frameUrl
-      ? []
-      : [
-          {
-            active: false,
-            slideIndex: previousFrameSlideIndex ?? slideIndex,
-            url: previousFrameUrl,
-          },
-        ]),
-    ...(frameUrl === null ? [] : [{ active: true, slideIndex, url: frameUrl }]),
-  ];
-
-  return frames.map((candidateFrame) => {
-    const previousFrameShowsActiveSlide =
-      !candidateFrame.active && candidateFrame.slideIndex === slideIndex;
-    return (
-      <iframe
-        key={candidateFrame.url}
-        title={
-          candidateFrame.active
-            ? t(
-                ($) => {
-                  return $.artifacts.templates.htmlPreview;
-                },
-                { title },
-              )
-            : t(
-                ($) => {
-                  return $.artifacts.templates.previousHtmlPreview;
-                },
-                { title },
-              )
-        }
-        data-template-detail-frame={
-          candidateFrame.active ? "active" : "previous"
-        }
-        data-loaded={!candidateFrame.active || frameLoaded ? "true" : undefined}
-        data-testid={
-          candidateFrame.active ? `${title} detail HTML preview` : undefined
-        }
-        src={candidateFrame.url}
-        sandbox="allow-same-origin"
-        tabIndex={-1}
-        className={cn(
-          "pointer-events-none absolute inset-0 h-full w-full border-0 bg-background opacity-0 data-[loaded=true]:opacity-100",
-          candidateFrame.active
-            ? "z-40"
-            : previousFrameShowsActiveSlide
-              ? "z-30"
-              : "z-10",
-        )}
-        onLoad={(event) => {
-          if (!candidateFrame.active) {
-            return;
-          }
-          revealTemplatePreviewFrameAfterPaint({
-            frame: event.currentTarget,
-            frameUrl: candidateFrame.url,
-            onFrameLoad,
-          });
-        }}
-      />
-    );
-  });
-}
-
 function templateDetailPreviewMatchesItem(
   preview: {
     readonly embedUrl: string;
@@ -3159,24 +2509,20 @@ function TemplatePreviewPage({
   item,
   onBack,
   onSelect,
-  runtime,
   signals,
 }: {
   item: PresentationTemplateItem;
   onBack: () => void;
   onSelect: (item: PresentationTemplateItem, colorSystemId?: string) => void;
-  runtime: TemplatePreviewRuntime;
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const detailPreview = useGet(signals.template.templateDetailHtmlPreview$);
+  const detailPreview = useGet(signals.template.openedTemplateSelection$);
+  const template = useLoadable(signals.template.openedTemplate$);
+  const html = useLoadable(signals.template.openedTemplateHtml$);
+  const thumbnails = useLoadable(signals.template.openedTemplateThumbnails$);
   const setCardThemeId = useSet(signals.template.setTemplateCardThemeId$);
-  const selectDetailPreview = useSet(
-    signals.template.selectPresentationTemplateDetailPreview$,
-  );
-  const settleDetailPreviewFrame = useSet(
-    signals.template.settlePresentationTemplateDetailPreviewFrame$,
-  );
+  const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
   const visibleDetailPreview = templateDetailPreviewMatchesItem(
     detailPreview,
     item,
@@ -3186,14 +2532,18 @@ function TemplatePreviewPage({
   const selectedThemeId =
     visibleDetailPreview?.themeId ?? defaultPresentationTemplateThemeId(item);
   const selectedTheme = findPresentationTemplateTheme(selectedThemeId);
-  const activeSlideIndex = visibleDetailPreview?.index ?? 0;
-  const defaultSlideCount = presentationTemplateSlideCount(item);
+  const loadedTemplate =
+    template.state === "hasData" && template.data?.item.slug === item.slug
+      ? template.data
+      : null;
   const detailSlideCount =
-    visibleDetailPreview?.slideCount ?? defaultSlideCount;
-  const cachedDetailDraft = runtime.presentation.drafts.get(item.embedUrl);
-  const htmlPreviewFailed = runtime.presentation.failed.has(item.embedUrl);
-  const thumbnailThemeVariables =
-    presentationTemplateThemeVariables(selectedTheme);
+    loadedTemplate?.draft.slides.length ?? presentationTemplateSlideCount(item);
+  const activeSlideIndex = Math.min(
+    visibleDetailPreview?.index ?? 0,
+    detailSlideCount - 1,
+  );
+  const htmlPreviewFailed =
+    template.state === "hasError" || html.state === "hasError";
   const detailImageSource = presentationTemplateDetailSlideImageSource(
     item,
     activeSlideIndex,
@@ -3208,7 +2558,6 @@ function TemplatePreviewPage({
   const selectDetailSlide = (index: number) => {
     selectDetailPreview({
       item,
-      runtime,
       index: Math.max(0, Math.min(detailSlideCount - 1, index)),
       themeCss: presentationTemplateThemeCss(selectedTheme),
       themeId: selectedTheme.id,
@@ -3218,7 +2567,6 @@ function TemplatePreviewPage({
   const selectDetailTheme = (theme: PresentationTemplateThemeOption) => {
     selectDetailPreview({
       item,
-      runtime,
       index: activeSlideIndex,
       themeCss: presentationTemplateThemeCss(theme),
       themeId: theme.id,
@@ -3295,18 +2643,18 @@ function TemplatePreviewPage({
               loading="eager"
               lowResolutionUrl={detailLowResolutionImage}
             />
-            <TemplateDetailPreviewFrame
-              frameLoaded={visibleDetailPreview?.frameLoaded ?? false}
-              frameUrl={visibleDetailPreview?.frameUrl ?? null}
-              onFrameLoad={(frameUrl) => {
-                settleDetailPreviewFrame(frameUrl);
-              }}
-              previousFrameSlideIndex={
-                visibleDetailPreview?.previousFrameSlideIndex ?? null
-              }
-              previousFrameUrl={visibleDetailPreview?.previousFrameUrl ?? null}
-              slideIndex={activeSlideIndex}
-              title={item.title}
+            <PresentationTemplateHtmlFrame
+              html={html.state === "hasData" ? html.data : null}
+              title={t(
+                ($) => {
+                  return $.artifacts.templates.htmlPreview;
+                },
+                {
+                  title: item.title,
+                },
+              )}
+              dataTestId={`${item.title} detail HTML preview`}
+              className="z-40"
             />
             <button
               type="button"
@@ -3332,8 +2680,7 @@ function TemplatePreviewPage({
               }}
               className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize bg-transparent focus:outline-none disabled:cursor-default"
             />
-            {visibleDetailPreview?.loading ||
-            !visibleDetailPreview?.frameUrl ? (
+            {template.state === "loading" || html.state === "loading" ? (
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-muted">
                 <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
               </div>
@@ -3360,8 +2707,6 @@ function TemplatePreviewPage({
                 ),
                 TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
               );
-              const thumbnailSlide =
-                cachedDetailDraft?.slides[slideIndex] ?? null;
               return (
                 <button
                   key={slideNumber}
@@ -3385,12 +2730,19 @@ function TemplatePreviewPage({
                       : "border-border hover:border-muted-foreground/50",
                   )}
                 >
-                  <PresentationTemplateShadowThumbnail
-                    draft={cachedDetailDraft}
-                    imageUrl={thumbnailImage}
-                    runtime={runtime}
-                    slideId={thumbnailSlide?.id ?? null}
-                    themeVariables={thumbnailThemeVariables}
+                  <img
+                    src={thumbnailImage}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                  <PresentationTemplateHtmlFrame
+                    html={
+                      thumbnails.state === "hasData"
+                        ? (thumbnails.data[slideIndex] ?? null)
+                        : null
+                    }
+                    loading="lazy"
                     title={t(
                       ($) => {
                         return $.artifacts.templates.slideThumbnail;
@@ -3558,14 +2910,12 @@ function PptCard({
   selected,
   onSelect,
   onPreview,
-  runtime,
   signals,
 }: {
   item: PresentationTemplateItem;
   selected: boolean;
   onSelect: (item: PresentationTemplateItem, colorSystemId?: string) => void;
   onPreview: (item: PresentationTemplateItem, slideIndex?: number) => void;
-  runtime: TemplatePreviewRuntime;
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
@@ -3586,7 +2936,6 @@ function PptCard({
         <TemplatePreview
           item={item}
           onPreview={onPreview}
-          runtime={runtime}
           signals={signals}
           theme={selectedTheme}
         />
@@ -5962,7 +5311,6 @@ export function ComposerPresentationRecommendations({
 function PptTemplateGrid({
   items,
   importedItems,
-  runtime,
   value,
   onSelect,
   onSelectImported,
@@ -5973,7 +5321,6 @@ function PptTemplateGrid({
 }: {
   items: readonly PresentationTemplateItem[];
   importedItems: readonly ImportedPresentationTemplatePickerItem[];
-  runtime: TemplatePreviewRuntime;
   value: GenerationTemplateRequest | undefined;
   onSelect: (item: PresentationTemplateItem, colorSystemId?: string) => void;
   onSelectImported: (template: PresentationTemplateSummary) => void;
@@ -6023,7 +5370,6 @@ function PptTemplateGrid({
             selected={isSelectedPresentationTemplate(item, value)}
             onSelect={onSelect}
             onPreview={onPreview}
-            runtime={runtime}
             signals={signals}
           />
         );
@@ -6062,7 +5408,7 @@ function TemplatePickerDialog({
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
-  const previewSlug = useGet(signals.template.templatePickerPreviewSlug$);
+  const previewSlug = useGet(signals.template.openedTemplateId$);
   const importedPreviewId = useGet(
     signals.template.importedPresentationTemplatePreviewId$,
   );
@@ -6091,22 +5437,14 @@ function TemplatePickerDialog({
   const setPresentationGridScrollTop = useSet(
     signals.template.setTemplatePickerPresentationScrollTop$,
   );
-  const detailPreview = useGet(signals.template.templateDetailHtmlPreview$);
-  const ownPreviewResources = useSet(
-    signals.template.ownTemplatePickerPreviewResources$,
+  const detailPreview = useGet(signals.template.openedTemplateSelection$);
+  const openedTemplate = useLoadable(signals.template.openedTemplate$);
+  const clearPresentationPreviews = useSet(
+    signals.template.clearPresentationTemplatePreviews$,
   );
-  const releasePreviewResources = useSet(
-    signals.template.releaseTemplatePickerPreviewResources$,
-  );
-  const openDetailPreview = useSet(
-    signals.template.openPresentationTemplateDetailPreview$,
-  );
-  const selectDetailPreview = useSet(
-    signals.template.selectPresentationTemplateDetailPreview$,
-  );
-  const closeDetailPreview = useSet(
-    signals.template.closePresentationTemplateDetailPreview$,
-  );
+  const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
+  const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
+  const closeDetailPreview = useSet(signals.template.closeOpenedTemplate$);
   const openWebsiteTemplatePreview = useSet(
     signals.template.openWebsiteTemplatePreview$,
   );
@@ -6199,7 +5537,7 @@ function TemplatePickerDialog({
   };
 
   const completeTemplatePickerClose = () => {
-    releasePreviewResources(runtime);
+    clearPresentationPreviews();
     resetImportedTemplatePicker();
     resetCustomTemplatePicker();
     clearAvatarVoiceSelection();
@@ -6276,19 +5614,12 @@ function TemplatePickerDialog({
       cardThemeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
     );
     const selectedSlideIndex = Math.max(0, Math.floor(slideIndex));
-    detach(
-      openDetailPreview(
-        {
-          index: selectedSlideIndex,
-          item,
-          runtime,
-          themeCss: presentationTemplateThemeCss(selectedTheme),
-          themeId: selectedTheme.id,
-        },
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
+    openDetailPreview({
+      index: selectedSlideIndex,
+      item,
+      themeCss: presentationTemplateThemeCss(selectedTheme),
+      themeId: selectedTheme.id,
+    });
   };
 
   const handlePreviewImported = (templateId: string, slideIndex: number) => {
@@ -6310,8 +5641,10 @@ function TemplatePickerDialog({
       defaultPresentationTemplateThemeId(previewItem);
     const selectedTheme = findPresentationTemplateTheme(selectedThemeId);
     const detailSlideCount =
-      activeDetailPreview?.slideCount ??
-      presentationTemplateSlideCount(previewItem);
+      openedTemplate.state === "hasData" &&
+      openedTemplate.data?.item.slug === previewItem.slug
+        ? openedTemplate.data.draft.slides.length
+        : presentationTemplateSlideCount(previewItem);
     return {
       activeSlideIndex: activeDetailPreview?.index ?? 0,
       detailSlideCount,
@@ -6329,7 +5662,6 @@ function TemplatePickerDialog({
     }
     selectDetailPreview({
       item: previewItem,
-      runtime,
       index: Math.max(0, Math.min(navigationState.detailSlideCount - 1, index)),
       themeCss: presentationTemplateThemeCss(navigationState.selectedTheme),
       themeId: navigationState.selectedTheme.id,
@@ -6414,7 +5746,7 @@ function TemplatePickerDialog({
             return;
           }
           if (previewItem !== null) {
-            closeDetailPreview(runtime);
+            closeDetailPreview();
             return;
           }
           closeTemplatePicker();
@@ -6425,7 +5757,6 @@ function TemplatePickerDialog({
           completeTemplatePickerClose();
           return;
         }
-        ownPreviewResources(runtime, pageSignal);
         if (!isPreviewing) {
           prewarmTemplatePreviewsForCategory(selectedCategory);
         }
@@ -6438,6 +5769,11 @@ function TemplatePickerDialog({
         maxWidth="6xl"
         height={760}
         contentClassName={dialogContentClassName}
+        // Website and Custom open a template in a dialog of their own rather
+        // than in this frame, and it is narrower than the gallery. The gallery
+        // steps back while one is open, so a template is read against the page
+        // like every other preview instead of against the grid it came from.
+        hideWhenNestedOpen
         aria-describedby={undefined}
         onKeyDown={handleDialogKeyDown}
         onKeyDownCapture={
@@ -6522,10 +5858,9 @@ function TemplatePickerDialog({
           <TemplatePreviewPage
             item={previewItem}
             onBack={() => {
-              closeDetailPreview(runtime);
+              closeDetailPreview();
             }}
             onSelect={handleSelectPresentation}
-            runtime={runtime}
             signals={signals}
           />
         ) : importedPreviewItem ? (
@@ -6646,7 +5981,6 @@ function TemplatePickerCategoryContent({
           onPreview={onPreviewPresentation}
           onPreviewImported={onPreviewImportedPresentation}
           onImported={onImported}
-          runtime={runtime}
           signals={signals}
         />
       </div>

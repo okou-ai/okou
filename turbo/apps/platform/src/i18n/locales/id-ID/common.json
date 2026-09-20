@@ -659,7 +659,6 @@
       "previewSlide": "Pratinjau slide {{slideNumber}}",
       "previewVoice": "Dengarkan suara {{title}}",
       "previewWebsite": "Pratinjau template website {{title}}",
-      "previousHtmlPreview": "pratinjau HTML sebelumnya {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
       "recommended": "Direkomendasikan",
       "renameImportedTemplate": "Ganti nama templat",
@@ -3479,21 +3478,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Pengirim yang diizinkan",
+        "codeExpiry": "Kedaluwarsa dalam 10 menit",
         "connectAria": "Hubungkan telepon",
-        "connectDescription": "Kirim pesan ke nomor AgentPhone ini dari telepon yang ingin Anda hubungkan.",
+        "connectDescription": "Pindai kode atau buka Pesan, lalu kirim kode yang sudah terisi.",
         "connectTitle": "Hubungkan telepon",
         "copyAria": "Salin {{phone}}",
+        "copyCodeAria": "Salin kode koneksi {{code}}",
+        "copyCodeError": "Gagal menyalin kode koneksi",
+        "copyCodeSuccess": "Kode koneksi disalin",
         "copyError": "Gagal menyalin nomor telepon",
         "copySuccess": "Nomor telepon disalin",
+        "createCodeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
+        "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
         "destination": "iMessage atau SMS ke",
-        "messageInstruction": "Kirim “hi”",
+        "manualSend": "atau kirim",
+        "manualSendTo": "ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
-        "replyInstruction": "Buka tautan koneksi dalam 10 menit untuk menyelesaikannya.",
-        "replyTitle": "Buka balasan kami",
-        "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim."
+        "qrTitle": "Pindai untuk membuka Pesan dengan kode koneksi yang sudah terisi",
+        "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim.",
+        "tryAgain": "Coba lagi"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -5483,7 +5489,7 @@
         "starting": "Memulai ekspor"
       },
       "backToAssistant": "Kembali ke {{assistantName}}",
-      "description": "Unduh file dan catatan teks yang Anda buat di {{assistantName}}.",
+      "description": "Unduh percakapan, memori, serta instruksi agen dan alur kerja yang dapat Anda akses di {{assistantName}}.",
       "documentTitle": "Ekspor data",
       "duration": {
         "soon": "segera"
@@ -5494,11 +5500,12 @@
         "startFailed": "Gagal memulai ekspor"
       },
       "scope": {
-        "agentInstructions": "Dokumen instruksi agen",
-        "artifactsExcluded": "Artefak tidak disertakan dalam ekspor ini.",
-        "chatMessages": "Pesan chat teks pengguna dan asisten",
-        "memoryFiles": "File memori",
-        "workflowInstructions": "Instruksi dan file SKILL.md alur kerja"
+        "agentInstructions": "Instruksi agen yang dapat Anda akses",
+        "chatMessages": "Pesan chat Anda",
+        "chatThreads": "Percakapan chat Anda",
+        "filesExcluded": "Artefak, lampiran, dan file pendukung alur kerja tidak disertakan.",
+        "memoryFiles": "File memori Anda saat ini",
+        "workflowInstructions": "Instruksi alur kerja yang dapat Anda akses"
       },
       "status": {
         "checkingDescription": "Status ekspor terbaru Anda akan muncul di sini.",
@@ -5955,6 +5962,14 @@
           "stores": "penyimpanan objek",
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
+        },
+        "morningBriefTrigger": {
+          "description": "Jalankan Morning Brief sungguhan sekarang. Ini mengantrekan proses berikutnya milikmu ke penjadwal biasa, yang mengirimkan brief nyata dan email nyata dalam satu menit. Memicunya sebelum waktu harianmu menghasilkan dua brief pagi itu.",
+          "failed": "Tidak dapat mengantrekan Morning Brief. Coba lagi.",
+          "queued": "Masuk antrean. Penjadwal akan mengirimkan brief dalam satu menit.",
+          "title": "Morning Brief",
+          "trigger": "Jalankan Morning Brief sekarang",
+          "triggering": "Mengantrekan…"
         },
         "voiceInput": {
           "default": "Default ({{model}})",

@@ -138,7 +138,7 @@ describe("POST /api/chat-threads/:id/image-model", () => {
       imageModelClient().update({
         headers: { authorization: `Bearer ${token}` },
         params: { id: fixture.threadId },
-        body: { model: "fal-ai/qwen-image" },
+        body: { model: "fal-ai/flux-pro/v1.1" },
       }),
       [204],
     );
@@ -146,7 +146,7 @@ describe("POST /api/chat-threads/:id/image-model", () => {
     await expect(readImageModelEvents(token)).resolves.toMatchObject([
       {
         chatThreadId: fixture.threadId,
-        selectedImageModel: "fal-ai/qwen-image",
+        selectedImageModel: "fal-ai/flux-pro/v1.1",
       },
     ]);
   });

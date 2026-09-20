@@ -12,6 +12,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { retryTransientLoad, waitForOperation } from "../utils.ts";
 
 const catalogVersion$ = state(0);
@@ -45,6 +46,49 @@ export const customTemplateCatalog$ = computed(
 export const reloadCustomTemplates$ = command(({ get, set }) => {
   set(catalogVersion$, get(catalogVersion$) + 1);
 });
+
+/**
+ * Follow the catalog while this tab is not the one changing it.
+ *
+ * A template is published by the run that analysed the file, not by the
+ * composer that sent it there, so the member who imports a file has no
+ * mutation of their own to refresh on: without this, the catalog they open is
+ * the one that was read before their analysis started, and the template they
+ * just made is missing until they close the picker and open it again.
+ *
+ * The topic is the one the user template routes already publish for every
+ * publish, repackage, update and delete — on the organization channel while
+ * the row is visible to the organization and on the user channel otherwise —
+ * so both scopes are subscribed. Its name predates this catalog and says
+ * presentation; what it reports is that a server-owned template catalog
+ * changed, and renaming it is a change of its own.
+ *
+ * `runOnSubscribe` closes the window between the first read of the catalog and
+ * the subscription attaching, which is the window a publish would otherwise
+ * have to land in to be missed until the next mutation.
+ *
+ * The feature switch is deliberately not read here. The catalog above answers
+ * for it, so a notification that reaches a member without the feature resolves
+ * an empty catalog and asks the API for nothing; and switches arrive from the
+ * API after this daemon starts, so a subscription that read one at startup
+ * would be absent for exactly the members who have the feature.
+ */
+export const subscribeCustomTemplatesChanged$ = command(
+  ({ set }, signal: AbortSignal): void => {
+    for (const scope of ["user", "org"] as const) {
+      set(
+        setAblyInvalidationLoop$,
+        {
+          scope,
+          topic: "presentationTemplatesChanged",
+          invalidations: [reloadCustomTemplates$],
+          options: { runOnSubscribe: true },
+        },
+        signal,
+      );
+    }
+  },
+);
 
 const reloadAndAwaitCustomTemplates$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {

@@ -631,9 +631,41 @@ function recoveryForExactAccount(
   };
 }
 
+/**
+ * An unsupported model stays unsupported, so this one kind withholds retry
+ * until the thread points somewhere else. What decides it is the selection the
+ * continue run would actually use — `sendContinueMessage$` reads the same
+ * thread selection the card's picker writes — rather than whether that picker
+ * was the control that changed it: a thread already pointing elsewhere when the
+ * card mounts is just as retryable, and moving the composer back onto the
+ * rejected model has to withdraw the action again.
+ *
+ * A thread with no explicit selection counts as unchanged. The continue run
+ * would re-resolve the same default that just failed, so retrying there only
+ * spends another run on the same rejection.
+ *
+ * An unidentified `failedModel` is the opposite case: there is nothing to
+ * compare, and the picker has no model to exclude either, so withholding retry
+ * would restore the dead end this recovery exists to remove.
+ */
+function tryAgainAction(
+  classified: ClassifiedAssistantError,
+  retryAt: string | null,
+  selectedModel: string | null,
+): AssistantErrorRecovery["actions"]["tryAgain"] {
+  if (classified.kind !== "model-unavailable") {
+    return { notBefore: retryAt };
+  }
+  const replaced =
+    isSupportedRunModel(selectedModel) &&
+    selectedModel !== classified.failedModel;
+  return replaced ? { notBefore: null } : null;
+}
+
 function createAssistantErrorRecoveryComputed(
   visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>,
   runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>,
+  selectedModel$: Computed<string | null>,
 ) {
   const classifiedAssistantError$ = createClassifiedAssistantErrorComputed(
     visibleRenderedChatGroups$,
@@ -673,12 +705,11 @@ function createAssistantErrorRecoveryComputed(
       limitWindow: recovery.limitWindow,
       retryAt: recovery.retryAt,
       actions: {
-        tryAgain:
-          classified.kind === "model-unavailable"
-            ? null
-            : {
-                notBefore: recovery.retryAt,
-              },
+        tryAgain: tryAgainAction(
+          classified,
+          recovery.retryAt,
+          get(selectedModel$),
+        ),
         resetAndTryAgain: recovery.resetAndTryAgain,
       },
     };
@@ -692,9 +723,19 @@ export function createAssistantErrorRecoverySignals(deps: {
   readonly runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>;
 }) {
   const threadMeta$ = threadMeta(deps.threadId);
+  /**
+   * The recovery reads the selection rather than the thread record it sits on.
+   * Every chat-thread event replays that record into a fresh object, so taking
+   * the record itself would re-run this asynchronous classification whenever
+   * any thread in the workspace changes.
+   */
+  const selectedModel$ = computed((get): string | null => {
+    return get(threadMeta$)?.selectedModel ?? null;
+  });
   const assistantErrorRecovery$ = createAssistantErrorRecoveryComputed(
     deps.visibleRenderedChatGroups$,
     deps.runDetails$,
+    selectedModel$,
   );
   /**
    * Which event the recovery will attach to follows from the transcript alone,

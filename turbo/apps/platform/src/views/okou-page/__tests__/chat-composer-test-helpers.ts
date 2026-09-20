@@ -433,59 +433,6 @@ export function trackTemplatePreviewImagePreloads(): {
   return { srcs };
 }
 
-export function mockUrlObjectMethods(
-  createObjectURLImplementation: (blob: Blob) => string,
-) {
-  const createObjectURLDescriptor = Object.getOwnPropertyDescriptor(
-    URL,
-    "createObjectURL",
-  );
-  const revokeObjectURLDescriptor = Object.getOwnPropertyDescriptor(
-    URL,
-    "revokeObjectURL",
-  );
-  const createObjectURL = vi.fn<typeof URL.createObjectURL>(
-    createObjectURLImplementation,
-  );
-  const revokeObjectURL = vi.fn<typeof URL.revokeObjectURL>();
-  Object.defineProperties(URL, {
-    createObjectURL: {
-      configurable: true,
-      value: createObjectURL,
-    },
-    revokeObjectURL: {
-      configurable: true,
-      value: revokeObjectURL,
-    },
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (createObjectURLDescriptor) {
-        Object.defineProperty(
-          URL,
-          "createObjectURL",
-          createObjectURLDescriptor,
-        );
-      } else {
-        Reflect.deleteProperty(URL, "createObjectURL");
-      }
-      if (revokeObjectURLDescriptor) {
-        Object.defineProperty(
-          URL,
-          "revokeObjectURL",
-          revokeObjectURLDescriptor,
-        );
-      } else {
-        Reflect.deleteProperty(URL, "revokeObjectURL");
-      }
-    },
-    { once: true },
-  );
-
-  return { createObjectURL, revokeObjectURL };
-}
-
 /** The composer's model control, named for the model it currently carries. */
 export function queryComposerModelTrigger(label: string): HTMLElement | null {
   return (

@@ -659,7 +659,6 @@
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
       "previewVoice": "音声{{title}}を試聴",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
-      "previousHtmlPreview": "{{title}} 前の HTML プレビュー",
       "previousSlide": "前のスライドをプレビューする",
       "recommended": "おすすめ",
       "renameImportedTemplate": "テンプレート名を変更",
@@ -3479,21 +3478,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "承認された送信者",
+        "codeExpiry": "10分後に期限切れになります",
         "connectAria": "電話を接続する",
-        "connectDescription": "接続したい電話から、この AgentPhone 番号にメッセージを送信してください。",
+        "connectDescription": "コードをスキャンするか「メッセージ」を開き、入力済みのコードを送信してください。",
         "connectTitle": "電話を接続する",
         "copyAria": "{{phone}} をコピーします",
+        "copyCodeAria": "接続コード {{code}} をコピー",
+        "copyCodeError": "接続コードをコピーできませんでした",
+        "copyCodeSuccess": "接続コードをコピーしました",
         "copyError": "電話番号のコピーに失敗しました",
         "copySuccess": "電話番号をコピーしました",
+        "createCodeError": "接続コードを作成できませんでした。もう一度お試しください。",
+        "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "destination": "iMessage または SMS で",
-        "messageInstruction": "「hi」と送信",
+        "manualSend": "または",
+        "manualSendTo": "を次の番号に送信：",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
-        "replyInstruction": "10分以内に接続リンクを開いて完了してください。",
-        "replyTitle": "返信を開く",
-        "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。"
+        "qrTitle": "スキャンして、接続コードが入力された「メッセージ」を開く",
+        "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。",
+        "tryAgain": "もう一度試す"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -5483,7 +5489,7 @@
         "starting": "エクスポートの開始"
       },
       "backToAssistant": "{{assistantName}} に戻る",
-      "description": "{{assistantName}} で作成したファイルとテキスト レコードをダウンロードします。",
+      "description": "{{assistantName}} の自分の会話、メモリ、アクセス可能なエージェントとワークフローの指示をダウンロードします。",
       "documentTitle": "データのエクスポート",
       "duration": {
         "soon": "すぐに"
@@ -5494,11 +5500,12 @@
         "startFailed": "エクスポートの開始に失敗しました"
       },
       "scope": {
-        "agentInstructions": "エージェントの指示文書",
-        "artifactsExcluded": "このエクスポートにはアーティファクトは含まれません。",
-        "chatMessages": "ユーザーとアシスタントのテキスト チャット メッセージ",
-        "memoryFiles": "メモリファイル",
-        "workflowInstructions": "ワークフロー SKILL.md の手順とファイル"
+        "agentInstructions": "アクセス可能なエージェントの指示",
+        "chatMessages": "自分のチャットメッセージ",
+        "chatThreads": "自分のチャットスレッド",
+        "filesExcluded": "アーティファクト、添付ファイル、ワークフローの補助ファイルは含まれません。",
+        "memoryFiles": "現在のメモリファイル",
+        "workflowInstructions": "アクセス可能なワークフローの指示"
       },
       "status": {
         "checkingDescription": "最新のエクスポート状態がここに表示されます。",
@@ -5955,6 +5962,14 @@
           "stores": "オブジェクトストア",
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
+        },
+        "morningBriefTrigger": {
+          "description": "実際の Morning Brief を今すぐ実行します。自分の次回実行を通常のスケジューラのキューに入れ、1 分以内に実際のブリーフと実際のメールが配信されます。毎日の配信時刻より前に実行すると、その朝はブリーフが 2 回届きます。",
+          "failed": "Morning Brief をキューに追加できませんでした。もう一度お試しください。",
+          "queued": "キューに追加しました。1 分以内にスケジューラがブリーフを配信します。",
+          "title": "Morning Brief",
+          "trigger": "Morning Brief を今すぐ実行",
+          "triggering": "キューに追加中…"
         },
         "voiceInput": {
           "default": "デフォルト（{{model}}）",
