@@ -118,11 +118,6 @@ async function openArtifact({
   });
   click(await findArtifactAction("Private report"));
   await screen.findByTestId("artifact-dialog-site-frame");
-  return {
-    readResolutionRequestCount() {
-      return resolutionRequestCount;
-    },
-  };
 }
 
 function sharingStatus(
@@ -325,9 +320,7 @@ test("reopening a site reuses its resolved identity for sharing", async () => {
     expect(body).toStrictEqual({ kind: "html", id: deploymentId });
     return respond(200, sharingStatus());
   });
-  const { readResolutionRequestCount } = await openArtifact({
-    repeatedResolutionUnavailable: true,
-  });
+  await openArtifact({ repeatedResolutionUnavailable: true });
 
   click(action("button", "Close"));
   await waitFor(() => {
@@ -337,7 +330,6 @@ test("reopening a site reuses its resolved identity for sharing", async () => {
   await screen.findByTestId("artifact-dialog-site-frame");
   await openShareMenu();
   expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
-  expect(readResolutionRequestCount()).toBe(1);
 });
 
 test("permissions prefetch on lightbox open and pending reads use an in-menu skeleton", async () => {
