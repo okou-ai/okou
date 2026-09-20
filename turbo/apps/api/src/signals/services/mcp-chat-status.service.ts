@@ -1,5 +1,6 @@
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type {
+  McpChatLifecycle,
   McpChatStatusResult,
   McpGetChatStatusInput,
   McpGetChatStatusOutput,
@@ -49,6 +50,145 @@ interface Principal {
 
 type InputStatus = NonNullable<McpGetChatStatusOutput["input"]>;
 type RunStatus = NonNullable<McpGetChatStatusOutput["run"]>;
+type OutputStatus = McpGetChatStatusOutput["output"];
+
+interface LifecycleEvidence {
+  readonly input: Pick<InputStatus, "state"> | null;
+  readonly run: Pick<RunStatus, "status" | "cancellationRecovery"> | null;
+  readonly output: Pick<OutputStatus, "state" | "reason">;
+}
+
+function activeLifecycleOutput(
+  output: LifecycleEvidence["output"],
+): Extract<McpChatLifecycle["output"], "pending" | "partial"> {
+  if (
+    (output.state === "pending" || output.state === "partial") &&
+    output.reason === null
+  ) {
+    return output.state;
+  }
+  throw new Error("Active chat lifecycle has settled output");
+}
+
+function terminalLifecycleOutcome(
+  status: RunStatus["status"],
+): NonNullable<McpChatLifecycle["outcome"]> {
+  switch (status) {
+    case "completed":
+    case "failed":
+    case "timeout":
+    case "cancelled": {
+      return status;
+    }
+    case "queued":
+    case "pending":
+    case "running": {
+      throw new Error("Active chat run has a terminal lifecycle outcome");
+    }
+  }
+}
+
+function inputLifecycle(evidence: LifecycleEvidence): McpChatLifecycle | null {
+  switch (evidence.input?.state) {
+    case "unavailable": {
+      return { phase: "unavailable", outcome: null, output: "unavailable" };
+    }
+    case "rejected": {
+      return { phase: "settled", outcome: "rejected", output: "none" };
+    }
+    case "revoked": {
+      return { phase: "settled", outcome: "revoked", output: "none" };
+    }
+    case "queued":
+    case "reserved": {
+      return { phase: "queued", outcome: null, output: "pending" };
+    }
+    case "associated":
+    case "delivered": {
+      if (evidence.run === null) {
+        throw new Error("Associated chat input is missing its selected run");
+      }
+      return null;
+    }
+    case undefined: {
+      return null;
+    }
+  }
+}
+
+function terminalLifecycle(
+  run: NonNullable<LifecycleEvidence["run"]>,
+  output: LifecycleEvidence["output"],
+): McpChatLifecycle {
+  const outcome = terminalLifecycleOutcome(run.status);
+  if (output.state === "pending" || output.state === "partial") {
+    if (output.reason !== null) {
+      throw new Error("Finalizing chat lifecycle has an output reason");
+    }
+    return { phase: "finalizing", outcome, output: output.state };
+  }
+  if (run.cancellationRecovery === "pending") {
+    throw new Error("Recovering chat lifecycle has settled output");
+  }
+  if (output.state === "ready") {
+    if (output.reason !== null) {
+      throw new Error("Ready chat lifecycle has an output reason");
+    }
+    return { phase: "settled", outcome, output: "ready" };
+  }
+  if (output.reason !== "no_output") {
+    throw new Error("Settled chat lifecycle has unavailable output");
+  }
+  return { phase: "settled", outcome, output: "none" };
+}
+
+function runLifecycle(evidence: LifecycleEvidence): McpChatLifecycle {
+  const run = evidence.run;
+  if (run === null) {
+    if (
+      evidence.output.state !== "unavailable" ||
+      evidence.output.reason !== "no_associated_run"
+    ) {
+      throw new Error("Idle chat lifecycle has associated output");
+    }
+    return { phase: "idle", outcome: null, output: "none" };
+  }
+  if (
+    run.status !== "cancelled" &&
+    run.cancellationRecovery !== "not_applicable"
+  ) {
+    throw new Error("Non-cancelled chat run has cancellation recovery state");
+  }
+  switch (run.status) {
+    case "queued":
+    case "pending": {
+      return {
+        phase: "queued",
+        outcome: null,
+        output: activeLifecycleOutput(evidence.output),
+      };
+    }
+    case "running": {
+      return {
+        phase: "running",
+        outcome: null,
+        output: activeLifecycleOutput(evidence.output),
+      };
+    }
+    case "completed":
+    case "failed":
+    case "timeout":
+    case "cancelled": {
+      return terminalLifecycle(run, evidence.output);
+    }
+  }
+}
+
+function deriveMcpChatLifecycle(
+  evidence: LifecycleEvidence,
+): McpChatLifecycle {
+  return inputLifecycle(evidence) ?? runLifecycle(evidence);
+}
 
 function reference(row: ChatEventRow) {
   return { threadId: row.chatThreadId, eventId: row.id, seqId: row.seqId };
@@ -422,6 +562,11 @@ async function projectMcpChatStatus(
   return {
     threadId: args.threadId,
     observedAt: nowDate().toISOString(),
+    lifecycle: deriveMcpChatLifecycle({
+      input: selection.input,
+      run: selection.run,
+      output,
+    }),
     input: selection.input,
     runSelection: args.inputRef ? "input" : "latest",
     run: selection.run,

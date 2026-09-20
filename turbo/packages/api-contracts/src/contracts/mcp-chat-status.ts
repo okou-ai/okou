@@ -12,6 +12,28 @@ const inputReferenceSchema = z.strictObject({
   seqId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 });
 
+export const mcpChatLifecycleSchema = z.strictObject({
+  phase: z.enum([
+    "idle",
+    "queued",
+    "running",
+    "finalizing",
+    "settled",
+    "unavailable",
+  ]),
+  outcome: z
+    .enum([
+      "completed",
+      "failed",
+      "timeout",
+      "cancelled",
+      "rejected",
+      "revoked",
+    ])
+    .nullable(),
+  output: z.enum(["pending", "partial", "ready", "none", "unavailable"]),
+});
+
 export const mcpGetChatStatusInputSchema = z
   .strictObject({
     threadId: z.uuid().toLowerCase(),
@@ -38,6 +60,7 @@ export const mcpGetChatStatusInputSchema = z
 export const mcpGetChatStatusOutputSchema = z.strictObject({
   threadId: z.uuid(),
   observedAt: z.iso.datetime(),
+  lifecycle: mcpChatLifecycleSchema,
   input: z
     .strictObject({
       ref: inputReferenceSchema,
@@ -105,6 +128,7 @@ export const mcpGetChatStatusOutputSchema = z.strictObject({
 });
 
 export type McpGetChatStatusInput = z.infer<typeof mcpGetChatStatusInputSchema>;
+export type McpChatLifecycle = z.infer<typeof mcpChatLifecycleSchema>;
 export type McpGetChatStatusOutput = z.infer<
   typeof mcpGetChatStatusOutputSchema
 >;

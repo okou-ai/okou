@@ -482,10 +482,12 @@ With an input reference, `runSelection: "input"` observes only its associated
 or reserved run. A queued, revoked, missing or inaccessible association never
 falls back to another run in the conversation.
 
-The result separates three observations:
+The result includes a compact lifecycle projection and preserves the three
+authoritative observations from which it is derived:
 
 | Field                | Meaning                                                                                                                                                    |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle`          | Evidence-derived `{phase, outcome, output}` summary for ordinary polling; the detailed input, run and output fields remain authoritative.                  |
 | `input.state`        | `queued`, `reserved`, `associated`, `delivered`, `rejected`, `revoked`, or `unavailable`; null input means no reference was requested.                     |
 | `input.deliveryMode` | `launch` only when the exact initial callback input proves launch admission; `steer` only with a delivered active-input receipt; otherwise `unknown`.      |
 | `run`                | Authorized run ID, actual status, timestamps and cancellation recovery; null means no accessible selected run.                                             |
@@ -504,6 +506,25 @@ compliance. Several inputs may share one run and its conversation output.
 `visibleMessageRef` can differ from the immutable original `ref` and may be
 null after revocation. Reads never submit, revoke, cancel, change recency or
 mark a conversation read.
+
+`lifecycle.phase` is `idle`, `queued`, `running`, `finalizing`, `settled`, or
+`unavailable`. Its independent `outcome` is `completed`, `failed`, `timeout`,
+`cancelled`, `rejected`, `revoked`, or null; `output` is `pending`, `partial`,
+`ready`, `none`, or `unavailable`. Exact-input evidence takes precedence:
+missing or inaccessible input evidence is unavailable, rejected and revoked
+inputs are settled with no output, and queued or reserved inputs remain queued
+without inheriting output from a shared run. With no selected run, the phase is
+idle and output is none; this means no work was selected by that observation,
+not that the conversation has no queued input when `inputRef` was omitted.
+
+For a selected run, queued and pending run states map to the queued phase, and
+running maps to the running phase. A terminal run with pending or partial output
+is finalizing while preserving its completed, failed, timeout, or cancelled
+outcome. It becomes settled only when output is ready or confirmed absent
+(`none`). Failure, timeout and cancellation remain visible even if output is
+ready. Pending cancellation recovery also remains finalizing. This summary is a
+current evidence projection, not proof of delivery mode, model compliance, or a
+single immutable final answer.
 
 Run status preserves `queued`, `pending`, `running`, `completed`, `failed`,
 `timeout` and `cancelled`. A terminal run is not enough for output readiness.
