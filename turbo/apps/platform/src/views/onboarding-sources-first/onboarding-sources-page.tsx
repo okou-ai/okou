@@ -53,16 +53,41 @@ function featuredSlugsFor(
  */
 const SEARCH_RESULT_LIMIT = 40;
 
+/**
+ * A name match beats a mention in a description, so "calendar" leads with
+ * Google Calendar rather than with everything whose blurb says "calendars".
+ */
+function searchRank(label: string, query: string): number {
+  if (label.startsWith(query)) {
+    return 0;
+  }
+  return label.includes(query) ? 1 : 2;
+}
+
 function matchingConnectors(
   connectors: readonly PlatformConnectorCatalogStatusItem[],
   query: string,
 ): readonly PlatformConnectorCatalogStatusItem[] {
-  const matches = connectors.filter((connector) => {
-    return `${connector.label} ${connector.description}`
-      .toLowerCase()
-      .includes(query);
+  const matches = connectors
+    .map((connector) => {
+      return {
+        connector,
+        rank: searchRank(connector.label.toLowerCase(), query),
+      };
+    })
+    .filter((match) => {
+      return (
+        match.rank < 2 ||
+        match.connector.description.toLowerCase().includes(query)
+      );
+    });
+  // A stable sort, so sources of the same rank keep the catalog's own order.
+  matches.sort((left, right) => {
+    return left.rank - right.rank;
   });
-  return matches.slice(0, SEARCH_RESULT_LIMIT);
+  return matches.slice(0, SEARCH_RESULT_LIMIT).map((match) => {
+    return match.connector;
+  });
 }
 
 /** Search offers the rest of the catalog; the grid already carries the field's. */
