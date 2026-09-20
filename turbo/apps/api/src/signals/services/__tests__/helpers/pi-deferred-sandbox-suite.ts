@@ -37,7 +37,6 @@ import {
 } from "../../pi-deferred-sandbox.service";
 import { promoteNextQueuedRun$ } from "../../run-queue.service";
 import { drainOrgQueueToCapacity$ } from "../../agent-run-lifecycle.service";
-import { setTimeout as delay } from "node:timers/promises";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
@@ -458,7 +457,7 @@ async function grantPaidConcurrency(orgId: string, slots = 1): Promise<void> {
 }
 
 export const registerDurabilityTests = (it: DefineTest): void => {
-  it("restores a large H1 after its publisher exits and more than 55 seconds of waiting", async () => {
+  it("restores a large H1 after its publisher exits and the API first-turn window elapses", async () => {
     const f = await fixture({ large: true });
     const blocker = await seedPiInferenceFixture({
       legacy: true,
@@ -473,25 +472,33 @@ export const registerDurabilityTests = (it: DefineTest): void => {
       .update(orgPlanEntitlements)
       .set({ baseConcurrencyLimit: 1 })
       .where(eq(orgPlanEntitlements.orgId, f.orgId));
+    const expectNoReservation = async () => {
+      await expect(
+        db()
+          .select()
+          .from(agentRunSandboxLease)
+          .where(eq(agentRunSandboxLease.runId, f.runId)),
+      ).resolves.toStrictEqual([]);
+      await expect(
+        db()
+          .select()
+          .from(runnerJobQueue)
+          .where(eq(runnerJobQueue.runId, f.runId)),
+      ).resolves.toStrictEqual([]);
+    };
     await expect(
       createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
     ).resolves.toBeFalsy();
-    const beforeWait = Date.now();
     await deletePiObjectOrphansForOwner(db(), { userId: f.userId });
-    await delay(56_000);
-    expect(Date.now() - beforeWait).toBeGreaterThan(55_000);
-    await expect(
-      db()
-        .select()
-        .from(agentRunSandboxLease)
-        .where(eq(agentRunSandboxLease.runId, f.runId)),
-    ).resolves.toStrictEqual([]);
-    await expect(
-      db()
-        .select()
-        .from(runnerJobQueue)
-        .where(eq(runnerJobQueue.runId, f.runId)),
-    ).resolves.toStrictEqual([]);
+    await expectNoReservation();
+    // The 45/55s API first-turn budgets bound the invocation this durable path
+    // outlives. Past them the demand still waits on capacity, not on expiry.
+    await withMockNowForTest(Date.now() + 60_000, async () => {
+      await expect(
+        createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
+      ).resolves.toBeFalsy();
+      await expectNoReservation();
+    });
     await db()
       .update(agentRuns)
       .set({ status: "completed" })
