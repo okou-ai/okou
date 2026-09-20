@@ -11030,7 +11030,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         );
         expect(check.body).toMatchObject({
           outcome: "resolved",
-          connector: { credentialResolution: "network-boundary" },
+          connector: { credentialResolution: "none" },
         });
       }
       await api.requestCancelRun(actor, run.runId, [200]);
