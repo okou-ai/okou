@@ -194,7 +194,22 @@ fn storage_inputs(
         || !manifest.cleanup_paths.is_empty()
         || !manifest.instruction_cleanups.is_empty()
     {
-        attach_shadow_to_json_request(&mut manifest, &mut pending_shadow, &mut shadow_transport);
+        if manifest_json(&manifest)?.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES {
+            attach_shadow_within_manifest_budget(
+                &mut manifest,
+                &mut pending_shadow,
+                &mut shadow_transport,
+                guest_control_proto::MAX_EXEC_STDIN_BYTES,
+            )?;
+        } else {
+            // This split JSON request already requires the file-backed fallback, so attaching the
+            // descriptor cannot change its transport or add another helper invocation.
+            attach_shadow_to_json_request(
+                &mut manifest,
+                &mut pending_shadow,
+                &mut shadow_transport,
+            );
+        }
         inputs.push(StorageInput::Json(manifest_json(&manifest)?));
     }
     let mut batch = empty_storage_manifest();
