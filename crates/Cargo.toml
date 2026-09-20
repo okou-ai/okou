@@ -125,6 +125,8 @@ tracing = { version = "0.1", default-features = false }
 tracing-appender = { version = "0.2", default-features = false }
 tracing-log = { version = "0.2", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false }
+tower-layer = { version = "0.3", default-features = false }
+tower-service = { version = "0.3", default-features = false }
 trybuild = { version = "1", default-features = false }
 unicode-normalization = { version = "0.1", default-features = false }
 ureq = { version = "3", default-features = false }

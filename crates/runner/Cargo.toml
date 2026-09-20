@@ -30,6 +30,8 @@ tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
 tracing = { workspace = true, features = ["attributes", "std"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
+tower-layer.workspace = true
+tower-service.workspace = true
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
 futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
 hyper = { workspace = true }
