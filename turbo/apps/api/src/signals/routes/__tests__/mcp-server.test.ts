@@ -64,6 +64,7 @@ import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
 } from "../../../test-fixtures/account-erasure-subject";
+import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
 import {
   completeRunWithoutCallbacksFixture,
@@ -876,6 +877,81 @@ describe("MCP chat discovery and creation", () => {
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
     ).toHaveLength(1);
+  });
+
+  it("finishes combined creation after its HTTP caller disconnects and recovers one input", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Recover combined creation",
+      model: "claude-sonnet-5",
+      message: "Keep this input after response loss",
+    };
+    // Infrastructure exception: hold the selected Agent after MCP mutation
+    // admission so the HTTP response can disconnect while waitUntil retains
+    // ownership of the real creation transaction.
+    const lock = await holdAgentRowLockFixture({
+      agentId: f.agent.agentId,
+      signal: context.signal,
+    });
+    const controller = new AbortController();
+    const app = createAppWithRoutes({
+      routes: mcpServerRoutes,
+      signal: context.signal,
+    });
+    const pending = settleIncludingAbort(
+      (async () => {
+        const response = await app.request(
+          new Request(resource, {
+            method: "POST",
+            headers: {
+              ...protocolHeaders(
+                token,
+                "tools/call",
+                true,
+                "create_chat_thread",
+              ),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(
+              requestBody("tools/call", true, {
+                name: "create_chat_thread",
+                arguments: args,
+              }),
+            ),
+            signal: controller.signal,
+          }),
+        );
+        return { status: response.status, body: await response.text() };
+      })(),
+    );
+    onTestFinished(async () => {
+      controller.abort();
+      lock.release();
+      await lock.done;
+      await pending;
+    });
+    await expect
+      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5_000 })
+      .toBeGreaterThan(0);
+    controller.abort();
+    lock.release();
+    await lock.done;
+    await pending;
+    await flushWaitUntilForTest();
+
+    const recovered = await createThread(token, args);
+    expect(recovered).toMatchObject({
+      threadId: args.requestId,
+      replayed: true,
+      input: { inputRef: { threadId: args.requestId } },
+    });
+    const messages = (await getMessages(token, { threadId: args.requestId }))
+      .messages;
+    expect(messages).toMatchObject([{ text: args.message }]);
+    expect(messages).toHaveLength(1);
   });
 
   it("deduplicates simultaneous combined creation and conflicts on changed intent or mode", async () => {

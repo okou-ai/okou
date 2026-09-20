@@ -17,6 +17,7 @@ import {
 } from "./account-erasure-subject";
 
 const agentLockPidRowSchema = z.object({ pid: z.number() });
+const agentLockWaiterCountRowSchema = z.object({ waiterCount: z.number() });
 
 /**
  * Infrastructure exception: a terminal run event is appended by a claimed
@@ -93,7 +94,11 @@ export async function readChatThreadCursorsFixture(
 export async function holdAgentRowLockFixture(args: {
   readonly agentId: string;
   readonly signal: AbortSignal;
-}): Promise<{ readonly release: () => void; readonly done: Promise<void> }> {
+}): Promise<{
+  readonly release: () => void;
+  readonly done: Promise<void>;
+  readonly blockedWaiterCount: () => Promise<number>;
+}> {
   const started = createDeferredPromise<number>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
   const done = db().transaction(async (tx) => {
@@ -117,7 +122,7 @@ export async function holdAgentRowLockFixture(args: {
     started.resolve(pidRows[0].pid);
     await released.promise;
   });
-  await started.promise;
+  const holderPid = await started.promise;
   return {
     release: () => {
       if (!released.settled()) {
@@ -125,6 +130,18 @@ export async function holdAgentRowLockFixture(args: {
       }
     },
     done,
+    blockedWaiterCount: async () => {
+      const [row] = await executeRawRows(
+        db(),
+        sql`
+          SELECT count(*)::int AS "waiterCount"
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        agentLockWaiterCountRowSchema,
+      );
+      return row?.waiterCount ?? 0;
+    },
   };
 }
 
