@@ -3491,21 +3491,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "अधिकृत प्रेषक",
+        "codeExpiry": "10 मिनट में समाप्त होगा",
         "connectAria": "फ़ोन कनेक्ट करें",
-        "connectDescription": "जिस फ़ोन को आप कनेक्ट करना चाहते हैं, उससे इस AgentPhone नंबर पर मैसेज भेजें।",
+        "connectDescription": "कोड स्कैन करें या Messages खोलें, फिर पहले से भरा हुआ कोड भेजें।",
         "connectTitle": "फ़ोन कनेक्ट करें",
         "copyAria": "{{phone}} कॉपी करें",
+        "copyCodeAria": "कनेक्शन कोड {{code}} कॉपी करें",
+        "copyCodeError": "कनेक्शन कोड कॉपी नहीं हो सका",
+        "copyCodeSuccess": "कनेक्शन कोड कॉपी हो गया",
         "copyError": "फ़ोन नंबर कॉपी करने में विफल",
         "copySuccess": "फ़ोन नंबर कॉपी किया गया",
+        "createCodeError": "कनेक्शन कोड नहीं बनाया जा सका। फिर से कोशिश करें।",
+        "creatingCode": "कनेक्शन कोड बनाया जा रहा है…",
         "description": "{{assistantName}} तक टेक्स्ट-संदेश पहुंच",
         "destination": "iMessage या SMS को",
-        "messageInstruction": "“hi” भेजें",
+        "manualSend": "या भेजें",
+        "manualSendTo": "इस नंबर पर",
         "openMessages": "मैसेज खोलें",
         "options": "फ़ोन विकल्प",
         "phoneLabel": "फ़ोन",
-        "replyInstruction": "कनेक्शन पूरा करने के लिए 10 मिनट के अंदर कनेक्शन लिंक खोलें।",
-        "replyTitle": "हमारा जवाब खोलें",
-        "risk": "जहाँ संभव हो iMessage का उपयोग करें। SMS और MMS के जवाब भरोसेमंद तरीके से नहीं पहुँच सकते हैं।"
+        "qrTitle": "कनेक्शन कोड पहले से भरे हुए Messages को खोलने के लिए स्कैन करें",
+        "risk": "जहाँ संभव हो iMessage का उपयोग करें। SMS और MMS के जवाब भरोसेमंद तरीके से नहीं पहुँच सकते हैं।",
+        "tryAgain": "फिर से कोशिश करें"
       },
       "catalogDiagnostics": {
         "fields": {

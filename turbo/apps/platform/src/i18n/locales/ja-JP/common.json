@@ -3478,21 +3478,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "承認された送信者",
+        "codeExpiry": "10分後に期限切れになります",
         "connectAria": "電話を接続する",
-        "connectDescription": "接続したい電話から、この AgentPhone 番号にメッセージを送信してください。",
+        "connectDescription": "コードをスキャンするか「メッセージ」を開き、入力済みのコードを送信してください。",
         "connectTitle": "電話を接続する",
         "copyAria": "{{phone}} をコピーします",
+        "copyCodeAria": "接続コード {{code}} をコピー",
+        "copyCodeError": "接続コードをコピーできませんでした",
+        "copyCodeSuccess": "接続コードをコピーしました",
         "copyError": "電話番号のコピーに失敗しました",
         "copySuccess": "電話番号をコピーしました",
+        "createCodeError": "接続コードを作成できませんでした。もう一度お試しください。",
+        "creatingCode": "接続コードを作成中…",
         "description": "{{assistantName}} へのテキスト メッセージ アクセス",
         "destination": "iMessage または SMS で",
-        "messageInstruction": "「hi」と送信",
+        "manualSend": "または",
+        "manualSendTo": "を次の番号に送信：",
         "openMessages": "メッセージを開く",
         "options": "電話オプション",
         "phoneLabel": "電話",
-        "replyInstruction": "10分以内に接続リンクを開いて完了してください。",
-        "replyTitle": "返信を開く",
-        "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。"
+        "qrTitle": "スキャンして、接続コードが入力された「メッセージ」を開く",
+        "risk": "可能な場合は iMessage を使用してください。SMS および MMS の返信は確実に届かないことがあります。",
+        "tryAgain": "もう一度試す"
       },
       "catalogDiagnostics": {
         "fields": {

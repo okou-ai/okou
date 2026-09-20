@@ -3546,21 +3546,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Mittente autorizzato",
+        "codeExpiry": "Scade tra 10 minuti",
         "connectAria": "Collega il telefono",
-        "connectDescription": "Invia un messaggio a questo numero AgentPhone dal telefono che vuoi collegare.",
+        "connectDescription": "Scansiona il codice o apri Messaggi, quindi invia il codice precompilato.",
         "connectTitle": "Collega il telefono",
         "copyAria": "Copia {{phone}}",
+        "copyCodeAria": "Copia il codice di connessione {{code}}",
+        "copyCodeError": "Impossibile copiare il codice di connessione",
+        "copyCodeSuccess": "Codice di connessione copiato",
         "copyError": "Impossibile copiare il numero di telefono",
         "copySuccess": "Numero di telefono copiato",
+        "createCodeError": "Impossibile creare un codice di connessione. Riprova.",
+        "creatingCode": "Creazione del codice di connessione…",
         "description": "Accesso via SMS a {{assistantName}}",
         "destination": "iMessage o SMS a",
-        "messageInstruction": "Invia “hi”",
+        "manualSend": "oppure invia",
+        "manualSendTo": "a",
         "openMessages": "Apri Messaggi",
         "options": "Opzioni del telefono",
         "phoneLabel": "Telefono",
-        "replyInstruction": "Apri il link di connessione entro 10 minuti per completare.",
-        "replyTitle": "Apri la nostra risposta",
-        "risk": "Usa iMessage quando possibile. Le risposte SMS e MMS potrebbero non arrivare in modo affidabile."
+        "qrTitle": "Scansiona per aprire Messaggi con il codice di connessione precompilato",
+        "risk": "Usa iMessage quando possibile. Le risposte SMS e MMS potrebbero non arrivare in modo affidabile.",
+        "tryAgain": "Riprova"
       },
       "catalogDiagnostics": {
         "fields": {

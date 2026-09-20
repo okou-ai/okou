@@ -3478,21 +3478,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Pengirim yang diizinkan",
+        "codeExpiry": "Kedaluwarsa dalam 10 menit",
         "connectAria": "Hubungkan telepon",
-        "connectDescription": "Kirim pesan ke nomor AgentPhone ini dari telepon yang ingin Anda hubungkan.",
+        "connectDescription": "Pindai kode atau buka Pesan, lalu kirim kode yang sudah terisi.",
         "connectTitle": "Hubungkan telepon",
         "copyAria": "Salin {{phone}}",
+        "copyCodeAria": "Salin kode koneksi {{code}}",
+        "copyCodeError": "Gagal menyalin kode koneksi",
+        "copyCodeSuccess": "Kode koneksi disalin",
         "copyError": "Gagal menyalin nomor telepon",
         "copySuccess": "Nomor telepon disalin",
+        "createCodeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
+        "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
         "destination": "iMessage atau SMS ke",
-        "messageInstruction": "Kirim “hi”",
+        "manualSend": "atau kirim",
+        "manualSendTo": "ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
-        "replyInstruction": "Buka tautan koneksi dalam 10 menit untuk menyelesaikannya.",
-        "replyTitle": "Buka balasan kami",
-        "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim."
+        "qrTitle": "Pindai untuk membuka Pesan dengan kode koneksi yang sudah terisi",
+        "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim.",
+        "tryAgain": "Coba lagi"
       },
       "catalogDiagnostics": {
         "fields": {

@@ -2,6 +2,7 @@ import { command, computed, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   integrationsAgentPhoneContract,
+  type AgentPhoneLinkCodeResponse,
   type AgentPhoneLinkStatusResponse,
 } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { apiClient$ } from "../api-client.ts";
@@ -32,6 +33,23 @@ export const agentPhoneLinkStatus$ = computed(
       apiBase: "api",
     });
     const result = await accept(client.getLinkStatus({ headers: {} }), [200]);
+    return result.body;
+  },
+);
+
+export const createAgentPhoneLinkCode$ = command(
+  async ({ get }, signal: AbortSignal): Promise<AgentPhoneLinkCodeResponse> => {
+    const client = get(apiClient$)(integrationsAgentPhoneContract, {
+      apiBase: "api",
+    });
+    const result = await accept(
+      client.createLinkCode({
+        headers: {},
+        fetchOptions: { signal },
+      }),
+      [200],
+    );
+    signal.throwIfAborted();
     return result.body;
   },
 );
