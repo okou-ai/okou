@@ -89,7 +89,6 @@ export const testSlackStateResponseSchema = z.object({
         "processing",
         "retryable",
         "processed",
-        "failed",
         "terminal",
       ]),
       retryCount: z.number(),

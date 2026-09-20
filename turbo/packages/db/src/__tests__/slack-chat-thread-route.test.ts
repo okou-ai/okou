@@ -1,4 +1,4 @@
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import { schema } from "../index";
@@ -93,6 +93,21 @@ describe("slackChatIngress schema", () => {
         "chk_slack_chat_ingress_retry_count",
         "chk_slack_chat_ingress_processing_attempt_count",
       ]),
+    );
+  });
+
+  it("admits exactly the five canonical ingress statuses", () => {
+    const statusCheck = getTableConfig(slackChatIngress).checks.find(
+      (check) => {
+        return check.name === "chk_slack_chat_ingress_status";
+      },
+    );
+    if (!statusCheck) {
+      throw new Error("Expected the canonical Slack ingress status check");
+    }
+
+    expect(new PgDialect().sqlToQuery(statusCheck.value).sql).toBe(
+      `"slack_chat_ingress"."status" IN ('pending', 'processing', 'retryable', 'processed', 'terminal')`,
     );
   });
 });
