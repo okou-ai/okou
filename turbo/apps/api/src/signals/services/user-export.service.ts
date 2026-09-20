@@ -13,7 +13,6 @@ import type {
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { users } from "@okouai/db/schema/user";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -27,13 +26,7 @@ import {
   uploadUserExportArchive$,
 } from "./user-export-archive.service";
 import { collectUserExportData$ } from "./user-export-data.service";
-import {
-  buildFromAddress,
-  buildOneClickUnsubscribeUrl,
-  buildUnsubscribeHeaders,
-  buildUnsubscribeUrl,
-  EMAIL_PUBLIC_BRAND,
-} from "./email-common.service";
+import { buildFromAddress, EMAIL_PUBLIC_BRAND } from "./email-common.service";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 const RATE_LIMIT_MS = 24 * 60 * 60 * 1000;
@@ -333,16 +326,6 @@ export const startUserExport$ = command(
   },
 );
 
-async function isUserUnsubscribed(db: Db, userId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ emailUnsubscribed: users.emailUnsubscribed })
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  return row?.emailUnsubscribed ?? false;
-}
-
 function getCachedUserEmail(
   runtime: ExportRuntime,
   userId: string,
@@ -408,46 +391,37 @@ export function userExportReadyEmail(
     readonly artifactCount: number;
   },
   signal: AbortSignal,
-): Computed<Promise<typeof emailOutbox.$inferInsert | null>> {
-  return computed(
-    async (get): Promise<typeof emailOutbox.$inferInsert | null> => {
-      if (await isUserUnsubscribed(runtime.db, args.userId)) {
-        log.debug("export email skipped because user is unsubscribed", {
-          userId: args.userId,
-        });
-        return null;
-      }
-      signal.throwIfAborted();
+): Computed<Promise<typeof emailOutbox.$inferInsert>> {
+  return computed(async (get): Promise<typeof emailOutbox.$inferInsert> => {
+    const email = await get(getCachedUserEmail(runtime, args.userId, signal));
+    signal.throwIfAborted();
+    const formattedExpiry = args.expiresAt.toLocaleString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "UTC",
+      timeZoneName: "short",
+    });
 
-      const email = await get(getCachedUserEmail(runtime, args.userId, signal));
-      const unsubscribeUrl = buildUnsubscribeUrl(args.userId);
-      const oneClickUnsubscribeUrl = buildOneClickUnsubscribeUrl(args.userId);
-      const formattedExpiry = args.expiresAt.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-
-      return {
-        fromAddress: buildFromAddress(),
-        toAddresses: email,
-        subject: DATA_EXPORT_READY_SUBJECT,
-        publicBrand: EMAIL_PUBLIC_BRAND,
-        headers: buildUnsubscribeHeaders(oneClickUnsubscribeUrl),
-        template: {
-          template: "data-export-ready",
-          props: {
-            downloadUrl: args.downloadUrl,
-            expiresAt: formattedExpiry,
-            artifactCount: args.artifactCount,
-            unsubscribeUrl,
-          },
+    return {
+      fromAddress: buildFromAddress(),
+      toAddresses: email,
+      subject: DATA_EXPORT_READY_SUBJECT,
+      publicBrand: EMAIL_PUBLIC_BRAND,
+      template: {
+        template: "data-export-ready",
+        props: {
+          downloadUrl: args.downloadUrl,
+          expiresAt: formattedExpiry,
+          artifactCount: args.artifactCount,
         },
-        status: "pending",
-        attempts: 0,
-      };
-    },
-  );
+      },
+      status: "pending",
+      attempts: 0,
+    };
+  });
 }
 
 function enqueueExportReadyEmail(
@@ -463,10 +437,8 @@ function enqueueExportReadyEmail(
   return computed(async (get) => {
     const email = await get(userExportReadyEmail(runtime, args, signal));
     signal.throwIfAborted();
-    if (email) {
-      await runtime.db.insert(emailOutbox).values(email);
-      signal.throwIfAborted();
-    }
+    await runtime.db.insert(emailOutbox).values(email);
+    signal.throwIfAborted();
   });
 }
 

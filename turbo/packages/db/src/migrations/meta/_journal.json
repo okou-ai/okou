@@ -712,8 +712,15 @@
     {
       "idx": 1179,
       "version": "7",
-      "when": 1789907000419,
-      "tag": "1179_morning_brief_occurrence_collection_facts",
+      "when": 1789905501563,
+      "tag": "1179_retire_slack_ingress_failed_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 1180,
+      "version": "7",
+      "when": 1789908966166,
+      "tag": "1180_morning_brief_occurrence_collection_facts",
       "breakpoints": true
     }
   ]

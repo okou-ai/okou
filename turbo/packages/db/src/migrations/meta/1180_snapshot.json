@@ -1,6 +1,6 @@
 {
-  "id": "7e44f65b-fb0d-4e12-a945-3c9f9df70545",
-  "prevId": "feb2e3f9-b4f1-4e10-aef0-a12c3b08f475",
+  "id": "a40f43cf-ea04-4d51-bd22-5f5ab80a486a",
+  "prevId": "7e44f65b-fb0d-4e12-a945-3c9f9df70545",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -20966,6 +20966,12 @@
         "defer_reason": {
           "name": "defer_reason",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "collection_facts": {
+          "name": "collection_facts",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
