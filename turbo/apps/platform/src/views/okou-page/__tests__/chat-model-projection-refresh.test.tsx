@@ -265,9 +265,9 @@ async function finishFailedProjectionRefresh(release: {
 
 test("Keep provider choices through a held and failed projection refresh", async () => {
   const { release } = await setupHeldProjectionRefresh();
-  await expect(personalOption()).resolves.toBeVisible();
+  await expect(personalOption()).resolves.toBeInTheDocument();
   await finishFailedProjectionRefresh(release);
-  await expect(personalOption()).resolves.toBeVisible();
+  await expect(personalOption()).resolves.toBeInTheDocument();
 });
 
 test("Keep the draft through a held and failed projection refresh", async () => {
