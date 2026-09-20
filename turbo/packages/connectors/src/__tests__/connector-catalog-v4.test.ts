@@ -215,6 +215,17 @@ describe("v4 connector catalog reader", () => {
     }).toThrow("invalid-artifact");
   });
 
+  it("accepts MCP artifacts without producer firewall semantics", () => {
+    const artifact = publishedCatalog();
+    const plaud = requiredConnector(artifact, "plaud-mcp");
+    plaud.firewall = { kind: "none" };
+
+    expect(requiredConnector(decode(artifact), "plaud-mcp")).toMatchObject({
+      mcp: plaud.mcp,
+      firewall: { kind: "none" },
+    });
+  });
+
   it("executes no-auth MCP without a provider registration", () => {
     const artifact = publishedCatalog();
     const plaud = requiredConnector(artifact, "plaud-mcp");

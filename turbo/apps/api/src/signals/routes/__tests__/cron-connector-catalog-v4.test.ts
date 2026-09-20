@@ -121,19 +121,7 @@ function mcpConnector(slug = "plaud-mcp") {
         revoke: { kind: "none" },
       },
     ],
-    firewall: {
-      kind: "generated",
-      billable: false,
-      config: {
-        description: "Notes",
-        apis: [
-          { base: "https://notes.example.com/mcp", auth: {}, permissions: [] },
-        ],
-      },
-      categories: null,
-      defaultAllowed: null,
-      defaultUnknownPolicy: "allow",
-    },
+    firewall: { kind: "none" },
   };
 }
 
@@ -165,27 +153,30 @@ function runtimeBuiltinConnector(
                 revoke: { kind: "none" },
               },
             ],
-    firewall: {
-      ...connector.firewall,
-      config: {
-        description: "Notes",
-        apis: [
-          {
-            base: endpoint,
-            auth:
-              authKind === "manual"
-                ? {
-                    headers: {
-                      [updated ? "X-Api-Key" : "Authorization"]:
-                        `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
-                    },
-                  }
-                : {},
-            permissions: [],
+    firewall:
+      protocol === "mcp"
+        ? { kind: "none" }
+        : {
+            ...connector.firewall,
+            config: {
+              description: "Notes",
+              apis: [
+                {
+                  base: endpoint,
+                  auth:
+                    authKind === "manual"
+                      ? {
+                          headers: {
+                            [updated ? "X-Api-Key" : "Authorization"]:
+                              `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
+                          },
+                        }
+                      : {},
+                  permissions: [],
+                },
+              ],
+            },
           },
-        ],
-      },
-    },
   };
 }
 

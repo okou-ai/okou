@@ -514,7 +514,7 @@ export function createRunsApi(
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(true),
-          ...(extraHeaders ? { extraHeaders } : {}),
+          extraHeaders,
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,
