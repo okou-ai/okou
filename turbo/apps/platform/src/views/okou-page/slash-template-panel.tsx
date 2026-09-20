@@ -13,7 +13,6 @@ import {
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
-import { SlashWorkflowPaneDiagram } from "./slash-workflow-pane-diagram.tsx";
 import { i18n } from "../../i18n/index.ts";
 import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
@@ -260,8 +259,7 @@ function SlashTemplateWorkflowPane() {
             return $.chat.composer.slashPanel.workflowSubtitle;
           })}
         />
-        <SlashWorkflowPaneDiagram />
-        <p className="mt-3 text-[12px] text-muted-foreground">
+        <p className="mt-[11px] text-[12px] text-muted-foreground">
           {t(($) => {
             return $.chat.composer.slashPanel.workflowHint;
           })}
