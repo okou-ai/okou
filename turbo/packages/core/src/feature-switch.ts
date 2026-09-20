@@ -72,6 +72,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // a colleague who opens the empty panel has the one action that fills it,
     // which is what the earlier narrowing to the maintainer was waiting for.
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    // Kept beside the org so the maintainer keeps the feature while signed
+    // into a customer workspace, where the org hash does not apply.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.PresentationConvert]: {
     maintainer: "bingjie@okou.ai",
