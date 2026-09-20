@@ -137,7 +137,8 @@ jq -e '
   ) and
   any($rootfs_process.steps[]?;
     ((.uses // "") | startswith("Swatinem/rust-cache@")) and
-    .with["shared-key"] == "${{ matrix.cacheSuffix }}-rootfs-process-local"
+    .with["shared-key"] == "${{ matrix.cacheSuffix }}-rootfs-process-local" and
+    .with["save-if"] == "${{ github.ref == \u0027refs/heads/main\u0027 }}"
   ) and
   any($rootfs_process.steps[]?;
     (.name // "" | startswith("Cross-compile rootfs process tests")) and

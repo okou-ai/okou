@@ -762,9 +762,7 @@ jobs:
         with:
           workspaces: crates -> target
           shared-key: ${{ matrix.cacheSuffix }}-rootfs-process-local
-          # Seed an isolated PR cache for the controlled warm-profile measurement.
-          # Restore main-only persistence after recording the candidate evidence.
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cross-compile rootfs process tests for ${{ matrix.label }}
         working-directory: crates
