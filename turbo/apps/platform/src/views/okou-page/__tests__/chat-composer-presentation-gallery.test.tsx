@@ -151,69 +151,6 @@ test("Opening a hovered presentation keeps the currently previewed slide", async
   expect(screen.getByLabelText("Preview next slide")).toBeDisabled();
 });
 
-test.each(["Retrying", "Reopening"] as const)(
-  "%s a presentation recovers after its HTML preview fails",
-  async (recovery) => {
-    mockTemplateChat();
-    const template = builtInTemplate();
-    let available = false;
-    context.mocks.http.get(template.embedUrl, () => {
-      if (!available) {
-        return new HttpResponse(null, { status: 503 });
-      }
-      return HttpResponse.html(`<!doctype html><html><body>
-      <section data-okou-slide data-slide-id="opening"><h1>Recovered opening</h1></section>
-      <section data-okou-slide data-slide-id="closing"><h1>Recovered closing</h1></section>
-    </body></html>`);
-    });
-    const user = userEvent.setup();
-
-    await setupPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      host: "app.okou.ai",
-    });
-
-    const picker = await openTemplatePicker(user, "Presentation");
-    click(screen.getByLabelText(`Preview ${template.title} at current slide`));
-    await waitFor(() => {
-      expect(buttonContainingText("Retry", picker)).toBeEnabled();
-    });
-
-    available = true;
-    if (recovery === "Retrying") {
-      click(buttonContainingText("Retry", picker));
-    } else {
-      click(buttonContainingText("Template", picker));
-      const reopen = await screen.findByLabelText(
-        `Preview ${template.title} at current slide`,
-      );
-      click(reopen);
-    }
-    const preview = await screen.findByRole("group", {
-      name: `${template.title} slide preview`,
-    });
-    const frame = await within(preview).findByTitle(
-      `${template.title} HTML preview`,
-    );
-    expect(frame.getAttribute("srcdoc")).toContain("Recovered opening");
-
-    click(screen.getByLabelText("Preview slide 2"));
-    await waitFor(() => {
-      expect(
-        within(preview)
-          .getByTitle(`${template.title} HTML preview`)
-          .getAttribute("srcdoc"),
-      ).toContain("Recovered closing");
-    });
-    expect(screen.getByLabelText("Preview slide 2")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByLabelText("Preview next slide")).toBeDisabled();
-  },
-);
-
 test("A late presentation response preserves the template currently being previewed", async () => {
   mockTemplateChat();
   const slowTemplate = builtInTemplate();

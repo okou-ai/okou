@@ -23,7 +23,6 @@ interface SelectTemplatePreview extends TemplatePreviewSelection {
 function createTemplatePreviewSignals() {
   const internalTemplateId$ = state<string | null>(null);
   const internalSelection$ = state<TemplatePreviewSelection | null>(null);
-  const internalReload$ = state(0);
   const templateId$ = computed((get) => {
     return get(internalTemplateId$);
   });
@@ -47,7 +46,6 @@ function createTemplatePreviewSignals() {
   // this computed's result without retaining previously visited templates.
   const template$ = computed(async (get) => {
     const item = get(item$);
-    get(internalReload$);
     if (item === null) {
       return null;
     }
@@ -113,11 +111,6 @@ function createTemplatePreviewSignals() {
     set(internalTemplateId$, null);
     set(internalSelection$, null);
   });
-  const retry$ = command(({ set }) => {
-    set(internalReload$, (version) => {
-      return version + 1;
-    });
-  });
   return {
     templateId$,
     template$,
@@ -126,7 +119,6 @@ function createTemplatePreviewSignals() {
     thumbnails$,
     select$,
     clear$,
-    retry$,
   };
 }
 
@@ -152,7 +144,6 @@ export function createPresentationTemplatePreviewSignals() {
     openPresentationTemplate$,
     selectOpenedTemplate$: opened.select$,
     closeOpenedTemplate$: opened.clear$,
-    retryOpenedTemplate$: opened.retry$,
     previewTemplateId$: preview.templateId$,
     previewTemplate$: preview.template$,
     previewTemplateSelection$: preview.selection$,

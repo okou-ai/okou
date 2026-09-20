@@ -2522,7 +2522,6 @@ function TemplatePreviewPage({
   const template = useLoadable(signals.template.openedTemplate$);
   const html = useLoadable(signals.template.openedTemplateHtml$);
   const thumbnails = useLoadable(signals.template.openedTemplateThumbnails$);
-  const retry = useSet(signals.template.retryOpenedTemplate$);
   const setCardThemeId = useSet(signals.template.setTemplateCardThemeId$);
   const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
   const visibleDetailPreview = templateDetailPreviewMatchesItem(
@@ -2688,23 +2687,6 @@ function TemplatePreviewPage({
               </div>
             ) : null}
           </div>
-          {htmlPreviewFailed ? (
-            <div
-              role="alert"
-              className="mt-3 flex items-center justify-between gap-2 text-sm text-muted-foreground"
-            >
-              <span>
-                {t(($) => {
-                  return $.artifacts.preview.genericUnavailable;
-                })}
-              </span>
-              <Button variant="outline" size="sm" onClick={retry}>
-                {t(($) => {
-                  return $.templates.retry;
-                })}
-              </Button>
-            </div>
-          ) : null}
           <div
             className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 lg:grid-cols-8"
             onKeyDown={handleDetailSlideKeyDown}
