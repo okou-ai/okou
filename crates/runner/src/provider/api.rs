@@ -1734,6 +1734,7 @@ impl ApiClient {
                 ),
                 &self.token,
             )
+            .connector_runtime_builtin_absent_reader()
             .json(&serde_json::json!({ "targets": targets }))
     }
 
