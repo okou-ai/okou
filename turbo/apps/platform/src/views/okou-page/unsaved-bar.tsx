@@ -1,48 +1,24 @@
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Pencil, Loader2 } from "lucide-react";
 import { surfaceVariants, Button, cn } from "@okouai/ui";
 
 /**
- * Where the bar is pinned, and therefore which element it portals into. A form
- * inside the settings dialog anchors to that dialog so the bar scrolls and
- * stacks with it; everything else anchors to the app shell.
+ * Pins the bar to the viewport above the page it belongs to. Base UI's floating
+ * layers portal outside the app shell, so they stay above the bar without
+ * coordinating z-index values.
  */
-type UnsavedBarAnchor = "page" | "settings-dialog";
-
-interface AnchorConfig {
-  readonly containerId: string;
-  readonly className: string;
-  /**
-   * Whether a missing container still renders the bar where it was written.
-   * The app shell root always exists in the product, so falling back keeps the
-   * bar visible when a test mounts a subtree on its own. A missing settings
-   * dialog instead means that dialog is closed, and the bar must not escape
-   * into the page behind it.
-   */
-  readonly renderInPlaceWithoutContainer: boolean;
-}
-
-const ANCHORS: Readonly<Record<UnsavedBarAnchor, AnchorConfig>> = {
-  page: {
-    containerId: "root",
-    // Modal and floating Base UI portals live outside this container and stay
-    // above the bar without coordinating z-index values.
-    className: "fixed bottom-[max(1.5rem,var(--sab))] z-40",
-    renderInPlaceWithoutContainer: true,
-  },
-  "settings-dialog": {
-    containerId: "settings-dialog-content",
-    className: "absolute bottom-6 z-10",
-    renderInPlaceWithoutContainer: false,
-  },
-};
+const PAGE_PINNING =
+  "fixed left-0 right-0 bottom-[max(1.5rem,var(--sab))] z-40";
 
 interface UnsavedBarProps {
   onDiscard: () => void;
   onSave: () => void;
   saving: boolean;
-  anchor?: UnsavedBarAnchor;
+  /**
+   * Replaces the viewport pinning. A bar written inside a scrollport passes
+   * `sticky` so it rides that scrollport instead of the viewport.
+   */
+  pinning?: string;
   /** Blocks saving while the form cannot produce a valid value. */
   saveDisabled?: boolean;
   testId?: string;
@@ -55,7 +31,7 @@ export function UnsavedBar({
   onDiscard,
   onSave,
   saving,
-  anchor = "page",
+  pinning = PAGE_PINNING,
   saveDisabled = false,
   testId = "unsaved-bar",
   message,
@@ -63,15 +39,9 @@ export function UnsavedBar({
   saveLabel,
 }: UnsavedBarProps) {
   const { t } = useTranslation();
-  const config = ANCHORS[anchor];
 
-  const bar = (
-    <div
-      className={cn(
-        "left-0 right-0 flex justify-center px-4",
-        config.className,
-      )}
-    >
+  return (
+    <div className={cn("flex justify-center px-4", pinning)}>
       <div
         data-testid={testId}
         className={surfaceVariants({
@@ -125,13 +95,4 @@ export function UnsavedBar({
       </div>
     </div>
   );
-
-  const container =
-    typeof document === "undefined"
-      ? null
-      : document.getElementById(config.containerId);
-  if (container) {
-    return createPortal(bar, container);
-  }
-  return config.renderInPlaceWithoutContainer ? bar : null;
 }
