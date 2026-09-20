@@ -2,7 +2,10 @@
 
 use std::{future::Future, io, sync::Arc, time::Duration};
 
-use rfb_client::{AuthenticationStage, Error, TrustRoots, VncPassword, authenticate};
+use rfb_client::{
+    AuthenticationStage, Error, PlainCredentials, TrustRoots, VncPassword, X509Authentication,
+    authenticate,
+};
 use rustls::{ServerConfig, pki_types::CertificateDer, pki_types::PrivatePkcs8KeyDer};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
@@ -22,6 +25,10 @@ const RESPONSE: [u8; 16] = [
 
 fn password() -> VncPassword {
     VncPassword::new(" secret ".to_owned()).unwrap()
+}
+
+fn authentication() -> X509Authentication {
+    X509Authentication::VncPassword(password())
 }
 
 fn deadline() -> Instant {
@@ -86,7 +93,11 @@ impl Certificate {
     }
 }
 
-async fn negotiate(mut server: TcpStream) -> TcpStream {
+async fn negotiate(server: TcpStream) -> TcpStream {
+    negotiate_subtype(server, 261).await
+}
+
+async fn negotiate_subtype(mut server: TcpStream, subtype: u32) -> TcpStream {
     server.write_all(BANNER).await.unwrap();
     let mut version = [0; 12];
     server.read_exact(&mut version).await.unwrap();
@@ -98,18 +109,26 @@ async fn negotiate(mut server: TcpStream) -> TcpStream {
     let mut version = [0; 2];
     server.read_exact(&mut version).await.unwrap();
     assert_eq!(version, [0, 2]);
-    server.write_all(&[0, 3]).await.unwrap();
-    for subtype in [258, 0xffff_ffff, 261] {
-        server.write_u32(subtype).await.unwrap();
+    server.write_all(&[0, 5]).await.unwrap();
+    for offered in [258, 260, 261, 262, 0xffff_ffff] {
+        server.write_u32(offered).await.unwrap();
     }
-    assert_eq!(server.read_u32().await.unwrap(), 261);
+    assert_eq!(server.read_u32().await.unwrap(), subtype);
     server.write_u8(1).await.unwrap();
     server
 }
 
 async fn secure(server: TcpStream, config: Arc<ServerConfig>) -> TlsStream<TcpStream> {
+    secure_subtype(server, config, 261).await
+}
+
+async fn secure_subtype(
+    server: TcpStream,
+    config: Arc<ServerConfig>,
+    subtype: u32,
+) -> TlsStream<TcpStream> {
     TlsAcceptor::from(config)
-        .accept(negotiate(server).await)
+        .accept(negotiate_subtype(server, subtype).await)
         .await
         .unwrap()
 }
@@ -158,7 +177,7 @@ async fn authenticates_and_transfers_only_the_post_security_result_stream() {
             disconnected(&mut server).await;
         };
         let caller = async {
-            let mut stream = authenticate(client, name, password(), roots, deadline())
+            let mut stream = authenticate(client, name, authentication(), roots, deadline())
                 .await
                 .unwrap()
                 .into_stream();
@@ -168,6 +187,76 @@ async fn authenticates_and_transfers_only_the_post_security_result_stream() {
         };
         bounded(async { tokio::join!(peer, caller) }).await;
     }
+}
+
+#[tokio::test]
+async fn authenticates_x509_none_without_inner_credentials() {
+    let cert = Certificate::new(NAME, false, false);
+    let roots = cert.roots();
+    let (client, server) = sockets().await;
+    let peer = async move {
+        let mut server = secure_subtype(server, cert.config, 260).await;
+        // Fragment the result to exercise exact asynchronous framing.
+        for byte in 0_u32.to_be_bytes() {
+            server.write_u8(byte).await.unwrap();
+            server.flush().await.unwrap();
+        }
+        server.write_u8(0x42).await.unwrap();
+        server.flush().await.unwrap();
+        assert_eq!(server.read_u8().await.unwrap(), 1);
+        disconnected(&mut server).await;
+    };
+    let caller = async {
+        let mut stream = authenticate(client, NAME, X509Authentication::None, roots, deadline())
+            .await
+            .unwrap()
+            .into_stream();
+        assert_eq!(stream.read_u8().await.unwrap(), 0x42);
+        stream.write_u8(1).await.unwrap();
+        stream.flush().await.unwrap();
+    };
+    bounded(async { tokio::join!(peer, caller) }).await;
+}
+
+#[tokio::test]
+async fn authenticates_x509_plain_with_exact_utf8_bytes() {
+    let cert = Certificate::new(NAME, false, false);
+    let roots = cert.roots();
+    let (client, server) = sockets().await;
+    let peer = async move {
+        let mut server = secure_subtype(server, cert.config, 262).await;
+        assert_eq!(server.read_u32().await.unwrap(), 8);
+        assert_eq!(server.read_u32().await.unwrap(), 10);
+        let mut username = [0; 8];
+        let mut password = [0; 10];
+        server.read_exact(&mut username).await.unwrap();
+        server.read_exact(&mut password).await.unwrap();
+        assert_eq!(&username, " user界".as_bytes());
+        assert_eq!(&password, " päss 界".as_bytes());
+        server.write_u32(0).await.unwrap();
+        server.write_u8(0x42).await.unwrap();
+        server.flush().await.unwrap();
+        assert_eq!(server.read_u8().await.unwrap(), 1);
+        disconnected(&mut server).await;
+    };
+    let caller = async {
+        let credentials =
+            PlainCredentials::new(" user界".to_owned(), " päss 界".to_owned()).unwrap();
+        let mut stream = authenticate(
+            client,
+            NAME,
+            X509Authentication::Plain(credentials),
+            roots,
+            deadline(),
+        )
+        .await
+        .unwrap()
+        .into_stream();
+        assert_eq!(stream.read_u8().await.unwrap(), 0x42);
+        stream.write_u8(1).await.unwrap();
+        stream.flush().await.unwrap();
+    };
+    bounded(async { tokio::join!(peer, caller) }).await;
 }
 
 #[tokio::test]
@@ -200,11 +289,38 @@ async fn rejects_certificate_failures_without_a_password_response() {
             assert!(result.is_err(), "accepted {case}");
         };
         let caller = async {
-            let result = authenticate(client, name, password(), roots, deadline()).await;
+            let result = authenticate(client, name, authentication(), roots, deadline()).await;
             assert!(matches!(result, Err(Error::Tls(_))), "{case}");
         };
         bounded(async { tokio::join!(peer, caller) }).await;
     }
+}
+
+#[tokio::test]
+async fn rejects_certificate_failure_before_plain_credentials() {
+    let cert = Certificate::new(NAME, false, false);
+    let roots = cert.roots();
+    let (client, server) = sockets().await;
+    let peer = async move {
+        let result = TlsAcceptor::from(cert.config)
+            .accept(negotiate_subtype(server, 262).await)
+            .await;
+        assert!(result.is_err());
+    };
+    let caller = async {
+        let credentials =
+            PlainCredentials::new("operator".to_owned(), "top secret".to_owned()).unwrap();
+        let result = authenticate(
+            client,
+            "another.example.test",
+            X509Authentication::Plain(credentials),
+            roots,
+            deadline(),
+        )
+        .await;
+        assert!(matches!(result, Err(Error::Tls(_))));
+    };
+    bounded(async { tokio::join!(peer, caller) }).await;
 }
 
 #[test]
@@ -219,6 +335,28 @@ fn validates_and_redacts_passwords_without_truncation() {
         let password = VncPassword::new(value.to_owned()).unwrap();
         assert_eq!(format!("{password:?}"), "VncPassword([REDACTED])");
     }
+}
+
+#[test]
+fn validates_and_redacts_plain_credentials_without_normalization() {
+    for username in [String::new(), "bad\0name".to_owned(), "a".repeat(1024)] {
+        assert!(matches!(
+            PlainCredentials::new(username, "password".to_owned()),
+            Err(Error::InvalidPlainUsername)
+        ));
+    }
+    for password in [String::new(), "bad\0password".to_owned(), "a".repeat(1024)] {
+        assert!(matches!(
+            PlainCredentials::new("username".to_owned(), password),
+            Err(Error::InvalidPlainPassword)
+        ));
+    }
+    let credentials = PlainCredentials::new("界".repeat(341), " pass word ".to_owned()).unwrap();
+    assert_eq!(format!("{credentials:?}"), "PlainCredentials([REDACTED])");
+    let authentication = X509Authentication::Plain(credentials);
+    let debug = format!("{authentication:?}");
+    assert_eq!(debug, "X509Authentication::Plain([REDACTED])");
+    assert!(!debug.contains("pass word"));
 }
 
 #[test]
@@ -249,14 +387,18 @@ fn before_subtypes() -> Vec<u8> {
     bytes
 }
 
-fn before_tls_ack() -> Vec<u8> {
+fn before_tls_ack(subtype: u32) -> Vec<u8> {
     let mut bytes = before_subtypes();
     bytes.push(1);
-    bytes.extend(261_u32.to_be_bytes());
+    bytes.extend(subtype.to_be_bytes());
     bytes
 }
 
-async fn rejected_plaintext(payload: Vec<u8>, truncated: bool) -> Error {
+async fn rejected_plaintext_with(
+    authentication: X509Authentication,
+    payload: Vec<u8>,
+    truncated: bool,
+) -> Error {
     let (client, mut server) = sockets().await;
     let peer = async move {
         server.write_all(&payload).await.unwrap();
@@ -271,7 +413,7 @@ async fn rejected_plaintext(payload: Vec<u8>, truncated: bool) -> Error {
     let caller = authenticate(
         client,
         NAME,
-        password(),
+        authentication,
         TrustRoots::public_roots(),
         deadline(),
     );
@@ -280,6 +422,10 @@ async fn rejected_plaintext(payload: Vec<u8>, truncated: bool) -> Error {
         Err(error) => error,
         Ok(_) => panic!("accepted malformed negotiation"),
     }
+}
+
+async fn rejected_plaintext(payload: Vec<u8>, truncated: bool) -> Error {
+    rejected_plaintext_with(authentication(), payload, truncated).await
 }
 
 #[tokio::test]
@@ -321,6 +467,30 @@ async fn rejects_unsupported_versions_and_insecure_security_lists() {
 }
 
 #[tokio::test]
+async fn every_policy_rejects_other_x509_subtypes_without_downgrade() {
+    for (authentication, offered) in [
+        (X509Authentication::None, [261_u32, 262]),
+        (authentication(), [260, 262]),
+        (
+            X509Authentication::Plain(
+                PlainCredentials::new("operator".to_owned(), "password".to_owned()).unwrap(),
+            ),
+            [260, 261],
+        ),
+    ] {
+        let mut bytes = before_subtypes();
+        bytes.push(offered.len() as u8);
+        for subtype in offered {
+            bytes.extend(subtype.to_be_bytes());
+        }
+        assert!(matches!(
+            rejected_plaintext_with(authentication, bytes, false).await,
+            Error::UnsupportedSecurity
+        ));
+    }
+}
+
+#[tokio::test]
 async fn requires_the_distinct_version_and_subtype_acknowledgements() {
     for ack in [1, 2, 255] {
         let mut bytes = before_vencrypt();
@@ -331,7 +501,7 @@ async fn requires_the_distinct_version_and_subtype_acknowledgements() {
         ));
     }
     for ack in [0, 2, 255] {
-        let mut bytes = before_tls_ack();
+        let mut bytes = before_tls_ack(261);
         bytes.push(ack);
         assert!(matches!(
             rejected_plaintext(bytes, false).await,
@@ -361,7 +531,7 @@ async fn bounds_failure_reasons_and_does_not_wait_for_eof_or_echo_text() {
 
 #[tokio::test]
 async fn rejects_truncated_messages_and_closes_the_socket() {
-    let complete = before_tls_ack();
+    let complete = before_tls_ack(261);
     // Every incomplete prefix up to the TLS boundary must terminate on EOF.
     for length in 0..complete.len() {
         assert!(matches!(
@@ -399,7 +569,8 @@ async fn safely_handles_failed_and_unknown_authentication_results() {
             disconnected(&mut server).await;
         };
         let caller = async {
-            let error = match authenticate(client, NAME, password(), roots, deadline()).await {
+            let error = match authenticate(client, NAME, authentication(), roots, deadline()).await
+            {
                 Err(error) => error,
                 Ok(_) => panic!("accepted failed authentication"),
             };
@@ -415,6 +586,48 @@ async fn safely_handles_failed_and_unknown_authentication_results() {
 }
 
 #[tokio::test]
+async fn x509_none_and_plain_share_bounded_failure_results() {
+    for (subtype, authentication) in [
+        (260, X509Authentication::None),
+        (
+            262,
+            X509Authentication::Plain(
+                PlainCredentials::new("operator".to_owned(), "password".to_owned()).unwrap(),
+            ),
+        ),
+    ] {
+        let cert = Certificate::new(NAME, false, false);
+        let roots = cert.roots();
+        let (client, server) = sockets().await;
+        let peer = async move {
+            let mut server = secure_subtype(server, cert.config, subtype).await;
+            if subtype == 262 {
+                let username_length = server.read_u32().await.unwrap();
+                let password_length = server.read_u32().await.unwrap();
+                assert_eq!((username_length, password_length), (8, 8));
+                let mut credentials = vec![0; (username_length + password_length) as usize];
+                server.read_exact(&mut credentials).await.unwrap();
+                assert_eq!(&credentials, b"operatorpassword");
+            }
+            server.write_u32(1).await.unwrap();
+            server.write_u32(18).await.unwrap();
+            server.write_all(b"peer secret reason").await.unwrap();
+            server.flush().await.unwrap();
+            disconnected(&mut server).await;
+        };
+        let caller = async {
+            let error = match authenticate(client, NAME, authentication, roots, deadline()).await {
+                Err(error) => error,
+                Ok(_) => panic!("accepted failed authentication"),
+            };
+            assert!(matches!(error, Error::AuthenticationFailed));
+            assert!(!format!("{error:?} {error}").contains("peer secret"));
+        };
+        bounded(async { tokio::join!(peer, caller) }).await;
+    }
+}
+
+#[tokio::test]
 async fn an_expired_deadline_or_invalid_name_closes_before_network_writes() {
     for invalid_name in [false, true] {
         let (client, mut server) = sockets().await;
@@ -424,7 +637,14 @@ async fn an_expired_deadline_or_invalid_name_closes_before_network_writes() {
         } else {
             Instant::now()
         };
-        let result = authenticate(client, name, password(), TrustRoots::public_roots(), end).await;
+        let result = authenticate(
+            client,
+            name,
+            authentication(),
+            TrustRoots::public_roots(),
+            end,
+        )
+        .await;
         if invalid_name {
             assert!(matches!(result, Err(Error::InvalidServerName)));
         } else {
@@ -445,7 +665,7 @@ async fn a_pre_banner_stall_reports_the_rfb_version_stage_and_disconnects() {
     let result = authenticate(
         client,
         NAME,
-        password(),
+        authentication(),
         TrustRoots::public_roots(),
         Instant::now() + Duration::from_millis(20),
     )
@@ -473,7 +693,7 @@ async fn a_security_negotiation_stall_reports_its_stage_and_disconnects() {
     let caller = authenticate(
         client,
         NAME,
-        password(),
+        authentication(),
         TrustRoots::public_roots(),
         Instant::now() + Duration::from_secs(1),
     );
@@ -501,7 +721,7 @@ async fn a_tls_stall_reports_its_stage_and_disconnects() {
     let caller = authenticate(
         client,
         NAME,
-        password(),
+        authentication(),
         TrustRoots::public_roots(),
         Instant::now() + Duration::from_secs(1),
     );
@@ -526,7 +746,7 @@ async fn a_vnc_authentication_stall_reports_its_stage_and_disconnects() {
     let caller = authenticate(
         client,
         NAME,
-        password(),
+        authentication(),
         roots,
         Instant::now() + Duration::from_secs(1),
     );
@@ -539,13 +759,64 @@ async fn a_vnc_authentication_stall_reports_its_stage_and_disconnects() {
     ));
 }
 
+async fn assert_x509_authentication_stall(
+    authentication: X509Authentication,
+    subtype: u32,
+    expected_stage: AuthenticationStage,
+) {
+    let cert = Certificate::new(NAME, false, false);
+    let roots = cert.roots();
+    let (client, server) = sockets().await;
+    let peer = async move {
+        let mut server = secure_subtype(server, cert.config, subtype).await;
+        if subtype == 262 {
+            let username_length = server.read_u32().await.unwrap();
+            let password_length = server.read_u32().await.unwrap();
+            let mut credentials = vec![0; (username_length + password_length) as usize];
+            server.read_exact(&mut credentials).await.unwrap();
+            assert_eq!(&credentials, b"operatorpassword");
+        }
+        disconnected(&mut server).await;
+    };
+    let caller = authenticate(
+        client,
+        NAME,
+        authentication,
+        roots,
+        Instant::now() + Duration::from_secs(1),
+    );
+    let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
+    assert!(matches!(
+        result,
+        Err(Error::AuthenticationDeadlineExceeded { stage }) if stage == expected_stage
+    ));
+}
+
+#[tokio::test]
+async fn x509_none_and_plain_stalls_report_their_exact_stages() {
+    assert_x509_authentication_stall(
+        X509Authentication::None,
+        260,
+        AuthenticationStage::X509NoneAuthentication,
+    )
+    .await;
+    assert_x509_authentication_stall(
+        X509Authentication::Plain(
+            PlainCredentials::new("operator".to_owned(), "password".to_owned()).unwrap(),
+        ),
+        262,
+        AuthenticationStage::X509PlainAuthentication,
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn dropping_authentication_during_tls_closes_the_owned_socket() {
     let (client, server) = sockets().await;
     let task = tokio::spawn(authenticate(
         client,
         NAME,
-        password(),
+        authentication(),
         TrustRoots::public_roots(),
         deadline(),
     ));
@@ -566,8 +837,39 @@ async fn dropping_authentication_after_tls_does_not_leave_a_password_reader() {
     let cert = Certificate::new(NAME, false, false);
     let roots = cert.roots();
     let (client, server) = sockets().await;
-    let task = tokio::spawn(authenticate(client, NAME, password(), roots, deadline()));
+    let task = tokio::spawn(authenticate(
+        client,
+        NAME,
+        authentication(),
+        roots,
+        deadline(),
+    ));
     let mut server = bounded(secure(server, cert.config)).await;
+    task.abort();
+    assert!(task.await.err().unwrap().is_cancelled());
+    disconnected(&mut server).await;
+}
+
+#[tokio::test]
+async fn dropping_plain_authentication_after_credential_write_closes_the_socket() {
+    let cert = Certificate::new(NAME, false, false);
+    let roots = cert.roots();
+    let (client, server) = sockets().await;
+    let task = tokio::spawn(authenticate(
+        client,
+        NAME,
+        X509Authentication::Plain(
+            PlainCredentials::new("operator".to_owned(), "password".to_owned()).unwrap(),
+        ),
+        roots,
+        deadline(),
+    ));
+    let mut server = bounded(secure_subtype(server, cert.config, 262)).await;
+    let username_length = server.read_u32().await.unwrap();
+    let password_length = server.read_u32().await.unwrap();
+    let mut credentials = vec![0; (username_length + password_length) as usize];
+    server.read_exact(&mut credentials).await.unwrap();
+    assert_eq!(&credentials, b"operatorpassword");
     task.abort();
     assert!(task.await.err().unwrap().is_cancelled());
     disconnected(&mut server).await;
@@ -579,7 +881,7 @@ async fn rejects_a_ready_security_result_when_the_deadline_has_already_elapsed()
     let roots = cert.roots();
     let (client, server) = sockets().await;
     let end = deadline();
-    let mut authentication = Box::pin(authenticate(client, NAME, password(), roots, end));
+    let mut authentication = Box::pin(authenticate(client, NAME, authentication(), roots, end));
     let mut server = bounded(async {
         tokio::select! {
             _ = &mut authentication => {

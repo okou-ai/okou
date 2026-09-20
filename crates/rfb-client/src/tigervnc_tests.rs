@@ -11,8 +11,9 @@ use tokio::{
 };
 
 use crate::{
-    Capture, Error, FramebufferConnection, Input, InputOutcome, Key, MouseButton, ScrollAxis,
-    Session, SharingMode, TrustRoots, VncPassword, authenticate,
+    Authenticated, Capture, Error, FramebufferConnection, Input, InputOutcome, Key, MouseButton,
+    PlainCredentials, ScrollAxis, Session, SharingMode, TrustRoots, VncPassword,
+    X509Authentication, authenticate,
 };
 
 fn deadline() -> Instant {
@@ -27,8 +28,25 @@ struct Fixture {
     _directory: tempfile::TempDir,
 }
 
+#[derive(Clone, Copy)]
+enum FixtureSecurity {
+    None,
+    Vnc,
+    Plain,
+}
+
+impl FixtureSecurity {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "X509None",
+            Self::Vnc => "X509Vnc",
+            Self::Plain => "X509Plain",
+        }
+    }
+}
+
 impl Fixture {
-    async fn start() -> Self {
+    async fn start(security: FixtureSecurity) -> Self {
         let script = std::env::var_os("RFB_TIGERVNC_FIXTURE")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
@@ -38,6 +56,7 @@ impl Fixture {
         let mut child = Command::new("/usr/bin/python3")
             .arg(script)
             .arg(directory.path())
+            .arg(security.as_str())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -56,6 +75,7 @@ impl Fixture {
         fixture.ready = fixture.read().await;
         assert_eq!(fixture.ready["ready"], true);
         assert_eq!(fixture.ready["version"], "1.13.1+dfsg-2build2");
+        assert_eq!(fixture.ready["security"], security.as_str());
         fixture
     }
 
@@ -81,20 +101,28 @@ impl Fixture {
         self.read().await
     }
 
-    async fn connect(&self, encoding: i32) -> FramebufferConnection<TcpStream> {
+    async fn authenticate(&self, authentication: X509Authentication) -> Authenticated<TcpStream> {
         let port = self.ready["port"].as_u64().unwrap() as u16;
         let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         stream.set_nodelay(true).unwrap();
         let certificate = std::fs::read(self.ready["ca_der"].as_str().unwrap()).unwrap();
-        let authenticated = authenticate(
+        authenticate(
             stream,
             "localhost",
-            VncPassword::new("testpass".to_owned()).unwrap(),
+            authentication,
             TrustRoots::custom(vec![certificate.into()]).unwrap(),
             deadline(),
         )
         .await
-        .unwrap();
+        .unwrap()
+    }
+
+    async fn connect(&self, encoding: i32) -> FramebufferConnection<TcpStream> {
+        let authenticated = self
+            .authenticate(X509Authentication::VncPassword(
+                VncPassword::new("testpass".to_owned()).unwrap(),
+            ))
+            .await;
         let mut connection = authenticated
             .initialize(SharingMode::Shared, deadline())
             .await
@@ -176,7 +204,7 @@ async fn pinned_tigervnc_session_acceptance() {
 
 async fn run_matrix() {
     for encoding in [16, 0] {
-        let mut fixture = Fixture::start().await;
+        let mut fixture = Fixture::start(FixtureSecurity::Vnc).await;
         let mut connection = fixture
             .connect(encoding)
             .await
@@ -401,4 +429,51 @@ async fn run_matrix() {
         );
         fixture.stop().await;
     }
+}
+
+#[tokio::test]
+#[ignore = "requires pinned TigerVNC/X11 tools; run the explicit command in tests/TIGERVNC.md"]
+async fn pinned_tigervnc_x509_none_authentication_acceptance() {
+    timeout(Duration::from_secs(30), async {
+        let mut fixture = Fixture::start(FixtureSecurity::None).await;
+        drop(fixture.authenticate(X509Authentication::None).await);
+        let log = fixture.command(json!({"command":"closed"})).await;
+        assert!(
+            log["log"]
+                .as_str()
+                .unwrap()
+                .contains("Client requests security type X509None (260)")
+        );
+        fixture.stop().await;
+    })
+    .await
+    .expect("complete TigerVNC X509None authentication deadline");
+}
+
+#[tokio::test]
+#[ignore = "requires pinned TigerVNC/PAM tools; run the explicit command in tests/TIGERVNC.md"]
+async fn pinned_tigervnc_x509_plain_authentication_acceptance() {
+    timeout(Duration::from_secs(30), async {
+        let username = std::env::var("RFB_TIGERVNC_PLAIN_USERNAME")
+            .expect("set the disposable PAM username described in tests/TIGERVNC.md");
+        let password = std::env::var("RFB_TIGERVNC_PLAIN_PASSWORD")
+            .expect("set the disposable PAM password described in tests/TIGERVNC.md");
+        let mut fixture = Fixture::start(FixtureSecurity::Plain).await;
+        let credentials = PlainCredentials::new(username, password).unwrap();
+        drop(
+            fixture
+                .authenticate(X509Authentication::Plain(credentials))
+                .await,
+        );
+        let log = fixture.command(json!({"command":"closed"})).await;
+        assert!(
+            log["log"]
+                .as_str()
+                .unwrap()
+                .contains("Client requests security type X509Plain (262)")
+        );
+        fixture.stop().await;
+    })
+    .await
+    .expect("complete TigerVNC X509Plain authentication deadline");
 }
