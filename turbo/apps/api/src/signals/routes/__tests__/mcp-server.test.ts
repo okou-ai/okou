@@ -895,11 +895,11 @@ describe("MCP chat discovery and creation", () => {
     const replay = await createThread(token, args);
     expect(replay).toMatchObject({
       threadId: args.requestId,
-      agentId: f.agent.agentId,
+      agentId: f.defaultAgentId,
       model: {
-        selectedModel: null,
-        effectiveModel: "claude-sonnet-4-6",
-        source: "org_default",
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
       },
       replayed: true,
       input: {

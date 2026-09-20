@@ -101,11 +101,12 @@ In this branch `agentId` and `model` are optional:
 ```
 
 An omitted Agent resolves to the currently visible organization default and is
-stored concretely on the thread. An omitted model leaves the thread unpinned, so
-the current member default then organization default is used at run admission;
-the response exposes the selected/effective model and `source`. `message` uses
-the same nonblank, 32,000 UTF-16-unit limit as `send_chat_message` and preserves
-its exact accepted text.
+stored concretely on the thread. An omitted model leaves the thread unpinned
+until run admission, so the current member default then organization default is
+used for that admission. Canonical admission may persist the resolved model on
+the thread for future runs. The response exposes the selected/effective model
+and `source`. `message` uses the same nonblank, 32,000 UTF-16-unit limit as
+`send_chat_message` and preserves its exact accepted text.
 
 The thread and canonical input event commit in one transaction. Only after that
 commit does the shared scheduler attempt to start, queue, or steer execution.
@@ -127,12 +128,13 @@ the same derived input reference. Concurrent identical requests converge on one
 thread and, when present, one input. Switching between empty and combined modes,
 changing a message, or changing omitted-versus-explicit Agent/model intent is a
 conflict. Replay returns current stored thread settings without undoing later
-edits; an originally omitted model deliberately continues to follow current
-defaults. Deleted conversations, expired retries, or missing canonical evidence
-return an error. There is no permanent request-ID ledger. Never automatically
-retry an uncertain old request after the window; inspect the original thread
-before intentionally creating new work. No new table or schema migration is
-introduced.
+edits. An originally omitted model follows current defaults while the thread is
+still unpinned; after run admission persists the resolved model, replay reports
+that thread pin. Deleted conversations, expired retries, or missing canonical
+evidence return an error. There is no permanent request-ID ledger. Never
+automatically retry an uncertain old request after the window; inspect the
+original thread before intentionally creating new work. No new table or schema
+migration is introduced.
 
 Creation checks current Agent visibility and account-content admission in its
 transaction, including the Agent owner's account. It uses the existing creation
