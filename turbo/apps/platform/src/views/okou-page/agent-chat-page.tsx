@@ -31,7 +31,6 @@ import { GrowthEntryHeader } from "./growth-entry.tsx";
 import {
   chatPageTaglineDisplayed$,
   chatPageTaglineIndex$,
-  chatPageTaglineStarted$,
   chatPageTaglineTypewriterRef$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
@@ -376,7 +375,6 @@ export function AgentChatPage() {
   const setInput = useSet(composerSignals.draft.setDraftInput$);
   const saveDraft = useSet(composerSignals.draft.save$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
-  const taglineStarted = useGet(chatPageTaglineStarted$);
   const tagline = useTagline(
     currentChatAgentDisplayName,
     userFirstName,
@@ -412,16 +410,23 @@ export function AgentChatPage() {
               one. Reduced motion keeps the offset off entirely, which resolves
               to the settled layout.
 
-              The travel lasts exactly as long as the line still has characters
-              to arrive, because the line is what is moving the avatar. A fixed
-              duration is the wrong length for a line of any other length, and
-              at 500ms it also outran the typing badly enough to be the whole of
-              why the move read as mechanical: the row slid left faster than the
-              text grew right, so the end of the line travelled backwards for
-              the first third of the move before it began to advance. Half a
-              sine over the typing run keeps the row slower than the text at
-              every point, which leaves the line growing out of its own centre
-              while the avatar drifts off it.
+              The offset is held by the line the page is currently rendering,
+              rather than by how far the typewriter has got. The typed text is
+              module state with no page lifetime, and the route boundary only
+              drops the committed page when the route itself changes, so moving
+              between two agents' chats would read the previous visit's line and
+              render this row already settled.
+
+              The travel lasts exactly as long as the line takes to arrive,
+              because the line is what is moving the avatar. A fixed duration is
+              the wrong length for a line of any other length, and at 500ms it
+              also outran the typing badly enough to be the whole of why the
+              move read as mechanical: the row slid left faster than the text
+              grew right, so the end of the line travelled backwards for the
+              first third of the move before it began to advance. Half a sine
+              over the typing run keeps the row slower than the text at every
+              point, which leaves the line growing out of its own centre while
+              the avatar drifts off it.
 
               While the offset is on, the reserved line hangs past the right
               edge; the scrollport above would answer that with a horizontal
@@ -430,14 +435,11 @@ export function AgentChatPage() {
           <div className="flex w-full justify-center overflow-x-clip">
             <div
               data-testid="chat-greeting"
-              data-settled={taglineStarted}
+              data-settled={tagline !== ""}
               style={
                 {
-                  // One character has already landed when the travel starts, so
-                  // the run that is left to accompany is one shorter.
                   "--chat-greeting-settle-duration": `${String(
-                    Math.max(tagline.length - 1, 0) *
-                      TAGLINE_TYPEWRITER_SPEED_MS,
+                    tagline.length * TAGLINE_TYPEWRITER_SPEED_MS,
                   )}ms`,
                 } as CSSProperties
               }

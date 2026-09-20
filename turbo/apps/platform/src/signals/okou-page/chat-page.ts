@@ -32,18 +32,6 @@ export const chatPageTaglineDisplayed$ = computed((get) => {
   return get(internalTaglineDisplayed$);
 });
 
-/**
- * Whether the line has painted its first character.
- *
- * The greeting settles out of its centred entrance on this, and it is derived
- * rather than read off the text so that the page re-renders twice for the whole
- * animation instead of once every 40ms: propagation stops at a computed whose
- * value did not change, and a boolean that stays `true` stops it here.
- */
-export const chatPageTaglineStarted$ = computed((get) => {
-  return get(internalTaglineDisplayed$).length > 0;
-});
-
 const startTaglineTypewriter$ = command(
   ({ set }, element: HTMLElement, signal: AbortSignal) => {
     const text = element.dataset.typewriterText ?? "";
