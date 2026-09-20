@@ -96,7 +96,7 @@ export function OnboardingPosterCard({
     <label
       className={cn(
         surfaceVariants({ interactive: true }),
-        "relative flex min-h-[260px] flex-col overflow-hidden text-center",
+        "relative flex min-h-[300px] flex-col overflow-hidden text-center",
         selected && "border-primary bg-state-selected",
       )}
     >
@@ -109,10 +109,10 @@ export function OnboardingPosterCard({
           <Check size={14} />
         </span>
       ) : null}
-      <span className="flex flex-1 items-center justify-center px-6 pb-5 pt-8">
+      <span className="flex flex-1 items-center justify-center px-8 pb-7 pt-12">
         {mark}
       </span>
-      <span className="block px-5 pb-6">
+      <span className="block px-8 pb-9">
         <span className="block text-sm font-medium text-foreground">
           {title}
         </span>
