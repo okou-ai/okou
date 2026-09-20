@@ -161,6 +161,15 @@ impl ApiRequestBuilder {
         }
     }
 
+    pub(crate) fn connector_runtime_builtin_absent_reader(self) -> Self {
+        Self {
+            builder: self
+                .builder
+                .header("X-Connector-Runtime-Builtin-Absent", "1"),
+            ..self
+        }
+    }
+
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {

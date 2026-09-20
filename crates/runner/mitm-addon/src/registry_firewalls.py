@@ -308,6 +308,7 @@ def resolve_firewall_entries(
     *,
     builtin_firewall_catalog_cache_path: str | None = None,
     builtin_firewall_catalog_snapshot: BuiltinFirewallCatalogSnapshot | None = None,
+    explicit_omitted_builtin_names: frozenset[str] = frozenset(),
 ) -> ResolvedFirewallEntries:
     """Expand a registry sandbox's firewall entries into runtime firewall configs.
 
@@ -351,12 +352,15 @@ def resolve_firewall_entries(
     loader records the affected sandbox as `invalid_firewalls` instead of
     accepting partially classified runtime ownership.
 
-    Builtin names absent from a valid current catalog are omitted and returned
-    in `omitted_builtin_names`. Raises `FirewallEntryResolutionError` for an
-    unavailable catalog, malformed connector runtime targets, invalid connector
-    identities, duplicate target identities, malformed firewall lists or entries,
-    unsupported entry kinds, invalid builtin base URL templates, and builtin
-    host-policy validation failures.
+    Builtin names explicitly omitted by runtime state, or absent from a valid
+    current catalog, are omitted and returned in `omitted_builtin_names`.
+    Explicit omission is applied before catalog resolution so stale catalog
+    snapshots cannot reactivate a terminally absent connector. Raises
+    `FirewallEntryResolutionError` for an unavailable catalog, malformed
+    connector runtime targets, invalid connector identities, duplicate target
+    identities, malformed firewall lists or entries, unsupported entry kinds,
+    invalid builtin base URL templates, and builtin host-policy validation
+    failures.
     """
     raw_firewalls = sandbox.get("firewalls")
     if raw_firewalls is None:
@@ -366,7 +370,7 @@ def resolve_firewall_entries(
 
     resolved: list[dict] = []
     builtin_cache_keys: list[BuiltinFirewallCoreCacheKey | None] = []
-    omitted_builtin_names: set[str] = set()
+    omitted_builtin_names = set(explicit_omitted_builtin_names)
     builtin_target_slugs, custom_target_ids = _connector_runtime_target_ids(sandbox)
     for entry in raw_firewalls:
         if not isinstance(entry, dict):
@@ -379,6 +383,8 @@ def resolve_firewall_entries(
                 raise FirewallEntryResolutionError(
                     "builtin firewall entry name must be a non-empty string"
                 )
+            if raw_name in explicit_omitted_builtin_names:
+                continue
             source_id = _source_id(entry)
             if builtin_firewall_catalog_snapshot is None:
                 builtin_firewall_catalog_snapshot = load_catalog_snapshot(
