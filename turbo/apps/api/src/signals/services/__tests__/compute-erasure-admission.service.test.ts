@@ -3671,7 +3671,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         f: OutputFixture,
         kind: TerminalKind,
         options: {
-          awaitTerminalProcessing?: boolean;
+          awaitTerminalProjection?: boolean;
           mode?: "plain" | "ccstate";
           payload?: Record<string, unknown>;
           sourceCallbackId?: string;
@@ -3705,7 +3705,7 @@ describe("actual compute transactions versus the B1 projector", () => {
                 callback,
                 context.signal,
                 {
-                  awaitTerminalProcessing: options.awaitTerminalProcessing,
+                  awaitTerminalProjection: options.awaitTerminalProjection,
                 },
               );
         expect(result).toStrictEqual({ success: true });
@@ -5210,7 +5210,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         });
 
         await invokeTerminal(f, "failed", {
-          awaitTerminalProcessing: true,
+          awaitTerminalProjection: true,
         });
         expect(
           (await terminalState(f)).events.filter((event) => {
@@ -5231,7 +5231,7 @@ describe("actual compute transactions versus the B1 projector", () => {
             .for("no key update");
         });
         const writing = settle(
-          invokeTerminal(f, "failed", { awaitTerminalProcessing: true }),
+          invokeTerminal(f, "failed", { awaitTerminalProjection: true }),
         );
         await waitForBlockedBy(held.pid);
         const failure = await writing;
