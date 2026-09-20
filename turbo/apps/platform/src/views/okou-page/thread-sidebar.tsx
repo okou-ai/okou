@@ -12,7 +12,7 @@ import type {
   ThreadSidebarArtifactSource,
   ThreadSidebarTarget,
 } from "../../signals/chat-page/thread-sidebar.ts";
-import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
+import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-preview.ts";
 import {
   ArtifactCatalogEmpty,
   ArtifactCatalogError,
@@ -23,6 +23,7 @@ import { BrowserSessionSidebar } from "./browser-session-sidebar.tsx";
 import { MailDraftSidebar } from "./mail-draft-sidebar.tsx";
 import type { MailDraftSignals } from "../../signals/chat-page/mail-draft.ts";
 import { ArtifactSidebar } from "./artifact-sidebar.tsx";
+import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
 
 // ---------------------------------------------------------------------------
 // Thread-owned utility sidebar content.
@@ -132,8 +133,9 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
   const fullscreen = useGet(sidebar.fullscreen$);
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
-  const open = useSet(sidebar.open$);
+  const openCatalogArtifact = useSet(sidebar.openCatalogArtifact$);
   const loadMore = useSet(sidebar.artifactCatalog.loadMore$);
+  const reloadCatalog = useSet(sidebar.artifactCatalog.reload$);
   const pageSignal = useGet(pageSignal$);
 
   // useLastLoadable keeps the previously resolved pages rendered while the
@@ -185,7 +187,7 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
       >
         {artifacts === null ? (
           catalogLoadable.state === "hasError" ? (
-            <ArtifactCatalogError />
+            <ArtifactCatalogError onRetry={reloadCatalog} />
           ) : (
             <ArtifactCatalogSkeleton />
           )
@@ -195,12 +197,10 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
           <ArtifactCatalogGrid
             artifacts={artifacts}
             onOpen={(artifactId) => {
-              open(
-                {
-                  type: "artifact",
-                  source: { kind: "catalog", artifactId },
-                },
-                pageSignal,
+              detach(
+                openCatalogArtifact(artifactId, pageSignal),
+                Reason.DomCallback,
+                "thread artifact catalog preview",
               );
             }}
           />
@@ -267,8 +267,15 @@ function ThreadArtifactDetail({
     active: fullscreen,
     toggle: toggleFullscreen,
   };
-  const navigateImage = (url: string) => {
-    openAttachment(url, pageSignal);
+  const navigateImage = (item: ImageArtifactNavigationItem) => {
+    openAttachment(
+      {
+        url: item.url,
+        filename: item.filename,
+        ...(item.preview ? { preview: item.preview } : {}),
+      },
+      pageSignal,
+    );
   };
 
   if (source.kind === "attachment") {

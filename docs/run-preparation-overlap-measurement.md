@@ -77,6 +77,44 @@ prerequisite wrapper, especially for preloaded catalogs or catalog work performe
 inside thread account selection. Provider-dependent framework, secret,
 permission and usage materialization remain outside this overlap.
 
+### Subscription capture and thread observation (#35497)
+
+The unchanged-schedule implementation baseline is exact main
+`f2146eeacd252a357fc62ccf5c80b2fe0b715590`. Record the exact candidate PR head
+with every comparison; never pool a rebased head with an older sample.
+
+For a personal subscription thread run, compare these existing complete spans:
+
+- `api_dispatch_pre_create_agent_capture_subscription_account`;
+- `api_dispatch_pre_create_agent_resolve_thread_session` plus
+  `api_dispatch_pre_create_agent_web_chat_resolve_session_prompt_context` when
+  present;
+- the containing `api_dispatch_pre_create_agent_run` and successful
+  `api_to_spawn` interval.
+
+The candidate starts only the first read-only thread observation alongside
+capture. Post-authorization remains gated on successful capture, while it may
+continue alongside a slower thread branch. Capture remains once per request;
+only thread observation repeats after a stale snapshot. Deterministic latch
+tests that show both branches in flight prove dependency receipt and ownership,
+not elapsed-time improvement.
+
+No query statement is added and successful-path counts must match the baseline.
+A failed capture may now retain the already-started, bounded read-only thread
+session/prompt queries. Report those failure-path reads separately; they must
+not include post-authorization, writes, proof, admission, queue publication or
+spawn. Compare database acquisition and queueing as well as query counts so
+overlap is not mistaken for a benefit obtained by increasing pool pressure.
+
+Run baseline and candidate samples sequentially with identical fixtures and
+concurrency. Report every per-run observation, exclusion, failure,
+cancellation, retry and measurement error before computing distributions.
+Local route observations do not establish deployed `api_to_spawn`, tail, pool
+or failure behavior. Production follow-up must use exact serving API and Runner
+identities and same-run intervals. If the controlled comparison cannot show a
+repeatable critical-path benefit without worse tail, pool, failure or retry
+behavior, remove the scheduling change and record a no-change result.
+
 ### Retired paused-Goal candidate
 
 The paused-Goal lookup and its measurement were removed during Goal retirement.

@@ -1021,6 +1021,20 @@ const archiveSizeMismatchSchema = z.object({
 
 export type ArchiveSizeMismatch = z.infer<typeof archiveSizeMismatchSchema>;
 
+const archiveConnectionAttemptSchema = z.object({
+  started: z.number().int().min(0).max(255),
+  succeeded: z.number().int().min(0).max(255),
+  failed: z.number().int().min(0).max(255),
+  dropped: z.number().int().min(0).max(255),
+  active_at_headers: z.number().int().min(0).max(255),
+  terminal_duration_ms: z.number().int().min(0).max(4_294_967_295),
+  saturated: z.boolean(),
+});
+
+export type ArchiveConnectionAttempt = z.infer<
+  typeof archiveConnectionAttemptSchema
+>;
+
 /**
  * Sandbox operation schema for internal sandbox operations (init, storage, cli, checkpoint, cleanup)
  */
@@ -1033,6 +1047,7 @@ const sandboxOperationSchema = z.object({
   outcome: z.string().max(64).optional(),
   reason: z.string().max(64).optional(),
   archive_size_mismatch: archiveSizeMismatchSchema.optional(),
+  archive_connection_attempt: archiveConnectionAttemptSchema.optional(),
   dns_readiness_attempt: z.number().int().min(1).max(3).optional(),
   dns_readiness_final_attempt: z.boolean().optional(),
   dns_readiness_guest_duration_ms: z

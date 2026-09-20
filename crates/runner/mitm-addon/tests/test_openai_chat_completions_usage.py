@@ -12,6 +12,7 @@ from mitmproxy.test import tutils
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import response_streaming
 import usage
 import usage.openai_chat_completions as openai_chat_completions
 from tests.flow_helpers import header_map, response_stream
@@ -649,6 +650,78 @@ class TestOpenAIChatCompletionsUsage:
             "sse event discarded",
             "incomplete json",
         ]
+
+    def test_repeated_sse_parse_errors_bound_diagnostics_and_recover(
+        self,
+        tmp_path,
+        real_flow,
+    ):
+        flow = _chat_completions_flow(
+            tmp_path,
+            real_flow,
+            content_type="text/event-stream",
+        )
+        malformed_events: list[bytes] = []
+        for index in range(6):
+            malformed_events.extend(
+                (
+                    f"event: malformed-{index}\ndata: x\n\n".encode(),
+                    f"event: discarded-{index}\n".encode()
+                    + b'data: {"id":"chatcmpl_discarded"\n'
+                    + b"x" * 4_097
+                    + b"\n\n",
+                )
+            )
+        recovered_usage = (
+            b"data: "
+            + _chat_payload(usage_payload={"prompt_tokens": 7, "completion_tokens": 2})
+            + b"\n\ndata: [DONE]\n\n"
+        )
+
+        with (
+            patch.object(
+                response_streaming,
+                "log_proxy_entry",
+                wraps=response_streaming.log_proxy_entry,
+            ) as serialize_diagnostic,
+            patch.object(
+                response_streaming.run_usage,
+                "mark",
+                wraps=response_streaming.run_usage.mark,
+            ) as mark_run_usage,
+        ):
+            mitm_addon.responseheaders(flow)
+            callback = response_stream(flow)
+            for event in malformed_events:
+                assert callback(event) == event
+            assert callback(recovered_usage) == recovered_usage
+
+            webhook = _run_response(flow, self._usage_webhook_api)
+
+        assert serialize_diagnostic.call_count == 4
+        mark_run_usage.assert_called_once_with(flow, "parse_error")
+        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
+            "tokens.input": 7,
+            "tokens.output": 2,
+        }
+        warnings = [
+            entry
+            for entry in read_jsonl_entries_after_flush(
+                Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
+            )
+            if entry.get("message") == "Model provider SSE usage extraction failed"
+        ]
+        assert [warning["event"] for warning in warnings] == [
+            "malformed-0",
+            "discarded-0",
+            "malformed-1",
+            "discarded-1",
+        ]
+        assert [warning["error"] for warning in warnings[1::2]] == [
+            "sse event discarded",
+            "sse event discarded",
+        ]
+        assert len({warning["error"] for warning in warnings}) == 2
 
     def test_malformed_sse_fails_closed_with_chat_protocol_diagnostic(
         self,

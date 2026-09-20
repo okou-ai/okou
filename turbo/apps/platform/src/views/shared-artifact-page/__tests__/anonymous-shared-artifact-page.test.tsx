@@ -164,6 +164,14 @@ test.each([imagePath, `/share/artifacts/${artifactId}`])(
     expect(action("button", "Sign in")).toBeEnabled();
     expect(action("button", "Try again")).toBeEnabled();
     expect(action("link", "Back to Okou")).toHaveAttribute("href", "/");
+    expect(
+      screen.getByText(/It may be private or no longer available\./u),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /It may not exist, or it may be shared with a different account or organization\./u,
+      ),
+    ).not.toBeInTheDocument();
     expect(window.location.href).toBe(artifactUrl);
     expect(assign.calls).toStrictEqual([]);
     expect(replace.calls).toStrictEqual([]);

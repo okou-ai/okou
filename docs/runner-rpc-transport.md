@@ -133,8 +133,8 @@ setup budget; validated SSH file methods retain their longer method-owned budget
 SSH authorization, session pruning, retained host-work capacity, and diagnostic
 reporting remain with SSH. Run cancellation/Drop synchronously closes its SSH
 registration; normal shutdown joins dispatched requests before session cleanup.
-This is preparation for non-SSH consumers, not implementation of #34170's token
-measurement or CLI command. No helper framing, version or retry contract changes.
+The current-run usage consumer described below shares this owner without
+changing helper framing, version or retry behavior.
 
 `Sandbox::guest_rpc(expected_run_id)` returns an assignment-bound
 `GuestRpcAcceptor`. `AcceptedGuestRpc` supplies a host-derived sandbox ID,
@@ -172,6 +172,32 @@ guarantee remote process termination.
 This dedicated guest-initiated channel does not change the ordinary
 host-to-guest control protocol. `process-control-ipc` remains guest-local
 process control/placement IPC, not this cross-VM transport.
+
+## Current-run usage consumer
+
+`run.usage` is a read-only, assignment-bound method. It accepts only the empty
+object `{}`. Any guest-supplied Run ID, host path, endpoint, addon generation or
+source total is an `invalid_request` rejected before dispatch. The host selects
+the Run from the current assignment and, when the captured `runUsage` switch is
+enabled, reads the immutable API-first handoff observation plus one
+generation-frozen MITM snapshot. The method requires no SSH consumer,
+credential or capability grant.
+
+A current Runner that knows the method but did not install the usage consumer
+returns `unavailable` with `not_dispatched`. An older Runner returns
+`unknown_method`. Callers use that distinction for feature-disabled versus
+unsupported assignments; neither response permits a fallback or retry. Source
+absence, invalid handoff data, MITM saturation and bounded MITM read failures
+are source states inside a successful business result when the Runner can still
+return a truthful snapshot.
+
+The method uses the same eight-request admission limit, 60-second request
+budget, assignment and sandbox cancellation, joined shutdown and
+terminal-plus-EOF rules as the other ordinary methods. It writes exactly one
+result terminal and then closes the stream. Parking, reassignment and sandbox
+cleanup retire the old owner, so an old guest connection or frozen addon reader
+cannot follow the next assignment. See [API-first run usage handoff](api-run-usage.md)
+for the version-1 source and composition contract.
 
 ## Opt-in binary streaming foundation
 

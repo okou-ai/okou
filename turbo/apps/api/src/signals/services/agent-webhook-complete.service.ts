@@ -11,15 +11,7 @@ import {
   type RunResult,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
-import {
-  isBuiltInModelProviderType,
-  modelProviderTypeSchema,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
-  knownRunFailureReasonSchema,
-  type KnownRunFailureReason,
-  type RunFailureReasonToken,
-} from "@okouai/api-contracts/contracts/run-failure-reasons";
+import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -62,6 +54,10 @@ import {
 } from "./agent-webhook-checkpoints.service";
 import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  logAgentRunFailure,
+  type AgentRunFailureLogSnapshot,
+} from "./agent-run-failure-log.service";
 
 type WebhookCompleteBody = z.infer<
   typeof webhookCompleteContract.complete.body
@@ -130,7 +126,7 @@ type CompletionResponse =
   | CompletionSuccessResponse
   | AgentCheckpointErrorResponse;
 
-interface RunRecord {
+interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly orgId: string;
@@ -141,7 +137,6 @@ interface RunRecord {
   readonly triggerSource: string | null;
   readonly launchSnapshot: (typeof agentRuns.$inferSelect)["launchSnapshot"];
   readonly langfuseTraceEnabled: boolean;
-  readonly modelProvider: string | null;
 }
 
 interface PreparedCompletion {
@@ -173,54 +168,6 @@ type CompletionTransactionResult =
 
 const L = logger("webhook:complete");
 
-const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
-  // Input and execution limits need no operator action for either key owner.
-  safety_policy_refusal: "suppress",
-  input_too_large: "suppress",
-  execution_timeout: "suppress",
-  insufficient_credits: "suppress-byok",
-  provider_insufficient_credits: "suppress-byok",
-  invalid_api_key: "suppress-byok",
-  invalid_credentials: "suppress-byok",
-  terms_acceptance_required: "suppress-byok",
-  context_window_exceeded: "suppress-byok",
-  output_token_limit: "suppress-byok",
-  provider_rate_limited: "suppress-byok",
-  provider_overloaded: "suppress-byok",
-  provider_stream_timeout: "suppress-byok",
-  provider_queue_timeout: "suppress-byok",
-  provider_server_error: "suppress-byok",
-  response_connection_lost: "suppress-byok",
-  reconnect_required: "suppress-byok",
-  usage_limit: "suppress-byok",
-  session_history_limit: "retain",
-  guest_root_filesystem_full: "retain",
-  unsupported_model: "retain",
-} satisfies Record<
-  KnownRunFailureReason,
-  "suppress" | "suppress-byok" | "retain"
->);
-
-function shouldSuppressKnownFailureLog(
-  run: RunRecord,
-  failureReason: KnownRunFailureReason,
-): boolean {
-  switch (KNOWN_FAILURE_LOG_POLICY[failureReason]) {
-    case "suppress": {
-      return true;
-    }
-    case "suppress-byok": {
-      const providerType = modelProviderTypeSchema.safeParse(run.modelProvider);
-      return (
-        providerType.success && !isBuiltInModelProviderType(providerType.data)
-      );
-    }
-    case "retain": {
-      return false;
-    }
-  }
-}
-
 function logAgentRunCompletionOutcome(
   input: CompleteAgentRunInput,
   commit: CompletionCommit,
@@ -236,60 +183,14 @@ function logAgentRunCompletionOutcome(
     });
     return;
   }
-  if (!shouldSuppressFailureLog(commit.run, commit.transitionFailureReason)) {
-    logRunFailure(input, commit);
-  }
-}
-
-function shouldSuppressFailureLog(
-  run: RunRecord,
-  failureReason: RunFailureReasonToken | undefined,
-): boolean {
-  const knownFailureReason =
-    knownRunFailureReasonSchema.safeParse(failureReason);
-  if (!knownFailureReason.success) {
-    return false;
-  }
-  return shouldSuppressKnownFailureLog(run, knownFailureReason.data);
-}
-
-/**
- * A capacity rejection on a built-in route fails the user's run against a
- * credential the platform owns, so it stays a genuine operator-actionable
- * failure rather than a caller-side condition. The reason token is
- * framework-independent, so a built-in Claude overload that reaches this same
- * boundary is included. Routing recovery is a separate decision; this only
- * classifies the severity of the single terminal record.
- */
-function isBuiltInCapacityFailure(commit: CompletionCommit): boolean {
-  return (
-    commit.transitionFailureReason === "provider_overloaded" &&
-    isBuiltInModelProviderType(commit.run.modelProvider)
-  );
-}
-
-function logRunFailure(
-  input: CompleteAgentRunInput,
-  commit: CompletionCommit,
-): void {
-  const isCreditError =
-    commit.transitionFailureReason === "insufficient_credits";
-  const logFailure = isCreditError
-    ? L.debug
-    : commit.transitionFailureReason === "guest_root_filesystem_full"
-      ? L.info
-      : isBuiltInCapacityFailure(commit)
-        ? L.error
-        : L.warn;
-  logFailure(
-    isCreditError ? "Run stopped: insufficient credits" : "Run failed",
-    {
-      runId: input.body.runId,
-      exitCode: input.body.exitCode,
-      error: commit.transitionError,
-      failureReason: commit.transitionFailureReason,
-    },
-  );
+  logAgentRunFailure({
+    runId: input.body.runId,
+    exitCode: input.body.exitCode,
+    error: commit.transitionError,
+    failureReason: commit.transitionFailureReason,
+    executionOwner: input.executionOwner ?? "sandbox",
+    run: commit.run,
+  });
 }
 
 function checkpointInputForCompletion(
@@ -369,6 +270,10 @@ async function loadCompletionRun(
       launchSnapshot: agentRuns.launchSnapshot,
       langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
+      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+      selectedModel: agentRuns.selectedModel,
+      modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+      modelRuntimeModel: agentRuns.modelRuntimeModel,
     })
     .from(agentRuns)
     .where(
@@ -443,6 +348,10 @@ async function lockCompletionRun(
       launchSnapshot: agentRuns.launchSnapshot,
       langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
+      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+      selectedModel: agentRuns.selectedModel,
+      modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+      modelRuntimeModel: agentRuns.modelRuntimeModel,
     })
     .from(agentRuns)
     .where(

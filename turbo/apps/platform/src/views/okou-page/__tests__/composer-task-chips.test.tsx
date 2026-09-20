@@ -644,13 +644,13 @@ test.each([
   {
     task: "Website",
     first: "Build a website for my business",
-    next: "Put my café menu online",
+    next: "Put my café menu online for guests",
     prompt: "Build a website that explains my business",
   },
   {
     task: "Presentation",
-    first: "Pitch my business to investors",
-    next: "Present my results",
+    first: "Pitch my new business to a room of investors",
+    next: "Present this quarter’s results to the team",
     prompt: "Create an investor pitch deck for my business",
   },
 ])(
@@ -684,7 +684,7 @@ test.each([
   {
     task: "Image",
     first: "Put my product in a new scene",
-    second: "Make a headshot for work",
+    second: "Make a headshot I can use at work",
     firstPrompt:
       "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent.",
     secondPrompt:
@@ -701,8 +701,8 @@ test.each([
   },
   {
     task: "Presentation",
-    first: "Pitch my business to investors",
-    second: "Put together a team update",
+    first: "Pitch my new business to a room of investors",
+    second: "Put together this week’s team update",
     firstPrompt:
       "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising.",
     secondPrompt:
@@ -764,7 +764,7 @@ test("Slash commands keep the selected task and recommendations in sync", async 
     expect(selectedTask(editor, "Presentation")).toBeVisible();
   });
   expect(screen.queryByRole("group", { name: "Image" })).toBeNull();
-  await screen.findByText("Pitch my business to investors");
+  await screen.findByText("Pitch my new business to a room of investors");
   expect(editor).toHaveTextContent("A quiet garden");
 });
 

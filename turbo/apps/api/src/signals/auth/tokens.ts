@@ -32,6 +32,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
+  ["run-usage:read", FeatureSwitchKey.RunUsage],
   ["user-template:write", FeatureSwitchKey.CustomTemplates],
   ["vnc:read", FeatureSwitchKey.VncAccess],
   ["vnc:write", FeatureSwitchKey.VncAccess],

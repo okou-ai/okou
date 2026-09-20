@@ -180,6 +180,13 @@ export async function loadOrgConcurrencyState(
   };
 }
 
+/**
+ * Fresh direct admission only. The caller has no persisted queue position, so
+ * its single captured `at` is both the position it is ordered at and the
+ * instant its earlier demand is tested for expiry. Queued legacy promotion and
+ * retained deferred promotion keep a historical position and must call
+ * `countEarlierDeferredDemand` with a separate current `eligibilityTime`.
+ */
 export async function loadOrgConcurrencyAdmissionState(
   db: ReadDb,
   args: {
@@ -192,11 +199,10 @@ export async function loadOrgConcurrencyAdmissionState(
     db,
     args,
   );
-  const deferredDemandTotals = earlierDeferredDemandTotals(
-    db,
-    args.orgId,
-    args.at,
-  );
+  const deferredDemandTotals = earlierDeferredDemandTotals(db, args.orgId, {
+    positionTime: args.at,
+    eligibilityTime: args.at,
+  });
   const [row] = await db
     .select({
       entitlementOrgId: orgPlanEntitlements.orgId,

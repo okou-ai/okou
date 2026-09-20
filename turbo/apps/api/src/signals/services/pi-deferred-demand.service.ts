@@ -4,7 +4,6 @@ import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
 
 import type { Tx } from "../../lib/db-types";
-import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 
 /**
@@ -32,17 +31,22 @@ function retainedDemand(tx: Pick<Db, "select">) {
   );
 }
 
+/**
+ * `eligibilityTime` is always the reader's current observation instant. Demand
+ * stops reserving capacity the moment it expires, so a historical queue
+ * position must never be substituted here.
+ */
 export function eligibleDeferredPiDemandPredicate(
   db: Pick<Db, "select">,
   orgId: string,
-  at: Date = nowDate(),
+  eligibilityTime: Date,
 ) {
   return and(
     eq(agentRuns.orgId, orgId),
     eq(agentRuns.status, "pending"),
     eq(agentRunSandboxIntent.state, "waiting"),
     retainedDemand(db),
-    gt(agentRunSandboxIntent.expiresAt, at),
+    gt(agentRunSandboxIntent.expiresAt, eligibilityTime),
   );
 }
 
@@ -74,25 +78,43 @@ export async function listDeferredPiCandidates(
 }
 
 /**
+ * The admission boundary an earlier-demand read is taken at. Ordering position
+ * and eligibility are two different instants and must stay separate:
+ *
+ * - `positionTime` is the candidate's immutable FIFO position. Queued legacy
+ *   promotion passes its historical `agent_run_queue.created_at` and retained
+ *   deferred promotion passes its historical `enqueuedAt`, so the documented
+ *   `(enqueuedAt, runId)` order never changes while a candidate waits.
+ * - `eligibilityTime` is the current admission observation instant, captured
+ *   under the same organization capacity lock. Only this instant decides
+ *   `expiresAt >`, so demand that expired after the candidate took its position
+ *   stops reserving a slot without waiting for a consumer to sweep it.
+ *
  * Omit `runId` for a fresh direct admission that has no persisted position yet:
- * it is ordered at `at` and yields to demand already persisted at that instant.
- * Already expired demand is excluded so an ineligible head cannot block eligible
- * work until a consumer sweeps it.
+ * it is ordered at `positionTime` and yields to demand already persisted at
+ * that instant. Such a caller captures one current instant and passes it as
+ * both, because its position is that same observation.
  */
+export interface EarlierDeferredDemandBoundary {
+  readonly positionTime: Date;
+  readonly eligibilityTime: Date;
+  readonly runId?: string;
+}
+
 function earlierDeferredDemandPredicate(
   tx: Pick<Db, "select">,
   orgId: string,
-  at: Date,
-  runId?: string,
+  boundary: EarlierDeferredDemandBoundary,
 ) {
+  const { positionTime, eligibilityTime, runId } = boundary;
   return and(
-    eligibleDeferredPiDemandPredicate(tx, orgId, at),
+    eligibleDeferredPiDemandPredicate(tx, orgId, eligibilityTime),
     runId === undefined
-      ? lte(agentRunSandboxIntent.enqueuedAt, at)
+      ? lte(agentRunSandboxIntent.enqueuedAt, positionTime)
       : or(
-          lt(agentRunSandboxIntent.enqueuedAt, at),
+          lt(agentRunSandboxIntent.enqueuedAt, positionTime),
           and(
-            eq(agentRunSandboxIntent.enqueuedAt, at),
+            eq(agentRunSandboxIntent.enqueuedAt, positionTime),
             lt(agentRunSandboxIntent.runId, runId),
           ),
         ),
@@ -103,28 +125,26 @@ function earlierDeferredDemandPredicate(
 export function earlierDeferredDemandTotals(
   db: Pick<Db, "select">,
   orgId: string,
-  at: Date,
-  runId?: string,
+  boundary: EarlierDeferredDemandBoundary,
 ) {
   return db
     .select({ count: count().as("earlier_deferred_demand_count") })
     .from(agentRunSandboxIntent)
     .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
-    .where(earlierDeferredDemandPredicate(db, orgId, at, runId))
+    .where(earlierDeferredDemandPredicate(db, orgId, boundary))
     .as("earlier_deferred_demand_totals");
 }
 
 export async function countEarlierDeferredDemand(
   tx: Tx,
   orgId: string,
-  at: Date,
-  runId?: string,
+  boundary: EarlierDeferredDemandBoundary,
 ): Promise<number> {
   const [earlier] = await tx
     .select({ count: count() })
     .from(agentRunSandboxIntent)
     .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
-    .where(earlierDeferredDemandPredicate(tx, orgId, at, runId));
+    .where(earlierDeferredDemandPredicate(tx, orgId, boundary));
   if (!earlier) {
     throw new Error("Earlier deferred demand count query returned no row");
   }

@@ -212,6 +212,13 @@ async fn receive_message(
     .map_err(|_| "timeout waiting for message".to_string())?
 }
 
+/// Message fields sent through the Ably REST API.
+struct PublishMessage<'a> {
+    name: Option<&'a str>,
+    data: &'a serde_json::Value,
+    encoding: Option<&'a str>,
+}
+
 /// Publish a single message via Ably REST API.
 async fn publish_message(
     client: &reqwest::Client,
@@ -222,21 +229,44 @@ async fn publish_message(
     data: &serde_json::Value,
     encoding: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    publish_message_with_timeout(
+        client,
+        rest_url,
+        channel,
+        auth_header,
+        PublishMessage {
+            name,
+            data,
+            encoding,
+        },
+        PUBLISH_TIMEOUT,
+    )
+    .await
+}
+
+async fn publish_message_with_timeout(
+    client: &reqwest::Client,
+    rest_url: &str,
+    channel: &str,
+    auth_header: &str,
+    message: PublishMessage<'_>,
+    publish_timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let url = format!("{rest_url}/channels/{channel}/messages");
 
-    let mut body = serde_json::json!({ "data": data });
+    let mut body = serde_json::json!({ "data": message.data });
     let obj = body.as_object_mut().ok_or("body is not an object")?;
 
-    if let Some(n) = name {
+    if let Some(n) = message.name {
         obj.insert("name".to_string(), serde_json::json!(n));
     }
-    if let Some(enc) = encoding {
+    if let Some(enc) = message.encoding {
         obj.insert("encoding".to_string(), serde_json::json!(enc));
     }
 
     // Sending and reading an error body share one deadline. Expiry does not
     // imply Ably rejected the message, so do not retry this publish.
-    tokio::time::timeout(PUBLISH_TIMEOUT, async {
+    tokio::time::timeout(publish_timeout, async {
         let resp = client
             .post(&url)
             .header("Authorization", format!("Basic {auth_header}"))
@@ -253,7 +283,7 @@ async fn publish_message(
         Ok(())
     })
     .await
-    .map_err(|_| format!("publish timed out after {PUBLISH_TIMEOUT:?}"))?
+    .map_err(|_| format!("publish timed out after {publish_timeout:?}"))?
 }
 
 #[tokio::main]
@@ -475,6 +505,7 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
+    const TEST_PUBLISH_TIMEOUT: Duration = Duration::from_secs(1);
     const TEST_TIMEOUT: Duration = Duration::from_secs(20);
 
     async fn stalled_publish_error(scheme: &str, response: Option<&[u8]>) -> String {
@@ -483,14 +514,17 @@ mod tests {
             let rest_url = format!("{scheme}://{}", listener.local_addr().unwrap());
             let client = reqwest::Client::builder().no_proxy().build().unwrap();
             let data = serde_json::json!("payload");
-            let publish = publish_message(
+            let publish = publish_message_with_timeout(
                 &client,
                 &rest_url,
                 "test-channel",
                 "test-auth",
-                Some("test"),
-                &data,
-                None,
+                PublishMessage {
+                    name: Some("test"),
+                    data: &data,
+                    encoding: None,
+                },
+                TEST_PUBLISH_TIMEOUT,
             );
             tokio::pin!(publish);
 
@@ -530,7 +564,7 @@ mod tests {
     async fn publish_times_out_during_tls_handshake() {
         assert_eq!(
             stalled_publish_error("https", None).await,
-            "publish timed out after 10s"
+            "publish timed out after 1s"
         );
     }
 
@@ -538,7 +572,7 @@ mod tests {
     async fn publish_times_out_waiting_for_response_headers() {
         assert_eq!(
             stalled_publish_error("http", None).await,
-            "publish timed out after 10s"
+            "publish timed out after 1s"
         );
     }
 
@@ -547,8 +581,13 @@ mod tests {
         let response = b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 100\r\n\r\npartial";
         assert_eq!(
             stalled_publish_error("http", Some(response)).await,
-            "publish timed out after 10s"
+            "publish timed out after 1s"
         );
+    }
+
+    #[test]
+    fn publish_timeout_matches_documented_contract() {
+        assert_eq!(PUBLISH_TIMEOUT, Duration::from_secs(10));
     }
 
     #[tokio::test]

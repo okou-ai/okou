@@ -3,7 +3,9 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -88,6 +90,154 @@ function getPreviewFrame(testId: string): HTMLIFrameElement {
   }
   return frame;
 }
+
+async function expectPrivateAttachmentResource(
+  root: HTMLElement,
+  filename: string,
+  firstUrl: string,
+  surface: "dialog" | "sidebar",
+): Promise<void> {
+  const queries = within(root);
+  let actual: string | null;
+  let expected: string;
+  if (filename.endsWith(".pdf")) {
+    const element = await queries.findByTestId(
+      surface === "dialog"
+        ? "artifact-dialog-document-frame"
+        : "artifact-sidebar-body-pdf",
+    );
+    const frame =
+      element instanceof HTMLIFrameElement
+        ? element
+        : element.querySelector("iframe");
+    actual = frame?.getAttribute("src") ?? null;
+    expected = `${firstUrl}#navpanes=0`;
+  } else if (filename.endsWith(".mp3")) {
+    const player = await queries.findByTestId(
+      surface === "dialog"
+        ? "artifact-dialog-audio"
+        : "artifact-sidebar-body-audio",
+    );
+    actual = player.getAttribute("src");
+    expected = firstUrl;
+  } else if (filename.endsWith(".xlsx")) {
+    const frame = await queries.findByTestId(
+      surface === "dialog"
+        ? "artifact-dialog-body-office"
+        : "artifact-sidebar-body-office",
+    );
+    await waitFor(() => {
+      if (!frame.getAttribute("src")) {
+        throw new Error("Expected the Office preview frame to have a source");
+      }
+    });
+    actual = new URL(
+      frame.getAttribute("src") ?? location.href,
+    ).searchParams.get("src");
+    expected = firstUrl;
+  } else {
+    const content = await queries.findByText(`private preview for ${filename}`);
+    actual = content.textContent;
+    expected = `private preview for ${filename}`;
+  }
+  expect(actual).toBe(expected);
+}
+
+test.each([
+  ["Markdown", "private-notes.md", "text/markdown"],
+  ["text", "private-notes.txt", "text/plain"],
+  ["JSON", "private-data.json", "application/json"],
+  ["CSV", "private-table.csv", "text/csv"],
+  ["PDF", "private-report.pdf", "application/pdf"],
+  ["audio", "private-recording.mp3", "audio/mpeg"],
+  [
+    "Office",
+    "private-workbook.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ],
+] as const)(
+  "A private %s attachment reuses one URL across reopen and split view",
+  async (_label, filename, contentType) => {
+    const fileId = `private-${filename.replaceAll(".", "-")}`;
+    const canonicalUrl = privateAttachmentUrl(fileId);
+    const firstUrl = `https://private-files.example/${filename}?signature=first`;
+    const nextUrl = `https://private-files.example/${filename}?signature=next`;
+    mockAttachmentChat(context, {
+      chatEvents: [
+        userImageMessage(`user-${fileId}`, [
+          {
+            type: "file",
+            fileId,
+            filenameSnapshot: filename,
+            contentType,
+          },
+        ]),
+      ],
+      artifacts: [
+        artifactFile(filename, {
+          id: fileId,
+          contentType,
+          url: canonicalUrl,
+        }),
+      ],
+    });
+    let resolveCount = 0;
+    context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+      expect(query.file_id).toBe(fileId);
+      const url = resolveCount === 0 ? firstUrl : nextUrl;
+      resolveCount += 1;
+      return respond(200, {
+        url,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        publicUrl: null,
+      });
+    });
+    context.mocks.http.get(
+      `https://private-files.example/${filename}`,
+      ({ request }) => {
+        const renewed = new URL(request.url).searchParams.get("signature");
+        return HttpResponse.text(
+          `${renewed === "first" ? "private" : "unexpected renewed"} preview for ${filename}`,
+        );
+      },
+    );
+
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    const filenameNode = await screen.findByText(filename);
+    const trigger = filenameNode.closest("button");
+    if (!trigger) {
+      throw new Error(`Expected a preview trigger for ${filename}`);
+    }
+
+    click(trigger);
+    let preview = await screen.findByTestId("attachment-lightbox");
+    await expectPrivateAttachmentResource(
+      preview,
+      filename,
+      firstUrl,
+      "dialog",
+    );
+    await closeFocusedPreview();
+
+    click(trigger);
+    preview = await screen.findByTestId("attachment-lightbox");
+    await expectPrivateAttachmentResource(
+      preview,
+      filename,
+      firstUrl,
+      "dialog",
+    );
+
+    click(await findNamedButton("Open in split view"));
+    const sidebar = await screen.findByTestId("artifact-sidebar");
+    await expectPrivateAttachmentResource(
+      sidebar,
+      filename,
+      firstUrl,
+      "sidebar",
+    );
+  },
+);
 
 test("A composer image preview does not replace an open artifact sidebar", async () => {
   const siteUrl = "https://workspace-guide.sites.vm7.io";
@@ -433,10 +583,22 @@ test("Image navigation remains inside its split-view chat", async () => {
     },
   );
   mockPrivateUrlSequence(context, {
-    [leftFirst]: ["https://private-files.example/left-shared.png"],
-    [leftSecond]: ["https://private-files.example/left-second.png"],
-    [rightFirst]: ["https://private-files.example/right-shared.png"],
-    [rightSecond]: ["https://private-files.example/right-second.png"],
+    [leftFirst]: [
+      "https://private-files.example/left-shared.png?signature=first",
+      "https://private-files.example/left-shared.png?signature=next",
+    ],
+    [leftSecond]: [
+      "https://private-files.example/left-second.png?signature=first",
+      "https://private-files.example/left-second.png?signature=next",
+    ],
+    [rightFirst]: [
+      "https://private-files.example/right-shared.png?signature=first",
+      "https://private-files.example/right-shared.png?signature=next",
+    ],
+    [rightSecond]: [
+      "https://private-files.example/right-second.png?signature=first",
+      "https://private-files.example/right-second.png?signature=next",
+    ],
   });
 
   await setupPage({
@@ -444,6 +606,15 @@ test("Image navigation remains inside its split-view chat", async () => {
     path: `/chats/${ATTACHMENT_THREAD_ID}?sidebar=${SECOND_ATTACHMENT_THREAD_ID}`,
   });
 
+  const leftPane = await waitFor(() => {
+    const pane = document.querySelector<HTMLElement>(
+      `[data-chat-thread-container-id="${ATTACHMENT_THREAD_ID}"]`,
+    );
+    if (!pane) {
+      throw new Error("Left chat pane is not ready");
+    }
+    return pane;
+  });
   const rightPane = await waitFor(() => {
     const pane = document.querySelector<HTMLElement>(
       `[data-chat-thread-container-id="${SECOND_ATTACHMENT_THREAD_ID}"]`,
@@ -464,12 +635,40 @@ test("Image navigation remains inside its split-view chat", async () => {
   });
   expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
     "src",
-    "https://private-files.example/right-second.png",
+    "https://private-files.example/right-second.png?signature=first",
   );
   expect(screen.getByTestId("attachment-lightbox-image")).not.toHaveAttribute(
     "src",
-    "https://private-files.example/left-second.png",
+    "https://private-files.example/left-second.png?signature=first",
   );
+
+  await closeFocusedPreview();
+
+  click(await findNamedLink("Preview shared.png", leftPane));
+  click(await findNamedButton("Next image artifact"));
+  await waitFor(() => {
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "src",
+      "https://private-files.example/left-second.png?signature=first",
+    );
+  });
+  click(await findNamedButton("Open in split view"));
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(sidebar).findByTestId("artifact-sidebar-body-image"),
+  ).resolves.toHaveAttribute(
+    "src",
+    "https://private-files.example/left-second.png?signature=first",
+  );
+  click(await findNamedButton("Previous image artifact", sidebar));
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByTestId("artifact-sidebar-body-image"),
+    ).toHaveAttribute(
+      "src",
+      "https://private-files.example/left-shared.png?signature=first",
+    );
+  });
 });
 
 test.each(["link", "card"])(
@@ -530,6 +729,14 @@ test.each(["link", "card"])(
     });
     expect(document.querySelector('a[aria-label="Share"]')).toBeNull();
     currentPreview = nextPreview;
+    click(await findNamedButton("Enter fullscreen"));
+    await findNamedButton("Exit fullscreen");
+    expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
+      "src",
+      `${firstPreview}#slide-2`,
+    );
+    click(await findNamedButton("Exit fullscreen"));
+    await findNamedButton("Enter fullscreen");
     await closeFocusedPreview();
     mockNow(new Date("2026-09-12T00:00:00.000Z"), context.signal);
     click(openPreview);
@@ -651,6 +858,7 @@ test.each([
     const storedPoster =
       storedForm === "relative" ? new URL(poster).pathname : poster;
     const videoUrl = `${R2_ORIGIN}/private/generated.mp4?X-Amz-Signature=owner`;
+    const renewedVideoUrl = `${R2_ORIGIN}/private/generated.mp4?X-Amz-Signature=renewed`;
     const posterUrl = `${R2_ORIGIN}/private/poster%20%2B.bin?X-Amz-Signature=owner&X-Amz-Security-Token=token%2B%2F%3D`;
     mockAttachmentChat(context, {
       chatEvents: [
@@ -674,6 +882,7 @@ test.each([
         }),
       ],
     });
+    let videoResolveCount = 0;
     context.mocks.api(
       artifactReferencesContract.resolve,
       ({ params, respond }) => {
@@ -682,8 +891,13 @@ test.each([
           new URL(storedPoster, "http://localhost").pathname.slice(
             "/artifacts/".length,
           );
+        const resolvedVideoUrl =
+          videoResolveCount === 0 ? videoUrl : renewedVideoUrl;
+        if (!isPoster) {
+          videoResolveCount += 1;
+        }
         return respond(200, {
-          url: isPoster ? posterUrl : videoUrl,
+          url: isPoster ? posterUrl : resolvedVideoUrl,
           filename: isPoster ? "poster-v2.jpg" : "generated.mp4",
           contentType: isPoster ? "image/jpeg" : "video/mp4",
           target: { kind: "file", id: isPoster ? posterId : videoId },
@@ -691,7 +905,17 @@ test.each([
         });
       },
     );
-    mockPrivateUrlSequence(context, { [videoId]: [videoUrl] });
+    context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
+      expect(query.file_id).toBe(videoId);
+      const resolvedVideoUrl =
+        videoResolveCount === 0 ? videoUrl : renewedVideoUrl;
+      videoResolveCount += 1;
+      return respond(200, {
+        url: resolvedVideoUrl,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        publicUrl: null,
+      });
+    });
     await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
     const thumbnail = await screen.findByTestId("chat-video-preview-thumbnail");
     expect(thumbnail).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${posterUrl}`);
@@ -702,9 +926,24 @@ test.each([
       throw new Error("Expected a video preview button");
     }
     click(card);
-    const stage = await screen.findByTestId("artifact-dialog-video-stage");
+    let stage = await screen.findByTestId("artifact-dialog-video-stage");
     await waitFor(() => {
       expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
+    });
+    await closeFocusedPreview();
+
+    click(card);
+    stage = await screen.findByTestId("artifact-dialog-video-stage");
+    await waitFor(() => {
+      expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
+    });
+
+    click(await findNamedButton("Open in split view"));
+    const sidebar = await screen.findByTestId("artifact-sidebar");
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByTestId("artifact-sidebar-body-video"),
+      ).toHaveAttribute("src", videoUrl);
     });
   },
 );

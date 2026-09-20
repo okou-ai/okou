@@ -5,13 +5,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { HostedSitePrepareRequest } from "@okouai/api-contracts/contracts/host";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import {
-  hostedDeployments,
-  hostedSites,
-  type HostedSiteManifest,
-} from "@okouai/db/schema/hosted-site";
+import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
+import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { createStore } from "ccstate";
-import { eq } from "drizzle-orm";
 
 import { writeDb$ } from "../signals/external/db";
 import { nowDate } from "../lib/time";
@@ -83,7 +79,6 @@ export async function insertLegacyHostedSiteHistoryFixture(args: {
       orgId: args.orgId,
       userId: args.userId,
       publicBrand: "okou",
-      deploymentVersion,
       artifactUrl,
       r2Prefix,
       manifest,
@@ -101,9 +96,5 @@ export async function insertLegacyHostedSiteHistoryFixture(args: {
     });
     deployments.push({ id, artifactUrl, r2Prefix, deploymentVersion });
   }
-  await db
-    .update(hostedSites)
-    .set({ nextDeploymentVersion: 3 })
-    .where(eq(hostedSites.id, siteId));
   return { siteId, deployments };
 }

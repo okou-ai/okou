@@ -2,9 +2,10 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import type {
-  ArtifactCatalogListQuery,
-  ArtifactDetail,
+import {
+  artifactCatalogContract,
+  type ArtifactCatalogListQuery,
+  type ArtifactDetail,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { act, screen, waitFor, within } from "@testing-library/react";
@@ -958,4 +959,72 @@ test("Return to the artifact list when a preview is unavailable", async () => {
       buttonNamed("Preview Deleted report.txt", artifactList()),
     ).toBeVisible();
   });
+});
+
+test("The artifact sidebar retries its own catalog from the failure message", async () => {
+  useWideScreen();
+  let attempts = 0;
+  mockArtifactConversation(context, {
+    catalog: [],
+    chatEvents: [
+      {
+        id: "sidebar-retry-user",
+        role: "user",
+        content: "Create the report",
+        runId: "sidebar-retry-work",
+        seqId: 1,
+        createdAt: "2026-09-01T12:00:00.000Z",
+      },
+      {
+        id: "sidebar-retry-artifact",
+        role: "assistant",
+        content: "![report.pdf](/f/navigation/retry/report.pdf)",
+        runId: "sidebar-retry-work",
+        runEventId: "sidebar-retry-artifact-event",
+        sequenceNumber: 1,
+        seqId: 2,
+        createdAt: "2026-09-01T12:00:01.000Z",
+      },
+    ],
+  });
+  // Registered after the conversation helper so this handler owns the catalog
+  // response for the sidebar's own instance of the signals.
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    attempts += 1;
+    if (attempts === 1) {
+      return respond(500, {
+        error: { code: "INTERNAL", message: "Catalog unavailable" },
+      });
+    }
+    return respond(200, {
+      artifacts: [
+        artifactSummary(
+          "a0000000-0000-4000-a000-000000000940",
+          "file",
+          "sidebar-recovered.pdf",
+        ),
+      ],
+      nextCursor: null,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  click(openArtifactsControl());
+
+  const panel = await screen.findByTestId("thread-sidebar-artifacts");
+  const alert = await within(panel).findByRole("alert");
+  expect(alert).toHaveTextContent("Could not load artifacts.");
+
+  // The sidebar owns a different catalog instance than the artifacts page, so
+  // the retry has to refetch the failure the reader is actually looking at.
+  click(buttonNamed("Try again", alert));
+
+  await expect(
+    within(panel).findByText("sidebar-recovered.pdf"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).queryByRole("alert")).not.toBeInTheDocument();
 });

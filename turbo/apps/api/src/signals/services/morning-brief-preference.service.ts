@@ -47,6 +47,7 @@ import {
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   applyMorningBriefLogicalChoice,
+  lockMorningBriefNativeScheduleForWrite,
   materializeMorningBriefNativeSchedule,
   readMorningBriefNativeSchedule,
   type MorningBriefNativeScheduleRow,
@@ -1032,6 +1033,10 @@ async function synchronizeTimezoneWhileLocked(
   }
   const workflowId = installation.id;
   await db.transaction(async (tx) => {
+    // Durable authority first, and the owner key while no row exists, so this
+    // schedule-only edit keeps the documented order and a first materialization
+    // cannot publish the timezone it is replacing.
+    await lockMorningBriefNativeScheduleForWrite(tx, identity);
     const rows = await tx
       .select()
       .from(workflowAutomations)

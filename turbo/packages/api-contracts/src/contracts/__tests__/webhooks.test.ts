@@ -88,6 +88,99 @@ describe("archive size mismatch telemetry", () => {
   });
 });
 
+describe("archive connection attempt telemetry", () => {
+  const operation = {
+    ts: "2026-09-20T00:00:00Z",
+    action_type: "storage_cache_fresh_delivery_headers",
+    duration_ms: 168,
+    success: true,
+  };
+  const diagnostic = {
+    started: 2,
+    succeeded: 1,
+    failed: 0,
+    dropped: 0,
+    active_at_headers: 1,
+    terminal_duration_ms: 37,
+    saturated: false,
+  };
+
+  it("accepts bounded observations, strips private fields, and accepts legacy operations", () => {
+    const measured = { ...operation, archive_connection_attempt: diagnostic };
+    const parsed = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      sandboxOperations: [
+        operation,
+        {
+          ...measured,
+          archive_connection_attempt: {
+            ...diagnostic,
+            origin: "https://private.example",
+            raw_error: "private",
+          },
+        },
+      ],
+    });
+    expect(parsed.sandboxOperations).toStrictEqual([operation, measured]);
+  });
+
+  it("accepts zero and maximum boundaries", () => {
+    for (const bounded of [
+      {
+        started: 0,
+        succeeded: 0,
+        failed: 0,
+        dropped: 0,
+        active_at_headers: 0,
+        terminal_duration_ms: 0,
+        saturated: false,
+      },
+      {
+        started: 255,
+        succeeded: 255,
+        failed: 255,
+        dropped: 255,
+        active_at_headers: 255,
+        terminal_duration_ms: 4_294_967_295,
+        saturated: true,
+      },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [
+            { ...operation, archive_connection_attempt: bounded },
+          ],
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects incomplete, non-integer, and out-of-range observations", () => {
+    for (const invalid of [
+      { ...diagnostic, started: -1 },
+      { ...diagnostic, started: 256 },
+      { ...diagnostic, succeeded: 1.5 },
+      { ...diagnostic, failed: "0" },
+      { ...diagnostic, dropped: -1 },
+      { ...diagnostic, active_at_headers: 256 },
+      { ...diagnostic, terminal_duration_ms: -1 },
+      { ...diagnostic, terminal_duration_ms: 4_294_967_296 },
+      { ...diagnostic, saturated: "false" },
+      { started: 1, succeeded: 1 },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [
+            { ...operation, archive_connection_attempt: invalid },
+          ],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe("Sandbox transient session output", () => {
   const body = {
     runId: "00000000-0000-4000-8000-000000000001",

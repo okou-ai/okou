@@ -599,18 +599,22 @@ fn app_server_shell_prompt_excludes_trailing_prompt_content() -> std::io::Result
         }),
     )?;
 
+    let mut completed_agent_message_texts = Vec::new();
     loop {
         let notification = server.read_required()?;
-        if notification["method"] == "item/completed" {
-            assert_eq!(
-                notification["params"]["item"]["text"],
-                "shell:inherited-value"
-            );
+        if notification["method"] == "item/completed"
+            && notification["params"]["item"]["type"] == "agentMessage"
+        {
+            completed_agent_message_texts.push(notification["params"]["item"]["text"].clone());
         }
         if notification["method"] == "turn/completed" {
             break;
         }
     }
+    assert_eq!(
+        completed_agent_message_texts,
+        [json!("shell:inherited-value")]
+    );
 
     assert_eq!(server.close_and_wait()?, 0);
     Ok(())
@@ -649,18 +653,24 @@ fn app_server_shell_prompt_reports_stderr_and_failure() -> std::io::Result<()> {
         }),
     )?;
 
+    let mut completed_agent_message_texts = Vec::new();
     loop {
         let notification = server.read_required()?;
-        if notification["method"] == "item/completed" {
-            assert_eq!(
-                notification["params"]["item"]["text"],
-                "stdout\nstderr\nmock shell exited with exit status: 7"
-            );
+        if notification["method"] == "item/completed"
+            && notification["params"]["item"]["type"] == "agentMessage"
+        {
+            completed_agent_message_texts.push(notification["params"]["item"]["text"].clone());
         }
         if notification["method"] == "turn/completed" {
             break;
         }
     }
+    assert_eq!(
+        completed_agent_message_texts,
+        [json!(
+            "stdout\nstderr\nmock shell exited with exit status: 7"
+        )]
+    );
 
     assert_eq!(server.close_and_wait()?, 0);
     Ok(())

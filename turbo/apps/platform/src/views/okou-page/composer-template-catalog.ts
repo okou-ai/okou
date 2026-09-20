@@ -85,15 +85,17 @@ export function toWebsiteGenerationTemplate(
 }
 
 /**
- * The four things the slash panel indexes. These are the template picker's own
- * categories, so opening the picker from a row lands on the same tab. Video is
- * not one of them: its catalog is reached from the picker itself.
+ * The three things the slash panel's Make group indexes. These are the template
+ * picker's own categories, so opening the picker from a row lands on the same
+ * tab. Video is not one of them: its catalog is reached from the picker itself.
+ * Workflow is not one either — the panel lists the agent's own workflows right
+ * underneath, so a row that only reopened the workflow catalog named the same
+ * thing twice.
  */
 export const SLASH_TEMPLATE_CATEGORIES = [
   "slides",
   "illustration",
   "website",
-  "workflow",
 ] as const;
 
 export type SlashTemplateCategory = (typeof SLASH_TEMPLATE_CATEGORIES)[number];
@@ -109,21 +111,6 @@ export type SlashTemplatePreviewCategory =
   | "illustration"
   | "video"
   | "website";
-
-/**
- * The slash rows that open the detail pane. Workflow templates are text, and a
- * pane sized for covers would be mostly empty for them.
- */
-export type SlashTemplateDetailCategory = Exclude<
-  SlashTemplateCategory,
-  "workflow"
->;
-
-export function isSlashTemplateDetailCategory(
-  category: SlashTemplateCategory,
-): category is SlashTemplateDetailCategory {
-  return category !== "workflow";
-}
 
 /** Covers render two across a 320px pane, so they are requested at 2x that. */
 const SLASH_TEMPLATE_COVER_SIZE = { width: 280, height: 158 } as const;

@@ -712,16 +712,6 @@ export async function holdChatCandidateDiscoveryFixture(signal: AbortSignal) {
 }
 
 /**
- * Block the last per-thread authority SELECT immediately before content.
- * This is the same narrow infrastructure exception as candidate discovery.
- */
-export async function holdActiveRunReadFixture(signal: AbortSignal) {
-  return await holdDeferredRow(signal, async (tx) => {
-    await tx.execute(sql`LOCK TABLE ${agentRuns} IN ACCESS EXCLUSIVE MODE`);
-  });
-}
-
-/**
  * Block the canonical ownership SELECT used by the final local authority gate.
  * This is the same narrow infrastructure exception as candidate discovery.
  */

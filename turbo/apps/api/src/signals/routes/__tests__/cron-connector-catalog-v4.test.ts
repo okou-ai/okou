@@ -510,47 +510,53 @@ describe("connector catalog v4 preparation", () => {
     });
   });
 
-  it("uses the Plaud auth-method switch for discovery while accepting its catalog", async () => {
-    serveObjects(release({}).objects);
-    expect((await sync()).body).toMatchObject({
-      outcome: "accepted",
-      filtering: { filteredAuthMethods: [] },
-    });
-    expect(
-      (await publicCatalog()).body.connectors.map((connector) => {
-        return connector.slug;
-      }),
-    ).toStrictEqual(["catalog-service"]);
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.PlaudConnector]: true } },
-      }),
-      [200],
-    );
-    expect((await publicCatalog()).body.connectors).toMatchObject([
-      { slug: "catalog-service" },
-      {
-        slug: "plaud-mcp",
-        authMethods: [{ id: "automatic", grantKind: "automatic" }],
-      },
-    ]);
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.PlaudConnector]: false } },
-      }),
-      [200],
-    );
-    expect(
-      (await publicCatalog()).body.connectors.map((connector) => {
-        return connector.slug;
-      }),
-    ).toStrictEqual(["catalog-service"]);
-  });
+  it.each([
+    ["Plaud", "plaud-mcp", FeatureSwitchKey.PlaudConnector],
+    ["Monday.com", "monday-mcp", FeatureSwitchKey.MondayConnector],
+  ] as const)(
+    "uses the %s auth-method switch for discovery while accepting its catalog",
+    async (_label, connectorSlug, featureSwitch) => {
+      serveObjects(release({ mcpSlug: connectorSlug }).objects);
+      expect((await sync()).body).toMatchObject({
+        outcome: "accepted",
+        filtering: { filteredAuthMethods: [] },
+      });
+      expect(
+        (await publicCatalog()).body.connectors.map((connector) => {
+          return connector.slug;
+        }),
+      ).toStrictEqual(["catalog-service"]);
+      const features = setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      );
+      await accept(
+        features.update({
+          headers: sessionHeaders,
+          body: { switches: { [featureSwitch]: true } },
+        }),
+        [200],
+      );
+      expect((await publicCatalog()).body.connectors).toMatchObject([
+        { slug: "catalog-service" },
+        {
+          slug: connectorSlug,
+          authMethods: [{ id: "automatic", grantKind: "automatic" }],
+        },
+      ]);
+      await accept(
+        features.update({
+          headers: sessionHeaders,
+          body: { switches: { [featureSwitch]: false } },
+        }),
+        [200],
+      );
+      expect(
+        (await publicCatalog()).body.connectors.map((connector) => {
+          return connector.slug;
+        }),
+      ).toStrictEqual(["catalog-service"]);
+    },
+  );
 
   it("reports a cold catalog as unavailable until v4 is accepted", async () => {
     serveObjects(new Map());

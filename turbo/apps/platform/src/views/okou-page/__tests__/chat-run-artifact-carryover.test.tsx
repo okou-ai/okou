@@ -329,11 +329,29 @@ test.each([
 );
 
 test("Open a carried generic file over an existing artifact sidebar", async () => {
-  const { dialog, lightbox } =
-    await openRelatedArtifactOverSidebar("archive.zip");
+  const browser = context.mocks.browser.blobDownload();
+  const { dialog, lightbox } = await openRelatedArtifactOverSidebar(
+    "archive.zip",
+    "archive bytes",
+  );
   expect(
     within(lightbox).getByText("No inline preview available for this file."),
   ).toBeVisible();
+
+  // Nothing renders here, so the screen has to carry the one action that still
+  // applies to the file rather than leaving an icon in the header as its only
+  // way out.
+  const download = queryAllByRoleFast("button", lightbox).find((candidate) => {
+    return candidate.textContent?.trim() === "Download";
+  });
+  expect(download).toBeDefined();
+  click(download as HTMLElement);
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  // Files without a preview take the browser's native download path, so the
+  // request carries the name rather than a blob this test could read.
+  expect(browser.downloads[0]?.filename).toBe("archive.zip");
   await closeRelatedArtifactPreview(dialog);
 });
 

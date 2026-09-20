@@ -33,7 +33,6 @@ import {
   countMorningBriefChatWritesFixture,
   deleteSeededChatThreadFixture,
   excludeMorningBriefChatThreadFixture,
-  holdActiveRunReadFixture,
   holdAgentRowFixture,
   holdChatCandidateDiscoveryFixture,
   holdChatThreadReadBarrierFixture,
@@ -53,7 +52,7 @@ import {
 } from "../../../test-fixtures/morning-brief-chat-collection";
 import { agentsRoutes } from "../agents";
 import { morningBriefChatCollectionPreviewRoutes } from "../morning-brief-chat-collection-preview";
-import { joinAll, onRejection } from "../../utils";
+import { onRejection } from "../../utils";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -272,6 +271,15 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
       text.includes('from "chat_events"') &&
       text.includes('"chat_events"."run_id" =') &&
       text.includes('order by "chat_events"."seq_id" asc')
+    );
+  }
+
+  function isExcerptContentQueryForThread(
+    queryArgs: unknown[],
+    threadId: string,
+  ): boolean {
+    return (
+      isExcerptContentQuery(queryArgs) && barrierQueryBinds(queryArgs, threadId)
     );
   }
 
@@ -990,9 +998,25 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
     }, 60_000);
 
     it("spends successive PostgreSQL waits without starting content after the candidate deadline", async () => {
+      let targetThreadId: string | undefined;
+      let healthyControlArmed = false;
+      let expiredContentQueryObserved = false;
+      const matchesTargetContentQuery = (queryArgs: unknown[]): boolean => {
+        return (
+          targetThreadId !== undefined &&
+          isExcerptContentQueryForThread(queryArgs, targetThreadId)
+        );
+      };
       await withDatabaseTransactionBarrierFixture(
         {
-          select: isExcerptContentQuery,
+          select: (queryArgs) => {
+            return healthyControlArmed && matchesTargetContentQuery(queryArgs);
+          },
+          observe: (queryArgs) => {
+            if (!healthyControlArmed && matchesTargetContentQuery(queryArgs)) {
+              expiredContentQueryObserved = true;
+            }
+          },
           stopAt: (_queryArgs, selectingStatement) => {
             return selectingStatement;
           },
@@ -1016,32 +1040,28 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
                   prompt: "prompt beyond the cumulative budget",
                   reply: "reply beyond the cumulative budget",
                 });
-                const discovery = ownBarrier(
-                  await holdChatCandidateDiscoveryFixture(context.signal),
-                );
+                targetThreadId = threadId;
                 const agent = ownBarrier(
                   await holdAgentRowFixture(member.agentId, context.signal),
+                );
+                const thread = ownBarrier(
+                  await holdChatThreadReadBarrierFixture(
+                    threadId,
+                    context.signal,
+                  ),
                 );
                 const startedAt = freezeAttemptClock();
 
                 const pending = collectRequest(member);
                 requests.push(pending);
-                await discovery.waitForBlocked();
-                // Discovery consumed most of the candidate allowance while
-                // queued in PostgreSQL, but stayed within its individual cap.
-                mockNow(candidateDeadline(startedAt) - 500);
-                await discovery.release();
                 await agent.waitForBlocked();
-
-                // Acquire the final-query blocker only after discovery
-                // committed; candidate selection itself also reads agent_runs.
-                const activeRun = ownBarrier(
-                  await holdActiveRunReadFixture(context.signal),
-                );
+                // The first owned row wait consumed most of the candidate
+                // allowance while staying within its individual lock cap.
+                mockNow(candidateDeadline(startedAt) - 500);
                 await agent.release();
-                await activeRun.waitForBlocked();
+                await thread.waitForBlocked();
                 mockNow(candidateDeadline(startedAt));
-                await activeRun.release();
+                await thread.release();
 
                 const response = await accept(pending, [200]);
                 expect(response.body).toMatchObject({
@@ -1052,37 +1072,35 @@ describe("POST /api/morning-brief/preview/chat-collection", () => {
                   truncations: ["deadline_exceeded"],
                 });
                 expect(JSON.stringify(response.body)).not.toContain(threadId);
-                expect(contentQuery.enteredYet()).toBeFalsy();
+                expect(expiredContentQueryObserved).toBeFalsy();
 
                 // Guard-removal control: a fresh healthy request reaches this
-                // exact content statement. The selected transaction exposes
-                // all three real server settings, including the
-                // whole-transaction bound.
+                // exact owned-thread content statement. The selected
+                // transaction exposes all three real server settings,
+                // including the whole-transaction bound.
+                healthyControlArmed = true;
                 const healthy = collectRequest(member);
                 requests.push(healthy);
-                const inspectHealthyQuery = onRejection(
-                  (async () => {
-                    const healthyContentQuery = await contentQuery.entered;
-                    expect(healthyContentQuery).toMatchObject({
-                      lockTimeout: "2s",
-                      statementTimeout: "5s",
-                    });
-                    // PostgreSQL renders the conservatively floored monotonic
-                    // remainder in milliseconds when fractional clock origins
-                    // leave it 1ms shy.
-                    expect(["11999ms", "12s"]).toContain(
-                      healthyContentQuery.transactionTimeout,
+                const healthyContentQuery = await Promise.race([
+                  contentQuery.entered,
+                  healthy.then(() => {
+                    throw new Error(
+                      "Expected the healthy request to reach the excerpt content query",
                     );
-                    contentQuery.release();
-                  })(),
-                  () => {
-                    contentQuery.release();
-                  },
-                );
-                const [recovered] = await joinAll([
-                  accept(healthy, [200]),
-                  inspectHealthyQuery,
+                  }),
                 ]);
+                expect(healthyContentQuery).toMatchObject({
+                  lockTimeout: "2s",
+                  statementTimeout: "5s",
+                });
+                // PostgreSQL renders the conservatively floored monotonic
+                // remainder in milliseconds when fractional clock origins
+                // leave it 1ms shy.
+                expect(["11999ms", "12s"]).toContain(
+                  healthyContentQuery.transactionTimeout,
+                );
+                contentQuery.release();
+                const recovered = await accept(healthy, [200]);
                 expect(recovered.body.result).toBe("collected");
                 expect(recovered.body.items).toHaveLength(1);
               })(),

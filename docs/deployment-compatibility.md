@@ -239,6 +239,25 @@ values and binds immutable public content by deployment ID. Legacy API history,
 selectors, old upload completion and schema fields remain until the documented
 consumer, data and rollback gates; no physical schema cleanup runs in that step.
 
+The subsequent runtime cleanup reads retained historical versions from manifest
+metadata and derives the active version through the fixed public deployment ID.
+Its runtime Drizzle mappings omit the four relational version fields from every
+implicit selection and insertion. A guarded SQL migration normalizes the
+metadata from the old authoritative columns, rotates changed manifest CAS hashes,
+and keeps outgoing API readers working with temporary defaults and a pointer
+projection trigger. IDs, stored byte paths and share policies do not change.
+See the [runtime retirement matrix](database/hosted-publication-retirement.md#runtime-version-column-retirement).
+The separately gated physical-drop migration removes the four columns, their
+two old indexes and the projection trigger/function. It verifies the retained
+manifest versions, public bindings and persisted SQL dependencies before
+dropping anything, and preserves content rows and share identities. This
+contraction remains draft until the runtime cleanup has shipped in its own
+production release and its predecessor has drained. The contraction installs
+that runtime transition's canonical main commit as the API rollback floor in
+the main-owned resolver before the physical drop deploys. Its API-only floor
+does not constrain the independently retained Runner tag. A migration journal
+entry cannot prove this serving/rollback boundary.
+
 New prepares bind each upload URL to its declared SHA-256 through the signed
 `x-amz-checksum-sha256` query parameter. Existing CLIs can keep sending only
 `Content-Type`; identical-byte retries work, while different bytes fail R2's
@@ -2747,9 +2766,18 @@ fields, including old privacy receipts; Marketing retains authoritative
 withdrawal state. Historical rows and external objects are not erased in this
 change.
 
+The final App cleanup removes its remaining click/UTM parser, attribution
+session-storage reader/writer, auth redirect propagation, and explicit PostHog
+attribution properties. Existing product
+analytics, PostHog user/organization identity, and `/api/events` business facts
+remain. Marketing is the single URL boundary: it omits acquisition parameters
+from App links while preserving product deep links. App does not add a second
+sanitizer for arbitrary incoming query strings or a migration that cleans
+historical browser state.
+
 Coordinate the Marketing single-sender cutover with this App/API deployment.
 Verify the replacement App is live before setting a later client floor; an
-already-open old bundle can otherwise continue sending browser conversions.
+already-open old bundle can otherwise continue collecting browser attribution.
 This PR does not select a floor or change production provider settings.
 
 ## X resource protocol cleanup

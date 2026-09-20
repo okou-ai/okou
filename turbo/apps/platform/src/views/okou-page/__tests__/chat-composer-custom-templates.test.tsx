@@ -1,3 +1,4 @@
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   userTemplatesContract,
   type UserTemplateDetail,
@@ -15,14 +16,27 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
+  THREAD_ID,
   context,
   mockTemplateChat,
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
-/** What the Custom entry sends, whatever the file turns out to be. */
-const PROMPT =
-  "Analyse this file with the `reverse-template` skill and save it as a reusable template. Publish the result with `okou user-template publish` so it appears under Custom — not with `okou presentation-template publish`, which the guide's presentation branch names for the other catalog.";
+/** What the Custom entry asks for, whatever the file turns out to be. */
+const PROMPT = "Analyse this file and save it as a reusable template.";
+
+/**
+ * What the run is told on top of that request, and the member is not: which
+ * guide reads the file, and which catalog the result belongs in.
+ */
+const GUIDANCE =
+  "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
+
+function additionalInfo(message: UserMessageDocument): string[] {
+  return message.parts.flatMap((part) => {
+    return part.type === "additional_info" ? [part.text] : [];
+  });
+}
 
 function customTemplate(
   overrides: Partial<UserTemplateDetail> = {},
@@ -936,9 +950,12 @@ test("Every source is sent with one message that lets the guide sort it", async 
   });
   // The `reverse-template` guide decides whether the file is a deck or a
   // document; repeating that here would give the run two answers that can
-  // disagree. What this message does carry is the catalog, because the guide's
-  // presentation branch names the other one.
+  // disagree. What the member reads is the request they made, one sentence
+  // long whatever the file turns out to be.
   expect(capture.runPrompts[0]).toBe(PROMPT);
+  // The catalog still has to be said, because the guide's presentation branch
+  // names the other one — so it is said where only the run reads it.
+  expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 
 test("A deck from the same entry is sent the same message", async () => {
@@ -966,35 +983,46 @@ test("A deck from the same entry is sent the same message", async () => {
     expect(capture.runPrompts).toHaveLength(1);
   });
   expect(capture.runPrompts[0]).toBe(PROMPT);
+  expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 
-test("A source no kind is made from is refused before it is uploaded", async () => {
-  mockCustomTemplates([]);
-  const { dialog, capture } = await openCustomPanel();
+test("Choosing a source leaves the picker for the thread it starts", async () => {
+  mockCustomTemplates([customTemplate()]);
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000013",
+    filename: "brand-report.docx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 5,
+    url: "https://cdn.example.test/brand-report.docx",
+  });
+  const user = userEvent.setup({ delay: null });
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: true },
+  });
+  const dialog = await openTemplatePicker(user);
 
   click(tabByText("Custom"));
-  const entry = await within(dialog).findByLabelText("Import your own file");
-  // Fired rather than uploaded through userEvent on purpose: `accept` is a
-  // filter the browser offers, not one it enforces, so the refusal has to hold
-  // for a file that reaches the input anyway.
-  fireEvent.change(entry, {
-    target: {
-      files: [
-        new File(["sheet"], "figures.xlsx", {
-          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }),
-      ],
-    },
-  });
+  await user.upload(
+    await within(dialog).findByLabelText("Import your own file"),
+    new File(["docx"], "brand-report.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+  );
 
-  await expect(
-    screen.findByText(
-      "Choose a .pptx, .ppt, .pdf, .docx, .doc, .png, .jpg, .jpeg, .webp, .bmp file to make a template.",
-    ),
-  ).resolves.toBeVisible();
-  // Refused before the bytes are spent, not after a run has already started on
-  // a file that cannot become a template.
-  expect(capture.runPrompts).toStrictEqual([]);
+  await waitFor(() => {
+    expect(capture.runPrompts).toHaveLength(1);
+  });
+  // The import sends a message, and the thread it sends into is the one the
+  // member was just handed. A picker left open covers the run they were sent
+  // to watch — and from an existing chat nothing else takes it away.
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
 
 test("Uploading stays in Presentation while the switch is off", async () => {

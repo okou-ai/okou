@@ -170,6 +170,7 @@ impl TestRun {
         let dispatcher = Runtime {
             ssh: None,
             vnc: Some(Arc::clone(runtime)),
+            usage: None,
         }
         .start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),

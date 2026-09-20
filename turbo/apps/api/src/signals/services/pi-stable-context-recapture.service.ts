@@ -106,6 +106,10 @@ function featurePromptInputs(
       FeatureSwitchKey.DeliveryFormatGuidance,
       featureContext,
     ),
+    presentationConvertEnabled: isFeatureEnabled(
+      FeatureSwitchKey.PresentationConvert,
+      featureContext,
+    ),
     customConnectorMcpEnabled: true,
   };
 }

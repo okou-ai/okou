@@ -8,7 +8,7 @@ import {
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   click,
@@ -471,12 +471,33 @@ test("status errors do not treat an owner as a recipient, and the action can be 
     return expect(action("button", "Share")).not.toBeDisabled();
   });
   expect(clipboard.writes).toStrictEqual([]);
-  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  // The audience is unknown, not absent. The choices stay on screen so the
+  // menu keeps its shape and shows what Retry will restore, but none of them
+  // may claim to be the current one.
+  const choices = screen.getByRole("radiogroup");
+  const options = queryAllByRoleFast("radio", choices);
+  expect(options).toHaveLength(3);
+  for (const option of options) {
+    expect(option).toBeDisabled();
+    expect(option).toHaveAttribute("aria-checked", "false");
+  }
+  // The organization is named by the permission read that just failed, so the
+  // row falls back to wording that does not invent one.
+  expect(
+    within(choices).getByText("Anyone in your organization with the link"),
+  ).toBeInTheDocument();
+  expect(within(choices).queryByText(/Acme/u)).not.toBeInTheDocument();
+
   fail = false;
   click(action("button", "Retry"));
   await waitFor(() => {
     expect(permission("Only me")).toBeInTheDocument();
   });
+  expect(permission("Only me")).toBeEnabled();
+  expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
+  expect(
+    screen.queryByText("Unable to load permissions"),
+  ).not.toBeInTheDocument();
 });
 
 test("the shared rollout switch keeps the private share menu hidden", async () => {

@@ -72,10 +72,13 @@ A writer that touches both the legacy automation and the native row takes:
 
 1. the member's Morning Brief preference/admission **advisory lock** when the
    operation has one (`morning_brief_preference:<org>:<user>`),
-2. the `morning_brief_native_schedules` row `FOR UPDATE`,
-3. the selected `workflow_automations` row `FOR UPDATE`,
-4. the exact S7a claim, Run, or callback row when the operation owns one,
-5. any `morning_brief_native_occurrences` row `FOR UPDATE`.
+2. the owner-key **advisory lock**
+   (`morning-brief-native-owner:<org>:<user>`) while the member has no
+   `morning_brief_native_schedules` row,
+3. the `morning_brief_native_schedules` row `FOR UPDATE`,
+4. the selected `workflow_automations` row `FOR UPDATE`,
+5. the exact S7a claim, Run, or callback row when the operation owns one,
+6. any `morning_brief_native_occurrences` row `FOR UPDATE`.
 
 Nothing else is permitted. External preflight — Clerk, Slack, the model
 provider — happens **outside** short transactions, and the transaction
@@ -83,19 +86,34 @@ re-reads every predicate it depends on before it commits. Each mutation's
 `WHERE` carries the epoch (and, for transitions, the phase) it read, so a stale
 compensation cannot restore an older epoch's state over a newer writer.
 
+### The owner key covers the member's first row
+
+`SELECT ... FOR UPDATE` locks rows, so it locks nothing for a member who has no
+durable row yet: reading that absence inside a transaction is not a lock on it.
+First materialization and every writer that classifies the selected legacy
+automation therefore take the owner key when they find no row, then re-read it
+under that key. A writer either observes the first row that committed while it
+waited and continues under it, or it holds the key and no first row can appear
+until it commits. An `ordinary` classification can never be carried across a
+concurrent first insert, and bootstrap can never publish a legacy snapshot a
+selected writer is still changing.
+
+Step 2 costs nothing once the member is materialized: the row lock in step 3 is
+the fence from then on, and an existing durable row is never resampled.
+
 ## Writers
 
-| Writer                                    | Effect on the native row                                      |
-| ----------------------------------------- | ------------------------------------------------------------- |
-| Settings enable / disable                 | Logical choice; `enabled` change bumps the epoch (revocation) |
-| Settings / system timezone update         | `timezone` only. **No epoch bump, no revocation**             |
-| Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**      |
-| Enrollment adoption / materialization     | Bootstrap insert only; an existing row is authority           |
-| Generic automation enable/disable/update  | Logical choice, same rules as Settings                        |
-| Official reconciliation pause / restore   | Configuration/readiness only; durable choice is preserved     |
-| Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded    |
-| Native cron claim                         | Takes the obligation; owes exactly one settlement             |
-| Native settlement                         | Installs the next obligation from the **current** recurrence  |
+| Writer                                    | Effect on the native row                                           |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| Settings enable / disable                 | Logical choice; `enabled` change bumps the epoch (revocation)      |
+| Settings / system timezone update         | `timezone` only. **No epoch bump, no revocation**                  |
+| Schedule-expression update                | `cron_expression` only. **No epoch bump, no revocation**           |
+| Enrollment adoption / materialization     | Bootstrap insert under the owner key; an existing row is authority |
+| Generic automation enable/disable/update  | Logical choice, same rules as Settings                             |
+| Official reconciliation pause / restore   | Configuration/readiness only; durable choice is preserved          |
+| Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded         |
+| Native cron claim                         | Takes the obligation; owes exactly one settlement                  |
+| Native settlement                         | Installs the next obligation from the **current** recurrence       |
 
 ### Selected legacy writers are schedule-first
 

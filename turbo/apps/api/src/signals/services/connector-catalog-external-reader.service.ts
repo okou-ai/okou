@@ -826,9 +826,6 @@ function connectorCatalogItem(
     ...(effective.connector.mcp === undefined
       ? {}
       : { mcp: { ...effective.connector.mcp } }),
-    ...(effective.connector.replaces === undefined
-      ? {}
-      : { replaces: { ...effective.connector.replaces } }),
     authMethods: effective.authMethods.map(authMethodSummaryForCatalog),
     permissionSummary: permissionSummaryForCatalog(effective.connector),
   };

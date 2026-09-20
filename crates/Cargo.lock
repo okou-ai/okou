@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ably-subscriber"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.92.0"
+version = "0.92.1"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.21.9"
+version = "0.21.10"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1843,7 +1843,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.10"
+version = "0.12.11"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -3521,7 +3521,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.202.0"
+version = "0.203.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3585,6 +3585,8 @@ dependencies = [
  "tokio-rustls",
  "tokio-tungstenite",
  "tokio-util",
+ "tower-layer",
+ "tower-service",
  "tracing",
  "tracing-appender",
  "tracing-log",
@@ -3866,7 +3868,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.23.2"
+version = "0.23.3"
 dependencies = [
  "async-trait",
  "serde",
@@ -3880,7 +3882,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.43.9"
+version = "0.43.10"
 dependencies = [
  "async-trait",
  "clap",
@@ -3915,7 +3917,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.11.7"
+version = "0.11.8"
 dependencies = [
  "async-trait",
  "guest-contracts",
