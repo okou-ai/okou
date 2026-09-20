@@ -140,7 +140,10 @@ export async function holdAgentRowLockFixture(args: {
         `,
         agentLockWaiterCountRowSchema,
       );
-      return row?.waiterCount ?? 0;
+      if (!row) {
+        throw new Error("Agent lock waiter count query returned no row");
+      }
+      return row.waiterCount;
     },
   };
 }
