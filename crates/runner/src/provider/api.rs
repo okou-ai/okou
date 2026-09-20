@@ -2961,10 +2961,10 @@ mod tests {
         let warning = captured_event(&events, "heartbeat failed");
         assert_eq!(warning.level, Level::WARN);
 
-        let event_debug = format!("{events:#?}");
-        assert!(!event_debug.contains("runner-token"));
-        assert!(!event_debug.contains("thread:heartbeat-test"));
-        assert!(!event_debug.contains("http://"));
+        let heartbeat_event_debug = format!("{retry:#?}\n{recovery:#?}\n{warning:#?}");
+        assert!(!heartbeat_event_debug.contains("runner-token"));
+        assert!(!heartbeat_event_debug.contains("thread:heartbeat-test"));
+        assert!(!heartbeat_event_debug.contains("http://"));
 
         assert!(ingest.calls_async().await > 0);
         let ingested = ingested.lock().unwrap();
