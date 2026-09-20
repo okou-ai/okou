@@ -114,6 +114,40 @@ the fence from then on, and an existing durable row is never resampled.
 | Thread or Agent deletion, membership loss | Revocation: epoch bump, obligation cleared, drain recorded         |
 | Native cron claim                         | Takes the obligation; owes exactly one settlement                  |
 | Native settlement                         | Installs the next obligation from the **current** recurrence       |
+| Settings > Debug on-demand trigger        | Moves `next_run_at` to now. **No epoch bump, no execution**        |
+
+### The on-demand trigger only moves the obligation
+
+`POST /api/debug/morning-brief-trigger` exists so a migrated owner can verify
+the pipeline without waiting for tomorrow's cron instant. It is owner-scoped:
+nothing in the request can name another member.
+
+It executes nothing. It moves the caller's own `next_run_at` to the current
+instant under `lockMorningBriefNativeScheduleForWrite` with the usual epoch
+revalidation, and the ordinary per-minute cron then claims that instant through
+the same claim, execution, settlement, delivery and recovery code a scheduled
+brief uses. An inline execution path would bypass the claim and with it the
+epoch/lease/attempt CAS that keeps one logical slot to at most one model
+request, one Chat receipt and one logical email.
+
+Three consequences follow from the existing rules rather than from new state:
+
+- The claim freezes `scheduled_for` at `next_run_at`, so the moved instant is a
+  different slot from the scheduled one and cannot collide with it.
+- The settlement recomputes the successor from the settlement clock, so a daily
+  cron triggered **after** that day's instant reinstalls the same next-morning
+  instant that was already pending. The scheduled delivery is not lost.
+- Triggering **before** that day's instant instead leaves the successor later
+  the same morning, so the owner receives the debug brief and then the scheduled
+  one. Two briefs, never a lost one. The card's copy says so.
+
+It refuses, with distinguishable outcomes and zero provider calls, when the row
+is absent, the phase is not `native`, the owner is disabled, the live membership
+generation does not match, an unsettled occurrence already exists, or the
+minimum interval since the most recent `claimed_at` has not elapsed. Refusing on
+an unsettled occurrence is what makes a repeated press safe: without it a second
+press would reset `next_run_at` underneath a running execution, and that
+obligation would then be discarded by its settlement.
 
 ### Selected legacy writers are schedule-first
 

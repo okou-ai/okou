@@ -677,8 +677,22 @@
     {
       "idx": 1174,
       "version": "7",
-      "when": 1789894847455,
-      "tag": "1174_retire_pro_suspend_tier",
+      "when": 1789890162359,
+      "tag": "1174_serious_thena",
+      "breakpoints": true
+    },
+    {
+      "idx": 1175,
+      "version": "7",
+      "when": 1789897069111,
+      "tag": "1175_resumable_user_exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 1176,
+      "version": "7",
+      "when": 1789900661029,
+      "tag": "1176_retire_pro_suspend_tier",
       "breakpoints": true
     }
   ]

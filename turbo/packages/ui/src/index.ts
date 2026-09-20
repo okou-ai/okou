@@ -112,6 +112,10 @@ export {
   ElapsedTime,
   type ElapsedTimeProps,
 } from "./components/ui/elapsed-time";
+export {
+  LazySpinner,
+  type LazySpinnerProps,
+} from "./components/ui/lazy-spinner";
 export { Skeleton } from "./components/ui/skeleton";
 export { FullscreenPanel } from "./components/ui/fullscreen-panel";
 export { ScrollBar } from "./components/ui/scroll-area";

@@ -1,19 +1,14 @@
 import { z } from "zod";
 
 import { chatThreadServiceTierSchema } from "./chat-threads";
+import { mcpChatModelIdSchema } from "./mcp-chat-discovery";
 import { mcpChatThreadSchema } from "./mcp-chat-threads";
 
 export const mcpCreateChatThreadInputSchema = z.strictObject({
   requestId: z.uuid().toLowerCase(),
   agentId: z.uuid().toLowerCase(),
-  title: z
-    .string()
-    .min(1)
-    .max(200)
-    .refine((title) => {
-      return title.trim().length > 0;
-    }, "Provide a nonblank title"),
-  model: z.string().min(1).max(255),
+  title: z.string().min(1).max(200).regex(/\S/u, "Provide a nonblank title"),
+  model: mcpChatModelIdSchema,
 });
 
 export const mcpCreateChatThreadOutputSchema = z.strictObject({

@@ -608,6 +608,8 @@ const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["processed_megapixel.first", usd(0.03), 1],
     ["processed_megapixel.additional", usd(0.015), 1],
   ]),
+  // Qwen Image is no longer selectable, but its row stays so already-recorded
+  // usage keeps pricing.
   ...usageGroup("image", "fal-ai/qwen-image", [
     ["output_megapixel", usd(0.02), 1],
   ]),

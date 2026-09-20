@@ -397,6 +397,7 @@ def _classify_registry_sandboxes(
                 sandbox,
                 builtin_firewall_catalog_cache_path=builtin_firewall_catalog_cache_path,
                 builtin_firewall_catalog_snapshot=builtin_catalog_snapshot,
+                explicit_omitted_builtin_names=explicit_omitted_builtins,
             )
         except registry_firewalls.FirewallEntryResolutionError as e:
             invalid_sandboxes[client_ip] = InvalidSandboxEntry("invalid_firewalls", str(e))

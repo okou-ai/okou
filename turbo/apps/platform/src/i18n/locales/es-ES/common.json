@@ -679,7 +679,6 @@
       "previewSlide": "Vista previa de la diapositiva {{slideNumber}}",
       "previewVoice": "Escuchar la voz {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
-      "previousHtmlPreview": "Vista previa HTML anterior de {{title}}",
       "previousSlide": "Vista previa de la diapositiva anterior",
       "recommended": "Recomendado",
       "renameImportedTemplate": "Cambiar nombre de la plantilla",
@@ -3544,21 +3543,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Remitente autorizado",
+        "codeExpiry": "Caduca en 10 minutos",
         "connectAria": "Conectar teléfono",
-        "connectDescription": "Envía un mensaje a este número de AgentPhone desde el teléfono que quieres conectar.",
+        "connectDescription": "Escanea el código o abre Mensajes y envía el código ya rellenado.",
         "connectTitle": "Conectar teléfono",
         "copyAria": "Copiar {{phone}}",
+        "copyCodeAria": "Copiar código de conexión {{code}}",
+        "copyCodeError": "No se pudo copiar el código de conexión",
+        "copyCodeSuccess": "Código de conexión copiado",
         "copyError": "No se pudo copiar el número de teléfono",
         "copySuccess": "Número de teléfono copiado",
+        "createCodeError": "No se pudo crear un código de conexión. Inténtalo de nuevo.",
+        "creatingCode": "Creando código de conexión…",
         "description": "Acceso por mensajes de texto a {{assistantName}}",
         "destination": "iMessage o SMS a",
-        "messageInstruction": "Envía «hi»",
+        "manualSend": "o envía",
+        "manualSendTo": "al",
         "openMessages": "Abrir Mensajes",
         "options": "Opciones de teléfono",
         "phoneLabel": "Teléfono",
-        "replyInstruction": "Toca el enlace de conexión en un plazo de 10 minutos para terminar.",
-        "replyTitle": "Abre nuestra respuesta",
-        "risk": "Usa iMessage cuando sea posible. Es posible que las respuestas por SMS y MMS no lleguen de forma fiable."
+        "qrTitle": "Escanea para abrir Mensajes con el código de conexión ya rellenado",
+        "risk": "Usa iMessage cuando sea posible. Es posible que las respuestas por SMS y MMS no lleguen de forma fiable.",
+        "tryAgain": "Intentar de nuevo"
       },
       "catalogDiagnostics": {
         "fields": {
@@ -5551,7 +5557,7 @@
         "starting": "Iniciando la exportación"
       },
       "backToAssistant": "Volver a {{assistantName}}",
-      "description": "Descarga los archivos y registros de texto que creaste en {{assistantName}}.",
+      "description": "Descarga tus conversaciones, memoria y las instrucciones de los agentes y flujos de trabajo a los que tienes acceso en {{assistantName}}.",
       "documentTitle": "Exportar datos",
       "duration": {
         "soon": "Pronto"
@@ -5562,11 +5568,12 @@
         "startFailed": "No se inició la exportación"
       },
       "scope": {
-        "agentInstructions": "Documentos de instrucción del agente",
-        "artifactsExcluded": "Los artefactos no están incluidos en esta exportación.",
-        "chatMessages": "Mensajes de chat de texto de usuarios y asistentes",
-        "memoryFiles": "Archivos de memoria",
-        "workflowInstructions": "Instrucciones y archivos SKILL.md de los flujos de trabajo"
+        "agentInstructions": "Instrucciones de los agentes a los que tienes acceso",
+        "chatMessages": "Tus mensajes de chat",
+        "chatThreads": "Tus conversaciones de chat",
+        "filesExcluded": "No se incluyen artefactos, archivos adjuntos ni archivos complementarios de los flujos de trabajo.",
+        "memoryFiles": "Tus archivos de memoria actuales",
+        "workflowInstructions": "Instrucciones de los flujos de trabajo a los que tienes acceso"
       },
       "status": {
         "checkingDescription": "Tu último estado de exportación aparecerá aquí.",
@@ -6027,6 +6034,14 @@
           "stores": "almacenes de objetos",
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
+        },
+        "morningBriefTrigger": {
+          "description": "Ejecuta ahora un Morning Brief real. Pone tu próxima ejecución en la cola del programador habitual, que entrega un resumen real y un correo real en menos de un minuto. Activarlo antes de tu hora diaria te dará dos resúmenes esa mañana.",
+          "failed": "No se pudo poner el Morning Brief en cola. Inténtalo de nuevo.",
+          "queued": "En cola. El programador entregará el resumen en menos de un minuto.",
+          "title": "Morning Brief",
+          "trigger": "Ejecutar Morning Brief ahora",
+          "triggering": "Poniendo en cola…"
         },
         "voiceInput": {
           "default": "Predeterminado ({{model}})",

@@ -304,6 +304,10 @@ test("Preview and send a website template", async () => {
   if (!previewDialog) {
     throw new Error("Website preview dialog not found");
   }
+  // The preview opens as a dialog inside the gallery, which is what lets the
+  // gallery step out of view for as long as it is up. Moving it out of the
+  // gallery's tree would leave the two panels overlapping again.
+  expect(picker).toHaveAttribute("data-nested-dialog-open");
   const finishCloseTransition = holdElementAnimations(previewDialog);
   await user.click(buttonNamed("Website", previewDialog));
   expect(previewDialog).toBeVisible();
@@ -317,6 +321,7 @@ test("Preview and send a website template", async () => {
     ).toBeVisible();
     return currentPicker;
   });
+  expect(returnedPicker).not.toHaveAttribute("data-nested-dialog-open");
 
   await user.click(
     within(returnedPicker).getByLabelText(

@@ -48,6 +48,7 @@ use super::session_history_download::{
     SessionHistoryDownloadPhaseTiming, SessionHistoryDownloadTimings,
     SessionHistoryMaterialization, SessionHistoryMaterializer,
 };
+use super::session_history_restore_plan::HistoryOverlapShadowApplicability;
 use super::session_restore::{
     MaterializedResumeSession, SessionRestoreDiagnostics, restore_session,
 };
@@ -90,6 +91,7 @@ const WORKSPACE_SESSION_HISTORY_PHASE_TELEMETRY_ERROR: &str =
     "workspace session history phase failed";
 const STORAGE_CACHE_POPULATE_FAILED: &str = "storage-cache-populate-failed";
 const STORAGE_DOWNLOAD_FAILED: &str = "storage-download-failed";
+const STORAGE_HISTORY_OVERLAP_SHADOW_ACTION: &str = "runner_storage_history_overlap_shadow";
 const SESSION_HISTORY_IDENTITY_VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
 const USER_CANCELLATION_CONTROL_PAYLOAD: &[u8] = br#"{"type":"user-cancellation"}"#;
 
@@ -1522,6 +1524,56 @@ fn record_storage_plan_state(
     }
 }
 
+fn record_storage_history_overlap_not_applicable(
+    telemetry: &mut JobTelemetry,
+    reason: &'static str,
+) {
+    telemetry.record_bounded_outcome(
+        STORAGE_HISTORY_OVERLAP_SHADOW_ACTION,
+        true,
+        "not_applicable",
+        Some(reason),
+    );
+}
+
+fn prepare_storage_history_overlap_shadow(
+    plan: &StoragePlan,
+    applicability: HistoryOverlapShadowApplicability,
+    telemetry: &mut JobTelemetry,
+) -> Option<guest_contracts::storage_manifest::HistoryOverlapShadow> {
+    match applicability {
+        HistoryOverlapShadowApplicability::Planned(history_root) => {
+            match plan.history_overlap_shadow(history_root) {
+                Ok(shadow) => Some(shadow),
+                Err(_) => {
+                    record_storage_history_overlap_not_applicable(telemetry, "descriptor_budget");
+                    None
+                }
+            }
+        }
+        HistoryOverlapShadowApplicability::NoPlannedRestore => {
+            record_storage_history_overlap_not_applicable(telemetry, "no_planned_restore");
+            None
+        }
+        HistoryOverlapShadowApplicability::VerifyFirst => {
+            record_storage_history_overlap_not_applicable(telemetry, "verify_first");
+            None
+        }
+    }
+}
+
+fn record_storage_history_overlap_transport(
+    telemetry: &mut JobTelemetry,
+    transport: super::storage::HistoryOverlapShadowTransport,
+) {
+    if matches!(
+        transport,
+        super::storage::HistoryOverlapShadowTransport::DescriptorBudget
+    ) {
+        record_storage_history_overlap_not_applicable(telemetry, "descriptor_budget");
+    }
+}
+
 async fn populate_storage_plan(
     plan: &mut StoragePlan,
     fresh_delivery: Option<&mut crate::storage_cache::FreshArchiveDelivery>,
@@ -1605,8 +1657,10 @@ async fn prepare_guest_storage(
     start: &RunStart<'_>,
     telemetry: &mut JobTelemetry,
     prepared_storage: &mut Option<crate::storage_cache::PreparedStorage>,
+    history_shadow_applicability: HistoryOverlapShadowApplicability,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
     let Some(manifest) = &context.storage_manifest else {
+        record_storage_history_overlap_not_applicable(telemetry, "no_storage_work");
         return Ok(None);
     };
     let apply_started = Instant::now();
@@ -1629,6 +1683,7 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
+                record_storage_history_overlap_not_applicable(telemetry, "no_storage_work");
                 prepared.delivery.cancel_and_drain(telemetry).await;
                 let _ = prepared_storage.take();
                 Ok(None)
@@ -1646,17 +1701,33 @@ async fn prepare_guest_storage(
                         "prepared storage disappeared after cache population".into(),
                     )
                 })?;
+                let shadow = prepare_storage_history_overlap_shadow(
+                    &prepared.plan,
+                    history_shadow_applicability,
+                    telemetry,
+                );
                 let files = prepared.plan.take_decoded();
-                let guest_manifest = prepared.plan.into_guest_manifest();
+                let mut guest_manifest = prepared.plan.into_guest_manifest();
+                guest_manifest.history_overlap_shadow = shadow;
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
+                let download_result =
+                    super::storage::download_storages_with_files_observing_transport(
+                        sandbox,
+                        context,
+                        guest_manifest,
+                        &files,
+                        |transport| {
+                            record_storage_history_overlap_transport(telemetry, transport);
+                        },
+                    )
+                    .await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
                     download_result.is_ok(),
                     download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
                 );
-                download_result.map(|()| deferred)
+                download_result.map(|_| deferred)
             }
         } else {
             let runtime_dir = guest_runtime_dir(context.run_id)?;
@@ -1676,21 +1747,38 @@ async fn prepare_guest_storage(
             );
             if !has_work {
                 info!(run_id = %context.run_id, "storage manifest has no download work, skipping download");
+                record_storage_history_overlap_not_applicable(telemetry, "no_storage_work");
                 Ok(None)
             } else {
                 let deferred =
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry).await?;
+                let shadow = prepare_storage_history_overlap_shadow(
+                    &plan,
+                    history_shadow_applicability,
+                    telemetry,
+                );
                 let files = plan.take_decoded();
-                let guest_manifest = plan.into_guest_manifest();
+                let mut guest_manifest = plan.into_guest_manifest();
+                guest_manifest.history_overlap_shadow = shadow;
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
+                let download_result =
+                    super::storage::download_storages_with_files_observing_transport(
+                        sandbox,
+                        context,
+                        guest_manifest,
+                        &files,
+                        |transport| {
+                            record_storage_history_overlap_transport(telemetry, transport);
+                        },
+                    )
+                    .await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
                     download_result.is_ok(),
                     download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
                 );
-                download_result.map(|()| deferred)
+                download_result.map(|_| deferred)
             }
         }
     }
@@ -1773,6 +1861,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         mut pre_spawn_admission_lease,
         guest_state_prepared,
     } = controls;
+    let history_shadow_applicability =
+        session_history_restore_plan.history_overlap_shadow_applicability(context);
     let pre_spawn_started = Instant::now();
 
     // Complete cancellation-aware guest runtime and storage preparation while
@@ -1850,6 +1940,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 &start,
                 telemetry,
                 &mut prepared_storage,
+                history_shadow_applicability,
             ),
         ))
         .await;

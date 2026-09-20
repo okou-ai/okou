@@ -580,7 +580,7 @@ Backend changes must be safe with:
 
 #### Pro-suspend plan retirement
 
-Migration `1174_retire_pro_suspend_tier` rewrites persisted `pro-suspend`
+Migration `1176_retire_pro_suspend_tier` rewrites persisted `pro-suspend`
 organization tiers, pending cancellation targets, and entitlement snapshots to
 `limited-free-1`. The entitlement rewrite applies the complete canonical
 limited-free capability set and active status while preserving balances,

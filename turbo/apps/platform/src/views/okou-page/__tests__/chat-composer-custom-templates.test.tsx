@@ -27,10 +27,12 @@ const PROMPT = "Analyse this file and save it as a reusable template.";
 
 /**
  * What the run is told on top of that request, and the member is not: which
- * guide reads the file, and which catalog the result belongs in.
+ * guide reads the file — the dispatcher, not the single-branch copy the
+ * registry archive shares a name with — and which catalog the result belongs
+ * in.
  */
 const GUIDANCE =
-  "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
+  "Analyse this file with the `reverse-template` dispatcher in `okou-ai/vm0-skills`: read `reverse-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 
 function additionalInfo(message: UserMessageDocument): string[] {
   return message.parts.flatMap((part) => {
@@ -294,6 +296,42 @@ test("The Custom category lists every reachable template", async () => {
   expect(within(dialog).getByText("Partner QBR")).toBeInTheDocument();
 });
 
+test("A template published while the panel is open appears in it", async () => {
+  // The analysis runs in a thread, so the publish reaches this member's
+  // catalog while the picker they started it from is open in front of them.
+  let templates: readonly UserTemplateDetail[] = [customTemplate()];
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(
+      200,
+      templates.map(
+        ({ pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry }) => {
+          return entry;
+        },
+      ),
+    );
+  });
+
+  const { dialog } = await openCustomPanel();
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+
+  templates = [
+    customTemplate({
+      id: "33333333-3333-4333-8333-333333333333",
+      title: "Party invitation",
+      sourceFilename: "invitation.docx",
+      kind: "document",
+    }),
+    ...templates,
+  ];
+  context.mocks.ably.trigger("presentationTemplatesChanged");
+
+  await expect(
+    within(dialog).findByText("Party invitation"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("A card carries who can see the template and nothing else about it", async () => {
   mockCustomTemplates([customTemplate()]);
 
@@ -424,6 +462,10 @@ test("Opening a deck shows its pages and management controls", async () => {
   const page = await screen.findByAltText("Page 1");
   expect(page).toHaveAttribute("src", "https://example.test/page-1.png");
   const preview = previewDialogAround(page);
+  // The preview is a dialog inside the picker, which is what lets the picker
+  // step out of view rather than stay half-visible around a narrower panel.
+  expect(dialog).toHaveAttribute("data-nested-dialog-open");
+  expect(preview).not.toHaveAttribute("data-nested-dialog-open");
   expect(
     within(preview).getByText("18 pages · from q3-board-final-v4.pptx"),
   ).toBeVisible();
@@ -954,7 +996,10 @@ test("Every source is sent with one message that lets the guide sort it", async 
   // long whatever the file turns out to be.
   expect(capture.runPrompts[0]).toBe(PROMPT);
   // The catalog still has to be said, because the guide's presentation branch
-  // names the other one — so it is said where only the run reads it.
+  // names the other one — so it is said where only the run reads it, along
+  // with the `--kind` a document needs to avoid the flag's presentation
+  // default, and the repository that tells the dispatcher apart from the
+  // registry's presentation-only copy.
   expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 

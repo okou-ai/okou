@@ -158,7 +158,7 @@ try {
 
   const migration = await readFile(
     new URL(
-      "../src/migrations/1174_retire_pro_suspend_tier.sql",
+      "../src/migrations/1176_retire_pro_suspend_tier.sql",
       import.meta.url,
     ),
     "utf8",

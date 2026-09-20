@@ -47,6 +47,7 @@ mod connection_observation;
 mod download;
 mod error;
 mod files;
+mod history_overlap_shadow;
 mod http_failure;
 mod instructions;
 mod manifest;
@@ -159,6 +160,11 @@ fn run_manifest_with_files(
         true,
         None,
     );
+    if let Some(shadow) = manifest.history_overlap_shadow.as_ref() {
+        let shadow_started = Instant::now();
+        let classification = history_overlap_shadow::classify(shadow);
+        telemetry::record_history_overlap_shadow(classification, shadow_started.elapsed());
+    }
     let RunPlan {
         cleanup_paths,
         instruction_cleanups,

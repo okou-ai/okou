@@ -1,12 +1,15 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { AgentPhoneLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import {
-  AlertTriangle,
+  Check,
   CircleCheck,
   Copy,
   EllipsisVertical,
+  Loader2,
 } from "lucide-react";
-import { surfaceVariants, Button } from "@okouai/ui";
+import { QRCodeSVG } from "qrcode.react";
+import { surfaceVariants, Button, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   Popover,
@@ -33,6 +36,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   agentPhoneLinkStatus$,
   agentPhoneConnectDialogOpen$,
+  createAgentPhoneLinkCode$,
   disconnectAgentPhone$,
   setAgentPhoneConnectDialogOpen$,
 } from "../../signals/okou-page/agentphone.ts";
@@ -42,7 +46,6 @@ import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
 const imessageIconImg = settingsIconAssetUrl("imessage");
-const AGENTPHONE_HANDSHAKE_MESSAGE = "hi";
 
 /** Render a US/Canada E.164 number as `+1 (NXX) NXX-XXXX`; other formats are
  *  returned unchanged. */
@@ -54,49 +57,86 @@ function formatAgentPhoneNumber(raw: string): string {
   return `+1 (${match[1]}) ${match[2]}-${match[3]}`;
 }
 
-function PhoneNumberCopyButton({
-  phoneNumber,
+function CopyTextButton({
+  value,
+  label,
+  ariaLabel,
+  successMessage,
+  errorMessage,
+  className,
 }: {
-  readonly phoneNumber: string;
+  readonly value: string;
+  readonly label: string;
+  readonly ariaLabel: string;
+  readonly successMessage: string;
+  readonly errorMessage: string;
+  readonly className?: string;
 }) {
-  const { t } = useTranslation();
-  const formatted = formatAgentPhoneNumber(phoneNumber);
-
   return (
     <IconTooltipButton
       type="button"
-      aria-label={t(
-        ($) => {
-          return $.connectors.providerSettings.agentphone.copyAria;
-        },
-        { phone: formatted },
+      aria-label={ariaLabel}
+      className={cn(
+        "group inline-flex items-center gap-1 rounded font-medium text-foreground transition-colors hover:text-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        className,
       )}
-      className="inline-flex items-center gap-1 rounded font-medium text-foreground transition-colors hover:text-foreground/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-      onClick={() => {
+      onClick={(event) => {
+        const button = event.currentTarget;
         detach(
           (async () => {
-            const copied = await writeToClipboard(phoneNumber);
-            if (copied) {
-              toast.success(
-                i18n.t(($) => {
-                  return $.connectors.providerSettings.agentphone.copySuccess;
-                }),
-              );
+            const copySucceeded = await writeToClipboard(value);
+            if (copySucceeded) {
+              button.dataset.copied = "true";
+              toast.success(successMessage);
             } else {
-              toast.error(
-                i18n.t(($) => {
-                  return $.connectors.providerSettings.agentphone.copyError;
-                }),
-              );
+              toast.error(errorMessage);
             }
           })(),
           Reason.DomCallback,
         );
       }}
     >
-      {formatted}
-      <Copy size={13} className="shrink-0 text-muted-foreground" />
+      {label}
+      <Copy
+        size={13}
+        className="shrink-0 text-muted-foreground group-data-[copied=true]:hidden"
+      />
+      <Check
+        size={13}
+        className="hidden shrink-0 text-green-600 group-data-[copied=true]:block"
+      />
     </IconTooltipButton>
+  );
+}
+
+function PhoneNumberCopyButton({
+  phoneNumber,
+  className,
+}: {
+  readonly phoneNumber: string;
+  readonly className?: string;
+}) {
+  const { t } = useTranslation();
+  const formatted = formatAgentPhoneNumber(phoneNumber);
+
+  return (
+    <CopyTextButton
+      value={phoneNumber}
+      label={formatted}
+      ariaLabel={t(
+        ($) => {
+          return $.connectors.providerSettings.agentphone.copyAria;
+        },
+        { phone: formatted },
+      )}
+      successMessage={i18n.t(($) => {
+        return $.connectors.providerSettings.agentphone.copySuccess;
+      })}
+      errorMessage={i18n.t(($) => {
+        return $.connectors.providerSettings.agentphone.copyError;
+      })}
+      className={className}
+    />
   );
 }
 
@@ -104,7 +144,7 @@ function AgentPhoneConnectActions({
   messageHref,
   onClose,
 }: {
-  readonly messageHref: string;
+  readonly messageHref: string | null;
   readonly onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -116,13 +156,21 @@ function AgentPhoneConnectActions({
           return $.connectors.actions.close;
         })}
       </Button>
-      <Button asChild>
-        <a href={messageHref}>
+      {messageHref ? (
+        <Button asChild>
+          <a href={messageHref}>
+            {t(($) => {
+              return $.connectors.providerSettings.agentphone.openMessages;
+            })}
+          </a>
+        </Button>
+      ) : (
+        <Button type="button" disabled>
           {t(($) => {
             return $.connectors.providerSettings.agentphone.openMessages;
           })}
-        </a>
-      </Button>
+        </Button>
+      )}
     </DialogFooter>
   );
 }
@@ -145,18 +193,144 @@ function AgentPhoneConnectIntro() {
   );
 }
 
-function AgentPhoneConnectDialog({
+function agentPhoneMessageHref(phoneNumber: string, code: string): string {
+  return `sms:${phoneNumber}?body=${encodeURIComponent(code)}`;
+}
+
+function AgentPhoneConnectionCodeContent({
   phoneNumber,
+  connectionCode,
 }: {
-  readonly phoneNumber: string | null;
+  readonly phoneNumber: string;
+  readonly connectionCode: AgentPhoneLinkCodeResponse;
 }) {
   const { t } = useTranslation();
+  const messageHref = agentPhoneMessageHref(phoneNumber, connectionCode.code);
+
+  return (
+    <div className="flex flex-col items-center text-center">
+      <div className="rounded-xl bg-gray-50 p-3">
+        <QRCodeSVG
+          value={messageHref}
+          size={176}
+          level="M"
+          marginSize={1}
+          bgColor="#ffffff"
+          fgColor="#000000"
+          title={t(($) => {
+            return $.connectors.providerSettings.agentphone.qrTitle;
+          })}
+          data-testid="agentphone-link-qr"
+          data-sms-href={messageHref}
+        />
+      </div>
+      <p className="mt-4 flex flex-wrap items-center justify-center gap-x-1 gap-y-2 text-xs text-muted-foreground">
+        <span>
+          {t(($) => {
+            return $.connectors.providerSettings.agentphone.manualSend;
+          })}
+        </span>
+        <CopyTextButton
+          value={connectionCode.code}
+          label={connectionCode.code}
+          ariaLabel={t(
+            ($) => {
+              return $.connectors.providerSettings.agentphone.copyCodeAria;
+            },
+            { code: connectionCode.code },
+          )}
+          successMessage={t(($) => {
+            return $.connectors.providerSettings.agentphone.copyCodeSuccess;
+          })}
+          errorMessage={t(($) => {
+            return $.connectors.providerSettings.agentphone.copyCodeError;
+          })}
+          className="-my-1 rounded-md px-1.5 py-1 font-mono tracking-wide hover:bg-gray-50 hover:text-foreground"
+        />
+        <span>
+          {t(($) => {
+            return $.connectors.providerSettings.agentphone.manualSendTo;
+          })}
+        </span>
+        <PhoneNumberCopyButton
+          phoneNumber={phoneNumber}
+          className="-my-1 rounded-md px-1.5 py-1 hover:bg-gray-50 hover:text-foreground"
+        />
+      </p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        <time dateTime={connectionCode.expiresAt}>
+          {t(($) => {
+            return $.connectors.providerSettings.agentphone.codeExpiry;
+          })}
+        </time>
+      </p>
+      <p className="mt-5 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.connectors.providerSettings.agentphone.risk;
+        })}
+      </p>
+    </div>
+  );
+}
+
+function AgentPhoneConnectionCodeLoading() {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="flex min-h-56 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"
+      role="status"
+    >
+      <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+      <span>
+        {t(($) => {
+          return $.connectors.providerSettings.agentphone.creatingCode;
+        })}
+      </span>
+    </div>
+  );
+}
+
+function AgentPhoneConnectionCodeError({
+  onRetry,
+}: {
+  readonly onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
+      <p className="max-w-72 text-sm text-muted-foreground" role="alert">
+        {t(($) => {
+          return $.connectors.providerSettings.agentphone.createCodeError;
+        })}
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+        {t(($) => {
+          return $.connectors.providerSettings.agentphone.tryAgain;
+        })}
+      </Button>
+    </div>
+  );
+}
+
+function AgentPhoneConnectDialog({
+  phoneNumber,
+  connectionCode,
+  connectionCodeFailed,
+  onRetry,
+}: {
+  readonly phoneNumber: string | null;
+  readonly connectionCode: AgentPhoneLinkCodeResponse | null;
+  readonly connectionCodeFailed: boolean;
+  readonly onRetry: () => void;
+}) {
   const open = useGet(agentPhoneConnectDialogOpen$);
   const setOpen = useSet(setAgentPhoneConnectDialogOpen$);
   if (!phoneNumber) {
     return null;
   }
-  const messageHref = `sms:${phoneNumber}?body=${encodeURIComponent(AGENTPHONE_HANDSHAKE_MESSAGE)}`;
+  const messageHref = connectionCode
+    ? agentPhoneMessageHref(phoneNumber, connectionCode.code)
+    : null;
 
   return (
     <Dialog
@@ -168,53 +342,16 @@ function AgentPhoneConnectDialog({
       <DialogContent>
         <AgentPhoneConnectIntro />
         <div className="grid gap-5">
-          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-            <p className="min-w-0 leading-5">
-              {t(($) => {
-                return $.connectors.providerSettings.agentphone.risk;
-              })}
-            </p>
-          </div>
-          <ol className="divide-y divide-border/60">
-            <li className="flex items-start gap-3 pb-4">
-              <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                1
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">
-                  {t(($) => {
-                    return $.connectors.providerSettings.agentphone
-                      .messageInstruction;
-                  })}
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-gray-50">
-                    <img src={imessageIconImg} alt="" className="h-5 w-5" />
-                  </span>
-                  <PhoneNumberCopyButton phoneNumber={phoneNumber} />
-                </div>
-              </div>
-            </li>
-            <li className="flex items-start gap-3 pt-4">
-              <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                2
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">
-                  {t(($) => {
-                    return $.connectors.providerSettings.agentphone.replyTitle;
-                  })}
-                </p>
-                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                  {t(($) => {
-                    return $.connectors.providerSettings.agentphone
-                      .replyInstruction;
-                  })}
-                </p>
-              </div>
-            </li>
-          </ol>
+          {connectionCode ? (
+            <AgentPhoneConnectionCodeContent
+              phoneNumber={phoneNumber}
+              connectionCode={connectionCode}
+            />
+          ) : connectionCodeFailed ? (
+            <AgentPhoneConnectionCodeError onRetry={onRetry} />
+          ) : (
+            <AgentPhoneConnectionCodeLoading />
+          )}
           <AgentPhoneConnectActions
             messageHref={messageHref}
             onClose={() => {
@@ -229,8 +366,10 @@ function AgentPhoneConnectDialog({
 
 function AgentPhoneCardActions({
   canConnect,
+  onConnect,
 }: {
   readonly canConnect: boolean;
+  readonly onConnect: () => void;
 }) {
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
@@ -240,7 +379,6 @@ function AgentPhoneCardActions({
     disconnectAgentPhone$,
   );
   const pageSignal = useGet(pageSignal$);
-  const setConnectOpen = useSet(setAgentPhoneConnectDialogOpen$);
   const disconnecting = disconnectLoadable.state === "loading";
   const isConnected = status?.linked ?? false;
   const connectedPhone = status?.linked ? status.phoneHandle : null;
@@ -282,9 +420,7 @@ function AgentPhoneCardActions({
           aria-label={t(($) => {
             return $.connectors.providerSettings.agentphone.connectAria;
           })}
-          onClick={() => {
-            setConnectOpen(true);
-          }}
+          onClick={onConnect}
         >
           {t(($) => {
             return $.connectors.actions.connect;
@@ -340,9 +476,21 @@ function AgentPhoneCardActions({
 export function AgentPhoneCard() {
   const { t } = useTranslation();
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
+  const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
+    createAgentPhoneLinkCode$,
+  );
+  const pageSignal = useGet(pageSignal$);
+  const setConnectOpen = useSet(setAgentPhoneConnectDialogOpen$);
   const status =
     statusLoadable.state === "hasData" ? statusLoadable.data : null;
   const agentPhoneNumber = status?.agentPhoneNumber ?? null;
+  const connectionCode =
+    connectionCodeLoadable.state === "hasData"
+      ? connectionCodeLoadable.data
+      : null;
+  const requestConnectionCode = () => {
+    detach(createConnectionCode(pageSignal), Reason.DomCallback);
+  };
 
   return (
     <>
@@ -380,10 +528,21 @@ export function AgentPhoneCard() {
               )}
             </div>
           </div>
-          <AgentPhoneCardActions canConnect={agentPhoneNumber !== null} />
+          <AgentPhoneCardActions
+            canConnect={agentPhoneNumber !== null}
+            onConnect={() => {
+              requestConnectionCode();
+              setConnectOpen(true);
+            }}
+          />
         </div>
       </div>
-      <AgentPhoneConnectDialog phoneNumber={agentPhoneNumber} />
+      <AgentPhoneConnectDialog
+        phoneNumber={agentPhoneNumber}
+        connectionCode={connectionCode}
+        connectionCodeFailed={connectionCodeLoadable.state === "hasError"}
+        onRetry={requestConnectionCode}
+      />
     </>
   );
 }
