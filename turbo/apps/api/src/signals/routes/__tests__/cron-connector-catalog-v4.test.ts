@@ -137,15 +137,17 @@ function mcpConnector(slug = "plaud-mcp") {
   };
 }
 
-function runtimeMcpConnector(
+function runtimeBuiltinConnector(
+  protocol: "http" | "mcp",
   authKind: "none" | "manual" | "automatic",
   endpoint: string,
   updated = false,
 ) {
   const connector = mcpConnector("catalog-mcp");
+  const { mcp, ...baseConnector } = connector;
   return {
-    ...connector,
-    mcp: { ...connector.mcp, endpoint },
+    ...baseConnector,
+    ...(protocol === "mcp" ? { mcp: { ...mcp, endpoint } } : {}),
     authMethods:
       authKind === "automatic"
         ? connector.authMethods
@@ -297,13 +299,20 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
-  it.each(["none", "manual", "automatic"] as const)(
-    "refreshes a running %s builtin MCP when its catalog configuration changes or disappears",
-    async (authKind) => {
+  it.each([
+    ["mcp", "none"],
+    ["mcp", "manual"],
+    ["mcp", "automatic"],
+    ["http", "manual"],
+  ] as const)(
+    "refreshes a running %s %s builtin when its catalog configuration changes or disappears",
+    async (protocol, authKind) => {
       const endpoint = "https://automatic-mcp.example.test/server";
       const initial = release({
         mutate(catalog) {
-          catalog.connectors = [runtimeMcpConnector(authKind, endpoint)];
+          catalog.connectors = [
+            runtimeBuiltinConnector(protocol, authKind, endpoint),
+          ];
         },
       });
       serveObjects(initial.objects);
@@ -317,7 +326,7 @@ describe("connector catalog v4 preparation", () => {
       await runs.grantProEntitlement(actor);
       await runs.ensureOrgModelProvider(actor);
       const agent = await bdd.createAgent(actor, {
-        displayName: "Builtin MCP catalog changes",
+        displayName: "Builtin catalog changes",
         visibility: "private",
       });
       const created: { runId?: string; connectionId?: string } = {};
@@ -410,7 +419,14 @@ describe("connector catalog v4 preparation", () => {
                             "Unrelated service",
                           ),
                         ]
-                      : [runtimeMcpConnector(authKind, nextEndpoint, true)];
+                      : [
+                          runtimeBuiltinConnector(
+                            protocol,
+                            authKind,
+                            nextEndpoint,
+                            true,
+                          ),
+                        ];
                 },
               }).objects,
             );
@@ -433,7 +449,7 @@ describe("connector catalog v4 preparation", () => {
               change === "removed"
                 ? {
                     target,
-                    state: "unresolved",
+                    state: "absent",
                     reason: "connector-unavailable",
                   }
                 : {
@@ -449,7 +465,9 @@ describe("connector catalog v4 preparation", () => {
         release({
           version: `${CATALOG_VERSION}.cleanup`,
           mutate(catalog) {
-            catalog.connectors = [runtimeMcpConnector(authKind, endpoint)];
+            catalog.connectors = [
+              runtimeBuiltinConnector(protocol, authKind, endpoint),
+            ];
           },
         }).objects,
       );
