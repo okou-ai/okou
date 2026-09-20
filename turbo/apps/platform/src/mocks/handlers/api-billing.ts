@@ -99,8 +99,8 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
 
 function defaultBillingStatus(): BillingStatusResponse {
   return {
-    tier: "limited-free-1",
-    ...billingPlanCapabilities("limited-free-1"),
+    tier: "free",
+    ...billingPlanCapabilities("free"),
     showUsagePack: false,
     credits: 0,
     onboardingPaymentPending: true,
