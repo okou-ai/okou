@@ -15,6 +15,7 @@ import { expect, test } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
+  getLinkByName,
   setupSharedThreadPage,
   sharedThread,
 } from "./shared-thread-test-helpers.ts";
@@ -23,6 +24,8 @@ const context = testContext();
 const FILE_ID = "f0000000-0000-4000-a000-000000000942";
 const SITE = "https://app.okou.ai/artifacts/lightsite1.html#slide-2";
 const VIDEO = "https://app.okou.ai/artifacts/lightvid01.mp4#t=2";
+const IMAGE = "https://app.okou.ai/artifacts/lightimg01.png";
+const DOCUMENT = "https://app.okou.ai/artifacts/lightdoc01.pdf";
 const SITE_COVER = "https://app.okou.ai/artifacts/siteshot01.webp";
 const VIDEO_COVER = "https://app.okou.ai/artifacts/vidcover01.jpg";
 const R2_ORIGIN = `https://${"b".repeat(32)}.r2.cloudflarestorage.com`;
@@ -709,4 +712,146 @@ test("revoked download access reports an error without downloading or leaving th
   expect(browser.downloads).toStrictEqual([]);
   expect(replace.calls).toStrictEqual([]);
   expect(window.location.href).toBe(sharedPageUrl);
+});
+
+function mockArtifactResource(resource: {
+  reference: string;
+  url: string;
+  filename: string;
+  contentType: string;
+}) {
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      expect(params.reference).toBe(resource.reference);
+      return respond(200, {
+        url: resource.url,
+        filename: resource.filename,
+        contentType: resource.contentType,
+        expiresAt: "2099-01-01T00:00:00Z",
+        sharedThreadSnapshot: true,
+        target: { kind: "file", id: FILE_ID },
+      });
+    },
+  );
+}
+
+test("a shared image opens in the conversation and keeps its destination for a new tab", async () => {
+  const chartUrl = `${R2_ORIGIN}/snapshots/chart.png?X-Amz-Signature=preview`;
+  mockArtifactResource({
+    reference: "lightimg01.png",
+    url: chartUrl,
+    filename: "chart.png",
+    contentType: "image/png",
+  });
+  mockSharedMessage(`![Quarterly chart](${IMAGE})`);
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const thumbnail = await screen.findByAltText("Quarterly chart");
+  const link = thumbnail.closest("a");
+  expect(link).toHaveAttribute("href", IMAGE);
+  expect(link).toHaveAttribute("target", "_blank");
+  await waitFor(() => {
+    expect(thumbnail).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${chartUrl}`);
+  });
+  if (!link) {
+    throw new Error("Expected the shared image to keep its own destination");
+  }
+
+  // A held modifier is a request for a tab of its own, so the anchor answers:
+  // the click runs to its default instead of being taken by the dialog.
+  expect(fireEvent.click(link, { metaKey: true })).toBeTruthy();
+
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+  click(link);
+
+  const dialog = await screen.findByRole("dialog");
+  await expect(
+    within(dialog).findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", chartUrl);
+  expect(within(dialog).getByText("Quarterly chart")).toBeInTheDocument();
+});
+
+test("a shared document opens in the conversation from its card and from its link", async () => {
+  const briefUrl = `${R2_ORIGIN}/snapshots/brief.pdf?X-Amz-Signature=preview`;
+  mockArtifactResource({
+    reference: "lightdoc01.pdf",
+    url: briefUrl,
+    filename: "brief.pdf",
+    contentType: "application/pdf",
+  });
+  mockSharedMessage(
+    `![Launch brief](${DOCUMENT})\n\n[Read the brief](${DOCUMENT})`,
+  );
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const card = await screen.findByTestId("markdown-artifact-preview-pdf");
+  expect(card).toHaveAttribute("href", DOCUMENT);
+
+  click(card);
+
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => {
+    expect(
+      within(dialog).getByTestId("artifact-dialog-document-frame"),
+    ).toContainHTML(`src="${briefUrl}#navpanes=0"`);
+  });
+  expect(within(dialog).getByText("Launch brief")).toBeInTheDocument();
+
+  click(getButtonByName("Close", dialog));
+
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  const link = getLinkByName("Read the brief");
+  expect(link).toHaveAttribute("href", DOCUMENT);
+
+  click(link);
+
+  const linkDialog = await screen.findByRole("dialog");
+  // The words the author wrote for the link title the preview they open.
+  expect(within(linkDialog).getByText("Read the brief")).toBeInTheDocument();
+});
+
+test("a prompt attachment opens in the conversation instead of a new tab", async () => {
+  const screenshotUrl =
+    "https://a.okou.io/shared-threads/public/image/screenshot.png";
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          {
+            messageIndex: 0,
+            role: "user",
+            content: "Match this layout",
+            attachments: [
+              {
+                filename: "screenshot.png",
+                contentType: "image/png",
+                size: 42,
+                url: screenshotUrl,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const link = screen.getByLabelText("screenshot.png");
+  expect(link).toHaveAttribute("href", screenshotUrl);
+
+  click(link);
+
+  const dialog = await screen.findByRole("dialog");
+  await expect(
+    within(dialog).findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", screenshotUrl);
+  expect(within(dialog).getByText("screenshot.png")).toBeInTheDocument();
 });

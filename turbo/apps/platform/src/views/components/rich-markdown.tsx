@@ -42,6 +42,7 @@ import type { SharedThreadArtifactSignals } from "../../signals/shared-thread-pa
 import { FilePreviewIcon } from "../okou-page/file-preview-icon.tsx";
 import {
   fallbackHtmlPreviewTitle,
+  shouldUseNativeAnchorNavigation,
   SitePreviewCard,
   SitePreviewContent,
   SitePreviewViewport,
@@ -100,6 +101,7 @@ function MediaImage({
   resolvedPreview,
   asLink = false,
   insideLink = false,
+  onActivate,
   resolutionFailed = false,
 }: {
   src: string | undefined;
@@ -110,6 +112,8 @@ function MediaImage({
   resolvedPreview?: AttachmentPreviewSignals;
   asLink?: boolean;
   insideLink?: boolean;
+  /** Present when the surface can present this image without leaving it. */
+  onActivate?: () => void;
   resolutionFailed?: boolean;
 }) {
   const { t } = useTranslation();
@@ -185,6 +189,17 @@ function MediaImage({
         target="_blank"
         rel="noopener noreferrer"
         className={className}
+        onClick={
+          onActivate === undefined
+            ? undefined
+            : (event) => {
+                if (shouldUseNativeAnchorNavigation(event)) {
+                  return;
+                }
+                event.preventDefault();
+                onActivate();
+              }
+        }
       >
         {preview}
       </a>
@@ -240,14 +255,7 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
       href={href}
       {...rest}
       onClick={(event) => {
-        if (
-          event.defaultPrevented ||
-          event.button !== 0 ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.shiftKey ||
-          event.altKey
-        ) {
+        if (shouldUseNativeAnchorNavigation(event)) {
           return;
         }
         if (card?.kind === "artifact") {
@@ -387,11 +395,13 @@ function LinkedArtifactImage({
   alt,
   insideLink,
 }: {
-  readonly signals: ArtifactSignals;
+  readonly signals: SharedThreadArtifactSignals;
   readonly alt: string;
   readonly insideLink?: boolean;
 }) {
   const thumbnail = useLoadable(signals.thumbnailUrl$);
+  const openPreview = useSet(signals.openPreview$);
+  const pageSignal = useGet(pageSignal$);
   return (
     <MediaImage
       src={thumbnail.state === "hasData" ? thumbnail.data : undefined}
@@ -400,8 +410,52 @@ function LinkedArtifactImage({
       load={signals.previewImageLoad}
       asLink
       insideLink={insideLink}
+      onActivate={() => {
+        openPreview(alt, pageSignal);
+      }}
       resolutionFailed={thumbnail.state === "hasError"}
     />
+  );
+}
+
+/** The words a Markdown node reads as, which is the label its author wrote. */
+function markdownNodeText(node: Element): string {
+  return node.children
+    .map((child) => {
+      if (child.type === "text") {
+        return child.value;
+      }
+      return child.type === "element" ? markdownNodeText(child) : "";
+    })
+    .join("");
+}
+
+/** A Markdown link whose destination this page presents in its own dialog. */
+function SharedThreadArtifactLink({
+  signals,
+  label,
+  children,
+  ...rest
+}: {
+  readonly signals: SharedThreadArtifactSignals;
+  readonly label: string;
+  readonly children?: ReactNode;
+} & MarkdownAnchorProps) {
+  const openPreview = useSet(signals.openPreview$);
+  const pageSignal = useGet(pageSignal$);
+  return (
+    <PlainLink
+      {...rest}
+      onClick={(event) => {
+        if (shouldUseNativeAnchorNavigation(event)) {
+          return;
+        }
+        event.preventDefault();
+        openPreview(label, pageSignal);
+      }}
+    >
+      {children}
+    </PlainLink>
   );
 }
 
@@ -465,23 +519,13 @@ export function SharedThreadArtifactCard({
       testId={`markdown-artifact-preview-${signals.kind}`}
       openInNewTab
       title={title}
-      onClick={
-        signals.kind === "html"
-          ? (event) => {
-              if (
-                event.button !== 0 ||
-                event.metaKey ||
-                event.ctrlKey ||
-                event.shiftKey ||
-                event.altKey
-              ) {
-                return;
-              }
-              event.preventDefault();
-              openPreview(title, pageSignal);
-            }
-          : undefined
-      }
+      onClick={(event) => {
+        if (shouldUseNativeAnchorNavigation(event)) {
+          return;
+        }
+        event.preventDefault();
+        openPreview(title, pageSignal);
+      }}
     >
       {resourceUrl.state === "hasError" ? (
         <span
@@ -511,6 +555,25 @@ export function SharedThreadArtifactCard({
         </span>
       )}
     </SitePreviewCard>
+  );
+}
+
+function LinkedMediaLinkRenderer(
+  props: { children?: ReactNode } & MarkdownAnchorProps,
+) {
+  const { children, ...rest } = props;
+  const node = props.node;
+  const artifact = node?.data?.linkedArtifact;
+  return artifact && node ? (
+    <SharedThreadArtifactLink
+      {...rest}
+      signals={artifact}
+      label={markdownNodeText(node)}
+    >
+      {children}
+    </SharedThreadArtifactLink>
+  ) : (
+    <PlainLink {...rest}>{children}</PlainLink>
   );
 }
 
@@ -674,6 +737,7 @@ const LINKED_MEDIA_MARKDOWN_COMPONENTS = {
   ...PLAIN_MARKDOWN_COMPONENTS,
   // A site card is a block, so its paragraph has to become a div here too.
   p: MediaParagraphRenderer,
+  a: LinkedMediaLinkRenderer,
   img: LinkedMediaImageRenderer,
   video: MediaVideoRenderer,
 } as const;

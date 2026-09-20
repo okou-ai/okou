@@ -2,7 +2,12 @@ import { command, computed, state } from "ccstate";
 
 import type { ArtifactSignals } from "../chat-page/artifact-card-signals.ts";
 import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
+import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
 import type { AttachmentLightboxState } from "../okou-page/attachment-chips.ts";
+import {
+  createTextPreviewComputed,
+  isTextPreviewKind,
+} from "../text-preview.ts";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import {
   copyAttachmentLinkToClipboard,
@@ -13,6 +18,31 @@ import { resetSignal } from "../utils.ts";
 export interface SharedThreadArtifactPreview {
   readonly title: string;
   readonly preview: AttachmentLightboxState & { readonly filename: string };
+}
+
+/**
+ * Hand the dialog what the kind's own preview surface reads: a text body needs
+ * its content, and a Markdown body needs the tree that content parses into.
+ * Every other kind renders from the resolved resource alone.
+ */
+function sharedArtifactPreviewState(
+  artifact: ArtifactSignals,
+): SharedThreadArtifactPreview["preview"] {
+  const base = {
+    ...artifact,
+    preview: artifact,
+    url: new URL(artifact.url, location.origin).href,
+  };
+  const kind = artifact.kind;
+  if (!isTextPreviewKind(kind)) {
+    return { ...base, kind };
+  }
+  const text$ =
+    artifact.text$ ??
+    createTextPreviewComputed(base.url, artifact.resourceUrl$);
+  return kind === "markdown"
+    ? { ...base, kind, text$, markdownTree$: createMarkdownPreviewTree(text$) }
+    : { ...base, kind, text$ };
 }
 
 /** One public conversation owns its preview and cancels actions on close/leave. */
@@ -33,21 +63,13 @@ export function createSharedThreadArtifactPreviewSignals() {
       signal: AbortSignal,
     ) => {
       signal.throwIfAborted();
-      if (artifact.kind !== "html" && artifact.kind !== "video") {
-        return;
-      }
       set(resetCopy$);
       set(resetDownload$);
       set(imageCanvas.reset$);
       set(fullscreen$, false);
       set(current$, {
         title: label.trim() || artifact.filename,
-        preview: {
-          ...artifact,
-          preview: artifact,
-          kind: artifact.kind,
-          url: new URL(artifact.url, location.origin).href,
-        },
+        preview: sharedArtifactPreviewState(artifact),
       });
       set(visible$, true);
     },
