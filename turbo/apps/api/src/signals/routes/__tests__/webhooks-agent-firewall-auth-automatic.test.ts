@@ -324,23 +324,31 @@ describe("builtin Automatic firewall credential destinations", () => {
       mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
     });
     const catalog = await installAutomaticMcpCatalog();
+    const firstRefreshAborted = createDeferredPromise<void>(context.signal);
     const firstRefreshSettled = createDeferredPromise<void>(context.signal);
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 3600,
       refreshResponse: async (attempt, signal) => {
         if (attempt === 1) {
-          const aborted = await settleIncludingAbort(
-            createDeferredPromise<never>(signal).promise,
-          );
-          firstRefreshSettled.resolve();
-          if (aborted.ok) {
-            throw new Error("Expected the pending refresh request to abort");
+          const markFirstRefreshAborted = () => {
+            if (!firstRefreshAborted.settled()) {
+              firstRefreshAborted.resolve();
+            }
+          };
+          if (signal.aborted) {
+            markFirstRefreshAborted();
+          } else {
+            signal.addEventListener("abort", markFirstRefreshAborted, {
+              once: true,
+            });
           }
+          await firstRefreshAborted.promise;
+          firstRefreshSettled.resolve();
           if (signal.aborted) {
             return HttpResponse.error();
           }
-          throw aborted.error;
+          throw new Error("Expected the pending refresh request to abort");
         }
         if (attempt === 2) {
           return HttpResponse.json(
