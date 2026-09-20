@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.92.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.92.3...guest-agent-v0.92.4) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
 ## [0.92.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.92.2...guest-agent-v0.92.3) (2026-09-20)
 
 

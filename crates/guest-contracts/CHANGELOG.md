@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.24](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.23...guest-contracts-v0.14.24) (2026-09-20)
+
+
+### Bug Fixes
+
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
 ## [0.14.23](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.22...guest-contracts-v0.14.23) (2026-09-20)
 
 

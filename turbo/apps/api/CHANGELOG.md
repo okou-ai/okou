@@ -8,6 +8,42 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.643.0](https://github.com/okou-ai/okou/compare/api-v1.642.3...api-v1.643.0) (2026-09-20)
+
+
+### Features
+
+* **mcp:** add bounded wait-and-read for chat output ([#35642](https://github.com/okou-ai/okou/issues/35642)) ([f896ec4](https://github.com/okou-ai/okou/commit/f896ec439314c3aacc50f22439c57c4738320b59))
+* **platform:** rebuild the get started panel around one grid ([#35659](https://github.com/okou-ai/okou/issues/35659)) ([6906e1a](https://github.com/okou-ai/okou/commit/6906e1a9c9c77235d6ee872c6e384bfae1324332))
+
+
+### Bug Fixes
+
+* **api:** finalize a healthy multi-source morning brief collection ([#35669](https://github.com/okou-ai/okou/issues/35669)) ([94c366f](https://github.com/okou-ai/okou/commit/94c366fb7065eb4b1ca5fd4c3c6582fb36c86f46))
+* **api:** send branded transactional export completion emails ([#35644](https://github.com/okou-ai/okou/issues/35644)) ([1386243](https://github.com/okou-ai/okou/commit/138624317c64a39c4b297ebca50798f9eb189f37))
+* **connectors:** emit terminal built-in absence after runner drain ([#35598](https://github.com/okou-ai/okou/issues/35598)) ([4ac5b93](https://github.com/okou-ai/okou/commit/4ac5b93f50e6b17c5d03e8e86fb408391887fe73))
+* update active github organization references ([#35650](https://github.com/okou-ai/okou/issues/35650)) ([1b873ca](https://github.com/okou-ai/okou/commit/1b873ca87c511fa30284eeb3232b92f4001a2d57))
+
+
+### Refactoring
+
+* **slack:** retire the legacy failed ingress status ([#35658](https://github.com/okou-ai/okou/issues/35658)) ([e65ccab](https://github.com/okou-ai/okou/commit/e65ccab9cb25c15094fe87983b73bc88e0bf5408))
+
+
+### Performance Improvements
+
+* **mcp:** reduce chat payload cost ([#35647](https://github.com/okou-ai/okou/issues/35647)) ([d36398a](https://github.com/okou-ai/okou/commit/d36398adbc113d1561eb1de8822670d096d2f083))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.479.0
+    * @okouai/core bumped to 8.688.2
+    * @okouai/db bumped to 1.279.9
+    * @okouai/pi-agent-runtime bumped to 1.33.31
+
 ## [1.642.3](https://github.com/okou-ai/okou/compare/api-v1.642.2...api-v1.642.3) (2026-09-20)
 
 
