@@ -228,9 +228,7 @@ export function AutoRechargeSection({
       </section>
       {dirty && (
         <UnsavedBar
-          // The settings dialog scrolls its section content; sticky rides that
-          // scrollport without leaving the section it belongs to.
-          pinning="sticky bottom-6 z-10"
+          pinning="scrollport"
           onDiscard={discard}
           onSave={handleSave}
           saving={saving}

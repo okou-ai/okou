@@ -3,22 +3,23 @@ import { Pencil, Loader2 } from "lucide-react";
 import { surfaceVariants, Button, cn } from "@okouai/ui";
 
 /**
- * Pins the bar to the viewport above the page it belongs to. Base UI's floating
- * layers portal outside the app shell, so they stay above the bar without
- * coordinating z-index values.
+ * What the bar is pinned against. `viewport` sits above the page it belongs to;
+ * Base UI's floating layers portal outside the app shell, so they stay above it
+ * without coordinating z-index values. `scrollport` rides the scrolling section
+ * the bar is written inside, which is what a bar inside a dialog needs.
  */
-const PAGE_PINNING =
-  "fixed left-0 right-0 bottom-[max(1.5rem,var(--sab))] z-40";
+type UnsavedBarPinning = "viewport" | "scrollport";
+
+const PINNINGS: Readonly<Record<UnsavedBarPinning, string>> = {
+  viewport: "fixed left-0 right-0 bottom-[max(1.5rem,var(--sab))] z-40",
+  scrollport: "sticky bottom-6 z-10",
+};
 
 interface UnsavedBarProps {
   onDiscard: () => void;
   onSave: () => void;
   saving: boolean;
-  /**
-   * Replaces the viewport pinning. A bar written inside a scrollport passes
-   * `sticky` so it rides that scrollport instead of the viewport.
-   */
-  pinning?: string;
+  pinning?: UnsavedBarPinning;
   /** Blocks saving while the form cannot produce a valid value. */
   saveDisabled?: boolean;
   testId?: string;
@@ -31,7 +32,7 @@ export function UnsavedBar({
   onDiscard,
   onSave,
   saving,
-  pinning = PAGE_PINNING,
+  pinning = "viewport",
   saveDisabled = false,
   testId = "unsaved-bar",
   message,
@@ -41,7 +42,7 @@ export function UnsavedBar({
   const { t } = useTranslation();
 
   return (
-    <div className={cn("flex justify-center px-4", pinning)}>
+    <div className={cn("flex justify-center px-4", PINNINGS[pinning])}>
       <div
         data-testid={testId}
         className={surfaceVariants({
