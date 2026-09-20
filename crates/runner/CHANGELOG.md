@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.202.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.202.0...runner-rs-v0.202.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **runner:** inject oauth for platform mcp connector ([#35442](https://github.com/vm0-ai/okou/issues/35442)) ([2689ef3](https://github.com/vm0-ai/okou/commit/2689ef3a9814a649e548737478e9fa2833ea1a84))
+
 ## [0.202.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.201.0...runner-rs-v0.202.0) (2026-09-20)
 
 
