@@ -293,18 +293,12 @@ test("An admin sees every step and what each one pays", async () => {
   expect(normalizedText(entry)).toBe("Get started3/6");
 
   const panel = await openQuestPanel();
-  expect(
-    within(panel).getByText(
-      "How rewards work",
-    ),
-  ).toBeInTheDocument();
+  expect(within(panel).getByText("How rewards work")).toBeInTheDocument();
   const workflowRow = screen.getByTestId("get-started-quest-workflow");
   const workflow = within(workflowRow);
   expect(workflow.getByText("Build a workflow")).toBeInTheDocument();
   // The reward leads the description line, so the two read as one sentence.
-  expect(normalizedText(workflowRow)).toContain(
-    "Build a workflow1,000",
-  );
+  expect(normalizedText(workflowRow)).toContain("Build a workflow1,000");
   expect(workflow.getByText("1,000")).toBeInTheDocument();
   // An unfinished quest names what pressing the row does.
 
@@ -342,9 +336,7 @@ test("A member is only offered the steps they can finish themselves", async () =
   expect(screen.getByTestId("get-started-quest-workflow")).toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
   expect(within(panel).queryByText("Invite your team")).not.toBeInTheDocument();
-  expect(
-    within(panel).queryByText("Add to Slack"),
-  ).not.toBeInTheDocument();
+  expect(within(panel).queryByText("Add to Slack")).not.toBeInTheDocument();
   // The earned total counts only the quests this role was offered.
   expect(within(panel).getByText("400 earned")).toBeInTheDocument();
 });
@@ -421,7 +413,9 @@ test("Sharing on X restores pending state and an Ably review notification update
     canEarnMore: false,
   });
   context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
-  await expect(within(panel).findByText("2,400 earned")).resolves.toBeInTheDocument();
+  await expect(
+    within(panel).findByText("2,400 earned"),
+  ).resolves.toBeInTheDocument();
   expect(within(panel).queryByText("In review")).not.toBeInTheDocument();
 });
 
@@ -497,9 +491,7 @@ test("Reward notifications refresh quests without disconnecting shared chat hist
   await waitFor(() => {
     expect(
       normalizedText(screen.getByTestId("get-started-quest-share")),
-    ).toContain(
-      "Not eligible",
-    );
+    ).toContain("Not eligible");
   });
   expect(within(panel).getByText("300 earned")).toBeInTheDocument();
   expect(
@@ -624,9 +616,7 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
   await openQuestPanel();
   expect(
     normalizedText(screen.getByTestId("get-started-quest-share")),
-  ).toContain(
-    "Not eligible",
-  );
+  ).toContain("Not eligible");
   click(screen.getByTestId("get-started-quest-share"));
   await expect(
     screen.findByRole("dialog", { name: "Share Okou on X" }),
@@ -641,15 +631,17 @@ test("Daily rewards are claimed by selecting check in and menu reopening refresh
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   const panel = await openQuestPanel();
-  await expect(within(panel).findByText("300 earned")).resolves.toBeInTheDocument();
+  await expect(
+    within(panel).findByText("300 earned"),
+  ).resolves.toBeInTheDocument();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
   expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
-  expect(normalizedText(checkinRow)).toContain(
-    "Check in100",
-  );
+  expect(normalizedText(checkinRow)).toContain("Check in100");
 
   click(checkinRow);
-  await expect(within(panel).findByText("400 earned")).resolves.toBeInTheDocument();
+  await expect(
+    within(panel).findByText("400 earned"),
+  ).resolves.toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
     "role",
     "menuitem",
@@ -711,7 +703,9 @@ test("A pending check-in disables the action and a failed request leaves it avai
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   const panel = await openQuestPanel();
-  await expect(within(panel).findByText("300 earned")).resolves.toBeInTheDocument();
+  await expect(
+    within(panel).findByText("300 earned"),
+  ).resolves.toBeInTheDocument();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
 
   click(checkinRow);

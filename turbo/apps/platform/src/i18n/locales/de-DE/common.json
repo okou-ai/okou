@@ -1421,8 +1421,8 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "",
-        "checkedIn": "",
+        "addedState": "{{amount}} hinzugefügt",
+        "checkedIn": "Eingecheckt",
         "checkin": {
           "action": "Einchecken",
           "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
@@ -1432,11 +1432,11 @@
         "connector": {
           "action": "Verbinden",
           "description": "Gmail, Notion und 100+ weitere",
-          "name": "Connector verbinden",
+          "name": "Tool verbinden",
           "unit": "pro Connector"
         },
-        "earned": "",
-        "howRewardsWork": "",
+        "earned": "{{amount}} erhalten",
+        "howRewardsWork": "So funktionieren Prämien",
         "inReview": "In Prüfung",
         "intro": {
           "checkin": {
@@ -1493,13 +1493,13 @@
           "name": "Team einladen",
           "unit": "pro Mitglied"
         },
-        "notEligible": "",
-        "pendingState": "",
-        "rewardsNote": "",
+        "notEligible": "Nicht berechtigt",
+        "pendingState": "{{amount}} ausstehend",
+        "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "share": {
           "action": "Teilen",
           "description": "Poste es und füge den Link hier ein",
-          "name": "{{assistantName}} auf X teilen"
+          "name": "Auf X teilen"
         },
         "shareDialog": {
           "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
@@ -1512,12 +1512,12 @@
         "slack": {
           "action": "Hinzufügen",
           "description": "Da, wo dein Team schon arbeitet",
-          "name": "{{assistantName}} zu Slack hinzufügen"
+          "name": "Zu Slack hinzufügen"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "streak": "",
+        "streak": "{{amount}} Tage in Folge",
         "title": "Einstieg",
-        "toGo": "",
+        "toGo": "Noch {{amount}}",
         "workflow": {
           "action": "Bauen",
           "description": "Mach aus einer Routineaufgabe eine wiederverwendbare Fähigkeit",

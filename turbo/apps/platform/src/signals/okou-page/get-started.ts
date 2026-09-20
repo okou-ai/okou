@@ -123,9 +123,12 @@ export const getStartedSummary$ = computed(
 );
 
 /** Whether the panel's reward note is unfolded. */
-export const rewardsNoteOpen$ = state(false);
+const rewardsNoteOpenState$ = state(false);
+export const rewardsNoteOpen$ = computed((get) => {
+  return get(rewardsNoteOpenState$);
+});
 export const setRewardsNoteOpen$ = command(({ set }, open: boolean) => {
-  set(rewardsNoteOpen$, open);
+  set(rewardsNoteOpenState$, open);
 });
 
 /**

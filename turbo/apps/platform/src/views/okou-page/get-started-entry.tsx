@@ -336,9 +336,7 @@ function QuestRow({
   opensModal?: boolean;
   pending?: boolean;
 }) {
-  const body = (
-    <QuestRowBody quest={quest} copy={copy} />
-  );
+  const body = <QuestRowBody quest={quest} copy={copy} />;
   const testId = `get-started-quest-${quest.key}`;
 
   // A quest with nothing left to open is a status line, not a control, so it
@@ -574,45 +572,47 @@ function CheckinBlock({
         className={`${className} text-sm [&_svg]:size-4 [&_svg]:shrink-0`}
         data-testid="get-started-quest-checkin"
       >
-      <div className="min-w-0">
-        <p className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}>
-          {label}
-          {streak > 0 && (
-            <span className="text-muted-foreground">
-              {" · "}
-              {t(
-                ($) => {
-                  return $.chat.agentPage.getStarted.streak;
-                },
-                { amount: formatLocalizedNumber(streak) },
-              )}
-            </span>
-          )}
-        </p>
-        <div className="mt-1.5 flex items-center gap-1">
-          {STREAK_SEGMENTS.map((index) => {
-            return (
-              <span
-                key={index}
-                className={`h-1.5 flex-1 rounded-full ${
-                  index < streak
-                    ? "bg-primary"
-                    : index === streak && !claimed
-                      ? "border border-primary"
-                      : "bg-card"
-                }`}
-              />
-            );
-          })}
+        <div className="min-w-0">
+          <p
+            className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}
+          >
+            {label}
+            {streak > 0 && (
+              <span className="text-muted-foreground">
+                {" · "}
+                {t(
+                  ($) => {
+                    return $.chat.agentPage.getStarted.streak;
+                  },
+                  { amount: formatLocalizedNumber(streak) },
+                )}
+              </span>
+            )}
+          </p>
+          <div className="mt-1.5 flex items-center gap-1">
+            {STREAK_SEGMENTS.map((index) => {
+              return (
+                <span
+                  key={index}
+                  className={`h-1.5 flex-1 rounded-full ${
+                    index < streak
+                      ? "bg-primary"
+                      : index === streak && !claimed
+                        ? "border border-primary"
+                        : "bg-card"
+                  }`}
+                />
+              );
+            })}
+          </div>
         </div>
-      </div>
-      <span className="flex items-center justify-end">
-        {claimed ? (
-          <Check className="shrink-0 text-chart-green" />
-        ) : (
-          <QuestReward amount={quest.rewardAmount} />
-        )}
-      </span>
+        <span className="flex items-center justify-end">
+          {claimed ? (
+            <Check className="shrink-0 text-chart-green" />
+          ) : (
+            <QuestReward amount={quest.rewardAmount} />
+          )}
+        </span>
       </div>
     );
   }
@@ -626,7 +626,9 @@ function CheckinBlock({
       data-testid="get-started-quest-checkin"
     >
       <div className="min-w-0">
-        <p className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}>
+        <p
+          className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}
+        >
           {label}
           {streak > 0 && (
             <span className="text-muted-foreground">
@@ -741,10 +743,7 @@ function GetStartedPanel({
   // 8 and stay concentric. Every block pads 12, which puts the ring, the tiles
   // and the note on one content edge.
   return (
-    <DropdownMenuContent
-      align="end"
-      className="w-[420px] rounded-[16px] p-2"
-    >
+    <DropdownMenuContent align="end" className="w-[420px] rounded-[16px] p-2">
       <div className="rounded-lg bg-muted px-3 py-2.5">
         <div className="flex items-center gap-3">
           <QuestRing completed={summary.completed} total={summary.total} />

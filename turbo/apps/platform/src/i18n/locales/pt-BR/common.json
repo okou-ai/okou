@@ -1445,8 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "",
-        "checkedIn": "",
+        "addedState": "{{amount}} adicionados",
+        "checkedIn": "Check-in feito",
         "checkin": {
           "action": "Fazer check-in",
           "description": "Faça check-in uma vez por dia. Reinicia às 00:00 UTC.",
@@ -1456,11 +1456,11 @@
         "connector": {
           "action": "Conectar",
           "description": "Gmail, Notion e mais de 100",
-          "name": "Conectar um conector",
+          "name": "Conecte uma ferramenta",
           "unit": "por conector"
         },
-        "earned": "",
-        "howRewardsWork": "",
+        "earned": "{{amount}} ganhos",
+        "howRewardsWork": "Como funcionam as recompensas",
         "inReview": "Em análise",
         "intro": {
           "checkin": {
@@ -1517,13 +1517,13 @@
           "name": "Convide seu time",
           "unit": "por membro"
         },
-        "notEligible": "",
-        "pendingState": "",
-        "rewardsNote": "",
+        "notEligible": "Não elegível",
+        "pendingState": "{{amount}} pendentes",
+        "rewardsNote": "As recompensas expiram 7 dias após a concessão. O check-in reinicia às 00:00 UTC. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
         "share": {
           "action": "Compartilhar",
           "description": "Publique e cole o link aqui",
-          "name": "Compartilhe o {{assistantName}} no X"
+          "name": "Compartilhar no X"
         },
         "shareDialog": {
           "description": "Envie uma publicação pública para análise. Uma recompensa aprovada por pessoa.",
@@ -1536,12 +1536,12 @@
         "slack": {
           "action": "Adicionar",
           "description": "Onde seu time já trabalha",
-          "name": "Adicionar o {{assistantName}} ao Slack"
+          "name": "Adicionar ao Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "streak": "",
+        "streak": "Sequência de {{amount}} dias",
         "title": "Primeiros passos",
-        "toGo": "",
+        "toGo": "Faltam {{amount}}",
         "workflow": {
           "action": "Criar",
           "description": "Transforme uma tarefa repetida em uma habilidade reutilizável",

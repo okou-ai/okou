@@ -1445,8 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "",
-        "checkedIn": "",
+        "addedState": "{{amount}} ajoutés",
+        "checkedIn": "Présence validée",
         "checkin": {
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
@@ -1456,11 +1456,11 @@
         "connector": {
           "action": "Connecter",
           "description": "Gmail, Notion et plus de 100 autres",
-          "name": "Connecter un connecteur",
+          "name": "Connecter un outil",
           "unit": "par connecteur"
         },
-        "earned": "",
-        "howRewardsWork": "",
+        "earned": "{{amount}} obtenus",
+        "howRewardsWork": "Comment fonctionnent les récompenses",
         "inReview": "En cours d'examen",
         "intro": {
           "checkin": {
@@ -1517,13 +1517,13 @@
           "name": "Invitez votre équipe",
           "unit": "par membre"
         },
-        "notEligible": "",
-        "pendingState": "",
-        "rewardsNote": "",
+        "notEligible": "Non éligible",
+        "pendingState": "{{amount}} en attente",
+        "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
         "share": {
           "action": "Partager",
           "description": "Publiez, puis collez le lien",
-          "name": "Partager {{assistantName}} sur X"
+          "name": "Partager sur X"
         },
         "shareDialog": {
           "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
@@ -1536,12 +1536,12 @@
         "slack": {
           "action": "Ajouter",
           "description": "Là où votre équipe travaille déjà",
-          "name": "Ajouter {{assistantName}} à Slack"
+          "name": "Ajouter à Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "streak": "",
+        "streak": "{{amount}} jours d’affilée",
         "title": "Démarrer",
-        "toGo": "",
+        "toGo": "Encore {{amount}}",
         "workflow": {
           "action": "Créer",
           "description": "Transformez une tâche répétitive en compétence réutilisable",

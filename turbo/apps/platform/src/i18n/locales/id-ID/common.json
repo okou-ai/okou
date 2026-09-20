@@ -1420,8 +1420,8 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "",
-        "checkedIn": "",
+        "addedState": "{{amount}} ditambahkan",
+        "checkedIn": "Sudah check in",
         "checkin": {
           "action": "Check in",
           "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
@@ -1431,11 +1431,11 @@
         "connector": {
           "action": "Hubungkan",
           "description": "Gmail, Notion, dan 100+ lainnya",
-          "name": "Hubungkan konektor",
+          "name": "Hubungkan alat",
           "unit": "per konektor"
         },
-        "earned": "",
-        "howRewardsWork": "",
+        "earned": "{{amount}} diperoleh",
+        "howRewardsWork": "Cara kerja hadiah",
         "inReview": "Sedang ditinjau",
         "intro": {
           "checkin": {
@@ -1492,13 +1492,13 @@
           "name": "Undang tim kamu",
           "unit": "per anggota"
         },
-        "notEligible": "",
-        "pendingState": "",
-        "rewardsNote": "",
+        "notEligible": "Tidak memenuhi syarat",
+        "pendingState": "{{amount}} tertunda",
+        "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
         "share": {
           "action": "Bagikan",
           "description": "Posting, lalu tempel tautannya",
-          "name": "Bagikan {{assistantName}} di X"
+          "name": "Bagikan di X"
         },
         "shareDialog": {
           "description": "Kirim postingan publik untuk ditinjau. Satu hadiah yang disetujui per orang.",
@@ -1511,12 +1511,12 @@
         "slack": {
           "action": "Tambahkan",
           "description": "Tempat tim kamu sudah bekerja",
-          "name": "Tambahkan {{assistantName}} ke Slack"
+          "name": "Tambahkan ke Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "streak": "",
+        "streak": "Beruntun {{amount}} hari",
         "title": "Mulai",
-        "toGo": "",
+        "toGo": "Kurang {{amount}}",
         "workflow": {
           "action": "Buat",
           "description": "Ubah tugas berulang jadi skill yang bisa dipakai ulang",
