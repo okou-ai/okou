@@ -23,16 +23,7 @@ export type AgentRunFullLaunchSnapshot =
   | AgentRunLaunchSnapshotV1
   | AgentRunLaunchSnapshotV2
   | AgentRunLaunchSnapshotV3;
-/** Immutable discriminator; the same run ID addresses the exact inference input. */
-export interface AgentRunLaunchSnapshotV4 {
-  schemaVersion: 4;
-  framework: "pi";
-  executionMode: "api-inference";
-  inferenceContractVersion: 1;
-}
-export type AgentRunLaunchSnapshot =
-  | AgentRunFullLaunchSnapshot
-  | AgentRunLaunchSnapshotV4;
+export type AgentRunLaunchSnapshot = AgentRunFullLaunchSnapshot;
 export interface AgentRunOfficialWorkflowDefinitionProvenance {
   readonly name: string;
   readonly revision: string;

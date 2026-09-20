@@ -59,7 +59,6 @@ export enum FeatureSwitchKey {
   McpServer = "mcpServer",
   VncAccess = "vncAccess",
   RunUsage = "runUsage",
-  PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",

@@ -1,10 +1,3 @@
-import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
-import { deleteUnreferencedPiObjects } from "./pi-inference-object.service";
-import { assertPiInferenceErasureReady } from "./pi-inference-lifecycle.service";
-import {
-  agentRunInference,
-  agentRunSandboxLease,
-} from "@okouai/db/schema/agent-run-inference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
@@ -37,47 +30,11 @@ export async function deleteRunConversations(
   tx: Tx,
   runIds: readonly string[],
 ) {
-  await assertPiInferenceErasureReady(tx, runIds);
-  // Capture references once under the caller's Run locks. One UUID-array
-  // binding avoids per-batch reads and PostgreSQL's scalar parameter limit.
-  const objectReferences =
-    runIds.length > 0
-      ? await tx
-          .select({ hash: agentRunInferenceObjects.hash })
-          .from(agentRunInferenceObjects)
-          .where(
-            eq(
-              agentRunInferenceObjects.runId,
-              sql`ANY(${sql.param(runIds)}::uuid[])`,
-            ),
-          )
-      : [];
-  const piObjectHashes = objectReferences.map((reference) => {
-    return reference.hash;
-  });
   const references = new Map<string, number>();
   let deletedConversations = 0;
-  // All erasure owners call this before parent cascades. Only proven releases
-  // may be removed; the lease FK blocks unknown external cleanup atomically.
   // Bind each complete target set once, as in preflight, instead of issuing
   // hundreds of scalar-parameter batches while holding the same Run locks.
   if (runIds.length > 0) {
-    await tx
-      .delete(agentRunSandboxLease)
-      .where(
-        and(
-          eq(
-            agentRunSandboxLease.runId,
-            sql`ANY(${sql.param(runIds)}::uuid[])`,
-          ),
-          eq(agentRunSandboxLease.state, "released"),
-        ),
-      );
-    await tx
-      .delete(agentRunInference)
-      .where(
-        eq(agentRunInference.runId, sql`ANY(${sql.param(runIds)}::uuid[])`),
-      );
     const removed = tx.$with("removed_conversations").as(
       tx
         .delete(conversations)
@@ -101,7 +58,7 @@ export async function deleteRunConversations(
       }
     }
   }
-  return { references, deletedConversations, piObjectHashes };
+  return { references, deletedConversations };
 }
 
 /** Delete only the locked Run set; a later scoped INSERT is not our evidence. */
@@ -197,7 +154,6 @@ export async function releaseDeletedConversationReferences(
       );
     }
   }
-  await deleteUnreferencedPiObjects(tx, [...new Set(removed.piObjectHashes)]);
   return {
     deletedConversations: removed.deletedConversations,
     releasedReferences: references.reduce((total, entry) => {
