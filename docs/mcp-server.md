@@ -530,6 +530,13 @@ runtime resource limits, not a deployment-global lease. MCP Tasks remains the
 longer-term negotiated protocol for durable work; bounded status wait is the
 compatibility optimization for current clients.
 
+Each positive wait also adds an identifier-free `mcp.chat_status.wait` event to
+the request trace. It records requested/effective/elapsed milliseconds,
+observations, outcome and return reason, principal/runtime occupancy and
+capacity, final input/run/output state categories, and whether content was
+included. Use these fields to validate live timeout margin and capacity before
+raising the server dwell limit.
+
 Original input lookup lasts while the exact canonical input and linkage remain
 in readable retained thread history. It continues through archives after the
 30-day live-event window, within the stated history limits; it is not a new

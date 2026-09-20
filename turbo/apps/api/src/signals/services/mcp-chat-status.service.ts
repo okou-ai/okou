@@ -4,6 +4,7 @@ import type {
   McpGetChatStatusInput,
   McpGetChatStatusOutput,
 } from "@okouai/api-contracts/contracts/mcp-chat-status";
+import { trace } from "@opentelemetry/api";
 import { runStatusSchema } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -16,7 +17,6 @@ import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { delay } from "signal-timers";
 
 import type { Tx } from "../../lib/db-types";
-import { logger } from "../../lib/log";
 import { monotonicNow, nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { isAbortError, settleIncludingAbort } from "../utils";
@@ -31,9 +31,12 @@ import {
   readMcpChatMessagePage,
   type McpCompleteChatMessage,
 } from "./mcp-chat-messages.service";
-import { admitMcpChatStatusWaiter } from "./mcp-chat-status-wait-admission";
+import {
+  admitMcpChatStatusWaiter,
+  MCP_CHAT_STATUS_MAX_PRINCIPAL_WAITERS,
+  MCP_CHAT_STATUS_MAX_RUNTIME_WAITERS,
+} from "./mcp-chat-status-wait-admission";
 
-const L = logger("McpChatStatus");
 export const MCP_CHAT_STATUS_MAX_WAIT_MS = 8000;
 const MCP_CHAT_STATUS_MAX_OBSERVATIONS = 5;
 const STATUS_OUTPUT_BYTES = 16 * 1024;
@@ -528,7 +531,7 @@ function withWaitResult(
   return result;
 }
 
-function logWait(
+function recordWaitTelemetry(
   data: McpGetChatStatusOutput | null,
   details: {
     readonly requestedMs: number;
@@ -544,12 +547,23 @@ function logWait(
     readonly runtimeOccupancy: number;
   },
 ): void {
-  L.debug("MCP chat status wait completed", {
-    ...details,
-    inputState: data?.input?.state ?? "not_requested",
-    runState: data?.run?.status ?? "unavailable",
-    outputState: data?.output.state ?? "unavailable",
-    contentIncluded:
+  trace.getActiveSpan()?.addEvent("mcp.chat_status.wait", {
+    "mcp.chat_status.wait.requested_ms": details.requestedMs,
+    "mcp.chat_status.wait.effective_ms": details.effectiveMs,
+    "mcp.chat_status.wait.elapsed_ms": details.elapsedMs,
+    "mcp.chat_status.wait.observations": details.observations,
+    "mcp.chat_status.wait.outcome": details.outcome,
+    "mcp.chat_status.wait.return_reason": details.returnReason,
+    "mcp.chat_status.wait.principal_occupancy": details.principalOccupancy,
+    "mcp.chat_status.wait.principal_capacity":
+      MCP_CHAT_STATUS_MAX_PRINCIPAL_WAITERS,
+    "mcp.chat_status.wait.runtime_occupancy": details.runtimeOccupancy,
+    "mcp.chat_status.wait.runtime_capacity":
+      MCP_CHAT_STATUS_MAX_RUNTIME_WAITERS,
+    "mcp.chat_status.wait.input_state": data?.input?.state ?? "not_requested",
+    "mcp.chat_status.wait.run_state": data?.run?.status ?? "unavailable",
+    "mcp.chat_status.wait.output_state": data?.output.state ?? "unavailable",
+    "mcp.chat_status.wait.content_included":
       data?.messagePage !== null && data?.messagePage !== undefined,
   });
 }
@@ -583,7 +597,9 @@ function waitForMcpChatStatus(
 ): Computed<Promise<McpGetChatStatusOutput | null>> {
   return computed(async (get): Promise<McpGetChatStatusOutput | null> => {
     const admission = admitMcpChatStatusWaiter(principal);
-    if (!admission) {
+    operation.principalOccupancy = admission.principalOccupancy;
+    operation.runtimeOccupancy = admission.runtimeOccupancy;
+    if (!admission.admitted) {
       return withWaitResult(
         currentStatus(operation),
         operation,
@@ -591,8 +607,6 @@ function waitForMcpChatStatus(
         "waiter_limit",
       );
     }
-    operation.principalOccupancy = admission.principalOccupancy;
-    operation.runtimeOccupancy = admission.runtimeOccupancy;
     const result = await settleIncludingAbort(
       (async (): Promise<McpGetChatStatusOutput | null> => {
         const deadline = operation.waitStartedAt + operation.effectiveMs;
@@ -680,7 +694,7 @@ function waitLogDetails(
   operation: WaitOperation,
   outcome: WaitOutcome | "cancelled" | "error",
   returnReason: WaitReturnReason | "request_cancelled" | "observation_error",
-): Parameters<typeof logWait>[1] {
+): Parameters<typeof recordWaitTelemetry>[1] {
   return {
     requestedMs: operation.requestedMs,
     effectiveMs: operation.effectiveMs,
@@ -715,7 +729,7 @@ export function getMcpChatStatus(
     );
     if (signal.aborted) {
       if (operation.effectiveMs > 0) {
-        logWait(
+        recordWaitTelemetry(
           operation.latest,
           waitLogDetails(operation, "cancelled", "request_cancelled"),
         );
@@ -724,7 +738,7 @@ export function getMcpChatStatus(
     }
     if (!result.ok && isAbortError(result.error)) {
       if (operation.effectiveMs > 0) {
-        logWait(
+        recordWaitTelemetry(
           operation.latest,
           waitLogDetails(operation, "cancelled", "request_cancelled"),
         );
@@ -734,7 +748,7 @@ export function getMcpChatStatus(
     if (operation.effectiveMs > 0) {
       const completed = result.ok ? result.value : null;
       if (completed?.wait) {
-        logWait(
+        recordWaitTelemetry(
           completed,
           waitLogDetails(
             operation,
@@ -743,7 +757,7 @@ export function getMcpChatStatus(
           ),
         );
       } else if (!result.ok || completed === null) {
-        logWait(
+        recordWaitTelemetry(
           operation.latest,
           waitLogDetails(operation, "error", "observation_error"),
         );

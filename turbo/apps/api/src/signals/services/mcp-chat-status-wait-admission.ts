@@ -5,13 +5,20 @@ interface Principal {
   readonly orgId: string;
 }
 
-const MCP_CHAT_STATUS_MAX_PRINCIPAL_WAITERS = 2;
-const MCP_CHAT_STATUS_MAX_RUNTIME_WAITERS = 32;
+export const MCP_CHAT_STATUS_MAX_PRINCIPAL_WAITERS = 2;
+export const MCP_CHAT_STATUS_MAX_RUNTIME_WAITERS = 32;
 
 interface Admission {
+  readonly admitted: true;
   readonly principalOccupancy: number;
   readonly runtimeOccupancy: number;
   readonly release: () => void;
+}
+
+interface RejectedAdmission {
+  readonly admitted: false;
+  readonly principalOccupancy: number;
+  readonly runtimeOccupancy: number;
 }
 
 interface WaiterState {
@@ -30,7 +37,7 @@ function principalKey(principal: Principal): string {
 /** Admit finite request-owned waits without logging principal identifiers. */
 export function admitMcpChatStatusWaiter(
   principal: Principal,
-): Admission | null {
+): Admission | RejectedAdmission {
   const state = waiterState();
   const key = principalKey(principal);
   const principalOccupancy = state.principalWaiters.get(key) ?? 0;
@@ -38,13 +45,18 @@ export function admitMcpChatStatusWaiter(
     principalOccupancy >= MCP_CHAT_STATUS_MAX_PRINCIPAL_WAITERS ||
     state.runtimeWaiters >= MCP_CHAT_STATUS_MAX_RUNTIME_WAITERS
   ) {
-    return null;
+    return {
+      admitted: false,
+      principalOccupancy,
+      runtimeOccupancy: state.runtimeWaiters,
+    };
   }
   const admittedPrincipalOccupancy = principalOccupancy + 1;
   state.runtimeWaiters += 1;
   state.principalWaiters.set(key, admittedPrincipalOccupancy);
   let released = false;
   return {
+    admitted: true,
     principalOccupancy: admittedPrincipalOccupancy,
     runtimeOccupancy: state.runtimeWaiters,
     release() {
