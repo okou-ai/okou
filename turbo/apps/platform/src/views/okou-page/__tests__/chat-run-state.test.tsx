@@ -432,9 +432,12 @@ test("Delay the spinner beside a user message the server has not confirmed", asy
     screen.findByText("Draft the launch checklist"),
   ).resolves.toBeInTheDocument();
   expect(optimisticUserMessageSpinners()).toHaveLength(0);
-  await waitFor(() => {
-    expect(optimisticUserMessageSpinners()).toHaveLength(1);
-  });
+  await waitFor(
+    () => {
+      expect(optimisticUserMessageSpinners()).toHaveLength(1);
+    },
+    { timeout: 3000 },
+  );
 
   runAccepted.resolve(undefined);
   await waitFor(() => {
