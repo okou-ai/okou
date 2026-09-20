@@ -14,7 +14,6 @@ export type SourcesFirstStep =
   | "industry"
   | "team"
   | "experience"
-  | "subscription"
   | "skills"
   | "slack"
   | "ready";
@@ -136,8 +135,8 @@ const MEMBER_BASE_STEPS = [
 ] as const satisfies readonly SourcesFirstStep[];
 
 /**
- * Step order for one run. Members skip invite and Slack; the experienced branch
- * adds the subscription and skills steps before Slack.
+ * Step order for one run. Members skip invite and Slack; answering the AI
+ * experience question with a plan adds the skills step before Slack.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
@@ -145,27 +144,21 @@ export function sourcesFirstSteps(
 ): readonly SourcesFirstStep[] {
   const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
   const experiencedSteps: readonly SourcesFirstStep[] =
-    experienced === true ? ["subscription", "skills"] : [];
+    experienced === true ? ["skills"] : [];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
   return [...base, ...experiencedSteps, ...slackStep, "ready"];
 }
 
-/**
- * Progress markers, as the design counts them: connecting a subscription is
- * step 4a under the AI experience question, not a step of its own.
- */
+/** Progress markers: one per step of this run. */
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
   experienced: boolean | null,
 ): { readonly current: number; readonly total: number } {
-  const markers = sourcesFirstSteps(flow, experienced).filter((candidate) => {
-    return candidate !== "subscription";
-  });
-  const marker = step === "subscription" ? "experience" : step;
-  const index = markers.indexOf(marker);
-  return { current: (index === -1 ? 0 : index) + 1, total: markers.length };
+  const steps = sourcesFirstSteps(flow, experienced);
+  const index = steps.indexOf(step);
+  return { current: (index === -1 ? 0 : index) + 1, total: steps.length };
 }
 
 /** The step before `step`, or null when it is the first one. */

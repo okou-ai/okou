@@ -78,7 +78,6 @@ import {
   setupOnboardingReadyPage$,
   setupOnboardingSkillsPage$,
   setupOnboardingSlackPage$,
-  setupOnboardingSubscriptionPage$,
   setupOnboardingTeamPage$,
 } from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
@@ -437,10 +436,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.onboardingExperience,
     setup: setupAuthPageWrapper(setupOnboardingExperiencePage$),
-  },
-  {
-    path: ROUTES.onboardingSubscription,
-    setup: setupAuthPageWrapper(setupOnboardingSubscriptionPage$),
   },
   {
     path: ROUTES.onboardingSkills,

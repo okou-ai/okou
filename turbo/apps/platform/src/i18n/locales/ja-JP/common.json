@@ -4164,16 +4164,13 @@
         "skills": "スキルをインポート",
         "slack": "Okou を Slack に追加",
         "sources": "仕事をつなぐ",
-        "subscription": "サブスクリプションを接続",
         "team": "メンバーを招待"
       },
       "experience": {
-        "copy": "次に何を設定するかが変わるだけです。",
+        "copy": "すでに払っているプランをつなげば、仕事は Okou クレジットではなくそちらで動きます。",
         "no": "いいえ、はじめてです",
         "noCopy": "設定は不要です。Okou が最初のタスクを選びます。",
-        "title": "Codex か Claude Code を使ったことはありますか？",
-        "yes": "はい、あります",
-        "yesCopy": "プランを接続して、SKILL.md をワークフローとして取り込みます。"
+        "title": "Codex か Claude Code を使ったことはありますか？"
       },
       "industries": {
         "coaching": {
@@ -4609,9 +4606,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "copy": "Okou は既定では Okou クレジットで動きます。自分のプランをつなげば、そちらで動きます。",
-        "rowCopy": "このプランで実行するので、Okou クレジットを使いません。",
-        "title": "すでに払っているプランをつなぐ。"
+        "rowCopy": "このプランで実行するので、Okou クレジットを使いません。"
       },
       "team": {
         "copy": "今すぐ誘っても、後からワークスペースのメニューで誘ってもかまいません。",

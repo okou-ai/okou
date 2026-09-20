@@ -9,7 +9,6 @@ import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboar
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
-  OnboardingSubscriptionPage,
   OnboardingTeamPage,
 } from "../../views/onboarding-sources-first/onboarding-setup-pages.tsx";
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
@@ -155,16 +154,6 @@ export const setupOnboardingExperiencePage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingExperiencePage,
-});
-
-export const setupOnboardingSubscriptionPage$ = createSourcesFirstPageSetup({
-  step: "subscription",
-  title: () => {
-    return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.subscription;
-    });
-  },
-  Page: OnboardingSubscriptionPage,
 });
 
 export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({

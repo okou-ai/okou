@@ -213,11 +213,15 @@ export function OnboardingTeamPage() {
   );
 }
 
+/**
+ * One question for both halves of the same decision: an answer names the plan
+ * the work should run on, and whether this person has skills to bring over.
+ */
 export function OnboardingExperiencePage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const flow = useSourcesFirstFlow("experience");
-  const experienced = flow.draft.experienced;
+  const { experienced, provider } = flow.draft;
 
   // The answer decides the branch, so the next step is resolved from the
   // answer itself instead of the one this render was built from.
@@ -241,93 +245,35 @@ export function OnboardingExperiencePage() {
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
-      onPrimary={goNext}
+      onPrimary={() => {
+        if (provider !== null) {
+          // Frontend pass: the personal model-provider connect flow is wired
+          // in the follow-up that adds the onboarding endpoints.
+          updateDraft({ providerConnected: true });
+        }
+        goNext();
+      }}
       primaryDisabled={experienced === null}
       onBack={flow.goBack}
     >
       <RadioGroup
-        value={experienced === null ? "" : experienced ? "yes" : "no"}
+        value={experienced === false ? "no" : (provider ?? "")}
         onValueChange={(value) => {
-          updateDraft({ experienced: value === "yes" });
+          updateDraft(
+            value === "no"
+              ? { experienced: false, provider: null, providerConnected: false }
+              : {
+                  experienced: true,
+                  provider: value === "codex" ? "codex" : "claudeCode",
+                  providerConnected: false,
+                },
+          );
         }}
-        className="grid gap-5 sm:grid-cols-2"
-      >
-        <OnboardingPosterCard
-          value="yes"
-          selected={experienced === true}
-          mark={
-            <OnboardingIllustration name="experienced" alt="" size="poster" />
-          }
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.experience.yes;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.experience.yesCopy;
-          })}
-        />
-        <OnboardingPosterCard
-          value="no"
-          selected={experienced === false}
-          mark={<OnboardingIllustration name="new" alt="" size="poster" />}
-          title={t(($) => {
-            return $.onboarding.sourcesFirst.experience.no;
-          })}
-          description={t(($) => {
-            return $.onboarding.sourcesFirst.experience.noCopy;
-          })}
-        />
-      </RadioGroup>
-    </OnboardingStepLayout>
-  );
-}
-
-export function OnboardingSubscriptionPage() {
-  const { t } = useTranslation();
-  const updateDraft = useSet(updateSourcesFirstDraft$);
-  const flow = useSourcesFirstFlow("subscription");
-  const provider = flow.draft.provider;
-
-  const connectAndContinue = (): void => {
-    // Frontend pass: the personal model-provider connect flow is wired in the
-    // follow-up that adds the onboarding endpoints.
-    updateDraft({ providerConnected: true });
-    flow.goNext();
-  };
-
-  return (
-    <OnboardingStepLayout
-      currentStep={flow.currentStep}
-      totalSteps={flow.totalSteps}
-      title={t(($) => {
-        return $.onboarding.sourcesFirst.subscription.title;
-      })}
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.subscription.copy;
-      })}
-      primaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.continue;
-      })}
-      onPrimary={connectAndContinue}
-      primaryDisabled={provider === null}
-      secondaryLabel={t(($) => {
-        return $.onboarding.sourcesFirst.common.skip;
-      })}
-      onSecondary={flow.goNext}
-      onBack={flow.goBack}
-    >
-      <RadioGroup
-        value={provider ?? ""}
-        onValueChange={(value) => {
-          updateDraft({
-            provider: value === "codex" ? "codex" : "claudeCode",
-            providerConnected: false,
-          });
-        }}
-        className="grid gap-5 sm:grid-cols-2"
+        className="grid gap-4 sm:grid-cols-3"
       >
         <OnboardingPosterCard
           value="codex"
-          selected={provider === "codex"}
+          selected={experienced === true && provider === "codex"}
           mark={
             <ProductMark name="openai" alt="" size="poster" invertInDarkMode />
           }
@@ -340,13 +286,24 @@ export function OnboardingSubscriptionPage() {
         />
         <OnboardingPosterCard
           value="claudeCode"
-          selected={provider === "claudeCode"}
+          selected={experienced === true && provider === "claudeCode"}
           mark={<ProductMark name="anthropic" alt="" size="poster" />}
           title={t(($) => {
             return $.onboarding.sourcesFirst.subscription.claudeCode;
           })}
           description={t(($) => {
             return $.onboarding.sourcesFirst.subscription.rowCopy;
+          })}
+        />
+        <OnboardingPosterCard
+          value="no"
+          selected={experienced === false}
+          mark={<OnboardingIllustration name="new" alt="" size="poster" />}
+          title={t(($) => {
+            return $.onboarding.sourcesFirst.experience.no;
+          })}
+          description={t(($) => {
+            return $.onboarding.sourcesFirst.experience.noCopy;
           })}
         />
       </RadioGroup>

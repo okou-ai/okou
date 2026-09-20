@@ -4234,16 +4234,13 @@
         "skills": "Importer vos skills",
         "slack": "Ajouter Okou à Slack",
         "sources": "Connecter votre travail",
-        "subscription": "Connecter votre abonnement",
         "team": "Inviter un collègue"
       },
       "experience": {
-        "copy": "Cela change seulement ce que nous configurons ensuite.",
+        "copy": "Connectez l'offre que vous payez déjà : le travail s'exécute là-bas, pas sur vos crédits Okou.",
         "no": "Non, c'est nouveau pour moi",
         "noCopy": "Passez la configuration. Okou choisit une première tâche à votre place.",
-        "title": "Avez-vous déjà utilisé Codex ou Claude Code ?",
-        "yes": "Oui, déjà",
-        "yesCopy": "Connectez votre offre et reprenez vos fichiers SKILL.md comme workflows."
+        "title": "Avez-vous déjà utilisé Codex ou Claude Code ?"
       },
       "industries": {
         "coaching": {
@@ -4679,9 +4676,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "copy": "Par défaut, Okou fonctionne avec des crédits Okou. Connectez votre propre offre et tout s'exécute là-bas.",
-        "rowCopy": "Exécute votre travail sur cette offre, sans consommer de crédits Okou.",
-        "title": "Connectez l'offre que vous payez déjà."
+        "rowCopy": "Exécute votre travail sur cette offre, sans consommer de crédits Okou."
       },
       "team": {
         "copy": "Invitez un collègue maintenant, ou plus tard depuis le menu de l'espace de travail.",

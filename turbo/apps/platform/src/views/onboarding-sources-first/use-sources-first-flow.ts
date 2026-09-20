@@ -17,7 +17,6 @@ const STEP_ROUTES: Readonly<Record<SourcesFirstStep, RoutePath>> = {
   industry: ROUTES.onboardingIndustry,
   team: ROUTES.onboardingTeam,
   experience: ROUTES.onboardingExperience,
-  subscription: ROUTES.onboardingSubscription,
   skills: ROUTES.onboardingSkills,
   slack: ROUTES.onboardingSlack,
   ready: ROUTES.onboardingReady,

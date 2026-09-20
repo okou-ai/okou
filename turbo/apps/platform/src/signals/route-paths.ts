@@ -61,7 +61,6 @@ export const ROUTES = {
   onboardingIndustry: "/onboarding/industry",
   onboardingTeam: "/onboarding/team",
   onboardingExperience: "/onboarding/experience",
-  onboardingSubscription: "/onboarding/subscription",
   onboardingSkills: "/onboarding/skills",
   onboardingSlack: "/onboarding/slack",
   onboardingReady: "/onboarding/ready",

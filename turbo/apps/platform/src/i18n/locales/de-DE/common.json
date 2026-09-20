@@ -4178,16 +4178,13 @@
         "skills": "Skills importieren",
         "slack": "Okou zu Slack hinzufügen",
         "sources": "Arbeit verbinden",
-        "subscription": "Abo verbinden",
         "team": "Teammitglied einladen"
       },
       "experience": {
-        "copy": "Das ändert nur, was wir als Nächstes einrichten.",
+        "copy": "Verbinde den Plan, den du schon bezahlst: die Arbeit läuft dort statt auf Okou-Credits.",
         "no": "Nein, das ist neu für mich",
         "noCopy": "Überspring die Einrichtung. Okou wählt stattdessen eine erste Aufgabe für dich.",
-        "title": "Hast du schon mit Codex oder Claude Code gearbeitet?",
-        "yes": "Ja, habe ich",
-        "yesCopy": "Verbinde deinen Plan und übernimm deine SKILL.md-Dateien als Workflows."
+        "title": "Hast du schon mit Codex oder Claude Code gearbeitet?"
       },
       "industries": {
         "coaching": {
@@ -4623,9 +4620,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "copy": "Standardmäßig läuft Okou auf Okou-Credits. Verbinde deinen eigenen Plan, dann läuft es dort.",
-        "rowCopy": "Führt deine Arbeit auf diesem Plan aus, ohne Okou-Credits zu verbrauchen.",
-        "title": "Verbinde den Plan, den du schon bezahlst."
+        "rowCopy": "Führt deine Arbeit auf diesem Plan aus, ohne Okou-Credits zu verbrauchen."
       },
       "team": {
         "copy": "Lade jetzt jemanden ein – oder später über das Workspace-Menü.",

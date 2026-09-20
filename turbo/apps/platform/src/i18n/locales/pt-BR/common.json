@@ -4234,16 +4234,13 @@
         "skills": "Importe suas skills",
         "slack": "Adicionar o Okou ao Slack",
         "sources": "Conecte seu trabalho",
-        "subscription": "Conecte sua assinatura",
         "team": "Convide alguém do time"
       },
       "experience": {
-        "copy": "Isso só muda o que vamos configurar em seguida.",
+        "copy": "Conecte o plano que você já paga e seu trabalho roda lá, não nos créditos Okou.",
         "no": "Não, é novidade para mim",
         "noCopy": "Pule a configuração. O Okou escolhe uma primeira tarefa para você.",
-        "title": "Você já usou o Codex ou o Claude Code?",
-        "yes": "Sim, já usei",
-        "yesCopy": "Conecte seu plano e traga seus arquivos SKILL.md como workflows."
+        "title": "Você já usou o Codex ou o Claude Code?"
       },
       "industries": {
         "coaching": {
@@ -4679,9 +4676,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "copy": "Por padrão, o Okou roda com créditos Okou. Conecte seu próprio plano e ele roda por lá.",
-        "rowCopy": "Roda seu trabalho neste plano, sem gastar créditos Okou.",
-        "title": "Conecte o plano que você já paga."
+        "rowCopy": "Roda seu trabalho neste plano, sem gastar créditos Okou."
       },
       "team": {
         "copy": "Convide alguém do time agora, ou depois pelo menu do workspace.",

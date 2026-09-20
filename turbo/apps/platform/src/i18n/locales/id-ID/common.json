@@ -4164,16 +4164,13 @@
         "skills": "Impor skill Anda",
         "slack": "Tambahkan Okou ke Slack",
         "sources": "Hubungkan pekerjaan Anda",
-        "subscription": "Hubungkan langganan Anda",
         "team": "Undang rekan kerja"
       },
       "experience": {
-        "copy": "Ini hanya mengubah apa yang kami siapkan berikutnya.",
+        "copy": "Hubungkan paket yang sudah Anda bayar dan pekerjaan Anda berjalan di sana, bukan memakai kredit Okou.",
         "no": "Belum, ini yang pertama",
         "noCopy": "Lewati penyiapan. Okou yang memilihkan tugas pertama untuk Anda.",
-        "title": "Pernah memakai Codex atau Claude Code?",
-        "yes": "Ya, pernah",
-        "yesCopy": "Hubungkan paket Anda dan bawa file SKILL.md sebagai workflow."
+        "title": "Pernah memakai Codex atau Claude Code?"
       },
       "industries": {
         "coaching": {
@@ -4609,9 +4606,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "copy": "Secara bawaan Okou berjalan dengan kredit Okou. Hubungkan paket Anda sendiri dan ia berjalan di sana.",
-        "rowCopy": "Menjalankan pekerjaan Anda di paket ini, jadi tidak memakai kredit Okou.",
-        "title": "Hubungkan paket yang sudah Anda bayar."
+        "rowCopy": "Menjalankan pekerjaan Anda di paket ini, jadi tidak memakai kredit Okou."
       },
       "team": {
         "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",
