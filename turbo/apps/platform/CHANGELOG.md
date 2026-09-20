@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.928.1](https://github.com/okou-ai/okou/compare/app-v0.928.0...app-v0.928.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **app:** open the slash panel's detail pane as a flyout beside the index ([#35558](https://github.com/okou-ai/okou/issues/35558)) ([8099ce4](https://github.com/okou-ai/okou/commit/8099ce4725305fde2706a1d1431895e802f15028))
+
+
+### Refactoring
+
+* **platform:** derive the conversation locator from sampled user turns ([#35377](https://github.com/okou-ai/okou/issues/35377)) ([e66063d](https://github.com/okou-ai/okou/commit/e66063d8d3270a971403d9f58c3cd7fa962a76d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.3
+    * @okouai/core bumped to 8.688.1
+
 ## [0.928.0](https://github.com/okou-ai/okou/compare/app-v0.927.1...app-v0.928.0) (2026-09-20)
 
 
