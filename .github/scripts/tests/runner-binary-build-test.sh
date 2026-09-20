@@ -58,6 +58,9 @@ mkdir -p \
 cp -a \
   "${REPO_ROOT}/.github/scripts/runner-binary-build" \
   "${repo}/.github/scripts/runner-binary-build"
+mkdir -p "${repo}/.github/scripts/runner-binary-build/tests"
+printf 'build contract fixture\n' \
+  > "${repo}/.github/scripts/runner-binary-build/tests/fixture.txt"
 
 cat > "${repo}/crates/runner/guest-binaries.json" <<'JSON'
 [
@@ -191,6 +194,8 @@ assert_text_change_affects_digest \
   "$repo" "crates/other-one/src/additional.rs" "other-package-source-change"
 assert_text_change_affects_digest \
   "$repo" ".github/scripts/runner-binary-build/contract.env" "contract-change"
+assert_text_change_affects_digest \
+  "$repo" ".github/scripts/runner-binary-build/tests/fixture.txt" "contract-tests-path-change"
 
 before=$(digest_value "$repo" aarch64-unknown-linux-musl)
 jq '.[0].destination = "/usr/local/bin/guest-one-v2"' \
@@ -284,6 +289,8 @@ jq -e \
   || fail "default inclusion must retain other workspace package source"
 [ ! -e "${context_root}/crates/other-one/src/feature/tests/input.txt" ] \
   || fail "materialization must exclude nested tests directories"
+[ -f "${context_root}/.github/scripts/runner-binary-build/tests/fixture.txt" ] \
+  || fail "tests directories outside crates must remain in the build contract"
 [ -f "${context_root}/${weird_relative}" ] \
   || fail "expected unusual tracked filename"
 [ ! -x "${context_root}/crates/runner/scripts/tool.sh" ] \

@@ -22,7 +22,7 @@ is_excluded_path() {
 
   # Complete tests directory segments are an audited repository convention
   # outside production build entry points. Test-named files remain included.
-  if [[ "$path" == */tests/* ]]; then
+  if [[ "$path" == crates/*/tests/* ]]; then
     return 0
   fi
   if [[ "$path" =~ ^crates/[^/]+/(benches|examples)/ ]]; then
