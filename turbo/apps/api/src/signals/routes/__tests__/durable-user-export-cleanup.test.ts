@@ -127,6 +127,34 @@ test("cleans staging in bounded pages, retaining the result download until its e
   });
 });
 
+test("reclaims an expired completed export and its durable inventory", async () => {
+  const user = await createActor();
+  const storage = installDurableUserExportStorage(context);
+  const result = await completedExport(user);
+  const api = createOpsLogsApi(context);
+  const before = await api.requestGetUserExport(user, [200]);
+  if (!before.body.job?.expiresAt) {
+    throw new Error("Expected a completed export expiry");
+  }
+  mockNow(new Date(before.body.job.expiresAt));
+  await work(user, result.jobId, "cleanup");
+  expect(
+    storage.hasObject(`exports/${user.userId}/${result.jobId}.zip`),
+  ).toBeFalsy();
+  expect(
+    storage.objectKeys(`exports/${user.userId}/${result.jobId}/staging/`),
+  ).toHaveLength(0);
+  await expect(work(user, result.jobId, "inspect")).resolves.toMatchObject({
+    state: null,
+  });
+  const expired = await api.requestGetUserExport(user, [200]);
+  expect(expired.body.job).toMatchObject({
+    id: result.jobId,
+    status: "completed",
+    downloadUrl: null,
+  });
+});
+
 test("reclaims unrecorded multipart uploads only after their provider-side grace period", async () => {
   const user = await createActor();
   const storage = installDurableUserExportStorage(context);

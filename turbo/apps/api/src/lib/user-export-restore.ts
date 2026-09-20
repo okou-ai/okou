@@ -359,8 +359,13 @@ def memory_manifest(archive, path):
             if not trailing:
                 break
             require(not trailing.strip(), "Trailing memory manifest content")
-    require(properties.get("files") is True and properties.get("fileCount") == count and
-            properties.get("totalSize") == total, "Memory manifest totals do not match its files")
+    require(properties.get("files") is True, "Memory manifest has no files array")
+    # Guest snapshots contain version, files and createdAt. Server snapshots
+    # also declare these totals; validate them whenever they are present.
+    for key, expected in (("fileCount", count), ("totalSize", total)):
+        if key in properties:
+            require(integer(properties[key], "memory manifest " + key) == expected,
+                    "Memory manifest totals do not match its files")
 
 
 def restore_memory(archive, output):

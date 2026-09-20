@@ -302,36 +302,10 @@ export const startUserExport$ = command(
           executionMode,
           createdAt: nowDate(),
         })
-        .onConflictDoNothing()
         .returning({ id: exportJobs.id });
       signal.throwIfAborted();
       if (!created) {
-        // Outgoing API instances do not take the admission lock yet.
-        const [existing] = await tx
-          .select({
-            id: exportJobs.id,
-            status: exportJobs.status,
-            executionMode: exportJobs.executionMode,
-          })
-          .from(exportJobs)
-          .where(
-            and(
-              eq(exportJobs.userId, args.userId),
-              inArray(exportJobs.status, ["pending", "running"]),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        if (!existing) {
-          throw new Error("Concurrent export admission has no active job");
-        }
-        return {
-          kind: "accepted",
-          jobId: existing.id,
-          status: activeExportJobStatus(existing.status),
-          executionMode: existing.executionMode,
-          shouldExecute: false,
-        };
+        throw new Error("Failed to create export job");
       }
       if (executionMode) {
         await enqueueBackgroundJob(

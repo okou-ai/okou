@@ -67,9 +67,9 @@ function centralHeaderSizeSql() {
     CASE WHEN ${userExportEntries.localOffset} >= 4294967295 THEN 8 ELSE 0 END`;
 }
 
-function entryEtag(entry: ExportEntry): string | undefined {
+function entryEtag(entry: ExportEntry): string {
   const etag = entry.metadata.etag;
-  if (etag !== undefined && typeof etag !== "string") {
+  if (typeof etag !== "string" || etag.length === 0) {
     throw new Error("User export source has an invalid immutable revision");
   }
   return etag;
@@ -110,10 +110,7 @@ async function localSegments(
       sourceKey: entry.sourceKey,
       sourceOffset: 0,
     });
-    const etag = entryEtag(entry);
-    if (etag !== undefined) {
-      etags.set(entry.sourceKey, etag);
-    }
+    etags.set(entry.sourceKey, entryEtag(entry));
     availableEnd = entry.localOffset + header.length + entry.size;
   }
   return { segments, etags, end: Math.min(end, availableEnd) };
@@ -295,6 +292,10 @@ export const assembleUserExportStep$ = command(
       if (fragment.type === "bytes") {
         buffers.push(fragment.bytes);
       } else {
+        const etag = next.etags.get(fragment.sourceKey);
+        if (!etag) {
+          throw new Error("User export source has no immutable revision");
+        }
         buffers.push(
           await get(
             readS3ObjectRange(
@@ -303,7 +304,7 @@ export const assembleUserExportStep$ = command(
                 key: fragment.sourceKey,
                 offset: fragment.offset,
                 length: fragment.length,
-                etag: next.etags.get(fragment.sourceKey),
+                etag,
               },
               signal,
             ),

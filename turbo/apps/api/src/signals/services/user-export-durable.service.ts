@@ -263,6 +263,10 @@ const scanStep$ = command(
         signal,
       );
     }
+    const etag = stringMetadata(entry.metadata, "etag");
+    if (!etag) {
+      throw new Error("User export source has no immutable revision");
+    }
     const bytes = await get(
       readS3ObjectRange(
         {
@@ -270,7 +274,7 @@ const scanStep$ = command(
           key: entry.sourceKey,
           offset: entry.scannedBytes,
           length: Math.min(SCAN_BYTES, entry.size - entry.scannedBytes),
-          etag: stringMetadata(entry.metadata, "etag"),
+          etag,
         },
         signal,
       ),

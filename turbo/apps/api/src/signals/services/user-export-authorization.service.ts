@@ -1,5 +1,5 @@
 import { command, computed } from "ccstate";
-import { and, asc, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { storages } from "@okouai/db/schema/storage";
@@ -166,7 +166,7 @@ export function currentUserExportMemberships(
   });
 }
 
-type AuthorityDb = Pick<Tx, "select" | "selectDistinct" | "execute">;
+type AuthorityDb = Pick<Tx, "select" | "selectDistinct">;
 
 function authorityIds(
   db: AuthorityDb,
@@ -196,15 +196,18 @@ async function requireLockedResources(
   // Aggregate in PostgreSQL so the terminal fence does not load every source
   // into the function. Share locks prevent a visibility/ownership write from
   // committing between this check and the publication in the same transaction.
-  const expected = await db.execute<{ count: number }>(
-    sql`select count(*)::int as count from (${ids}) expected_resources`,
-  );
+  const [expected] = await db
+    .select({ count: count() })
+    .from(sql`(${ids}) expected_resources`);
   signal.throwIfAborted();
-  const actual = await db.execute<{ count: number }>(
-    sql`select count(*)::int as count from (${readable}) locked_resources`,
-  );
+  const [actual] = await db
+    .select({ count: count() })
+    .from(sql`(${readable}) locked_resources`);
   signal.throwIfAborted();
-  if (expected.rows[0]?.count !== actual.rows[0]?.count) {
+  if (!expected || !actual) {
+    throw new Error("Publication authority count query returned no row");
+  }
+  if (expected.count !== actual.count) {
     throw new Error(
       "Access to an exported resource changed before publication",
     );

@@ -40,8 +40,17 @@ function jsonLines(values: readonly unknown[]): Buffer {
   );
 }
 
-function sources() {
+function sources(producer: "guest" | "server" = "guest") {
   const binary = Buffer.from([0x00, 0xff, 0x61, 0x80, 0xfe]);
+  // Match the active guest ArtifactManifest and server volume manifest writers.
+  const memoryManifest = {
+    version: producer === "guest" ? 1 : "memory-version-a",
+    createdAt: "2026-09-20T00:00:00Z",
+    files: [{ path: "binary.dat", size: binary.length, hash: sha256(binary) }],
+    ...(producer === "server"
+      ? { fileCount: 1, totalSize: binary.length }
+      : {}),
+  };
   const files = new Map<string, Buffer>([
     ["README.md", Buffer.from("Export fixture")],
     ["restore.py", Buffer.from(USER_EXPORT_RESTORE_SCRIPT)],
@@ -101,17 +110,7 @@ function sources() {
         ]),
       ),
     ],
-    [
-      "memory/org-a/storage-a/manifest.json",
-      json({
-        version: "1",
-        fileCount: 1,
-        totalSize: binary.length,
-        files: [
-          { path: "binary.dat", size: binary.length, hash: sha256(binary) },
-        ],
-      }),
-    ],
+    ["memory/org-a/storage-a/manifest.json", json(memoryManifest)],
   ]);
   // Cross the manifest page boundary while keeping fixture content small.
   for (let index = 0; index < 100; index++) {
@@ -120,7 +119,7 @@ function sources() {
       json({ id: `extra-${index}`, instructions: null }),
     );
   }
-  return { files, binary };
+  return { files, binary, memoryManifest };
 }
 
 function exportZip(files: ReadonlyMap<string, Buffer>): AdmZip {
@@ -174,35 +173,60 @@ async function runRestore(zip: AdmZip) {
 }
 
 describe("downloaded export recovery tool", () => {
-  it("restores verified paged sources, current chat events, instructions and binary memory", async () => {
-    const fixture = sources();
-    const { result, output } = await runRestore(exportZip(fixture.files));
-    expect(result.error).toBeUndefined();
-    expect(result.stderr).toBe("");
-    expect(result.status).toBe(0);
-    await expect(
-      readFile(join(output, "chat-messages/thread-a.jsonl"), "utf8"),
-    ).resolves.toBe(
-      jsonLines([event(3), event(5), event(8), event(9), event(10)]).toString(
-        "utf8",
-      ),
-    );
-    await expect(
-      readFile(join(output, "chat-messages/empty.jsonl"), "utf8"),
-    ).resolves.toBe("");
-    await expect(
-      readFile(join(output, "memory/org-a/binary.dat")),
-    ).resolves.toStrictEqual(fixture.binary);
-    await expect(
-      readFile(join(output, "agents.jsonl"), "utf8"),
-    ).resolves.toContain("Keep these instructions exactly.");
-    await expect(
-      readFile(join(output, "workflows.jsonl"), "utf8"),
-    ).resolves.toContain("Workflow instruction.");
-    await expect(
-      readFile(join(output, "chat-threads.jsonl"), "utf8"),
-    ).resolves.toContain("Pinned thread");
-  });
+  it.each(["guest", "server"] as const)(
+    "restores verified paged sources, current chat events, instructions and %s binary memory",
+    async (producer) => {
+      const fixture = sources(producer);
+      const { result, output } = await runRestore(exportZip(fixture.files));
+      expect(result.error).toBeUndefined();
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      await expect(
+        readFile(join(output, "chat-messages/thread-a.jsonl"), "utf8"),
+      ).resolves.toBe(
+        jsonLines([event(3), event(5), event(8), event(9), event(10)]).toString(
+          "utf8",
+        ),
+      );
+      await expect(
+        readFile(join(output, "chat-messages/empty.jsonl"), "utf8"),
+      ).resolves.toBe("");
+      await expect(
+        readFile(join(output, "memory/org-a/binary.dat")),
+      ).resolves.toStrictEqual(fixture.binary);
+      await expect(
+        readFile(join(output, "agents.jsonl"), "utf8"),
+      ).resolves.toContain("Keep these instructions exactly.");
+      await expect(
+        readFile(join(output, "workflows.jsonl"), "utf8"),
+      ).resolves.toContain("Workflow instruction.");
+      await expect(
+        readFile(join(output, "chat-threads.jsonl"), "utf8"),
+      ).resolves.toContain("Pinned thread");
+    },
+  );
+
+  it.each(["fileCount", "totalSize"] as const)(
+    "rejects a supplied memory %s that disagrees with the file inventory",
+    async (field) => {
+      const fixture = sources("server");
+      fixture.files.set(
+        "memory/org-a/storage-a/manifest.json",
+        json({
+          ...fixture.memoryManifest,
+          [field]: field === "fileCount" ? 2 : fixture.binary.length + 1,
+        }),
+      );
+      const { result, output } = await runRestore(exportZip(fixture.files));
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(
+        "Memory manifest totals do not match its files",
+      );
+      await expect(
+        readFile(join(output, "chat-threads.jsonl")),
+      ).rejects.toThrow("ENOENT");
+    },
+  );
 
   it("rejects changed source bytes even when their ZIP CRC is internally valid", async () => {
     const zip = exportZip(sources().files);

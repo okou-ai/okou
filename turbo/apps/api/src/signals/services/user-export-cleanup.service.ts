@@ -68,6 +68,13 @@ async function claimCleanupJob(
     if (!row) {
       return null;
     }
+    let preserveArchive = false;
+    if (row.owner?.status === "completed") {
+      if (row.owner.expiresAt === null) {
+        throw new Error("Completed durable export is missing its expiry");
+      }
+      preserveArchive = row.owner.expiresAt > current;
+    }
     const [claimed] = await tx
       .update(backgroundJobs)
       .set({
@@ -86,9 +93,7 @@ async function claimCleanupJob(
     return {
       job: claimed,
       claimedAt: current,
-      preserveArchive:
-        row.owner?.status === "completed" &&
-        (row.owner.expiresAt === null || row.owner.expiresAt > current),
+      preserveArchive,
     };
   });
 }
