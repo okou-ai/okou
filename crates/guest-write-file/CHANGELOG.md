@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.174](https://github.com/vm0-ai/okou/compare/guest-write-file-v0.1.173...guest-write-file-v0.1.174) (2026-09-19)
+
 ## [0.1.173](https://github.com/vm0-ai/okou/compare/guest-write-file-v0.1.172...guest-write-file-v0.1.173) (2026-09-18)
 
 ## [0.1.172](https://github.com/vm0-ai/okou/compare/guest-write-file-v0.1.171...guest-write-file-v0.1.172) (2026-09-18)

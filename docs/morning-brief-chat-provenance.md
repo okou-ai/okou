@@ -204,9 +204,12 @@ one of its own; the attempt adds the candidate reserve below on top of it.
   they are not a transaction or attempt deadline. Every local transaction also
   receives the remaining absolute allowance as `transaction_timeout`, so
   several individually-short waits cannot cumulatively run past the boundary.
-  Before each later statement the individual caps are shortened again from the
-  then-current remainder. The budget can shorten an existing cap, never extend
-  it.
+  The individual caps remain distinct from that absolute timeout: when less
+  time remains than either cap, `transaction_timeout` is deliberately the first
+  server deadline. This prevents an equal `lock_timeout` or `statement_timeout`
+  from racing it and misclassifying whole-budget exhaustion as a per-thread
+  read failure. The application and monotonic clocks are still checked before
+  every later statement, so no new query starts at equality.
 - The same database wrapper bounds candidate discovery and the shared local
   admission/final-authority reads (feature state, canonical ownership, erasure
   admission and Agent visibility). No local transaction spans the external
@@ -268,15 +271,19 @@ stale content again. The limits worth stating:
   and a query-level observer proves the body SELECT did not start. A fresh
   request then reaches that exact SELECT and exposes `2s` lock, `5s` statement
   and `12s` transaction settings, so the absence check is not vacuous.
-- A separate case starts the per-thread transaction with 100 ms remaining. Once
-  `pg_blocking_pids` proves its Agent query is in flight, the controlled
-  application clock advances to the same boundary, but the test never releases
-  the lock. PostgreSQL's `transaction_timeout` alone ends the transaction; the
-  checked-out client owns the resulting connection event, the route awaits
-  cleanup, and the wrapper retains the callback's `25P04` when Drizzle's later
-  rollback observes the already-terminated connection. A following healthy
-  request proves the pool remains usable. This is the real server-side
-  cancellation proof, distinct from merely discarding a late result.
+- A separate case starts the per-thread transaction with one second remaining,
+  still strictly below either individual statement cap. A
+  driver-boundary barrier observes its exact Agent query and the installed
+  `2s` lock, `5s` statement and `1s` transaction settings before dispatch,
+  without polling inside the server deadline window. The controlled application
+  clock then advances to the same boundary, the query is dispatched behind a
+  lock, and the test never releases that lock. PostgreSQL's `transaction_timeout`
+  alone ends the transaction; the checked-out client owns the resulting
+  connection event, the route awaits cleanup, and the wrapper retains the
+  callback's `25P04` when Drizzle's later rollback observes the already-
+  terminated connection. A following healthy request proves the pool remains
+  usable. This is the real server-side cancellation proof, distinct from merely
+  discarding a late result.
 - Final authority coverage holds the last external membership response, then
   blocks the subsequent canonical ownership query in PostgreSQL. Releasing it
   at exact whole-attempt equality withholds every item and identifier, and a

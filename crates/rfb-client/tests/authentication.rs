@@ -2,7 +2,7 @@
 
 use std::{future::Future, io, sync::Arc, time::Duration};
 
-use rfb_client::{Error, TrustRoots, VncPassword, authenticate};
+use rfb_client::{AuthenticationStage, Error, TrustRoots, VncPassword, authenticate};
 use rustls::{ServerConfig, pki_types::CertificateDer, pki_types::PrivatePkcs8KeyDer};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
@@ -428,14 +428,19 @@ async fn an_expired_deadline_or_invalid_name_closes_before_network_writes() {
         if invalid_name {
             assert!(matches!(result, Err(Error::InvalidServerName)));
         } else {
-            assert!(matches!(result, Err(Error::DeadlineExceeded)));
+            assert!(matches!(
+                result,
+                Err(Error::AuthenticationDeadlineExceeded {
+                    stage: AuthenticationStage::RfbVersion
+                })
+            ));
         }
         disconnected(&mut server).await;
     }
 }
 
 #[tokio::test]
-async fn a_stalled_peer_hits_the_shared_deadline_and_observes_disconnect() {
+async fn a_pre_banner_stall_reports_the_rfb_version_stage_and_disconnects() {
     let (client, mut server) = sockets().await;
     let result = authenticate(
         client,
@@ -445,8 +450,93 @@ async fn a_stalled_peer_hits_the_shared_deadline_and_observes_disconnect() {
         Instant::now() + Duration::from_millis(20),
     )
     .await;
-    assert!(matches!(result, Err(Error::DeadlineExceeded)));
+    assert!(matches!(
+        result,
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::RfbVersion
+        })
+    ));
     disconnected(&mut server).await;
+}
+
+#[tokio::test]
+async fn a_security_negotiation_stall_reports_its_stage_and_disconnects() {
+    let (client, mut server) = sockets().await;
+    let peer = async move {
+        server.write_all(BANNER).await.unwrap();
+        server.flush().await.unwrap();
+        let mut version = [0; 12];
+        server.read_exact(&mut version).await.unwrap();
+        assert_eq!(&version, BANNER);
+        disconnected(&mut server).await;
+    };
+    let caller = authenticate(
+        client,
+        NAME,
+        password(),
+        TrustRoots::public_roots(),
+        Instant::now() + Duration::from_secs(1),
+    );
+    let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
+    assert!(matches!(
+        result,
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::SecurityNegotiation
+        })
+    ));
+}
+
+#[tokio::test]
+async fn a_tls_stall_reports_its_stage_and_disconnects() {
+    let (client, server) = sockets().await;
+    let peer = async move {
+        let server = negotiate(server).await;
+        let mut tls_bytes = Vec::new();
+        bounded(server.take(64 * 1024).read_to_end(&mut tls_bytes))
+            .await
+            .unwrap();
+        assert!(!tls_bytes.is_empty());
+        assert!(tls_bytes.len() < 64 * 1024);
+    };
+    let caller = authenticate(
+        client,
+        NAME,
+        password(),
+        TrustRoots::public_roots(),
+        Instant::now() + Duration::from_secs(1),
+    );
+    let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
+    assert!(matches!(
+        result,
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::TlsHandshake
+        })
+    ));
+}
+
+#[tokio::test]
+async fn a_vnc_authentication_stall_reports_its_stage_and_disconnects() {
+    let cert = Certificate::new(NAME, false, false);
+    let roots = cert.roots();
+    let (client, server) = sockets().await;
+    let peer = async move {
+        let mut server = secure(server, cert.config).await;
+        disconnected(&mut server).await;
+    };
+    let caller = authenticate(
+        client,
+        NAME,
+        password(),
+        roots,
+        Instant::now() + Duration::from_secs(1),
+    );
+    let ((), result) = bounded(async { tokio::join!(peer, caller) }).await;
+    assert!(matches!(
+        result,
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::VncAuthentication
+        })
+    ));
 }
 
 #[tokio::test]
@@ -512,7 +602,9 @@ async fn rejects_a_ready_security_result_when_the_deadline_has_already_elapsed()
     tokio::time::sleep_until(end).await;
     let result = authentication.await;
     match result {
-        Err(Error::DeadlineExceeded) => {}
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::VncAuthentication,
+        }) => {}
         Err(error) => panic!("unexpected authentication failure: {error}"),
         Ok(_) => panic!("returned an authenticated connection after its deadline"),
     }

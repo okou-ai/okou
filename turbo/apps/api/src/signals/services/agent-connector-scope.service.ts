@@ -5,7 +5,7 @@ import {
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { and, eq, isNotNull } from "drizzle-orm";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -52,13 +52,13 @@ async function loadAgentAllowedConnectorSlugRows(
   },
 ): Promise<readonly AgentConnectorSlugRow[]> {
   return await db
-    .select({ connectorSlug: userConnectors.connectorSlug })
-    .from(userConnectors)
+    .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+    .from(userBuiltinConnectors)
     .where(
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, args.agentId),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
       ),
     );
 }

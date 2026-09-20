@@ -5,11 +5,11 @@ import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/co
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
-  connectConnectorOAuthAuthCode$,
-  connectFlowConnectorSlug$,
-  getConnectorStatusDirectConnectMethod,
-  pollingOAuthAuthCodeConnectorSlug$,
-  pollingOAuthDeviceAuthConnectorSlug$,
+  builtinConnectFlowSlug$,
+  builtinPollingOAuthAuthCodeSlug$,
+  builtinPollingOAuthDeviceAuthSlug$,
+  connectBuiltinConnectorOAuthAuthCode$,
+  getBuiltinConnectorStatusDirectConnectMethod,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -100,17 +100,17 @@ export function QuestConnectorPicker({
   const { t } = useTranslation();
   const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
   const pageSignal = useGet(pageSignal$);
-  const connect = useSet(connectConnectorOAuthAuthCode$);
-  const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
+  const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
+  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
+  const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
   const connectors =
     catalogLoadable.state === "hasData"
       ? oneClickConnectors(catalogLoadable.data.connectors)
       : [];
 
   const select = (connector: PlatformConnectorCatalogStatusItem) => {
-    const direct = getConnectorStatusDirectConnectMethod(connector);
+    const direct = getBuiltinConnectorStatusDirectConnectMethod(connector);
     const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
     if (direct?.kind !== "browser-auth" || !accountOptions) {
       onNeedsChoice(connector);

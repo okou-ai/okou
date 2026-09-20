@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
+import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import { mockEnv } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -29,6 +30,7 @@ import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflo
 const context = testContext();
 const CRON_SECRET = "official-workflow-catalog-cron-secret";
 const TEST_SUFFIX = randomUUID().replaceAll("-", "").slice(0, 12);
+serializeOfficialWorkflowCatalogTests();
 
 type ActiveDefinition = Extract<
   OfficialWorkflowSourceDefinition,

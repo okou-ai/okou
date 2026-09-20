@@ -221,6 +221,7 @@ function providerGrant(args: {
       };
     }
     case "none":
+    case "automatic":
     case "managed": {
       throw new Error(`Unsupported ${args.methodRef} test grant`);
     }

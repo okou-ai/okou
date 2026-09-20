@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { resolveArtifactImageTransformOrigin } from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
@@ -193,6 +193,59 @@ export function createAttachmentPreviewSignals(
 export type AttachmentPreviewSignals = ReturnType<
   typeof createAttachmentPreviewSignals
 >;
+
+interface AttachmentPreviewSource {
+  readonly url: string;
+  readonly preview?: AttachmentPreviewSignals;
+}
+
+/**
+ * Keep one resource-resolution graph with the surface that owns a preview.
+ * Callers pass that graph through cards, dialogs, and sidebars; only a caller
+ * without an owner yet creates it here.
+ */
+export function attachmentPreviewSignalsFor(
+  source: AttachmentPreviewSource,
+): AttachmentPreviewSignals {
+  return source.preview ?? createAttachmentPreviewSignals(source.url);
+}
+
+interface AttachmentPreviewRegistry {
+  /** Get or create the one preview graph owned for a canonical resource URL. */
+  readonly register$: Command<
+    AttachmentPreviewSignals,
+    [AttachmentPreviewSource]
+  >;
+}
+
+/** A lifecycle-scoped registry for owners that retain multiple previews. */
+export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
+  const internalPreviewsByUrl$ = state<
+    ReadonlyMap<string, AttachmentPreviewSignals>
+  >(new Map());
+  const register$ = command(
+    (
+      { get, set },
+      source: AttachmentPreviewSource,
+    ): AttachmentPreviewSignals => {
+      const url = publicAttachmentUrl(source.url);
+      const previews = get(internalPreviewsByUrl$);
+      const existing = previews.get(url);
+      if (existing) {
+        return existing;
+      }
+      const preview = attachmentPreviewSignalsFor({
+        url,
+        ...(source.preview ? { preview: source.preview } : {}),
+      });
+      const next = new Map(previews);
+      next.set(url, preview);
+      set(internalPreviewsByUrl$, next);
+      return preview;
+    },
+  );
+  return { register$ };
+}
 
 export function createAttachmentResourceUrl$(url: string) {
   return createAttachmentPreviewSignals(url).resourceUrl$;

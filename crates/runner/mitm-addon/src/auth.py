@@ -296,6 +296,7 @@ def _build_firewall_auth_context(
             matched_firewall = {
                 "name": allow.name,
                 "apiId": api_id,
+                "base": firewall_base,
                 "connectorSlug": allow.name,
                 "routingVariables": routing_variables,
                 **({"sourceId": source_id} if isinstance(source_id, str) else {}),

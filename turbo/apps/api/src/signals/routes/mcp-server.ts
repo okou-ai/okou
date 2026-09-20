@@ -30,6 +30,7 @@ import { getMcpChatStatus } from "../services/mcp-chat-status.service";
 import { searchMcpChatMessages } from "../services/mcp-chat-search.service";
 import { sendMcpChatMessage$ } from "../services/mcp-chat-send.service";
 import { createMcpChatThread$ } from "../services/mcp-chat-creation.service";
+import { updateMcpChatThread$ } from "../services/mcp-chat-thread-update.service";
 import {
   listMcpAgents,
   listMcpModels,
@@ -216,6 +217,11 @@ const serveAuthorizedMcp$ = command(
         createThread: async (input, operationSignal) => {
           return await admitMutation((signal) => {
             return set(createMcpChatThread$, { principal, input }, signal);
+          }, operationSignal);
+        },
+        updateThread: async (input, operationSignal) => {
+          return await admitMutation((signal) => {
+            return set(updateMcpChatThread$, { principal, input }, signal);
           }, operationSignal);
         },
         getStatus: (input, readSignal) => {

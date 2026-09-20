@@ -1,9 +1,9 @@
 import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/client-headers";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -215,11 +215,14 @@ async function openConnectorFilterCatalog() {
   context.mocks.data.agents([
     listAgent(researchId, "Research Agent", "preset:0"),
   ]);
-  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: params.id === researchId ? ["github"] : [],
-    });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, {
+        enabledConnectorSlugs: params.id === researchId ? ["github"] : [],
+      });
+    },
+  );
   await setupPage({ context, path: "/connectors" });
   await expectCards({ github: true, asana: true });
   return { researchId };
@@ -429,13 +432,16 @@ test("Present a connector with no accounts and allow cancelling direct OAuth", a
   mockOAuthCompletions(context);
   const popup = context.mocks.browser.authWindow();
   context.mocks.browser.open(popup);
-  context.mocks.api(connectorOauthStartContract.start, async ({ respond }) => {
-    await oauthStarted.promise;
-    return respond(200, {
-      authorizationUrl: "https://oauth.test/github/authorize",
-      oauthAttemptId: crypto.randomUUID(),
-    });
-  });
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    async ({ respond }) => {
+      await oauthStarted.promise;
+      return respond(200, {
+        authorizationUrl: "https://oauth.test/github/authorize",
+        oauthAttemptId: crypto.randomUUID(),
+      });
+    },
+  );
   await setupPage({
     context,
     path: "/connectors",
@@ -762,11 +768,14 @@ test("Find the connectors no agent is using", async () => {
     { connectorSlug: "mail-1" as ConnectorSlug },
   ]);
   context.mocks.data.agents([listAgent(researchId, "Research", "preset:0")]);
-  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
-    return respond(200, {
-      enabledConnectorSlugs: params.id === researchId ? ["mail-0"] : [],
-    });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.get,
+    ({ params, respond }) => {
+      return respond(200, {
+        enabledConnectorSlugs: params.id === researchId ? ["mail-0"] : [],
+      });
+    },
+  );
   mockPublicConnectorStatus(
     context,
     connectedShelfCatalog(),

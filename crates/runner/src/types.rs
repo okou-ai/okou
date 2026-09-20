@@ -179,7 +179,7 @@ pub enum FirewallEntry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source_id: Option<String>,
     },
-    /// Inline firewall body for org custom connectors.
+    /// Run-scoped firewall body for org custom connectors.
     #[serde(rename = "inline", rename_all = "camelCase")]
     Inline {
         firewall: Firewall,

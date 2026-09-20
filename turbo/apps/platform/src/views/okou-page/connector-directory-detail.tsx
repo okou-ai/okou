@@ -3,7 +3,7 @@ import { ChevronLeft, SlidersHorizontal } from "lucide-react";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Button } from "@okouai/ui";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
+import { builtinConnectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
 import {
   ConnectorIconTile,
   ConnectorAccountSummaryText,
@@ -45,7 +45,7 @@ function ConnectorDetailHeader({
   readonly onBack: () => void;
 }) {
   const { t } = useTranslation();
-  const status = connectorCurrentConnectionStatus(connector);
+  const status = builtinConnectorCurrentConnectionStatus(connector);
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 px-6 pt-6">

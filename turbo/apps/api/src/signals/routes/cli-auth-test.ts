@@ -20,7 +20,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { modelProviders } from "@okouai/db/schema/model-provider";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { command } from "ccstate";
 import { and, eq, notExists } from "drizzle-orm";
 
@@ -40,7 +40,7 @@ import {
   testUserOrgId,
   ensureTestOrg$,
 } from "../services/cli-auth.service";
-import { upsertConnectorTokenConnection$ } from "../services/connector-data.service";
+import { upsertBuiltinConnectorTokenConnection$ } from "../services/connector-data.service";
 import { connectorActionResolverForSnapshot } from "../services/connector-action-resolver.service";
 import {
   getConnectorRuntimeConnector,
@@ -306,7 +306,7 @@ const createTestConnector$ = command(
     }
 
     const connectionResult = await set(
-      upsertConnectorTokenConnection$,
+      upsertBuiltinConnectorTokenConnection$,
       {
         orgId,
         userId,
@@ -472,7 +472,7 @@ const enableTestConnectors$ = command(
       );
     }
 
-    await writeDb.insert(userConnectors).values(
+    await writeDb.insert(userBuiltinConnectors).values(
       connectorSlugs.map((connectorSlug) => {
         return {
           orgId,

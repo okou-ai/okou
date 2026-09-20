@@ -2,7 +2,7 @@ import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   agentsByIdContract,
@@ -135,7 +135,7 @@ export const apiAgentsHandlers = [
   }),
 
   // GET /api/agents/:id/user-connectors
-  mockApi(userConnectorsContract.get, ({ params, respond }) => {
+  mockApi(userBuiltinConnectorsContract.get, ({ params, respond }) => {
     const enabledConnectorSlugs =
       mockEnabledConnectorSlugsByAgent.get(params.id) ?? [];
     return respond(200, {
@@ -150,7 +150,7 @@ export const apiAgentsHandlers = [
   }),
 
   // PUT /api/agents/:id/user-connectors
-  mockApi(userConnectorsContract.update, ({ body, params, respond }) => {
+  mockApi(userBuiltinConnectorsContract.update, ({ body, params, respond }) => {
     const enabledConnectorSlugs = mockConnectorUpdateResponse(
       mockEnabledConnectorSlugsByAgent.get(params.id) ?? [],
       body.enabledConnectorSlugs,

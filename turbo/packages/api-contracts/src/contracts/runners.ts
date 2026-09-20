@@ -1,4 +1,7 @@
-import { piSandboxContinuationSchema } from "./pi-inference-lifecycle";
+import {
+  piApiHandoffUsageSchema,
+  piSandboxContinuationSchema,
+} from "./pi-inference-lifecycle";
 import { z } from "zod";
 import { piCredentialHeaderSchema } from "./pi-credential";
 import { piModelConfigV4Schema } from "./pi-native";
@@ -154,6 +157,9 @@ export const runnerClaimCapabilitiesSchema = z
   })
   .strict()
   .readonly();
+
+/** Native model support is advertised in a header ignored by previous APIs. */
+export const NATIVE_GPT_6_SOL_HEADER = "X-Native-Gpt-6-Sol";
 
 export const builtInModelProviderConnectionSourceSchema = z.enum([
   "provider_response",
@@ -944,6 +950,7 @@ const piApiFirstTurnOwnershipTransferManifestShape = {
   session: piApiFirstTurnSessionSchema,
   sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
   langfuseParent: piLangfuseParentSchema.optional(),
+  apiUsage: piApiHandoffUsageSchema.optional(),
 };
 
 export const piApiFirstTurnOwnershipTransferModeSchema = z.enum([
@@ -958,21 +965,18 @@ const piApiFirstTurnManifestV3Schema = z.discriminatedUnion("mode", [
       ...piApiFirstTurnOwnershipTransferManifestShape,
       mode: z.literal("sandbox-first"),
     })
-    .strict()
     .readonly(),
   z
     .object({
       ...piApiFirstTurnOwnershipTransferManifestShape,
       mode: z.literal("pending-tool-continuation"),
     })
-    .strict()
     .readonly(),
   z
     .object({
       ...piApiFirstTurnOwnershipTransferManifestShape,
       mode: z.literal("settled-session-continuation"),
     })
-    .strict()
     .readonly(),
 ]);
 
@@ -1008,7 +1012,6 @@ export const piApiFirstTurnManifestSchema = z.union([
         .strict()
         .readonly(),
     })
-    .strict()
     .readonly(),
 ]);
 

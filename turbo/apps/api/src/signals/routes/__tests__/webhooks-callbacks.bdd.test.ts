@@ -6503,7 +6503,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
     });
     await waitForExpectation(async () => {
-      const listed = await connectors.listConnectors(actor);
+      const listed = await connectors.listBuiltinConnectors(actor);
       expect(listed.connectors).not.toContainEqual(
         expect.objectContaining({
           type: "openai",
@@ -7021,7 +7021,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       const s3CallCountBeforeCleanup = await startUserDeletion(fixture);
       await flushWaitUntilForTest();
       await waitForExpectation(async () => {
-        const listed = await connectors.listConnectors(doomed);
+        const listed = await connectors.listBuiltinConnectors(doomed);
         expect(listed.connectors).not.toContainEqual(
           expect.objectContaining({
             type: "openai",

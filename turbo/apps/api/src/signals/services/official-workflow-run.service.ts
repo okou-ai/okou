@@ -18,7 +18,7 @@ import type { ReadonlyDb } from "../external/db";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
   readAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowRevision,
+  readAcceptedOfficialWorkflowRevisions,
 } from "./official-workflow-catalog-read.service";
 
 export const OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE =
@@ -163,6 +163,20 @@ function acceptedRevisionMatchesDefinition(
   );
 }
 
+function acceptedRevisionsMatchDefinitions(
+  definitions: readonly OfficialWorkflowAcceptedDefinition[],
+  revisions: readonly (OfficialWorkflowAcceptedRevision | null)[],
+): boolean {
+  return definitions.every((definition, index) => {
+    const revision = revisions[index];
+    return (
+      revision !== null &&
+      revision !== undefined &&
+      acceptedRevisionMatchesDefinition(definition, revision)
+    );
+  });
+}
+
 function acceptedDefinitionForName(
   definitions: readonly OfficialWorkflowAcceptedDefinition[],
   name: string,
@@ -202,9 +216,7 @@ async function resolveObservation(
   const definitionNames = new Set<string>();
   const workflowIds = new Set<string>();
   const mountPaths = new Set<string>();
-  const definitions: ResolvedOfficialWorkflowRunDefinition[] = [];
-
-  for (const candidate of orderedCandidates) {
+  const acceptedCandidates = orderedCandidates.map((candidate) => {
     if (
       definitionNames.has(candidate.definitionName) ||
       workflowIds.has(candidate.workflowId) ||
@@ -223,30 +235,38 @@ async function resolveObservation(
     if (!accepted) {
       throw new OfficialWorkflowRunAdmissionError();
     }
-    const revision = await readAcceptedOfficialWorkflowRevision(
-      db,
-      { name: accepted.name, revision: accepted.revision },
-      signal,
-    );
-    if (!revision || !acceptedRevisionMatchesDefinition(accepted, revision)) {
-      throw new OfficialWorkflowRunAdmissionError();
-    }
-    definitions.push({
-      workflowId: candidate.workflowId,
-      workflowName: candidate.workflowName,
-      mountPath: candidate.mountPath,
-      name: accepted.name,
-      revision: accepted.revision,
-      artifact: {
-        orgId: SYSTEM_ORG_ID,
-        userId: VOLUME_ORG_USER_ID,
-        storageName: accepted.artifact.storageName,
-        storageId: accepted.artifact.storageId,
-        storageVersion: accepted.artifact.storageVersion,
-      },
-      blueprints: blueprintIdentities(accepted),
-    });
-  }
+    return { candidate, accepted };
+  });
+  const revisions = await readAcceptedOfficialWorkflowRevisions(
+    db,
+    acceptedCandidates.map(({ accepted }) => {
+      return { name: accepted.name, revision: accepted.revision };
+    }),
+    signal,
+  );
+  const definitions = acceptedCandidates.map(
+    ({ candidate, accepted }, index): ResolvedOfficialWorkflowRunDefinition => {
+      const revision = revisions[index];
+      if (!revision || !acceptedRevisionMatchesDefinition(accepted, revision)) {
+        throw new OfficialWorkflowRunAdmissionError();
+      }
+      return {
+        workflowId: candidate.workflowId,
+        workflowName: candidate.workflowName,
+        mountPath: candidate.mountPath,
+        name: accepted.name,
+        revision: accepted.revision,
+        artifact: {
+          orgId: SYSTEM_ORG_ID,
+          userId: VOLUME_ORG_USER_ID,
+          storageName: accepted.artifact.storageName,
+          storageId: accepted.artifact.storageId,
+          storageVersion: accepted.artifact.storageVersion,
+        },
+        blueprints: blueprintIdentities(accepted),
+      };
+    },
+  );
 
   return {
     releaseId: catalog.releaseId,
@@ -446,6 +466,7 @@ export async function validateOfficialWorkflowRunForInsert(
     }),
   );
 
+  const acceptedDefinitions: OfficialWorkflowAcceptedDefinition[] = [];
   for (const expected of observation.definitions) {
     const installation = installationById.get(expected.workflowId);
     const accepted = acceptedDefinitionForName(
@@ -465,13 +486,16 @@ export async function validateOfficialWorkflowRunForInsert(
     ) {
       return new OfficialWorkflowRunAdmissionError();
     }
-    const revision = await readAcceptedOfficialWorkflowRevision(tx, {
-      name: accepted.name,
-      revision: accepted.revision,
-    });
-    if (!revision || !acceptedRevisionMatchesDefinition(accepted, revision)) {
-      return new OfficialWorkflowRunAdmissionError();
-    }
+    acceptedDefinitions.push(accepted);
+  }
+  const revisions = await readAcceptedOfficialWorkflowRevisions(
+    tx,
+    acceptedDefinitions.map((accepted) => {
+      return { name: accepted.name, revision: accepted.revision };
+    }),
+  );
+  if (!acceptedRevisionsMatchDefinitions(acceptedDefinitions, revisions)) {
+    return new OfficialWorkflowRunAdmissionError();
   }
 
   if (

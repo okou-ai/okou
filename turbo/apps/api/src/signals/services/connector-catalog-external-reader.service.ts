@@ -1,7 +1,7 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { ConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogAuthMethodSummary,
@@ -21,7 +21,7 @@ import {
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
 } from "@okouai/db/schema/connector-catalog";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { singleton, testOverride } from "../../lib/singleton";
@@ -37,7 +37,6 @@ import {
   connectorCatalogArtifactFailureCode,
   decodeAttestedConnectorCatalogSnapshot,
   decodeConnectorCatalogSnapshot,
-  decodeRetainedV3ConnectorCatalogSnapshot,
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { isConnectorCatalogIconKey } from "@okouai/connectors/connector-catalog/artifacts/icon";
 import { deriveConnectorCatalogFirewallPermissions } from "@okouai/connectors/connector-catalog/artifacts/relationships";
@@ -340,16 +339,12 @@ async function readCurrentIdentity(args: {
         .where(
           and(
             eq(connectorCatalogActiveSnapshot.sourceId, args.sourceId),
-            inArray(connectorCatalogActiveSnapshot.schemaVersion, [
+            eq(
+              connectorCatalogActiveSnapshot.schemaVersion,
               SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-              3,
-            ]),
+            ),
           ),
         )
-        // Until normal sync first accepts v4, retained v3 keeps existing HTTP
-        // connectors available. An existing v4 always wins, including when
-        // invalid; its failures must never silently select v3 (#34913).
-        .orderBy(desc(connectorCatalogActiveSnapshot.schemaVersion))
         .limit(1);
     },
   );
@@ -458,12 +453,9 @@ async function readCurrentCatalog(args: {
           : "different_authority",
     });
   }
-  const decoded =
-    args.identity.schemaVersion === 3
-      ? decodeRetainedV3ConnectorCatalogSnapshot(decodeArgs)
-      : validationAuthorityIsCurrent
-        ? decodeAttestedConnectorCatalogSnapshot(decodeArgs)
-        : decodeConnectorCatalogSnapshot(decodeArgs);
+  const decoded = validationAuthorityIsCurrent
+    ? decodeAttestedConnectorCatalogSnapshot(decodeArgs)
+    : decodeConnectorCatalogSnapshot(decodeArgs);
   const filteredAuthMethods = measureCatalogLoadSync(
     args.timing,
     "api_dispatch_connector_catalog_validate_compatibility",
@@ -909,7 +901,7 @@ function categoryMetadataForConnectors(
 }
 
 function connectionForCatalogStatus(
-  connector: ConnectorResponse | null,
+  connector: BuiltinConnectorResponse | null,
 ): PublicConnectorCatalogConnection | null {
   if (!connector) {
     return null;
@@ -940,7 +932,7 @@ function hasRequestedScopes(
 }
 
 function hasCatalogScopeMismatch(args: {
-  readonly connector: ConnectorResponse | null;
+  readonly connector: BuiltinConnectorResponse | null;
   readonly facts: PrivateAuthMethodFacts | undefined;
   readonly storedRequestedScopes: readonly string[] | null;
 }): boolean {
@@ -956,7 +948,7 @@ function hasCatalogScopeMismatch(args: {
 function connectionMethodForCatalogStatus(args: {
   readonly effective: EffectiveConnector;
   readonly featureStates: ConnectorFeatureStates;
-  readonly response: ConnectorResponse | null;
+  readonly response: BuiltinConnectorResponse | null;
 }): ConnectorCatalogAuthMethod | undefined {
   if (!args.response) {
     return undefined;
@@ -1244,7 +1236,7 @@ function discoveryEffectiveConnectors(
 
 export async function searchExternalConnectorCatalog(
   args: ExternalCatalogSearchArgs,
-): Promise<ConnectorSearchItem[]> {
+): Promise<BuiltinConnectorSearchItem[]> {
   const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
   const effective = effectiveConnectors({
     catalog,

@@ -13,16 +13,16 @@ import type {
 } from "../../signals/connector-domain.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
-  connectConnectorOAuthAuthCode$,
+  connectBuiltinConnectorOAuthAuthCode$,
   type ConnectorConnectSuccess,
-  connectConnectorNoAuth$,
-  connectFlowConnectorSlug$,
-  getConnectorStatusConnectLaunchMode,
-  getOnlyAvailableStatusBrowserAuthMethodDetail,
-  getOnlyAvailableStatusNoAuthMethod,
-  justConnectedSlugs$,
-  pollingOAuthAuthCodeConnectorSlug$,
-  type ConnectorConnectionResult,
+  connectBuiltinConnectorNoAuth$,
+  builtinConnectFlowSlug$,
+  getBuiltinConnectorStatusConnectLaunchMode,
+  getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
+  getOnlyAvailableBuiltinConnectorStatusNoAuthMethod,
+  justConnectedBuiltinSlugs$,
+  builtinPollingOAuthAuthCodeSlug$,
+  type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -119,7 +119,7 @@ function useDirectedAuthorizeParams(): {
 }
 
 function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
-  const justConnected = useGet(justConnectedSlugs$);
+  const justConnected = useGet(justConnectedBuiltinSlugs$);
   const allLoadable = useLastLoadable(connectorCatalogStatus$);
   const catalogLoaded = allLoadable.state === "hasData";
   const allData = catalogLoaded ? allLoadable.data.connectors : [];
@@ -229,7 +229,7 @@ function runDirectedAuthorize(
         readonly useDefaultConnectorProjection?: boolean;
       },
       signal: AbortSignal,
-    ) => Promise<ConnectorConnectionResult | false>;
+    ) => Promise<BuiltinConnectorConnectionResult | false>;
     readonly connectNoAuth: (
       args: {
         readonly connectorSlug: ConnectorSlug;
@@ -242,7 +242,7 @@ function runDirectedAuthorize(
         };
       },
       signal: AbortSignal,
-    ) => Promise<ConnectorConnectionResult | false>;
+    ) => Promise<BuiltinConnectorConnectionResult | false>;
     readonly openConnectModal: () => void;
     readonly reloadAuthorization: () => void;
     readonly onSuccess: ConnectorConnectSuccess;
@@ -269,18 +269,18 @@ function runDirectedAuthorize(
     return;
   }
   const launchMode = params.item
-    ? getConnectorStatusConnectLaunchMode(params.item)
+    ? getBuiltinConnectorStatusConnectLaunchMode(params.item)
     : "modal";
   const browserAuthMethod =
     launchMode === "browser-auth" ? params.authMethod : null;
   const noAuthMethod =
     launchMode === "no-auth" && params.item
-      ? getOnlyAvailableStatusNoAuthMethod(params.item)
+      ? getOnlyAvailableBuiltinConnectorStatusNoAuthMethod(params.item)
       : null;
   if ((browserAuthMethod && params.item) || noAuthMethod) {
     detach(
       (async () => {
-        let connected: ConnectorConnectionResult | false = false;
+        let connected: BuiltinConnectorConnectionResult | false = false;
         if (browserAuthMethod && params.item) {
           connected = await params.connect(
             params.connectorSlug,
@@ -387,10 +387,10 @@ function useDirectedAuthorizeSuccess(
 function DirectedAuthorizeCard() {
   const { t } = useTranslation();
   const params = useDirectedAuthorizeParams();
-  const pollingConnectorSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
-  const connectFlowConnectorSlug = useGet(connectFlowConnectorSlug$);
-  const connect = useSet(connectConnectorOAuthAuthCode$);
-  const connectNoAuth = useSet(connectConnectorNoAuth$);
+  const pollingConnectorSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
+  const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
+  const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
+  const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
   const [authorizeLoadable, authorize] = useLoadableSet(authorizeConnector$);
   const reloadAuthorization = useSet(reloadAgentConnectorAuthorizations$);
   const signal = useGet(pageSignal$);
@@ -426,7 +426,7 @@ function DirectedAuthorizeCard() {
   const isLoading = catalogLoading || permissionLoading;
   const canAuthorize = canAuthorizeConnector(item, isConnected);
   const selectedAuthMethod = item
-    ? getOnlyAvailableStatusBrowserAuthMethodDetail(item)
+    ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item)
     : null;
   const connectorLabel = item?.label ?? connectorSlug;
   const connectorDescription = item?.description ?? "";

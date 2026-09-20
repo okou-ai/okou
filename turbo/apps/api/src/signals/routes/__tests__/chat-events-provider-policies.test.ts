@@ -1794,7 +1794,7 @@ describe("CHAT-02: model-first provider policies", () => {
       });
     }),
   )(
-    "selects built-in $model through OpenRouter US only when the switch is $enabled",
+    "keeps direct built-in $model priority with OpenRouter US switch $enabled",
     async ({ model, enabled }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       if (model === "deepseek-v4.1-flash") {
@@ -1822,44 +1822,22 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       const { claim } = await claimChatRun(runnerGroup, run.runId);
       const environment = claimEnvironment(claim);
-      const expectedProvider = enabled ? "openrouter-codex" : "deepseek";
-      const expectedModel = enabled
-        ? `deepseek/${model}`
-        : model === "deepseek-v4.1-flash"
-          ? "deepseek-flash"
-          : model;
-      expect(environment.OPENAI_BASE_URL).toBe(
-        enabled
-          ? "https://us.openrouter.ai/api/v1"
-          : "https://api.deepseek.com/",
-      );
+      const expectedModel =
+        model === "deepseek-v4.1-flash" ? "deepseek-flash" : model;
+      expect(environment.OPENAI_BASE_URL).toBe("https://api.deepseek.com/");
       expect(environment.OPENAI_MODEL).toBe(expectedModel);
       expect(claim.codexRuntimeConfig).toMatchObject({
-        providerId: expectedProvider,
+        providerId: "deepseek",
         modelCatalog: {
           models: expect.arrayContaining([
             expect.objectContaining({ slug: expectedModel }),
           ]),
         },
       });
-      expect(claim.billableFirewalls).toContain(
-        `model-provider:${expectedProvider}`,
+      expect(claim.billableFirewalls).toContain("model-provider:deepseek");
+      expect(claim.billableFirewalls).not.toContain(
+        "model-provider:openrouter-codex",
       );
-      if (enabled) {
-        expect(claim.firewalls).toContainEqual(
-          expect.objectContaining({
-            kind: "inline",
-            firewall: expect.objectContaining({
-              name: "model-provider:openrouter-codex",
-              apis: expect.arrayContaining([
-                expect.objectContaining({
-                  base: "https://us.openrouter.ai/api/v1/responses",
-                }),
-              ]),
-            }),
-          }),
-        );
-      }
       await cancelChatRun(actor, run.runId);
     },
     90_000,
@@ -1870,9 +1848,9 @@ describe("CHAT-02: model-first provider policies", () => {
     "deepseek-v4-flash",
     "deepseek-v4-pro",
   ] as const)(
-    "fails closed for built-in %s when only the direct candidate is available",
+    "uses direct built-in %s when the OpenRouter fallback is unavailable",
     async (model) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
@@ -1893,38 +1871,32 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.OpenRouterUsRouting]: true,
       });
 
-      const prompt = "do not fall back to the managed DeepSeek direct key";
-      const response =
-        await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
-          {
-            selectedModel: model,
-            providerType: "openrouter-codex",
-            upstreamModel: `deepseek/${model}`,
-          },
-          async () => {
-            return await requestSendEventRaw(actor, {
-              agentId,
-              prompt,
-              userMessage: {
-                version: 1,
-                parts: [{ type: "text", text: prompt }],
-              },
-              model,
-              hasTextContent: true,
-            });
-          },
-        );
-      expect(response.status).toBe(503);
-      expectApiError(response.body);
-      expect(response.body.error.message).toBe(
-        "Every built-in model route for this model is temporarily unavailable",
+      const run = await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+        {
+          selectedModel: model,
+          providerType: "openrouter-codex",
+          upstreamModel: `deepseek/${model}`,
+        },
+        async () => {
+          return await sendChatRun(actor, {
+            agentId,
+            prompt: "retain the managed DeepSeek direct priority",
+            model,
+          });
+        },
       );
+      const { claim } = await claimChatRun(runnerGroup, run.runId);
+      expect(claimEnvironment(claim).OPENAI_BASE_URL).toBe(
+        "https://api.deepseek.com/",
+      );
+      expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
+      await cancelChatRun(actor, run.runId);
     },
   );
 
-  it("fails closed when the DeepSeek OpenRouter US candidate is cooling", async () => {
+  it("restores direct DeepSeek while the OpenRouter US fallback is cooling", async () => {
     const model = "deepseek-v4-flash";
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     await seedBuiltInModelCandidateKeys(context, model);
     const direct = await resolveBuiltInModelRouteFixture(context, model);
     expect(direct).toMatchObject({ provider_type: "deepseek" });
@@ -1963,22 +1935,17 @@ describe("CHAT-02: model-first provider policies", () => {
       [FeatureSwitchKey.OpenRouterUsRouting]: true,
     });
 
-    const prompt = "do not fall back while OpenRouter US is cooling";
-    const response = await requestSendEventRaw(actor, {
+    const run = await sendChatRun(actor, {
       agentId,
-      prompt,
-      userMessage: {
-        version: 1,
-        parts: [{ type: "text", text: prompt }],
-      },
+      prompt: "restore direct DeepSeek while its fallback is cooling",
       model,
-      hasTextContent: true,
     });
-    expect(response.status).toBe(503);
-    expectApiError(response.body);
-    expect(response.body.error.message).toBe(
-      "Every built-in model route for this model is temporarily unavailable",
+    const { claim } = await claimChatRun(runnerGroup, run.runId);
+    expect(claimEnvironment(claim).OPENAI_BASE_URL).toBe(
+      "https://api.deepseek.com/",
     );
+    expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
+    await cancelChatRun(actor, run.runId);
   });
 
   it.each(

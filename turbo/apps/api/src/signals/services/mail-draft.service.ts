@@ -16,7 +16,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
 import { mailDrafts } from "@okouai/db/schema/mail-draft";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { convert } from "html-to-text";
 import { z } from "zod";
 
@@ -35,13 +35,13 @@ import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
-import { resolveConnectorCredentialAccess } from "./connector-credential-access.service";
+import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-  type ConnectorCredentialConnection,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialConnection,
+} from "./builtin-connector-credential-runtime.service";
 
 const L = logger("api:mail-draft");
 
@@ -109,7 +109,7 @@ const gmailAttachmentResourceSchema = z.object({
   data: z.string(),
 });
 
-interface MailConnection extends ConnectorCredentialConnection {
+interface MailConnection extends BuiltinConnectorCredentialConnection {
   readonly connectorSlug: "gmail";
   readonly externalEmail: string;
   readonly externalUsername: string | null;
@@ -280,21 +280,21 @@ async function loadMailConnections(args: {
       storageVersion: connectors.storageVersion,
       tokenExpiresAt: connectors.tokenExpiresAt,
     })
-    .from(userConnectors)
+    .from(userBuiltinConnectors)
     .innerJoin(
       connectors,
       and(
-        eq(connectors.orgId, userConnectors.orgId),
-        eq(connectors.userId, userConnectors.userId),
-        eq(connectors.connectorSlug, userConnectors.connectorSlug),
+        eq(connectors.orgId, userBuiltinConnectors.orgId),
+        eq(connectors.userId, userBuiltinConnectors.userId),
+        eq(connectors.connectorSlug, userBuiltinConnectors.connectorSlug),
       ),
     )
     .where(
       and(
-        eq(userConnectors.orgId, args.orgId),
-        eq(userConnectors.userId, args.userId),
-        eq(userConnectors.agentId, args.agentId),
-        eq(userConnectors.connectorSlug, "gmail"),
+        eq(userBuiltinConnectors.orgId, args.orgId),
+        eq(userBuiltinConnectors.userId, args.userId),
+        eq(userBuiltinConnectors.agentId, args.agentId),
+        eq(userBuiltinConnectors.connectorSlug, "gmail"),
         args.sourceId
           ? eq(connectors.id, args.sourceId)
           : eq(connectors.isDefault, true),
@@ -305,7 +305,7 @@ async function loadMailConnections(args: {
     if (row.connectorSlug !== "gmail" || !row.externalEmail) {
       return [];
     }
-    const accessResult = resolveConnectorCredentialAccess({
+    const accessResult = resolveBuiltinConnectorCredentialAccess({
       snapshot: args.snapshot,
       stored: {
         authMethodId: row.authMethod,
@@ -482,14 +482,14 @@ async function resolveMailAccessToken(
   if (args.connection.needsReconnect || !args.connection.scopesReady) {
     return { kind: "error", message: "Reconnect Gmail before continuing" };
   }
-  const accessTokenValueRef = connectorCredentialRuntimeValueRef(
+  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
     args.connection,
     GMAIL_ACCESS_TOKEN_ENV,
   );
   if (accessTokenValueRef === null) {
     return { kind: "error", message: "Reconnect Gmail before continuing" };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection: args.connection,
     db: args.db,
     valueRefs: [accessTokenValueRef],
@@ -502,7 +502,7 @@ async function resolveMailAccessToken(
   ) {
     return { kind: "ok", accessToken };
   }
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection: args.connection,
       db: args.db,

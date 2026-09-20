@@ -4,10 +4,10 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  connectorOauthStartContract,
-  connectorOpenIdStartContract,
+  builtinConnectorOauthStartContract,
+  builtinConnectorOpenIdStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   customConnectorOAuth2Contract,
@@ -210,23 +210,32 @@ test.each([
       oauthAttemptId,
       connectionId: account.id,
     };
-    context.mocks.api(connectorOauthStartContract.start, ({ respond }) => {
-      return respond(200, start);
-    });
-    context.mocks.api(connectorOpenIdStartContract.start, ({ respond }) => {
-      return respond(200, start);
-    });
-    context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ respond }) => {
+        return respond(200, start);
+      },
+    );
+    context.mocks.api(
+      builtinConnectorOpenIdStartContract.start,
+      ({ respond }) => {
+        return respond(200, start);
+      },
+    );
+    context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
       return respond(200, {
         enabledConnectorSlugs: granting ? ["stripe"] : [],
       });
     });
-    context.mocks.api(userConnectorsContract.update, async ({ respond }) => {
-      granting = true;
-      permissionRequest.resolve();
-      await permissions.promise;
-      return respond(200, { enabledConnectorSlugs: ["stripe"] });
-    });
+    context.mocks.api(
+      userBuiltinConnectorsContract.update,
+      async ({ respond }) => {
+        granting = true;
+        permissionRequest.resolve();
+        await permissions.promise;
+        return respond(200, { enabledConnectorSlugs: ["stripe"] });
+      },
+    );
     context.mocks.api(
       connectorAccountsContract.connection,
       async ({ respond }) => {
@@ -376,13 +385,16 @@ test.each([false, true])(
     ]);
     const popup = authorizationWindow();
     const authorizationUrl = "https://oauth.test/stripe/authorize";
-    context.mocks.api(connectorOauthStartContract.start, ({ respond }) => {
-      return respond(200, {
-        authorizationUrl,
-        connectionId: account.id,
-        oauthAttemptId,
-      });
-    });
+    context.mocks.api(
+      builtinConnectorOauthStartContract.start,
+      ({ respond }) => {
+        return respond(200, {
+          authorizationUrl,
+          connectionId: account.id,
+          oauthAttemptId,
+        });
+      },
+    );
     context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
       return authorized
         ? respond(200, account)
@@ -787,7 +799,7 @@ test.each([
       return respond(200, { connectors: [connector] });
     });
     context.mocks.api(
-      connectorOauthStartContract.start,
+      builtinConnectorOauthStartContract.start,
       async ({ respond }) => {
         return respond(200, {
           authorizationUrl,

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.202.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.201.0...runner-rs-v0.202.0) (2026-09-20)
+
+
+### Features
+
+* **vnc:** retain authentication timeout stages ([#35423](https://github.com/vm0-ai/okou/issues/35423)) ([6628561](https://github.com/vm0-ai/okou/commit/662856111e607397edd681142fc6af42287bfba5))
+
+## [0.201.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.4...runner-rs-v0.201.0) (2026-09-19)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-sol run model ([#35391](https://github.com/vm0-ai/okou/issues/35391)) ([a1f2db4](https://github.com/vm0-ai/okou/commit/a1f2db4d50af3a79a6212f478c447b3d8ac6c6f9))
+* **connectors:** add builtin mcp automatic authentication ([#35241](https://github.com/vm0-ai/okou/issues/35241)) ([095cfe8](https://github.com/vm0-ai/okou/commit/095cfe801e2b69165c0c33b1e36d42990b88b812))
+
 ## [0.200.4](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.3...runner-rs-v0.200.4) (2026-09-18)
 
 

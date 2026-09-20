@@ -84,6 +84,7 @@ export type PublicConnectorAuthClientConfig =
 
 export type ConnectorGrantKind =
   | "none"
+  | "automatic"
   | "manual"
   | "auth-code"
   | "openid-auth"
@@ -93,6 +94,12 @@ export type ConnectorGrantKind =
 
 export interface ConnectorNoAuthGrantConfig {
   readonly kind: "none";
+}
+
+export interface ConnectorAutomaticGrantConfig {
+  readonly kind: "automatic";
+  readonly callbackOrigin: "api";
+  readonly outputs: ConnectorGrantOutputBindings;
 }
 
 export interface ConnectorManualGrantConfig {
@@ -167,6 +174,7 @@ export interface ConnectorManagedGrantConfig {
 
 export type ConnectorGrantConfig =
   | ConnectorNoAuthGrantConfig
+  | ConnectorAutomaticGrantConfig
   | ConnectorManualGrantConfig
   | ConnectorAuthCodeGrantConfig
   | ConnectorOpenIdAuthGrantConfig
@@ -174,7 +182,11 @@ export type ConnectorGrantConfig =
   | ConnectorDeviceAuthGrantConfig
   | ConnectorManagedGrantConfig;
 
-export type ConnectorAccessKind = "static" | "refresh-token" | "none";
+export type ConnectorAccessKind =
+  | "static"
+  | "refresh-token"
+  | "none"
+  | "automatic";
 
 export const CONNECTOR_PLATFORM_SECRET_NAMES = [
   "GOOGLE_ADS_DEVELOPER_TOKEN",
@@ -254,9 +266,16 @@ export interface ConnectorNoAccessConfig {
   readonly kind: "none";
 }
 
+export interface ConnectorAutomaticAccessConfig {
+  readonly kind: "automatic";
+  readonly inputs: ConnectorRefreshTokenInputBindings;
+  readonly outputs: ConnectorRefreshTokenOutputBindings;
+}
+
 export type ConnectorAccessConfig =
   | ConnectorStaticAccessConfig
   | ConnectorRefreshTokenAccessConfig
+  | ConnectorAutomaticAccessConfig
   | ConnectorNoAccessConfig;
 
 export type ConnectorRevokeKind = "none" | "token-revoke";
@@ -292,6 +311,15 @@ interface ConnectorAuthMethodRuntimeConfigBase {
  * joining their accepted public and private method data.
  */
 export type ConnectorAuthMethodRuntimeConfig =
+  | (ConnectorAuthMethodRuntimeConfigBase & {
+      readonly client?: never;
+      readonly grant: ConnectorAutomaticGrantConfig;
+      readonly access: ConnectorAutomaticAccessConfig;
+      readonly revoke: Extract<
+        ConnectorRevokeConfig,
+        { readonly kind: "none" }
+      >;
+    })
   | (ConnectorAuthMethodRuntimeConfigBase & {
       readonly client?: never;
       readonly grant: ConnectorNoAuthGrantConfig;

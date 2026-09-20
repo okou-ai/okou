@@ -17,7 +17,7 @@ import {
   agentsByIdContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { createStore } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
@@ -475,7 +475,7 @@ describe("okou workflow automation scheduler", () => {
     await wf.connectConnector(scenario.actor, "gmail");
     await accept(
       setupApp({ context, routes: agentsRoutes })(
-        userConnectorsContract,
+        userBuiltinConnectorsContract,
       ).update({
         headers: authHeaders(),
         params: { id: scenario.agentId },

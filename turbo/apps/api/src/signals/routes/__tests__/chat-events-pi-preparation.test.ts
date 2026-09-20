@@ -547,6 +547,11 @@ describe("CHAT-02: model-first provider policies", () => {
         baseSession: { sessionId: thread.id, sha256: null },
         session: { sessionId: thread.id },
         sandboxEventSequenceStart: 1,
+        apiUsage: {
+          schemaVersion: 1,
+          state: "no-inference",
+          sampledAt: expect.any(Number),
+        },
       });
       const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`;
       const h0 = MemoryPiSession.fromJsonl(

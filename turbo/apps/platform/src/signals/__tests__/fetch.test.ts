@@ -6,7 +6,7 @@ import {
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -46,15 +46,18 @@ async function waitForReadyPage(): Promise<void> {
 }
 
 function client() {
-  return context.store.get(apiClient$)(userConnectorsContract);
+  return context.store.get(apiClient$)(userBuiltinConnectorsContract);
 }
 
 test("Service requests carry stable client context and a unique trace", async () => {
   const observedHeaders: ObservedClientHeaders[] = [];
-  context.mocks.api(userConnectorsContract.get, ({ request, respond }) => {
-    observedHeaders.push(observedClientHeaders(request));
-    return respond(200, { enabledConnectorSlugs: [] });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.get,
+    ({ request, respond }) => {
+      observedHeaders.push(observedClientHeaders(request));
+      return respond(200, { enabledConnectorSlugs: [] });
+    },
+  );
 
   await setupPage({
     appVersion: APP_VERSION,
@@ -97,7 +100,7 @@ test("Service requests carry stable client context and a unique trace", async ()
 });
 
 test("An empty service error still gives the user a useful status", async () => {
-  context.mocks.api(userConnectorsContract.get, ({ respond }) => {
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(403, {
       error: { code: "FORBIDDEN", message: "" },
     });

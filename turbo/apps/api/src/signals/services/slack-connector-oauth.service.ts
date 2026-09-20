@@ -24,7 +24,7 @@ import { safeJsonParse, tapError } from "../utils";
 import { connectorActionResolver } from "./connector-action-resolver.service";
 import {
   connectorConnectionWriteFailureMessage,
-  upsertConnectorTokenConnection$,
+  upsertBuiltinConnectorTokenConnection$,
 } from "./connector-data.service";
 import {
   claimConnectorOAuthState,
@@ -422,7 +422,7 @@ const finishSlackConnectorOAuth$ = command(
       await set(storeInstallation$, { context, oauth }, signal);
     }
     const connector = await set(
-      upsertConnectorTokenConnection$,
+      upsertBuiltinConnectorTokenConnection$,
       {
         orgId: context.orgId,
         userId: context.userId,

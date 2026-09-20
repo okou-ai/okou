@@ -24,8 +24,8 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
-  connectorManualGrantContract,
-  connectorOauthStartContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorOauthStartContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   onboardingCompleteContract,
@@ -823,7 +823,7 @@ test("Onboarding OAuth can be cancelled and retried", async () => {
   });
   context.mocks.browser.open(authWindow);
   context.mocks.api(
-    connectorOauthStartContract.start,
+    builtinConnectorOauthStartContract.start,
     ({ params, respond }) => {
       expect(params.connectorSlug).toBe("github");
       return respond(200, {
@@ -903,7 +903,7 @@ test("An existing account connection is recognized during onboarding", async () 
 
 test("Ahrefs can be connected for the default agent during onboarding", async () => {
   context.mocks.api(
-    connectorManualGrantContract.connect,
+    builtinConnectorManualGrantContract.connect,
     ({ body, params, respond }) => {
       expect(params.connectorSlug).toBe("ahrefs");
       expect(body.authMethod).toBe("api-token");

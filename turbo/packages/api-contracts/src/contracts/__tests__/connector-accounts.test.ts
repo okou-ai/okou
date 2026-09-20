@@ -11,12 +11,12 @@ import {
 } from "../connector-accounts";
 import { chatThreadConnectorSelectionContract } from "../chat-threads";
 import {
-  connectorExternalCodeSessionContract,
-  connectorManualGrantContract,
-  connectorNoAuthGrantContract,
-  connectorOauthDeviceAuthSessionContract,
-  connectorOauthStartContract,
-  connectorOpenIdStartContract,
+  builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
+  builtinConnectorOauthStartContract,
+  builtinConnectorOpenIdStartContract,
 } from "../connectors";
 import {
   customConnectorOAuth2Contract,
@@ -88,27 +88,27 @@ describe("connector account contracts", () => {
 
   it("requires account intent on app-owned connection mutations", () => {
     expect(
-      connectorOauthStartContract.start.body.safeParse({
+      builtinConnectorOauthStartContract.start.body.safeParse({
         authMethod: "oauth",
       }).success,
     ).toBe(false);
     expect(
-      connectorOpenIdStartContract.start.body.safeParse({
+      builtinConnectorOpenIdStartContract.start.body.safeParse({
         authMethod: "openid",
       }).success,
     ).toBe(false);
     expect(
-      connectorNoAuthGrantContract.connect.body.safeParse({
+      builtinConnectorNoAuthGrantContract.connect.body.safeParse({
         authMethod: "none",
       }).success,
     ).toBe(false);
     expect(
-      connectorOauthDeviceAuthSessionContract.create.body.safeParse({
+      builtinConnectorOauthDeviceAuthSessionContract.create.body.safeParse({
         authMethod: "oauth-device",
       }).success,
     ).toBe(false);
     expect(
-      connectorExternalCodeSessionContract.create.body.safeParse({
+      builtinConnectorExternalCodeSessionContract.create.body.safeParse({
         authMethod: "external-code",
       }).success,
     ).toBe(false);
@@ -122,27 +122,27 @@ describe("connector account contracts", () => {
 
   it("requires explicit account intent for manual grants", () => {
     expect(
-      connectorManualGrantContract.connect.body.safeParse({
+      builtinConnectorManualGrantContract.connect.body.safeParse({
         authMethod: "api-token",
         values: { apiKey: "test" },
       }).success,
     ).toBe(false);
     expect(
-      connectorManualGrantContract.connect.body.safeParse({
+      builtinConnectorManualGrantContract.connect.body.safeParse({
         authMethod: "api-token",
         account: { intent: "single-account" },
         values: { apiKey: "test" },
       }).success,
     ).toBe(false);
     expect(
-      connectorManualGrantContract.connect.body.safeParse({
+      builtinConnectorManualGrantContract.connect.body.safeParse({
         authMethod: "api-token",
         account: { intent: "add", displayName: "Work" },
         values: { apiKey: "test" },
       }).success,
     ).toBe(true);
     expect(
-      connectorManualGrantContract.connect.body.safeParse({
+      builtinConnectorManualGrantContract.connect.body.safeParse({
         authMethod: "api-token",
         account: { intent: "reconnect", connectionId },
         values: { apiKey: "test" },

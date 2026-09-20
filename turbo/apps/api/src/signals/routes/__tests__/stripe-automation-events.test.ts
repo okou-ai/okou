@@ -5,7 +5,7 @@ import {
   connectorAccountsContract,
   type ConnectorAccountConnection,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   testStripeAutomationEventFixtureContract,
   type TestStripeAutomationEventFixtureAction,
@@ -72,7 +72,7 @@ interface Scenario {
   readonly workflowId: string;
   readonly automationId: string;
   readonly chatThreadId: string;
-  readonly connector: ConnectorResponse;
+  readonly connector: BuiltinConnectorResponse;
   readonly runnerGroup: string;
 }
 
@@ -109,7 +109,7 @@ async function connectStripeOAuth(
   actor: ApiTestUser,
   accountId: string,
   livemode = true,
-): Promise<ConnectorResponse> {
+): Promise<BuiltinConnectorResponse> {
   mockStripeConnectorOAuth({ accountId, livemode });
   const started = await connectors.startOauth(actor, "stripe", "oauth");
   const state = new URL(started.authorizationUrl).searchParams.get("state");

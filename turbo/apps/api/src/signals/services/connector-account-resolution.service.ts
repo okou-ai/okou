@@ -21,6 +21,7 @@ export interface ConnectorAccountResolutionRequest {
 
 interface ResolvedConnectorAccount {
   readonly authMethod: string;
+  readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorId: string;
   readonly storageVersion: number;
   readonly target: ConnectorAccountTarget;
@@ -38,6 +39,7 @@ type ConnectorAccountResolution =
 
 interface ConnectorAccountIdentityRow {
   readonly authMethod: string;
+  readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorId: string;
   readonly connectorSlug: string | null;
   readonly customConnectorId: string | null;
@@ -117,6 +119,7 @@ function targetCondition(
 function identitySelection() {
   return {
     authMethod: connectors.authMethod,
+    automaticAuthType: connectors.automaticAuthType,
     connectorId: connectors.id,
     connectorSlug: connectors.connectorSlug,
     customConnectorId: connectors.customConnectorId,
@@ -199,6 +202,7 @@ function resolved(
     kind: "resolved",
     account: {
       authMethod: row.authMethod,
+      automaticAuthType: row.automaticAuthType,
       connectorId: row.connectorId,
       storageVersion: row.storageVersion,
       target: connectorAccountTargetFromRow(row),

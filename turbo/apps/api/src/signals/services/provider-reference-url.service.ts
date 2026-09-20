@@ -1,10 +1,7 @@
+import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import {
-  hostedDeployments,
-  hostedSites,
-  type HostedSiteManifest,
-} from "@okouai/db/schema/hosted-site";
+import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { badRequestMessage } from "../../lib/error";

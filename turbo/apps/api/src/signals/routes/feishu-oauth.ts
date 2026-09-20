@@ -40,7 +40,7 @@ import {
   startCustomConnectorOAuth2$,
   storeCustomConnectorOAuth2Connection,
   type CustomConnectorCustomOAuthStateContext,
-  type OAuthTokenResult,
+  type CustomConnectorOAuthTokenResult,
 } from "../services/custom-connector-oauth2.service";
 import {
   ensureFeishuCustomConnector$,
@@ -273,7 +273,7 @@ async function exchangeOAuthTokenAndUserInfo(
   signal: AbortSignal,
 ): Promise<
   | {
-      readonly token: OAuthTokenResult;
+      readonly token: CustomConnectorOAuthTokenResult;
       readonly userInfo: FeishuUserInfo;
     }
   | undefined
@@ -447,7 +447,7 @@ async function persistFeishuOAuthConnection(
     readonly state: FeishuConnectionState;
     readonly installation: FeishuInstallationOAuthRow;
     readonly connector: CustomConnectorHttpRow;
-    readonly token: OAuthTokenResult;
+    readonly token: CustomConnectorOAuthTokenResult;
     readonly userInfo: FeishuUserInfo;
     readonly featureContext: FeatureSwitchContext;
   },
@@ -576,7 +576,7 @@ async function finishFeishuOAuthConnection(
     readonly state: FeishuConnectionState;
     readonly installation: FeishuInstallationOAuthRow;
     readonly connector: CustomConnectorHttpRow;
-    readonly token: OAuthTokenResult;
+    readonly token: CustomConnectorOAuthTokenResult;
     readonly userInfo: FeishuUserInfo;
     readonly expectedOpenId?: string;
     readonly featureContext: FeatureSwitchContext;

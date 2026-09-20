@@ -195,7 +195,7 @@ describe("Lark integration", () => {
     };
   }
 
-  it("isolates agent selection and default resets between Feishu and Lark", async () => {
+  async function agentSelectionFixture() {
     const { actor, client, larkClient, install, defaultAgentId } =
       await fixture();
     runsApi.configureRunnerGroup();
@@ -332,7 +332,7 @@ describe("Lark integration", () => {
       expect(response.status).toBe(200);
       await flushWaitUntilForTest();
     }
-    async function expectAgent(platform: FeishuPlatform, agentId: string) {
+    async function getAgentRun(platform: FeishuPlatform) {
       const prompt = `Check ${platform} selection ${randomUUID()}`;
       await send(platform, prompt);
       mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
@@ -349,37 +349,86 @@ describe("Lark integration", () => {
       if (!run) {
         throw new Error("Expected integration run");
       }
-      expect(run).toMatchObject({ agentId, triggerSource: platform });
       await runsApi.requestCancelRun(actor, run.id, [200]);
       await flushWaitUntilForTest();
+      return run;
     }
-    await send("feishu", `/switch ${feishuAgent.agentId}`);
-    await expectAgent("lark", defaultAgentId);
-    await send("lark", `/switch ${larkAgent.agentId}`);
-    await expectAgent("feishu", feishuAgent.agentId);
-    await expectAgent("lark", larkAgent.agentId);
-    await send("feishu", "/switch default");
-    await expectAgent("feishu", defaultAgentId);
-    await expectAgent("lark", larkAgent.agentId);
-    await send("feishu", `/switch ${feishuAgent.agentId}`);
-    await send("lark", "/switch default");
-    await expectAgent("lark", defaultAgentId);
-    await expectAgent("feishu", feishuAgent.agentId);
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    await accept(
-      client.removeInstallation({
-        headers,
-        params: { installationId: installations.feishu.id },
-      }),
-      [200],
-    );
-    await accept(
-      larkClient.removeInstallation({
-        headers,
-        params: { installationId: installations.lark.id },
-      }),
-      [200],
-    );
+    async function removeInstallations() {
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      await accept(
+        client.removeInstallation({
+          headers,
+          params: { installationId: installations.feishu.id },
+        }),
+        [200],
+      );
+      await accept(
+        larkClient.removeInstallation({
+          headers,
+          params: { installationId: installations.lark.id },
+        }),
+        [200],
+      );
+    }
+    return {
+      defaultAgentId,
+      feishuAgentId: feishuAgent.agentId,
+      larkAgentId: larkAgent.agentId,
+      send,
+      getAgentRun,
+      removeInstallations,
+    };
+  }
+
+  it("keeps agent selection scoped to Feishu and Lark", async () => {
+    const scenario = await agentSelectionFixture();
+    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
+    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
+      agentId: scenario.defaultAgentId,
+      triggerSource: "lark",
+    });
+    await scenario.send("lark", `/switch ${scenario.larkAgentId}`);
+    await expect(scenario.getAgentRun("feishu")).resolves.toMatchObject({
+      agentId: scenario.feishuAgentId,
+      triggerSource: "feishu",
+    });
+    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
+      agentId: scenario.larkAgentId,
+      triggerSource: "lark",
+    });
+    await scenario.removeInstallations();
+  });
+
+  it("keeps Lark selection when Feishu returns to default", async () => {
+    const scenario = await agentSelectionFixture();
+    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
+    await scenario.send("lark", `/switch ${scenario.larkAgentId}`);
+    await scenario.send("feishu", "/switch default");
+    await expect(scenario.getAgentRun("feishu")).resolves.toMatchObject({
+      agentId: scenario.defaultAgentId,
+      triggerSource: "feishu",
+    });
+    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
+      agentId: scenario.larkAgentId,
+      triggerSource: "lark",
+    });
+    await scenario.removeInstallations();
+  });
+
+  it("keeps Feishu selection when Lark returns to default", async () => {
+    const scenario = await agentSelectionFixture();
+    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
+    await scenario.send("lark", `/switch ${scenario.larkAgentId}`);
+    await scenario.send("lark", "/switch default");
+    await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
+      agentId: scenario.defaultAgentId,
+      triggerSource: "lark",
+    });
+    await expect(scenario.getAgentRun("feishu")).resolves.toMatchObject({
+      agentId: scenario.feishuAgentId,
+      triggerSource: "feishu",
+    });
+    await scenario.removeInstallations();
   });
 
   it("keeps Lark installations separate from the legacy Feishu default", async () => {

@@ -82,7 +82,7 @@ function sentFilenames(
   });
 }
 
-test("Attach supported files by picker or drag and drop", async () => {
+async function setupAttachmentInputMethods() {
   const thread = continuityThread(9, 1, "Attachment input methods");
   const workspace = installContinuityWorkspace(context, {
     caseId: 9,
@@ -111,8 +111,13 @@ test("Attach supported files by picker or drag and drop", async () => {
     path: `/chats/${thread.id}`,
     ...workspace.pageOptions,
   });
-
   await messageComposer();
+  return { contentTypes, transferCredentials };
+}
+
+test("Attach supported files with the file picker", async () => {
+  const { contentTypes, transferCredentials } =
+    await setupAttachmentInputMethods();
   const ordinary = new File(["# Notes"], "release-notes.md");
   const uncommon = new File(["custom"], "sample.uncommon");
   await userEvent.upload(composerFileInput(), [ordinary, uncommon]);
@@ -136,7 +141,10 @@ test("Attach supported files by picker or drag and drop", async () => {
       previewBypass: null,
     },
   ]);
+});
 
+test("Accept supported drops and reject an oversized dropped file", async () => {
+  const { contentTypes } = await setupAttachmentInputMethods();
   const dropped = new File(["drop"], "dropped.txt", { type: "text/plain" });
   const oversized = new File(["too large"], "archive.iso", {
     type: "application/octet-stream",

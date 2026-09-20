@@ -55,7 +55,7 @@ import {
   orgMembersContract,
   orgMembershipRequestsContract,
 } from "@okouai/api-contracts/contracts/org-member-routes";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   userPreferencesContract,
   type UpdateUserPreferencesRequest,
@@ -1201,7 +1201,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       agentId: string,
     ): Promise<readonly string[]> {
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
-        userConnectorsContract,
+        userBuiltinConnectorsContract,
       );
       const response = await accept(
         client.get({

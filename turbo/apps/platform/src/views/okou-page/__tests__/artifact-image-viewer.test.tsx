@@ -345,3 +345,90 @@ test("The image viewer supports next image within one assistant response", async
     screen.queryByRole("status", { name: "Loading artifacts" }),
   ).toBeNull();
 });
+
+test("The image viewer keeps its zoom level across a fullscreen round trip", async () => {
+  const imageUrl =
+    "https://cdn.vm7.io/artifacts/test/image-viewer-fullscreen/only.png";
+  const decode = context.mocks.deferred<void>();
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    return this.src === imageUrl ? decode.promise : Promise.resolve();
+  });
+  const runId = "run-image-viewer-fullscreen";
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(200, {
+      runs: [
+        {
+          runId,
+          files: [
+            artifactFile(imageUrl, {
+              id: "artifact-image-viewer-fullscreen",
+              filename: "only.png",
+            }),
+          ],
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    chatEvents: [
+      {
+        id: "msg-image-viewer-fullscreen",
+        role: "assistant",
+        content: `![only.png](${imageUrl})`,
+        runId,
+        runEventId: "event:0",
+        sequenceNumber: 0,
+        createdAt: "2026-03-10T00:00:00Z",
+      },
+    ],
+  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  const inlineImage = await screen.findByAltText("only.png");
+  const previewButton = inlineImage.closest<HTMLElement>("button");
+  if (!previewButton) {
+    throw new Error("Expected the generated image to open a preview");
+  }
+  fireEvent.load(inlineImage);
+  click(previewButton);
+  const lightboxImage = await waitFor(() => {
+    return getLightboxImage();
+  });
+  setImageDimensions(lightboxImage, 1600, 900);
+  await finishLightboxImageDecode(lightboxImage, () => {
+    return decode.resolve();
+  });
+
+  // The step size belongs to the zoom canvas; this asserts only that zooming
+  // moved the level and that the fullscreen toggle preserves whatever the
+  // viewer is currently showing.
+  const zoomLevel = screen.getByTestId("artifact-dialog-image-zoom-level");
+  expect(zoomLevel.textContent).toBe("100%");
+  click(getButtonByName("Zoom in"));
+  await waitFor(() => {
+    expect(zoomLevel.textContent).not.toBe("100%");
+  });
+  const zoomedLevel = zoomLevel.textContent;
+
+  click(getButtonByName("Enter fullscreen"));
+  await waitFor(() => {
+    return getButtonByName("Exit fullscreen");
+  });
+  expect(zoomLevel.textContent).toBe(zoomedLevel);
+
+  click(getButtonByName("Exit fullscreen"));
+  await waitFor(() => {
+    return getButtonByName("Enter fullscreen");
+  });
+  expect(zoomLevel.textContent).toBe(zoomedLevel);
+});

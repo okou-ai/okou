@@ -12,12 +12,12 @@ import {
 } from "drizzle-orm/pg-core";
 import type { StoredConnectorAccountMutation } from "@okouai/db/jsonb-contracts/connector-account-mutation";
 
-export const connectorExternalCodeSessionStatusEnum = pgEnum(
+export const builtinConnectorExternalCodeSessionStatusEnum = pgEnum(
   "connector_external_code_session_status",
   ["pending", "completing", "complete", "expired", "error"],
 );
 
-export const connectorExternalCodeSessions = pgTable(
+export const builtinConnectorExternalCodeSessions = pgTable(
   "connector_external_code_sessions",
   {
     id: uuid("id").defaultRandom().primaryKey(),
@@ -27,7 +27,7 @@ export const connectorExternalCodeSessions = pgTable(
     authorizeAgent: boolean("authorize_agent").default(false).notNull(),
     connectorSlug: varchar("connector_slug", { length: 64 }).notNull(),
     authMethod: varchar("auth_method", { length: 50 }).notNull(),
-    status: connectorExternalCodeSessionStatusEnum("status")
+    status: builtinConnectorExternalCodeSessionStatusEnum("status")
       .default("pending")
       .notNull(),
     sessionTokenHash: varchar("session_token_hash", { length: 128 }).notNull(),

@@ -3788,6 +3788,7 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     readyScrollAfterRenderRequest$: events.readyScrollAfterRenderRequest$,
     initialEventsReady$: events.initialEventsReady$,
     assistantErrorRecovery$: events.assistantErrorRecovery$,
+    assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
     retryAssistantError$: events.retryAssistantError$,
     resetCodexSubscriptionAndRetry$: events.resetCodexSubscriptionAndRetry$,
     eventImageGroups$: events.eventImageGroups$,

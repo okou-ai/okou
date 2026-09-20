@@ -13,8 +13,7 @@ import { chromium, webkit, type Page } from "@playwright/test";
 const scenarios = {
   recovery: {
     frame: '[data-testid="assistant-error-card-shell"]',
-    pending:
-      '[data-testid="assistant-error-card-shell"]:not(:has([data-testid="assistant-error-recovery"]))',
+    pending: '[data-testid="assistant-error-card-loading"]',
     ready: '[data-testid="assistant-error-recovery"]',
     request: /^\/api\/runs\/[0-9a-f-]{36}$/u,
   },

@@ -37,12 +37,16 @@ import {
   hostedDeployments,
   hostedSites,
   privateHostedDeployments,
-} from "@okouai/db/schema/hosted-site";
+} from "@okouai/db/runtime/hosted-site";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { z } from "zod";
 
 import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
+import {
+  nullableDriverValueDecoder,
+  pgIntegerDecoder,
+} from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import {
   isSharedThreadArtifactLogicalKey,
@@ -1000,7 +1004,10 @@ async function hostedSiteDetail(
         requestedSlug: hostedSites.requestedSlug,
         publicSlug: hostedSites.publicSlug,
         url: privateHostedDeployments.url,
-        deploymentVersion: privateHostedDeployments.deploymentVersion,
+        deploymentVersion:
+          sql`(${privateHostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+            pgIntegerDecoder,
+          ),
         entrypoint: privateHostedDeployments.entrypoint,
         spaFallback: privateHostedDeployments.spaFallback,
       })
@@ -1031,7 +1038,10 @@ async function hostedSiteDetail(
       slug: hostedSites.slug,
       requestedSlug: hostedSites.requestedSlug,
       publicSlug: hostedSites.publicSlug,
-      deploymentVersion: hostedSites.activeDeploymentVersion,
+      deploymentVersion:
+        sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+          nullableDriverValueDecoder(pgIntegerDecoder),
+        ),
       url: hostedDeployments.url,
       entrypoint: hostedDeployments.entrypoint,
       spaFallback: hostedDeployments.spaFallback,

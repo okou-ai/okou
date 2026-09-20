@@ -73,6 +73,7 @@ export function getModelReasoningEfforts(
     case "gpt-5.6-sol":
     case "gpt-5.6-terra":
     case "gpt-6-astra":
+    case "gpt-6-sol":
       return CODEX_REASONING_EFFORTS;
     case "gpt-5.6-luna":
       return ["low", "medium", "high", "xhigh", "max"];
@@ -112,6 +113,7 @@ export function defaultModelReasoningEffort(
     : model;
   switch (normalizeBuiltInModelId(bareModel ?? "")) {
     case "gpt-6-astra":
+    case "gpt-6-sol":
     case "gpt-5.6-sol":
     case "gpt-5.6-terra":
     case "gpt-5.6-luna":
