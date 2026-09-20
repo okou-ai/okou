@@ -13201,7 +13201,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(sameUserRuntime.body.results[0]).toMatchObject({
       target: { kind: "builtin", connectorSlug: "missing-builtin" },
-      state: "unresolved",
+      state: "absent",
       reason: "connector-unavailable",
     });
     expect(sameUserRuntime.body.results[1]).toMatchObject({
