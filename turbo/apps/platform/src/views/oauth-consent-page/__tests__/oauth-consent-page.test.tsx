@@ -44,6 +44,14 @@ test.each(["app.vm7.ai", "app.okou.ai"])(
     expect(consent).toHaveAttribute("data-client-id", CLIENT_ID);
     expect(consent).toHaveAttribute("data-clerk-theme", "simple");
     expect(consent).toHaveAttribute("data-clerk-logo-link-url", "/");
+    expect(consent).toHaveAttribute(
+      "data-clerk-primary-color",
+      "hsl(var(--primary))",
+    );
+    expect(consent).toHaveAttribute(
+      "data-clerk-primary-foreground",
+      "hsl(var(--primary-foreground))",
+    );
     expect(screen.getByTestId("app-auth-layout")).toContainElement(
       screen.getByTestId("app-oauth-consent"),
     );

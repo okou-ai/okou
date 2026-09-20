@@ -213,6 +213,9 @@ export function OAuthConsent({
     createElement("div", {
       "data-client-id": new URLSearchParams(location.search).get("client_id"),
       "data-clerk-logo-link-url": appearance?.options?.logoLinkUrl,
+      "data-clerk-primary-color": appearance?.variables?.colorPrimary,
+      "data-clerk-primary-foreground":
+        appearance?.variables?.colorPrimaryForeground,
       "data-clerk-theme": appearance?.theme,
       "data-testid": "clerk-oauth-consent",
       hidden: !mounted,

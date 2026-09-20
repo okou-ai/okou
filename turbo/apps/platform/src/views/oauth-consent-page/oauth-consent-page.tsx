@@ -6,7 +6,7 @@ import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts
 import { resolveAuthBrandContext } from "../../signals/auth.ts";
 import { theme$ } from "../../signals/theme.ts";
 import { AuthShell } from "../auth/auth-shell.tsx";
-import { getClerkAuthAppearance } from "../auth-v1/clerk-auth-appearance.ts";
+import { getClerkOAuthConsentAppearance } from "../auth-v1/clerk-auth-appearance.ts";
 
 function OAuthConsentLoadingFallback() {
   const { t } = useTranslation();
@@ -39,7 +39,10 @@ export function OAuthConsentPage() {
           ref={contentReady}
         >
           <OAuthConsent
-            appearance={getClerkAuthAppearance(authBrand.homeUrl, theme)}
+            appearance={getClerkOAuthConsentAppearance(
+              authBrand.homeUrl,
+              theme,
+            )}
             fallback={<OAuthConsentLoadingFallback />}
           />
         </div>
