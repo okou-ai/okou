@@ -458,8 +458,10 @@ export async function getStartedStatus(
     ).toISOString(),
     claimedToday: Boolean(today),
     checkinStreak: countCheckinStreak(
-      checkinDays.map((row) => {
-        return row.rewardKey.slice(-10);
+      checkinDays.flatMap((row) => {
+        // A check-in always carries its day in the reward key, but the column
+        // is nullable for the quests that do not need one.
+        return row.rewardKey === null ? [] : [row.rewardKey.slice(-10)];
       }),
       getStartedUtcDay(at),
     ),
