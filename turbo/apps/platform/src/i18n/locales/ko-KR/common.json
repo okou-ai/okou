@@ -1420,6 +1420,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "",
+        "checkedIn": "",
         "checkin": {
           "action": "출석하기",
           "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
@@ -1432,8 +1434,9 @@
           "name": "커넥터 연결하기",
           "unit": "커넥터당"
         },
+        "earned": "",
+        "howRewardsWork": "",
         "inReview": "검토 중",
-        "inReviewDescription": "제출됨, 검토 대기 중",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} 크레딧",
@@ -1489,12 +1492,9 @@
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
-        "pendingInvitations": "대기 중인 초대: {{amount}}",
-        "personalBalanceNote": "보상은 지급 후 7일이 지나면 만료돼요. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
-        "progressLabel": "시작하기 진행 상황",
-        "rejectedDescription": "이 게시물은 조건에 맞지 않아요. Okou를 언급한 다른 공개 게시물을 제출하세요.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "보상을 받은 커넥터: {{amount}}",
+        "notEligible": "",
+        "pendingState": "",
+        "rewardsNote": "",
         "share": {
           "action": "공유",
           "description": "게시한 뒤 링크를 붙여넣기",
@@ -1514,8 +1514,9 @@
           "name": "Slack에 {{assistantName}} 추가하기"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "작업을 시도하고 크레딧을 받으세요.",
+        "streak": "",
         "title": "시작하기",
+        "toGo": "",
         "workflow": {
           "action": "만들기",
           "description": "반복 작업을 재사용 가능한 스킬로 만들기",

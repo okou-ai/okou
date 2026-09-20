@@ -1421,6 +1421,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "",
+        "checkedIn": "",
         "checkin": {
           "action": "चेक इन करें",
           "description": "दिन में एक बार चेक इन करें। 00:00 UTC पर रीसेट होता है।",
@@ -1433,8 +1435,9 @@
           "name": "कनेक्टर जोड़ें",
           "unit": "प्रति कनेक्टर"
         },
+        "earned": "",
+        "howRewardsWork": "",
         "inReview": "समीक्षा में",
-        "inReviewDescription": "भेजा गया, समीक्षा बाकी है",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} क्रेडिट",
@@ -1490,12 +1493,9 @@
           "name": "अपनी टीम को बुलाएँ",
           "unit": "प्रति सदस्य"
         },
-        "pendingInvitations": "लंबित निमंत्रण: {{amount}}",
-        "personalBalanceNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
-        "progressLabel": "शुरुआत की प्रगति",
-        "rejectedDescription": "यह पोस्ट योग्य नहीं है। Okou का उल्लेख करने वाली कोई दूसरी सार्वजनिक पोस्ट भेजें।",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "पुरस्कृत कनेक्टर: {{amount}}",
+        "notEligible": "",
+        "pendingState": "",
+        "rewardsNote": "",
         "share": {
           "action": "शेयर करें",
           "description": "पोस्ट करें, फिर लिंक यहाँ चिपकाएँ",
@@ -1515,8 +1515,9 @@
           "name": "{{assistantName}} को Slack में जोड़ें"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "कोई काम आज़माएँ और क्रेडिट पाएँ।",
+        "streak": "",
         "title": "शुरू करें",
+        "toGo": "",
         "workflow": {
           "action": "बनाएँ",
           "description": "बार-बार होने वाले काम को दोबारा इस्तेमाल होने वाली स्किल बनाएँ",

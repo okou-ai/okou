@@ -1445,6 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "",
+        "checkedIn": "",
         "checkin": {
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
@@ -1457,8 +1459,9 @@
           "name": "Connecter un connecteur",
           "unit": "par connecteur"
         },
+        "earned": "",
+        "howRewardsWork": "",
         "inReview": "En cours d'examen",
-        "inReviewDescription": "Envoyé, en attente d'examen",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} crédits",
@@ -1514,12 +1517,9 @@
           "name": "Invitez votre équipe",
           "unit": "par membre"
         },
-        "pendingInvitations": "Invitations en attente : {{amount}}",
-        "personalBalanceNote": "Les récompenses expirent 7 jours après leur attribution. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
-        "progressLabel": "Progression du démarrage",
-        "rejectedDescription": "Cette publication n’est pas éligible. Envoyez une autre publication publique mentionnant Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Connecteurs récompensés : {{amount}}",
+        "notEligible": "",
+        "pendingState": "",
+        "rewardsNote": "",
         "share": {
           "action": "Partager",
           "description": "Publiez, puis collez le lien",
@@ -1539,8 +1539,9 @@
           "name": "Ajouter {{assistantName}} à Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Essayez une tâche et gagnez des crédits.",
+        "streak": "",
         "title": "Démarrer",
+        "toGo": "",
         "workflow": {
           "action": "Créer",
           "description": "Transformez une tâche répétitive en compétence réutilisable",

@@ -1445,6 +1445,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "",
+        "checkedIn": "",
         "checkin": {
           "action": "Registrar visita",
           "description": "Registra tu visita una vez al día. Se reinicia a las 00:00 UTC.",
@@ -1457,8 +1459,9 @@
           "name": "Conectar un conector",
           "unit": "por conector"
         },
+        "earned": "",
+        "howRewardsWork": "",
         "inReview": "En revisión",
-        "inReviewDescription": "Enviado, pendiente de revisión",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} créditos",
@@ -1514,12 +1517,9 @@
           "name": "Invita a tu equipo",
           "unit": "por miembro"
         },
-        "pendingInvitations": "Invitaciones pendientes: {{amount}}",
-        "personalBalanceNote": "Las recompensas caducan 7 días después de recibirlas. Las de Slack van a la organización; las demás, a tu saldo personal.",
-        "progressLabel": "Progreso de los primeros pasos",
-        "rejectedDescription": "Esta publicación no cumple los requisitos. Envía otra publicación pública que mencione a Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Conectores recompensados: {{amount}}",
+        "notEligible": "",
+        "pendingState": "",
+        "rewardsNote": "",
         "share": {
           "action": "Compartir",
           "description": "Publícalo y pega el enlace",
@@ -1539,8 +1539,9 @@
           "name": "Añadir {{assistantName}} a Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Prueba una tarea y gana créditos.",
+        "streak": "",
         "title": "Primeros pasos",
+        "toGo": "",
         "workflow": {
           "action": "Crear",
           "description": "Convierte una tarea repetida en una habilidad reutilizable",

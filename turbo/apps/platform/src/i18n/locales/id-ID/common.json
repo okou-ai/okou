@@ -1420,6 +1420,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "",
+        "checkedIn": "",
         "checkin": {
           "action": "Check in",
           "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
@@ -1432,8 +1434,9 @@
           "name": "Hubungkan konektor",
           "unit": "per konektor"
         },
+        "earned": "",
+        "howRewardsWork": "",
         "inReview": "Sedang ditinjau",
-        "inReviewDescription": "Terkirim, menunggu ditinjau",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} kredit",
@@ -1489,12 +1492,9 @@
           "name": "Undang tim kamu",
           "unit": "per anggota"
         },
-        "pendingInvitations": "Undangan tertunda: {{amount}}",
-        "personalBalanceNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
-        "progressLabel": "Progres memulai",
-        "rejectedDescription": "Postingan ini tidak memenuhi syarat. Kirim postingan publik lain yang menyebut Okou.",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "Konektor yang diberi hadiah: {{amount}}",
+        "notEligible": "",
+        "pendingState": "",
+        "rewardsNote": "",
         "share": {
           "action": "Bagikan",
           "description": "Posting, lalu tempel tautannya",
@@ -1514,8 +1514,9 @@
           "name": "Tambahkan {{assistantName}} ke Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Coba tugas dan dapatkan kredit.",
+        "streak": "",
         "title": "Mulai",
+        "toGo": "",
         "workflow": {
           "action": "Buat",
           "description": "Ubah tugas berulang jadi skill yang bisa dipakai ulang",

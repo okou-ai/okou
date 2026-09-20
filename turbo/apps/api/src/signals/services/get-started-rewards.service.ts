@@ -35,6 +35,32 @@ export function getStartedUtcDay(at: Date): string {
   return at.toISOString().slice(0, 10);
 }
 
+/**
+ * Consecutive check-in days, counting back from today.
+ *
+ * Check-in claims dedupe on `checkin:{userId}:{utcDay}`, so the day is already
+ * in the reward key and the streak needs no schema of its own. A user who has
+ * not checked in yet today still has a live streak -- it only breaks once a
+ * whole day passes without a claim -- so the walk starts at today and is
+ * allowed to begin at yesterday instead.
+ */
+export function countCheckinStreak(
+  days: readonly string[],
+  today: string,
+): number {
+  const seen = new Set(days);
+  const cursor = new Date(`${today}T00:00:00.000Z`);
+  if (!seen.has(today)) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  let streak = 0;
+  while (seen.has(cursor.toISOString().slice(0, 10))) {
+    streak += 1;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  return streak;
+}
+
 export function getStartedClaimResponse(
   row: GetStartedClaimRow,
 ): GetStartedClaim {
@@ -351,6 +377,19 @@ export async function getStartedStatus(
       ),
     )
     .limit(1);
+  // The reward key ends in the UTC day, and ISO days sort chronologically, so
+  // the most recent claims come back first without a date column of their own.
+  const checkinDays = await db
+    .select({ rewardKey: getStartedClaims.rewardKey })
+    .from(getStartedClaims)
+    .where(
+      and(
+        eq(getStartedClaims.beneficiaryUserId, args.userId),
+        eq(getStartedClaims.questKey, "checkin"),
+      ),
+    )
+    .orderBy(desc(getStartedClaims.rewardKey))
+    .limit(400);
   const [share] = await db
     .select()
     .from(getStartedClaims)
@@ -418,6 +457,12 @@ export async function getStartedStatus(
       Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1),
     ).toISOString(),
     claimedToday: Boolean(today),
+    checkinStreak: countCheckinStreak(
+      checkinDays.map((row) => {
+        return row.rewardKey.slice(-10);
+      }),
+      getStartedUtcDay(at),
+    ),
     quests,
     shareClaim: share ? getStartedClaimResponse(share) : null,
     recentGrants: recent.map(getStartedClaimResponse),

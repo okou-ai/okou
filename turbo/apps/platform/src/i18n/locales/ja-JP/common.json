@@ -1420,6 +1420,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "",
+        "checkedIn": "",
         "checkin": {
           "action": "チェックイン",
           "description": "1日1回チェックイン。UTC 00:00にリセットされます。",
@@ -1432,8 +1434,9 @@
           "name": "コネクタを接続",
           "unit": "コネクタごと"
         },
+        "earned": "",
+        "howRewardsWork": "",
         "inReview": "確認中",
-        "inReviewDescription": "送信済み、確認待ち",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} クレジット",
@@ -1489,12 +1492,9 @@
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
-        "pendingInvitations": "承諾待ちの招待: {{amount}}",
-        "personalBalanceNote": "報酬は付与から7日後に失効します。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
-        "progressLabel": "セットアップの進捗",
-        "rejectedDescription": "この投稿は対象外です。Okou に言及した別の公開投稿を送信してください。",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "報酬獲得済みコネクタ: {{amount}}",
+        "notEligible": "",
+        "pendingState": "",
+        "rewardsNote": "",
         "share": {
           "action": "シェア",
           "description": "投稿して、リンクを貼り付け",
@@ -1514,8 +1514,9 @@
           "name": "{{assistantName}} を Slack に追加"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "タスクを試してクレジットを獲得。",
+        "streak": "",
         "title": "はじめる",
+        "toGo": "",
         "workflow": {
           "action": "作成",
           "description": "繰り返しの作業を再利用できるスキルに変える",

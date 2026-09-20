@@ -90,10 +90,14 @@ export interface GetStartedSummary {
   readonly completed: number;
   readonly total: number;
   readonly earnedCredits: number;
+  /** Credits still claimable, which is what the panel leads with. */
+  readonly remainingCredits: number;
+  readonly checkinStreak: number;
 }
 export const getStartedSummary$ = computed(
   async (get): Promise<GetStartedSummary> => {
     const quests = await get(getStartedQuests$);
+    const status = await get(getStartedStatus$);
     return {
       completed: quests.filter((quest) => {
         return quest.status === "done";
@@ -106,9 +110,23 @@ export const getStartedSummary$ = computed(
         .reduce((sum, quest) => {
           return sum + quest.earnedCredits;
         }, 0),
+      remainingCredits: quests
+        .filter((quest) => {
+          return quest.canEarnMore && quest.status !== "inReview";
+        })
+        .reduce((sum, quest) => {
+          return sum + quest.rewardAmount;
+        }, 0),
+      checkinStreak: status?.checkinStreak ?? 0,
     };
   },
 );
+
+/** Whether the panel's reward note is unfolded. */
+export const rewardsNoteOpen$ = state(false);
+export const setRewardsNoteOpen$ = command(({ set }, open: boolean) => {
+  set(rewardsNoteOpen$, open);
+});
 
 /**
  * Which quest's intro dialog is open, if any.

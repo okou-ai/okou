@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import {
   CalendarCheck,
   Check,
+  ChevronRight,
   Coins,
   Link2,
   Route,
@@ -13,7 +14,6 @@ import {
 } from "lucide-react";
 import {
   Button,
-  buttonVariants,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -23,7 +23,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
 } from "@okouai/ui";
@@ -37,7 +36,9 @@ import {
   getStartedQuests$,
   getStartedSummary$,
   setCheckinClaimedOpen$,
+  rewardsNoteOpen$,
   setQuestIntroKey$,
+  setRewardsNoteOpen$,
   setShareDialogOpen$,
   setSharePostDraft$,
   shareDialogOpen$,
@@ -223,50 +224,11 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
  * the brand foreground so it still carries the row, and the unit stays muted
  * so the eye lands on the number.
  */
-function QuestReward({
-  amount,
-  unit,
-}: {
-  amount: number;
-  unit: string | null;
-}) {
-  const { t } = useTranslation();
+function QuestReward({ amount }: { amount: number }) {
   return (
-    <span className="font-semibold tabular-nums text-brand-text">
-      {t(
-        ($) => {
-          return $.chat.agentPage.getStarted.reward;
-        },
-        { amount: formatLocalizedNumber(amount) },
-      )}
-      {unit !== null && (
-        <span className="font-normal text-muted-foreground"> {unit}</span>
-      )}
-    </span>
-  );
-}
-
-/**
- * The row's press affordance.
- *
- * The row itself is the menu item, so this is a span: a control nested inside
- * an option is invalid for the menu's roles, and the row already owns the
- * click, the hover state and the keyboard focus. It borrows `buttonVariants`
- * rather than restating a button's geometry, so the two cannot drift, and it
- * is hidden from assistive technology because the row's own name already says
- * what activating it does.
- */
-function QuestAction({ label }: { label: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={buttonVariants({
-        variant: "neutral",
-        size: "xs",
-        className: "pointer-events-none shrink-0",
-      })}
-    >
-      {label}
+    <span className="flex items-center justify-end gap-1 text-sm font-semibold tabular-nums text-brand-text">
+      <Coins className="size-3 shrink-0" />
+      {formatLocalizedNumber(amount)}
     </span>
   );
 }
@@ -277,95 +239,85 @@ function QuestAction({ label }: { label: string }) {
 // quest fell back to the document's 16px text and lucide's 24px default, which
 // set the done rows a size above the rows beside them and pushed their titles
 // 8px further right than the rest of the column.
+// A one-line row: a 28px tile, the title column, and a 76px trailing slot the
+// figures right-align into. At one line the tile, not the text, sets the row
+// height, which is why it is 28 and not the 32 the two-line row used.
 const QUEST_ROW_CLASS =
-  "gap-3 px-3 py-2.5 text-sm [&_svg]:size-4 [&_svg]:shrink-0";
+  "grid grid-cols-[28px_minmax(0,1fr)_76px] items-center gap-3 px-3 py-2 text-sm [&_svg]:size-4 [&_svg]:shrink-0";
+
+/**
+ * The state a row carries, as one muted fragment after a middot.
+ *
+ * The descriptions moved to the intro dialogs, so the second line went with
+ * them; what is left is the part the dialog cannot know -- how far along this
+ * user is. Facts, not prose.
+ */
+function useQuestState(quest: GetStartedQuest): string | null {
+  const { t } = useTranslation();
+  if (quest.status === "inReview") {
+    return null;
+  }
+  if (quest.status === "rejected") {
+    return t(($) => {
+      return $.chat.agentPage.getStarted.notEligible;
+    });
+  }
+  if (quest.key === "invite" && quest.limit !== null) {
+    const counts = `${formatLocalizedNumber(quest.claimedCount)}/${formatLocalizedNumber(quest.limit)}`;
+    return quest.pendingCount > 0
+      ? `${counts} · ${t(
+          ($) => {
+            return $.chat.agentPage.getStarted.pendingState;
+          },
+          { amount: formatLocalizedNumber(quest.pendingCount) },
+        )}`
+      : counts;
+  }
+  if (quest.key === "connector" && quest.claimedCount > 0) {
+    return t(
+      ($) => {
+        return $.chat.agentPage.getStarted.addedState;
+      },
+      { amount: formatLocalizedNumber(quest.claimedCount) },
+    );
+  }
+  return null;
+}
 
 function QuestRowBody({
   quest,
   copy,
-  actionable,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
-  /** Whether the row opens something, so it earns a press affordance. */
-  actionable: boolean;
 }) {
   const { t } = useTranslation();
   const done = quest.status === "done" && !quest.canEarnMore;
   const earning = quest.canEarnMore && quest.status !== "inReview";
-  const description =
-    quest.status === "inReview"
-      ? t(($) => {
-          return $.chat.agentPage.getStarted.inReviewDescription;
-        })
-      : quest.status === "rejected"
-        ? t(($) => {
-            return $.chat.agentPage.getStarted.rejectedDescription;
-          })
-        : copy.description;
+  const state = useQuestState(quest);
   return (
     <>
-      {QUEST_ICONS[quest.key]}
-      <span className="min-w-0 flex-1">
-        <span
-          className={`block truncate ${done ? "text-muted-foreground" : ""}`}
-        >
-          {copy.name}
-        </span>
-        <span className="block text-xs text-muted-foreground">
-          {earning && (
-            <>
-              <QuestReward amount={quest.rewardAmount} unit={copy.unit} />
-              {" · "}
-            </>
-          )}
-          {description}
-        </span>
-        {quest.key === "invite" && quest.limit !== null && (
-          <span className="block text-xs text-muted-foreground">
-            {formatLocalizedNumber(quest.claimedCount)}/
-            {formatLocalizedNumber(quest.limit)}
-            {quest.pendingCount > 0 && (
-              <>
-                {" "}
-                ·{" "}
-                {t(
-                  ($) => {
-                    return $.chat.agentPage.getStarted.pendingInvitations;
-                  },
-                  {
-                    amount: formatLocalizedNumber(quest.pendingCount),
-                  },
-                )}
-              </>
-            )}
-          </span>
-        )}
-        {quest.key === "connector" && quest.claimedCount > 0 && (
-          <span className="block text-xs text-muted-foreground">
-            {t(
-              ($) => {
-                return $.chat.agentPage.getStarted.rewardedConnections;
-              },
-              {
-                amount: formatLocalizedNumber(quest.claimedCount),
-              },
-            )}
-          </span>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
+        {QUEST_ICONS[quest.key]}
+      </span>
+      <span className={`truncate ${done ? "text-muted-foreground" : ""}`}>
+        {copy.name}
+        {state !== null && (
+          <span className="text-muted-foreground"> · {state}</span>
         )}
       </span>
-      {/* One trailing slot, one meaning: finished, waiting, or pressable. */}
-      {done && <Check className="shrink-0 text-chart-green" />}
-      {quest.status === "inReview" && (
-        <span className="shrink-0 rounded-full bg-gray-50 px-2 py-0.5 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.chat.agentPage.getStarted.inReview;
-          })}
-        </span>
-      )}
-      {actionable && copy.action !== null && (
-        <QuestAction label={copy.action} />
-      )}
+      {/* One trailing slot, one meaning: finished, waiting, or what it pays. */}
+      <span className="flex items-center justify-end">
+        {done && <Check className="shrink-0 text-chart-green" />}
+        {quest.status === "inReview" && (
+          <span className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.inReview;
+            })}
+          </span>
+        )}
+        {earning && <QuestReward amount={quest.rewardAmount} />}
+      </span>
     </>
   );
 }
@@ -385,7 +337,7 @@ function QuestRow({
   pending?: boolean;
 }) {
   const body = (
-    <QuestRowBody quest={quest} copy={copy} actionable={onSelect !== null} />
+    <QuestRowBody quest={quest} copy={copy} />
   );
   const testId = `get-started-quest-${quest.key}`;
 
@@ -393,10 +345,7 @@ function QuestRow({
   // renders without a hover state rather than as a menu item that does nothing.
   if (onSelect === null) {
     return (
-      <div
-        className={`flex items-center ${QUEST_ROW_CLASS}`}
-        data-testid={testId}
-      >
+      <div className={QUEST_ROW_CLASS} data-testid={testId}>
         {body}
       </div>
     );
@@ -586,6 +535,178 @@ function useQuestActions(
   return actions as Record<GetStartedQuestKey, () => void>;
 }
 
+/**
+ * The check-in, promoted out of the list.
+ *
+ * The streak track is a picture of what checking in builds, so the two belong
+ * to one control rather than sitting in different parts of the panel. The
+ * whole block is the click target and it keeps its reward, which a decorative
+ * track would have dropped along with the way to claim today.
+ */
+function CheckinBlock({
+  quest,
+  streak,
+  pending,
+  onSelect,
+}: {
+  quest: GetStartedQuest;
+  streak: number;
+  pending: boolean;
+  onSelect: (() => void) | null;
+}) {
+  const { t } = useTranslation();
+  const claimed = !quest.canEarnMore;
+  const label = claimed
+    ? t(($) => {
+        return $.chat.agentPage.getStarted.checkedIn;
+      })
+    : t(($) => {
+        return $.chat.agentPage.getStarted.checkin.action;
+      });
+  // Claimed, so there is nothing left to press: a status line rather than a
+  // control, the same way a finished quest row renders.
+  const className = `-mx-1 mt-2 grid grid-cols-[minmax(0,1fr)_76px] items-center gap-3 rounded-lg px-1 py-1.5 ${
+    pending ? "opacity-50" : ""
+  }`;
+  if (onSelect === null) {
+    return (
+      <div
+        className={`${className} text-sm [&_svg]:size-4 [&_svg]:shrink-0`}
+        data-testid="get-started-quest-checkin"
+      >
+      <div className="min-w-0">
+        <p className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}>
+          {label}
+          {streak > 0 && (
+            <span className="text-muted-foreground">
+              {" · "}
+              {t(
+                ($) => {
+                  return $.chat.agentPage.getStarted.streak;
+                },
+                { amount: formatLocalizedNumber(streak) },
+              )}
+            </span>
+          )}
+        </p>
+        <div className="mt-1.5 flex items-center gap-1">
+          {STREAK_SEGMENTS.map((index) => {
+            return (
+              <span
+                key={index}
+                className={`h-1.5 flex-1 rounded-full ${
+                  index < streak
+                    ? "bg-primary"
+                    : index === streak && !claimed
+                      ? "border border-primary"
+                      : "bg-card"
+                }`}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <span className="flex items-center justify-end">
+        {claimed ? (
+          <Check className="shrink-0 text-chart-green" />
+        ) : (
+          <QuestReward amount={quest.rewardAmount} />
+        )}
+      </span>
+      </div>
+    );
+  }
+  return (
+    <DropdownMenuItem
+      className={className}
+      onClick={onSelect}
+      closeOnClick={false}
+      disabled={pending}
+      aria-busy={pending}
+      data-testid="get-started-quest-checkin"
+    >
+      <div className="min-w-0">
+        <p className={`truncate text-sm ${claimed ? "text-muted-foreground" : ""}`}>
+          {label}
+          {streak > 0 && (
+            <span className="text-muted-foreground">
+              {" · "}
+              {t(
+                ($) => {
+                  return $.chat.agentPage.getStarted.streak;
+                },
+                { amount: formatLocalizedNumber(streak) },
+              )}
+            </span>
+          )}
+        </p>
+        <div className="mt-1.5 flex items-center gap-1">
+          {STREAK_SEGMENTS.map((index) => {
+            return (
+              <span
+                key={index}
+                className={`h-1.5 flex-1 rounded-full ${
+                  index < streak
+                    ? "bg-primary"
+                    : index === streak && !claimed
+                      ? "border border-primary"
+                      : "bg-card"
+                }`}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <span className="flex items-center justify-end">
+        {claimed ? (
+          <Check className="shrink-0 text-chart-green" />
+        ) : (
+          <QuestReward amount={quest.rewardAmount} />
+        )}
+      </span>
+    </DropdownMenuItem>
+  );
+}
+
+// A week of check-ins is the span the track shows; a longer streak keeps the
+// track full rather than growing it.
+const STREAK_SEGMENTS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
+
+/** The reward rules, unfolded in place rather than behind another surface. */
+function RewardsNote() {
+  const { t } = useTranslation();
+  const open = useGet(rewardsNoteOpen$);
+  const setOpen = useSet(setRewardsNoteOpen$);
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        className="flex w-full items-center gap-1 rounded-lg px-3 pb-2.5 pt-2 text-left text-xs text-muted-foreground transition-colors hover:bg-state-hover [&_svg]:size-3 [&_svg]:shrink-0"
+        onClick={() => {
+          setOpen(!open);
+        }}
+        aria-expanded={open}
+      >
+        <span>
+          {t(($) => {
+            return $.chat.agentPage.getStarted.howRewardsWork;
+          })}
+        </span>
+        <ChevronRight
+          className={`transition-transform ${open ? "rotate-90" : ""}`}
+        />
+      </button>
+      {open && (
+        <p className="px-3 pb-1 text-xs leading-[1.5] text-muted-foreground">
+          {t(($) => {
+            return $.chat.agentPage.getStarted.rewardsNote;
+          })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function GetStartedPanel({
   quests,
   summary,
@@ -604,12 +725,10 @@ function GetStartedPanel({
   const opensModal = (quest: GetStartedQuest): boolean => {
     return quest.key === "share" || (introEnabled && questHasIntro(quest.key));
   };
-  const percent = (summary.completed / summary.total) * 100;
-  // Keep the daily reward separate from the other quests.
   const setupQuests = quests.filter((quest) => {
     return quest.key !== "checkin";
   });
-  const dailyQuests = quests.filter((quest) => {
+  const checkinQuest = quests.find((quest) => {
     return quest.key === "checkin";
   });
   const selectHandler = (quest: GetStartedQuest): (() => void) | null => {
@@ -618,79 +737,57 @@ function GetStartedPanel({
       : null;
   };
 
-  // 400px, not 356: the rows gave their trailing edge to an affordance, so the
-  // text column buys that width back rather than wrapping to pay for it.
+  // 420px with a 16px outer radius and an 8px tray, so the inner blocks sit at
+  // 8 and stay concentric. Every block pads 12, which puts the ring, the tiles
+  // and the note on one content edge.
   return (
-    <DropdownMenuContent align="end" className="w-[400px]">
-      <div className="flex items-start gap-2.5 px-3 pb-2 pt-2.5">
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold">
-            {t(($) => {
-              return $.chat.agentPage.getStarted.title;
-            })}
+    <DropdownMenuContent
+      align="end"
+      className="w-[420px] rounded-[16px] p-2"
+    >
+      <div className="rounded-lg bg-muted px-3 py-2.5">
+        <div className="flex items-center gap-3">
+          <QuestRing completed={summary.completed} total={summary.total} />
+          <p className="min-w-0 flex-1 text-[13px] font-semibold tabular-nums">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.toGo;
+              },
+              { amount: formatLocalizedNumber(summary.remainingCredits) },
+            )}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t(($) => {
-              return $.chat.agentPage.getStarted.subtitle;
-            })}
+          <p className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.earned;
+              },
+              { amount: formatLocalizedNumber(summary.earnedCredits) },
+            )}
           </p>
         </div>
-        <span className="flex h-[22px] shrink-0 items-center gap-1.5 rounded-full bg-brand-subtle px-2 text-xs font-semibold tabular-nums text-brand-text">
-          {/* A pill enforces no icon size the way Button and DropdownMenuItem
-              do, so the mark is sized against this one: 12px is what Badge
-              gives an icon in a pill, and lucide's 24px default overflowed the
-              22px box. */}
-          <Coins className="size-3 shrink-0" />
-          {formatLocalizedNumber(summary.earnedCredits)}
-        </span>
-      </div>
-      <div className="px-3 pb-2.5">
-        <span
-          role="progressbar"
-          aria-label={t(($) => {
-            return $.chat.agentPage.getStarted.progressLabel;
-          })}
-          aria-valuemin={0}
-          aria-valuemax={summary.total}
-          aria-valuenow={summary.completed}
-          className="block h-1 overflow-hidden rounded-full bg-divider"
-        >
-          <span
-            className="block h-full rounded-full bg-primary"
-            style={{ width: `${percent}%` }}
-          />
-        </span>
-      </div>
-      <DropdownMenuSeparator />
-      {setupQuests.map((quest) => {
-        return (
-          <QuestRow
-            key={quest.key}
-            quest={quest}
-            copy={copy[quest.key]}
-            onSelect={selectHandler(quest)}
-            opensModal={opensModal(quest)}
-          />
-        );
-      })}
-      {dailyQuests.length > 0 && <DropdownMenuSeparator />}
-      {dailyQuests.map((quest) => {
-        return (
-          <QuestRow
-            key={quest.key}
-            quest={quest}
-            copy={copy[quest.key]}
-            onSelect={selectHandler(quest)}
+        {checkinQuest && (
+          <CheckinBlock
+            quest={checkinQuest}
+            streak={summary.checkinStreak}
             pending={checkinPending}
+            onSelect={selectHandler(checkinQuest)}
           />
-        );
-      })}
-      <DropdownMenuSeparator />
-      <p className="px-3 pb-1 pt-1.5 text-xs text-muted-foreground">
-        {t(($) => {
-          return $.chat.agentPage.getStarted.personalBalanceNote;
+        )}
+      </div>
+      <div className="mt-2">
+        {setupQuests.map((quest) => {
+          return (
+            <QuestRow
+              key={quest.key}
+              quest={quest}
+              copy={copy[quest.key]}
+              onSelect={selectHandler(quest)}
+              opensModal={opensModal(quest)}
+            />
+          );
         })}
-      </p>
+      </div>
+      <RewardsNote />
     </DropdownMenuContent>
   );
 }
