@@ -275,6 +275,19 @@ test("The pane floats beside the index instead of sharing its box", async () => 
   expect(flyout()?.contains(pane)).toBeTruthy();
 });
 
+test("Arrowing to a type opens its flyout too", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+
+  // The flyout follows the row the menu is on, and the keyboard owns that row
+  // whenever the pointer is elsewhere — so it is not a hover-only surface.
+  await user.keyboard("{ArrowDown}");
+
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
+  });
+});
+
 test("Crossing the gap into the flyout does not close it", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
