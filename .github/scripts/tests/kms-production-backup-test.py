@@ -122,13 +122,13 @@ class BackupCliTest(unittest.TestCase):
     def test_renamed_repository_records_new_provenance(self):
         result, state, _ = self.invoke(
             overrides={
-                "GITHUB_REPOSITORY": "maxandzoe/okou",
-                "GITHUB_WORKFLOW_REF": "maxandzoe/okou/.github/workflows/kms-production-backup.yml@refs/heads/main",
+                "GITHUB_REPOSITORY": "okou-ai/okou",
+                "GITHUB_WORKFLOW_REF": "okou-ai/okou/.github/workflows/kms-production-backup.yml@refs/heads/main",
             }
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         snapshot = json.loads(state["secrets"]["KMS_BACKUP_JSON"]["raw"])
-        self.assertEqual(snapshot["workflow"]["repository"], "maxandzoe/okou")
+        self.assertEqual(snapshot["workflow"]["repository"], "okou-ai/okou")
 
     def test_wrong_principal_stops_before_backup(self):
         result, state, report = self.invoke("wrong-principal")

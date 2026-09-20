@@ -26,6 +26,7 @@ import {
   mcpRevokeQueuedMessageOutputSchema,
   mcpCancelRunOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
+import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
@@ -240,6 +241,11 @@ async function callTool(
       }),
     })
     .parse(rpc(response.body)).result;
+}
+
+function structuredToolError(result: Awaited<ReturnType<typeof callTool>>) {
+  expect(result.isError).toBeTruthy();
+  return mcpToolErrorContentSchema.parse(result.structuredContent).error;
 }
 
 async function listThreads(token: string, args: Record<string, unknown> = {}) {
@@ -513,7 +519,7 @@ describe("MCP chat discovery and creation", () => {
     const auth = await fixture();
     const first = await callTool(auth.token(), "list_models");
     expect(first.isError).toBeTruthy();
-    expect(first.structuredContent).toBeUndefined();
+    structuredToolError(first);
     await expect(callTool(auth.token(), "list_models")).resolves.toStrictEqual(
       first,
     );
@@ -561,7 +567,7 @@ describe("MCP chat discovery and creation", () => {
 
       const pending = await callTool(token, "list_models");
       expect(pending.isError).toBeTruthy();
-      expect(pending.structuredContent).toBeUndefined();
+      structuredToolError(pending);
       expect(pending.content).toContainEqual({
         type: "text",
         text: "Model policies need to be synchronized with the current organization plan. Open model settings, then retry discovery.",
@@ -779,9 +785,11 @@ describe("MCP chat discovery and creation", () => {
       { ...args, title: "Different intent" },
       { ...args, model: "claude-sonnet-4-6" },
     ]) {
-      expect(
-        (await callTool(token, "create_chat_thread", conflicting)).isError,
-      ).toBeTruthy();
+      const result = await callTool(token, "create_chat_thread", conflicting);
+      expect(structuredToolError(result)).toMatchObject({
+        code: "request_id_conflict",
+        retryable: false,
+      });
     }
     await expect(
       f.chat.readThreadMetadata(f.actor, args.requestId),
@@ -952,7 +960,7 @@ describe("MCP chat discovery and creation", () => {
         patch: { title: "Accepted title" },
       });
       expect(replay.isError).toBeTruthy();
-      expect(replay.structuredContent).toBeUndefined();
+      structuredToolError(replay);
     });
     await expect(
       getThread(currentToken, created.threadId),
@@ -1066,7 +1074,7 @@ describe("MCP chat discovery and creation", () => {
     await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
       const expired = await callTool(token, "create_chat_thread", args);
       expect(expired.isError).toBeTruthy();
-      expect(expired.structuredContent).toBeUndefined();
+      structuredToolError(expired);
     });
     await f.chat.deleteThread(f.actor, created.threadId);
     expect(
@@ -1246,7 +1254,7 @@ describe("MCP chat discovery and creation", () => {
       }
       const result = await callTool(token, "create_chat_thread", args);
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
       expect(result.content).toContainEqual({
         type: "text",
         text: "Account content is closed.",
@@ -1270,19 +1278,39 @@ describe("MCP chat discovery and creation", () => {
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
       { ...args, orgId: f.auth.orgId },
-      { ...args, model: "not-a-supported-model" },
     ]) {
-      expect(
-        (await callTool(token, "create_chat_thread", invalid)).isError,
-      ).toBeTruthy();
+      const result = await callTool(token, "create_chat_thread", invalid);
+      expect(structuredToolError(result)).toMatchObject({
+        code: "invalid_arguments",
+        retryable: false,
+        issues: expect.any(Array),
+      });
     }
+    const unavailableModel = await callTool(token, "create_chat_thread", {
+      ...args,
+      model: "not-a-supported-model",
+    });
+    expect(structuredToolError(unavailableModel)).toMatchObject({
+      code: "selection_unavailable",
+      retryable: false,
+    });
     expect((await listThreads(token)).threads).toStrictEqual([]);
-    expect(
-      (await callTool(token, "list_agents", { limit: 51 })).isError,
-    ).toBeTruthy();
-    expect(
-      (await callTool(token, "list_models", { orgId: f.auth.orgId })).isError,
-    ).toBeTruthy();
+    const invalidLimit = await callTool(token, "list_agents", { limit: 51 });
+    expect(structuredToolError(invalidLimit)).toMatchObject({
+      code: "invalid_arguments",
+      retryable: false,
+      issues: [expect.objectContaining({ path: ["limit"], code: "too_big" })],
+    });
+    const invalidModelInput = await callTool(token, "list_models", {
+      orgId: f.auth.orgId,
+    });
+    expect(structuredToolError(invalidModelInput)).toMatchObject({
+      code: "invalid_arguments",
+      retryable: false,
+      issues: [
+        expect.objectContaining({ path: [], code: "unrecognized_keys" }),
+      ],
+    });
   });
 });
 
@@ -1920,7 +1948,7 @@ describe("MCP chat mutations", () => {
     ]) {
       const failed = await callTool(token, "send_chat_message", changed);
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
     }
     await expect(
       f.chat.listThreadEvents(f.actor, first.id),
@@ -2031,7 +2059,7 @@ describe("MCP chat mutations", () => {
         },
       );
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
       await expect(
         f.chat.listThreadEvents(f.actor, thread.id),
       ).resolves.toStrictEqual(before);
@@ -2299,7 +2327,7 @@ describe("MCP chat mutations", () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const expired = await callTool(expiryToken, "send_chat_message", args);
         expect(expired.isError).toBeTruthy();
-        expect(expired.structuredContent).toBeUndefined();
+        structuredToolError(expired);
         expect(expired.content[0]?.text).toContain("expired");
       }
     });
@@ -2373,7 +2401,7 @@ describe("MCP chat mutations", () => {
         }),
       ).resolves.toStrictEqual(hiddenStatus);
       expect(hiddenStatus.isError).toBeTruthy();
-      expect(hiddenStatus.structuredContent).toBeUndefined();
+      structuredToolError(hiddenStatus);
       await expect(
         revokeMessage(foreignToken, thread.id, args.requestId),
       ).resolves.toMatchObject({ outcome: "unavailable", runId: null });
@@ -2498,7 +2526,7 @@ describe("MCP chat mutations", () => {
     ]) {
       const failed = await callTool(token, "send_chat_message", args);
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
     }
     expect(
       (await getMessages(token, { threadId: thread.id })).messages,
@@ -2662,7 +2690,7 @@ describe("MCP chat mutations", () => {
         { runId },
       );
       expect(failure.isError).toBeTruthy();
-      expect(failure.structuredContent).toBeUndefined();
+      structuredToolError(failure);
       expect(failure.content[0]?.text).toContain("No such run");
     }
     await expect(f.runs.readRun(f.actor, runId)).resolves.toMatchObject({
@@ -2923,7 +2951,7 @@ describe("MCP chat mutations", () => {
       { runId: active.runId },
     );
     expect(result.isError).toBeTruthy();
-    expect(result.structuredContent).toBeUndefined();
+    structuredToolError(result);
     await expect(
       f.api.readRun(actor.actor, active.runId),
     ).resolves.toMatchObject({
@@ -3058,7 +3086,7 @@ describe("MCP canonical message reads", () => {
         around,
       });
       expect(failure.isError).toBeTruthy();
-      expect(failure.structuredContent).toBeUndefined();
+      structuredToolError(failure);
     }
   });
 
@@ -3244,7 +3272,7 @@ describe("MCP canonical message reads", () => {
       cursor: target.nextContentCursor,
     });
     expect(staleContent.isError).toBeTruthy();
-    expect(staleContent.structuredContent).toBeUndefined();
+    structuredToolError(staleContent);
     expect(
       (
         await callTool(token, "get_chat_messages", {
@@ -3281,7 +3309,7 @@ describe("MCP canonical message reads", () => {
         invalid,
       );
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
     }
     await expect(
       getMessages(f.auth.token(), { ...args, cursor }),
@@ -3370,7 +3398,7 @@ describe("MCP canonical message reads", () => {
       cursor: page.olderCursor,
     });
     expect(changed.isError).toBeTruthy();
-    expect(changed.structuredContent).toBeUndefined();
+    structuredToolError(changed);
     expect((await getMessages(token, args)).messages[0]?.text).toBe(
       "Visible append",
     );
@@ -3656,7 +3684,7 @@ describe("MCP canonical message reads", () => {
       threadId: sent.threadId,
     });
     expect(result.isError).toBeTruthy();
-    expect(result.structuredContent).toBeUndefined();
+    structuredToolError(result);
     expect(result.content[0]?.text).toContain("metadata");
   });
 
@@ -3759,7 +3787,7 @@ describe("MCP canonical message reads", () => {
 
       const failed = await callTool(token, "get_chat_messages", args);
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
       expect(failed.content[0]?.text).toContain("could not be read completely");
       for (const message of before.messages) {
         expect(JSON.stringify(failed)).not.toContain(message.text);
@@ -3811,7 +3839,7 @@ describe("MCP canonical message reads", () => {
         threadId: sent.threadId,
       });
       expect(failed.isError).toBeTruthy();
-      expect(failed.structuredContent).toBeUndefined();
+      structuredToolError(failed);
       expect(JSON.stringify(failed)).not.toContain(
         "Visible tail alone is incomplete",
       );
@@ -3877,7 +3905,7 @@ describe("MCP canonical message reads", () => {
         limit: 1,
       });
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
       expect(result.content[0]?.text).toMatch(/budget|limit/u);
     },
   );
@@ -3903,7 +3931,7 @@ describe("MCP canonical message reads", () => {
       limit: 1,
     });
     expect(result.isError).toBeTruthy();
-    expect(result.structuredContent).toBeUndefined();
+    structuredToolError(result);
     expect(result.content[0]?.text).toContain("32 MiB");
   });
 
@@ -4549,7 +4577,7 @@ describe("MCP message search", () => {
     await deleteFakeChatEventObject(archive.key);
     const missing = await callTool(token, "search_chat_messages", args);
     expect(missing.isError).toBeTruthy();
-    expect(missing.structuredContent).toBeUndefined();
+    structuredToolError(missing);
     expect(JSON.stringify(missing)).not.toContain("canonical answer");
   });
 
@@ -4633,7 +4661,7 @@ describe("MCP message search", () => {
     }
     const combined = await callTool(token, "search_chat_messages", { query });
     expect(combined.isError).toBeTruthy();
-    expect(combined.structuredContent).toBeUndefined();
+    structuredToolError(combined);
     expect(combined.content[0]?.text).toMatch(/budget|limit/u);
     expect(JSON.stringify(combined)).not.toContain("VISIBLE_EXCERPT_CANARY_");
   });
@@ -4821,7 +4849,7 @@ describe("MCP message search", () => {
         ...invalid,
       });
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
     }
     expect(
       (await searchMessages(token, { ...args, cursor })).matches[0]?.excerpt
@@ -4912,7 +4940,7 @@ describe("MCP message search", () => {
       const auth = await fixture();
       const result = await callTool(auth.token(), "search_chat_messages", args);
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
     },
   );
 });
@@ -5017,7 +5045,14 @@ describe("external MCP entry", () => {
               annotations: { readOnlyHint: true },
             },
             { name: "get_chat_status", annotations: { readOnlyHint: true } },
-            { name: "list_agents", annotations: { readOnlyHint: true } },
+            {
+              name: "list_agents",
+              inputSchema: {
+                type: "object",
+                properties: { limit: { maximum: 50 } },
+              },
+              annotations: { readOnlyHint: true },
+            },
             { name: "list_models", annotations: { readOnlyHint: true } },
             { name: "list_chat_threads", annotations: { readOnlyHint: true } },
             { name: "get_chat_thread", annotations: { readOnlyHint: true } },
@@ -5804,7 +5839,7 @@ describe("external MCP entry", () => {
     ]) {
       const result = await callTool(f.auth.token(), "list_chat_threads", args);
       expect(result.isError).toBeTruthy();
-      expect(result.structuredContent).toBeUndefined();
+      structuredToolError(result);
     }
     const second = await listThreads(f.auth.token(), { ...filters, cursor });
     const ids = [...first.threads, ...second.threads].map((thread) => {

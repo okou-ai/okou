@@ -263,7 +263,6 @@ import {
   matchesConnectorSearch,
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
 import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
@@ -6722,9 +6721,6 @@ function AddConnectorsDialog({
               })}
             </p>
           )}
-          {connecting ? (
-            <ConnectorConnectionCancelButton onCancel={onClose} />
-          ) : null}
         </DialogHeader>
         <div className="shrink-0">
           <Input

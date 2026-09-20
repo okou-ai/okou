@@ -7,7 +7,10 @@ import {
   type OrgModelPolicy,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
+  CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { GetRunResponse } from "@okouai/api-contracts/contracts/runs";
@@ -525,6 +528,11 @@ test.each([
     "queue expiry",
     "provider_queue_timeout",
     "Oops, something went wrong. Please try again later.",
+  ],
+  [
+    "Codex access program",
+    "codex_access_program_unavailable",
+    CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   ],
 ] as const)(
   "A terminal provider failure (%s) displays its message without a recovery action",
