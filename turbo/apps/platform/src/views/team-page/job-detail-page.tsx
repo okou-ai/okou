@@ -208,7 +208,7 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
     return (
       <DetailPageShell scroll={false}>
         <Breadcrumb />
-        <main className="flex-1 flex items-center justify-center px-4 sm:px-6 pb-[max(4rem,var(--sab))]">
+        <main className="flex-1 flex items-center justify-center px-4 sm:px-6 pb-safe-or-16">
           <div className="flex flex-col items-center text-center gap-4 max-w-sm">
             <NoPermissionIllustration className="h-32 w-auto max-w-[220px] object-contain opacity-90" />
             <div className="space-y-1.5">
@@ -246,7 +246,7 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
   return (
     <DetailPageShell scroll={false}>
       <Breadcrumb />
-      <main className="flex-1 px-4 sm:px-6 pt-4 pb-[max(2rem,var(--sab))]">
+      <main className="flex-1 px-4 sm:px-6 pt-4 pb-safe-or-8">
         <div className="mx-auto max-w-[900px]">
           <Card className={surfaceVariants()}>
             <CardContent className="px-6 py-6 text-center space-y-3">

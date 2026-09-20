@@ -20,7 +20,7 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
 
   return (
     <div
-      className="relative flex h-full min-h-0 overflow-x-hidden overflow-y-auto bg-background p-6 pb-[max(1.5rem,var(--sab))]"
+      className="relative flex h-full min-h-0 overflow-x-hidden overflow-y-auto bg-background p-6 pb-safe-or-6"
       data-testid="app-auth-layout"
     >
       <div
@@ -46,7 +46,7 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
         }}
         className={cn(
           "fixed z-50 border-border bg-card text-foreground hover:bg-card-hover",
-          "right-[calc(1.5rem+var(--sar))] top-[calc(1.5rem+var(--sat))]",
+          "right-safe-offset-6 top-safe-offset-6",
         )}
         aria-label={t(($) => {
           return $.auth.toggleTheme;

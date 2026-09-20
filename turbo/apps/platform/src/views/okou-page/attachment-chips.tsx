@@ -1437,7 +1437,7 @@ function ArtifactPreviewDialogContent({
         showCloseButton={false}
         // The backdrop is fixed, so a standalone PWA clips it above the bottom
         // safe inset; extending `bottom` keeps it covering the screen edge.
-        overlayClassName="[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))] bg-gray-900/45 dark:bg-gray-900/45"
+        overlayClassName="[@media(display-mode:standalone)]:-bottom-safe bg-gray-900/45 dark:bg-gray-900/45"
         maxWidth={1440}
         height={1000}
         surface="canvas"
