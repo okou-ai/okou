@@ -8,6 +8,37 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.644.0](https://github.com/okou-ai/okou/compare/api-v1.643.0...api-v1.644.0) (2026-09-20)
+
+
+### Features
+
+* **api:** create chat with initial message ([#35628](https://github.com/okou-ai/okou/issues/35628)) ([03784da](https://github.com/okou-ai/okou/commit/03784da089fb913321cd7637a236ba59547ee8a3))
+
+
+### Bug Fixes
+
+* **api:** disarm departed members' workflow automations ([#35692](https://github.com/okou-ai/okou/issues/35692)) ([023c234](https://github.com/okou-ai/okou/commit/023c2346455420c38f4f7e38c36f2698e8755be9))
+* **api:** remove mercury response disclosure prompt ([#35679](https://github.com/okou-ai/okou/issues/35679)) ([430b0c9](https://github.com/okou-ai/okou/commit/430b0c98ede23e39ac9b415f61cd7f89c7f5a4c3))
+* **artifacts:** keep chat attachments out of the artifact catalog ([#35655](https://github.com/okou-ai/okou/issues/35655)) ([670a649](https://github.com/okou-ai/okou/commit/670a6496664335866abc0ea78b47975054c8c1ff))
+
+
+### Refactoring
+
+* **api:** derive run-scoped builtin mcp firewalls ([#35673](https://github.com/okou-ai/okou/issues/35673)) ([ccee77f](https://github.com/okou-ai/okou/commit/ccee77fffc666113fa529042d1f6046e9a96c1ff))
+* **mcp:** make chat status lifecycle-only ([#35643](https://github.com/okou-ai/okou/issues/35643)) ([bfcefb7](https://github.com/okou-ai/okou/commit/bfcefb708909ba609261da023fba4e0f20f65d37))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.480.0
+    * @okouai/connectors bumped to 3.14.3
+    * @okouai/core bumped to 8.688.3
+    * @okouai/db bumped to 1.279.10
+    * @okouai/pi-agent-runtime bumped to 1.33.32
+
 ## [1.643.0](https://github.com/okou-ai/okou/compare/api-v1.642.3...api-v1.643.0) (2026-09-20)
 
 

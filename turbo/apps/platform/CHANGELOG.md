@@ -11,6 +11,23 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.929.1](https://github.com/okou-ai/okou/compare/app-v0.929.0...app-v0.929.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **artifacts:** keep chat attachments out of the artifact catalog ([#35655](https://github.com/okou-ai/okou/issues/35655)) ([670a649](https://github.com/okou-ai/okou/commit/670a6496664335866abc0ea78b47975054c8c1ff))
+* **platform:** unfold the chat greeting from the centered avatar ([#35675](https://github.com/okou-ai/okou/issues/35675)) ([c871d25](https://github.com/okou-ai/okou/commit/c871d2596d3cf4effec33150fc0101f4ebd70bde))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.480.0
+    * @okouai/connectors bumped to 3.14.3
+    * @okouai/core bumped to 8.688.3
+
 ## [0.929.0](https://github.com/okou-ai/okou/compare/app-v0.928.2...app-v0.929.0) (2026-09-20)
 
 
