@@ -3151,7 +3151,6 @@
       "device": {
         "checking": "Memeriksa persetujuan...",
         "connect": "Hubungkan {{connector}}",
-        "copyThenOpen": "Salin kode ini, lalu buka halaman verifikasi untuk menyetujui akses.",
         "description": "Buka halaman verifikasi penyedia, lalu masukkan kode verifikasi ini untuk menyetujui akses.",
         "intro": "Hubungkan untuk mendapatkan kode verifikasi, lalu gunakan kode itu di halaman verifikasi penyedia untuk menyetujui akses.",
         "openPage": "Buka halaman verifikasi",

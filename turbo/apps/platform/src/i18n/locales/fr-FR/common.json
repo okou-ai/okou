@@ -3216,7 +3216,6 @@
       "device": {
         "checking": "Vérification de l'approbation...",
         "connect": "Connecter {{connector}}",
-        "copyThenOpen": "Copiez ce code, puis ouvrez la page de vérification pour approuver l'accès.",
         "description": "Ouvrez la page de vérification du fournisseur, puis saisissez ce code de vérification pour approuver l'accès.",
         "intro": "Connectez-vous pour obtenir un code de vérification, puis utilisez-le sur la page de vérification du fournisseur pour approuver l'accès.",
         "openPage": "Ouvrir la page de vérification",

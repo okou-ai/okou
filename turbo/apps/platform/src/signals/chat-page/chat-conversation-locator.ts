@@ -18,7 +18,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { animationFrame, timeout } from "signal-timers";
+import { animationFrame } from "signal-timers";
 import {
   chatEventDisplayError,
   isRenderableAssistantEvent,
@@ -64,8 +64,6 @@ const POINTER_EDGE_MARGIN_PX = 16;
 /** Falloff radius, as a multiple of pitch, so density does not change feel. */
 const MAGNIFY_SIGMA_RATIO = 2.6;
 const MAGNIFY_SIGMA_MIN_PX = 26;
-/** How long a jumped-to turn stays marked. */
-const LANDED_MARK_MS = 1200;
 /** Turns overlapping the viewport by less than this do not extend the band. */
 const BAND_EDGE_SLACK_PX = 8;
 
@@ -124,6 +122,11 @@ export interface LocatorPreview {
   readonly createdAt: string | undefined;
 }
 
+interface LocatorLanding {
+  readonly eventId: string | null;
+  readonly revision: number;
+}
+
 export interface ChatConversationLocatorSignals {
   readonly railOnRef$: Command<(() => void) | undefined, [HTMLElement | null]>;
   readonly previewOnRef$: Command<
@@ -132,6 +135,8 @@ export interface ChatConversationLocatorSignals {
   >;
   readonly layout$: Computed<LocatorLayout>;
   readonly preview$: Computed<LocatorPreview | null>;
+  readonly landing$: Computed<LocatorLanding>;
+  readonly turnOnRef$: Command<(() => void) | undefined, [HTMLElement | null]>;
   /** True while the pointer is over the rail. */
   readonly engaged$: Computed<boolean>;
   /** Complete folded turn sequence, independent of the DOM render window. */
@@ -180,6 +185,7 @@ interface LocatorStore {
   readonly previewElement$: State<HTMLElement | null>;
   readonly measurement$: State<LocatorMeasurement>;
   readonly preview$: State<LocatorPreview | null>;
+  readonly landing$: State<LocatorLanding>;
   readonly engaged$: State<boolean>;
   readonly windowStart$: State<number>;
   readonly pagedByReader$: State<boolean>;
@@ -201,6 +207,16 @@ interface RailRuntime {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function readTurnAnchor(element: HTMLElement): HTMLElement | null {
+  // Expanded history precedes the main result in the DOM, while the locator
+  // represents the result as the assistant turn.
+  return element.matches(SCROLL_ANCHOR_SELECTOR)
+    ? element
+    : (element.querySelector<HTMLElement>(
+        RUN_WORK_MAIN_SCROLL_ANCHOR_SELECTOR,
+      ) ?? element.querySelector<HTMLElement>(SCROLL_ANCHOR_SELECTOR));
 }
 
 /**
@@ -228,13 +244,7 @@ function readTurns(container: HTMLElement): DomTurn[] {
     if (rect.height === 0) {
       continue;
     }
-    // Expanded work history precedes the main result in the DOM, while the
-    // locator still represents the result as the assistant turn.
-    const anchor = element.matches(SCROLL_ANCHOR_SELECTOR)
-      ? element
-      : (element.querySelector<HTMLElement>(
-          RUN_WORK_MAIN_SCROLL_ANCHOR_SELECTOR,
-        ) ?? element.querySelector<HTMLElement>(SCROLL_ANCHOR_SELECTOR));
+    const anchor = readTurnAnchor(element);
     const eventId = anchor?.dataset.chatScrollAnchorEventId;
     if (!eventId) {
       continue;
@@ -608,6 +618,7 @@ function createStore(): LocatorStore {
       railHeight: 0,
     }),
     preview$: state<LocatorPreview | null>(null),
+    landing$: state<LocatorLanding>({ eventId: null, revision: 0 }),
     engaged$: state(false),
     windowStart$: state(0),
     pagedByReader$: state(false),
@@ -759,6 +770,7 @@ function createPaint(
 }
 
 function createJump(
+  store: LocatorStore,
   threadId: string,
   visibleTurns$: Computed<readonly LocatorTurn[]>,
   scrollContainer$: Computed<HTMLElement | null>,
@@ -773,7 +785,7 @@ function createJump(
     async (
       { get, set },
       turnIndex: number,
-      signal: AbortSignal,
+      parentSignal: AbortSignal,
     ): Promise<void> => {
       const turn = get(visibleTurns$)[turnIndex];
       if (!turn) {
@@ -783,6 +795,7 @@ function createJump(
       if (!container) {
         return;
       }
+      const signal = set(resetLandedSignal$, parentSignal);
       L.debug("jump to turn", { threadId, turnIndex, eventId: turn.eventId });
       await set(
         scrollToEvent$,
@@ -804,21 +817,39 @@ function createJump(
       if (!landedElement) {
         return;
       }
-      const landedSignal = set(resetLandedSignal$, signal);
-      landedElement.dataset.locatorLanded = "";
-      const clearLanded = () => {
-        delete landedElement.dataset.locatorLanded;
-      };
-      landedSignal.addEventListener("abort", clearLanded, { once: true });
-      timeout(
+      set(store.landing$, (previous) => {
+        return { eventId: turn.eventId, revision: previous.revision + 1 };
+      });
+      signal.addEventListener(
+        "abort",
         () => {
-          landedSignal.removeEventListener("abort", clearLanded);
-          clearLanded();
+          set(store.landing$, (previous) => {
+            return { ...previous, eventId: null };
+          });
         },
-        LANDED_MARK_MS,
-        { signal: landedSignal },
+        { once: true },
       );
     },
+  );
+}
+
+function createTurnOnRef(store: LocatorStore) {
+  return onRef(
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      signal.addEventListener(
+        "abort",
+        () => {
+          const landing = get(store.landing$);
+          if (
+            landing.eventId ===
+            readTurnAnchor(element)?.dataset.chatScrollAnchorEventId
+          ) {
+            set(store.landing$, { ...landing, eventId: null });
+          }
+        },
+        { once: true },
+      );
+    }),
   );
 }
 
@@ -1195,6 +1226,7 @@ export function createChatConversationLocatorSignals({
   const recompute$ = createRecompute(store, scrollContainer$);
   const paint$ = createPaint(store, visibleTurns$, layout$);
   const jumpToTurn$ = createJump(
+    store,
     threadId,
     visibleTurns$,
     scrollContainer$,
@@ -1217,6 +1249,10 @@ export function createChatConversationLocatorSignals({
     preview$: computed((get) => {
       return get(store.preview$);
     }),
+    landing$: computed((get) => {
+      return get(store.landing$);
+    }),
+    turnOnRef$: createTurnOnRef(store),
     engaged$: computed((get) => {
       return get(store.engaged$);
     }),

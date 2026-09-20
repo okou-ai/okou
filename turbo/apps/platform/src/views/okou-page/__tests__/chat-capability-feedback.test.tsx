@@ -93,6 +93,8 @@ test("Offer passage actions only for a valid assistant selection", async () => {
   });
 
   expect(nativeCopyAvailable).toBeTruthy();
+  expect(queryToolbarButton("Quote")).toBeInTheDocument();
+  expect(fireEvent.copy(document)).toBeTruthy();
   await waitFor(() => {
     expect(queryToolbarButton("Quote")).not.toBeInTheDocument();
   });

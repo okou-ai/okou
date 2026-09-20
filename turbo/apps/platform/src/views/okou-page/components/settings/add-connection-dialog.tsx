@@ -509,11 +509,6 @@ function getOAuthDeviceAuthStatusText(
     { readonly status: "pending" | "polling" }
   >,
 ): string {
-  if (!state.approvalOpened) {
-    return i18n.t(($) => {
-      return $.connectors.connectDialog.device.copyThenOpen;
-    });
-  }
   if (state.status === "polling") {
     return i18n.t(($) => {
       return $.connectors.connectDialog.device.checking;

@@ -3164,7 +3164,6 @@
       "device": {
         "checking": "Genehmigung wird geprüft...",
         "connect": "Verbinden Sie {{connector}}",
-        "copyThenOpen": "Kopieren Sie diesen Code und öffnen Sie dann die Bestätigungsseite, um den Zugriff zu genehmigen.",
         "description": "Öffnen Sie die Bestätigungsseite des Anbieters und geben Sie dann diesen Bestätigungscode ein, um den Zugriff zu genehmigen.",
         "intro": "Stellen Sie eine Verbindung her, um einen Bestätigungscode zu erhalten, und verwenden Sie ihn dann auf der Bestätigungsseite des Anbieters, um den Zugriff zu genehmigen.",
         "openPage": "Verifizierungsseite öffnen",

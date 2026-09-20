@@ -39,9 +39,8 @@ import {
   avatarMakerStep$,
   avatarMakerSteps$,
   avatarMakerStepIdx$,
-  avatarMakerJustPicked$,
-  avatarMakerShowSparkles$,
-  avatarMakerShuffling$,
+  avatarMakerPreviewRevision$,
+  avatarMakerShuffleRevision$,
   openAvatarMaker$,
   selectAvatarOption$,
   shuffleAvatar$,
@@ -81,23 +80,19 @@ function getSparkleParticles() {
   return generateParticles();
 }
 
-function Sparkles({ active }: { active: boolean }) {
-  if (!active) {
-    return null;
-  }
-
+function Sparkles() {
   const particles = getSparkleParticles();
   return (
     <div
       className="pointer-events-none absolute inset-0 z-10"
-      data-testid="avatar-sparkles"
+      aria-hidden="true"
     >
       {particles.map((p) => {
         const key = `${p.x.toFixed(2)}_${p.y.toFixed(2)}_${p.size.toFixed(2)}`;
         return (
           <div
             key={key}
-            className="absolute animate-avatar-firework rounded-full"
+            className="absolute rounded-full opacity-0 motion-safe:animate-avatar-firework"
             style={
               {
                 width: p.size,
@@ -188,7 +183,7 @@ function StepOptions({
         disabled={disabled}
         className={cn(
           "flex size-14 shrink-0 items-center justify-center rounded-full transition-all hover:scale-110 disabled:opacity-30 disabled:hover:scale-100",
-          "animate-avatar-option-appear",
+          "motion-safe:animate-avatar-option-appear",
           isPicked && "scale-110 ring-2 ring-[#ed4e01] ring-offset-2",
         )}
         style={{ animationDelay: `${index * 0.05}s` }}
@@ -207,21 +202,23 @@ function StepOptions({
 function AvatarPreviewWithShuffle() {
   const { t } = useTranslation("agents");
   const config = useGet(avatarMakerConfig$);
-  const justPicked = useGet(avatarMakerJustPicked$);
-  const showSparkles = useGet(avatarMakerShowSparkles$);
-  const shuffling = useGet(avatarMakerShuffling$);
+  const previewRevision = useGet(avatarMakerPreviewRevision$);
+  const shuffleRevision = useGet(avatarMakerShuffleRevision$);
   const shuffle = useSet(shuffleAvatar$);
   const dialogSignal = useGet(avatarMakerDialogSignal$);
 
   return (
-    <div
-      className={cn(
-        "group relative overflow-visible transition-transform duration-200",
-        justPicked || shuffling ? "scale-110" : "scale-100",
-      )}
-    >
-      <AvatarSvgPreview config={config} size={96} />
-      <Sparkles active={showSparkles} />
+    <div className="group relative overflow-visible">
+      <div
+        key={previewRevision}
+        className={cn(
+          "relative",
+          previewRevision > 0 && "motion-safe:animate-avatar-preview-pop",
+        )}
+      >
+        <AvatarSvgPreview config={config} size={96} />
+        {previewRevision > 0 && <Sparkles />}
+      </div>
       <TooltipProvider delayDuration={800} skipDelayDuration={0}>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -232,7 +229,7 @@ function AvatarPreviewWithShuffle() {
               className="absolute -right-1 -bottom-1 flex h-7 w-7 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border hover:text-foreground transition-colors"
               onClick={() => {
                 if (dialogSignal) {
-                  detach(shuffle(dialogSignal), Reason.DomCallback);
+                  shuffle(dialogSignal);
                 }
               }}
               aria-label={t(($) => {
@@ -240,8 +237,13 @@ function AvatarPreviewWithShuffle() {
               })}
             >
               <Dices
+                key={shuffleRevision}
                 size={14}
-                className={shuffling ? "animate-avatar-dice-spin" : undefined}
+                className={
+                  shuffleRevision > 0
+                    ? "motion-safe:animate-avatar-dice-spin"
+                    : undefined
+                }
               />
             </button>
           </TooltipTrigger>
@@ -321,7 +323,7 @@ function StepNavigator() {
           <ChevronLeft size={14} />
         </IconTooltipButton>
         <p
-          className="min-w-[3rem] animate-avatar-option-appear-fast text-center text-xs font-semibold text-foreground"
+          className="min-w-[3rem] motion-safe:animate-avatar-option-appear-fast text-center text-xs font-semibold text-foreground"
           key={step}
         >
           {stepLabels[step]}
@@ -416,10 +418,7 @@ function AvatarMakerDialogBody({
               config={config}
               selectOption={(selection) => {
                 if (dialogSignal) {
-                  detach(
-                    selectOption(selection, dialogSignal),
-                    Reason.DomCallback,
-                  );
+                  selectOption(selection, dialogSignal);
                 }
               }}
             />
