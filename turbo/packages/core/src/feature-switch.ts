@@ -60,8 +60,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.RunUsage]: {
     maintainer: "liangyou@okou.ai",
     description:
-      "Query observed provider-token usage for the current assigned Run. Off for everyone until CLI and Runner consumers are deployed.",
+      "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",

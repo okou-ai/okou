@@ -102,12 +102,8 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("keeps current-run usage off until consumers are deployed and an override enables it", () => {
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
+  it("enables current-run usage for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, context)).toBe(false);
       expect(
         isFeatureEnabled(FeatureSwitchKey.RunUsage, {
@@ -116,11 +112,21 @@ describe("isFeatureEnabled", () => {
         }),
       ).toBe(true);
     }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, staffContext)).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.RunUsage, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.RunUsage]: false },
+      }),
+    ).toBe(false);
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.RunUsage]).toEqual({
       maintainer: "liangyou@okou.ai",
       description:
-        "Query observed provider-token usage for the current assigned Run. Off for everyone until CLI and Runner consumers are deployed.",
-      rolloutStage: "alpha",
+        "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
+      rolloutStage: "beta",
     });
   });
 
