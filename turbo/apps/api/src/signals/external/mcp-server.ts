@@ -149,23 +149,205 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function reusableScalarKey(value: unknown): string | null {
-  if (!isJsonObject(value) || Object.keys(value).length !== 3) {
+const nonRelocatableSchemaKeywords = [
+  "$id",
+  "$anchor",
+  "$dynamicAnchor",
+  "$dynamicRef",
+  "$recursiveAnchor",
+  "$recursiveRef",
+  "$defs",
+  "definitions",
+] as const;
+const reusableSchemaArrayKeywords = ["anyOf", "oneOf", "allOf"] as const;
+
+function hasReusableSchemaShape(value: Record<string, unknown>): boolean {
+  if (typeof value.type === "string") {
+    return true;
+  }
+  if (Array.isArray(value.type)) {
+    return value.type.every((item) => {
+      return typeof item === "string";
+    });
+  }
+  return (
+    reusableSchemaArrayKeywords.some((keyword) => {
+      return Array.isArray(value[keyword]);
+    }) ||
+    Array.isArray(value.enum) ||
+    Object.hasOwn(value, "const")
+  );
+}
+
+function reusableSchemaKey(value: unknown): string | null {
+  if (!isJsonObject(value)) {
     return null;
   }
   if (
-    value.type !== "string" ||
-    (value.format !== "uuid" && value.format !== "date-time") ||
-    typeof value.pattern !== "string"
+    nonRelocatableSchemaKeywords.some((keyword) => {
+      return keyword in value;
+    })
   ) {
     return null;
   }
-  return `${value.format}\u0000${value.pattern}`;
+  if (
+    Object.keys(value).length === 3 &&
+    value.type === "string" &&
+    (value.format === "uuid" || value.format === "date-time") &&
+    typeof value.pattern === "string"
+  ) {
+    return `scalar\u0000${String(value.format)}\u0000${String(value.pattern)}`;
+  }
+  if (value.type === "object" && isJsonObject(value.properties)) {
+    return `object\u0000${JSON.stringify(value)}`;
+  }
+  if (hasReusableSchemaShape(value)) {
+    return `schema\u0000${JSON.stringify(value)}`;
+  }
+  return null;
 }
 
-interface ReusableScalar {
+const schemaMapKeywords = [
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "patternProperties",
+  "properties",
+] as const;
+const schemaArrayKeywords = ["allOf", "anyOf", "oneOf", "prefixItems"] as const;
+const schemaValueKeywords = [
+  "additionalItems",
+  "additionalProperties",
+  "contains",
+  "contentSchema",
+  "else",
+  "if",
+  "items",
+  "not",
+  "propertyNames",
+  "then",
+  "unevaluatedItems",
+  "unevaluatedProperties",
+] as const;
+
+function includesString(values: readonly string[], value: string): boolean {
+  return values.includes(value);
+}
+
+function forEachJsonObject(
+  value: unknown,
+  visit: (child: Record<string, unknown>) => void,
+): void {
+  if (isJsonObject(value)) {
+    visit(value);
+    return;
+  }
+  if (!Array.isArray(value)) {
+    return;
+  }
+  for (const child of value) {
+    if (isJsonObject(child)) {
+      visit(child);
+    }
+  }
+}
+
+function forEachJsonSchemaChild(
+  schema: Record<string, unknown>,
+  visit: (child: Record<string, unknown>, insideDefinitions: boolean) => void,
+  insideDefinitions: boolean,
+): void {
+  for (const [keyword, value] of Object.entries(schema)) {
+    if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
+      const childInsideDefinitions =
+        insideDefinitions || keyword === "$defs" || keyword === "definitions";
+      for (const child of Object.values(value)) {
+        if (isJsonObject(child)) {
+          visit(child, childInsideDefinitions);
+        }
+      }
+      continue;
+    }
+    if (includesString(schemaArrayKeywords, keyword) && Array.isArray(value)) {
+      for (const child of value) {
+        if (isJsonObject(child)) {
+          visit(child, insideDefinitions);
+        }
+      }
+      continue;
+    }
+    if (includesString(schemaValueKeywords, keyword)) {
+      forEachJsonObject(value, (child) => {
+        visit(child, insideDefinitions);
+      });
+    }
+  }
+}
+
+function replaceJsonSchemaChildren(
+  schema: Record<string, unknown>,
+  replace: (
+    child: Record<string, unknown>,
+    insideDefinitions: boolean,
+  ) => unknown,
+  insideDefinitions: boolean,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(schema).map(([keyword, value]) => {
+      if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
+        const childInsideDefinitions =
+          insideDefinitions || keyword === "$defs" || keyword === "definitions";
+        return [
+          keyword,
+          Object.fromEntries(
+            Object.entries(value).map(([name, child]) => {
+              return [
+                name,
+                isJsonObject(child)
+                  ? replace(child, childInsideDefinitions)
+                  : child,
+              ];
+            }),
+          ),
+        ];
+      }
+      if (
+        includesString(schemaArrayKeywords, keyword) &&
+        Array.isArray(value)
+      ) {
+        return [
+          keyword,
+          value.map((child) => {
+            return isJsonObject(child)
+              ? replace(child, insideDefinitions)
+              : child;
+          }),
+        ];
+      }
+      if (includesString(schemaValueKeywords, keyword)) {
+        if (isJsonObject(value)) {
+          return [keyword, replace(value, insideDefinitions)];
+        }
+        if (Array.isArray(value)) {
+          return [
+            keyword,
+            value.map((child) => {
+              return isJsonObject(child)
+                ? replace(child, insideDefinitions)
+                : child;
+            }),
+          ];
+        }
+      }
+      return [keyword, value];
+    }),
+  );
+}
+
+interface ReusableSchema {
   readonly count: number;
   readonly definition: Record<string, unknown>;
+  readonly key: string;
   readonly name: string;
 }
 
@@ -187,27 +369,34 @@ function compactJsonSchema(
       return;
     }
     if (!insideDefinitions) {
-      const key = reusableScalarKey(value);
+      const key = reusableSchemaKey(value);
       if (key) {
         const previous = occurrences.get(key);
         occurrences.set(key, {
           count: (previous?.count ?? 0) + 1,
           definition: previous?.definition ?? value,
         });
-        return;
+        if (key.startsWith("scalar\u0000")) {
+          return;
+        }
       }
     }
-    for (const [key, child] of Object.entries(value)) {
-      count(child, insideDefinitions || key === "$defs");
-    }
+    forEachJsonSchemaChild(value, count, insideDefinitions);
   }
   count(schema);
 
   const existingDefinitions = isJsonObject(schema.$defs) ? schema.$defs : {};
   const usedNames = new Set(Object.keys(existingDefinitions));
   const counters = new Map<string, number>();
-  function uniqueName(format: unknown): string {
-    const base = format === "uuid" ? "uuid" : "dateTime";
+  function uniqueName(definition: Record<string, unknown>): string {
+    const base =
+      definition.format === "uuid"
+        ? "uuid"
+        : definition.format === "date-time"
+          ? "dateTime"
+          : definition.type === "object"
+            ? "object"
+            : "schema";
     let index = (counters.get(base) ?? 0) + 1;
     let name = index === 1 ? base : `${base}${index}`;
     while (usedNames.has(name)) {
@@ -227,7 +416,7 @@ function compactJsonSchema(
       return {
         key,
         ...candidate,
-        name: uniqueName(candidate.definition.format),
+        name: uniqueName(candidate.definition),
       };
     })
     .sort((left, right) => {
@@ -237,28 +426,30 @@ function compactJsonSchema(
     });
 
   function render(
-    selected: ReadonlyMap<string, ReusableScalar>,
+    selected: ReadonlyMap<string, ReusableSchema>,
   ): Record<string, unknown> {
-    function replace(value: unknown, insideDefinitions = false): unknown {
-      if (Array.isArray(value)) {
-        return value.map((item) => {
-          return replace(item, insideDefinitions);
-        });
-      }
+    function replace(
+      value: unknown,
+      insideDefinitions = false,
+      retainedKey?: string,
+    ): unknown {
       if (!isJsonObject(value)) {
         return value;
       }
       if (!insideDefinitions) {
-        const key = reusableScalarKey(value);
-        const candidate = key ? selected.get(key) : undefined;
+        const key = reusableSchemaKey(value);
+        const candidate =
+          key && key !== retainedKey ? selected.get(key) : undefined;
         if (candidate) {
           return { $ref: `#/$defs/${candidate.name}` };
         }
       }
-      return Object.fromEntries(
-        Object.entries(value).map(([key, child]) => {
-          return [key, replace(child, insideDefinitions || key === "$defs")];
-        }),
+      return replaceJsonSchemaChildren(
+        value,
+        (child, childInsideDefinitions) => {
+          return replace(child, childInsideDefinitions);
+        },
+        insideDefinitions,
       );
     }
 
@@ -268,12 +459,16 @@ function compactJsonSchema(
     }
     const definitions: Record<string, unknown> = { ...existingDefinitions };
     for (const candidate of selected.values()) {
-      definitions[candidate.name] = candidate.definition;
+      definitions[candidate.name] = replace(
+        candidate.definition,
+        false,
+        candidate.key,
+      );
     }
     return { ...rewritten, $defs: definitions };
   }
 
-  const selected = new Map<string, ReusableScalar>();
+  const selected = new Map<string, ReusableSchema>();
   let compacted = schema;
   let compactedBytes = utf8Bytes(JSON.stringify(compacted));
   for (const candidate of candidates) {
@@ -573,30 +768,30 @@ function registerManageTools(
     "create_chat_thread",
     {
       description:
-        "Create an empty conversation without sending or starting a run. Choose a visible agent and selectable model from the discovery tools. Use one UUID requestId per intended conversation; within 24 hours, retry only the identical agent, exact title, and model. Replay returns current settings without reverting edits; expired, deleted, or conflicting identities fail. The threadId equals requestId. Follow nextAction to send; admission is checked then.",
+        "Create a conversation, optionally accepting its first message atomically. Only requestId is required. Omitted agentId uses the visible organization default; omitted model leaves the thread unpinned so current member/workspace defaults apply at run admission; omitted title stays null until the first text run generates one. Without message, use the send_chat_message handoff. With message, dispatch is attempted after acceptance; follow get_chat_status because acceptance is not delivery or run success. Use one UUID requestId per intent; within 24 hours, retry only with the identical mode, values, and field presence. threadId equals requestId and inputRef is stable. Deleted, expired, or conflicting requests fail; inspect uncertain old work before retrying.",
       inputSchema: mcpCreateChatThreadInputSchema,
       outputSchema: mcpCreateChatThreadOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     (input, context) => {
       return mutationTool(
         access,
-        "okou:chat:manage",
+        "message" in input ? "okou:chat:send" : "okou:chat:manage",
         (signal) => {
           return access.createThread(input, signal);
         },
         AbortSignal.any([requestSignal, context.mcpReq.signal]),
         {
           summarize(data) {
-            return `Created chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}. Next: send_chat_message.`;
+            return `Created chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}. Next: ${data.nextAction.tool}.`;
           },
           unavailableMessage:
-            "Creation result is unavailable. Retry the identical requestId, Agent, exact title and model within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
+            "Creation result is unavailable. Retry the identical requestId, mode, exact values and optional-field presence within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
         },
       );
     },

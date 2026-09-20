@@ -11,6 +11,7 @@ foundation shipped in #34931; discovery and current context are tracked by
 #34932 under #34890. Message history is delivered in #34933 and search in
 #35100; sending and cancellation are delivered in #34934, status in #35101,
 and Agent/model discovery and empty conversation creation in #35102.
+Atomic creation with an optional first message is delivered in #35540.
 Successful results keep the complete machine-readable value in
 `structuredContent` and include a tool-specific human summary of at most 512
 UTF-8 bytes in text content; they do not duplicate the full JSON value as text.
@@ -44,9 +45,11 @@ the tool's documented idempotency and inspection guidance before retrying.
 
 ## Starting a conversation
 
-Call `list_agents` and `list_models` before `create_chat_thread`. Discovery
-requires `okou:chat:read`; creation additionally requires `okou:chat:manage`.
-All calls retain the endpoint's organization/read-scope requirements.
+Call `list_agents` and `list_models` before `create_chat_thread` when selecting
+explicit values. Discovery requires `okou:chat:read`; creation additionally
+requires `okou:chat:manage`. The optional first-message branch also requires
+`okou:chat:send`. All calls retain the endpoint's organization/read-scope
+requirements.
 
 `list_agents` accepts optional `limit` (default 20, maximum 50) and `cursor`.
 It lists public or caller-owned Agents in the authorized organization, with
@@ -71,37 +74,65 @@ defaults awaiting canonical repair after a plan change return a setup error.
 Open model settings to synchronize the policies, then retry discovery. Discovery
 reads enforce a 15-second deadline, three-second SQL limits and a 16 KiB data budget.
 
-For example:
+To create an empty conversation, only `requestId` is required:
 
 ```json
 {
-  "requestId": "<new UUID for this intended conversation>",
-  "agentId": "<visible Agent UUID from list_agents>",
-  "title": "Review the quarterly plan",
-  "model": "<selectable model id from list_models>"
+  "requestId": "<new UUID for this intended conversation>"
 }
 ```
 
-All four fields are required; title must be nonblank and at most 200 UTF-16 units.
-Creation returns `threadId` (the normalized `requestId`), Agent, current title,
-selected/effective model, service tier, creation time, authenticated App URL,
-`replayed`, `retryUntil`, and `nextAction` pointing to `send_chat_message` with
-that thread ID. The conversation starts empty: no message is submitted, no run
-starts, and no context or run is inherited. Existing media/reasoning defaults
-apply; the service tier starts unset. Sending is a separate call with its own
-request ID and self-contained text. Credentials, quota and execution policy are
-checked on send, as indicated by `admission: "checked_on_send"`.
+The response points `nextAction` to `send_chat_message`; no message is submitted
+and no run starts. Sending later uses its own request ID and self-contained text.
 
-Retry an uncertain creation using the identical request ID, Agent, exact title
-and model within 24 hours of acceptance. The canonical `created` event retains
-the original intent; replay returns current stored settings without undoing
-later title/model edits. Concurrent identical requests converge on one thread.
-Conflicting input, deleted conversations, expired retries or missing creation
-evidence return an error. The guarantee is limited to accessible conversations
-and the 24-hour window; creation events have seven-day live retention. There is
-no permanent request-ID ledger. Never automatically retry an uncertain old
-request after the window; inspect the original thread before intentionally
-creating new work. No new table or schema migration is introduced.
+To atomically create a conversation and accept its first input, add `message`.
+All selection fields remain optional:
+
+```json
+{
+  "requestId": "<new UUID for this intended conversation and input>",
+  "message": "Summarize the risks and propose next steps."
+}
+```
+
+In either mode, optional `agentId`, `title`, and `model` select explicit values.
+An omitted Agent resolves to the currently visible organization default and is
+stored concretely on the thread. An omitted title stays null until the first
+text run triggers automatic title generation. An omitted model leaves the
+thread unpinned until run admission, so the current member default then
+organization default is used for that admission. Canonical admission may
+persist the resolved model on the thread for future runs. The response exposes
+the selected/effective model and `source`. `message` uses the same nonblank,
+32,000 UTF-16-unit limit as `send_chat_message` and preserves its exact accepted
+text.
+
+The thread and canonical input event commit in one transaction. Only after that
+commit does the shared scheduler attempt to start, queue, or steer execution.
+The response therefore reports the durable `input` receipt and its current
+`disposition`; it does not claim delivery or run success. Its `nextAction`
+points to `get_chat_status` with the complete stable `inputRef`. Use that handoff
+and then `get_chat_messages` to observe output.
+
+Both modes return `threadId` (the normalized `requestId`), the concrete Agent,
+current title, selected/effective model, service tier, creation time,
+authenticated App URL, `replayed`, and `retryUntil`. Existing media/reasoning
+defaults apply and service tier starts unset. Credentials, quota, and execution
+policy are checked when the initial or later input is dispatched, as indicated
+by `admission: "checked_on_send"`.
+
+Retry an uncertain creation within 24 hours using the identical request ID,
+operation mode, exact values, and optional-field presence. Combined retries keep
+the same derived input reference. Concurrent identical requests converge on one
+thread and, when present, one input. Switching between empty and combined modes,
+changing a message, or changing omitted-versus-explicit Agent/title/model intent
+is a conflict. Replay returns current stored thread settings without undoing
+later edits. An originally omitted model follows current defaults while the
+thread is still unpinned; after run admission persists the resolved model,
+replay reports that thread pin. Deleted conversations, expired retries, or
+missing canonical evidence return an error. There is no permanent request-ID ledger. Never
+automatically retry an uncertain old request after the window; inspect the
+original thread before intentionally creating new work. No new table or schema
+migration is introduced.
 
 Creation checks current Agent visibility and account-content admission in its
 transaction, including the Agent owner's account. It uses the existing creation
@@ -649,14 +680,17 @@ Tokens with just these two scopes remain valid for reads.
 A `403 insufficient_scope` challenge names those required scopes.
 Mutation permissions are checked on every tool invocation:
 
-| Tool                                  | Additional required scope |
-| ------------------------------------- | ------------------------- |
-| `create_chat_thread`                  | `okou:chat:manage`        |
-| `send_chat_message`                   | `okou:chat:send`          |
-| `revoke_queued_message`, `cancel_run` | `okou:run:cancel`         |
+| Tool                                  | Additional required scope                                           |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| `create_chat_thread`                  | `okou:chat:manage`; plus `okou:chat:send` when `message` is present |
+| `send_chat_message`                   | `okou:chat:send`                                                    |
+| `revoke_queued_message`, `cancel_run` | `okou:run:cancel`                                                   |
 
-Tools requiring a missing mutation scope are not advertised. Direct invocation
-is rejected and performs no operation.
+`create_chat_thread` is advertised when manage scope is present so the empty
+mode remains discoverable; its message branch independently checks send scope
+at invocation. Other mutation tools requiring a missing scope are not
+advertised. Direct invocation without the applicable scope is rejected and
+performs no operation.
 Title/model editing is delivered separately. A tool argument cannot select or override
 the organization. Existing grants do not automatically gain scopes; clients must
 reauthorize to obtain additional permissions.

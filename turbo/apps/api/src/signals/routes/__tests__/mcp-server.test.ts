@@ -19,7 +19,10 @@ import {
   mcpListAgentsOutputSchema,
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
-import { mcpCreateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-creation";
+import {
+  mcpCreateChatThreadOutputSchema,
+  mcpCreateChatWithMessageOutputSchema,
+} from "@okouai/api-contracts/contracts/mcp-chat-creation";
 import { mcpUpdateChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-thread-update";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
@@ -37,6 +40,7 @@ import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
+import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
@@ -64,7 +68,9 @@ import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
 } from "../../../test-fixtures/account-erasure-subject";
+import { holdAgentRowLockFixture } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { seedRetentionOutputEvent$ } from "../../../test-fixtures/chat-event-retention";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import {
   completeRunWithoutCallbacksFixture,
   holdChatThreadRowLockFixture,
@@ -148,6 +154,31 @@ function expectSubstantialCompactSuccess(result: unknown): void {
   const measurement = measureCompactSuccess(result);
   expect(measurement.compactBytes).toBeLessThanOrEqual(
     Math.floor(measurement.baselineBytes * 0.6),
+  );
+}
+
+const mcpCreationNamespace = "107f0e3c-b577-40c5-b2e8-0ebdcce13242";
+
+function mcpCreationEventId(input: {
+  readonly requestId: string;
+  readonly agentId?: string;
+  readonly title?: string;
+  readonly model?: string;
+  readonly message?: string;
+}): string {
+  const optionalIdentity = (value: string | undefined) => {
+    return value === undefined ? ["omitted"] : ["present", value];
+  };
+  return uuidv5(
+    JSON.stringify([
+      "create_chat_thread",
+      input.requestId,
+      optionalIdentity(input.agentId),
+      optionalIdentity(input.title),
+      optionalIdentity(input.model),
+      "message" in input ? ["present", input.message] : ["omitted"],
+    ]),
+    mcpCreationNamespace,
   );
 }
 
@@ -463,9 +494,17 @@ async function chatRunFixture() {
   return { auth, actor, chat, agent, runs };
 }
 
-async function creationFixture() {
+async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
   const f = await threadFixture();
   const runs = createRunsApi(context);
+  const defaultAgentId = options.withDefaultAgent
+    ? await f.bdd.bootstrapLimitedFreeOnboarding(f.actor, {
+        displayName: "MCP default Agent",
+      })
+    : null;
+  if (defaultAgentId) {
+    await runs.grantProEntitlement(f.actor);
+  }
   const { providerId } = await runs.ensureOrgModelProvider(f.actor);
   await runs.updateOrgModelPolicies(
     f.actor,
@@ -479,7 +518,7 @@ async function creationFixture() {
       };
     }),
   );
-  return { ...f, runs, providerId };
+  return { ...f, runs, providerId, defaultAgentId };
 }
 
 describe("MCP chat discovery and creation", () => {
@@ -819,6 +858,351 @@ describe("MCP chat discovery and creation", () => {
     expect(sent.inputRef.threadId).toBe(requestId);
   });
 
+  it("creates an untitled empty conversation using Agent and model defaults", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = { requestId: randomUUID() };
+
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+        admission: "checked_on_send",
+      },
+      replayed: false,
+      nextAction: {
+        tool: "send_chat_message",
+        arguments: { threadId: args.requestId },
+      },
+    });
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      replayed: true,
+    });
+  });
+
+  it("re-resolves a concurrently accepted default Agent without reversing the subject lock order", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    if (!f.defaultAgentId) {
+      throw new Error("Expected the default Agent fixture");
+    }
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = { requestId: randomUUID() };
+    const replacement = await f.bdd.createAgent(f.actor, {
+      displayName: "Replacement MCP default Agent",
+      visibility: "private",
+    });
+    const lock = await holdAgentRowLockFixture({
+      agentId: f.defaultAgentId,
+      signal: context.signal,
+    });
+    const first = createThread(token, args);
+    onTestFinished(async () => {
+      lock.release();
+      await lock.done;
+      await first;
+    });
+    await expect
+      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
+      .toBeGreaterThan(0);
+    await setOrgDefaultAgentFixture({
+      orgId: f.auth.orgId,
+      agentId: replacement.agentId,
+    });
+
+    await expect(createThread(token, args)).resolves.toMatchObject({
+      agentId: replacement.agentId,
+      replayed: false,
+    });
+    lock.release();
+    await lock.done;
+    await expect(first).resolves.toMatchObject({
+      agentId: replacement.agentId,
+      replayed: true,
+    });
+  });
+
+  it("atomically creates a conversation with its first message and resolves defaults", async () => {
+    const f = await creationFixture({ withDefaultAgent: true });
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      message: "  Preserve this exact first message. 中文 😀  ",
+    };
+    const created = await createThread(token, args);
+    expect(created).toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      title: null,
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+        admission: "checked_on_send",
+      },
+      replayed: false,
+      input: {
+        inputRef: { threadId: args.requestId, eventId: expect.any(String) },
+        disposition: "associated",
+        runId: expect.any(String),
+      },
+      nextAction: {
+        tool: "get_chat_status",
+        arguments: {
+          threadId: args.requestId,
+          inputRef: expect.objectContaining({ threadId: args.requestId }),
+        },
+      },
+    });
+    const combined = mcpCreateChatWithMessageOutputSchema.parse(created);
+    expect(combined.nextAction.arguments.inputRef).toStrictEqual(
+      combined.input.inputRef,
+    );
+    expect(
+      Date.parse(combined.input.retryUntil) -
+        Date.parse(combined.input.acceptedAt),
+    ).toBe(24 * 60 * 60 * 1000);
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toMatchObject([{ text: args.message }]);
+
+    await f.runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: false,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: f.providerId,
+      },
+      {
+        model: "claude-sonnet-4-6",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: f.providerId,
+      },
+    ]);
+
+    const replay = await createThread(token, args);
+    expect(replay).toMatchObject({
+      threadId: args.requestId,
+      agentId: f.defaultAgentId,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
+      replayed: true,
+      input: {
+        inputRef: combined.input.inputRef,
+        disposition: "associated",
+        runId: combined.input.runId,
+      },
+    });
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toHaveLength(1);
+  });
+
+  it("finishes combined creation after its HTTP caller disconnects and recovers one input", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Recover combined creation",
+      model: "claude-sonnet-5",
+      message: "Keep this input after response loss",
+    };
+    // Infrastructure exception: hold the selected Agent after MCP mutation
+    // admission so the HTTP response can disconnect while waitUntil retains
+    // ownership of the real creation transaction.
+    const lock = await holdAgentRowLockFixture({
+      agentId: f.agent.agentId,
+      signal: context.signal,
+    });
+    const controller = new AbortController();
+    const app = createAppWithRoutes({
+      routes: mcpServerRoutes,
+      signal: context.signal,
+    });
+    const pending = settleIncludingAbort(
+      (async () => {
+        const response = await app.request(
+          new Request(resource, {
+            method: "POST",
+            headers: {
+              ...protocolHeaders(
+                token,
+                "tools/call",
+                true,
+                "create_chat_thread",
+              ),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(
+              requestBody("tools/call", true, {
+                name: "create_chat_thread",
+                arguments: args,
+              }),
+            ),
+            signal: controller.signal,
+          }),
+        );
+        return { status: response.status, body: await response.text() };
+      })(),
+    );
+    onTestFinished(async () => {
+      controller.abort();
+      lock.release();
+      await lock.done;
+      await pending;
+    });
+    await expect
+      .poll(lock.blockedWaiterCount, { interval: 10, timeout: 5000 })
+      .toBeGreaterThan(0);
+    controller.abort();
+    lock.release();
+    await lock.done;
+    await pending;
+    await flushWaitUntilForTest();
+
+    const recovered = await createThread(token, args);
+    expect(recovered).toMatchObject({
+      threadId: args.requestId,
+      agentId: f.agent.agentId,
+      model: {
+        selectedModel: "claude-sonnet-5",
+        effectiveModel: "claude-sonnet-5",
+        source: "thread",
+      },
+      replayed: true,
+      input: { inputRef: { threadId: args.requestId } },
+    });
+    const messages = (await getMessages(token, { threadId: args.requestId }))
+      .messages;
+    expect(messages).toMatchObject([{ text: args.message }]);
+    expect(messages).toHaveLength(1);
+  });
+
+  it("deduplicates simultaneous combined creation and conflicts on changed intent or mode", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "One combined operation",
+      model: "claude-sonnet-5",
+      message: "Create and submit exactly once",
+    };
+    const results = await Promise.all([
+      createThread(token, args),
+      createThread(token, args),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.replayed;
+        })
+        .sort(),
+    ).toStrictEqual([false, true]);
+    const inputs = results.map((result) => {
+      if (!("input" in result)) {
+        throw new Error("Expected combined creation responses");
+      }
+      expect(result.input).toMatchObject({
+        disposition: "rejected",
+        runId: null,
+      });
+      return result.input;
+    });
+    expect(inputs[0]?.inputRef).toStrictEqual(inputs[1]?.inputRef);
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toHaveLength(1);
+
+    const secondAgent = await f.bdd.createAgent(f.actor, {
+      displayName: "Another combined creation Agent",
+      visibility: "private",
+    });
+    for (const conflicting of [
+      { ...args, title: "Changed title" },
+      { ...args, title: undefined },
+      { ...args, message: "Changed message" },
+      { ...args, agentId: secondAgent.agentId },
+      { ...args, agentId: undefined },
+      { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: undefined },
+      {
+        requestId: args.requestId,
+        agentId: args.agentId,
+        title: args.title,
+        model: args.model,
+      },
+    ]) {
+      expect(
+        structuredToolError(
+          await callTool(token, "create_chat_thread", conflicting),
+        ),
+      ).toMatchObject({ code: "request_id_conflict", retryable: false });
+    }
+
+    const emptyRequestId = randomUUID();
+    const empty = {
+      requestId: emptyRequestId,
+      agentId: f.agent.agentId,
+      title: "Empty mode stays empty",
+      model: "claude-sonnet-5",
+    };
+    await createThread(token, empty);
+    expect(
+      structuredToolError(
+        await callTool(token, "create_chat_thread", {
+          ...empty,
+          message: "Changing to combined mode must conflict",
+        }),
+      ),
+    ).toMatchObject({ code: "request_id_conflict", retryable: false });
+  });
+
+  it("requires send scope only for the message branch", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({
+      scope: `${requiredScopes} okou:chat:manage`,
+    });
+    const empty = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Manage-only empty conversation",
+      model: "claude-sonnet-5",
+    });
+    expect(empty.nextAction.tool).toBe("send_chat_message");
+
+    const combinedId = randomUUID();
+    expect(
+      structuredToolError(
+        await callTool(token, "create_chat_thread", {
+          requestId: combinedId,
+          title: "Must not be created",
+          message: "Send scope is required",
+        }),
+      ),
+    ).toMatchObject({ code: "insufficient_scope", retryable: false });
+    expect(
+      (await listThreads(f.auth.token({ scope: defaultScopes }))).threads.map(
+        (thread) => {
+          return thread.threadId;
+        },
+      ),
+    ).not.toContain(combinedId);
+  });
+
   it("deduplicates simultaneous creation and replays current mutable settings without overwriting them", async () => {
     const f = await creationFixture();
     const args = {
@@ -867,7 +1251,10 @@ describe("MCP chat discovery and creation", () => {
     ).resolves.toStrictEqual(before);
     for (const conflicting of [
       { ...args, title: "Different intent" },
+      { ...args, title: undefined },
+      { ...args, agentId: undefined },
       { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: undefined },
     ]) {
       const result = await callTool(token, "create_chat_thread", conflicting);
       expect(structuredToolError(result)).toMatchObject({
@@ -1060,8 +1447,19 @@ describe("MCP chat discovery and creation", () => {
       title: "Unchanged metadata",
       model: "claude-sonnet-5",
     });
-    const eventsBefore = (await f.chat.requestThreadEvents(f.actor, {}, [200]))
-      .body;
+    const eventsResponse = await f.chat.requestThreadEvents(f.actor, {}, [200]);
+    if (eventsResponse.status !== 200) {
+      throw new Error("Expected chat thread events to load");
+    }
+    const eventsBefore = eventsResponse.body;
+    const createdEventId = eventsBefore.events.find((event) => {
+      return (
+        event.kind === "created" && event.chatThreadId === created.threadId
+      );
+    })?.id;
+    if (!createdEventId) {
+      throw new Error("Expected the MCP creation event");
+    }
     for (const patch of [
       {},
       { title: " " },
@@ -1097,7 +1495,7 @@ describe("MCP chat discovery and creation", () => {
     expect(
       (
         await callTool(token, "update_chat_thread", {
-          requestId: created.threadId,
+          requestId: createdEventId,
           threadId: created.threadId,
           patch: { title: "Event collision must roll back" },
         })
@@ -1147,60 +1545,66 @@ describe("MCP chat discovery and creation", () => {
     });
   });
 
-  it("expires creation retries after 24 hours and does not recreate deleted conversations", async () => {
-    const f = await creationFixture();
-    const args = {
-      requestId: randomUUID(),
-      agentId: f.agent.agentId,
-      title: "Retry window",
-      model: "claude-sonnet-5",
-    };
-    const created = await createThread(
-      f.auth.token({ scope: defaultScopes }),
-      args,
-    );
-    const token = f.auth.token({
-      scope: defaultScopes,
-      exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
-    });
-    await withMockNowForTest(Date.parse(created.retryUntil) - 1, async () => {
-      await expect(createThread(token, args)).resolves.toMatchObject({
-        replayed: true,
+  it.each([
+    { kind: "empty", message: undefined },
+    { kind: "combined", message: "Retain one expiring initial input" },
+  ] as const)(
+    "expires $kind creation retries after 24 hours and does not recreate deleted conversations",
+    async ({ message }) => {
+      const f = await creationFixture();
+      const args = {
+        requestId: randomUUID(),
+        agentId: f.agent.agentId,
+        title: "Retry window",
+        model: "claude-sonnet-5",
+        ...(message === undefined ? {} : { message }),
+      };
+      const created = await createThread(
+        f.auth.token({ scope: defaultScopes }),
+        args,
+      );
+      const token = f.auth.token({
+        scope: defaultScopes,
+        exp: Math.floor((Date.parse(created.retryUntil) + 60_000) / 1000),
       });
-    });
-    await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
-      const expired = await callTool(token, "create_chat_thread", args);
-      expect(expired.isError).toBeTruthy();
-      structuredToolError(expired);
-    });
-    await f.chat.deleteThread(f.actor, created.threadId);
-    expect(
-      (await callTool(token, "create_chat_thread", args)).isError,
-    ).toBeTruthy();
-    expect((await listThreads(token)).threads).toStrictEqual([]);
-  });
+      await withMockNowForTest(Date.parse(created.retryUntil) - 1, async () => {
+        await expect(createThread(token, args)).resolves.toMatchObject({
+          replayed: true,
+        });
+      });
+      await withMockNowForTest(Date.parse(created.retryUntil) + 1, async () => {
+        const expired = await callTool(token, "create_chat_thread", args);
+        expect(expired.isError).toBeTruthy();
+        structuredToolError(expired);
+      });
+      await f.chat.deleteThread(f.actor, created.threadId);
+      expect(
+        (await callTool(token, "create_chat_thread", args)).isError,
+      ).toBeTruthy();
+      expect((await listThreads(token)).threads).toStrictEqual([]);
+    },
+  );
 
   it("rejects an unrelated created-event collision and an existing thread without matching creation evidence", async () => {
     const f = await creationFixture();
     const token = f.auth.token({ scope: defaultScopes });
-    const collidingEventId = randomUUID();
-    const first = await f.chat.createThread(f.actor, {
-      agentId: f.agent.agentId,
-      title: "Other event owner",
-      model: "claude-sonnet-5",
-      eventId: collidingEventId,
-    });
     const args = {
-      requestId: collidingEventId,
+      requestId: randomUUID(),
       agentId: f.agent.agentId,
       title: "MCP creation intent",
       model: "claude-sonnet-5",
     };
+    const first = await f.chat.createThread(f.actor, {
+      agentId: f.agent.agentId,
+      title: "Other event owner",
+      model: "claude-sonnet-5",
+      eventId: mcpCreationEventId(args),
+    });
     expect(
       (await callTool(token, "create_chat_thread", args)).isError,
     ).toBeTruthy();
     expect(
-      (await callTool(token, "get_chat_thread", { threadId: collidingEventId }))
+      (await callTool(token, "get_chat_thread", { threadId: args.requestId }))
         .isError,
     ).toBeTruthy();
     const existingId = randomUUID();
@@ -1359,7 +1763,7 @@ describe("MCP chat discovery and creation", () => {
     },
   );
 
-  it("requires explicit creation choices and rejects unrelated execution controls", async () => {
+  it("validates optional creation choices and rejects unrelated execution controls", async () => {
     const f = await creationFixture();
     const token = f.auth.token({ scope: defaultScopes });
     const args = {
@@ -1372,10 +1776,19 @@ describe("MCP chat discovery and creation", () => {
       { ...args, title: "  " },
       { ...args, title: "x".repeat(201) },
       { ...args, model: " \n\t " },
-      { ...args, model: undefined },
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
       { ...args, orgId: f.auth.orgId },
+      {
+        requestId: randomUUID(),
+        title: "Blank initial input",
+        message: "  ",
+      },
+      {
+        requestId: randomUUID(),
+        title: "Oversized initial input",
+        message: "x".repeat(32_001),
+      },
     ]) {
       const result = await callTool(token, "create_chat_thread", invalid);
       expect(structuredToolError(result)).toMatchObject({
@@ -5596,9 +6009,17 @@ describe("external MCP entry", () => {
                           maxLength: 255,
                           pattern: "\\S",
                         },
+                        message: {
+                          maxLength: 32_000,
+                          pattern: "\\S",
+                        },
                       },
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: {
+                      readOnlyHint: false,
+                      idempotentHint: true,
+                      openWorldHint: true,
+                    },
                   },
                   {
                     name: "update_chat_thread",
