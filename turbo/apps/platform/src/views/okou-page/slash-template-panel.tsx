@@ -261,18 +261,17 @@ function SlashTemplateWorkflowPane() {
           })}
         />
         {/*
-          The artwork carries its own warm ground, so it sits in a rounded
-          block the way the marketing surfaces frame a scene, rather than
-          bleeding into the popover. Its intrinsic size is twice the width it
-          renders at, which is what keeps it sharp on a 2x display.
+          The artwork carries its own warm ground and rounded corners, so it
+          needs no frame here. Its intrinsic size is declared so the pane
+          reserves the right box before the CDN answers.
         */}
         <img
           src={slashWorkflowPaneImg}
           alt=""
           aria-hidden
-          width={576}
-          height={365}
-          className="mt-[11px] w-full rounded-xl"
+          width={560}
+          height={280}
+          className="mt-[11px] w-full"
         />
         <p className="mt-3 text-[12px] text-muted-foreground">
           {t(($) => {
