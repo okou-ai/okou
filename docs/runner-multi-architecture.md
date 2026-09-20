@@ -153,6 +153,12 @@ prefix or add job, crate, branch, or commit namespaces. Use the action only once
 per job so the server keeps the startup credentials for the complete compiler
 lifetime without exposing them to later build steps.
 
+Rust coverage is an `x86_64` consumer of this architecture-only namespace.
+Pushes, merge groups, and same-repository pull requests start the shared action;
+fork and Dependabot pull requests skip the credentialed setup and run the same
+coverage command without sccache. A trusted run that selects the action still
+fails when its R2 configuration is missing instead of silently falling back.
+
 This avoids GitHub's branch-scoped compiler cache and shared storage quota.
 The additional Cargo dependency cache still uses GitHub and saves only on main;
 main often reuses the complete runner binary and skips compilation, so that
