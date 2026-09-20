@@ -4,7 +4,7 @@ import type { AuthUrlResult } from "@okouai/connectors/auth-providers/provider-f
 
 import { generateConnectorOAuthState } from "../../lib/connector-oauth-state";
 
-type PrepareResolvedConnectorOpenIdAuthStartResult = {
+type PrepareResolvedBuiltinConnectorOpenIdAuthStartResult = {
   readonly ok: true;
   readonly state: string;
   readonly returnTo: string;
@@ -24,11 +24,11 @@ export function openIdRealmForOrigin(origin: string): string {
   return url.toString();
 }
 
-export function prepareConnectorOpenIdAuthStartWithMethod(args: {
+export function prepareBuiltinConnectorOpenIdAuthStartWithMethod(args: {
   readonly connectorSlug: string;
   readonly method: ConnectorAuthMethodRuntimeConfig;
   readonly origin: string;
-}): PrepareResolvedConnectorOpenIdAuthStartResult {
+}): PrepareResolvedBuiltinConnectorOpenIdAuthStartResult {
   if (args.method.grant.kind !== "openid-auth") {
     throw new Error("OpenID auth method required");
   }
@@ -47,7 +47,7 @@ export function prepareConnectorOpenIdAuthStartWithMethod(args: {
   };
 }
 
-export async function buildConnectorOpenIdAuthUrlWithMethod(args: {
+export async function buildBuiltinConnectorOpenIdAuthUrlWithMethod(args: {
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly method: ConnectorAuthMethodRuntimeConfig;

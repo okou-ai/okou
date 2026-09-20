@@ -760,7 +760,6 @@ describe("POST /api/image-recognition", () => {
       expect.objectContaining({
         title: "Unavailable thread",
         threadId: null,
-        runId: null,
         tokens: 4000,
         credits: EXPECTED_CHARGE,
       }),
@@ -964,7 +963,6 @@ describe("POST /api/image-recognition", () => {
       expect.objectContaining({
         title: "Unavailable thread",
         threadId: null,
-        runId: null,
         tokens: 8000,
         credits: EXPECTED_CHARGE * 2,
       }),

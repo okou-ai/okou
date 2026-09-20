@@ -3,7 +3,9 @@ import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
 import { executePiResourceIndexWork$ } from "../services/pi-resource-version-index.service";
+import { executePiStableContextWork } from "../services/pi-stable-context.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
+import { writeDb$ } from "../external/db";
 
 const materializePiResourceIndexes$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -12,9 +14,14 @@ const materializePiResourceIndexes$ = command(
     }
     const result = await set(executePiResourceIndexWork$, undefined, signal);
     signal.throwIfAborted();
+    const stableContext = await executePiStableContextWork(
+      set(writeDb$),
+      signal,
+    );
+    signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: { success: true as const, ...result },
+      body: { success: true as const, ...result, stableContext },
     };
   },
 );

@@ -36,7 +36,7 @@ import {
   readPiResourceVersionIndexes,
 } from "./pi-resource-version-index.service";
 
-const RESOURCE_SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024;
+export const PI_RESOURCE_SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024;
 
 interface VirtualFile {
   readonly path: string;
@@ -595,7 +595,7 @@ export function buildPiResourceSnapshotFromIndexes(
       : { schemaVersion: 2, agentsFiles, skills, memoryRecall };
   if (
     Buffer.byteLength(JSON.stringify(snapshot), "utf8") >
-    RESOURCE_SNAPSHOT_MAX_BYTES
+    PI_RESOURCE_SNAPSHOT_MAX_BYTES
   ) {
     throw new Error("Pi resource snapshot exceeds its size limit");
   }

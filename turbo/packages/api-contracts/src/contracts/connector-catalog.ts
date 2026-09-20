@@ -207,6 +207,27 @@ const connectorCatalogPathParamsSchema = z.object({
   connectorSlug: connectorSlugSchema,
 });
 
+/**
+ * The grant kinds that complete in the browser: the user presses one button,
+ * authorizes at the provider, and comes back connected. Everything else needs a
+ * key pasted in from somewhere outside Okou.
+ *
+ * This is also the rule the Get started connector reward pays on, so the two
+ * cannot drift: a connector the catalog offers as one-click is a connector that
+ * earns the reward.
+ */
+export const ONE_CLICK_CONNECTOR_GRANT_KINDS = Object.freeze([
+  "auth-code",
+  "external-code",
+  "device-auth",
+] as const);
+
+export function isOneClickConnectorGrantKind(grantKind: string): boolean {
+  return ONE_CLICK_CONNECTOR_GRANT_KINDS.some((kind) => {
+    return kind === grantKind;
+  });
+}
+
 export type PublicConnectorCatalogAuthMethodSummary = z.infer<
   typeof publicConnectorCatalogAuthMethodSummarySchema
 >;

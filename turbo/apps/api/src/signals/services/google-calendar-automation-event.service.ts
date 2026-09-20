@@ -31,11 +31,11 @@ import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
-  connectorCredentialRuntimeValueRef,
-  loadConnectorCredentialConnection,
-  loadConnectorCredentialValues,
-  refreshConnectorCredentialAccess,
-} from "./connector-credential-runtime.service";
+  builtinConnectorCredentialRuntimeValueRef,
+  loadBuiltinConnectorCredentialConnection,
+  loadBuiltinConnectorCredentialValues,
+  refreshBuiltinConnectorCredentialAccess,
+} from "./builtin-connector-credential-runtime.service";
 import {
   AutomationEventSourceTiming,
   type AutomationEventRunTiming,
@@ -348,7 +348,7 @@ export async function normalizeGoogleCalendarIdForConnector(
   }
   const snapshot = await loadConnectorRuntimeSnapshot(db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db,
     snapshot,
     orgId: args.orgId,
@@ -379,7 +379,7 @@ async function resolveGoogleCalendarAccess(
   const currentTime = nowDate();
   const snapshot = await loadConnectorRuntimeSnapshot(args.db);
   signal.throwIfAborted();
-  const loaded = await loadConnectorCredentialConnection({
+  const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,
     snapshot,
     orgId: args.orgId,
@@ -403,7 +403,7 @@ async function resolveGoogleCalendarAccess(
     };
   }
   const connection = loaded.connection;
-  const accessTokenValueRef = connectorCredentialRuntimeValueRef(
+  const accessTokenValueRef = builtinConnectorCredentialRuntimeValueRef(
     connection,
     GOOGLE_CALENDAR_ACCESS_TOKEN_ENVIRONMENT_NAME,
   );
@@ -414,7 +414,7 @@ async function resolveGoogleCalendarAccess(
         "Reconnect Google Calendar before using Google Calendar event automations",
     };
   }
-  const values = await loadConnectorCredentialValues({
+  const values = await loadBuiltinConnectorCredentialValues({
     connection,
     db: args.db,
     valueRefs: [accessTokenValueRef],
@@ -441,7 +441,7 @@ async function resolveGoogleCalendarAccess(
       },
     };
   }
-  const refreshed = await refreshConnectorCredentialAccess(
+  const refreshed = await refreshBuiltinConnectorCredentialAccess(
     {
       connection,
       db: args.db,

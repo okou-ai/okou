@@ -34,7 +34,7 @@ const externalCodeProviderStateSchema = z
     };
   });
 
-export function parseConnectorOauthDeviceProviderState(args: {
+export function parseBuiltinConnectorOauthDeviceProviderState(args: {
   readonly serializedState: string;
   readonly connectorSlug: ConnectorSlug;
 }) {
@@ -47,7 +47,7 @@ export function parseConnectorOauthDeviceProviderState(args: {
   return providerState;
 }
 
-export function serializeConnectorOauthDeviceProviderState(args: {
+export function serializeBuiltinConnectorOauthDeviceProviderState(args: {
   readonly connectorSlug: ConnectorSlug;
   readonly deviceCode: string;
   readonly pollState: string | undefined;
@@ -59,7 +59,7 @@ export function serializeConnectorOauthDeviceProviderState(args: {
   });
 }
 
-export function parseConnectorExternalCodeProviderState(args: {
+export function parseBuiltinConnectorExternalCodeProviderState(args: {
   readonly serializedState: string;
   readonly connectorSlug: ConnectorSlug;
   readonly authMethod: ConnectorAuthMethodId;
@@ -76,7 +76,7 @@ export function parseConnectorExternalCodeProviderState(args: {
   return providerState;
 }
 
-export function serializeConnectorExternalCodeProviderState(args: {
+export function serializeBuiltinConnectorExternalCodeProviderState(args: {
   readonly connectorSlug: ConnectorSlug;
   readonly authMethod: ConnectorAuthMethodId;
   readonly providerState: string;

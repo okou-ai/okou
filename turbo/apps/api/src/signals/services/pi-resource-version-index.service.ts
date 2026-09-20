@@ -3,9 +3,13 @@ import { randomUUID } from "node:crypto";
 
 import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
+import {
+  piStableContextArtifactResources,
+  piStableContextHeads,
+} from "@okouai/db/schema/pi-stable-context";
 import { storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, inArray, lte, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import {
@@ -23,14 +27,113 @@ import { safeSync, settle } from "../utils";
 
 const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
+const HEAD_INVALIDATION_BATCH_SIZE = 256;
 const WORK_LEASE_MS = 5 * 60 * 1000;
 
+function indexQueueValues(
+  versionIds: readonly string[],
+  archiveSizes: ReadonlyMap<string, number>,
+) {
+  return versionIds.map((storageVersionId) => {
+    const sourceArchiveSize = archiveSizes.get(storageVersionId);
+    if (sourceArchiveSize === undefined) {
+      throw new Error("Cannot index an unregistered Storage version");
+    }
+    return {
+      storageVersionId,
+      extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
+      sourceArchiveSize,
+    };
+  });
+}
+
+function repairedVersionHeadCondition(
+  db: Pick<Db, "select">,
+  changedVersionIds: readonly string[],
+) {
+  return or(
+    exists(
+      db
+        .select({ ordinal: piStableContextArtifactResources.ordinal })
+        .from(piStableContextArtifactResources)
+        .where(
+          and(
+            eq(
+              piStableContextArtifactResources.artifactDigest,
+              piStableContextHeads.artifactDigest,
+            ),
+            inArray(
+              piStableContextArtifactResources.storageVersionId,
+              changedVersionIds,
+            ),
+          ),
+        ),
+    ),
+    // Pending/running heads have no artifact edge yet. Their captured immutable
+    // mounts still bind the repaired Storage encoding.
+    sql`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)
+      ) AS mount
+      WHERE ${inArray(sql`mount->>'versionId'`, changedVersionIds)}
+    )`,
+  );
+}
+
+async function invalidateRepairedVersionHeads(
+  db: Pick<Db, "select" | "update">,
+  changedVersionIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  const condition = repairedVersionHeadCondition(db, changedVersionIds);
+  const heads = await db
+    .select({ id: piStableContextHeads.id })
+    .from(piStableContextHeads)
+    .where(condition)
+    .orderBy(asc(piStableContextHeads.id))
+    .for("update");
+  signal?.throwIfAborted();
+  const invalidatedAt = nowDate();
+  // Every bulk head writer uses the same UUID order. Update only the exact
+  // prelocked snapshot so a concurrent insert cannot enter an unlocked batch.
+  for (
+    let offset = 0;
+    offset < heads.length;
+    offset += HEAD_INVALIDATION_BATCH_SIZE
+  ) {
+    const ids = heads
+      .slice(offset, offset + HEAD_INVALIDATION_BATCH_SIZE)
+      .map((head) => {
+        return head.id;
+      });
+    await db
+      .update(piStableContextHeads)
+      .set({
+        generation: sql`${piStableContextHeads.generation} + 1`,
+        status: "missing",
+        input: null,
+        inputDigest: null,
+        artifactDigest: null,
+        validityHorizon: null,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt: invalidatedAt,
+        attemptCount: 0,
+        lastErrorClass: null,
+        updatedAt: invalidatedAt,
+      })
+      .where(inArray(piStableContextHeads.id, ids));
+    signal?.throwIfAborted();
+  }
+}
+
 export async function enqueuePiResourceVersionIndexes(
-  db: Pick<Db, "insert" | "select">,
+  db: Pick<Db, "insert" | "select" | "update">,
   versionIds: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {
-  const unique = [...new Set(versionIds)];
+  const unique = [...new Set(versionIds)].sort();
   if (unique.length === 0) {
     return;
   }
@@ -47,40 +150,62 @@ export async function enqueuePiResourceVersionIndexes(
       return [version.id, version.archiveSize] as const;
     }),
   );
-  await db
+  const values = indexQueueValues(unique, sizes);
+  const inserted = await db
     .insert(piResourceVersionIndexes)
-    .values(
-      unique.map((storageVersionId) => {
-        const archiveSize = sizes.get(storageVersionId);
-        if (archiveSize === undefined) {
-          throw new Error("Cannot index an unregistered Storage version");
-        }
-        return {
-          storageVersionId,
-          extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
-          sourceArchiveSize: archiveSize,
-        };
-      }),
-    )
-    .onConflictDoUpdate({
-      target: [
-        piResourceVersionIndexes.storageVersionId,
-        piResourceVersionIndexes.extractorVersion,
-      ],
-      // Storage repair can replace an archive encoding under the same logical
-      // version. Invalidate the old projection/lease before acknowledging repair.
-      set: {
+    .values(values)
+    .onConflictDoNothing()
+    .returning({
+      storageVersionId: piResourceVersionIndexes.storageVersionId,
+    });
+  const insertedVersionIds = new Set(
+    inserted.map((row) => {
+      return row.storageVersionId;
+    }),
+  );
+  const changedVersionIds: string[] = [];
+  // A first insert establishes indexing work but is not an encoding repair.
+  // Only a pre-existing row whose immutable archive encoding changed may clear
+  // stable-context demand. Insert-first also serializes concurrent enqueues
+  // without relying on PostgreSQL's internal tuple metadata.
+  for (const value of values) {
+    if (insertedVersionIds.has(value.storageVersionId)) {
+      continue;
+    }
+    const enqueuedAt = nowDate();
+    const [changed] = await db
+      .update(piResourceVersionIndexes)
+      .set({
         status: "pending",
         projection: null,
         projectionHash: null,
-        sourceArchiveSize: sql`excluded.source_archive_size`,
+        sourceArchiveSize: value.sourceArchiveSize,
         leaseId: null,
         leaseExpiresAt: null,
-        availableAt: nowDate(),
-        updatedAt: nowDate(),
-      },
-      setWhere: sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM excluded.source_archive_size`,
-    });
+        availableAt: enqueuedAt,
+        attemptCount: 0,
+        updatedAt: enqueuedAt,
+      })
+      .where(
+        and(
+          eq(piResourceVersionIndexes.storageVersionId, value.storageVersionId),
+          eq(
+            piResourceVersionIndexes.extractorVersion,
+            PI_RESOURCE_EXTRACTOR_VERSION,
+          ),
+          sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM ${value.sourceArchiveSize}`,
+        ),
+      )
+      .returning({
+        storageVersionId: piResourceVersionIndexes.storageVersionId,
+      });
+    if (changed) {
+      changedVersionIds.push(changed.storageVersionId);
+    }
+  }
+  if (changedVersionIds.length > 0) {
+    await invalidateRepairedVersionHeads(db, changedVersionIds, signal);
+  }
   signal?.throwIfAborted();
 }
 

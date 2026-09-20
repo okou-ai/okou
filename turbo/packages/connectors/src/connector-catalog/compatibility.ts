@@ -45,7 +45,7 @@ export const connectorCatalogCompatibilityEvaluationSchema = z
   })
   .strict();
 
-const EXECUTABLE_CAPABILITY_EVALUATOR_VERSION = 4;
+const EXECUTABLE_CAPABILITY_EVALUATOR_VERSION = 5;
 
 export interface ExecutableCapabilityState {
   readonly digest: string;
@@ -207,14 +207,14 @@ function addProviderReasons(
   if (
     method.grant.kind !== "none" &&
     method.grant.kind !== "manual" &&
+    method.grant.kind !== "automatic" &&
     registration?.handlers.grant !== method.grant.kind
   ) {
     reasons.add("missing-grant-provider");
   }
   if (
-    method.access.kind === "automatic" ||
-    (method.access.kind === "refresh-token" &&
-      registration?.handlers.access !== "refresh-token")
+    method.access.kind === "refresh-token" &&
+    registration?.handlers.access !== "refresh-token"
   ) {
     reasons.add("missing-access-provider");
   }
@@ -297,7 +297,9 @@ export function evaluateConnectorCatalogCompatibility(args: {
             method.revoke.kind === "none" &&
             ((method.grant.kind === "none" && method.access.kind === "none") ||
               (method.grant.kind === "manual" &&
-                method.access.kind === "static"))
+                method.access.kind === "static") ||
+              (method.grant.kind === "automatic" &&
+                method.access.kind === "automatic"))
           ),
         method,
         registration: registrations.get(

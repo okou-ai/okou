@@ -74,6 +74,30 @@ const USER_AGENT_MEDIA_CONTROLS_MESSAGES: ReadonlySet<string> = new Set([
 ]);
 
 const GLOBAL_ONERROR_MECHANISM = "auto.browser.global_handlers.onerror";
+const GLOBAL_ONUNHANDLEDREJECTION_MECHANISM =
+  "auto.browser.global_handlers.onunhandledrejection";
+
+// Clerk keeps its alternative sign-in methods available when the browser
+// cannot use a passkey. Its WebAuthn capability probe can still escape as a
+// global rejection, so discard only the exact production signatures.
+const EXPECTED_WEBAUTHN_REJECTION_MESSAGES: ReadonlySet<string> = new Set([
+  "NotSupportedError: Error connecting to Web Authentication service.",
+  "NotSupportedError: The user agent does not support public key credentials.",
+]);
+
+function isExpectedWebAuthnCapture(event: ErrorEvent): boolean {
+  return (
+    event.exception?.values?.some((value) => {
+      const mechanism = value.mechanism;
+      return (
+        mechanism?.handled === false &&
+        mechanism.type.startsWith(GLOBAL_ONUNHANDLEDREJECTION_MECHANISM) &&
+        value.value !== undefined &&
+        EXPECTED_WEBAUTHN_REJECTION_MESSAGES.has(value.value)
+      );
+    }) ?? false
+  );
+}
 
 // Narrow to the exact user-agent condition: an unhandled global capture that
 // matches a known media-controls message and whose frames are exclusively
@@ -202,8 +226,13 @@ export function createPlatformSentryOptions(
         return null;
       }
 
-      // Only the page runtime renders <video>; the worker keeps every capture.
-      if (runtime === "page" && isUserAgentMediaControlsCapture(event)) {
+      // Only the page runtime owns browser UI integrations; the worker keeps
+      // every capture.
+      if (
+        runtime === "page" &&
+        (isUserAgentMediaControlsCapture(event) ||
+          isExpectedWebAuthnCapture(event))
+      ) {
         return null;
       }
 

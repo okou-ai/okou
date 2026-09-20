@@ -30,6 +30,7 @@ import {
 } from "../../../test-fixtures/computer-use-authorization";
 import {
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   setChatThreadUserFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -367,6 +368,17 @@ async function readSelection(fixture: AuthorizationRunFixture): Promise<{
   };
 }
 
+async function readStoredSelection(fixture: AuthorizationRunFixture): Promise<{
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+}> {
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    computerUseHostId: metadata.computerUseHostId,
+    cloudBrowserEnabled: metadata.cloudBrowserEnabled,
+  };
+}
+
 async function readAuthorization(fixture: AuthorizationFixture): Promise<{
   readonly completedAt: string | null;
   readonly computerUseHostId: string | null;
@@ -409,6 +421,7 @@ function durableAuthorization(
 
 async function readApplyState(
   fixture: AuthorizationFixture,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<ApplyState> {
   const thread = await readChatThreadTitleStateFixture(fixture.threadId);
   const request = await readComputerUseAuthorizationRequestFixture(
@@ -417,7 +430,10 @@ async function readApplyState(
   if (!request) {
     throw new Error("Expected the authorization request row");
   }
-  const selection = await readSelection(fixture);
+  const selection =
+    selectionSource === "http"
+      ? await readSelection(fixture)
+      : await readStoredSelection(fixture);
   return {
     selection,
     authorization: durableAuthorization(request, selection),
@@ -426,6 +442,14 @@ async function readApplyState(
     threadUpdatedAt: thread.updatedAt,
     requestUpdatedAt: request.updatedAt,
   };
+}
+
+async function expectMetadataDenied(
+  fixture: AuthorizationRunFixture,
+): Promise<void> {
+  await expect(
+    chat.requestReadThreadMetadata(fixture.actor, fixture.threadId, [404]),
+  ).resolves.toMatchObject({ status: 404 });
 }
 
 async function readThreadEffects(fixture: AuthorizationFixture) {
@@ -483,9 +507,10 @@ async function expectApplied(
   before: ApplyState,
   appliedAtMs: number,
   eventCount = 1,
+  selectionSource: "http" | "stored" = "http",
 ): Promise<void> {
   const appliedAt = new Date(appliedAtMs).toISOString();
-  const after = await readApplyState(fixture);
+  const after = await readApplyState(fixture, selectionSource);
   expect(after.selection).toStrictEqual({
     computerUseHostId: fixture.hostId,
     cloudBrowserEnabled: false,
@@ -522,7 +547,10 @@ async function exerciseClosure(
   clearPublications();
   const denied = await applyAuthorization(fixture, [404]);
   expect(denied.status).toBe(404);
-  await expect(readApplyState(fixture)).resolves.toStrictEqual(baseline);
+  await expectMetadataDenied(fixture);
+  await expect(readApplyState(fixture, "stored")).resolves.toStrictEqual(
+    baseline,
+  );
   expectNoInvalidation(fixture);
 
   await removeErasureSubjectsFixture([closed.jobId]);
@@ -710,9 +738,9 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
 
             // The real UPDATE has executed, but a different connection sees no
             // thread, event, sequence or request-completion change yet.
-            await expect(readApplyState(fixture)).resolves.toStrictEqual(
-              before,
-            );
+            await expect(
+              readApplyState(fixture, "stored"),
+            ).resolves.toStrictEqual(before);
             expect(threadListInvalidations(fixture)).toBe(0);
             expect(threadListInvalidations(unrelated)).toBe(0);
             expect(threadListInvalidationChannels()).toStrictEqual([]);
@@ -745,7 +773,8 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
       );
       await operations.finish();
 
-      await expectApplied(fixture, before, appliedAt);
+      await expectMetadataDenied(fixture);
+      await expectApplied(fixture, before, appliedAt, 1, "stored");
       expect(threadListInvalidations(fixture)).toBe(1);
       expect(threadListInvalidations(unrelated)).toBe(1);
       expect(threadListInvalidationChannels()).toStrictEqual([
@@ -759,9 +788,11 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
         }),
       ]);
 
-      const committed = await readApplyState(fixture);
+      const committed = await readApplyState(fixture, "stored");
       await applyAuthorization(fixture, [404]);
-      await expect(readApplyState(fixture)).resolves.toStrictEqual(committed);
+      await expect(readApplyState(fixture, "stored")).resolves.toStrictEqual(
+        committed,
+      );
       expect(threadListInvalidations(fixture)).toBe(1);
       expect(threadListInvalidations(unrelated)).toBe(1);
       expect(threadListInvalidationChannels()).toStrictEqual([
@@ -795,7 +826,9 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
         await expect
           .poll(barrier.blockedWaiterCount, BLOCKED)
           .toBeGreaterThanOrEqual(1);
-        await expect(readApplyState(fixture)).resolves.toStrictEqual(before);
+        await expect(readApplyState(fixture, "stored")).resolves.toStrictEqual(
+          before,
+        );
         expect(threadListInvalidations(fixture)).toBe(0);
         expect(threadListInvalidationChannels()).toStrictEqual([]);
         barrier.release();
@@ -803,7 +836,10 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
         await closing;
       }, context.signal);
       await operations.finish();
-      await expect(readApplyState(fixture)).resolves.toStrictEqual(before);
+      await expectMetadataDenied(fixture);
+      await expect(readApplyState(fixture, "stored")).resolves.toStrictEqual(
+        before,
+      );
       expectNoInvalidation(fixture);
     },
   );
@@ -1394,7 +1430,8 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
         context.signal,
       );
       await operations.finish();
-      const after = await readApplyState(fixture);
+      await expectMetadataDenied(fixture);
+      const after = await readApplyState(fixture, "stored");
       expect(after.selection).toStrictEqual(before.selection);
       expect(after.authorization).toStrictEqual(before.authorization);
       expect(after.events).toStrictEqual(before.events);
@@ -1701,9 +1738,9 @@ describe("account erasure fences canonical Computer Use authorization Apply", ()
               /Unknown response status 500/,
             );
             await barrier.entered;
-            await expect(readApplyState(fixture)).resolves.toStrictEqual(
-              before,
-            );
+            await expect(
+              readApplyState(fixture, "stored"),
+            ).resolves.toStrictEqual(before);
             expectNoInvalidation(fixture);
             cancelled.abort(new DOMException("Operation ended", "AbortError"));
             barrier.release();

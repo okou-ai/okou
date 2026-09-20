@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   connectorCheckRequestBodySchema,
   type ConnectorCheckDiagnosticResult,
@@ -142,8 +142,8 @@ function resolvedUrl(
 
 function connectorResponse(
   connectorSlug: string,
-  connectionStatus: ConnectorResponse["connectionStatus"] = "connected",
-): ConnectorResponse {
+  connectionStatus: BuiltinConnectorResponse["connectionStatus"] = "connected",
+): BuiltinConnectorResponse {
   return {
     id: "00000000-0000-4000-8000-000000000002",
     slug: connectorSlug,
@@ -225,7 +225,7 @@ function stubDiagnostic(
 
 function stubConnector(
   connectorSlug: string,
-  response: ConnectorResponse | null = connectorResponse(connectorSlug),
+  response: BuiltinConnectorResponse | null = connectorResponse(connectorSlug),
   onRequest?: () => void,
   baseUrl = API_BASE_URL,
 ): void {
@@ -261,7 +261,7 @@ function stubAgentConnectors(
 function stubResolvedDependencies(
   connectorSlug = "github",
   options: {
-    readonly connector?: ConnectorResponse | null;
+    readonly connector?: BuiltinConnectorResponse | null;
     readonly enabledConnectorSlugs?: string[];
     readonly baseUrl?: string;
   } = {},
@@ -295,7 +295,7 @@ describe("okou connector check command", () => {
 
   function setRunAccount(
     connectorSlug: string,
-    connectionStatus: ConnectorResponse["connectionStatus"] | null,
+    connectionStatus: BuiltinConnectorResponse["connectionStatus"] | null,
     options: {
       readonly connectionId?: string;
       readonly label?: string;

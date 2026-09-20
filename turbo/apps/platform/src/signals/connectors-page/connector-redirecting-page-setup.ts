@@ -63,6 +63,7 @@ export const setupConnectorRedirectingPage$ = command(
     set(
       updatePage$,
       createElement(ConnectorRedirectingPage, {
+        connectorSlug,
         connectorLabel,
         connectorIcon,
         status,

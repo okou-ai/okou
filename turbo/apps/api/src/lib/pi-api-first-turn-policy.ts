@@ -3,6 +3,7 @@ import { PI_API_FIRST_TURN_SESSION_MAX_BYTES } from "@okouai/api-contracts/contr
 import type {
   PiApiFirstTurnOwnershipStage,
   PiApiModelFailureDiagnostic,
+  PiApiUsageObservation,
 } from "@okouai/pi-agent-runtime/api";
 
 type PiApiFirstTurnErrorCode =
@@ -68,6 +69,7 @@ export class PiApiFirstTurnModelFailureError extends PiApiFirstTurnError {
   constructor(
     readonly diagnostic: PiApiModelFailureDiagnostic,
     failureReason?: RunFailureReasonToken,
+    readonly usageObservation?: PiApiUsageObservation,
   ) {
     super("PI_API_MODEL_FAILED", "Pi API first-turn model request failed", {
       failureReason,

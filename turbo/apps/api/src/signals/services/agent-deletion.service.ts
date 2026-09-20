@@ -12,11 +12,16 @@ import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { conflict } from "../../lib/error";
 import { isLockNotAvailable } from "../../lib/pg-errors";
+import { testOverride } from "../../lib/singleton";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
+import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
 import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
-import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
+import {
+  lockAgentInstructionsStoragesInTransaction,
+  removeLockedAgentInstructionsStoragesInTransaction,
+} from "./agent-instructions-storage-transaction.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
@@ -47,6 +52,25 @@ export function agentExistsInOrg(args: {
 }
 
 const DELETE_AGENT_LOCK_TIMEOUT = "100ms";
+
+interface AgentDeletionHooks {
+  readonly afterInitialStableContextCleanup?: (
+    tx: Tx,
+    args: { readonly agentId: string },
+  ) => Promise<void>;
+}
+
+const agentDeletionHooks = testOverride<AgentDeletionHooks>(() => {
+  return {};
+});
+
+export function setAgentDeletionHooksForTest(hooks: AgentDeletionHooks): void {
+  agentDeletionHooks.set(hooks);
+}
+
+export function clearAgentDeletionHooksForTest(): void {
+  agentDeletionHooks.clear();
+}
 
 interface DeleteAgentArgs {
   readonly agentId: string;
@@ -240,9 +264,19 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     );
 
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
+  // Storage parents precede stable artifacts/edges in the publisher and GC
+  // lock order. Prelock before lifecycle cleanup, not after Agent deletion.
+  const lockedInstructionsStorages =
+    await lockAgentInstructionsStoragesInTransaction(tx, [
+      { orgId: args.orgId, agentName: lifecycle.agentName },
+    ]);
 
-  // A native Morning Brief delivery cascades away with this Agent, taking the
-  // only association to its still-unsent mail with it. Remove both first.
+  // Remove current non-FK lifecycle rows before the Agent cascade.
+  await deleteAgentStableContextLifecycleData(tx, args.agentId);
+  await agentDeletionHooks
+    .get()
+    .afterInitialStableContextCleanup?.(tx, { agentId: args.agentId });
+  // Revoke unsent native Morning Brief mail before the Agent cascade.
   await revokeMorningBriefDeliveryOwnership(tx, {
     kind: "agent",
     agentId: args.agentId,
@@ -251,11 +285,16 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx
     .delete(agents)
     .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));
+  // The cascade drains transactions that already owned a child Workflow row.
+  // Sweep again afterward so any generation/publication they initialized
+  // after the first scan cannot outlive the deleted Agent.
+  await deleteAgentStableContextLifecycleData(tx, args.agentId);
 
-  const s3Prefix = await removeAgentInstructionsStorageInTransaction(tx, {
-    orgId: args.orgId,
-    agentName: lifecycle.agentName,
-  });
+  await removeLockedAgentInstructionsStoragesInTransaction(
+    tx,
+    lockedInstructionsStorages,
+  );
+  const s3Prefix = lockedInstructionsStorages[0]?.s3Prefix ?? null;
 
   return {
     kind: "deleted" as const,

@@ -9,7 +9,9 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
 import { and, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
+import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { lockPiMemoryPhase2MaintenanceCleanupProtection } from "./pi-memory-phase2-maintenance.service";
@@ -44,13 +46,38 @@ interface ResourceOwner extends Owner {
   readonly kind: "agent" | "maintenance";
 }
 
-interface ComputeRunAdmission {
+export interface ComputeRunAdmission {
   readonly runId: string;
   readonly sessionId: string;
   readonly owner: ComputeRunOwner;
   readonly sessionOwner: Owner;
   readonly closed: boolean;
 }
+
+interface ComputeRunAdmissionObservation {
+  readonly admission: ComputeRunAdmission;
+  readonly resource: ResourceOwner;
+  readonly maintenance:
+    | (Owner & {
+        readonly id: string;
+      })
+    | undefined;
+  readonly capturedMaintenance: string | undefined;
+}
+
+const agentClaimAdmissionLockRowSchema = z.object({
+  resourceId: z.string().uuid().nullable(),
+  resourceUserId: z.string().nullable(),
+  resourceOrgId: z.string().nullable(),
+  runId: z.string().uuid().nullable(),
+  runUserId: z.string().nullable(),
+  runOrgId: z.string().nullable(),
+  runSessionId: z.string().uuid().nullable(),
+  sessionId: z.string().uuid().nullable(),
+  sessionUserId: z.string().nullable(),
+  sessionOrgId: z.string().nullable(),
+  sessionAgentId: z.string().uuid().nullable(),
+});
 
 class ComputeOwnershipChangedError extends Error {
   constructor() {
@@ -338,11 +365,11 @@ function maintenanceResourceOwned(args: {
 }
 
 /** Resolve without business locks, then acquire the complete sorted B1 set. */
-export async function prepareComputeRunAdmission(
+async function observeComputeRunAdmission(
   tx: Tx,
   runId: string,
   expected: ComputeRunOwner,
-): Promise<ComputeRunAdmission | undefined> {
+): Promise<ComputeRunAdmissionObservation | undefined> {
   const [owner] = await tx
     .select({
       userId: agentRuns.userId,
@@ -411,29 +438,216 @@ export async function prepareComputeRunAdmission(
   ) {
     return undefined;
   }
-  await lockResource(tx, resource);
-  if (expected.resourceOwner && !sameOwner(resource, expected.resourceOwner)) {
+  return {
+    admission: {
+      runId,
+      sessionId: owner.sessionId,
+      owner,
+      sessionOwner: owner.sessionOwner,
+      closed: !allowed,
+    },
+    resource,
+    maintenance,
+    capturedMaintenance,
+  };
+}
+
+/** Resolve subjects and retain the generic resource-lock behavior for callers. */
+export async function prepareComputeRunAdmission(
+  tx: Tx,
+  runId: string,
+  expected: ComputeRunOwner,
+): Promise<ComputeRunAdmission | undefined> {
+  const observed = await observeComputeRunAdmission(tx, runId, expected);
+  if (!observed) {
+    return undefined;
+  }
+  await lockResource(tx, observed.resource);
+  if (
+    expected.resourceOwner &&
+    !sameOwner(observed.resource, expected.resourceOwner)
+  ) {
     return undefined;
   }
   if (
-    resource.kind === "maintenance" &&
+    observed.resource.kind === "maintenance" &&
     !maintenanceResourceOwned({
-      resource,
-      owner,
-      bound: maintenance,
-      capturedCleanupOwner: capturedMaintenance
+      resource: observed.resource,
+      owner: observed.admission.owner,
+      bound: observed.maintenance,
+      capturedCleanupOwner: observed.capturedMaintenance
         ? expected.capturedCleanupOwner
         : undefined,
     })
   ) {
     return undefined;
   }
+  return observed.admission;
+}
+
+async function validateAgentClaimAdmission(
+  tx: Tx,
+  observed: ComputeRunAdmissionObservation & {
+    readonly resource: ResourceOwner & { readonly kind: "agent" };
+  },
+): Promise<boolean> {
+  const { admission, resource } = observed;
+  const [row] = await executeRawRows(
+    tx,
+    sql`
+      WITH locked_resource AS MATERIALIZED (
+        SELECT
+          ${agents.id} AS "id",
+          ${agents.owner} AS "userId",
+          ${agents.orgId} AS "orgId"
+        FROM ${agents}
+        WHERE ${eq(agents.id, resource.id)}
+        FOR KEY SHARE OF ${agents}
+      ),
+      matching_resource AS MATERIALIZED (
+        SELECT ${admission.runId}::uuid AS "runId"
+        FROM locked_resource
+        WHERE locked_resource."userId" = ${resource.userId}
+          AND locked_resource."orgId" = ${resource.orgId}
+      ),
+      locked_run AS MATERIALIZED (
+        SELECT
+          ${agentRuns.id} AS "id",
+          ${agentRuns.userId} AS "userId",
+          ${agentRuns.orgId} AS "orgId",
+          ${agentRuns.sessionId} AS "sessionId"
+        FROM ${agentRuns}
+        INNER JOIN matching_resource
+          ON matching_resource."runId" = ${agentRuns.id}
+        WHERE ${and(
+          eq(agentRuns.id, admission.runId),
+          eq(agentRuns.status, "pending"),
+        )}
+        FOR UPDATE OF ${agentRuns}
+      ),
+      matching_run AS MATERIALIZED (
+        SELECT locked_run."sessionId"
+        FROM locked_run
+        WHERE locked_run."userId" = ${admission.owner.userId}
+          AND locked_run."orgId" = ${admission.owner.orgId}
+          AND locked_run."sessionId" = ${admission.sessionId}::uuid
+      ),
+      locked_session AS MATERIALIZED (
+        SELECT
+          ${agentSessions.id} AS "id",
+          ${agentSessions.userId} AS "userId",
+          ${agentSessions.orgId} AS "orgId",
+          ${agentSessions.agentId} AS "agentId"
+        FROM ${agentSessions}
+        INNER JOIN matching_run
+          ON matching_run."sessionId" = ${agentSessions.id}
+        WHERE ${eq(agentSessions.id, admission.sessionId)}
+        FOR UPDATE OF ${agentSessions}
+      )
+      SELECT
+        (SELECT locked_resource."id" FROM locked_resource) AS "resourceId",
+        (
+          SELECT locked_resource."userId" FROM locked_resource
+        ) AS "resourceUserId",
+        (
+          SELECT locked_resource."orgId" FROM locked_resource
+        ) AS "resourceOrgId",
+        (SELECT locked_run."id" FROM locked_run) AS "runId",
+        (SELECT locked_run."userId" FROM locked_run) AS "runUserId",
+        (SELECT locked_run."orgId" FROM locked_run) AS "runOrgId",
+        (
+          SELECT locked_run."sessionId" FROM locked_run
+        ) AS "runSessionId",
+        (SELECT locked_session."id" FROM locked_session) AS "sessionId",
+        (
+          SELECT locked_session."userId" FROM locked_session
+        ) AS "sessionUserId",
+        (
+          SELECT locked_session."orgId" FROM locked_session
+        ) AS "sessionOrgId",
+        (
+          SELECT locked_session."agentId" FROM locked_session
+        ) AS "sessionAgentId"
+    `,
+    agentClaimAdmissionLockRowSchema,
+  );
+  if (!row) {
+    throw new Error("Missing Agent claim admission lock result");
+  }
+  if (
+    row.resourceId !== resource.id ||
+    row.resourceUserId === null ||
+    row.resourceOrgId === null ||
+    !sameOwner(
+      { userId: row.resourceUserId, orgId: row.resourceOrgId },
+      resource,
+    )
+  ) {
+    throw new ComputeOwnershipChangedError();
+  }
+  if (row.runId === null) {
+    return false;
+  }
+  if (
+    row.runId !== admission.runId ||
+    row.runUserId === null ||
+    row.runOrgId === null ||
+    row.runSessionId !== admission.sessionId ||
+    !sameOwner({ userId: row.runUserId, orgId: row.runOrgId }, admission.owner)
+  ) {
+    throw new ComputeOwnershipChangedError();
+  }
+  if (
+    row.sessionId !== admission.sessionId ||
+    row.sessionUserId === null ||
+    row.sessionOrgId === null ||
+    row.sessionAgentId !== admission.owner.agentId ||
+    !sameOwner(
+      { userId: row.sessionUserId, orgId: row.sessionOrgId },
+      admission.sessionOwner,
+    )
+  ) {
+    throw new ComputeOwnershipChangedError();
+  }
+  return true;
+}
+
+/**
+ * Keep the final run/queue transition separate, but coalesce the ordinary
+ * Agent resource -> pending run -> Session locked rereads into one statement.
+ */
+export async function prepareAgentClaimAdmission(
+  tx: Tx,
+  runId: string,
+  expected: ComputeRunOwner & { readonly agentId: string },
+): Promise<
+  | {
+      readonly admission: ComputeRunAdmission;
+      readonly valid: boolean;
+    }
+  | undefined
+> {
+  const observed = await observeComputeRunAdmission(tx, runId, expected);
+  const resource = observed?.resource;
+  if (!observed || !resource || resource.kind !== "agent") {
+    return undefined;
+  }
+  const agentResource = { ...resource, kind: "agent" as const };
+  // Preserve the generic path's stale expected-owner outcome. The actual
+  // resource is still locked before returning unavailable.
+  if (
+    expected.resourceOwner &&
+    !sameOwner(agentResource, expected.resourceOwner)
+  ) {
+    await lockResource(tx, agentResource);
+    return undefined;
+  }
   return {
-    runId,
-    sessionId: owner.sessionId,
-    owner,
-    sessionOwner: owner.sessionOwner,
-    closed: !allowed,
+    admission: observed.admission,
+    valid: await validateAgentClaimAdmission(tx, {
+      ...observed,
+      resource: agentResource,
+    }),
   };
 }
 

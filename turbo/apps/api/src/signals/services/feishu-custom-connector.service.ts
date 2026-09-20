@@ -41,6 +41,7 @@ import type { Tx } from "../../lib/db-types";
 import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { resolveConnectorAccount } from "./connector-account-resolution.service";
+import { invalidatePiStableContextsForOrg } from "./pi-stable-context-generation.service";
 
 const FEISHU_AUTHORIZATION_HEADER = "Authorization";
 const FEISHU_AUTHORIZATION_TEMPLATE = "Bearer {{oauth.access_token}}";
@@ -314,6 +315,7 @@ async function createFeishuCustomConnector(
         connectorId: connector.id,
         ...desiredOAuthConfig(installation),
       });
+      await invalidatePiStableContextsForOrg(tx, args.orgId);
       signal.throwIfAborted();
       return {
         connectorId: connector.id,
@@ -365,6 +367,7 @@ async function repairFeishuCustomConnector(
             updatedAt: nowDate(),
           },
         });
+      await invalidatePiStableContextsForOrg(tx, installation.orgId);
       signal.throwIfAborted();
       return {
         connectorId: existing.connector.id,
@@ -674,6 +677,9 @@ export const deleteFeishuInstallationAndCustomConnector$ = command(
           ),
         )
         .returning({ id: orgCustomConnectors.id });
+      if (deletedConnector) {
+        await invalidatePiStableContextsForOrg(tx, args.orgId);
+      }
       signal.throwIfAborted();
       return {
         installationDeleted: true,

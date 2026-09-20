@@ -7,8 +7,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from mitmproxy.flow import Error
 
-import flow_metadata
-import flow_metadata_keys as metadata_keys
 import mitm_addon
 import usage
 from tests.flow_helpers import response_stream
@@ -22,17 +20,13 @@ def _inline_delivery(sync_usage_executor):
 
 
 def _stream_flow(real_flow, tmp_path, *, encoding=""):
-    flow = make_x_pipeline_flow(
+    return make_x_pipeline_flow(
         real_flow,
         tmp_path,
         path="/2/tweets/search/stream",
         sandbox_run_id=str(uuid.uuid4()),
         content_encoding=encoding,
     )
-    flow.metadata[metadata_keys.X_RESOURCE_BILLING] = flow_metadata.XResourceBilling(
-        protocol="x-resource-v1", start_date="2000-01-01"
-    )
-    return flow
 
 
 @pytest.mark.parametrize("tail_failure", ["truncated_gzip", "corrupt_gzip", "malformed_json"])

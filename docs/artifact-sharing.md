@@ -16,7 +16,9 @@ and multipart uploads), integration input/output files, browser screenshots,
 Social downloads, and generated preview images use the private artifact bucket.
 The upload purpose is not a storage-policy selector. Private objects have an
 ownership record with `metadata.storage: "private-artifact-v1"`, the bucket and
-object key, and a stable ten-character `/artifacts/` reference. Missing private configuration or
+object key, and a stable ten-character reference. Persisted URL fields and API
+responses qualify that reference with the configured `APP_URL`, for example
+`https://app.okou.ai/artifacts/abc123def4.pdf`. Missing private configuration or
 bytes never falls back to a public write or public lookup.
 
 Reads authorize the recorded owner and organization and use the stored location,
@@ -29,8 +31,9 @@ choice in their request snapshot; older jobs without that field remain public.
 
 Web previews, Agent downloads, image recognition, template import/preview, and
 Drive sync resolve the stored location. Providers that fetch bytes receive
-temporary signed URLs; durable records retain the stable reference. Teams and
-GitHub message links to new private files use the authenticated App URL.
+temporary signed URLs; durable URL fields retain the complete authenticated App
+URL while storage metadata retains the host-independent ten-character reference.
+Teams and GitHub message links to new private files use that same App URL.
 Conversation sharing copies private attachment bytes into private snapshots
 controlled by the conversation's existing share policy, including when creation
 has subsequently been disabled. Reattaching an existing output preserves its
@@ -127,8 +130,9 @@ live switch before accepting bytes or starting paid generation and capture that
 same private storage policy for the operation. An older API rejects the new
 route rather than ignoring an unknown request field and creating public bytes.
 Old CLI requests keep using existing routes, and new CLI commands without the
-option remain compatible with old APIs. No rollout activation or storage
-migration is part of this change.
+option remain compatible with old APIs. The URL cutover backfills hostless
+staff-only database records but does not move object bytes, activate the rollout
+switch, or change access policy.
 
 If creation succeeds but sharing fails, the command exits unsuccessfully and
 returns the created artifact's owner URL plus a read-state recovery command.
@@ -206,7 +210,7 @@ live sharing policy and independent artifact snapshot.
 If an update fails or its response is lost, rerun without `--visibility` before retrying: the
 policy write may already have succeeded. Deploy the API and CLI together before
 using these commands; older run tokens lack the new capabilities and require a
-new run. No storage migration or host Worker protocol change is required.
+new run. No object-storage migration or host Worker protocol change is required.
 
 ## Standalone artifact viewer
 

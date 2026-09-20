@@ -147,43 +147,6 @@ async fn proxy_registration_accepts_canonical_targets() {
 }
 
 #[tokio::test]
-async fn proxy_registration_preserves_claimed_x_resource_capability() {
-    let directory = tempfile::tempdir().unwrap();
-    let config = test_executor_config(directory.path()).await;
-    let mut context = minimal_context();
-    let capability = serde_json::json!({
-        "protocol": "x-resource-v1",
-        "startDate": "2099-01-01"
-    });
-    context.x_resource_billing = Some(serde_json::from_value(capability.clone()).unwrap());
-    let _session = register_proxy(&config, &context, "10.200.0.3")
-        .await
-        .unwrap();
-    let read_registry = || async {
-        serde_json::from_str::<serde_json::Value>(
-            &tokio::fs::read_to_string(directory.path().join("proxy-registry.json"))
-                .await
-                .unwrap(),
-        )
-        .unwrap()
-    };
-    assert_eq!(
-        read_registry().await["sandboxes"]["10.200.0.3"]["xResourceBilling"],
-        capability
-    );
-
-    context.x_resource_billing = None;
-    let _older_session = register_proxy(&config, &context, "10.200.0.3")
-        .await
-        .unwrap();
-    assert!(
-        read_registry().await["sandboxes"]["10.200.0.3"]
-            .get("xResourceBilling")
-            .is_none()
-    );
-}
-
-#[tokio::test]
 async fn proxy_registration_completes_and_attributes_logs_without_application_reply() {
     use std::os::unix::fs::PermissionsExt;
     use tokio::io::AsyncReadExt;

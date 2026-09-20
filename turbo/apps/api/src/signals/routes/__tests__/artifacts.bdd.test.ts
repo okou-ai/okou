@@ -15,7 +15,7 @@ import { HttpResponse, http } from "msw";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { describe, expect, it } from "vitest";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -56,7 +56,7 @@ interface ArtifactActor {
 }
 
 async function resolvePrivatePreviewReference(url: string) {
-  const reference = parseArtifactReference(url);
+  const reference = parseArtifactReference(url, env("APP_URL"));
   if (!reference) {
     throw new Error("Expected a private preview reference");
   }
@@ -341,7 +341,7 @@ async function createHostedArtifact(args: {
   if (!prepared.artifactUrl) {
     throw new Error("Expected a versioned hosted artifact URL");
   }
-  if (parseArtifactReference(prepared.artifactUrl)) {
+  if (parseArtifactReference(prepared.artifactUrl, env("APP_URL"))) {
     args.objectStore.addObject({
       bucket: "test-hosted-sites",
       key: `private-sites/okou/${prepared.deploymentId}/index.html`,

@@ -57,6 +57,51 @@ authentication changes advance every referencing connection's generation. Refere
 until their hosts are rebound or deleted. Deleting a host retains its reusable
 credential.
 
+## Owner setup in the app
+
+With `vncAccess` enabled, open **Connectors → Remote access → VNC**.
+The independent VNC page at `/connectors/vnc` manages hosts and reusable
+credentials. Add a host's hostname or IP address and port (default 5900), then
+select a saved credential or create one. The initial supported profile is
+VeNCrypt X509Vnc: certificate-verified TLS plus a classic VNC password.
+Passwords must contain 1–8 printable ASCII characters; spaces are significant.
+The app does not offer unsupported authentication profiles or an insecure
+certificate bypass.
+
+Choose system certificate authorities or paste the public CA certificates
+needed to verify the server. Custom trust accepts at most eight CA certificates
+and 64 KiB; do not paste private keys or leaf server certificates. The server
+certificate must identify the configured hostname or IP address. Saving a host
+records configuration; it does not test reachability or authenticate a session.
+
+Grant VNC access explicitly using the card's Agent access control or the Agent's
+authorization tab. This grant is independent of SSH and permits access to the
+owner's current and future configured VNC hosts. Agents select shared or exclusive
+mode when opening each session; the server decides admission and may override
+the requested mode. The settings page adds no controller lock.
+
+The Credentials tab shows which hosts use each credential. Renaming does not
+rotate its password; explicitly replacing the password affects every bound
+host. Saved passwords are never returned or prefilled. A referenced credential
+cannot be deleted until its hosts are removed or reassigned. Deleting a host
+retains its reusable credential.
+
+Edits and deletes use the version reviewed when the dialog opened. If another
+operation changes it, close the dialog and review the refreshed configuration
+before retrying. After an uncertain save, the original form is locked: explicitly
+retry the same request, or close and refresh to check whether it succeeded.
+Closing, navigating away or changing owner discards unsaved passwords.
+There is no VNC realtime subscription; revisit the page or use Refresh to
+observe changes from another client.
+
+Deploy the existing VNC APIs before this app UI. An unavailable/disabled API
+shows an unavailable state; network and server failures remain retryable load
+errors. The UI does not change the default-off switch or existing data.
+Real Agent/server interoperability, two-client admission, mixed versions and
+retained-data rollback are tracked separately in
+[#35299](https://github.com/vm0-ai/okou/issues/35299); merging the UI is not
+production activation evidence.
+
 ## Secret inventory
 
 The only VNC encrypted field is

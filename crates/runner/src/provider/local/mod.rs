@@ -294,7 +294,6 @@ impl JobProvider for LocalProvider {
             feature_flags: req.feature_flags,
             billable_firewalls: vec![],
             model_usage_provider: None,
-            x_resource_billing: None,
             codex_runtime_config: None,
             pi_launch_config: None,
             pi_model_config: None,

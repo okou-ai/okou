@@ -7,7 +7,7 @@ import {
   type GithubConnectUserBody,
   type GithubInstallationResponse,
 } from "@okouai/api-contracts/contracts/integrations-github";
-import { connectorsBySlugContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorsBySlugContract } from "@okouai/api-contracts/contracts/connectors";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -22,13 +22,13 @@ import { mockClerkMembership } from "./api-bdd-clerk";
 import { createRouteMocks } from "./route-test";
 import { integrationsGithubRoutes } from "../../integrations-github";
 import { githubOauthRoutes } from "../../github-oauth";
-import { connectorsRoutes } from "../../connectors";
+import { builtinConnectorsRoutes } from "../../connectors";
 import { featureSwitchesRoutes } from "../../feature-switches";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...githubOauthRoutes,
   ...integrationsGithubRoutes,
-  ...connectorsRoutes,
+  ...builtinConnectorsRoutes,
   ...featureSwitchesRoutes,
 ]);
 
@@ -374,8 +374,8 @@ export function createGithubBddApi(context: TestContext) {
     },
 
     async readGithubConnector(actor: ApiTestUser) {
-      const client = setupApp({ context, routes: connectorsRoutes })(
-        connectorsBySlugContract,
+      const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsBySlugContract,
       );
       const response = await accept(
         client.get({

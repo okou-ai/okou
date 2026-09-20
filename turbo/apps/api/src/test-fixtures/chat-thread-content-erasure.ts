@@ -97,6 +97,66 @@ export async function readChatThreadTitleStateFixture(
 }
 
 /**
+ * Stored metadata for one test-owned thread, without B1 admission or row locks.
+ *
+ * Read-only fixture exception: the production metadata GET now correctly denies
+ * a closed canonical subject and takes the thread's first UPDATE lock, so it
+ * cannot observe rollback state while a tested writer deliberately retains that
+ * row. Those states are impossible to inspect through production HTTP. Erasure
+ * suites use this fixture only at those closed or held-writer boundaries, keep
+ * real route assertions everywhere the route is reachable, and continue to use
+ * production APIs for setup, mutation, event, sequence and publication checks.
+ */
+export async function readStoredChatThreadMetadataFixture(
+  chatThreadId: string,
+): Promise<{
+  readonly id: string;
+  readonly userId: string;
+  readonly agentId: string | null;
+  readonly title: string | null;
+  readonly selectedModel: string | null;
+  readonly modelSettings: unknown;
+  readonly codexServiceTier: string | null;
+  readonly pinnedAt: string | null;
+  readonly computerUseHostId: string | null;
+  readonly cloudBrowserEnabled: boolean;
+  readonly selectedVideoModel: string | null;
+  readonly selectedImageModel: string | null;
+  readonly renamedAt: string | null;
+  readonly updatedAt: string;
+}> {
+  const [thread] = await db()
+    .select({
+      id: chatThreads.id,
+      userId: chatThreads.userId,
+      agentId: chatThreads.agentId,
+      title: chatThreads.title,
+      selectedModel: chatThreads.selectedModel,
+      modelSettings: chatThreads.modelSettings,
+      codexServiceTier: chatThreads.codexServiceTier,
+      pinnedAt: chatThreads.pinnedAt,
+      computerUseHostId: chatThreads.computerUseHostId,
+      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+      selectedVideoModel: chatThreads.selectedVideoModel,
+      selectedImageModel: chatThreads.selectedImageModel,
+      renamedAt: chatThreads.renamedAt,
+      updatedAt: chatThreads.updatedAt,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, chatThreadId))
+    .limit(1);
+  if (!thread) {
+    throw new Error("Expected the chat thread row to exist");
+  }
+  return {
+    ...thread,
+    pinnedAt: thread.pinnedAt?.toISOString() ?? null,
+    renamedAt: thread.renamedAt?.toISOString() ?? null,
+    updatedAt: thread.updatedAt.toISOString(),
+  };
+}
+
+/**
  * Holds one uncommitted `chat_thread_events` row carrying a key the next
  * sidebar append will supply: either the event id a route accepts from its
  * caller, or the `(user_id, org_id, seq_id)` slot the durable sequence is about
@@ -183,7 +243,24 @@ function isContentLock(queryArgs: unknown[], table: string): boolean {
   return (
     text.startsWith("select") &&
     text.includes(`from "${table}"`) &&
-    text.includes("for key share")
+    (text.includes("for key share") || text.includes("for update"))
+  );
+}
+
+/** The complete single-thread metadata projection, after retained identity. */
+function isMetadataProjectionRead(
+  queryArgs: unknown[],
+  chatThreadId: string,
+): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes('"model_settings"') &&
+    text.includes('"computer_use_host_id"') &&
+    text.includes('"selected_video_model"') &&
+    text.includes('"selected_image_model"') &&
+    !text.includes(" join ") &&
+    barrierQueryBinds(queryArgs, chatThreadId)
   );
 }
 
@@ -263,12 +340,14 @@ function tookIdentityLock(transaction: SelectedTransaction): boolean {
  * lock. The read-only gate commits first and never locks, so without that the
  * barrier would pause the gate's commit instead of the writer's.
  *
- * `cursor-update`, `image-model-update` and `video-model-update` are the stops
- * that pause **after** their statement: the `UPDATE` has run and is still
- * uncommitted, which is the boundary between the real mutation and the writer's
- * own post-write cancellation check, and therefore the last point at which a
- * rollback is still guaranteed. Pausing at `commit` is already past that check,
- * so a cancellation arriving there races a `COMMIT` that still succeeds.
+ * `metadata-read`, `cursor-update`, `image-model-update` and
+ * `video-model-update` are the stops that pause **after** their statement. For
+ * metadata this retains the projected result before the helper's final abort
+ * check. For writers, the mutation has run and is still uncommitted, which is
+ * the boundary between the real mutation and the writer's own post-write
+ * cancellation check, and therefore the last point at which a rollback is
+ * still guaranteed. Pausing at `commit` is already past that check, so a
+ * cancellation arriving there races a `COMMIT` that still succeeds.
  */
 type ChatThreadContentBarrierStop =
   | "identity"
@@ -276,6 +355,7 @@ type ChatThreadContentBarrierStop =
   | "title-context"
   | "agent-lock"
   | "thread-lock"
+  | "metadata-read"
   | "cursor-update"
   | "image-model-update"
   | "video-model-update"
@@ -283,6 +363,7 @@ type ChatThreadContentBarrierStop =
 
 function pausesAfterStatement(stop: ChatThreadContentBarrierStop): boolean {
   return (
+    stop === "metadata-read" ||
     stop === "cursor-update" ||
     stop === "image-model-update" ||
     stop === "video-model-update"
@@ -310,6 +391,9 @@ function reachedBarrierStop(
   }
   if (stop === "thread-lock") {
     return isContentLock(queryArgs, "chat_threads");
+  }
+  if (stop === "metadata-read") {
+    return isMetadataProjectionRead(queryArgs, chatThreadId);
   }
   if (stop === "cursor-update") {
     return isReadCursorUpdate(queryArgs, chatThreadId);
@@ -361,6 +445,111 @@ export async function withChatThreadContentBarrierFixture<T>(
       },
       pauseAfter: pausesAfterStatement(args.stopAt),
       work: args.work,
+    },
+    signal,
+  );
+}
+
+interface ChatThreadMetadataSqlControlBarrier extends TransactionBarrier {
+  /** Complete SQL control statements grouped by whole transaction attempt. */
+  readonly attempts: () => readonly (readonly string[])[];
+}
+
+/**
+ * Captures one metadata request's real node-postgres transaction controls.
+ * Setup is complete before this fixture is entered and its callback starts only
+ * that request, so BEGIN is an unambiguous candidate. A retrying identity may
+ * ROLLBACK and begin again; every whole attempt is retained and the final
+ * COMMIT is paused only long enough for the test to inspect exact SQL counts.
+ */
+export async function withChatThreadMetadataSqlControlFixture<T>(
+  work: (barrier: ChatThreadMetadataSqlControlBarrier) => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  const attempts: string[][] = [];
+  return await withDatabaseTransactionBarrierFixture(
+    {
+      select: (queryArgs) => {
+        return barrierQueryText(queryArgs).startsWith("begin");
+      },
+      stopAt: (queryArgs, _selectingStatement, transaction) => {
+        const text = barrierQueryText(queryArgs);
+        if (text === "rollback") {
+          attempts.push([...transaction.statements, text]);
+          return false;
+        }
+        if (text === "commit") {
+          attempts.push([...transaction.statements, text]);
+          return true;
+        }
+        return false;
+      },
+      work: async (barrier) => {
+        return await work({
+          ...barrier,
+          attempts: () => {
+            return attempts;
+          },
+        });
+      },
+    },
+    signal,
+  );
+}
+
+/**
+ * Pauses the first metadata attempt before its Agent lock while observing each
+ * real transaction on its own driver client. A test can move canonical identity
+ * there, then account for the failed attempt's ROLLBACK and the bounded retry's
+ * final COMMIT without counting the infrastructure mutation transaction.
+ */
+export async function withChatThreadMetadataRetrySqlControlFixture<T>(
+  args: {
+    readonly chatThreadId: string;
+    readonly work: (barrier: ChatThreadMetadataSqlControlBarrier) => Promise<T>;
+  },
+  signal: AbortSignal,
+): Promise<T> {
+  const active = new Map<unknown, string[]>();
+  const targetClients = new Set<unknown>();
+  const attempts: string[][] = [];
+  return await withDatabaseTransactionBarrierFixture(
+    {
+      select: (queryArgs) => {
+        return isContentIdentityRead(queryArgs, args.chatThreadId);
+      },
+      stopAt: (queryArgs) => {
+        return isContentLock(queryArgs, "agents");
+      },
+      observe: (queryArgs, receiver) => {
+        const text = barrierQueryText(queryArgs);
+        if (text.startsWith("begin")) {
+          active.set(receiver, []);
+        }
+        const transaction = active.get(receiver);
+        if (!transaction) {
+          return;
+        }
+        transaction.push(text);
+        if (isContentIdentityRead(queryArgs, args.chatThreadId)) {
+          targetClients.add(receiver);
+        }
+        if (text === "commit" || text === "rollback") {
+          if (targetClients.has(receiver)) {
+            attempts.push([...transaction]);
+          }
+          active.delete(receiver);
+          targetClients.delete(receiver);
+        }
+      },
+      work: async (barrier) => {
+        return await args.work({
+          ...barrier,
+          attempts: () => {
+            return attempts;
+          },
+        });
+      },
     },
     signal,
   );

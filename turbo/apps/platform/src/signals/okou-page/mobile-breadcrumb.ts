@@ -172,14 +172,14 @@ export const mobileBreadcrumb$ = computed(
       return await get(activityDetailBreadcrumb$);
     }
 
-    if (route === "connectorSsh") {
+    if (route === "connectorSsh" || route === "connectorVnc") {
       return {
         section: i18n.t(($) => {
           return $.appShell.sidebar.navigation.connectors;
         }),
         sectionPath: ROUTES.connectors,
         name: i18n.t(($) => {
-          return $.ssh.label;
+          return route === "connectorVnc" ? $.vnc.label : $.ssh.label;
         }),
       };
     }

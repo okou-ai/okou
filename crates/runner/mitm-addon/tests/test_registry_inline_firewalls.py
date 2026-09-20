@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 import matching
 import registry
 from tests.registry_builtin_helpers import (
@@ -52,12 +54,20 @@ class TestRegistryInlineFirewalls:
         assert first_result.api_entry is first_sandbox_info["firewalls"][0]["apis"][0]
         assert second_result.api_entry is second_sandbox_info["firewalls"][0]["apis"][0]
 
-    def test_inline_only_registry_ignores_catalog_cache_changes(self, tmp_path, mitm_ctx):
+    @pytest.mark.parametrize("custom", [False, True])
+    def test_inline_only_registry_ignores_catalog_cache_changes(self, tmp_path, mitm_ctx, custom):
         registry_path = tmp_path / "registry.json"
         cache_path = tmp_path / "builtin-firewall-catalog-cache.json"
+        sandbox = inline_sandbox("run-inline")
+        if custom:
+            custom_id = "550e8400-e29b-41d4-a716-446655440000"
+            sandbox["firewalls"][0]["customConnectorId"] = custom_id
+            sandbox["connectorRuntimeTargets"] = [
+                {"kind": "custom", "customConnectorId": custom_id}
+            ]
         write_multi_sandbox_registry(
             registry_path,
-            {"10.200.0.1": inline_sandbox("run-inline")},
+            {"10.200.0.1": sandbox},
         )
         write_catalog_cache(
             cache_path,

@@ -422,6 +422,7 @@ async def test_builtin_connector_routing_variables_are_forwarded_with_matched_fi
     assert request.to_body()["matchedFirewall"] == {
         "name": "github",
         "apiId": flow.metadata[metadata_keys.FIREWALL_API_ID],
+        "base": "https://api.github.com",
         "connectorSlug": "github",
         "sourceId": source_id,
         "routingVariables": {"GITHUB_HOST": "münich.example.test"},

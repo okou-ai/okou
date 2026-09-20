@@ -63,7 +63,7 @@ const expectedVercelCrons = [
   },
   {
     path: cronCleanupXResourceReadsContract.cleanup.path,
-    schedule: "* * * * *",
+    schedule: "0 * * * *",
   },
   {
     path: cronMonitorChatEventQueueContract.monitor.path,

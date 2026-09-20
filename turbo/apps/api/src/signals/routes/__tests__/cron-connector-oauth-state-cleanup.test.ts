@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -15,7 +15,7 @@ import {
   testCronDeleteCleanupsStateContract,
   testCronDeleteCleanupsStateRoutes,
 } from "../test-cron-delete-cleanups-state";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -28,8 +28,8 @@ function mockAuthenticatedSession(marker: string): void {
 async function startGithubOauth(marker: string): Promise<string> {
   mockAuthenticatedSession(marker);
   const response = await accept(
-    setupApp({ context, routes: connectorsRoutes })(
-      connectorOauthStartContract,
+    setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorOauthStartContract,
     ).start({
       params: { connectorSlug: "github" },
       headers: { authorization: "Bearer clerk-session" },

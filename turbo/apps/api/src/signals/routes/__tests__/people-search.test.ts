@@ -854,7 +854,6 @@ describe("okou people-search route", () => {
 
     expect(usageRow).toMatchObject({
       title: "Unavailable thread",
-      runId: null,
     });
     expect(usageRow?.breakdown).toContainEqual({
       kind: "other",

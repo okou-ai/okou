@@ -55,13 +55,13 @@ async function readPreviousFixture(
     `
       SELECT
         "selected_model" AS "selectedModel",
-        "provider_type" AS "providerType",
-        "upstream_model" AS "upstreamModel",
+        "model_runtime_provider" AS "providerType",
+        "model_runtime_model" AS "upstreamModel",
         "unavailable_until" AS "unavailableUntil"
       FROM "built_in_model_candidate_cooldown"
       WHERE "selected_model" = $1
-        AND "provider_type" = $2
-        AND "upstream_model" = $3
+        AND "model_runtime_provider" = $2
+        AND "model_runtime_model" = $3
     `,
     [identity.selectedModel, identity.providerType, identity.upstreamModel],
   );
@@ -80,16 +80,16 @@ async function readObservationFixture(
     `
       SELECT
         "selected_model" AS "selectedModel",
-        "provider_type" AS "providerType",
-        "upstream_model" AS "upstreamModel",
+        "model_runtime_provider" AS "providerType",
+        "model_runtime_model" AS "upstreamModel",
         "unavailable_until" AS "unavailableUntil",
         "connection_observation_started_at"
           AS "connectionObservationStartedAt",
         "connection_observation_until" AS "connectionObservationUntil"
       FROM "built_in_model_candidate_cooldown"
       WHERE "selected_model" = $1
-        AND "provider_type" = $2
-        AND "upstream_model" = $3
+        AND "model_runtime_provider" = $2
+        AND "model_runtime_model" = $3
       FOR UPDATE
     `,
     [identity.selectedModel, identity.providerType, identity.upstreamModel],
@@ -135,13 +135,13 @@ async function assertCanonicalSchema(client: Client): Promise<void> {
     },
     {
       characterMaximumLength: 100,
-      columnName: "provider_type",
+      columnName: "model_runtime_provider",
       dataType: "character varying",
       isNullable: "NO",
     },
     {
       characterMaximumLength: 255,
-      columnName: "upstream_model",
+      columnName: "model_runtime_model",
       dataType: "character varying",
       isNullable: "NO",
     },
@@ -183,7 +183,7 @@ async function assertCanonicalSchema(client: Client): Promise<void> {
     primaryKey.rows.map((row) => {
       return row.columnName;
     }),
-    ["selected_model", "provider_type", "upstream_model"],
+    ["selected_model", "model_runtime_provider", "model_runtime_model"],
   );
 
   const observationCheck = await client.query<{
@@ -239,7 +239,7 @@ async function assertObservationPairRejected(
     client.query(
       `
         INSERT INTO "built_in_model_candidate_cooldown" (
-          "selected_model", "provider_type", "upstream_model",
+          "selected_model", "model_runtime_provider", "model_runtime_model",
           "unavailable_until", ${columns}
         )
         VALUES ($1, $2, $3, $4, $5)
@@ -272,7 +272,7 @@ async function validateCanonicalStatements(client: Client): Promise<void> {
   await client.query(
     `
       INSERT INTO "built_in_model_candidate_cooldown" (
-        "selected_model", "provider_type", "upstream_model", "unavailable_until"
+        "selected_model", "model_runtime_provider", "model_runtime_model", "unavailable_until"
       )
       VALUES ($1, $2, $3, $4)
     `,
@@ -290,10 +290,10 @@ async function validateCanonicalStatements(client: Client): Promise<void> {
     const result = await client.query<PreviousCooldownRow>(
       `
         INSERT INTO "built_in_model_candidate_cooldown" (
-          "selected_model", "provider_type", "upstream_model", "unavailable_until"
+          "selected_model", "model_runtime_provider", "model_runtime_model", "unavailable_until"
         )
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT ("selected_model", "provider_type", "upstream_model")
+        ON CONFLICT ("selected_model", "model_runtime_provider", "model_runtime_model")
         DO UPDATE SET
           "unavailable_until" = GREATEST(
             "built_in_model_candidate_cooldown"."unavailable_until",
@@ -301,8 +301,8 @@ async function validateCanonicalStatements(client: Client): Promise<void> {
           )
         RETURNING
           "selected_model" AS "selectedModel",
-          "provider_type" AS "providerType",
-          "upstream_model" AS "upstreamModel",
+          "model_runtime_provider" AS "providerType",
+          "model_runtime_model" AS "upstreamModel",
           "unavailable_until" AS "unavailableUntil"
       `,
       [
@@ -339,8 +339,8 @@ async function validateCanonicalStatements(client: Client): Promise<void> {
         "connection_observation_started_at" = $1,
         "connection_observation_until" = $2
       WHERE "selected_model" = $3
-        AND "provider_type" = $4
-        AND "upstream_model" = $5
+        AND "model_runtime_provider" = $4
+        AND "model_runtime_model" = $5
     `,
     [
       observationStartedAt,
@@ -373,8 +373,8 @@ async function validateCanonicalStatements(client: Client): Promise<void> {
         "connection_observation_started_at" = NULL,
         "connection_observation_until" = NULL
       WHERE "selected_model" = $1
-        AND "provider_type" = $2
-        AND "upstream_model" = $3
+        AND "model_runtime_provider" = $2
+        AND "model_runtime_model" = $3
     `,
     [
       fixture.statement.selectedModel,
@@ -406,13 +406,13 @@ async function validateCanonicalStatements(client: Client): Promise<void> {
     `
       SELECT
         "selected_model" AS "selectedModel",
-        "provider_type" AS "providerType",
-        "upstream_model" AS "upstreamModel",
+        "model_runtime_provider" AS "providerType",
+        "model_runtime_model" AS "upstreamModel",
         "unavailable_until" AS "unavailableUntil"
       FROM "built_in_model_candidate_cooldown"
       WHERE "selected_model" = $1
-        AND "provider_type" = $2
-        AND "upstream_model" = $3
+        AND "model_runtime_provider" = $2
+        AND "model_runtime_model" = $3
         AND "unavailable_until" > $4
     `,
     [
@@ -431,12 +431,12 @@ async function validateCanonicalStatements(client: Client): Promise<void> {
     `
       DELETE FROM "built_in_model_candidate_cooldown"
       WHERE "selected_model" = $1
-        AND "provider_type" = $2
-        AND "upstream_model" = $3
+        AND "model_runtime_provider" = $2
+        AND "model_runtime_model" = $3
       RETURNING
         "selected_model" AS "selectedModel",
-        "provider_type" AS "providerType",
-        "upstream_model" AS "upstreamModel",
+        "model_runtime_provider" AS "providerType",
+        "model_runtime_model" AS "upstreamModel",
         "unavailable_until" AS "unavailableUntil"
     `,
     [

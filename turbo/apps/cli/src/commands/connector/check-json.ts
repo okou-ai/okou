@@ -6,10 +6,10 @@ import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/con
 
 import {
   getAgentCustomConnectorGrants,
-  getAgentUserConnectors,
+  getAgentUserBuiltinConnectors,
 } from "../../lib/api/domains/agents";
 import {
-  getConnector,
+  getBuiltinConnector,
   getCustomConnector,
 } from "../../lib/api/domains/connectors";
 import { getOkouAgentId } from "../../lib/okou-env";
@@ -141,13 +141,13 @@ async function loadCheckEvidence(
         ? getCustomConnector(target.customConnectorId)
         : null,
       !runBound && target.kind === "builtin"
-        ? getConnector(target.connectorSlug)
+        ? getBuiltinConnector(target.connectorSlug)
         : null,
       runBound ? resolveRunConnectorAccountLookups([target]) : null,
       agentId === undefined
         ? null
         : target.kind === "builtin"
-          ? getAgentUserConnectors(agentId).then((slugs) => {
+          ? getAgentUserBuiltinConnectors(agentId).then((slugs) => {
               return slugs.includes(target.connectorSlug);
             })
           : getAgentCustomConnectorGrants(agentId).then((grants) => {

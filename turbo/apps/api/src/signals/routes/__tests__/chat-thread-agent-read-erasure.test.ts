@@ -662,13 +662,10 @@ describe("account erasure fences the bulk Agent read-cursor write", () => {
 });
 
 describe("bulk Agent read-cursor notifications stay bounded", () => {
-  it("updates every eligible row and bounds the payload at 0, 1, 100, 101 and 129 unread threads", async () => {
+  it("updates all unread rows and publishes Agent scope above the notification budget", async () => {
     const fixture = await createAgentReadFixture(
       NOTIFIED_THREAD_ID_BUDGET + 29,
     );
-    const other = await createAgentReadFixture(1);
-
-    // Every seeded thread is unread, and marking once moves all of them.
     clearPublishedNotifications();
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     const overflow = publishedReadCursorPayloads();
@@ -677,8 +674,11 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     ]);
     expect(JSON.stringify(overflow[0]).length).toBeLessThan(4096);
     await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
+  });
 
-    // A genuine no-op publishes nothing and stays idempotent.
+  it("publishes nothing when every Agent thread is already read", async () => {
+    const fixture = await createAgentReadFixture(1);
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     clearPublishedNotifications();
     const marked = await readChatThreadCursorsFixture(fixture.threadIds);
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
@@ -686,44 +686,42 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     await expect(
       readChatThreadCursorsFixture(fixture.threadIds),
     ).resolves.toStrictEqual(marked);
+  });
 
-    // Exactly one unread thread publishes its exact id.
-    const single = fixture.threadIds.slice(0, 1);
-    await appendTerminalChatEventsFixture({ threadIds: single });
-    clearPublishedNotifications();
-    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-    expect(publishedReadCursorPayloads()).toStrictEqual([
-      { agentId: fixture.agentId, threadIds: single },
-    ]);
+  it.each([1, NOTIFIED_THREAD_ID_BUDGET] as const)(
+    "publishes the exact thread ids for %i unread Agent threads within the budget",
+    async (threadCount) => {
+      const fixture = await createAgentReadFixture(threadCount);
+      clearPublishedNotifications();
+      await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
+      const payloads = publishedReadCursorPayloads();
+      expect(payloads).toHaveLength(1);
+      const payload = payloads[0];
+      expect(payload).toStrictEqual({
+        agentId: fixture.agentId,
+        threadIds: expect.arrayContaining([...fixture.threadIds]),
+      });
+      const { threadIds } = readCursorPayloadThreadIdsSchema.parse(payload);
+      expect(threadIds).toHaveLength(threadCount);
+      expect(JSON.stringify(payload).length).toBeLessThan(4096);
+      await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
+    },
+  );
 
-    // The budget itself still publishes the exact list, in a bounded payload.
-    const atBudget = fixture.threadIds.slice(0, NOTIFIED_THREAD_ID_BUDGET);
-    await appendTerminalChatEventsFixture({ threadIds: atBudget });
-    clearPublishedNotifications();
-    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
-    const exact = publishedReadCursorPayloads();
-    expect(exact).toHaveLength(1);
-    expect(exact[0]).toStrictEqual({
-      agentId: fixture.agentId,
-      threadIds: expect.arrayContaining([...atBudget]),
-    });
-    expect(JSON.stringify(exact[0]).length).toBeLessThan(4096);
-    await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
-
-    // One more than the budget overflows, and still moves every cursor.
-    const pastBudget = fixture.threadIds.slice(
-      0,
-      NOTIFIED_THREAD_ID_BUDGET + 1,
-    );
-    await appendTerminalChatEventsFixture({ threadIds: pastBudget });
+  it("publishes Agent scope and updates every row one thread above the notification budget", async () => {
+    const fixture = await createAgentReadFixture(NOTIFIED_THREAD_ID_BUDGET + 1);
     clearPublishedNotifications();
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     expect(publishedReadCursorPayloads()).toStrictEqual([
       { agentId: fixture.agentId, threadIds: [], scope: "agent" },
     ]);
     await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
+  });
 
-    // Another user's threads under their own Agent are untouched throughout.
+  it("leaves another Agent's unread threads untouched", async () => {
+    const fixture = await createAgentReadFixture(1);
+    const other = await createAgentReadFixture(1);
+    await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     await expect(unreadThreadIds(other)).resolves.toStrictEqual(
       new Set(other.threadIds),
     );

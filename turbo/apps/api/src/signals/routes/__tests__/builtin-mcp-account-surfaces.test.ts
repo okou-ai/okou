@@ -3,17 +3,17 @@ import { afterEach, describe, it } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  connectorNoAuthGrantContract,
-  connectorScopeDiffContract,
-  connectorsBySlugContract,
-  connectorsMainContract,
-  connectorsSearchContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorScopeDiffContract,
+  builtinConnectorsBySlugContract,
+  builtinConnectorsMainContract,
+  builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   agentsMainContract,
   agentsByIdContract,
 } from "@okouai/api-contracts/contracts/agents";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
@@ -29,7 +29,7 @@ import {
 } from "../../../test-fixtures/connector-catalog";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 import { agentsRoutes } from "../agents";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi } from "./helpers/api-bdd";
@@ -44,7 +44,7 @@ describe("builtin MCP account surfaces", () => {
   const routes = [
     ...connectorCatalogRoutes,
     ...connectorAccountRoutes,
-    ...connectorsRoutes,
+    ...builtinConnectorsRoutes,
     ...agentsRoutes,
   ];
   function accounts() {
@@ -103,7 +103,7 @@ describe("builtin MCP account surfaces", () => {
       ]),
     );
     const search = await accept(
-      setupApp({ context, routes })(connectorsSearchContract).search({
+      setupApp({ context, routes })(builtinConnectorsSearchContract).search({
         headers,
         query: { keyword: "public-mcp" },
       }),
@@ -135,7 +135,9 @@ describe("builtin MCP account surfaces", () => {
   it("connects and manages MCP accounts through ordinary connector endpoints", async () => {
     authenticate();
     const connected = await accept(
-      setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
+      setupApp({ context, routes })(
+        builtinConnectorNoAuthGrantContract,
+      ).connect({
         headers,
         params: { connectorSlug: target.connectorSlug },
         body: {
@@ -152,7 +154,9 @@ describe("builtin MCP account surfaces", () => {
       { target, accountCount: 1, defaultConnection: { id: connectionId } },
     ]);
     const list = await accept(
-      setupApp({ context, routes })(connectorsMainContract).list({ headers }),
+      setupApp({ context, routes })(builtinConnectorsMainContract).list({
+        headers,
+      }),
       [200],
     );
     expect(list.body.connectors).toMatchObject([
@@ -200,14 +204,16 @@ describe("builtin MCP account surfaces", () => {
         [200],
       ),
       accept(
-        setupApp({ context, routes })(connectorsBySlugContract).get({
+        setupApp({ context, routes })(builtinConnectorsBySlugContract).get({
           headers,
           params: { connectorSlug: target.connectorSlug },
         }),
         [200],
       ),
       accept(
-        setupApp({ context, routes })(connectorScopeDiffContract).getScopeDiff({
+        setupApp({ context, routes })(
+          builtinConnectorScopeDiffContract,
+        ).getScopeDiff({
           headers,
           params: { connectorSlug: target.connectorSlug },
         }),
@@ -269,7 +275,7 @@ describe("builtin MCP account surfaces", () => {
     );
     const params = { id: created.body.agentId };
     createdAgents.push(params.id);
-    const client = setupApp({ context, routes })(userConnectorsContract);
+    const client = setupApp({ context, routes })(userBuiltinConnectorsContract);
     await accept(
       client.update({
         headers,
@@ -329,7 +335,7 @@ describe("builtin MCP account surfaces", () => {
     });
     createdAgents.push(agent.agentId);
     await accept(
-      setupApp({ context, routes })(userConnectorsContract).update({
+      setupApp({ context, routes })(userBuiltinConnectorsContract).update({
         headers,
         params: { id: agent.agentId },
         body: { enabledConnectorSlugs: [target.connectorSlug] },
@@ -337,7 +343,9 @@ describe("builtin MCP account surfaces", () => {
       [200],
     );
     const connected = await accept(
-      setupApp({ context, routes })(connectorNoAuthGrantContract).connect({
+      setupApp({ context, routes })(
+        builtinConnectorNoAuthGrantContract,
+      ).connect({
         headers,
         params: { connectorSlug: target.connectorSlug },
         body: { authMethod: "none", account: { intent: "add" } },

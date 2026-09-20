@@ -15,6 +15,7 @@ import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events
 import {
   holdChatThreadEventIdFixture,
   readChatThreadTitleStateFixture,
+  readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -325,6 +326,28 @@ async function readPins(
   };
 }
 
+async function readStoredPins(
+  fixture: GenerationModelFixture,
+): Promise<GenerationModelPins> {
+  const metadata = await readStoredChatThreadMetadataFixture(fixture.threadId);
+  return {
+    selectedImageModel: metadata.selectedImageModel,
+    selectedVideoModel: metadata.selectedVideoModel,
+  };
+}
+
+async function readClosedPins(
+  fixture: GenerationModelFixture,
+): Promise<GenerationModelPins> {
+  const response = await chat.requestReadThreadMetadata(
+    fixture.actor,
+    fixture.threadId,
+    [404],
+  );
+  expect(response.status).toBe(404);
+  return readStoredPins(fixture);
+}
+
 /**
  * The thread's `updated_at`, which both routes set alongside their pin. No chat
  * thread read contract returns it, so
@@ -406,7 +429,7 @@ describe.each(generationModelEndpoints())(
       clearPublications();
       await endpoint.requestPinNext(fixture.actor, fixture.threadId, [404]);
 
-      await expect(readPins(fixture)).resolves.toStrictEqual(pins);
+      await expect(readClosedPins(fixture)).resolves.toStrictEqual(pins);
       await expect(readUpdatedAt(fixture)).resolves.toBe(updatedAt);
       await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
         before,
@@ -467,7 +490,7 @@ describe.each(generationModelEndpoints())(
       clearPublications();
       await endpoint.requestPinNext(shared.actor, shared.threadId, [404]);
 
-      await expect(readPins(shared)).resolves.toStrictEqual(pins);
+      await expect(readClosedPins(shared)).resolves.toStrictEqual(pins);
       await expect(readUpdatedAt(shared)).resolves.toBe(updatedAt);
       await expect(generationModelEvents(shared)).resolves.toStrictEqual(
         before,
@@ -507,7 +530,7 @@ describe.each(generationModelEndpoints())(
         [404],
       );
 
-      await expect(readPins(organization)).resolves.toStrictEqual(pins);
+      await expect(readClosedPins(organization)).resolves.toStrictEqual(pins);
       await expect(readUpdatedAt(organization)).resolves.toBe(updatedAt);
       await expect(generationModelEvents(organization)).resolves.toStrictEqual(
         before,
@@ -575,7 +598,9 @@ describe.each(generationModelEndpoints())(
 
             // A separate reader still sees the baseline pin and no new event,
             // and no invalidation has escaped to this caller's own channel.
-            await expect(readPins(fixture)).resolves.toStrictEqual(before);
+            await expect(readStoredPins(fixture)).resolves.toStrictEqual(
+              before,
+            );
             await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
               baselineEvents,
             );
@@ -607,7 +632,7 @@ describe.each(generationModelEndpoints())(
       expect(admitted.slice(baselineEvents.length)).toStrictEqual([
         { seqId: lastSeqId + 1, kind: endpoint.kind },
       ]);
-      await expect(readPins(fixture)).resolves.toMatchObject({
+      await expect(readClosedPins(fixture)).resolves.toMatchObject({
         [endpoint.pinKey]: endpoint.nextModel,
       });
       // The released write published exactly one invalidation and it went to
@@ -630,9 +655,9 @@ describe.each(generationModelEndpoints())(
 
       // The closure landed behind the admitted write, so the next pin is
       // rejected, changes nothing and adds no notification on any channel.
-      const pinned = await readPins(fixture);
+      const pinned = await readClosedPins(fixture);
       await endpoint.requestPinNext(fixture.actor, fixture.threadId, [404]);
-      await expect(readPins(fixture)).resolves.toStrictEqual(pinned);
+      await expect(readClosedPins(fixture)).resolves.toStrictEqual(pinned);
       await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
         admitted,
       );
@@ -735,7 +760,9 @@ describe.each(generationModelEndpoints())(
             // pre-write lock timeout, and the baseline pin is still what any
             // other caller reads.
             expect(entered.rowCount).toBe(1);
-            await expect(readPins(fixture)).resolves.toStrictEqual(before);
+            await expect(readStoredPins(fixture)).resolves.toStrictEqual(
+              before,
+            );
 
             controller.abort(new DOMException("Operation ended", "AbortError"));
             barrier.release();
@@ -913,7 +940,7 @@ describe("account erasure re-resolves moved parents for the generation model rou
 
     // The retry reselected the moved owner, admitted it and found it closed, so
     // nothing was written under the stale label and nothing was published.
-    await expect(readPins(fixture)).resolves.toStrictEqual(before);
+    await expect(readClosedPins(fixture)).resolves.toStrictEqual(before);
     await expect(generationModelEvents(fixture)).resolves.toStrictEqual(
       baselineEvents,
     );

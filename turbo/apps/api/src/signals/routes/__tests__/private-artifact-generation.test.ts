@@ -358,7 +358,9 @@ describe("managed artifact privacy", () => {
       });
       expect(stored?.Bucket).toBe(enabled ? privateBucket : publicBucket);
       if (enabled) {
-        expect(result.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.jpg$/u);
+        expect(result.url).toMatch(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
+        );
         expect(result.sourceUrl).toBeUndefined();
         expect(result.embedUrl).toBeUndefined();
         const serializedEvents = JSON.stringify(

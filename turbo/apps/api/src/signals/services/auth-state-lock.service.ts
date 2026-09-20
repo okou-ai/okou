@@ -3,7 +3,7 @@ import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/con
 
 import type { Db } from "../external/db";
 
-export async function lockConnectorState(
+export async function lockBuiltinConnectorState(
   db: Db,
   args: {
     readonly orgId: string;
@@ -25,7 +25,7 @@ export async function lockConnectorAccountTarget(
   },
 ): Promise<void> {
   if (args.target.kind === "builtin") {
-    await lockConnectorState(db, {
+    await lockBuiltinConnectorState(db, {
       orgId: args.orgId,
       userId: args.userId,
       connectorSlug: args.target.connectorSlug,

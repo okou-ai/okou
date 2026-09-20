@@ -91,10 +91,6 @@ const billingStatusResponseSchema = z.object({
   autoRechargeAllowed: z.boolean(),
   supportByok: z.boolean(),
   restrictedBuiltInModels: z.boolean(),
-  // Retired brand alias of restrictedBuiltInModels, still emitted for Apps
-  // below 0.891.0 that read only this name. Drop it from the API and this
-  // schema once the App client-version floor reaches 0.891.0: #33658 step 2.
-  restrictedVm0Models: z.boolean().optional(),
   videoGenerationAllowed: z.boolean(),
   workflowWebhookAutomationAllowed: z.boolean(),
   credits: z.number(),
@@ -1197,9 +1193,6 @@ const invoiceSchema = z.object({
 
 const billingInvoicesResponseSchema = z.object({
   invoices: z.array(invoiceSchema),
-  // Apps older than this release gate the receipt download UI on this flag.
-  // Keep emitting it until the App client-version floor excludes those builds.
-  receiptDownloadsSupported: z.literal(true),
 });
 
 const billingReceiptsMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/u);

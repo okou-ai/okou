@@ -5,27 +5,22 @@ import type {
   InitClientArgs,
   InitClientReturn,
 } from "@okouai/api-contracts/contracts/trpc-contract";
-import { delay } from "signal-timers";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { pathParams$ } from "../route.ts";
-import { onRejection, setLoop } from "../utils.ts";
+import { onRejection } from "../utils.ts";
 import type {
   AgentEvent,
   AgentEventsResponse,
-  LogStatus,
 } from "../okou-page/log-types.ts";
 import { groupVisibleGroups, type EventGroup } from "./log-detail-utils.ts";
 import {
   formatActivityClockTime,
   formatActivityDurationMs,
 } from "./activity-time.ts";
-import { scrollToBottomActivityDetail$ } from "./activity-detail-scroll.ts";
 
 const AGENT_EVENTS_PAGE_LIMIT = 100;
-const AGENT_EVENTS_POLL_INTERVAL_MS = 1000;
-const TERMINAL_EVENT_STALL_POLL_LIMIT = 30;
 
 type AgentEventsClient = InitClientReturn<
   typeof runAgentEventsContract,
@@ -35,8 +30,6 @@ type AgentEventsClient = InitClientReturn<
 interface ActivityEvents {
   readonly runId: string;
   readonly events: AgentEvent[];
-  readonly status: LogStatus;
-  readonly lastEventSequence: number | null;
 }
 
 type ActivityEventsState =
@@ -66,10 +59,7 @@ export const currentRunId$ = computed((get) => {
 async function fetchAgentEventPage(
   client: AgentEventsClient,
   runId: string,
-  request: {
-    readonly since?: number;
-    readonly cursor?: string;
-  },
+  cursor: string | undefined,
   signal: AbortSignal,
 ): Promise<AgentEventsResponse> {
   const result = await accept(
@@ -78,10 +68,7 @@ async function fetchAgentEventPage(
       query: {
         limit: AGENT_EVENTS_PAGE_LIMIT,
         order: "asc",
-        ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
-        ...(request.cursor === undefined && request.since !== undefined
-          ? { since: request.since }
-          : {}),
+        ...(cursor === undefined ? {} : { cursor }),
       },
       fetchOptions: { signal },
     }),
@@ -94,36 +81,10 @@ async function fetchAgentEventPage(
 async function fetchAgentEventBatch(
   client: AgentEventsClient,
   runId: string,
-  request: {
-    readonly since?: number;
-    readonly expectedSequence?: number;
-  },
   signal: AbortSignal,
-): Promise<Omit<ActivityEvents, "runId">> {
-  const firstPage = await fetchAgentEventPage(
-    client,
-    runId,
-    request.since === undefined ? {} : { since: request.since },
-    signal,
-  );
-  const events = [...firstPage.events];
-  let page = firstPage;
-
-  // If an indexed sequence is still missing, do not walk the already-known
-  // tail on every poll. Keep querying from the contiguous prefix until the
-  // missing event appears, then resume cursor pagination.
-  if (
-    request.expectedSequence !== undefined &&
-    !firstPage.events.some((event) => {
-      return event.sequenceNumber === request.expectedSequence;
-    })
-  ) {
-    return {
-      events,
-      status: page.status,
-      lastEventSequence: page.lastEventSequence,
-    };
-  }
+): Promise<AgentEvent[]> {
+  let page = await fetchAgentEventPage(client, runId, undefined, signal);
+  const events = [...page.events];
 
   const seenCursors = new Set<string>();
 
@@ -136,18 +97,14 @@ async function fetchAgentEventBatch(
     const nextPage = await fetchAgentEventPage(
       client,
       runId,
-      { cursor: nextCursor },
+      nextCursor,
       signal,
     );
     events.push(...nextPage.events);
     page = nextPage;
   }
 
-  return {
-    events,
-    status: page.status,
-    lastEventSequence: page.lastEventSequence,
-  };
+  return events;
 }
 
 const internalActivityEventsState$ = state<ActivityEventsState | null>(null);
@@ -167,69 +124,6 @@ const activityEventsLoading$ = computed((get) => {
   return state?.phase === "loading" && state.runId === runId;
 });
 
-function isTerminalStatus(status: LogStatus): boolean {
-  return (
-    status === "completed" ||
-    status === "failed" ||
-    status === "timeout" ||
-    status === "cancelled"
-  );
-}
-
-function visibleEventSequence(events: readonly AgentEvent[]): number {
-  let visibleThrough = -1;
-  for (const event of events) {
-    if (event.sequenceNumber <= visibleThrough) {
-      continue;
-    }
-    if (event.sequenceNumber !== visibleThrough + 1) {
-      break;
-    }
-    visibleThrough = event.sequenceNumber;
-  }
-  return visibleThrough;
-}
-
-function reachedTerminalEventWatermark(data: ActivityEvents): boolean {
-  return (
-    isTerminalStatus(data.status) &&
-    data.lastEventSequence !== null &&
-    visibleEventSequence(data.events) >= data.lastEventSequence
-  );
-}
-
-function mergeAgentEvents(
-  current: readonly AgentEvent[],
-  incoming: readonly AgentEvent[],
-): AgentEvent[] {
-  const bySequence = new Map(
-    current.map((event) => {
-      return [event.sequenceNumber, event] as const;
-    }),
-  );
-  for (const event of incoming) {
-    if (!bySequence.has(event.sequenceNumber)) {
-      bySequence.set(event.sequenceNumber, event);
-    }
-  }
-  return [...bySequence.values()].sort((left, right) => {
-    return left.sequenceNumber - right.sequenceNumber;
-  });
-}
-
-function activityEventsMadeProgress(
-  previous: ActivityEvents,
-  current: ActivityEvents,
-): boolean {
-  return (
-    current.events.length !== previous.events.length ||
-    visibleEventSequence(current.events) !==
-      visibleEventSequence(previous.events) ||
-    current.status !== previous.status ||
-    current.lastEventSequence !== previous.lastEventSequence
-  );
-}
-
 export const setupActivityEvents$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const runId = get(currentRunId$);
@@ -240,8 +134,8 @@ export const setupActivityEvents$ = command(
 
     set(internalActivityEventsState$, { phase: "loading", runId });
     const client = get(apiClient$)(runAgentEventsContract);
-    const initial = await onRejection(
-      fetchAgentEventBatch(client, runId, {}, signal),
+    const events = await onRejection(
+      fetchAgentEventBatch(client, runId, signal),
       () => {
         if (!signal.aborted) {
           set(internalActivityEventsState$, { phase: "unavailable", runId });
@@ -250,71 +144,10 @@ export const setupActivityEvents$ = command(
     );
     signal.throwIfAborted();
 
-    let current = {
-      runId,
-      ...initial,
-    } satisfies ActivityEvents;
-    set(internalActivityEventsState$, { phase: "ready", data: current });
-
-    await get(activityDetail$);
-    signal.throwIfAborted();
-    // Allow React to render the initial event history and bind the scroll
-    // container before restoring the pre-removal bottom position.
-    await delay(0, { signal });
-    set(scrollToBottomActivityDetail$);
-
-    if (reachedTerminalEventWatermark(current)) {
-      return;
-    }
-
-    let waitBeforeFirstPoll = true;
-    let terminalStallPolls = 0;
-    setLoop(
-      async (loopSignal) => {
-        if (waitBeforeFirstPoll) {
-          waitBeforeFirstPoll = false;
-          return false;
-        }
-
-        const visibleThrough = visibleEventSequence(current.events);
-        const batch = await fetchAgentEventBatch(
-          client,
-          runId,
-          {
-            ...(visibleThrough < 0 ? {} : { since: visibleThrough }),
-            expectedSequence: visibleThrough + 1,
-          },
-          loopSignal,
-        );
-        loopSignal.throwIfAborted();
-
-        const previous = current;
-        current = {
-          runId,
-          events: mergeAgentEvents(current.events, batch.events),
-          status: batch.status,
-          lastEventSequence: batch.lastEventSequence,
-        };
-        set(internalActivityEventsState$, { phase: "ready", data: current });
-
-        if (reachedTerminalEventWatermark(current)) {
-          return true;
-        }
-
-        if (!isTerminalStatus(current.status)) {
-          terminalStallPolls = 0;
-          return false;
-        }
-        if (activityEventsMadeProgress(previous, current)) {
-          terminalStallPolls = 0;
-          return false;
-        }
-        terminalStallPolls++;
-        return terminalStallPolls >= TERMINAL_EVENT_STALL_POLL_LIMIT;
-      },
-      AGENT_EVENTS_POLL_INTERVAL_MS,
-      signal,
-    );
+    set(internalActivityEventsState$, {
+      phase: "ready",
+      data: { runId, events },
+    });
   },
 );
 

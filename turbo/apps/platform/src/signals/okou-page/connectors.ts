@@ -2,7 +2,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
@@ -32,7 +32,7 @@ import {
   createComposerConnectorAccountSignals,
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
-import { resetManualGrantForm$ } from "./settings/connectors.ts";
+import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -261,7 +261,7 @@ function createBuiltinConnectorAuthorizationCommand(
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      const client = get(apiClient$)(userConnectorsContract);
+      const client = get(apiClient$)(userBuiltinConnectorsContract);
       await withCleanup(
         accept(
           client.update({
@@ -371,7 +371,7 @@ function createConnectorUiSignals(): Pick<
   const updateConnectorUiState$ = command(
     ({ set }, patch: Partial<ComposerConnectorUiState>): void => {
       if (patch.selectedConnectorSlug) {
-        set(resetManualGrantForm$, patch.selectedConnectorSlug);
+        set(resetBuiltinManualGrantForm$, patch.selectedConnectorSlug);
       }
       set(internalUiState$, (current) => {
         return { ...current, ...patch };

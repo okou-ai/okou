@@ -22,6 +22,7 @@ Building something:
 | Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
 | Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
 | Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
+| Adding an overlay, fullscreen panel or action bar         | [Floating layers and portal ownership](#floating-layers-and-portal-ownership)                                                                                                   |
 | Building the composer, or a surface that stands in for it | [The composer card surface](#the-composer-card-surface)                                                                                                                         |
 | Adding a scroll area                                      | [Chat scrollbars](#chat-scrollbars)                                                                                                                                             |
 | Adding motion, or handling reduced motion                 | [Animated layers](#animated-layers)                                                                                                                                             |
@@ -116,11 +117,10 @@ and the system decides how thick it is. Components must not hand-write a width:
 an arbitrary bracketed width, or a literal width inside a `style` prop, is a
 second registry for a decision this token already owns, and the two round to
 different device-pixel counts wherever the device scale is odd.
-`no-restricted-syntax` in `eslint.style.config.mjs` rejects both, and the three
+`no-restricted-syntax` in `eslint.style.config.mjs` rejects both, and the two
 files that legitimately spell a width turn the rule off by name with their own
-reason: two pin a whole pixel against the repaint a fractional border shows when
-a box's content resolves, and the 404 page's `border-[24px]` is a mat around
-artwork rather than a border on anything.
+reason: both pin a whole pixel, the chat card against the repaint a fractional
+border shows when its content resolves.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
 device pixel where 1px paints two, so every bare border carries half the ink it
@@ -251,6 +251,8 @@ compositing layers can cause nearby content to flicker in Safari. Preserve their
 layout, focus visibility, touch behavior, and pointer-event rules. When other
 properties still animate, name those properties instead of using
 `transition-all`. This does not remove loading or popup lifecycle animations.
+The shared scrollbars follow Base UI's official fade behavior, documented under
+[Chat scrollbars](#chat-scrollbars).
 
 ## Token and variant governance
 
@@ -329,8 +331,10 @@ remain available without hovering.
 ## Component contracts
 
 A component owns its own utilities. Reach for the component rather than
-restating its treatment, and keep layout, stacking and container context at the
-call site.
+restating its treatment. Call sites own layout and container-query context;
+app-wide stacking belongs to the shell, and floating-layer stacking belongs to
+the shared primitives. Follow [stacking ownership](#stacking-ownership) for
+any local overlap rather than adding a z-index to a control.
 
 ### The composer card surface
 
@@ -338,8 +342,29 @@ call site.
 the two surfaces that sit in its place: the service-status notice and the shared
 thread's claim prompt. The variant carries the fill, radius, border, shadow, the
 focus border transition and the `after` veil layer; callers keep layout,
-stacking and container context, which is why the composer still spells
-`@container/composer z-10` itself.
+including `@container/composer` on the group around the card. The shell owns
+the composer's order relative to the transcript and app-wide layers; the card's
+internal paint layers follow the local-isolation rule below. An existing
+call-site `z-10` is not part of the surface contract or a pattern to copy.
+
+### The composer's width
+
+Every width-dependent utility inside the composer reads the composer, through
+`composer-wide` — `@container composer (width >= 600px)` — and nothing else. A
+chat panel beside the Cloud Browser is about 550px wide inside a 1600px window,
+so a viewport breakpoint there keeps the full-width layout in a box that cannot
+hold it, and controls that belong to the same row stop expanding at different
+widths.
+
+The variant is mobile-first and has no `max-` counterpart: compact is the base
+style and a wider composer adds to it. Where a control simply runs out of room,
+the footer wraps rather than taking a second breakpoint to squeeze it.
+
+`@container/composer` sits on the group around the card, not on the card, so
+the surfaces rendered beside it at the same width — the model-scope notice, the
+pending-items strip — are inside it. Content portalled out of that subtree, such
+as the template picker dialog and the model picker popover, is a different box
+sized against the window and keeps viewport breakpoints.
 
 It is a `cva` variant on the component rather than an exported class string,
 because a class constant is not a component API: a caller can reorder it against
@@ -515,6 +540,14 @@ by the chat sidebar and message pane. Compose it with Base UI's
 `ScrollArea.Root`, `ScrollArea.Viewport`, and `ScrollArea.Content`. The vertical
 track is 10px wide with 1px padding, a transparent left border, and a flexible
 rounded `bg-border` thumb. Base UI hides it when content does not overflow.
+
+Visibility follows [Base UI's official Tailwind example](https://github.com/mui/base-ui/blob/v1.7.0/docs/src/app/%28docs%29/react/components/scroll-area/demos/hero/tailwind/index.tsx):
+idle scrollbars are transparent and ignore pointer events; `data-hovering` or
+`data-scrolling` makes them visible and interactive. `transition-opacity` fades
+them out, while `data-scrolling:duration-0` reveals them immediately on scroll.
+Base UI owns the interaction state and scroll timeout; the shared component
+owns these visibility utilities alongside the shadcn geometry and colors.
+
 Callers retain their viewport refs, scroll handlers, content layout, and
 scroll-position ownership; they do not add scrollbar width, color, or offset
 overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
@@ -625,6 +658,109 @@ would change its appearance substantially.
 
 These apply wherever the situation comes up, not only to the surface that first
 met it.
+
+### Floating layers and portal ownership
+
+Portals belong to the shared primitives. Business components must not import
+`createPortal` from `react-dom`. `DialogContent`, `SheetContent`,
+`PopoverContent`, `SelectContent`, `DropdownMenuContent` and `TooltipContent`
+already own that relocation through Base UI's own `Portal`, together with the
+focus, outside-press, scroll-lock and `aria` ownership that arrives with it.
+The portal there is not a rendering convenience: it is what lets a layer escape
+an ancestor's `overflow` clip or `transform` containing block, which is a DOM
+constraint rather than a state-location one. The toaster is the one surface
+that portals to `document.body` on purpose, because a toast outranks a dialog;
+it lives in the primitive layer for the same reason.
+
+An app-local surface renders in a stable host owned by the layout. An action
+bar can use `sticky` to remain visible within its scrollport; sticky positioning
+does not escape that scrollport's clipping or stacking context. A fullscreen
+panel or cover needs a shell-owned host that can paint over every region it
+covers. `fixed` changes positioning, but does not escape an ancestor's stacking
+context. Establish the correct host before removing an existing portal.
+Swapping a subtree between a portal and its written position remounts it, which
+costs the scroll position and any DOM state it held.
+
+Artifact list and preview fullscreen surfaces use the shared `FullscreenPanel`
+primitive. It moves one stable portal container to `#root` in fullscreen and
+back into its inline slot on exit, escaping the workspace stacking context.
+The fullscreen surface participates in the isolated app root at `z-40`, above
+workspace and sidebar content and below body-level Base UI dialogs and menus.
+This also keeps it below the planned `z-50` primitives when root isolation is
+removed. Business components do not own this portal or its stacking utilities.
+
+Both modes render through the same portal container rather than switching
+between a portal and an in-place React subtree. This preserves React state.
+Native `moveBefore` also preserves scroll, iframe and media state; browsers
+without it use `appendChild` with explicit scroll restoration, but embedded
+frames/media may reload.
+
+Reflowing Markdown previews opt into `FullscreenPanel`'s `scrollAnchor` contract.
+The primitive captures the first visible content block and its viewport offset
+before React changes the fullscreen styles, then restores that reading position
+after moving the portal. It temporarily disables native scroll anchoring during
+the commit so browser compensation cannot compete with restoration. Each toggle
+captures the current reading position, including scrolling done in fullscreen.
+Retaining a DOM node and its numeric `scrollTop` alone does not preserve a
+document's reading position when its line wrapping changes.
+
+Safe-area insets are the surface's own responsibility whenever it is `fixed`
+and meets a viewport edge. `#root` carries the top and horizontal insets as
+padding and delegates the bottom one, and a fixed box is laid out past that
+padding box whether or not it was portalled, so "is it portalled" is the wrong
+question and "is it fixed against an edge" is the right one.
+[Page layouts](#page-layouts) registers the `p-safe` utility and the viewport
+height tokens these surfaces take.
+
+#### Stacking ownership
+
+Business controls do not declare z-index. Icon buttons, menu triggers, cards
+and other content must not choose their order against unrelated app regions.
+A row's background already paints behind its children; a button does not need
+`relative z-10` to sit above it. Event propagation is handled by event handlers,
+not by raising the button's paint order.
+
+- Shared floating primitives follow shadcn's flat `z-50` convention. Their
+  portals and stacking utilities stay inside `@okouai/ui`; callers do not
+  override them. Peer surfaces at the same stack level in the same stacking
+  context follow DOM order, so preserve the primitive's portal structure.
+- The shell owns app-wide non-portal layers such as drawers, scrims and
+  fullscreen panels. Keep a small fixed set of literal Tailwind z-index
+  utilities in shell-owned files, below the shared floating layer in the
+  stacking context where they compete. Document each layer's host, the context
+  it participates in and the siblings it must cover.
+- Necessary overlap _inside_ a component is a local exception. Establish an
+  explicit `isolate` host around the participating elements in the same change,
+  and document why their order is needed. Keep the z-index inside that host;
+  it must not rank the component against the shell. Prefer ordinary paint order
+  when it already produces the intended result.
+
+Use literal utilities at those owning layers. Do not introduce a parallel
+z-index token ladder or component-local `--layer-*` variables. This is the
+project's ownership convention, not a limitation of CSS custom properties:
+Tailwind can express a variable-backed z-index, but neither a variable nor a
+larger literal lets a descendant escape its ancestor's stacking context.
+
+Audit the context, not a numeric threshold. A positioned `z-0` creates a
+stacking context just as `isolate` does; transforms and opacity below 1 can
+also create one. Review those boundaries before adding isolation to a layout
+wrapper, especially when descendants need to cover other app regions.
+
+The artifact bug recorded in
+[#35387](https://github.com/vm0-ai/okou/issues/35387) illustrates the failure:
+`WorkspaceInset` had `relative z-0`, trapping the artifact detail's
+`fixed z-[100]` inside that context. The sidebar header's `relative z-10`
+buttons participated outside it and painted above the fullscreen surface.
+Lowering 100 below 50 or removing only `#root`'s isolation cannot repair that
+boundary. The artifact catalog's portal to `#root` escaped it, so removing that
+portal before correcting the host would expose the same bug on that path.
+
+The primitive `z-50` restoration, root-isolation removal, shell-host migration
+and z-index lint are tracked in #35387. Existing z-index declarations are
+migration debt to audit under these ownership rules, including zero, negative
+values and values below 50; passing today's lint does not establish correct
+stacking. Regression coverage must verify that fullscreen content paints above
+sidebar actions and that toggling fullscreen preserves the panel's DOM state.
 
 ### Horizontal hairline rules
 
@@ -1297,6 +1433,16 @@ returned before push. Both policy diagnostics and the full lint command's
 failure output direct contributors to `docs/styles.md` for the style guide. The
 full command keeps a failing exit status for policy, CSS, Tailwind, or test
 failures.
+
+Z-index ownership enforcement is planned in
+[#35387](https://github.com/vm0-ai/okou/issues/35387) and is not yet part of these
+checks. It must cover numeric, negative, arbitrary and variable-backed z-index
+utilities (including variants), arbitrary `z-index` properties and inline
+`zIndex`, rather than only values at or above 50. Each permitted declaration
+must identify its exact file, owner, rationale and stacking host; a local
+exception must name its `isolate` boundary. Static lint cannot prove the runtime
+ancestor chain or paint order, so it complements the fullscreen regression
+coverage described above. Do not assemble class names dynamically to evade it.
 
 When a style check fails, read this guide and replace business styling with the
 appropriate Tailwind utilities and registered tokens. When a change removes CSS

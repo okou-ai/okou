@@ -31,7 +31,7 @@ import { settle } from "../utils";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { ORG_SENTINEL_USER_ID } from "./feature-switches.service";
+import { ORG_SENTINEL_USER_ID } from "./feature-switch-scope";
 import { stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
 import {
   repairMissingStripeInvoicePaidAutomationProjection,

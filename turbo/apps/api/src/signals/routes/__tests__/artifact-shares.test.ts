@@ -43,6 +43,10 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
+function artifactReferenceFromUrl(value: string): string {
+  return new URL(value).pathname.slice("/artifacts/".length);
+}
+
 class ClerkApiResponseTestError extends Error {
   static readonly kind = "ClerkAPIResponseError";
 
@@ -652,8 +656,10 @@ test("a private file keeps the same short reference through organization sharing
   );
   const target = { kind: "file" as const, id: prepared.body.id };
   const url = prepared.body.url;
-  expect(url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.pdf$/u);
-  const reference = url.slice("/artifacts/".length);
+  expect(url).toMatch(
+    /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+  );
+  const reference = artifactReferenceFromUrl(url);
   const recipient = `user_${randomUUID()}`;
   members.add(recipient);
   session(recipient);
@@ -672,7 +678,7 @@ test("a private file keeps the same short reference through organization sharing
     }),
     [200],
   );
-  expect(shared.body.shortUrl).toBe(`https://app.okou.ai${url}`);
+  expect(shared.body.shortUrl).toBe(url);
   expect(shared.body.url).toBe(shared.body.shortUrl);
   session(recipient);
   const resolved = await accept(
@@ -738,7 +744,7 @@ test("agent reference resolution enforces resource capability, type and ownershi
     }),
     [200],
   );
-  const reference = prepared.body.url.slice("/artifacts/".length);
+  const reference = artifactReferenceFromUrl(prepared.body.url);
   const recipient = `user_${randomUUID()}`;
   members.add(recipient);
   const seconds = Math.floor(now() / 1000);
@@ -1022,7 +1028,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
       const first = await host.prepareHostedSite(actor, body);
       await host.completeHostedSite(actor, first.deploymentId);
       const firstTarget = { kind: "html" as const, id: first.deploymentId };
-      const firstReference = first.url.slice("/artifacts/".length);
+      const firstReference = artifactReferenceFromUrl(first.url);
       const ownerHeaders = runHeaders(owner, org, ["artifact:read"]);
       const owned = await accept(
         api()(artifactReferencesContract).read({
@@ -1065,7 +1071,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
       });
       await host.completeHostedSite(actor, second.deploymentId);
       const secondTarget = { kind: "html" as const, id: second.deploymentId };
-      const secondReference = second.url.slice("/artifacts/".length);
+      const secondReference = artifactReferenceFromUrl(second.url);
       const selected = await accept(
         api()(artifactReferencesContract).read({
           headers: recipientHeaders,
@@ -1706,7 +1712,7 @@ test("new HTML sites keep independent sharing and resolve to isolated content", 
   );
   expect(privateStatus.body).toMatchObject({
     audience: "private",
-    ownerUrl: `https://app.okou.ai${first.url}`,
+    ownerUrl: first.url,
     url: null,
   });
   const ownerReference = artifactReferencePath(first.deploymentId, "hint.pdf")
@@ -1764,14 +1770,14 @@ test("new HTML sites keep independent sharing and resolve to isolated content", 
     [200],
   );
   expect(before.body).toMatchObject({
-    ownerUrl: `https://app.okou.ai${second.url}`,
+    ownerUrl: second.url,
     audience: "private",
     selectedTarget: null,
     selectedVersion: null,
     candidateVersion: 1,
     url: null,
   });
-  expect(share.body.shortUrl).toBe(`https://app.okou.ai${first.url}`);
+  expect(share.body.shortUrl).toBe(first.url);
   expect(share.body.url).toBe(share.body.shortUrl);
   const recipient = `user_${randomUUID()}`;
   members.add(recipient);
@@ -1779,7 +1785,7 @@ test("new HTML sites keep independent sharing and resolve to isolated content", 
   await accept(
     api()(artifactReferencesContract).resolve({
       headers,
-      params: { reference: second.url.slice("/artifacts/".length) },
+      params: { reference: artifactReferenceFromUrl(second.url) },
     }),
     [404],
   );
@@ -1812,21 +1818,21 @@ test("new HTML sites keep independent sharing and resolve to isolated content", 
   expect(changed.body).toMatchObject({
     selectedTarget: newer,
     selectedVersion: 1,
-    url: `https://app.okou.ai${second.url}`,
+    url: second.url,
   });
-  expect(changed.body.shortUrl).toBe(`https://app.okou.ai${second.url}`);
+  expect(changed.body.shortUrl).toBe(second.url);
   session(recipient);
   await accept(
     api()(artifactReferencesContract).resolve({
       headers,
-      params: { reference: first.url.slice("/artifacts/".length) },
+      params: { reference: artifactReferenceFromUrl(first.url) },
     }),
     [200],
   );
   const current = await accept(
     api()(artifactReferencesContract).resolve({
       headers,
-      params: { reference: second.url.slice("/artifacts/".length) },
+      params: { reference: artifactReferenceFromUrl(second.url) },
     }),
     [200],
   );
@@ -1842,7 +1848,7 @@ test("new HTML sites keep independent sharing and resolve to isolated content", 
   expect(revoked.body).toMatchObject({
     audience: "private",
     url: null,
-    ownerUrl: `https://app.okou.ai${second.url}`,
+    ownerUrl: second.url,
   });
 });
 

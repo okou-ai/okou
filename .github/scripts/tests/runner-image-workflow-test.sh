@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKFLOW="${REPO_ROOT}/.github/workflows/runner-image.yml"
+ACTION="${REPO_ROOT}/.github/actions/setup-r2-sccache/action.yml"
 
 fail() {
   echo "FAIL: $1" >&2
@@ -12,6 +13,7 @@ fail() {
 
 command -v yq >/dev/null || fail "yq is required"
 workflow_json=$(yq -o=json '.' "$WORKFLOW")
+action_json=$(yq -o=json '.' "$ACTION")
 
 # Exercise the workflow's input detector with a transport-only Git change.
 test_root=$(mktemp -d)
@@ -42,6 +44,46 @@ image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c 
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "download-only changes must be recognized as runner image inputs"
 
+check_ci_detectors() {
+  local base_ref=$1 change_label=$2 include_turbo=${3:-false}
+  ruby -ryaml -ropen3 - "$REPO_ROOT" "$test_root" "$base_ref" "$change_label" "$include_turbo" <<'RUBY'
+root, fixture, base, change_label, include_turbo = ARGV
+detectors = [["crates", "detect", "detect", "base-ref"],
+             ["runner-image", "prepare", "turbo", "base-ref"],
+             ["runner-image", "prepare", "crates", "base-ref"]]
+detectors << ["turbo", "prepare", "detect", "changed-files"] if include_turbo == "true"
+detectors.each do |workflow, job, step_id, input|
+  steps = YAML.load_file("#{root}/.github/workflows/#{workflow}.yml").fetch("jobs").fetch(job).fetch("steps")
+  lines = steps.find { |step| step["id"] == step_id }.fetch("run").lines
+  first = lines.index { |line| line.start_with?("if ") && line.include?(".github/actions/") }
+  raise "missing CI detector: #{workflow}/#{step_id}" unless first
+  last = (first...lines.length).find { |index| lines[index].strip == "fi" }
+  # Execute the workflow's actual selection boundary against a real Git diff.
+  script = lines[first..last].join + "\necho \"ci-changed=${ci_changed:-}\"\n"
+  output_file = "#{fixture}/detected"
+  [base, "HEAD"].each do |comparison|
+    File.write(output_file, "")
+    env = {"GITHUB_OUTPUT" => output_file}
+    if input == "base-ref"
+      env["BASE_REF"] = comparison
+    else
+      changed_files, error, status = Open3.capture3("git", "diff", "--name-only", comparison, "HEAD", chdir: fixture)
+      raise error unless status.success?
+      env["CHANGED_FILES"] = changed_files
+    end
+    output, error, status = Open3.capture3(env,
+                                         "bash", "-e", "-o", "pipefail", "-c", script, chdir: fixture)
+    raise error unless status.success?
+    expected = comparison == base ? "true" : "false"
+    result = output + File.read(output_file)
+    unless result.lines.include?("ci-changed=#{expected}\n")
+      raise "wrong #{change_label} selection: #{workflow}/#{step_id}"
+    end
+  end
+end
+RUBY
+}
+
 # An installer-only edit must still select its image and native test consumers.
 base_ref=$(fixture_git rev-parse HEAD)
 mkdir -p "${test_root}/.github/actions/setup-aws-cli"
@@ -52,30 +94,18 @@ fixture_git commit --quiet -m installer
 image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "installer-only changes must be recognized as runner image inputs"
+check_ci_detectors "$base_ref" "installer"
 
-ruby -ryaml -ropen3 - "$REPO_ROOT" "$test_root" "$base_ref" <<'RUBY'
-root, fixture, base = ARGV
-[["crates", "detect", "detect"], ["runner-image", "prepare", "turbo"],
- ["runner-image", "prepare", "crates"]].each do |workflow, job, step_id|
-  steps = YAML.load_file("#{root}/.github/workflows/#{workflow}.yml").fetch("jobs").fetch(job).fetch("steps")
-  lines = steps.find { |step| step["id"] == step_id }.fetch("run").lines
-  first = lines.index { |line| line.start_with?("if git diff ") && line.include?(".github/actions/") }
-  raise "missing CI detector: #{workflow}/#{step_id}" unless first
-  last = (first...lines.length).find { |index| lines[index].strip == "fi" }
-  # Execute the workflow's actual selection boundary against a real Git diff.
-  script = lines[first..last].join + "\necho \"ci-changed=${ci_changed:-}\"\n"
-  output_file = "#{fixture}/detected"
-  [base, "HEAD"].each do |comparison|
-    File.write(output_file, "")
-    output, error, status = Open3.capture3({"BASE_REF" => comparison, "GITHUB_OUTPUT" => output_file},
-                                         "bash", "-e", "-o", "pipefail", "-c", script, chdir: fixture)
-    raise error unless status.success?
-    expected = comparison == base ? "true" : "false"
-    result = output + File.read(output_file)
-    raise "wrong installer selection: #{workflow}/#{step_id}" unless result.lines.include?("ci-changed=#{expected}\n")
-  end
-end
-RUBY
+# A shared-cache-action-only edit must select the same image and consumers.
+base_ref=$(fixture_git rev-parse HEAD)
+mkdir -p "${test_root}/.github/actions/setup-r2-sccache"
+cp "$ACTION" "${test_root}/.github/actions/setup-r2-sccache/action.yml"
+fixture_git add .github/actions/setup-r2-sccache/action.yml
+fixture_git commit --quiet -m shared-cache-action
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "shared cache action changes must be recognized as runner image inputs"
+check_ci_detectors "$base_ref" "shared cache action" true
 
 jq -e '
   .jobs.prepare.outputs["turbo-runner-consumer-needed"] ==
@@ -153,7 +183,15 @@ jq -e '
   ) and
   ((.jobs.compile.steps | map(.uses // .name) | index("Configure git safe directory")) <
     (.jobs.compile.steps | map(.uses // .name) | index("Build runner binary"))) and
-  any(.jobs.compile.steps[]; .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba") and
+  any(.jobs.compile.steps[];
+    .name == "Setup R2 sccache" and
+    .uses == "./.github/actions/setup-r2-sccache" and
+    .with.architecture == "${{ matrix.id }}" and
+    .with["r2-access-key-id"] == "${{ secrets.R2_ACCESS_KEY_ID }}" and
+    .with["r2-secret-access-key"] == "${{ secrets.R2_SECRET_ACCESS_KEY }}" and
+    .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
+    .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
+  ) and
   any(.jobs.compile.steps[]; .uses == "Swatinem/rust-cache@v2") and
   any(.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
   any(.jobs.compile.steps[];
@@ -164,22 +202,51 @@ jq -e '
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
 
-# Execute the configured startup boundary without contacting storage. The
+# The action owns the pinned install and the complete startup interface.
+jq -e '
+  .runs.using == "composite" and
+  (.inputs | keys | sort) ==
+    ["architecture", "r2-access-key-id", "r2-account-id", "r2-bucket-name", "r2-secret-access-key"] and
+  all(.inputs[]; .required == true) and
+  any(.runs.steps[];
+    .name == "Install sccache" and
+    .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba" and
+    .with.version == "v0.15.0"
+  ) and
+  any(.runs.steps[];
+    .name == "Configure R2 sccache" and
+    .shell == "bash" and
+    .env.AWS_ACCESS_KEY_ID == "${{ inputs.r2-access-key-id }}" and
+    .env.AWS_SECRET_ACCESS_KEY == "${{ inputs.r2-secret-access-key }}" and
+    .env.R2_ACCOUNT_ID == "${{ inputs.r2-account-id }}" and
+    .env.SCCACHE_ARCHITECTURE == "${{ inputs.architecture }}" and
+    .env.SCCACHE_BUCKET == "${{ inputs.r2-bucket-name }}" and
+    .env.SCCACHE_GHA_ENABLED == "false" and
+    .env.SCCACHE_IDLE_TIMEOUT == "0" and
+    .env.SCCACHE_REGION == "auto"
+  )
+' <<<"$action_json" >/dev/null || fail "shared cache action must retain its pinned install and explicit startup inputs"
+
+# Execute the action's configured startup boundary without contacting storage. The
 # server must receive R2 configuration, while later build steps receive only
 # compiler settings through GITHUB_ENV.
-cache_step=$(jq -c '.jobs.compile.steps[] | select(.name == "Configure sccache")' <<<"$workflow_json")
+cache_step=$(jq -c '.runs.steps[] | select(.name == "Configure R2 sccache")' <<<"$action_json")
 cache_script=$(jq -r '.run' <<<"$cache_step")
 cache_env_entries=$(jq -r '.env | to_entries[] | "\(.key)=\(.value)"' <<<"$cache_step")
-mapfile -t cache_env <<<"$cache_env_entries"
-for index in "${!cache_env[@]}"; do
-  value=${cache_env[$index]}
-  value=${value//"\${{ secrets.R2_ACCESS_KEY_ID }}"/fixture-access}
-  value=${value//"\${{ secrets.R2_SECRET_ACCESS_KEY }}"/fixture-secret}
-  value=${value//"\${{ vars.R2_ACCOUNT_ID }}"/fixture-account}
-  value=${value//"\${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"/fixture-bucket}
-  value=${value//"\${{ matrix.id }}"/arm64}
-  cache_env[index]=$value
-done
+mapfile -t cache_env_templates <<<"$cache_env_entries"
+render_cache_env() {
+  local architecture=$1 index value
+  cache_env=()
+  for index in "${!cache_env_templates[@]}"; do
+    value=${cache_env_templates[$index]}
+    value=${value//"\${{ inputs.r2-access-key-id }}"/fixture-access}
+    value=${value//"\${{ inputs.r2-secret-access-key }}"/fixture-secret}
+    value=${value//"\${{ inputs.r2-account-id }}"/fixture-account}
+    value=${value//"\${{ inputs.r2-bucket-name }}"/fixture-bucket}
+    value=${value//"\${{ inputs.architecture }}"/$architecture}
+    cache_env+=("$value")
+  done
+}
 cache_dir="${test_root}/cache-startup"
 mkdir -p "$cache_dir"
 cat > "${cache_dir}/sccache" <<'BASH'
@@ -191,23 +258,41 @@ set -euo pipefail
 [ "$SCCACHE_BUCKET" = fixture-bucket ]
 [ "$SCCACHE_ENDPOINT" = https://fixture-account.r2.cloudflarestorage.com ]
 [ "$SCCACHE_REGION" = auto ]
-[ "$SCCACHE_S3_KEY_PREFIX" = runner-sccache/arm64/ ]
+[ "$SCCACHE_S3_KEY_PREFIX" = "$EXPECTED_PREFIX" ]
 [ "$SCCACHE_GHA_ENABLED" = false ]
 [ "$SCCACHE_IDLE_TIMEOUT" = 0 ]
 [ -f "$SCCACHE_CONF" ]
 touch "$SERVER_STARTED"
 BASH
 chmod +x "${cache_dir}/sccache"
+for architecture in arm64 x86_64; do
+  render_cache_env "$architecture"
+  rm -f "${cache_dir}/github-env" "${cache_dir}/started"
+  cache_start_env=(env -i "PATH=$PATH" "RUNNER_TEMP=$cache_dir"
+    "GITHUB_ENV=${cache_dir}/github-env" "SCCACHE_PATH=${cache_dir}/sccache"
+    "SERVER_STARTED=${cache_dir}/started" "EXPECTED_PREFIX=runner-sccache/${architecture}/"
+    "${cache_env[@]}")
+  "${cache_start_env[@]}" bash -eo pipefail -c "$cache_script"
+  [ -f "${cache_dir}/started" ] || fail "R2 cache server did not start for $architecture"
+  grep -qx 'server_startup_timeout_ms = 60000' "${cache_dir}/sccache.toml" || \
+    fail "cache startup must retain its 60-second timeout"
+  if grep -Eq 'AWS_|R2_|SCCACHE_(BUCKET|ENDPOINT|S3_KEY_PREFIX)|fixture-(access|secret)' \
+    "${cache_dir}/github-env"; then
+    fail "cache startup must not export storage configuration or credentials to build steps"
+  fi
+  [ "$(wc -l < "${cache_dir}/github-env" | tr -d ' ')" = 3 ] || \
+    fail "cache startup must export only three compiler settings"
+  grep -qx 'CARGO_INCREMENTAL=0' "${cache_dir}/github-env" || fail "sccache builds must disable incremental compilation"
+  grep -qx "SCCACHE_CONF=${cache_dir}/sccache.toml" "${cache_dir}/github-env" || fail "builds must retain the cache config"
+  grep -qx 'RUSTC_WRAPPER=sccache' "${cache_dir}/github-env" || fail "builds must use the configured cache server"
+done
+
+render_cache_env arm64
 cache_start_env=(env -i "PATH=$PATH" "RUNNER_TEMP=$cache_dir"
   "GITHUB_ENV=${cache_dir}/github-env" "SCCACHE_PATH=${cache_dir}/sccache"
-  "SERVER_STARTED=${cache_dir}/started" "${cache_env[@]}")
-"${cache_start_env[@]}" bash -eo pipefail -c "$cache_script"
-[ -f "${cache_dir}/started" ] || fail "R2 cache server did not start"
-if grep -Eq 'AWS_|R2_|SCCACHE_(BUCKET|ENDPOINT)|fixture-(access|secret)' "${cache_dir}/github-env"; then
-  fail "cache startup must not export storage configuration or credentials to build steps"
-fi
-grep -qx 'RUSTC_WRAPPER=sccache' "${cache_dir}/github-env" || fail "builds must use the configured cache server"
-for missing in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID SCCACHE_BUCKET; do
+  "SERVER_STARTED=${cache_dir}/started" "EXPECTED_PREFIX=runner-sccache/arm64/"
+  "${cache_env[@]}")
+for missing in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID SCCACHE_BUCKET SCCACHE_ARCHITECTURE; do
   rm -f "${cache_dir}/started"
   if "${cache_start_env[@]}" "$missing=" bash -eo pipefail -c "$cache_script" \
     >"${cache_dir}/out" 2>"${cache_dir}/err"; then
@@ -215,11 +300,20 @@ for missing in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY R2_ACCOUNT_ID SCCACHE_BUC
   fi
   [ ! -e "${cache_dir}/started" ] || fail "missing R2 configuration must not start a local cache"
 done
+rm -f "${cache_dir}/started"
+if "${cache_start_env[@]}" SCCACHE_ARCHITECTURE=ppc64 bash -eo pipefail -c "$cache_script" \
+  >"${cache_dir}/out" 2>"${cache_dir}/err"; then
+  fail "cache startup must reject an unsupported architecture"
+fi
+[ ! -e "${cache_dir}/started" ] || fail "unsupported architecture must not start a local cache"
 
 jq -e '
   ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba")) |
+    select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
     .key] == ["compile"]) and
+  ([.jobs | to_entries[] |
+    select(any(.value.steps[]?; .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba")) |
+    .key] == []) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; .uses == "Swatinem/rust-cache@v2")) |
     .key] == ["compile"])

@@ -97,40 +97,12 @@ export const visibleCustomTemplates$ = computed(
 );
 
 /**
- * Where a kind is read.
+ * The open template, with the kind that decides what looking at it shows.
  *
- * A deck is a column of page images, which this panel can already scroll, so
- * it takes the panel over. A document and an illustration are each one file
- * read at whatever size suits it — someone else's viewer for the document, the
- * picture itself for the illustration — so both want a viewport of their own
- * and open a dialog over the catalog instead.
- *
- * Every kind answers here rather than one being what the others fall through
- * to, so a kind added to `USER_TEMPLATE_KINDS` fails this switch until someone
- * says where clicking its tile leads. Without it a new kind opens nothing and
- * the tile reads as broken.
- */
-export function customTemplateSurface(
-  kind: UserTemplateKind,
-): "panel" | "dialog" {
-  switch (kind) {
-    case "presentation": {
-      return "panel";
-    }
-    case "document":
-    case "illustration": {
-      return "dialog";
-    }
-  }
-}
-
-/**
- * The open template, with the kind that decides where it opens.
- *
- * The kind travels with the id rather than being read back from the catalog,
- * because the surface has to be chosen in the same frame as the click: waiting
- * for the detail request to say which would render one surface first and then
- * replace it.
+ * The kind travels with the id rather than being read back from the catalog so
+ * that the dialog can open on the click that asked for it: a deck draws the
+ * pages it already has and the other kinds draw their source file, and the
+ * request that would say which has not answered yet.
  */
 interface OpenCustomTemplate {
   readonly templateId: string;
@@ -139,7 +111,10 @@ interface OpenCustomTemplate {
 
 const internalOpenTemplate$ = state<OpenCustomTemplate | null>(null);
 
-export const openCustomTemplateId$ = computed((get) => {
+/** Which template is open, for the request that loads it and the guards that
+ * clear it. It stays in this module: the dialog asks whether anything is open
+ * through the kind beside it, and what to draw through the detail it loads. */
+const openCustomTemplateId$ = computed((get) => {
   return get(internalOpenTemplate$)?.templateId ?? null;
 });
 

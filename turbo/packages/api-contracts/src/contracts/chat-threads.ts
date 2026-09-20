@@ -1823,7 +1823,7 @@ export const chatEventsContract = c.router({
         .object({
           agentId: z.string().min(1),
           threadId: z.string().min(1),
-          interruptsRunId: z.string().uuid(),
+          interruptsRunId: z.string().uuid().toLowerCase(),
           clientEventId: z.string().uuid().optional(),
           prompt: z.undefined().optional(),
           clientThreadId: z.undefined().optional(),

@@ -244,16 +244,21 @@ function ResponsiveTriggerContent({
   if (!mobileIcon) {
     return label;
   }
+  // Only the composer asks for the icon-only trigger, and its trigger is
+  // `w-8 overflow-hidden` until the composer is wide, so this reads the
+  // composer's width rule. Against the window it would hand a 32px trigger the
+  // label layout whenever the window is wide, and the label would be clipped to
+  // its first character.
   return (
     <span className="flex items-center min-w-0">
-      <span className="flex items-center justify-center sm:hidden">
+      <span className="flex items-center justify-center composer-wide:hidden">
         {iconType ? (
           <ProviderIcon type={iconType} size={18} />
         ) : (
           <Cpu size={18} />
         )}
       </span>
-      <span className="hidden min-w-0 sm:inline-flex sm:items-center sm:gap-1.5">
+      <span className="hidden min-w-0 composer-wide:inline-flex composer-wide:items-center composer-wide:gap-1.5">
         {iconType && <ProviderIcon type={iconType} size={16} />}
         {label}
       </span>

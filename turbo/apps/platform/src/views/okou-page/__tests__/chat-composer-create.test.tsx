@@ -158,7 +158,7 @@ test("The type a slash command selects states the run in the action row", async 
   );
 });
 
-test("Choose a video from the type picker and submit its settings", async () => {
+async function setupVideoCreate() {
   setupModels();
   const submissions: {
     userMessage?: UserMessageDocument;
@@ -172,18 +172,12 @@ test("Choose a video from the type picker and submit its settings", async () => 
   const editor = await setupComposer();
   const user = userEvent.setup({ delay: null });
   await chooseCommand(editor, "A train crossing the mountains /", "video");
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  const card = editor.closest('[data-slot="chat-composer-card"]');
-  expect(card).toContainElement(
-    screen.getByRole("combobox", { name: "Choose a type" }),
-  );
-  expect(editor).toHaveTextContent("A train crossing the mountains");
-  expect(editor).not.toHaveTextContent("/");
-  expect(submissions).toHaveLength(0);
-  const videoPicker = await screen.findByRole("combobox", {
-    name: "Video models",
-  });
-  expect(videoPicker).toHaveTextContent("Seedance 2.0");
+  return { editor, submissions, user };
+}
+
+async function choosePortraitVideoRatio(
+  user: ReturnType<typeof userEvent.setup>,
+) {
   click(
     await waitFor(() => {
       return button("Video options 16:9 · 8s · 720p");
@@ -199,6 +193,29 @@ test("Choose a video from the type picker and submit its settings", async () => 
   click(portrait);
   expect(portrait).toHaveAttribute("aria-checked", "true");
   await user.keyboard("{Escape}");
+}
+
+test("Choose a video from the type picker and edit its settings", async () => {
+  const { editor, submissions, user } = await setupVideoCreate();
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  const card = editor.closest('[data-slot="chat-composer-card"]');
+  expect(card).toContainElement(
+    screen.getByRole("combobox", { name: "Choose a type" }),
+  );
+  expect(editor).toHaveTextContent("A train crossing the mountains");
+  expect(editor).not.toHaveTextContent("/");
+  expect(submissions).toHaveLength(0);
+  const videoPicker = await screen.findByRole("combobox", {
+    name: "Video models",
+  });
+  expect(videoPicker).toHaveTextContent("Seedance 2.0");
+  await choosePortraitVideoRatio(user);
+  expect(submissions).toHaveLength(0);
+});
+
+test("Submit the chosen video settings with the user prompt", async () => {
+  const { submissions, user } = await setupVideoCreate();
+  await choosePortraitVideoRatio(user);
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);
@@ -275,7 +292,7 @@ test.each(["presentation", "video", "image"] as const)(
   },
 );
 
-test("A queued Create message keeps its intent separate from user-authored text", async () => {
+async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
   setupModels();
   const queued: UserMessageDocument[] = [];
   const runId = crypto.randomUUID();
@@ -302,17 +319,25 @@ test("A queued Create message keeps its intent separate from user-authored text"
     featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
   });
   await screen.findByText("Review the launch brief");
+  return queued;
+}
 
-  const followupEditor = await findComposerEditor();
-  const prompt = "Create a presentation. Keep these words in my message.";
-  await chooseCommand(followupEditor, `${prompt} /`, "presentation");
+async function chooseSlideCount(name: "20–24 slides" | "4–8 slides") {
   click(screen.getByRole("combobox", { name: "Slide count" }));
-  click(await screen.findByRole("option", { name: "20–24 slides" }));
+  click(await screen.findByRole("option", { name }));
   await waitFor(() => {
     expect(
       screen.getByRole("combobox", { name: "Slide count" }),
-    ).toHaveTextContent("20–24 slides");
+    ).toHaveTextContent(name);
   });
+}
+
+test("A queued Create message keeps its intent separate from user-authored text", async () => {
+  const queued = await setupQueuedCreateConversation();
+  const followupEditor = await findComposerEditor();
+  const prompt = "Create a presentation. Keep these words in my message.";
+  await chooseCommand(followupEditor, `${prompt} /`, "presentation");
+  await chooseSlideCount("20–24 slides");
   await waitFor(() => {
     expect(button("Send")).toBeEnabled();
   });
@@ -340,13 +365,31 @@ test("A queued Create message keeps its intent separate from user-authored text"
       .trim(),
   ).toBe(prompt);
   await expect(screen.findByText(prompt)).resolves.toBeVisible();
-  click(screen.getByRole("combobox", { name: "Slide count" }));
-  click(await screen.findByRole("option", { name: "4–8 slides" }));
+});
+
+test("Queued Create messages retain their own slide counts", async () => {
+  const queued = await setupQueuedCreateConversation();
+  const prompt = "A longer presentation";
+  await chooseCommand(
+    await findComposerEditor(),
+    `${prompt} /`,
+    "presentation",
+  );
+  await chooseSlideCount("20–24 slides");
   await waitFor(() => {
-    expect(
-      screen.getByRole("combobox", { name: "Slide count" }),
-    ).toHaveTextContent("4–8 slides");
+    expect(button("Send")).toBeEnabled();
   });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(queued).toHaveLength(1);
+  });
+  expect(queued[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("- Slide count: 20-24"),
+  });
+  await expect(screen.findByText(prompt)).resolves.toBeVisible();
+
+  await chooseSlideCount("4–8 slides");
   await fill(await findComposerEditor(), "A shorter follow-up");
   click(button("Send"));
   await waitFor(() => {
@@ -506,71 +549,87 @@ test.each(createTemplateScenarios)(
   },
 );
 
-test.each(createTemplateScenarios)(
-  "$commandLabel edits only the clicked draft template and sends every reference",
-  async ({ mode, pickerLabel, selectLabel, previewLabel, templates }) => {
-    setupModels();
-    const submissions: UserMessageDocument[] = [];
-    mockChatLifecycle(context, {
-      onRunCreate: (body) => {
-        if (body.userMessage) {
-          submissions.push(body.userMessage);
-        }
+async function setupEditedDraftTemplate(
+  scenario: (typeof createTemplateScenarios)[number],
+) {
+  const { mode, pickerLabel, selectLabel, previewLabel, templates } = scenario;
+  setupModels();
+  const submissions: UserMessageDocument[] = [];
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      if (body.userMessage) {
+        submissions.push(body.userMessage);
+      }
+    },
+  });
+  const [first, second, replacement] = templates;
+  if (!first || !second || !replacement) {
+    throw new Error(`Expected three ${mode} templates`);
+  }
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Our launch " },
+          {
+            type: "template",
+            titleSnapshot: first.title,
+            template: first.request,
+          },
+          { type: "text", text: " for the cover. " },
+          {
+            type: "template",
+            titleSnapshot: second.title,
+            template: second.request,
+          },
+        ],
       },
+      draftAttachments: null,
     });
-    const [first, second, replacement] = templates;
-    if (!first || !second || !replacement) {
-      throw new Error(`Expected three ${mode} templates`);
-    }
-    context.mocks.api(agentDraftContract.get, ({ respond }) => {
-      return respond(200, {
-        draftUserMessage: {
-          version: 1,
-          parts: [
-            { type: "text", text: "Our launch " },
-            {
-              type: "template",
-              titleSnapshot: first.title,
-              template: first.request,
-            },
-            { type: "text", text: " for the cover. " },
-            {
-              type: "template",
-              titleSnapshot: second.title,
-              template: second.request,
-            },
-          ],
-        },
-        draftAttachments: null,
-      });
-    });
-    const editor = await setupComposer();
-    await waitFor(() => {
-      expect(composerInlineTemplates()).toHaveLength(2);
-    });
-    const user = userEvent.setup({ delay: null });
-    await user.click(editor);
-    await user.paste(" /");
-    const menu = await screen.findByTestId("slash-workflow-menu");
-    await enterCreateMode(mode, menu);
+  });
+  const editor = await setupComposer();
+  await waitFor(() => {
+    expect(composerInlineTemplates()).toHaveLength(2);
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.paste(" /");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  await enterCreateMode(mode, menu);
 
-    const firstChip = composerInlineTemplates()[0];
-    if (!firstChip) {
-      throw new Error("Expected the first inline template");
-    }
-    click(button(`${previewLabel} ${first.title}`, firstChip));
-    await screen.findByRole("dialog");
-    click(await screen.findByLabelText(`${selectLabel} ${replacement.title}`));
-    await waitFor(() => {
-      const chips = composerInlineTemplates();
-      expect(chips).toHaveLength(2);
-      expect(chips[0]).toHaveTextContent(replacement.title);
-      expect(chips[1]).toHaveTextContent(second.title);
-    });
-    expect(editor).toHaveTextContent("Our launch");
-    expect(editor).toHaveTextContent("for the cover.");
-    expect(button(pickerLabel)).toBeInTheDocument();
+  const firstChip = composerInlineTemplates()[0];
+  if (!firstChip) {
+    throw new Error("Expected the first inline template");
+  }
+  click(button(`${previewLabel} ${first.title}`, firstChip));
+  await screen.findByRole("dialog");
+  click(await screen.findByLabelText(`${selectLabel} ${replacement.title}`));
+  await waitFor(() => {
+    const chips = composerInlineTemplates();
+    expect(chips).toHaveLength(2);
+    expect(chips[0]).toHaveTextContent(replacement.title);
+    expect(chips[1]).toHaveTextContent(second.title);
+  });
+  expect(editor).toHaveTextContent("Our launch");
+  expect(editor).toHaveTextContent("for the cover.");
+  expect(button(pickerLabel)).toBeInTheDocument();
+  return { mode, replacement, second, submissions };
+}
 
+test.each(createTemplateScenarios)(
+  "$commandLabel edits only the clicked draft template",
+  async (scenario) => {
+    await setupEditedDraftTemplate(scenario);
+    expect(composerInlineTemplates()).toHaveLength(2);
+  },
+);
+
+test.each(createTemplateScenarios)(
+  "$commandLabel sends every edited draft template reference",
+  async (scenario) => {
+    const { mode, replacement, second, submissions } =
+      await setupEditedDraftTemplate(scenario);
     click(button("Send"));
     await waitFor(() => {
       expect(submissions).toHaveLength(1);
@@ -592,7 +651,7 @@ test.each(createTemplateScenarios)(
   },
 );
 
-test("Multiple templates keep a generic toolbar label and all references survive sending", async () => {
+async function setupMultipleTemplatePresentation() {
   setupModels();
   const submissions: UserMessageDocument[] = [];
   mockChatLifecycle(context, {
@@ -618,7 +677,17 @@ test("Multiple templates keep a generic toolbar label and all references survive
   await waitFor(() => {
     expect(button("Add template")).toBeInTheDocument();
   });
+  return { first, second, submissions };
+}
+
+test("Multiple templates keep a generic toolbar label", async () => {
+  await setupMultipleTemplatePresentation();
   expect(composerInlineTemplates()).toHaveLength(2);
+});
+
+test("All selected template references survive sending", async () => {
+  const { first, second, submissions } =
+    await setupMultipleTemplatePresentation();
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);
@@ -685,7 +754,7 @@ test("The slash panel's Illustration row opens the image style flow", async () =
   });
 });
 
-test("Switching Create preserves slash text and template references", async () => {
+async function setupSwitchedCreateMode() {
   setupModels();
   const submissions: UserMessageDocument[] = [];
   mockChatLifecycle(context, {
@@ -721,6 +790,17 @@ test("Switching Create preserves slash text and template references", async () =
   });
   expect(editor).toHaveTextContent("Our launch /notes");
   expect(composerInlineTemplates()).toHaveLength(1);
+  return { chip, editor, submissions, template };
+}
+
+test("Switching Create preserves slash text and template references", async () => {
+  const { editor } = await setupSwitchedCreateMode();
+  expect(editor).toHaveTextContent("Our launch /notes");
+});
+
+test("Exiting switched Create mode sends the ordinary draft and template", async () => {
+  const { chip, editor, submissions, template } =
+    await setupSwitchedCreateMode();
   click(button("Exit create mode", chip));
   await waitFor(() => {
     expect(chip).not.toBeInTheDocument();
@@ -792,7 +872,7 @@ test("The template chip cover stays off until the Lab switch is on", async () =>
   expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
 });
 
-test("An inline template chip shows the chosen cover and follows a replacement", async () => {
+async function setupCoveredPresentationTemplate() {
   setupModels();
   mockChatLifecycle(context);
   const editor = await setupComposerWithChipCover(true);
@@ -801,12 +881,18 @@ test("An inline template chip shows the chosen cover and follows a replacement",
     throw new Error("Expected two presentation templates");
   }
   await addPresentationTemplate(editor, first.title);
+  return { first, replacement };
+}
+
+test("An inline template chip shows the chosen cover", async () => {
+  const { first } = await setupCoveredPresentationTemplate();
   await waitFor(() => {
     expect(inlineTemplateCover()?.getAttribute("src")).toContain(first.slug);
   });
+});
 
-  // The picker rewrites the node in place, so the cover has to follow the new
-  // selection rather than only the first one.
+test("An inline template chip follows a replacement cover", async () => {
+  const { first, replacement } = await setupCoveredPresentationTemplate();
   const chip = composerInlineTemplates()[0];
   if (!chip) {
     throw new Error("Expected the inline template");
