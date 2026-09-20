@@ -15,6 +15,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { deleteAgentRunFixture } from "../../../test-fixtures/chat-events";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -541,8 +542,12 @@ describe("POST /api/uploads/complete", () => {
     expect(completed.status).toBe(200);
     await seedOrgMetadata({
       orgId: requireOrgId(actor),
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: requireOrgId(actor),
+      status: "suspended",
     });
 
     const response = await chat.requestCompleteUpload(

@@ -642,7 +642,7 @@ export function organizationTier(orgId: string): Computed<Promise<OrgTier>> {
     if (isOrgTier(row?.tier)) {
       return row.tier;
     }
-    return "pro-suspend";
+    return "limited-free-1";
   });
 }
 

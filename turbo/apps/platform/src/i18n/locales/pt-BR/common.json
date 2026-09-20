@@ -1224,9 +1224,6 @@
       "namedPlan": "Plano {{plan}}",
       "noActivePlan": "Nenhum plano ativo",
       "noActiveSubscription": "Nenhuma assinatura ativa",
-      "noPlan": {
-        "name": "Sem plano"
-      },
       "perMonth": "/mês",
       "pricePerMonth": "{{price}}/mês",
       "pro": {
@@ -5407,7 +5404,6 @@
       "custom": "Personalizado",
       "free": "Grátis",
       "limitedFree": "Grátis limitado",
-      "noPlan": "Sem plano",
       "pro": "Pro",
       "team": "Team"
     },

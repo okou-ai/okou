@@ -198,7 +198,7 @@ async function finalizeBootstrap(
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, args.orgId))
     .limit(1);
-  const tier = orgRow?.tier ?? "pro-suspend";
+  const tier = orgRow?.tier ?? "limited-free-1";
 
   if (isPaidTier(tier)) {
     await tx

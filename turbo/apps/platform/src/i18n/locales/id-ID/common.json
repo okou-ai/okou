@@ -1200,9 +1200,6 @@
       "namedPlan": "Paket {{plan}}",
       "noActivePlan": "Tidak ada paket aktif",
       "noActiveSubscription": "Tidak ada langganan aktif",
-      "noPlan": {
-        "name": "Tidak ada paket"
-      },
       "perMonth": "/bulan",
       "pricePerMonth": "{{price}}/bulan",
       "pro": {
@@ -5336,7 +5333,6 @@
       "custom": "Kustom",
       "free": "Gratis",
       "limitedFree": "Gratis terbatas",
-      "noPlan": "Tidak ada paket",
       "pro": "Pro",
       "team": "Tim"
     },

@@ -673,6 +673,13 @@
       "when": 1789872519523,
       "tag": "1173_retire_hosted_publication_version_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1174,
+      "version": "7",
+      "when": 1789894847455,
+      "tag": "1174_retire_pro_suspend_tier",
+      "breakpoints": true
     }
   ]
 }

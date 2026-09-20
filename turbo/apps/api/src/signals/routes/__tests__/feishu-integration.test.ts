@@ -6067,7 +6067,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
 
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({
@@ -6245,7 +6245,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({

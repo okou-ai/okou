@@ -578,6 +578,30 @@ Backend changes must be safe with:
 - new runner -> old backend, if traffic propagation or non-production
   deployment order can expose that pairing
 
+#### Pro-suspend plan retirement
+
+Migration `1174_retire_pro_suspend_tier` rewrites persisted `pro-suspend`
+organization tiers, pending cancellation targets, and entitlement snapshots to
+`limited-free-1`. The entitlement rewrite applies the complete canonical
+limited-free capability set and active status while preserving balances,
+subscription and period fields, source metadata, and other billing provenance.
+Validated constraints prevent the retired value from being persisted again.
+
+The outgoing API already writes `limited-free-1` for cancellations and can read
+the migrated state, so it remains compatible while the migration runs before
+API promotion. The current App emits only `limited-free-1`, and current API
+responses never expose `pro-suspend`. A new API still accepts the previous
+App's cancellation request literal and normalizes it before service execution;
+Stripe setup completion applies the same normalization to checkout metadata
+created before the rollout. These are input-only compatibility aliases, not
+organization tiers or stored plan values.
+
+Remove the App-request alias only after the replacement App is live and the
+web-client floor excludes the previous build. Remove the Stripe metadata alias
+only after every setup Checkout Session created by the previous build is
+terminal or expired. Neither alias permits the retired value to pass the
+persistence constraints.
+
 ### Commit-addressed CLI artifacts
 
 The private CLI used inside supported runs is published as an immutable,

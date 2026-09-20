@@ -1200,9 +1200,6 @@
       "namedPlan": "{{plan}} プラン",
       "noActivePlan": "有効なプランはありません",
       "noActiveSubscription": "有効なサブスクリプションがありません",
-      "noPlan": {
-        "name": "計画なし"
-      },
       "perMonth": "/月",
       "pricePerMonth": "{{price}}/月",
       "pro": {
@@ -5336,7 +5333,6 @@
       "custom": "カスタム",
       "free": "無料",
       "limitedFree": "限定無料",
-      "noPlan": "計画なし",
       "pro": "プロ",
       "team": "チーム"
     },

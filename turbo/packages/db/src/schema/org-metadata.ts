@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  check,
   foreignKey,
   index,
   pgTable,
@@ -10,6 +11,7 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { agents } from "./agent";
 
 function orgMetadataColumnsBeforeFirstPartySource() {
@@ -107,6 +109,14 @@ export const orgMetadata = pgTable(
   },
   (table) => {
     return [
+      check(
+        "chk_org_metadata_tier_not_pro_suspend",
+        sql`${table.tier} <> 'pro-suspend'`,
+      ),
+      check(
+        "chk_org_metadata_pending_target_not_pro_suspend",
+        sql`${table.pendingSubscriptionTargetTier} IS NULL OR ${table.pendingSubscriptionTargetTier} <> 'pro-suspend'`,
+      ),
       foreignKey({
         name: "org_metadata_default_agent_id_agents_id_fk",
         columns: [table.defaultAgentId],

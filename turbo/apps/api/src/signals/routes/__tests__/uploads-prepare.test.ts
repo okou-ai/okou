@@ -466,8 +466,12 @@ describe("POST /api/uploads/prepare", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
+    });
+    await upsertOrgPlanEntitlementFixture({
+      orgId: actor.orgId,
+      status: "suspended",
     });
     mocks.clerk.session(actor.userId, actor.orgId);
 
@@ -501,7 +505,7 @@ describe("POST /api/uploads/prepare", () => {
 
     await seedOrgMetadata({
       orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     for (const status of ["trialing", "past_due"] as const) {

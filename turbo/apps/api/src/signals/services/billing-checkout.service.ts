@@ -391,7 +391,6 @@ function billingTierRank(tier: string | null | undefined): number {
     }
     case "free":
     case "limited-free-1":
-    case "pro-suspend":
     default: {
       return 0;
     }
@@ -415,11 +414,8 @@ function billingTierLabel(tier: string | null | undefined): string {
     case "limited-free-1": {
       return "Limited free";
     }
-    case "pro-suspend": {
-      return "Pro suspended";
-    }
     default: {
-      return tier ?? "Pro suspended";
+      return tier ?? "Limited free";
     }
   }
 }

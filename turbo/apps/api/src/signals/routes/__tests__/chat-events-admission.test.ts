@@ -637,14 +637,14 @@ describe("CHAT-02: admission without spendable credits", () => {
     const completed = await bdd.completeOnboarding(actor);
     expect(completed.status).toBe(200);
     const agent = await bdd.createAgent(actor, {
-      displayName: "Pro-suspend chat agent",
+      displayName: "Suspended chat agent",
     });
     if (!actor.orgId) {
-      throw new Error("Expected pro-suspend chat actor to have an org");
+      throw new Error("Expected suspended chat actor to have an org");
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro-suspend",
+      tier: "pro",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({

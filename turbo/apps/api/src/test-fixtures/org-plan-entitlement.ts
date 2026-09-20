@@ -49,6 +49,9 @@ export async function upsertOrgPlanEntitlementFixture(values: {
   readonly restrictedBuiltInModels?: boolean;
   readonly videoGenerationAllowed?: boolean;
   readonly workflowWebhookAutomationAllowed?: boolean;
+  readonly audioLifetimeLimit?: number | null;
+  readonly audioDailyRateLimit?: number;
+  readonly audioDailyDurationSeconds?: number;
 }): Promise<void> {
   const row = {
     orgId: values.orgId,
@@ -65,6 +68,9 @@ export async function upsertOrgPlanEntitlementFixture(values: {
     restrictedBuiltInModels: values.restrictedBuiltInModels,
     videoGenerationAllowed: values.videoGenerationAllowed,
     workflowWebhookTriggerAllowed: values.workflowWebhookAutomationAllowed,
+    audioLifetimeLimit: values.audioLifetimeLimit,
+    audioDailyRateLimit: values.audioDailyRateLimit,
+    audioDailyDurationSeconds: values.audioDailyDurationSeconds,
   };
   await createStore()
     .set(writeDb$)
@@ -111,6 +117,15 @@ export async function upsertOrgPlanEntitlementFixture(values: {
           : {
               workflowWebhookTriggerAllowed: row.workflowWebhookTriggerAllowed,
             }),
+        ...(row.audioLifetimeLimit === undefined
+          ? {}
+          : { audioLifetimeLimit: row.audioLifetimeLimit }),
+        ...(row.audioDailyRateLimit === undefined
+          ? {}
+          : { audioDailyRateLimit: row.audioDailyRateLimit }),
+        ...(row.audioDailyDurationSeconds === undefined
+          ? {}
+          : { audioDailyDurationSeconds: row.audioDailyDurationSeconds }),
       },
     });
 }

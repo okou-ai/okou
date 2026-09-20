@@ -232,8 +232,7 @@ function stubBillingStatus(
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
       scheduledChange: null,
-      hasSubscription:
-        tier !== "free" && tier !== "limited-free-1" && tier !== "pro-suspend",
+      hasSubscription: tier !== "free" && tier !== "limited-free-1",
       autoRecharge: {
         enabled: false,
         threshold: null,
