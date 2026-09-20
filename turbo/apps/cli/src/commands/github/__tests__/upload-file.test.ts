@@ -53,7 +53,7 @@ describe("okou github upload-file command", () => {
     uploadFileCommand.outputHelp();
 
     expect(helpOutput).toContain("Uploads through Okou storage first");
-    expect(helpOutput).toContain("vm0-ai/vm0");
+    expect(helpOutput).toContain("okou-ai/okou");
   });
 
   it.each([
@@ -104,7 +104,7 @@ describe("okou github upload-file command", () => {
         completeBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
           commentId: "12345",
-          repo: "vm0-ai/vm0",
+          repo: "okou-ai/okou",
           issueNumber: 42,
           filename: "report.pdf",
           mimetype: "application/pdf",
@@ -120,7 +120,7 @@ describe("okou github upload-file command", () => {
       "--file",
       testFilePath,
       "--repo",
-      "vm0-ai/vm0",
+      "okou-ai/okou",
       "--issue-number",
       "42",
       "--caption",
@@ -130,7 +130,7 @@ describe("okou github upload-file command", () => {
     expect(putReceivedContentType).toBe("application/pdf");
     expect(completeBody).toMatchObject({
       uploadId: "00000000-0000-4000-8000-000000000101",
-      repo: "vm0-ai/vm0",
+      repo: "okou-ai/okou",
       issueNumber: 42,
       contentType: "application/pdf",
       caption: "Daily report",
@@ -140,7 +140,7 @@ describe("okou github upload-file command", () => {
     const parsed = JSON.parse(stdout) as Record<string, unknown>;
     expect(parsed).toMatchObject({
       commentId: "12345",
-      repo: "vm0-ai/vm0",
+      repo: "okou-ai/okou",
       issueNumber: 42,
       filename: "report.pdf",
       mimetype: "application/pdf",
@@ -157,7 +157,7 @@ describe("okou github upload-file command", () => {
         "-f",
         testFilePath,
         "-r",
-        "vm0-ai/vm0",
+        "okou-ai/okou",
         "-i",
         "not-a-number",
       ]);

@@ -208,7 +208,7 @@ run_case() {
     METAL_HOSTS=arm-1,x86-1,x86-2 \
     METAL_USER=ci \
     OFFICIAL_RUNNER_SECRET=test-secret \
-    REPO=vm0-ai/vm0 \
+    REPO=okou-ai/okou \
     ROOTFS_HASH_MAP='{"arm-1":"rootfs-arm","x86-1":"rootfs-x86-1","x86-2":"rootfs-x86-2"}' \
     RUNNER_API_URL=https://api.example.test \
     RUNNER_DIR="/var/lib/vm0-runner/runners/${job_ref}" \

@@ -5184,7 +5184,7 @@ describe("okou workflow automations", () => {
           eventConfig: {
             provider: "github",
             event: "pull_request",
-            repository: "vm0-ai/vm0",
+            repository: "okou-ai/okou",
             action: "closed",
             merged: true,
             filters: {
@@ -5204,7 +5204,7 @@ describe("okou workflow automations", () => {
       eventConfig: {
         provider: "github",
         event: "pull_request",
-        repository: "vm0-ai/vm0",
+        repository: "okou-ai/okou",
         action: "closed",
         merged: true,
         filters: {
@@ -5227,7 +5227,7 @@ describe("okou workflow automations", () => {
           eventConfig: {
             provider: "github",
             event: "pull_request",
-            repository: "vm0-ai/vm0",
+            repository: "okou-ai/okou",
             action: "labeled",
             filters: {
               labels: ["ready-to-merge"],
@@ -5248,7 +5248,7 @@ describe("okou workflow automations", () => {
     expect(updated.body.eventConfig).toStrictEqual({
       provider: "github",
       event: "pull_request",
-      repository: "vm0-ai/vm0",
+      repository: "okou-ai/okou",
       action: "labeled",
       filters: {
         labels: ["ready-to-merge"],
@@ -5262,7 +5262,7 @@ describe("okou workflow automations", () => {
         eventConfig: {
           provider: "github",
           event: "pull_request",
-          repository: "vm0-ai/vm0",
+          repository: "okou-ai/okou",
           action: "opened",
           merged: true,
           filters: {},
@@ -5292,7 +5292,7 @@ describe("okou workflow automations", () => {
             provider: "github",
             event: "workflow_run_completed",
             filters: {
-              repositories: ["vm0-ai/vm0"],
+              repositories: ["okou-ai/okou"],
               workflows: ["Turbo", ".github/workflows/turbo.yml"],
               conclusions: ["failure", "startup_failure"],
               branches: ["main"],
@@ -5312,7 +5312,7 @@ describe("okou workflow automations", () => {
         provider: "github",
         event: "workflow_run_completed",
         filters: {
-          repositories: ["vm0-ai/vm0"],
+          repositories: ["okou-ai/okou"],
           workflows: ["Turbo", ".github/workflows/turbo.yml"],
           conclusions: ["failure", "startup_failure"],
           branches: ["main"],
@@ -5333,7 +5333,7 @@ describe("okou workflow automations", () => {
             provider: "github",
             event: "workflow_run_completed",
             filters: {
-              repositories: ["vm0-ai/vm0"],
+              repositories: ["okou-ai/okou"],
               conclusions: ["success"],
               branches: ["release"],
             },
@@ -5348,7 +5348,7 @@ describe("okou workflow automations", () => {
       eventType: "github-workflow-run-completed",
       eventConfig: {
         filters: {
-          repositories: ["vm0-ai/vm0"],
+          repositories: ["okou-ai/okou"],
           conclusions: ["success"],
           branches: ["release"],
         },
@@ -5374,7 +5374,7 @@ describe("okou workflow automations", () => {
           eventConfig: {
             provider: "github",
             event: "pull_request",
-            repository: "vm0-ai/vm0",
+            repository: "okou-ai/okou",
             action: "closed",
             filters: {},
           },

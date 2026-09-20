@@ -34,14 +34,14 @@ for argument in "$@"; do
 done
 
 case "$endpoint" in
-  repos/vm0-ai/vm0/pulls/42)
+  repos/okou-ai/okou/pulls/42)
     if [ "${MOCK_PR_LOOKUP_FAILURE:-0}" = "1" ]; then
       echo 'gh: failed to resolve PR head (HTTP 500)' >&2
       exit 1
     fi
-    printf 'feature/safe-shared-runner\tvm0-ai/vm0\n'
+    printf 'feature/safe-shared-runner\tokou-ai/okou\n'
     ;;
-  repos/vm0-ai/vm0/actions/runs)
+  repos/okou-ai/okou/actions/runs)
     if [ "${MOCK_DISCOVERY_FAILURE_STATUS:-}" = "$status_filter" ]; then
       echo 'gh: failed to list workflow runs (HTTP 500)' >&2
       exit 1
@@ -75,7 +75,7 @@ JSON
     cat <<'JSON'
 [{"workflow_runs":[
   {"id":100,"name":"Turbo","status":"in_progress","event":"merge_group","head_sha":"old-a","head_branch":"gh-readonly-queue/main/pr-42-old-a","path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/100"},
-  {"id":110,"name":"Crates","status":"in_progress","event":"pull_request","head_sha":"old-b","head_branch":"feature/safe-shared-runner","head_repository":{"full_name":"vm0-ai/vm0"},"path":".github/workflows/crates.yml","pull_requests":[],"html_url":"https://example.test/110"},
+  {"id":110,"name":"Crates","status":"in_progress","event":"pull_request","head_sha":"old-b","head_branch":"feature/safe-shared-runner","head_repository":{"full_name":"okou-ai/okou"},"path":".github/workflows/crates.yml","pull_requests":[],"html_url":"https://example.test/110"},
   {"id":115,"name":"Turbo","status":"in_progress","event":"pull_request","head_sha":"old-branch-collision","head_branch":"feature/safe-shared-runner","head_repository":{"full_name":"fork/vm0"},"path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/115"},
   {"id":120,"name":"Runner Image","status":"in_progress","event":"merge_group","head_sha":"old-c","head_branch":"gh-readonly-queue/main/pr-42-old-c","path":".github/workflows/runner-image.yml","pull_requests":[],"html_url":"https://example.test/120"},
   {"id":130,"name":"Turbo","status":"in_progress","event":"merge_group","head_sha":"old-d","head_branch":"gh-readonly-queue/main/pr-99-old-d","path":".github/workflows/turbo.yml","pull_requests":[],"html_url":"https://example.test/130"},
@@ -85,7 +85,7 @@ JSON
 ]}]
 JSON
     ;;
-  repos/vm0-ai/vm0/actions/runs/*/force-cancel)
+  repos/okou-ai/okou/actions/runs/*/force-cancel)
     [ "$method" = "POST" ] || exit 1
     run_id=${endpoint%/force-cancel}
     run_id=${run_id##*/}
@@ -100,7 +100,7 @@ JSON
       touch "$MOCK_RUNS_RELEASED"
     fi
     ;;
-  repos/vm0-ai/vm0/actions/runs/*)
+  repos/okou-ai/okou/actions/runs/*)
     run_id=${endpoint##*/}
     case " ${MOCK_RUN_STATUS_FAILURE_RUN_IDS:-} " in
       *" $run_id "*)
@@ -134,7 +134,7 @@ run_cancel() {
     PATH="${fake_bin}:$PATH" \
     HOME="${HOME:-/tmp}" \
     GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     GITHUB_RUN_ID=200 \
     GITHUB_SHA=current-sha \
     MERGE_GROUP_HEAD_REF=gh-readonly-queue/main/pr-42-current \
@@ -154,7 +154,7 @@ run_closed_pr_cleanup() {
     PATH="${fake_bin}:$PATH" \
     HOME="${HOME:-/tmp}" \
     GH_TOKEN=test-token \
-    GITHUB_REPOSITORY=vm0-ai/vm0 \
+    GITHUB_REPOSITORY=okou-ai/okou \
     GITHUB_RUN_ID=400 \
     PR_NUMBER=42 \
     RUNNER_OWNER_SCOPE=closed-pr-cleanup \
@@ -312,7 +312,7 @@ grep -q "All superseded CI runs completed" <<<"$output" ||
 [ ! -s "${tmp_dir}/sleep.log" ] ||
   fail "a failed cancellation target must not enter the completion barrier"
 if grep -Fq \
-  'api --method GET repos/vm0-ai/vm0/actions/runs/100' \
+  'api --method GET repos/okou-ai/okou/actions/runs/100' \
   "${tmp_dir}/gh.log"; then
   fail "a failed cancellation target must not receive follow-up API queries"
 fi

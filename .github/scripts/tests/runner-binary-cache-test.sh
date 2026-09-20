@@ -175,7 +175,7 @@ run_publish() {
   EXPECTED_TARGET="$target" \
   EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
   OUTPUT_DIR="$output_dir" \
-  PRODUCER_REPOSITORY=vm0-ai/vm0 \
+  PRODUCER_REPOSITORY=okou-ai/okou \
   PRODUCER_WORKFLOW_PATH=.github/workflows/runner-image.yml \
   PRODUCER_RUN_ID=10 \
   PRODUCER_RUN_ATTEMPT=1 \
@@ -207,7 +207,7 @@ fi
 MANIFEST_PATH="${TMPDIR}/published/manifest.json" \
 EXPECTED_TARGET="$target" \
 EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
-EXPECTED_REPOSITORY=vm0-ai/vm0 \
+EXPECTED_REPOSITORY=okou-ai/okou \
 EXPECTED_WORKFLOW_PATH=.github/workflows/runner-image.yml \
   "$CACHE" manifest-validate >/dev/null
 
@@ -217,7 +217,7 @@ assert_reusable_manifest_fails() {
     env MANIFEST_PATH="$manifest" \
     EXPECTED_TARGET="$target" \
     EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
-    EXPECTED_REPOSITORY=vm0-ai/vm0 \
+    EXPECTED_REPOSITORY=okou-ai/okou \
     EXPECTED_WORKFLOW_PATH=.github/workflows/runner-image.yml \
     "$CACHE" manifest-validate
 }
@@ -332,7 +332,7 @@ if missing_config=$(FRESH_METADATA_PATH="$fresh" \
   EXPECTED_TARGET="$target" \
   EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
   OUTPUT_DIR="${TMPDIR}/missing-config" \
-  PRODUCER_REPOSITORY=vm0-ai/vm0 \
+  PRODUCER_REPOSITORY=okou-ai/okou \
   PRODUCER_RUN_ID=10 \
   PRODUCER_RUN_ATTEMPT=1 \
   PRODUCER_EVENT=pull_request \
@@ -384,19 +384,19 @@ jq --arg guest "$first_guest" --arg sha "$guest_conflict_sha" \
   "$main_manifest" > "${TMPDIR}/guest-conflict-manifest.json"
 
 cat > "${TMPDIR}/run-20.json" <<JSON
-{"id":20,"run_attempt":1,"event":"push","status":"completed","conclusion":"success","head_branch":"main","head_sha":"${main_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"vm0-ai/vm0"},"pull_requests":[]}
+{"id":20,"run_attempt":1,"event":"push","status":"completed","conclusion":"success","head_branch":"main","head_sha":"${main_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"okou-ai/okou"},"pull_requests":[]}
 JSON
 cat > "${TMPDIR}/run-21.json" <<JSON
-{"id":21,"run_attempt":1,"event":"pull_request","status":"completed","conclusion":"success","head_branch":"feature","head_sha":"${pr_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"vm0-ai/vm0"},"pull_requests":[{"number":123}]}
+{"id":21,"run_attempt":1,"event":"pull_request","status":"completed","conclusion":"success","head_branch":"feature","head_sha":"${pr_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"okou-ai/okou"},"pull_requests":[{"number":123}]}
 JSON
 cat > "${TMPDIR}/run-22.json" <<JSON
-{"id":22,"run_attempt":1,"event":"push","status":"completed","conclusion":"failure","head_branch":"main","head_sha":"${main_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"vm0-ai/vm0"},"pull_requests":[]}
+{"id":22,"run_attempt":1,"event":"push","status":"completed","conclusion":"failure","head_branch":"main","head_sha":"${main_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"okou-ai/okou"},"pull_requests":[]}
 JSON
 cat > "${TMPDIR}/run-24.json" <<JSON
-{"id":24,"run_attempt":1,"event":"merge_group","status":"completed","conclusion":"failure","head_branch":"gh-readonly-queue/main/pr-456-deadbeef","head_sha":"${reachable_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"vm0-ai/vm0"},"pull_requests":[]}
+{"id":24,"run_attempt":1,"event":"merge_group","status":"completed","conclusion":"failure","head_branch":"gh-readonly-queue/main/pr-456-deadbeef","head_sha":"${reachable_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"okou-ai/okou"},"pull_requests":[]}
 JSON
 cat > "${TMPDIR}/run-30.json" <<JSON
-{"id":30,"run_attempt":1,"event":"pull_request","status":"completed","conclusion":"success","head_branch":"other","head_sha":"${unreachable_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"vm0-ai/vm0"},"pull_requests":[{"number":999}]}
+{"id":30,"run_attempt":1,"event":"pull_request","status":"completed","conclusion":"success","head_branch":"other","head_sha":"${unreachable_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"okou-ai/okou"},"pull_requests":[{"number":999}]}
 JSON
 
 cat > "${TMPDIR}/bin/gh" <<'BASH'
@@ -506,7 +506,7 @@ run_shadow() {
   RUNNER_PATH="$runner" \
   EXPECTED_TARGET="$target" \
   EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
-  REPO=vm0-ai/vm0 \
+  REPO=okou-ai/okou \
   CURRENT_RUN_ID=99 \
   CURRENT_EVENT="$current_event" \
   CURRENT_PR_NUMBER="$current_pr_number" \

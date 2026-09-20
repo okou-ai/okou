@@ -83,7 +83,7 @@
 //! operation and starts at 0, incrementing by 1 for each output frame across stdout
 //! and stderr.
 //!
-//! [guest file compression guide]: https://github.com/vm0-ai/okou/blob/main/docs/guest-file-compression.md
+//! [guest file compression guide]: https://github.com/okou-ai/okou/blob/main/docs/guest-file-compression.md
 //!
 //! `write_file_result.success` / `write_files_result.success` use 0=false and
 //! 1=true.

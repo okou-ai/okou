@@ -87,4 +87,4 @@ While we do not currently operate a formal bug bounty program, we evaluate signi
 
 ## Security Updates
 
-Security advisories will be published through [GitHub Security Advisories](https://github.com/vm0-ai/vm0/security/advisories). We recommend watching this repository to stay informed.
+Security advisories will be published through [GitHub Security Advisories](https://github.com/okou-ai/okou/security/advisories). We recommend watching this repository to stay informed.

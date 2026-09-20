@@ -57,7 +57,7 @@ const commandCases = [
       "--permission",
       "contents:read",
       "--url",
-      "https://api.github.com/repos/vm0-ai/vm0",
+      "https://api.github.com/repos/okou-ai/okou",
     ],
   },
   {

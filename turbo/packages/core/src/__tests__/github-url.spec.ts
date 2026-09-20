@@ -219,24 +219,29 @@ describe("getSkillNameFromPath", () => {
 describe("resolveSkillRef", () => {
   it("expands bare name to default registry URL", () => {
     expect(resolveSkillRef("slack")).toBe(
-      "https://github.com/vm0-ai/vm0-skills/tree/main/slack",
+      "https://github.com/okou-ai/vm0-skills/tree/main/slack",
     );
   });
 
   it("expands another bare name", () => {
     expect(resolveSkillRef("elevenlabs")).toBe(
-      "https://github.com/vm0-ai/vm0-skills/tree/main/elevenlabs",
+      "https://github.com/okou-ai/vm0-skills/tree/main/elevenlabs",
     );
   });
 
   it("trims whitespace from bare names", () => {
     expect(resolveSkillRef("  slack  ")).toBe(
-      "https://github.com/vm0-ai/vm0-skills/tree/main/slack",
+      "https://github.com/okou-ai/vm0-skills/tree/main/slack",
     );
   });
 
   it("returns full tree URL as-is", () => {
     const url = "https://github.com/acme/repo/tree/main/tool";
+    expect(resolveSkillRef(url)).toBe(url);
+  });
+
+  it("preserves stored legacy registry URLs", () => {
+    const url = "https://github.com/vm0-ai/vm0-skills/tree/main/slack";
     expect(resolveSkillRef(url)).toBe(url);
   });
 

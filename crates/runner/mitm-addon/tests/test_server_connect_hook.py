@@ -429,7 +429,7 @@ async def test_server_connect_waits_for_tls_before_binding_connector_on_shared_i
         client_ip="10.200.0.5",
         host=shared_address[0],
         sni="",
-        path="/repos/vm0-ai/vm0",
+        path="/repos/okou-ai/okou",
         request_headers=headers(("Host", "api.github.com")),
     )
     data = _ServerConnectData(client=flow.client_conn, server=flow.server_conn)
