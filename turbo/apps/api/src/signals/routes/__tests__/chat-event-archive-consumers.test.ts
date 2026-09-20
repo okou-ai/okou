@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import { gunzipSync } from "node:zlib";
 
 import { HttpResponse } from "msw";
 import {
@@ -14,6 +16,12 @@ import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-th
 import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
+import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
+import {
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -33,11 +41,13 @@ import { sharedThreadRoutes } from "../shared-threads";
 import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   installFakeChatEventR2,
+  readFakeChatEventObject,
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
@@ -45,9 +55,14 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   installUserExportStorage,
   readExportChatRows,
+  readExportJsonLines,
+  readExportText,
   readUserExportZip,
 } from "./helpers/user-export-storage";
 import { createRouteMocks } from "./helpers/route-test";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import AdmZip from "adm-zip";
 
 const context = testContext();
 const store = createStore();
@@ -142,6 +157,30 @@ function installAgentStorage(): void {
   }
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     if (
+      (command instanceof HeadObjectCommand ||
+        (command instanceof GetObjectCommand && command.input.Range)) &&
+      command.input.Key?.startsWith("chat-events/")
+    ) {
+      const bytes = readFakeChatEventObject(command.input.Key);
+      if (!bytes) {
+        throw new Error("Expected an immutable snapshot object");
+      }
+      const range = command.input.Range
+        ? /^bytes=(\d+)-(\d+)$/.exec(command.input.Range)
+        : null;
+      const start = range ? Number(range[1]) : 0;
+      const end = range ? Number(range[2]) + 1 : bytes.length;
+      const body = bytes.subarray(start, end);
+      return Promise.resolve({
+        Body: Readable.from([body]),
+        ContentLength: body.length,
+        ContentRange: range
+          ? `bytes ${start}-${end - 1}/${bytes.length}`
+          : undefined,
+        ETag: `"${createHash("sha256").update(bytes).digest("hex")}"`,
+      });
+    }
+    if (
       (command instanceof GetObjectCommand ||
         command instanceof HeadObjectCommand ||
         command instanceof PutObjectCommand) &&
@@ -151,6 +190,73 @@ function installAgentStorage(): void {
     }
     return snapshots(command);
   });
+}
+
+function readDurableChatRows(zip: AdmZip, threadId: string) {
+  const index = JSON.parse(
+    readExportText(zip, `chat-messages/${threadId}/index.json`),
+  ) as {
+    snapshotPath: string;
+    snapshotPhysicalCoverage: number;
+    upperSeqId: number;
+  };
+  const snapshot = zip.getEntry(index.snapshotPath);
+  if (!snapshot) {
+    throw new Error("Expected the authoritative exported chat snapshot");
+  }
+  const archived = gunzipSync(snapshot.getData())
+    .toString("utf8")
+    .trimEnd()
+    .split("\n")
+    .map((line) => {
+      return chatEventRowSchema.parse(JSON.parse(line));
+    });
+  const tail = zip
+    .getEntries()
+    .filter((entry) => {
+      return entry.entryName.startsWith(`chat-messages/${threadId}/tail/`);
+    })
+    .flatMap((entry) => {
+      return readExportJsonLines(zip, entry.entryName).map((row) => {
+        return chatEventRowSchema.parse(row);
+      });
+    })
+    .filter((row) => {
+      return (
+        row.seqId > index.snapshotPhysicalCoverage &&
+        row.seqId <= index.upperSeqId
+      );
+    });
+  return [...archived, ...tail].sort((left, right) => {
+    return left.seqId - right.seqId;
+  });
+}
+
+function expectExportMessageBytes(
+  rows: readonly ChatEventRow[],
+  expected: {
+    readonly ids: readonly string[];
+    readonly texts: readonly string[];
+    readonly threadId: string;
+    readonly offset: number;
+  },
+): void {
+  for (const [index, content] of expected.texts.entries()) {
+    const row = rows[index + expected.offset];
+    expect(row).toMatchObject({
+      id: expected.ids[index],
+      chatThreadId: expected.threadId,
+      eventType: "output.message",
+    });
+    if (!row) {
+      throw new Error("Expected every exported message");
+    }
+    expect(
+      createHash("sha256").update(JSON.stringify(row.payload)).digest("hex"),
+    ).toBe(
+      createHash("sha256").update(JSON.stringify({ content })).digest("hex"),
+    );
+  }
 }
 
 describe("archived chat event consumers", () => {
@@ -163,59 +269,129 @@ describe("archived chat event consumers", () => {
     installAgentStorage();
   });
 
-  it("exports snapshot history plus the PostgreSQL tail after archived source rows are gone", async () => {
-    const fixture = await createArchiveFixture("export");
-    const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
-    const archivedText = withHiddenCitation(archivedVisible);
-    const archivedEventId = await store.set(
-      seedRetentionOutputEvent$,
-      {
-        chatThreadId: fixture.threadId,
-        content: archivedText,
-        offsetMs: -60_000,
-      },
-      context.signal,
-    );
-    await archiveAndRetain(fixture.threadId, [archivedEventId]);
-    const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
-    const tailText = withHiddenCitation(tailVisible);
-    const tailEventId = await store.set(
-      seedRetentionOutputEvent$,
-      { chatThreadId: fixture.threadId, content: tailText },
-      context.signal,
-    );
+  it.each([false, true])(
+    "exports snapshot history plus the PostgreSQL tail after archived source rows are gone (durable=%s)",
+    async (durable) => {
+      const fixture = await createArchiveFixture("export");
+      if (durable) {
+        if (!fixture.actor.orgId) {
+          throw new Error("Expected an organization for the export fixture");
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...fixture.actor, orgId: fixture.actor.orgId },
+          {
+            [FeatureSwitchKey.DurableUserExport]: true,
+          },
+        );
+      }
+      const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
+      // Each message stays within PostgreSQL's indexed document limit while
+      // their combined compressed snapshot crosses the export range boundary.
+      const archivedTexts = durable
+        ? Array.from({ length: 24 }, () => {
+            return (
+              withHiddenCitation(archivedVisible) +
+              randomBytes(256 * 1024).toString("base64")
+            );
+          })
+        : [withHiddenCitation(archivedVisible)];
+      const archivedEventIds: string[] = [];
+      for (const content of archivedTexts) {
+        archivedEventIds.push(
+          await store.set(
+            seedRetentionOutputEvent$,
+            { chatThreadId: fixture.threadId, content, offsetMs: -60_000 },
+            context.signal,
+          ),
+        );
+      }
+      await archiveAndRetain(fixture.threadId, archivedEventIds);
+      const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
+      const tailTexts = durable
+        ? Array.from({ length: 100 }, (_, index) => {
+            return `${withHiddenCitation(tailVisible)} ${index} ${"x".repeat(64 * 1024)}`;
+          })
+        : [withHiddenCitation(tailVisible)];
+      const tailEventIds: string[] = [];
+      for (const content of tailTexts) {
+        tailEventIds.push(
+          await store.set(
+            seedRetentionOutputEvent$,
+            { chatThreadId: fixture.threadId, content },
+            context.signal,
+          ),
+        );
+      }
 
-    const exportApi = createOpsLogsApi(context);
-    installUserExportStorage(context);
-    const started = await exportApi.requestPostUserExport(fixture.actor, [202]);
-    await flushWaitUntilForTest();
-    const status = await exportApi.requestGetUserExport(fixture.actor, [200]);
-    expect(status.body.job).toMatchObject({
-      id: started.body.jobId,
-      status: "completed",
-    });
-    const zip = readUserExportZip(
-      context,
-      `exports/${fixture.actor.userId}/${started.body.jobId}.zip`,
-    );
-    const messages = readExportChatRows(zip, fixture.threadId);
-    expect(messages).toMatchObject([
-      {
-        id: archivedEventId,
-        chatThreadId: fixture.threadId,
-        eventType: "output.message",
-        payload: { content: archivedText },
-      },
-      {
-        id: tailEventId,
-        chatThreadId: fixture.threadId,
-        eventType: "output.message",
-        payload: { content: tailText },
-      },
-    ]);
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.seqId).toBeLessThan(messages[1]?.seqId ?? 0);
-  }, 60_000);
+      const exportApi = createOpsLogsApi(context);
+      const storage = durable
+        ? installDurableUserExportStorage(context)
+        : undefined;
+      if (!durable) {
+        installUserExportStorage(context);
+      }
+      const started = await exportApi.requestPostUserExport(
+        fixture.actor,
+        [202],
+      );
+      await flushWaitUntilForTest();
+      if (durable) {
+        await accept(
+          setupApp({ context, routes: testUserExportWorkRoutes })(
+            testUserExportWorkContract,
+          ).action({
+            body: {
+              action: "run",
+              userId: fixture.actor.userId,
+              jobId: started.body.jobId,
+              maxSteps: 200,
+            },
+          }),
+          [200],
+        );
+      }
+      const status = await exportApi.requestGetUserExport(fixture.actor, [200]);
+      expect(status.body.job).toMatchObject({
+        id: started.body.jobId,
+        status: "completed",
+      });
+      const zip =
+        storage && status.body.job?.downloadUrl
+          ? new AdmZip(storage.download(status.body.job.downloadUrl))
+          : readUserExportZip(
+              context,
+              `exports/${fixture.actor.userId}/${started.body.jobId}.zip`,
+            );
+      const messages = durable
+        ? readDurableChatRows(zip, fixture.threadId)
+        : readExportChatRows(zip, fixture.threadId);
+      expectExportMessageBytes(messages, {
+        ids: archivedEventIds,
+        texts: archivedTexts,
+        threadId: fixture.threadId,
+        offset: 0,
+      });
+      expectExportMessageBytes(messages, {
+        ids: tailEventIds,
+        texts: tailTexts,
+        threadId: fixture.threadId,
+        offset: archivedTexts.length,
+      });
+      if (durable) {
+        expect(
+          zip.getEntries().filter((entry) => {
+            return entry.entryName.startsWith(
+              `chat-messages/${fixture.threadId}/tail/`,
+            );
+          }).length,
+        ).toBeGreaterThan(1);
+      }
+      expect(messages).toHaveLength(archivedTexts.length + tailTexts.length);
+      expect(messages[0]?.seqId).toBeLessThan(messages.at(-1)?.seqId ?? 0);
+    },
+    60_000,
+  );
 
   it("shares archived selections with a fixed title when the title provider is unavailable", async () => {
     const fixture = await createArchiveFixture("sharing-provider-failure");

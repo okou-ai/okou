@@ -673,6 +673,20 @@
       "when": 1789872519523,
       "tag": "1173_retire_hosted_publication_version_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1174,
+      "version": "7",
+      "when": 1789889152602,
+      "tag": "1174_background_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 1175,
+      "version": "7",
+      "when": 1789889490189,
+      "tag": "1175_user_export_inventory",
+      "breakpoints": true
     }
   ]
 }

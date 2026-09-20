@@ -45,6 +45,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DurableUserExport]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Resume user exports across bounded background job invocations. Enable after outgoing export cleanup workers have drained.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",

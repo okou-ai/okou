@@ -11,6 +11,7 @@ import {
   type GetObjectCommandOutput,
   HeadObjectCommand,
   ListPartsCommand,
+  ListMultipartUploadsCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
@@ -1494,6 +1495,60 @@ export function s3ObjectContentLength(
   );
 }
 
+/** An exact, bounded range from an immutable source revision. */
+export function readS3ObjectRange(
+  args: {
+    readonly bucket: string;
+    readonly key: string;
+    readonly offset: number;
+    readonly length: number;
+    readonly etag?: string;
+  },
+  signal: AbortSignal,
+): Computed<Promise<Buffer>> {
+  return computed(async (get) => {
+    signal.throwIfAborted();
+    if (args.length === 0) {
+      return Buffer.alloc(0);
+    }
+    if (
+      !Number.isSafeInteger(args.offset) ||
+      args.offset < 0 ||
+      !Number.isSafeInteger(args.length) ||
+      args.length < 0 ||
+      args.length > 16 * 1024 * 1024
+    ) {
+      throw new Error("Invalid bounded storage range");
+    }
+    const response = await get(s3ClientForBucket(args.bucket)).send(
+      new GetObjectCommand({
+        Bucket: args.bucket,
+        Key: args.key,
+        Range: `bytes=${args.offset}-${args.offset + args.length - 1}`,
+        IfMatch: args.etag,
+      }),
+      { abortSignal: signal },
+    );
+    signal.throwIfAborted();
+    const body = await readS3ObjectBody(
+      response,
+      args.key,
+      { maxBytes: args.length },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      body.length !== args.length ||
+      !response.ContentRange?.startsWith(
+        `bytes ${args.offset}-${args.offset + args.length - 1}/`,
+      )
+    ) {
+      throw new Error("Storage returned an incomplete or mismatched range");
+    }
+    return body;
+  });
+}
+
 export type S3ObjectHead =
   | { readonly kind: "missing" }
   | {
@@ -1502,6 +1557,7 @@ export type S3ObjectHead =
       readonly contentType: string | undefined;
       readonly lastModified: Date | undefined;
       readonly metadata: Readonly<Record<string, string>>;
+      readonly etag?: string;
     };
 
 export function isS3NotFoundError(error: unknown): boolean {
@@ -1520,19 +1576,23 @@ export function isS3NotFoundError(error: unknown): boolean {
 export function s3ObjectHead(
   bucket: string,
   key: string,
+  signal?: AbortSignal,
 ): Computed<Promise<S3ObjectHead>> {
-  return s3ObjectHeadWithClient(s3ClientForBucket(bucket), bucket, key);
+  return s3ObjectHeadWithClient(s3ClientForBucket(bucket), bucket, key, signal);
 }
 
 function s3ObjectHeadWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   key: string,
+  signal?: AbortSignal,
 ): Computed<Promise<S3ObjectHead>> {
   return computed(async (get): Promise<S3ObjectHead> => {
     const client = get(client$);
     const result = await settle(
-      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key })),
+      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), {
+        abortSignal: signal,
+      }),
     );
     if (!result.ok) {
       if (isS3NotFoundError(result.error)) {
@@ -1547,6 +1607,7 @@ function s3ObjectHeadWithClient(
       contentType: result.value.ContentType,
       lastModified: result.value.LastModified,
       metadata: result.value.Metadata ?? {},
+      etag: result.value.ETag,
     };
   });
 }
@@ -1634,5 +1695,76 @@ export function verifyS3FilesExist(
     ]);
 
     return manifestExists && archiveExists;
+  });
+}
+
+/** One small page, including uploads whose creation receipt was never saved. */
+export function listMultipartS3UploadsPage(
+  bucket: string,
+  prefix: string,
+  signal: AbortSignal,
+): Computed<
+  Promise<{
+    readonly uploads: readonly {
+      readonly key: string;
+      readonly uploadId: string;
+      readonly initiated: Date;
+    }[];
+    readonly isTruncated: boolean;
+  }>
+> {
+  return computed(async (get) => {
+    signal.throwIfAborted();
+    const response = await get(s3ClientForBucket(bucket)).send(
+      new ListMultipartUploadsCommand({
+        Bucket: bucket,
+        Prefix: prefix,
+        MaxUploads: 10,
+      }),
+      { abortSignal: signal },
+    );
+    signal.throwIfAborted();
+    const uploads = (response.Uploads ?? []).map((upload) => {
+      if (!upload.Key || !upload.UploadId || !upload.Initiated) {
+        throw new Error("R2 returned incomplete multipart upload metadata");
+      }
+      return {
+        key: upload.Key,
+        uploadId: upload.UploadId,
+        initiated: upload.Initiated,
+      };
+    });
+    return { uploads, isTruncated: response.IsTruncated === true };
+  });
+}
+
+/** Delete-first pagination lets cleanup resume without an expiring R2 cursor. */
+export function listUserExportStagingPage(
+  bucket: string,
+  prefix: string,
+  signal: AbortSignal,
+): Computed<
+  Promise<{ readonly keys: readonly string[]; readonly isTruncated: boolean }>
+> {
+  return computed(async (get) => {
+    signal.throwIfAborted();
+    const response = await get(s3ClientForBucket(bucket)).send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        MaxKeys: 1000,
+      }),
+      { abortSignal: signal },
+    );
+    signal.throwIfAborted();
+    const keys = (response.Contents ?? []).map((object) => {
+      if (!object.Key || !object.Key.startsWith(prefix)) {
+        throw new Error(
+          "R2 returned an object outside the export cleanup prefix",
+        );
+      }
+      return object.Key;
+    });
+    return { keys, isTruncated: response.IsTruncated === true };
   });
 }

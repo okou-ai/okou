@@ -1,5 +1,9 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { enqueueBackgroundJob } from "./background-job.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type {
   UserExportJob,
@@ -55,6 +59,7 @@ type StartUserExportResult =
       readonly jobId: string;
       readonly status: ActiveExportJobStatus;
       readonly shouldExecute: boolean;
+      readonly executionMode: "durable-v1" | null;
     }
   | { readonly kind: "rate_limited" };
 
@@ -142,6 +147,7 @@ export function userExportStatus(userId: string) {
       .select({
         id: exportJobs.id,
         status: exportJobs.status,
+        executionMode: exportJobs.executionMode,
         createdAt: exportJobs.createdAt,
         completedAt: exportJobs.completedAt,
         expiresAt: exportJobs.expiresAt,
@@ -230,71 +236,126 @@ export const startUserExport$ = command(
     signal: AbortSignal,
   ): Promise<StartUserExportResult> => {
     const db = set(writeDb$);
-
-    const [activeJob] = await db
-      .select({
-        id: exportJobs.id,
-        status: exportJobs.status,
-      })
-      .from(exportJobs)
-      .where(
-        and(
-          eq(exportJobs.userId, args.userId),
-          inArray(exportJobs.status, ["pending", "running"]),
-        ),
-      )
-      .limit(1);
+    const executionMode = isFeatureEnabled(
+      FeatureSwitchKey.DurableUserExport,
+      await loadUserFeatureSwitchContext(db, args.orgId, args.userId),
+    )
+      ? ("durable-v1" as const)
+      : null;
     signal.throwIfAborted();
-
-    if (activeJob) {
+    return await db.transaction(async (tx) => {
+      // Serialize admission and cooldown for this owner, not execution. This also
+      // covers a previous job completing while another POST is being admitted.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`user-export:${args.userId}`}, 0))`,
+      );
+      signal.throwIfAborted();
+      const [active] = await tx
+        .select({
+          id: exportJobs.id,
+          status: exportJobs.status,
+          executionMode: exportJobs.executionMode,
+        })
+        .from(exportJobs)
+        .where(
+          and(
+            eq(exportJobs.userId, args.userId),
+            inArray(exportJobs.status, ["pending", "running"]),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (active) {
+        return {
+          kind: "accepted",
+          jobId: active.id,
+          status: activeExportJobStatus(active.status),
+          executionMode: active.executionMode,
+          shouldExecute: false,
+        };
+      }
+      const [recent] = await tx
+        .select({ id: exportJobs.id })
+        .from(exportJobs)
+        .where(
+          and(
+            eq(exportJobs.userId, args.userId),
+            eq(exportJobs.status, "completed"),
+            gt(
+              exportJobs.completedAt,
+              new Date(nowDate().getTime() - RATE_LIMIT_MS),
+            ),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (recent) {
+        return { kind: "rate_limited" };
+      }
+      const [created] = await tx
+        .insert(exportJobs)
+        .values({
+          userId: args.userId,
+          orgId: args.orgId,
+          status: "pending",
+          publicBrand: PUBLIC_BRAND,
+          executionMode,
+          createdAt: nowDate(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: exportJobs.id });
+      signal.throwIfAborted();
+      if (!created) {
+        // Outgoing API instances do not take the admission lock yet.
+        const [existing] = await tx
+          .select({
+            id: exportJobs.id,
+            status: exportJobs.status,
+            executionMode: exportJobs.executionMode,
+          })
+          .from(exportJobs)
+          .where(
+            and(
+              eq(exportJobs.userId, args.userId),
+              inArray(exportJobs.status, ["pending", "running"]),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!existing) {
+          throw new Error("Concurrent export admission has no active job");
+        }
+        return {
+          kind: "accepted",
+          jobId: existing.id,
+          status: activeExportJobStatus(existing.status),
+          executionMode: existing.executionMode,
+          shouldExecute: false,
+        };
+      }
+      if (executionMode) {
+        await enqueueBackgroundJob(
+          tx,
+          {
+            id: created.id,
+            kind: "user-export",
+            handlerVersion: 1,
+            userId: args.userId,
+            orgId: args.orgId,
+            input: {},
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+      }
       return {
         kind: "accepted",
-        jobId: activeJob.id,
-        status: activeExportJobStatus(activeJob.status),
-        shouldExecute: false,
-      };
-    }
-
-    const rateLimitCutoff = new Date(nowDate().getTime() - RATE_LIMIT_MS);
-    const [recentCompleted] = await db
-      .select({ id: exportJobs.id })
-      .from(exportJobs)
-      .where(
-        and(
-          eq(exportJobs.userId, args.userId),
-          eq(exportJobs.status, "completed"),
-          gt(exportJobs.completedAt, rateLimitCutoff),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (recentCompleted) {
-      return { kind: "rate_limited" };
-    }
-
-    const [job] = await db
-      .insert(exportJobs)
-      .values({
-        userId: args.userId,
-        orgId: args.orgId,
+        jobId: created.id,
         status: "pending",
-        publicBrand: PUBLIC_BRAND,
-        createdAt: nowDate(),
-      })
-      .returning({ id: exportJobs.id });
-    signal.throwIfAborted();
-
-    if (!job) {
-      throw new Error("Failed to create export job");
-    }
-
-    return {
-      kind: "accepted",
-      jobId: job.id,
-      status: "pending",
-      shouldExecute: true,
-    };
+        executionMode,
+        shouldExecute: true,
+      };
+    });
   },
 );
 
@@ -364,6 +425,57 @@ function getCachedUserEmail(
   });
 }
 
+export function userExportReadyEmail(
+  runtime: ExportRuntime,
+  args: {
+    readonly userId: string;
+    readonly downloadUrl: string;
+    readonly expiresAt: Date;
+    readonly artifactCount: number;
+  },
+  signal: AbortSignal,
+): Computed<Promise<typeof emailOutbox.$inferInsert | null>> {
+  return computed(
+    async (get): Promise<typeof emailOutbox.$inferInsert | null> => {
+      if (await isUserUnsubscribed(runtime.db, args.userId)) {
+        log.debug("export email skipped because user is unsubscribed", {
+          userId: args.userId,
+        });
+        return null;
+      }
+      signal.throwIfAborted();
+
+      const email = await get(getCachedUserEmail(runtime, args.userId, signal));
+      const unsubscribeUrl = buildUnsubscribeUrl(args.userId);
+      const oneClickUnsubscribeUrl = buildOneClickUnsubscribeUrl(args.userId);
+      const formattedExpiry = args.expiresAt.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+      return {
+        fromAddress: buildFromAddress(),
+        toAddresses: email,
+        subject: DATA_EXPORT_READY_SUBJECT,
+        publicBrand: EMAIL_PUBLIC_BRAND,
+        headers: buildUnsubscribeHeaders(oneClickUnsubscribeUrl),
+        template: {
+          template: "data-export-ready",
+          props: {
+            downloadUrl: args.downloadUrl,
+            expiresAt: formattedExpiry,
+            artifactCount: args.artifactCount,
+            unsubscribeUrl,
+          },
+        },
+        status: "pending",
+        attempts: 0,
+      };
+    },
+  );
+}
+
 function enqueueExportReadyEmail(
   runtime: ExportRuntime,
   args: {
@@ -375,42 +487,12 @@ function enqueueExportReadyEmail(
   signal: AbortSignal,
 ): Computed<Promise<void>> {
   return computed(async (get) => {
-    if (await isUserUnsubscribed(runtime.db, args.userId)) {
-      log.debug("export email skipped because user is unsubscribed", {
-        userId: args.userId,
-      });
-      return;
+    const email = await get(userExportReadyEmail(runtime, args, signal));
+    signal.throwIfAborted();
+    if (email) {
+      await runtime.db.insert(emailOutbox).values(email);
+      signal.throwIfAborted();
     }
-    signal.throwIfAborted();
-
-    const email = await get(getCachedUserEmail(runtime, args.userId, signal));
-    const unsubscribeUrl = buildUnsubscribeUrl(args.userId);
-    const oneClickUnsubscribeUrl = buildOneClickUnsubscribeUrl(args.userId);
-    const formattedExpiry = args.expiresAt.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-
-    await runtime.db.insert(emailOutbox).values({
-      fromAddress: buildFromAddress(),
-      toAddresses: email,
-      subject: DATA_EXPORT_READY_SUBJECT,
-      publicBrand: EMAIL_PUBLIC_BRAND,
-      headers: buildUnsubscribeHeaders(oneClickUnsubscribeUrl),
-      template: {
-        template: "data-export-ready",
-        props: {
-          downloadUrl: args.downloadUrl,
-          expiresAt: formattedExpiry,
-          artifactCount: args.artifactCount,
-          unsubscribeUrl,
-        },
-      },
-      status: "pending",
-      attempts: 0,
-    });
-    signal.throwIfAborted();
   });
 }
 

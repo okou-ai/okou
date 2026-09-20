@@ -36,6 +36,7 @@ export async function commitMemoryVersion(
   context: TestContext,
   actor: ApiTestUser,
   files: readonly MemoryFile[],
+  archiveSize = 1024,
 ): Promise<CommittedMemoryVersion> {
   if (!actor.orgId) {
     throw new Error("commitMemoryVersion requires an actor with an org");
@@ -59,7 +60,7 @@ export async function commitMemoryVersion(
     files: entries,
   });
   storagesApi.mockStorageObjectExistsOnce();
-  storagesApi.mockStorageObjectExistsOnce();
+  storagesApi.mockStorageObjectExistsOnce(archiveSize);
   await storagesApi.commitStorage(actor, {
     storageName: MEMORY_ARTIFACT_NAME,
     storageOwner: "user",
