@@ -275,7 +275,7 @@ export function OnboardingExperiencePage() {
           value="codex"
           selected={experienced === true && provider === "codex"}
           mark={
-            <ProductMark name="openai" alt="" size="poster" invertInDarkMode />
+            <ProductMark name="openai" alt="" size="choice" invertInDarkMode />
           }
           title={t(($) => {
             return $.onboarding.sourcesFirst.subscription.codex;
@@ -287,7 +287,7 @@ export function OnboardingExperiencePage() {
         <OnboardingPosterCard
           value="claudeCode"
           selected={experienced === true && provider === "claudeCode"}
-          mark={<ProductMark name="anthropic" alt="" size="poster" />}
+          mark={<ProductMark name="anthropic" alt="" size="choice" />}
           title={t(($) => {
             return $.onboarding.sourcesFirst.subscription.claudeCode;
           })}
@@ -298,7 +298,7 @@ export function OnboardingExperiencePage() {
         <OnboardingPosterCard
           value="no"
           selected={experienced === false}
-          mark={<OnboardingIllustration name="new" alt="" size="poster" />}
+          mark={<OnboardingIllustration name="new" alt="" size="choice" />}
           title={t(($) => {
             return $.onboarding.sourcesFirst.experience.no;
           })}

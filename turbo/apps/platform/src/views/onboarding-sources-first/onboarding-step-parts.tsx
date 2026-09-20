@@ -13,6 +13,9 @@ const ILLUSTRATION_BASE = "https://static.okou.io/web/assets/onboarding/";
  */
 const MARK_SIZES = {
   poster: "h-[132px] max-w-[240px]",
+  // The size an answer card carries: small enough that three sit in a row
+  // without the art outweighing the words under it.
+  choice: "h-[96px] max-w-[176px]",
   header: "h-9 max-w-9",
 } as const;
 
@@ -42,6 +45,7 @@ export function OnboardingIllustration({
  */
 const PRODUCT_MARK_SIZES = {
   poster: "h-20 w-20",
+  choice: "h-14 w-14",
   header: "h-7 w-7",
   mark: "h-4 w-4",
 } as const;
@@ -92,7 +96,7 @@ export function OnboardingPosterCard({
     <label
       className={cn(
         surfaceVariants({ interactive: true }),
-        "relative flex min-h-[300px] flex-col overflow-hidden text-center",
+        "relative flex min-h-[260px] flex-col overflow-hidden text-center",
         selected && "border-primary bg-state-selected",
       )}
     >
@@ -105,7 +109,7 @@ export function OnboardingPosterCard({
           <Check size={14} />
         </span>
       ) : null}
-      <span className="flex flex-1 items-center justify-center px-6 pb-6 pt-10">
+      <span className="flex flex-1 items-center justify-center px-6 pb-5 pt-8">
         {mark}
       </span>
       <span className="block px-5 pb-6">
