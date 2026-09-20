@@ -220,6 +220,30 @@ test("A user connects AgentPhone with a prefilled one-time code", async () => {
   });
 });
 
+test("The Phone card spells the shared number but copies its digits", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.data.agentPhoneIntegration({
+    linked: false,
+    publicBrand: "okou",
+    agentPhoneNumber: "+13144386568",
+    configured: true,
+  });
+
+  await setupIntegrationsPage(context, { agentPhone: true });
+
+  const phoneCard = await waitFor(() => {
+    return getIntegrationCard("Phone");
+  });
+  expect(phoneCard).toHaveTextContent("iMessage or SMS to+1 (314) GET-OKOU");
+
+  click(getAction("button", "Copy +1 (314) 438-6568", phoneCard));
+
+  await expect(
+    screen.findByText("Phone number copied"),
+  ).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual(["+13144386568"]);
+});
+
 test("An admin can begin Microsoft Teams installation", async () => {
   const browserOpen = context.mocks.browser.open();
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
