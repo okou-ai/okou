@@ -49,6 +49,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",

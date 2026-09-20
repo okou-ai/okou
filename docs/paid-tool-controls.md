@@ -2,9 +2,10 @@
 
 Paid-tool controls are personal preferences within one workspace. They do not
 change connector authorization, organization permissions, or billing policy.
-The `paidToolControls` feature switch is disabled by default. The settings and
-creation-guidance UI require both `chatPreference` and `paidToolControls` to be
-enabled. Saved preferences and enforcement are independent of those switches.
+The `paidToolControls` feature switch remains globally disabled and is enabled
+for staff organizations. The settings and creation-guidance UI require both
+`chatPreference` and `paidToolControls` to be enabled. Saved preferences and
+enforcement are independent of those switches.
 
 ## Storage and API
 
@@ -99,7 +100,8 @@ current CLI commands do not act on this retired ID. Retaining existing rows
 preserves restrictions for pinned CLI versions that still recognize the ID;
 normal membership, user, and organization cleanup still applies. API writes
 validate the current catalog; an older settings client trying to change the
-retired tool must refresh. The UI remains behind the default-off feature switch.
+retired tool must refresh. The UI remains behind the globally default-off
+feature switch, with staff organizations enabled by default.
 
 An absent or empty variable means no disabled tools for contexts without this
 policy. Unknown string IDs are ignored by older CLIs, allowing later catalog
@@ -116,5 +118,5 @@ does not provide a backend rollback mechanism.
 
 Local verification covers authenticated preference isolation and cleanup,
 queued and deferred snapshots, real CLI dispatch without paid side effects,
-and settings save/error/lifetime behavior. Production activation is a separate
-decision; this change does not enable the switch.
+and settings save/error/lifetime behavior. The staff rollout uses the shared
+staff organization allowlist; the global default remains off.
