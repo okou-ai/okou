@@ -171,7 +171,7 @@ jq -e '
 
 jq -e '
   .jobs.compile["runs-on"] == "ubuntu-latest-8-cores" and
-  .jobs.compile.container.image == "ghcr.io/vm0-ai/vm0-toolchain-rust:20260825" and
+  .jobs.compile.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
   (.jobs.compile.if | contains("!cancelled()")) and
   (.jobs.compile.if | contains("needs.prepare.result == '\''success'\''")) and
   (.jobs.compile.if | contains("runner-binary-miss-count != '\''0'\''")) and

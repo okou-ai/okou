@@ -328,9 +328,15 @@ describe("builtin Automatic firewall credential destinations", () => {
     const provider = mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
       initialExpiresIn: 3600,
-      refreshResponse: async (attempt) => {
+      refreshResponse: async (attempt, signal) => {
         if (attempt === 1) {
-          await delay(300, { signal: context.signal });
+          const delayed = await settleIncludingAbort(delay(300, { signal }));
+          if (!delayed.ok) {
+            if (signal.aborted) {
+              return HttpResponse.error();
+            }
+            throw delayed.error;
+          }
           return HttpResponse.json({
             access_token: "too-late-automatic-token",
             token_type: "Bearer",

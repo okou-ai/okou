@@ -314,9 +314,9 @@ print(json.dumps(data)+"\\n200", end="")
         self.assertEqual(inventory["failures"][0]["reason"], "duplicate_json_key")
 
     def test_renamed_repository_uses_the_same_protected_workflow(self):
-        self.env["GITHUB_REPOSITORY"] = "maxandzoe/okou"
+        self.env["GITHUB_REPOSITORY"] = "okou-ai/okou"
         self.env["GITHUB_WORKFLOW_REF"] = (
-            "maxandzoe/okou/.github/workflows/"
+            "okou-ai/okou/.github/workflows/"
             "kms-production-exit-check.yml@refs/heads/main"
         )
         self.fake_neon()
