@@ -114,11 +114,32 @@ def _write_account_mcp_state(tmp_path: Path, *, credentialed: bool = False) -> t
         "captureNetworkBodies": True,
         "firewalls": [
             {
-                "kind": "builtin",
-                "name": _REMOVED,
+                "kind": "inline",
                 "sourceId": _MCP_SOURCE_ID,
+                "firewall": {
+                    "name": _REMOVED,
+                    "apis": [
+                        {
+                            "id": f"{_REMOVED}:0",
+                            "base": "https://shared.example.com",
+                            "auth": (
+                                {"headers": {"Authorization": "Bearer ${{ secrets.MCP_TOKEN }}"}}
+                                if credentialed
+                                else {}
+                            ),
+                            "permissions": [],
+                        }
+                    ],
+                },
             },
             {"kind": "builtin", "name": _RETAINED},
+        ],
+        "connectorRuntimeTargets": [
+            {
+                "kind": "builtin",
+                "connectorSlug": _REMOVED,
+                "sourceId": _MCP_SOURCE_ID,
+            }
         ],
         "connectorRoutingVariables": {f"builtin:{_REMOVED}": {}},
         "networkPolicies": {
@@ -131,23 +152,7 @@ def _write_account_mcp_state(tmp_path: Path, *, credentialed: bool = False) -> t
         cache_path,
         digest="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         version="catalog-a",
-        firewalls={
-            _REMOVED: {
-                "name": _REMOVED,
-                "apis": [
-                    {
-                        "base": "https://shared.example.com",
-                        "auth": (
-                            {"headers": {"Authorization": "Bearer ${{ secrets.MCP_TOKEN }}"}}
-                            if credentialed
-                            else {}
-                        ),
-                        "permissions": [],
-                    }
-                ],
-            },
-            _RETAINED: _firewall(_RETAINED, "https://shared.example.com"),
-        },
+        firewalls={_RETAINED: _firewall(_RETAINED, "https://shared.example.com")},
     )
     return registry_path, cache_path
 
@@ -246,6 +251,7 @@ async def test_no_auth_mcp_skips_account_validation(
             },
         }
         sandbox["connectorRoutingVariables"] = {f"custom:{custom_id}": {}}
+        sandbox["connectorRuntimeTargets"] = [{"kind": "custom", "customConnectorId": custom_id}]
         intent = custom_id
     if not has_auth_context:
         sandbox.pop("encryptedSecrets")
@@ -344,8 +350,8 @@ async def test_authenticated_builtin_owner_removed_during_account_check_is_rejec
 
     assert endpoint.request_count == 1
     assert flow.response is not None
-    assert flow.response.status_code == 424
-    assert json.loads(flow.response.content)["error"] == "connector_not_configured_for_run"
+    assert flow.response.status_code == 409
+    assert json.loads(flow.response.content)["error"] == "ambiguous_connector_route"
     assert "Authorization" not in flow.request.headers
 
 
