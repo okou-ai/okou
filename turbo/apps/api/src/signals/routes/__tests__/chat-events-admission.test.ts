@@ -280,12 +280,19 @@ describe("CHAT-02: web chat send and client ids", () => {
         return run.prompt === prompt;
       }),
     ).toHaveLength(0);
+    // The rejection must claim no input. Queue-first keeps the user's message
+    // visible and unclaimed, like every other blocked admission, so the send
+    // can be retried against a freshly prepared request.
     const events = await chat.listThreadEvents(actor, clientThreadId);
-    expect(
-      userMessages(events.events).filter((event) => {
-        return chatEventDisplayText(event) === prompt;
-      }),
-    ).toHaveLength(0);
+    const queued = userMessages(events.events).filter((event) => {
+      return chatEventDisplayText(event) === prompt;
+    });
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      eventType: "input.prompt",
+      content: null,
+    });
+    expect(queued[0]?.runId).toBeUndefined();
   }, 90_000);
 
   it("passes request-scoped network body capture into the runner claim", async () => {
