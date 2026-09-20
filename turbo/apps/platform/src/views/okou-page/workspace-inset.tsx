@@ -19,6 +19,9 @@ export function WorkspaceInset({
         beside === "chat-list" ? "md:ml-0" : ""
       }`}
       data-testid="workspace-inset"
+      // The chrome the sheet is framed against, so the rendered layout case is
+      // readable as data rather than inferred from the margin utility.
+      data-beside={beside}
     >
       {children}
     </div>

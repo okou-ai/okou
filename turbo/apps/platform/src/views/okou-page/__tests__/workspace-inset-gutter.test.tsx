@@ -32,19 +32,25 @@ test("the workspace sheet keeps its left inset once the chat list is hidden", as
   click(composer);
   await screen.findByTestId("chat-list-column");
 
-  const inset = screen.getByTestId("workspace-inset");
-  expect(inset.className).toContain("md:ml-0");
+  expect(screen.getByTestId("workspace-inset")).toHaveAttribute(
+    "data-beside",
+    "chat-list",
+  );
 
   const user = userEvent.setup();
   await user.keyboard("{Control>}b{/Control}");
   await waitFor(() => {
     expect(screen.queryByTestId("chat-list-column")).toBeNull();
   });
-  expect(screen.getByTestId("workspace-inset").className).not.toContain(
-    "md:ml-0",
+  expect(screen.getByTestId("workspace-inset")).toHaveAttribute(
+    "data-beside",
+    "nav-rail",
   );
 
   await user.keyboard("{Control>}b{/Control}");
   await screen.findByTestId("chat-list-column");
-  expect(screen.getByTestId("workspace-inset").className).toContain("md:ml-0");
+  expect(screen.getByTestId("workspace-inset")).toHaveAttribute(
+    "data-beside",
+    "chat-list",
+  );
 });
