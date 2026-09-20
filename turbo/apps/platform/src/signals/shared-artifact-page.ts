@@ -4,6 +4,8 @@ import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
 import { clerk$ } from "./auth.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
 import { createMarkdownPreviewTree } from "./markdown-preview-tree.ts";
+import type { MermaidDiagramPreviewCommand } from "./mermaid-diagram.ts";
+import { createPublicArtifactPreviewSignals } from "./public-artifact-preview.ts";
 import type { AttachmentLightboxState } from "./okou-page/attachment-chips.ts";
 import {
   createTextPreviewComputed,
@@ -37,6 +39,7 @@ export const signInToSharedArtifact$ = command(
 export function createSharedArtifactPreview(
   artifact: SharedArtifactContent,
   referenceUrl: string,
+  openDiagram$: MermaidDiagramPreviewCommand,
 ): SharedArtifactPreview {
   const kind = classifyChatAttachment(artifact);
   const contentUrl = new URL(artifact.url);
@@ -69,7 +72,7 @@ export function createSharedArtifactPreview(
             ...base,
             kind,
             text$,
-            markdownTree$: createMarkdownPreviewTree(text$),
+            markdownTree$: createMarkdownPreviewTree(text$, openDiagram$),
           }
         : { ...base, kind, text$ };
   } else {
@@ -87,6 +90,9 @@ export function createSharedArtifactViewerSignals() {
   return {
     imageCanvas: createZoomableImageCanvasSignals(),
     fullscreen: createArtifactViewerFullscreenSignals(),
+    // A Markdown artifact can embed a diagram, which this page presents in a
+    // dialog over the artifact it belongs to.
+    diagram: createPublicArtifactPreviewSignals(),
   };
 }
 

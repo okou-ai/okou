@@ -46,8 +46,8 @@ import { SCROLL_FADE_Y_END } from "../okou-page/scroll-fade.ts";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
 import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
-import { SharedThreadArtifactLightbox } from "./shared-thread-artifact-lightbox.tsx";
-import type { SharedThreadArtifactPreviewSignals } from "../../signals/shared-thread-page/shared-thread-artifact-preview.ts";
+import { PublicArtifactLightbox } from "../components/public-artifact-lightbox.tsx";
+import type { PublicArtifactPreviewSignals } from "../../signals/public-artifact-preview.ts";
 
 /**
  * A shared message with an optional prepared plain tree. Rich bodies leave the
@@ -66,7 +66,7 @@ export type SharedDisplayMessage = Omit<SharedMessage, "attachments"> & {
 export type SharedDisplayThread = Omit<SharedThreadResponse, "messages"> & {
   readonly messages: readonly SharedDisplayMessage[];
   readonly richContent?: SharedThreadRichContentSignals;
-  readonly artifactPreview?: SharedThreadArtifactPreviewSignals;
+  readonly artifactPreview?: PublicArtifactPreviewSignals;
 };
 
 interface SharedMessageGroup {
@@ -609,7 +609,7 @@ export function SharedThreadPage({
         )}
       </WorkspaceInset>
       {sharedThread?.artifactPreview ? (
-        <SharedThreadArtifactLightbox signals={sharedThread.artifactPreview} />
+        <PublicArtifactLightbox signals={sharedThread.artifactPreview} />
       ) : null}
     </div>
   );

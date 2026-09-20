@@ -1223,9 +1223,6 @@
       "namedPlan": "Plano {{plan}}",
       "noActivePlan": "Nenhum plano ativo",
       "noActiveSubscription": "Nenhuma assinatura ativa",
-      "noPlan": {
-        "name": "Sem plano"
-      },
       "perMonth": "/mês",
       "pricePerMonth": "{{price}}/mês",
       "pro": {
@@ -3216,7 +3213,6 @@
       "device": {
         "checking": "Verificando a aprovação...",
         "connect": "Conectar {{connector}}",
-        "copyThenOpen": "Copie este código e abra a página de verificação para aprovar o acesso.",
         "description": "Abra a página de verificação do provedor e insira este código para aprovar o acesso.",
         "intro": "Conecte-se para obter um código de verificação e use-o na página de verificação do provedor para aprovar o acesso.",
         "openPage": "Abrir página de verificação",
@@ -4204,6 +4200,489 @@
       "checkingPlan": "Verificando plano",
       "runNow": "Executar agora",
       "upgradePro": "Atualizar para Pro para executar"
+    },
+    "sourcesFirst": {
+      "common": {
+        "back": "Voltar",
+        "cancel": "Cancelar",
+        "continue": "Continuar",
+        "finish": "Concluir configuração",
+        "notNow": "Agora não",
+        "skip": "Pular por enquanto"
+      },
+      "documentTitles": {
+        "experience": "Sua experiência com IA",
+        "industry": "Escolha sua área",
+        "ready": "O Okou está pronto",
+        "skills": "Importe suas skills",
+        "slack": "Adicionar o Okou ao Slack",
+        "sources": "Conecte seu trabalho",
+        "team": "Convide alguém do time"
+      },
+      "experience": {
+        "copy": "Conecte o plano que você já paga e seu trabalho roda lá, não nos créditos Okou.",
+        "no": "Não, é novidade para mim",
+        "noCopy": "O Okou escolhe uma primeira tarefa para você.",
+        "title": "Você já usou o Codex ou o Claude Code?"
+      },
+      "industries": {
+        "coaching": {
+          "name": "Coaching e treinamentos",
+          "summary": "Coaching, cursos e treinamentos"
+        },
+        "consulting": {
+          "name": "Consultoria independente",
+          "summary": "Consultoria de negócios, RH e TI"
+        },
+        "design": {
+          "name": "Design e criação",
+          "summary": "Gráficos, sites e trabalho criativo"
+        },
+        "finance": {
+          "name": "Contabilidade e escrituração",
+          "summary": "Livros, relatórios e conciliação"
+        },
+        "investing": {
+          "name": "Investimentos e pesquisa de mercado",
+          "summary": "Investimentos, mercados e carteiras"
+        },
+        "marketing": {
+          "name": "Marketing e conteúdo",
+          "summary": "Redes sociais, conteúdo e marca"
+        },
+        "operations": {
+          "name": "Negócios e operações",
+          "summary": "Donos de negócio, assistentes e operações"
+        },
+        "other": {
+          "name": "Outra / ainda explorando",
+          "summary": "Outra área, ou ainda explorando"
+        },
+        "research": {
+          "name": "Pesquisa e aprendizado",
+          "summary": "Pesquisa, estudo e aprendizado"
+        },
+        "sales": {
+          "name": "Vendas e desenvolvimento de clientes",
+          "summary": "Prospecção, vendas e crescimento de clientes"
+        },
+        "software": {
+          "name": "Software e apps",
+          "summary": "Apps, jogos e desenvolvimento"
+        }
+      },
+      "industry": {
+        "copy": "O Okou usa isso para escolher sua primeira tarefa e as fontes de onde ela parte.",
+        "title": "Que tipo de trabalho você faz?"
+      },
+      "skills": {
+        "confirm": "Importar e continuar",
+        "copy": "Importe um SKILL.md e ele vira um workflow no Okou, pronto para rodar com /.",
+        "import": "Escolher um arquivo",
+        "importedCopy": "Importado como workflow do Okou.",
+        "importedTitle": "Seu workflow está pronto",
+        "panelCopy": "Do Codex, do Claude Code ou de qualquer agente que escreva um.",
+        "panelTitle": "Solte um SKILL.md aqui",
+        "previewCopy": "Importado como workflow do Okou. Só você pode usá-lo até compartilhar.",
+        "previewTitle": "Revise sua skill",
+        "replace": "Escolher outro arquivo",
+        "title": "Traga as skills que você já escreveu."
+      },
+      "slack": {
+        "add": "Adicionar ao Slack",
+        "connectedCopy": "Abra o Slack e mencione @Okou para passar uma tarefa.",
+        "connectedStatus": "Adicionado ao seu workspace",
+        "connectedTitle": "O Slack está conectado",
+        "copy": "Adicione uma vez e mencione @Okou onde o trabalho já acontece.",
+        "otherAdded": "Adicionado",
+        "otherImessage": "iMessage",
+        "othersLabel": "Adicione depois, ou agora",
+        "otherTeams": "Teams",
+        "otherTelegram": "Telegram",
+        "previewAppBadge": "APP",
+        "previewAsk": "puxe os cadastros da semana passada por origem, concilie com a conta de anúncios e coloque a tabela em uma planilha.",
+        "previewAskAuthor": "Mia Chen",
+        "previewChannel": "# growth",
+        "previewChannelGeneral": "# general",
+        "previewChannelLaunch": "# launch",
+        "previewChannelsLabel": "Canais",
+        "previewChannelTopic": "Números da semana e o que vamos lançar",
+        "previewComposer": "Mensagem para #growth",
+        "previewContext": "A reunião do conselho é quinta e eu ainda devo os números da semana passada.",
+        "previewContextAuthor": "Dan Rivera",
+        "previewContextTime": "9:06 AM",
+        "previewDirectMessagesLabel": "Mensagens diretas",
+        "previewMention": "@Okou",
+        "previewReplies": "3 respostas",
+        "previewReply": "1.284 cadastros na semana passada, 18% acima dos 1.088. A planilha está na thread.",
+        "previewReplyAuthor": "Okou",
+        "previewReplyTime": "9:16 AM",
+        "previewTime": "9:14 AM",
+        "previewWorkspace": "Northwind",
+        "rowCopy": "Funciona em qualquer canal onde você adicionar.",
+        "rowTitle": "Okou for Slack",
+        "title": "Passe uma tarefa ao Okou sem sair do Slack."
+      },
+      "sources": {
+        "copy": "Ele trabalha na nuvem, a partir das ferramentas que seu time já usa. 10x mais entrega, menos atrito operacional, custo menor. Conecte uma fonte para começar.",
+        "note": "Você escolhe quais contas conectar.",
+        "searchAction": "Encontre uma fonte para o seu trabalho",
+        "searchCopy": "Busque no catálogo completo por tarefa ou nome do app.",
+        "searchEmpty": "Nenhuma fonte correspondente",
+        "searchPlaceholder": "Busque por tarefa ou nome do app",
+        "searchTitle": "Encontre uma fonte para o seu trabalho",
+        "title": "O Okou é seu, e é compartilhado com todo o time."
+      },
+      "startingPrompt": {
+        "exact": {
+          "finance_quickbooks": {
+            "outcome": "Seu panorama de fechamento do mês",
+            "question": "Qual empresa e mês de referência devo usar?",
+            "text": "Resuma as receitas, despesas e faturas em atraso do mês passado no QuickBooks. Me dê uma lista curta de itens para verificar."
+          },
+          "finance_xero": {
+            "outcome": "Seu panorama de fechamento do mês",
+            "question": "Qual organização e mês de referência devo usar?",
+            "text": "Resuma as receitas, despesas e faturas em atraso do mês passado no Xero. Me dê uma lista curta de itens para verificar."
+          },
+          "marketing_google_ads": {
+            "outcome": "Três ideias para o próximo teste de campanha",
+            "question": "Em qual conta, campanha e objetivo devo focar?",
+            "text": "Analise os resultados da semana passada no Google Ads e sugira três coisas para investigar ou testar. Deixe qualquer mudança como recomendação."
+          },
+          "marketing_google_analytics": {
+            "outcome": "Três oportunidades no seu tráfego",
+            "question": "Qual propriedade e meta de conversão devo usar?",
+            "text": "Analise o tráfego da semana passada no Google Analytics e sugira três oportunidades para melhorar meu conteúdo ou minhas landing pages."
+          },
+          "marketing_google_search_console": {
+            "outcome": "Cinco atualizações de conteúdo para fazer",
+            "question": "Em qual site e período devo focar?",
+            "text": "Analise meus resultados recentes no Google Search Console e sugira cinco atualizações de conteúdo com base nas consultas e páginas."
+          },
+          "marketing_meta_ads": {
+            "outcome": "Três ideias para o próximo teste de criativo",
+            "question": "Em quais campanhas e público devo focar?",
+            "text": "Analise os resultados da semana passada no Meta Ads e sugira três ideias de criativo para testar. Deixe qualquer mudança como recomendação."
+          },
+          "marketing_tiktok_ads": {
+            "outcome": "Três ideias para o próximo teste de criativo",
+            "question": "Em quais campanhas e público devo focar?",
+            "text": "Analise os resultados da semana passada no TikTok Ads e sugira três ideias de criativo para testar. Deixe qualquer mudança como recomendação."
+          },
+          "marketing_youtube": {
+            "outcome": "Cinco ideias para seus próximos vídeos",
+            "question": "Qual canal e quais vídeos devemos revisar?",
+            "text": "Analise meus vídeos recentes no YouTube e sugira cinco temas de continuação com base no desempenho e no retorno do público."
+          },
+          "sales_google_contacts": {
+            "outcome": "Pessoas para retomar contato",
+            "question": "Com que tipo de prospect você quer retomar contato?",
+            "text": "Analise meus Google Contacts e me ajude a selecionar pessoas para retomar contato no meu trabalho de vendas. Pergunte como é um bom prospect."
+          },
+          "sales_hubspot": {
+            "outcome": "Cinco negócios para fazer avançar",
+            "question": "Em qual pipeline ou responsável devo focar?",
+            "text": "Analise meus negócios abertos no HubSpot e sugira cinco follow-ups para esta semana, com um motivo para cada um."
+          },
+          "software_github": {
+            "outcome": "Notas de versão que seus clientes entendem",
+            "question": "Com qual repositório e versão começamos?",
+            "text": "Transforme as mudanças da semana passada no GitHub em notas de versão claras para os clientes. Me pergunte qual repositório usar."
+          },
+          "software_linear": {
+            "outcome": "O andamento do seu projeto, em um só lugar",
+            "question": "Em qual projeto do Linear devo focar?",
+            "text": "Resuma o trabalho atual no Linear em itens entregues, bloqueios e próximas prioridades. Me pergunte qual projeto usar."
+          }
+        },
+        "fallback": {
+          "calendar": {
+            "outcome": "Suas próximas reuniões, preparadas",
+            "question": "Qual agenda e quais reuniões vamos preparar?",
+            "text": "Analise minhas próximas reuniões de {{short}} no {{source}} e escreva um checklist curto de preparação. Me pergunte qual agenda usar."
+          },
+          "generic": {
+            "outcome": "Uma primeira tarefa útil com {{source}}",
+            "question": "O que você quer alcançar com esta fonte?",
+            "text": "Me ajude a usar o {{source}} no meu trabalho de {{short}}. Pergunte o que eu quero alcançar e sugira uma tarefa útil com as informações disponíveis ali."
+          },
+          "noSource": {
+            "question": "No que você quer que eu foque primeiro?"
+          },
+          "projects": {
+            "outcome": "Suas próximas prioridades de projeto",
+            "question": "Com qual projeto ou workspace começamos?",
+            "text": "Analise meu trabalho de {{short}} no {{source}} e resuma tarefas abertas, bloqueios e próximos passos. Me pergunte qual projeto usar."
+          }
+        },
+        "family": {
+          "coaching_calendar": {
+            "outcome": "Suas próximas sessões, preparadas",
+            "question": "Qual agenda e quais objetivos de sessão vamos usar?",
+            "text": "Veja as sessões de coaching desta semana no {{source}} e me ajude a preparar uma pauta para cada uma. Me pergunte os objetivos das sessões."
+          },
+          "coaching_documents": {
+            "outcome": "Um plano de ação para seu cliente",
+            "question": "Quais anotações de sessão vamos transformar em plano de ação?",
+            "text": "Transforme as anotações de sessão no {{source}} em um plano de ação para o cliente com três exercícios e um foco para a próxima sessão. Me pergunte quais anotações usar."
+          },
+          "coaching_email": {
+            "outcome": "A pauta da sua próxima sessão",
+            "question": "Para qual cliente vamos nos preparar?",
+            "text": "Analise os e-mails recentes de um cliente de coaching no {{source}} e escreva uma pauta para a próxima sessão em torno das dúvidas e objetivos dele."
+          },
+          "coaching_sheets": {
+            "outcome": "Sua lista de alunos para acompanhar",
+            "question": "Qual planilha de progresso dos alunos devo usar?",
+            "text": "Analise minha planilha de progresso dos alunos no {{source}} e sugira quem precisa de acompanhamento e o que abordar. Me pergunte qual planilha usar."
+          },
+          "consulting_documents": {
+            "outcome": "Uma proposta a partir do briefing do cliente",
+            "question": "Qual briefing de cliente vamos transformar em proposta?",
+            "text": "Transforme um briefing de cliente no {{source}} em um esboço de proposta com escopo, entregas e questões em aberto. Me pergunte qual briefing usar."
+          },
+          "consulting_email": {
+            "outcome": "Seu próximo follow-up com o cliente",
+            "question": "Qual conversa com o cliente devo usar?",
+            "text": "Analise minha última conversa com o cliente no {{source}} e escreva um follow-up com os próximos passos acordados e as dúvidas a resolver."
+          },
+          "consulting_sheets": {
+            "outcome": "Sua atualização de progresso para o cliente",
+            "question": "Com qual planilha de acompanhamento do projeto começamos?",
+            "text": "Analise a planilha de acompanhamento de um projeto no {{source}} e escreva uma atualização curta de progresso com riscos e próximos passos. Me pergunte qual planilha usar."
+          },
+          "design_documents": {
+            "outcome": "Uma direção criativa clara",
+            "question": "Com qual pasta de projeto ou briefing começamos?",
+            "text": "Use uma pasta de projeto ou briefing no {{source}} para escrever uma direção criativa, um checklist de assets e os próximos passos. Me pergunte qual projeto usar."
+          },
+          "design_email": {
+            "outcome": "Um briefing a partir do feedback do cliente",
+            "question": "Qual conversa com o cliente vira o briefing?",
+            "text": "Transforme uma conversa recente com o cliente no {{source}} em um briefing criativo com objetivos, entregas e questões em aberto."
+          },
+          "design_sheets": {
+            "outcome": "Suas próximas prioridades de design",
+            "question": "Qual planilha de acompanhamento devo olhar?",
+            "text": "Transforme minha planilha de acompanhamento no {{source}} em uma lista de prioridades de design, prazos e assets faltando. Me pergunte qual planilha usar."
+          },
+          "finance_documents": {
+            "outcome": "Seu checklist de fechamento do mês",
+            "question": "Com quais anotações de fechamento devo trabalhar?",
+            "text": "Transforme minhas anotações de fechamento no {{source}} em um checklist de registros faltando, dúvidas abertas e follow-ups com clientes. Me pergunte quais anotações usar."
+          },
+          "finance_email": {
+            "outcome": "Sua lista de cobranças de documentos",
+            "question": "Em qual cliente e período devo focar?",
+            "text": "Encontre e-mails recentes de clientes no {{source}} sobre notas ou documentos faltando e escreva uma lista de follow-up contábil."
+          },
+          "finance_sheets": {
+            "outcome": "Sua revisão de conciliação",
+            "question": "Qual planilha de conciliação e qual período devo usar?",
+            "text": "Analise minha planilha de conciliação no {{source}} e aponte registros sem correspondência, diferenças e itens para verificar. Me pergunte qual planilha usar."
+          },
+          "investing_documents": {
+            "outcome": "Sua tese de investimento, organizada",
+            "question": "Quais anotações de empresa ou investimento vamos revisar?",
+            "text": "Transforme as anotações de investimento no {{source}} em um resumo com a tese, as evidências, os riscos e as questões em aberto. Me pergunte quais anotações usar."
+          },
+          "investing_email": {
+            "outcome": "Sua pesquisa recente, resumida",
+            "question": "Em quais mercados ou e-mails de pesquisa devo focar?",
+            "text": "Resuma os e-mails recentes de pesquisa de mercado no {{source}} em temas centrais, fontes datadas e perguntas a investigar."
+          },
+          "investing_sheets": {
+            "outcome": "O que pesquisar em seguida",
+            "question": "Qual watchlist e qual período registrado devo usar?",
+            "text": "Analise minha watchlist no {{source}}. Aponte dados faltando e mudanças nos números registrados e sugira três coisas para pesquisar em seguida."
+          },
+          "marketing_documents": {
+            "outcome": "Cinco posts a partir do seu briefing de marca",
+            "question": "Com qual briefing de marca e público começamos?",
+            "text": "Transforme um briefing de marca no {{source}} em cinco posts para a próxima semana. Me pergunte qual briefing e qual público usar."
+          },
+          "marketing_email": {
+            "outcome": "Cinco ideias de post a partir de dúvidas de clientes",
+            "question": "Em quais conversas de produto ou de clientes devo focar?",
+            "text": "Encontre dúvidas recorrentes de clientes nos meus e-mails do {{source}} na última semana e transforme-as em cinco ideias de post."
+          },
+          "marketing_sheets": {
+            "outcome": "Cinco ideias para a próxima semana",
+            "question": "Qual planilha tem os resultados de conteúdo?",
+            "text": "Veja meus resultados de conteúdo no {{source}} e sugira cinco posts para tentar na próxima semana. Me pergunte qual planilha usar."
+          },
+          "operations_calendar": {
+            "outcome": "Sua semana, planejada",
+            "question": "Em torno de qual agenda vamos planejar?",
+            "text": "Analise as reuniões desta semana no {{source}} e faça uma lista de preparação com prazos e o tempo que devo manter livre."
+          },
+          "operations_documents": {
+            "outcome": "Um processo que seu time consegue seguir",
+            "question": "Qual documento de processo vamos transformar em checklist?",
+            "text": "Transforme um documento de processo no {{source}} em um checklist prático com responsáveis, prazos e etapas faltando. Me pergunte qual processo usar."
+          },
+          "operations_email": {
+            "outcome": "O que precisa da sua atenção hoje",
+            "question": "Quais conversas com clientes ou fornecedores devo priorizar?",
+            "text": "Resuma os e-mails de clientes e fornecedores de hoje no {{source}}. Destaque pedidos urgentes, prazos e respostas que devo tratar primeiro."
+          },
+          "operations_sheets": {
+            "outcome": "Suas próximas três prioridades",
+            "question": "Qual planilha de operações vamos revisar?",
+            "text": "Analise minha planilha de operações no {{source}} e destaque trabalho atrasado, bloqueios e as próximas três prioridades. Me pergunte qual planilha usar."
+          },
+          "other_documents": {
+            "outcome": "Seu documento, destilado",
+            "question": "Com qual documento começamos?",
+            "text": "Transforme um documento no {{source}} em um resumo curto e três próximos passos úteis. Me pergunte qual documento usar."
+          },
+          "other_email": {
+            "outcome": "As prioridades da sua caixa de entrada",
+            "question": "Em quais conversas devo focar?",
+            "text": "Resuma meus e-mails de trabalho de hoje no {{source}} e me diga o que precisa de resposta ou de decisão."
+          },
+          "other_sheets": {
+            "outcome": "Seu progresso de relance",
+            "question": "Qual planilha de acompanhamento devo revisar?",
+            "text": "Transforme uma planilha de acompanhamento no {{source}} em uma atualização curta de progresso e uma lista do que precisa de atenção. Me pergunte qual planilha usar."
+          },
+          "research_documents": {
+            "outcome": "Sua pesquisa em uma página",
+            "question": "Em quais anotações ou tema de pesquisa devo focar?",
+            "text": "Transforme minhas anotações de pesquisa no {{source}} em um resumo de uma página com achados principais, fontes e perguntas sem resposta. Me pergunte quais anotações usar."
+          },
+          "research_email": {
+            "outcome": "Sua discussão de pesquisa, resumida",
+            "question": "Qual conversa de pesquisa vamos resumir?",
+            "text": "Transforme uma discussão de pesquisa no {{source}} em um resumo de achados, referências e questões em aberto. Me pergunte qual conversa usar."
+          },
+          "research_sheets": {
+            "outcome": "Padrões na sua pesquisa",
+            "question": "Com qual conjunto de dados e pergunta de pesquisa começamos?",
+            "text": "Analise meus dados de pesquisa no {{source}} e resuma padrões, informações faltando e perguntas que valem investigação."
+          },
+          "sales_calendar": {
+            "outcome": "Suas reuniões de vendas, preparadas",
+            "question": "Para quais reuniões de vendas vamos nos preparar primeiro?",
+            "text": "Analise minhas próximas reuniões de vendas no {{source}} e escreva um checklist de preparação para cada prospect."
+          },
+          "sales_documents": {
+            "outcome": "Sua próxima call de vendas, preparada",
+            "question": "Para qual prospect estamos nos preparando?",
+            "text": "Transforme um resumo de prospect no {{source}} em perguntas de descoberta e um pitch curto para minha próxima call de vendas. Me pergunte qual prospect usar."
+          },
+          "sales_email": {
+            "outcome": "Três follow-ups para fazer negócios avançarem",
+            "question": "Com quais prospects ou threads de e-mail começamos?",
+            "text": "Analise minhas conversas recentes com prospects no {{source}} e escreva três follow-ups a partir das dúvidas e dos próximos passos deles."
+          },
+          "sales_sheets": {
+            "outcome": "Cinco prospects para dar sequência",
+            "question": "Qual lista de leads e quais critérios de cliente devo usar?",
+            "text": "Analise minha lista de leads no {{source}} e selecione cinco prospects para dar sequência, usando as informações que já estão na planilha."
+          },
+          "software_documents": {
+            "outcome": "Sua feature, com escopo claro",
+            "question": "Com qual briefing de feature vamos trabalhar?",
+            "text": "Transforme um briefing de feature no {{source}} em um escopo claro, critérios de aceite e questões em aberto. Me pergunte qual briefing usar."
+          },
+          "software_email": {
+            "outcome": "Três temas de feedback para investigar",
+            "question": "Quais threads de feedback de produto ou de clientes devo usar?",
+            "text": "Agrupe o feedback recente de produto no {{source}} em temas e sugira três problemas para investigar primeiro."
+          },
+          "software_sheets": {
+            "outcome": "Os bloqueios da sua release, em um só lugar",
+            "question": "Qual planilha de bugs ou de release devo revisar?",
+            "text": "Analise uma planilha de bugs ou de release no {{source}} e resuma bloqueios, responsáveis e próximos passos. Me pergunte qual planilha usar."
+          }
+        },
+        "profile": {
+          "coaching": {
+            "firstTaskPrompt": "Esboce uma sessão prática de treinamento com objetivos de aprendizado, atividades e um exercício final. Primeiro me pergunte sobre os participantes e o tema.",
+            "firstTaskTitle": "Esboçar uma sessão de treinamento",
+            "short": "coaching e treinamentos"
+          },
+          "consulting": {
+            "firstTaskPrompt": "Prepare um resumo com fontes sobre um cliente em potencial: negócio, novidades recentes e perguntas para a primeira reunião. Pergunte o nome da empresa.",
+            "firstTaskTitle": "Pesquisar um cliente em potencial",
+            "short": "consultoria"
+          },
+          "design": {
+            "firstTaskPrompt": "Me ajude a escrever um briefing criativo com público, mensagem, entregas e direção visual. Primeiro me pergunte sobre o projeto.",
+            "firstTaskTitle": "Montar um briefing criativo",
+            "short": "criação"
+          },
+          "finance": {
+            "firstTaskPrompt": "Me ajude a montar um checklist de fechamento mensal para o meu trabalho contábil. Primeiro pergunte sobre o negócio e as necessidades de relatório.",
+            "firstTaskTitle": "Preparar um checklist de fechamento",
+            "short": "contabilidade"
+          },
+          "investing": {
+            "firstTaskPrompt": "Prepare um resumo de pesquisa sobre uma empresa com modelo de negócio, relatórios públicos recentes, riscos principais e fontes datadas. Pergunte qual empresa pesquisar.",
+            "firstTaskTitle": "Pesquisar uma empresa",
+            "short": "pesquisa de investimentos"
+          },
+          "marketing": {
+            "firstTaskPrompt": "Compare o conteúdo público de três concorrentes e sugira três ângulos para a minha marca. Me pergunte em qual marca e público focar.",
+            "firstTaskTitle": "Pesquisar meus concorrentes",
+            "short": "marketing"
+          },
+          "operations": {
+            "firstTaskPrompt": "Me ajude a planejar a semana em torno de prioridades, prazos e reuniões. Pergunte o que é mais importante e o que já está comprometido.",
+            "firstTaskTitle": "Planejar minha semana de trabalho",
+            "short": "operações"
+          },
+          "other": {
+            "firstTaskPrompt": "Me ajude a transformar um objetivo de trabalho em um plano prático com prioridades e próximos passos. Pergunte sobre o objetivo, o prazo e as restrições.",
+            "firstTaskTitle": "Transformar um objetivo em plano",
+            "short": "trabalho"
+          },
+          "research": {
+            "firstTaskPrompt": "Prepare um resumo de pesquisa com fontes confiáveis, achados principais e questões em aberto. Pergunte sobre o meu tema e o que preciso aprender.",
+            "firstTaskTitle": "Pesquisar um tema",
+            "short": "pesquisa"
+          },
+          "sales": {
+            "firstTaskPrompt": "Pesquise empresas que combinam com meu cliente ideal e monte uma lista curta com fontes públicas e motivos de fit. Me pergunte sobre minha oferta e meu mercado-alvo.",
+            "firstTaskTitle": "Encontrar clientes em potencial",
+            "short": "vendas"
+          },
+          "software": {
+            "firstTaskPrompt": "Me ajude a escrever um briefing de feature com o problema do usuário, o comportamento esperado, os critérios de aceite e as questões em aberto. Primeiro pergunte sobre a feature.",
+            "firstTaskTitle": "Escrever um briefing de feature",
+            "short": "software"
+          }
+        }
+      },
+      "subscription": {
+        "claudeCode": "Claude Code",
+        "codex": "Codex",
+        "rowCopy": "Roda no seu plano, sem gastar créditos Okou."
+      },
+      "team": {
+        "copy": "Convide alguém do time agora, ou depois pelo menu do workspace.",
+        "invite": "Enviar convite",
+        "invited": "Convidado",
+        "label": "E-mail do colega",
+        "note": "Eles entram neste workspace; as contas deles continuam sendo deles.",
+        "panelTitle": "Convide alguém do time",
+        "placeholder": "teammate@company.com",
+        "points": {
+          "accounts": "As contas conectadas continuam sendo deles — nada é compartilhado sem eles.",
+          "workflows": "Qualquer pessoa aqui pode rodar os workflows que este workspace já tem.",
+          "workspace": "Eles chegam neste workspace, com as fontes que você acabou de conectar."
+        },
+        "title": "Traga as pessoas que fazem este trabalho com você."
+      },
+      "welcome": {
+        "copy": "Comece com uma primeira tarefa, escolhida para o trabalho que você acabou de conectar.",
+        "offerTitle": "A primeira hora de consultoria é por nossa conta, mais até 100 créditos —",
+        "promptLabel": "Seu prompt inicial",
+        "start": "Começar com o Okou",
+        "title": "O Okou está pronto para você"
+      }
     },
     "templatePicker": {
       "image": {
@@ -5413,7 +5892,6 @@
       "custom": "Personalizado",
       "free": "Grátis",
       "limitedFree": "Grátis limitado",
-      "noPlan": "Sem plano",
       "pro": "Pro",
       "team": "Team"
     },

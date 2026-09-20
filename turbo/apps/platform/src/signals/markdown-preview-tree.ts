@@ -6,6 +6,7 @@ import { parseMarkdownTree } from "../lib/markdown/pipeline.ts";
 import {
   createMermaidDiagramRegistry,
   embedMermaidSignals,
+  type MermaidDiagramPreviewCommand,
 } from "./mermaid-diagram.ts";
 import type { TextPreviewComputed } from "./text-preview.ts";
 
@@ -14,6 +15,7 @@ export type MarkdownPreviewTreeComputed = Computed<Promise<Root>>;
 /** Derive one preview tree and its diagram graph from the current text. */
 export function createMarkdownPreviewTree(
   text$: TextPreviewComputed,
+  openDiagram$: MermaidDiagramPreviewCommand,
 ): MarkdownPreviewTreeComputed {
   return computed(async (get): Promise<Root> => {
     const source = await get(text$);
@@ -24,7 +26,7 @@ export function createMarkdownPreviewTree(
     const tree = parseMarkdownTree(source, {
       mermaid: true,
     });
-    const diagrams = createMermaidDiagramRegistry();
+    const diagrams = createMermaidDiagramRegistry(openDiagram$);
     embedMermaidSignals(tree, diagrams.register);
     return tree;
   });

@@ -7,11 +7,10 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { animationFrame, delay } from "signal-timers";
+import { animationFrame } from "signal-timers";
 import { isEditableTarget, matchShortcut } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
-import { debounceCommand } from "../command-scheduling.ts";
 import type {
   ComposerFeedbackSignals,
   FeedbackRange,
@@ -19,7 +18,7 @@ import type {
 } from "../okou-page/chat-feedback.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
 import { clearChatListQuery$ } from "../okou-page/sidebar-state.ts";
-import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
+import { onDomEventFn, onRef, resetSignal, withCleanup } from "../utils.ts";
 import type {
   ChatForwardTarget,
   ChatForwardContext,
@@ -347,6 +346,7 @@ function isSelectionInteractionTarget(target: EventTarget | null): boolean {
 
 function createSelectionState(threadId: string) {
   const internalSelection$ = state<CapturedFeedbackSelection | null>(null);
+  const pendingCopyCount$ = state(0);
   const resetToolbarSignal$ = resetSignal();
   const selection$ = computed((get): ChatThreadFeedbackSelection | null => {
     const selection = get(internalSelection$);
@@ -426,10 +426,19 @@ function createSelectionState(threadId: string) {
       return;
     }
     signal.throwIfAborted();
-    const copied = await writeToClipboard(selection.text);
+    set(pendingCopyCount$, (count) => {
+      return count + 1;
+    });
+    const copied = await withCleanup(writeToClipboard(selection.text), () => {
+      set(pendingCopyCount$, (count) => {
+        return count - 1;
+      });
+    });
     signal.throwIfAborted();
     if (copied) {
-      set(close$);
+      if (get(internalSelection$) === selection) {
+        set(close$);
+      }
       toast.success(
         i18n.t(($) => {
           return $.chat.toasts.copied;
@@ -439,6 +448,7 @@ function createSelectionState(threadId: string) {
   });
   return {
     internalSelection$,
+    pendingCopyCount$,
     resetToolbarSignal$,
     selection$,
     close$,
@@ -568,29 +578,39 @@ function createStartForward(
 
 function createToolbarRef({
   resetToolbarSignal$,
+  pendingCopyCount$,
   close$,
   copy$,
   start$,
   startForward$,
 }: {
   resetToolbarSignal$: ReturnType<typeof resetSignal>;
+  pendingCopyCount$: State<number>;
   close$: Command<void, []>;
   copy$: Command<Promise<void>, [AbortSignal]>;
   start$: Command<void, []>;
   startForward$: Command<boolean, []>;
 }) {
   return onRef(
-    command(({ set }, el: HTMLElement, signal: AbortSignal) => {
+    command(({ get, set }, el: HTMLElement, signal: AbortSignal) => {
       const toolbarSignal = set(resetToolbarSignal$, signal);
+      el.ownerDocument.addEventListener(
+        "copy",
+        () => {
+          // Legacy clipboard writes also dispatch copy. Their command owns
+          // success, failure, and closing after the result is available.
+          if (get(pendingCopyCount$) !== 0) {
+            return;
+          }
+          // Leave the native selection and clipboard default action intact.
+          set(close$);
+        },
+        { signal: toolbarSignal },
+      );
       el.ownerDocument.addEventListener(
         "keydown",
         onDomEventFn(async (event: KeyboardEvent) => {
           if (toolbarSignal.aborted) {
-            return;
-          }
-          if (matchShortcut("mod+c", event)) {
-            await delay(0, { signal: toolbarSignal });
-            set(close$);
             return;
           }
           if (event.defaultPrevented) {
@@ -638,7 +658,6 @@ function createListenersRef({
   reconcileAfterScroll$: Command<void, []>;
   isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>;
 }) {
-  const debouncedCapture$ = debounceCommand(capture$, 0);
   return onRef(
     command(({ get, set }, el: HTMLElement, signal: AbortSignal) => {
       const doc = el.ownerDocument;
@@ -661,20 +680,26 @@ function createListenersRef({
         { capture: true, signal },
       );
       doc.addEventListener(
-        "pointerup",
-        onDomEventFn(async () => {
+        "click",
+        () => {
           if (!selectionInteractionInProgress) {
             return;
           }
-          await delay(0, { signal });
+          // React's button action consumes the snapshot before this document
+          // bubble listener releases it. Pointerup is too early: focusing the
+          // button may already have cleared the native selection.
           selectionInteractionInProgress = false;
-        }),
-        { capture: true, signal },
+        },
+        { signal },
       );
       doc.addEventListener(
         "pointercancel",
         () => {
           selectionInteractionInProgress = false;
+          mouseSelectionInProgress = false;
+          if (get(selection$) !== null) {
+            set(capture$, signal);
+          }
         },
         { capture: true, signal },
       );
@@ -700,23 +725,23 @@ function createListenersRef({
       );
       doc.addEventListener(
         "mouseup",
-        onDomEventFn(() => {
+        () => {
           if (!mouseSelectionInProgress) {
             return;
           }
           mouseSelectionInProgress = false;
-          return set(debouncedCapture$, signal);
-        }),
+          set(capture$, signal);
+        },
         { signal },
       );
       doc.addEventListener(
         "selectionchange",
-        onDomEventFn(() => {
+        () => {
           if (mouseSelectionInProgress || selectionInteractionInProgress) {
             return;
           }
-          return set(debouncedCapture$, signal);
-        }),
+          set(capture$, signal);
+        },
         { signal },
       );
       doc.addEventListener(
@@ -767,6 +792,7 @@ export function createChatThreadFeedbackSignals(
   );
   const setToolbarRef$ = createToolbarRef({
     resetToolbarSignal$: selection.resetToolbarSignal$,
+    pendingCopyCount$: selection.pendingCopyCount$,
     close$: selection.close$,
     copy$: selection.copy$,
     start$,

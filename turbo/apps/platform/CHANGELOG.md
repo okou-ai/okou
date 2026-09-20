@@ -11,6 +11,36 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.928.0](https://github.com/okou-ai/okou/compare/app-v0.927.1...app-v0.928.0) (2026-09-20)
+
+
+### Features
+
+* **app:** centre the home greeting and frame the agent avatar ([#35587](https://github.com/okou-ai/okou/issues/35587)) ([e9ef0df](https://github.com/okou-ai/okou/commit/e9ef0dfc8d5e2d968ff95bf8ea055ba873dbdfe5))
+* **platform:** link plain urls in user messages ([#35564](https://github.com/okou-ai/okou/issues/35564)) ([3d8a17a](https://github.com/okou-ai/okou/commit/3d8a17a1633ece078a943ae0ad99c39cf5b4e62a))
+
+
+### Bug Fixes
+
+* align cloudflare access naming ([#35632](https://github.com/okou-ai/okou/issues/35632)) ([708ac2e](https://github.com/okou-ai/okou/commit/708ac2e7cec6250eef99bdae13ce272ea2fff6e9))
+* **app:** let fullscreen own its backdrop and drop it where there is nothing to enlarge ([#35579](https://github.com/okou-ai/okou/issues/35579)) ([81c51f3](https://github.com/okou-ai/okou/commit/81c51f32d3c7c2e4bb82a1d0d29ac94be8da958c))
+* **platform:** show loading while image urls resolve ([#35616](https://github.com/okou-ai/okou/issues/35616)) ([d333248](https://github.com/okou-ai/okou/commit/d3332480e1ab01c7bc11cd8a9974d4d77c766995))
+* **vnc:** align configuration count display ([#35629](https://github.com/okou-ai/okou/issues/35629)) ([bbe33b2](https://github.com/okou-ai/okou/commit/bbe33b25ab2658acd03a13baeb6471aa0a101594))
+
+
+### Refactoring
+
+* **platform:** retire the unsaved bar's portal anchors ([#35622](https://github.com/okou-ai/okou/issues/35622)) ([94604ed](https://github.com/okou-ai/okou/commit/94604edc06d17f65f253170256791afe0d494536))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.2
+    * @okouai/core bumped to 8.688.0
+    * @okouai/ui bumped to 1.11.0
+
 ## [0.927.1](https://github.com/okou-ai/okou/compare/app-v0.927.0...app-v0.927.1) (2026-09-20)
 
 

@@ -748,25 +748,21 @@ function QueueDrawerContent() {
       ? t(($) => {
           return $.queue.tiers.limitedFree;
         })
-      : concurrency.tier === "pro-suspend"
+      : concurrency.tier === "free"
         ? t(($) => {
-            return $.queue.tiers.noPlan;
+            return $.queue.tiers.free;
           })
-        : concurrency.tier === "free"
+        : concurrency.tier === "pro"
           ? t(($) => {
-              return $.queue.tiers.free;
+              return $.queue.tiers.pro;
             })
-          : concurrency.tier === "pro"
+          : concurrency.tier === "team"
             ? t(($) => {
-                return $.queue.tiers.pro;
+                return $.queue.tiers.team;
               })
-            : concurrency.tier === "team"
-              ? t(($) => {
-                  return $.queue.tiers.team;
-                })
-              : t(($) => {
-                  return $.queue.tiers.custom;
-                });
+            : t(($) => {
+                return $.queue.tiers.custom;
+              });
   const canManageBilling =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const visibleUpgrade = canManageBilling ? upgrade : undefined;

@@ -160,8 +160,8 @@ function activeCustomBillingStatus(): BillingStatusResponse {
 function noActiveBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
-    tier: "pro-suspend",
-    ...billingPlanCapabilities("pro-suspend"),
+    tier: "limited-free-1",
+    ...billingPlanCapabilities("limited-free-1"),
     credits: 0,
     onboardingPaymentPending: false,
     subscriptionStatus: null,
@@ -176,7 +176,7 @@ function noActiveBillingStatus(): BillingStatusResponse {
     },
     creditBreakdown: [],
     creditGrants: [],
-    concurrencyLimit: 0,
+    concurrencyLimit: 1,
     concurrencySubscriptions: [],
   };
 }
@@ -1207,7 +1207,7 @@ test("Cancel a legacy downgrade and reopen conversion choices", async () => {
     name: "Downgrade plan",
   });
   expect(
-    within(downgradeDialog).getByText("Downgrade to No plan?"),
+    within(downgradeDialog).getByText("Downgrade to Limited free?"),
   ).toBeInTheDocument();
   expect(
     within(downgradeDialog).queryByText("Choose which plan to downgrade to."),
@@ -3337,7 +3337,7 @@ test("Show the end date for a cancelled custom plan", async () => {
       cancelAtPeriodEnd: true,
       scheduledChange: {
         type: "cancel",
-        targetTier: "pro-suspend",
+        targetTier: "limited-free-1",
         effectiveDate: "2026-08-09T00:00:00Z",
       },
     });
@@ -3364,7 +3364,7 @@ test("Manage paid concurrency while the Team plan is ending", async () => {
     cancelAtPeriodEnd: true,
     scheduledChange: {
       type: "cancel",
-      targetTier: "pro-suspend",
+      targetTier: "limited-free-1",
       effectiveDate: "2026-06-01T00:00:00Z",
     },
     concurrencyLimit: 15,

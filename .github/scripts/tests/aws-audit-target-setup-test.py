@@ -27,6 +27,11 @@ SPEC.loader.exec_module(audit)
 SECRET = "synthetic-provider-secret-must-not-be-logged"
 REQUEST_ID = "8a09df32-b555-47c3-b6a7-5895764899c0"
 SNAPSHOT_ID = "07c0eeed-e8d8-48d7-b5f4-922c4798f962"
+IMMUTABLE_SUB_CLAIM_PREFIX = "repo:okou-ai@242540347/okou@1096175506"
+IMMUTABLE_PRODUCTION_SUBJECT = (
+    f"{IMMUTABLE_SUB_CLAIM_PREFIX}:environment:production"
+)
+LEGACY_PRODUCTION_SUBJECT = "repo:okou-ai/okou:environment:production"
 
 
 class AuditSetupTests(unittest.TestCase):
@@ -63,15 +68,15 @@ class AuditSetupTests(unittest.TestCase):
     def client(self, service, **_kwargs):
         return self.clients[service]
 
-    def test_iam_trust_allows_only_renamed_production_subject(self):
-        expected_subject = "repo:okou-ai/okou:environment:production"
+    def test_iam_trust_requires_immutable_production_subject(self):
         github_directory = SCRIPT.parent.parent
         for relative_path in [
             "aws-audit-32264/operator-trust.json",
             "kms-migration-32264/role-trust.json",
         ]:
             with self.subTest(path=relative_path):
-                policy = json.loads((github_directory / relative_path).read_text())
+                policy_text = (github_directory / relative_path).read_text()
+                policy = json.loads(policy_text)
                 conditions = policy["Statement"][0]["Condition"]["StringEquals"]
                 self.assertEqual(
                     conditions["token.actions.githubusercontent.com:aud"],
@@ -79,8 +84,9 @@ class AuditSetupTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     conditions["token.actions.githubusercontent.com:sub"],
-                    expected_subject,
+                    IMMUTABLE_PRODUCTION_SUBJECT,
                 )
+                self.assertNotIn(LEGACY_PRODUCTION_SUBJECT, policy_text)
 
     def main(self, account=audit.ACCOUNT, denied=False, oidc_status="200"):
         sts = self.stubs["sts"]

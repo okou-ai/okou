@@ -220,8 +220,8 @@ test("Fail closed and recover clearly from permission errors", async () => {
     label: "Recovery Service",
     permissions: [connectorPermission],
   });
-  let listCalls = 0;
-  let applyCalls = 0;
+  let permissionServiceAvailable = false;
+  let saveAvailable = false;
   let refreshPending = false;
   const refreshGate = context.mocks.deferred<void>();
   installPermissionMetadata((slug) => {
@@ -241,8 +241,7 @@ test("Fail closed and recover clearly from permission errors", async () => {
         });
   });
   context.mocks.api(userPermissionGrantsContract.list, async ({ respond }) => {
-    listCalls += 1;
-    if (listCalls <= 2) {
+    if (!permissionServiceAvailable) {
       throw new TypeError("Permission service temporarily unavailable");
     }
     if (refreshPending) {
@@ -251,8 +250,7 @@ test("Fail closed and recover clearly from permission errors", async () => {
     return respond(200, []);
   });
   context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
-    applyCalls += 1;
-    if (applyCalls === 1) {
+    if (!saveAvailable) {
       return respond(500, {
         error: { code: "SAVE_FAILED", message: "Permission save failed" },
       });
@@ -281,11 +279,18 @@ test("Fail closed and recover clearly from permission errors", async () => {
 
   await readyChat();
   const card = await screen.findByTestId("permission-action-card");
+  await expect(
+    within(card).findByText("Couldn't load permission status"),
+  ).resolves.toBeVisible();
+  expect(queryButton("Confirm", card)).not.toBeInTheDocument();
+  expect(sends).toHaveLength(0);
+
+  permissionServiceAvailable = true;
+  context.mocks.ably.trigger("connectorPermissionUpdated");
   const confirm = await waitFor(() => {
     return getButton("Confirm", card);
   });
-  expect(listCalls).toBeGreaterThan(2);
-  expect(applyCalls).toBe(0);
+  expect(confirm).toBeEnabled();
   expect(sends).toHaveLength(0);
 
   click(confirm);
@@ -298,12 +303,12 @@ test("Fail closed and recover clearly from permission errors", async () => {
     within(card).queryByText("Permissions updated"),
   ).not.toBeInTheDocument();
 
+  saveAvailable = true;
   click(getButton("Confirm", card));
   const updated = await within(card).findByText("Permissions updated");
   expect(updated).toBeVisible();
   const connectorCard = await screen.findByTestId("connector-action-card");
   expect(getButton("Connect", connectorCard)).toBeEnabled();
-  expect(applyCalls).toBe(2);
   refreshGate.resolve(undefined);
 });
 

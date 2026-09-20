@@ -95,6 +95,7 @@ type CheckoutCompletionResult =
       readonly paidInvoice: StripeInvoice;
     }
   | { readonly status: "pending" }
+  | { readonly status: "expired" }
   | { readonly status: "customer_mismatch" }
   | {
       readonly status: "tier_conflict";
@@ -391,7 +392,6 @@ function billingTierRank(tier: string | null | undefined): number {
     }
     case "free":
     case "limited-free-1":
-    case "pro-suspend":
     default: {
       return 0;
     }
@@ -415,11 +415,8 @@ function billingTierLabel(tier: string | null | undefined): string {
     case "limited-free-1": {
       return "Limited free";
     }
-    case "pro-suspend": {
-      return "Pro suspended";
-    }
     default: {
-      return tier ?? "Pro suspended";
+      return tier ?? "Limited free";
     }
   }
 }
@@ -1335,6 +1332,10 @@ export const completeCheckoutSession$ = command(
     const customerId = stripeObjectId(session.customer);
     if (!org || !customerId || customerId !== org.stripeCustomerId) {
       return { status: "customer_mismatch" };
+    }
+
+    if (session.status === "expired") {
+      return { status: "expired" };
     }
 
     if (session.status !== "complete" || session.mode !== "subscription") {

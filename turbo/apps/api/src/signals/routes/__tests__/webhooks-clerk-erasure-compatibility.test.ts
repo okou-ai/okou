@@ -759,15 +759,20 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
   await expect
     .poll(
       async () => {
-        return await stableContextBackendBlockedByFixture({
+        const blocked = await stableContextBackendBlockedByFixture({
           blockedPid: cleanupPid,
           blockerPid: gcPid,
         });
+        if (blocked && !releaseGc.settled()) {
+          // Release in the same poll iteration that proves the real block. A
+          // later statement can consume the 100 ms production lock deadline.
+          releaseGc.resolve();
+        }
+        return blocked;
       },
       { interval: 5, timeout: 500 },
     )
     .toBe(true);
-  releaseGc.resolve();
   await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
   await flushWaitUntilForTest();
   await expect(

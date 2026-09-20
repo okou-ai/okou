@@ -14,11 +14,7 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
-import {
-  resetConnectorRedirectingMobileWarning$,
-  showConnectorRedirectingMobileWarningAfterDelay$,
-  type ConnectorRedirectingStatus,
-} from "./connector-redirecting.ts";
+import type { ConnectorRedirectingStatus } from "./connector-redirecting.ts";
 
 function connectorSlugFromPath(
   value: string | undefined,
@@ -59,7 +55,6 @@ export const setupConnectorRedirectingPage$ = command(
       searchParams.get("status") === "error" ? "error" : "redirecting";
     const connectorIcon = connectorIconFromSearchParams(searchParams);
 
-    set(resetConnectorRedirectingMobileWarning$);
     set(
       updatePage$,
       createElement(ConnectorRedirectingPage, {
@@ -79,8 +74,5 @@ export const setupConnectorRedirectingPage$ = command(
       ),
     );
     await set(hideAppSkeleton$, signal);
-    if (status === "redirecting") {
-      await set(showConnectorRedirectingMobileWarningAfterDelay$, signal);
-    }
   },
 );
