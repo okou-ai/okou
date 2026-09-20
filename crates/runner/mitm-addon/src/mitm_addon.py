@@ -347,6 +347,23 @@ def _admit_platform_api_request(flow: http.HTTPFlow) -> bool:
     return True
 
 
+def _admit_connector_auth_request(
+    flow: http.HTTPFlow,
+    *,
+    platform_connector_auth: bool,
+) -> bool:
+    if not upstream_admission.ensure_bound_destination(
+        flow,
+        kind="connector_auth",
+        api_url=get_api_url(),
+        platform_connector_auth=platform_connector_auth,
+    ):
+        return False
+    if platform_connector_auth:
+        platform_api.add_vercel_bypass_header(flow.request.headers)
+    return True
+
+
 def _prebind_requestheaders_upstream_destination(
     flow: http.HTTPFlow,
     classification: request_classification.RequestClassification,
@@ -360,10 +377,9 @@ def _prebind_requestheaders_upstream_destination(
     allow = classification.firewall_allow
     if not _firewall_allow_injects_ordinary_upstream_credentials(allow):
         return
-    upstream_admission.ensure_bound_destination(
+    _admit_connector_auth_request(
         flow,
-        kind="connector_auth",
-        api_url=get_api_url(),
+        platform_connector_auth=classification.platform_connector_auth,
     )
 
 
@@ -1044,10 +1060,9 @@ async def _try_firewall_request_stream_from_headers(
 
     if _firewall_allow_injects_ordinary_upstream_credentials(
         allow
-    ) and not upstream_admission.ensure_bound_destination(
+    ) and not _admit_connector_auth_request(
         flow,
-        kind="connector_auth",
-        api_url=get_api_url(),
+        platform_connector_auth=classification.platform_connector_auth,
     ):
         fall_back()
         return
@@ -1449,10 +1464,9 @@ async def request(flow: http.HTTPFlow) -> None:
                 return
             if _firewall_allow_injects_ordinary_upstream_credentials(
                 allow
-            ) and not upstream_admission.ensure_bound_destination(
+            ) and not _admit_connector_auth_request(
                 flow,
-                kind="connector_auth",
-                api_url=get_api_url(),
+                platform_connector_auth=classification.platform_connector_auth,
             ):
                 prepare_firewall_metadata(flow, allow, sandbox_info)
                 _block_upstream_destination_unbound(flow, reason="connector_auth")

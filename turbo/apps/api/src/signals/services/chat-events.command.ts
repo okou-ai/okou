@@ -1093,6 +1093,7 @@ async function resolveExplicitRunConfiguration(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly body: NormalSendBody;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing?: ApiDispatchTimingCollector;
 }): Promise<ResolvedRunConfiguration | NormalSendFailure | undefined> {
   const modelSelection = params.body.modelSelection;
@@ -1109,6 +1110,7 @@ async function resolveExplicitRunConfiguration(params: {
         orgId: params.orgId,
         userId: params.userId,
         modelSelection,
+        featureSwitchContext: params.featureSwitchContext,
       });
     },
   );
@@ -1889,6 +1891,7 @@ async function resolveThread(params: {
           requestedCodexServiceTier: params.requestedCodexServiceTier,
           persistRequestedCodexServiceTier:
             params.persistRequestedCodexServiceTier,
+          featureSwitchContext: params.featureSwitches.featureSwitchContext,
         });
       },
     );
@@ -2802,6 +2805,7 @@ function loadTimedAuthorizedAgent(
 function resolveTimedExplicitRunConfiguration(
   args: NormalSendArgs,
   db: Db,
+  featureSwitches: NormalSendFeatureSwitches,
 ): ReturnType<typeof resolveExplicitRunConfiguration> {
   return measureApiDispatchTiming(
     args.timing,
@@ -2813,6 +2817,7 @@ function resolveTimedExplicitRunConfiguration(
         orgId: args.orgId,
         userId: args.userId,
         body: args.body,
+        featureSwitchContext: featureSwitches.featureSwitchContext,
         timing: args.timing,
       });
     },
@@ -3154,6 +3159,7 @@ const prepareNormalSend$ = command(
     const explicitRunConfiguration = await resolveTimedExplicitRunConfiguration(
       args,
       db,
+      featureSwitches,
     );
     signal.throwIfAborted();
     if (explicitRunConfiguration && "status" in explicitRunConfiguration) {

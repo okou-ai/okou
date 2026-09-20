@@ -1,6 +1,9 @@
 import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
-import { LIMITED_FREE1_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  LIMITED_FREE1_DEFAULT_RUN_MODEL,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { CANONICAL_CODEX_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
@@ -20,7 +23,11 @@ import {
   holdChatThreadRowLockFixture,
   releaseBddBuiltInModelKey,
 } from "../../../test-fixtures/chat-events";
-import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
+import {
+  setOrgModelPolicyProviderTypeFixture,
+  stageUnrepairedOrgModelPolicyFixture,
+} from "../../../test-fixtures/org-model-policies";
+import { withModelRoutingQueryReceipt } from "../../../test-fixtures/model-routing-query-receipt";
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
@@ -401,6 +408,65 @@ describe("CHAT-02: model-first provider policies", () => {
       };
     }
     expect(builtInObservation).toStrictEqual(expectedBuiltInObservation);
+  }, 90_000);
+
+  it("reuses request-scoped routing reads on an existing-thread send", async () => {
+    const { actor, agentId, providerId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-sonnet-5",
+    });
+
+    const captured = await withModelRoutingQueryReceipt(() => {
+      return sendChatRun(actor, {
+        agentId,
+        threadId: thread.id,
+        prompt: "reuse the routing receipt facts",
+      });
+    });
+    // The second plan read is final admission; the second switch read belongs
+    // to stable-context materialization. Routing owns only the single policy
+    // read and never loads personal account metadata on this organization path.
+    expect(captured.receipt).toStrictEqual({
+      planReads: 2,
+      policyReads: 1,
+      featureSwitchReads: 2,
+      personalMetadataReads: 0,
+      personalAccountReads: 0,
+    });
+    await cancelChatRun(actor, captured.result.runId);
+  }, 90_000);
+
+  it("routes from the authoritative policies seeded by the same send", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    await seedBuiltInModelKey(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
+    await stageUnrepairedOrgModelPolicyFixture({
+      orgId: requireOrgId(actor),
+      state: "unseeded",
+    });
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "route from the repaired policy snapshot",
+    });
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({
+      selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    });
+    await cancelChatRun(actor, run.runId);
   }, 90_000);
 
   it("preserves persisted external model plan-state outcomes", async () => {

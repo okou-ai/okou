@@ -52,12 +52,11 @@ import {
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 
-type OrgModelPolicyRow = Omit<
-  typeof orgModelPolicies.$inferSelect,
-  "modelProviderSurfaceId"
-> & {
-  readonly modelProviderSurfaceId: string | null;
-};
+export type OrgModelPolicyRow = Readonly<
+  Omit<typeof orgModelPolicies.$inferSelect, "modelProviderSurfaceId"> & {
+    readonly modelProviderSurfaceId: string | null;
+  }
+>;
 
 interface ProviderRouteInfo {
   readonly selectedModel: string | null;
@@ -253,13 +252,9 @@ function resolveOmittedModelProviderSurfaceIds(
   });
 }
 
-async function orgModelCapabilities(
-  db: Db,
-  orgId: string,
-): Promise<
-  Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok">
-> {
-  const capabilities = await loadOrgPlanCapabilities(db, orgId);
+function modelPolicyCapabilities(
+  capabilities: OrgPlanCapabilities | null,
+): Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok"> {
   if (capabilities?.status !== "active") {
     return {
       restrictedBuiltInModels: false,
@@ -270,6 +265,20 @@ async function orgModelCapabilities(
     restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     supportByok: capabilities.supportByok,
   };
+}
+
+async function orgModelCapabilities(
+  db: Db,
+  orgId: string,
+): Promise<
+  Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok">
+> {
+  return modelPolicyCapabilities(await loadOrgPlanCapabilities(db, orgId));
+}
+
+export interface EnsuredOrgModelPolicyFacts {
+  readonly orgPlanCapabilities: OrgPlanCapabilities | null;
+  readonly policies: readonly OrgModelPolicyRow[];
 }
 
 function modelAllowedForOrgPlan(
@@ -418,8 +427,9 @@ async function ensureOrgModelPoliciesLocked(
   db: Db,
   orgId: string,
   userId: string,
-): Promise<OrgModelPolicyRow[]> {
-  const capabilities = await orgModelCapabilities(db, orgId);
+): Promise<EnsuredOrgModelPolicyFacts> {
+  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
+  const capabilities = modelPolicyCapabilities(orgPlanCapabilities);
   const seedDefaultModel = getSeedDefaultModelForPlan(capabilities);
   const existing = await loadRows(db, orgId);
   if (existing.length > 0) {
@@ -427,14 +437,20 @@ async function ensureOrgModelPoliciesLocked(
       return policy.isDefault;
     });
     if (!shouldReplaceExistingDefaultForPlan(existingDefault, capabilities)) {
-      return sortRowsByCatalog(existing);
+      return {
+        orgPlanCapabilities,
+        policies: sortRowsByCatalog(existing),
+      };
     }
 
     if (!capabilities.supportByok || capabilities.restrictedBuiltInModels) {
       await setDefaultModelPolicy(db, orgId, userId, seedDefaultModel, {
         resetRouteToBuiltIn: !capabilities.supportByok,
       });
-      return sortRowsByCatalog(await loadRows(db, orgId));
+      return {
+        orgPlanCapabilities,
+        policies: sortRowsByCatalog(await loadRows(db, orgId)),
+      };
     }
 
     const fallbackDefault =
@@ -449,9 +465,15 @@ async function ensureOrgModelPoliciesLocked(
         parseSupportedModel(fallbackDefault.model) ?? seedDefaultModel,
         {},
       );
-      return sortRowsByCatalog(await loadRows(db, orgId));
+      return {
+        orgPlanCapabilities,
+        policies: sortRowsByCatalog(await loadRows(db, orgId)),
+      };
     }
-    return sortRowsByCatalog(existing);
+    return {
+      orgPlanCapabilities,
+      policies: sortRowsByCatalog(existing),
+    };
   }
 
   // A retired default can be the only persisted policy while the new API is
@@ -481,7 +503,10 @@ async function ensureOrgModelPoliciesLocked(
     });
 
   if (missing.length === 0) {
-    return sortRowsByCatalog(initialized);
+    return {
+      orgPlanCapabilities,
+      policies: sortRowsByCatalog(initialized),
+    };
   }
 
   await db
@@ -491,31 +516,54 @@ async function ensureOrgModelPoliciesLocked(
       target: [orgModelPolicies.orgId, orgModelPolicies.model],
     });
 
-  return sortRowsByCatalog(await loadRows(db, orgId));
+  return {
+    orgPlanCapabilities,
+    policies: sortRowsByCatalog(await loadRows(db, orgId)),
+  };
+}
+
+export async function loadOrgModelPolicyFacts(
+  db: Db,
+  orgId: string,
+): Promise<EnsuredOrgModelPolicyFacts> {
+  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
+  const policies = await loadRows(db, orgId);
+  return {
+    orgPlanCapabilities,
+    policies: sortRowsByCatalog(policies),
+  };
+}
+
+export async function ensureOrgModelPolicyFacts(
+  db: Db,
+  orgId: string,
+  userId: string,
+): Promise<EnsuredOrgModelPolicyFacts> {
+  const initial = await loadOrgModelPolicyFacts(db, orgId);
+  const capabilities = modelPolicyCapabilities(initial.orgPlanCapabilities);
+  if (
+    initial.policies.length > 0 &&
+    !shouldReplaceExistingDefaultForPlan(
+      initial.policies.find((policy) => {
+        return policy.isDefault;
+      }),
+      capabilities,
+    )
+  ) {
+    return initial;
+  }
+  return db.transaction(async (tx) => {
+    await lockPolicyWrites(tx, orgId);
+    return ensureOrgModelPoliciesLocked(tx, orgId, userId);
+  });
 }
 
 export async function ensureOrgModelPolicies(
   db: Db,
   orgId: string,
   userId: string,
-): Promise<OrgModelPolicyRow[]> {
-  const capabilities = await orgModelCapabilities(db, orgId);
-  const existing = await loadRows(db, orgId);
-  if (
-    existing.length > 0 &&
-    !shouldReplaceExistingDefaultForPlan(
-      existing.find((policy) => {
-        return policy.isDefault;
-      }),
-      capabilities,
-    )
-  ) {
-    return sortRowsByCatalog(existing);
-  }
-  return db.transaction(async (tx) => {
-    await lockPolicyWrites(tx, orgId);
-    return ensureOrgModelPoliciesLocked(tx, orgId, userId);
-  });
+): Promise<readonly OrgModelPolicyRow[]> {
+  return (await ensureOrgModelPolicyFacts(db, orgId, userId)).policies;
 }
 
 async function listOrgProviderRoutes(
