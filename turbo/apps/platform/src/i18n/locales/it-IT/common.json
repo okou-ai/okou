@@ -459,6 +459,7 @@
       "description": "Potrebbe essere privato o non più disponibile.",
       "help": "Chiedi alla persona che ha condiviso questo link di verificare l’accesso.",
       "signedInAs": "Accesso effettuato come {{email}}",
+      "signedInDescription": "Potrebbe non esistere o essere condiviso con un altro account o un’altra organizzazione.",
       "signIn": "Accedi",
       "signInFailed": "Impossibile aprire l’accesso. Riprova.",
       "switchAccount": "Cambia account",
@@ -520,7 +521,7 @@
       "description": "Sfoglia tutto ciò che hai creato qui.",
       "emptyDescription": "Gli artefatti appariranno qui quando saranno disponibili.",
       "emptyTitle": "Nessun artefatto trovato",
-      "error": "Impossibile caricare gli artefatti. Riprova più tardi.",
+      "error": "Impossibile caricare gli artefatti.",
       "filters": {
         "avatar": "Avatar",
         "avatarAria": "Mostra artefatti avatar",
@@ -539,7 +540,8 @@
         "websiteAria": "Mostra gli artefatti del sito web"
       },
       "kindIcon": "{{kind}} artefatto",
-      "loading": "Caricamento degli artefatti"
+      "loading": "Caricamento degli artefatti",
+      "retry": "Riprova"
     },
     "fileBadges": {
       "artwork": "ARTE",
@@ -621,6 +623,7 @@
       "onlyMeDescription": "Solo tu puoi visualizzare questo artefatto",
       "organization": "Organizzazione",
       "organizationDescription": "Chiunque in {{organization}} abbia il link",
+      "organizationDescriptionUnnamed": "Chiunque nella tua organizzazione abbia il link",
       "permissionsUpdated": "Accesso aggiornato",
       "publicAccess": "Accesso pubblico",
       "publicDescription": "Chiunque abbia il link può visualizzarlo",
@@ -665,7 +668,6 @@
       "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa il tuo file",
       "importFileHint": "Riutilizza il design del tuo file",
-      "importUnsupported": "Scegli un file {{formats}} per creare un modello.",
       "multiAccent": "Multiaccento",
       "needPro": "Richiede Pro",
       "nextSlide": "Anteprima della diapositiva successiva",
@@ -6611,7 +6613,6 @@
     "loadingAccess": "Caricamento degli accessi degli agenti…",
     "manage": "Gestisci VNC",
     "port": "Porta",
-    "refresh": "Aggiorna",
     "retry": "Riprova",
     "save": "Salva",
     "saveRecovery": {

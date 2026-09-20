@@ -104,6 +104,15 @@ async function fillHost(dialog: HTMLElement) {
   );
 }
 
+test("The VNC connector page omits the redundant refresh action", async () => {
+  mockSettings();
+  await page();
+  await screen.findByText(host.displayName);
+  expect(queryAction("button", "Refresh")).toBeNull();
+  expect(getAction("radio", "Hosts")).toHaveAttribute("aria-checked", "true");
+  expect(getAction("radio", "Credentials")).toBeInTheDocument();
+});
+
 test("An owner reuses a VNC credential without exposing its password", async () => {
   mockSettings({ connections: [] });
   const requests: unknown[] = [];

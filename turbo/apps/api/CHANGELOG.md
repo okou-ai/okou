@@ -8,6 +8,51 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.640.0](https://github.com/vm0-ai/okou/compare/api-v1.639.2...api-v1.640.0) (2026-09-20)
+
+
+### Features
+
+* **connectors:** gate monday mcp discovery ([#35525](https://github.com/vm0-ai/okou/issues/35525)) ([a7384c6](https://github.com/vm0-ai/okou/commit/a7384c6f34b5841a424676418e5f57178b21da06))
+
+
+### Performance Improvements
+
+* **api:** reuse chat startup snapshots ([#35371](https://github.com/vm0-ai/okou/issues/35371)) ([8396eda](https://github.com/vm0-ai/okou/commit/8396eda860c508e1cfa79e974390991035168ce1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.685.0
+    * @okouai/db bumped to 1.279.3
+
+## [1.639.2](https://github.com/vm0-ai/okou/compare/api-v1.639.1...api-v1.639.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* **api:** separate deferred demand expiry from queue position ([#35487](https://github.com/vm0-ai/okou/issues/35487)) ([0bb0320](https://github.com/vm0-ai/okou/commit/0bb032075f3213182a400f45d4ea97ef77c27346))
+* **vnc:** align remote access defaults ([#35448](https://github.com/vm0-ai/okou/issues/35448)) ([08b7e4c](https://github.com/vm0-ai/okou/commit/08b7e4c9d5a641c665616f9bbbde2b2efe50294e))
+
+
+### Refactoring
+
+* retire hosted publication version column dependencies ([#35321](https://github.com/vm0-ai/okou/issues/35321)) ([f205ec5](https://github.com/vm0-ai/okou/commit/f205ec54fc463f43b1106a3659e5d6a8c979cab8))
+
+
+### Performance Improvements
+
+* **api:** reuse request-scoped model routing facts ([#35373](https://github.com/vm0-ai/okou/issues/35373)) ([cc0d66f](https://github.com/vm0-ai/okou/commit/cc0d66f610a38e2bc2d3fbe74ed360768f9995ae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.279.2
+
 ## [1.639.1](https://github.com/vm0-ai/okou/compare/api-v1.639.0...api-v1.639.1) (2026-09-20)
 
 

@@ -459,6 +459,7 @@
       "description": "Puede que sea privado o que ya no esté disponible.",
       "help": "Pide a la persona que compartió este enlace que revise el acceso.",
       "signedInAs": "Sesión iniciada como {{email}}",
+      "signedInDescription": "Puede que no exista o que se haya compartido con otra cuenta u organización.",
       "signIn": "Iniciar sesión",
       "signInFailed": "No se pudo abrir el inicio de sesión. Inténtalo de nuevo.",
       "switchAccount": "Cambiar de cuenta",
@@ -520,7 +521,7 @@
       "description": "Explora todo lo que hayas creado aquí.",
       "emptyDescription": "Los artefactos aparecerán aquí cuando estén disponibles.",
       "emptyTitle": "No se han encontrado artefactos",
-      "error": "No se pudo cargar artefactos. Inténtalo de nuevo más tarde.",
+      "error": "No se pudo cargar artefactos.",
       "filters": {
         "avatar": "Avatares",
         "avatarAria": "Mostrar artefactos de avatar",
@@ -539,7 +540,8 @@
         "websiteAria": "Mostrar artefactos de sitios web"
       },
       "kindIcon": "{{kind}} artefacto",
-      "loading": "Cargando artefactos"
+      "loading": "Cargando artefactos",
+      "retry": "Reintentar"
     },
     "fileBadges": {
       "artwork": "ARTE",
@@ -621,6 +623,7 @@
       "onlyMeDescription": "Solo tú puedes ver este artefacto",
       "organization": "Organización",
       "organizationDescription": "Cualquier persona de {{organization}} con el enlace",
+      "organizationDescriptionUnnamed": "Cualquier persona de tu organización con el enlace",
       "permissionsUpdated": "Acceso actualizado",
       "publicAccess": "Acceso público",
       "publicDescription": "Cualquier persona con el enlace puede verlo",
@@ -665,7 +668,6 @@
       "importedSlides_other": "{{count}} diapositivas",
       "importFile": "Importa tu propio archivo",
       "importFileHint": "Reutiliza el diseño de tu archivo",
-      "importUnsupported": "Elige un archivo {{formats}} para crear una plantilla.",
       "multiAccent": "Multiacentos",
       "needPro": "Necesitas Pro",
       "nextSlide": "Vista previa de la diapositiva siguiente",
@@ -6611,7 +6613,6 @@
     "loadingAccess": "Cargando acceso de los agentes…",
     "manage": "Gestionar VNC",
     "port": "Puerto",
-    "refresh": "Actualizar",
     "retry": "Reintentar",
     "save": "Guardar",
     "saveRecovery": {

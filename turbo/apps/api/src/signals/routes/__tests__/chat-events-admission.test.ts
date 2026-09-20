@@ -3,17 +3,20 @@ import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readCanonicalChatEventStorageFixture } from "../../../test-fixtures/chat-events";
+import { overrideCanonicalAgentAuthorityFixture } from "../../../test-fixtures/canonical-agent-authority";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   createUnassociatedThreadBoundAgentRunFixture,
   createUnassociatedThreadBoundAgentRunsServiceFixture,
+  holdAgentRunPiExecutionSnapshotFixture,
 } from "../../../test-fixtures/thread-bound-run-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mailRoutes } from "../mail";
@@ -28,6 +31,7 @@ import {
   assistantMessages,
   userMessages,
   assistantEvent,
+  requireOrgId,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -226,6 +230,79 @@ describe("CHAT-02: web chat send and client ids", () => {
       "Only the private agent owner can run this agent",
     );
   }, 30_000);
+
+  it("rejects a request-scoped Agent observation after final ownership changes", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    const nextOwner = bdd.user({ orgId });
+    const gate = holdAgentRunPiExecutionSnapshotFixture({
+      userId: actor.userId,
+      orgId,
+      signal: context.signal,
+    });
+    onTestFinished(gate.release);
+    const clientThreadId = randomUUID();
+    const prompt = "reject stale request-scoped Agent ownership";
+
+    const sent = chat.requestSendEvent(
+      actor,
+      { agentId, clientThreadId, prompt },
+      [409],
+    );
+    await expect(gate.arrival).resolves.toMatchObject({
+      userId: actor.userId,
+      orgId,
+    });
+    // Agent ownership has no production mutation API. This test-only override
+    // models the otherwise-unconstructible transfer after request observation
+    // but before the transaction-authoritative compute admission recheck.
+    await overrideCanonicalAgentAuthorityFixture({
+      agentId,
+      override: {
+        owner: nextOwner.userId,
+        displayName: "Transferred request observation Agent",
+        visibility: "public",
+        updatedAt: nowDate(),
+      },
+      signal: context.signal,
+    });
+    gate.release();
+
+    const rejected = await sent;
+    expectApiError(rejected.body);
+    expect(rejected.body.error.message).toBe("Run admission is unavailable");
+    const runs = await api.listAgentRuns(actor, {
+      status: "queued,pending,running,completed,failed,timeout,cancelled",
+      limit: 100,
+    });
+    expect(
+      runs.runs.filter((run) => {
+        return run.prompt === prompt;
+      }),
+    ).toHaveLength(0);
+    // The rejection must claim no input. Queue-first keeps the user's message
+    // visible and unclaimed, like every other blocked admission, and releases
+    // the queue head through a revocation instead of stranding it.
+    const events = await chat.listThreadEvents(actor, clientThreadId);
+    const queued = userMessages(events.events).filter((event) => {
+      return chatEventDisplayText(event) === prompt;
+    });
+    expect(queued).toHaveLength(1);
+    const queuedEvent = queued[0];
+    expect(queuedEvent).toMatchObject({
+      eventType: "input.prompt",
+      content: null,
+    });
+    expect(queuedEvent?.runId).toBeUndefined();
+    expect(
+      events.events.filter((event) => {
+        return (
+          event.eventType === "control.revoke" &&
+          event.revokesEventId === queuedEvent?.id
+        );
+      }),
+    ).toHaveLength(1);
+  }, 90_000);
 
   it("passes request-scoped network body capture into the runner claim", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

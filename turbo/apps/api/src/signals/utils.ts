@@ -364,6 +364,27 @@ export async function joinAll(
   return await result;
 }
 
+/** Join every branch, then surface rejection by dependency order. */
+export function joinAllInOrder<T extends readonly unknown[] | []>(
+  operations: T,
+  signal?: AbortSignal,
+): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }>;
+export async function joinAllInOrder(
+  operations: readonly unknown[],
+  signal?: AbortSignal,
+): Promise<unknown[]> {
+  const results = await Promise.allSettled(operations);
+  const values: unknown[] = [];
+  for (const result of results) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+    values.push(result.value);
+  }
+  signal?.throwIfAborted();
+  return values;
+}
+
 interface PromiseResolvers<T> {
   readonly promise: Promise<T>;
   readonly resolve: (value: T | PromiseLike<T>) => void;

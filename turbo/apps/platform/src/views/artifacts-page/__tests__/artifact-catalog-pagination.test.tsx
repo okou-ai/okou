@@ -301,3 +301,31 @@ test("Scrolling can recover after a later artifact page fails", async () => {
     findArtifactAction("retried-page.txt"),
   ).resolves.toBeInTheDocument();
 });
+
+test("a failed first page recovers from its own message instead of a browser reload", async () => {
+  let attempts = 0;
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    attempts += 1;
+    if (attempts === 1) {
+      return respond(500, {
+        error: { code: "INTERNAL", message: "Catalog unavailable" },
+      });
+    }
+    return respond(200, {
+      artifacts: [artifact({ title: "recovered.txt" })],
+      nextCursor: null,
+    });
+  });
+
+  await setupArtifactCatalogPage(context);
+
+  await expect(
+    screen.findByText("Could not load artifacts."),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Try again"));
+
+  await expect(screen.findByText("recovered.txt")).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByText("Could not load artifacts."),
+  ).not.toBeInTheDocument();
+});

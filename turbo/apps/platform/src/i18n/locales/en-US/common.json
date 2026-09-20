@@ -445,6 +445,7 @@
       "description": "It may be private or no longer available.",
       "help": "Ask the person who shared this link to check access.",
       "signedInAs": "Signed in as {{email}}",
+      "signedInDescription": "It may not exist, or it may be shared with a different account or organization.",
       "signIn": "Sign in",
       "signInFailed": "Could not open sign-in. Please try again.",
       "switchAccount": "Switch account",
@@ -505,7 +506,7 @@
       "description": "Browse everything you have created here.",
       "emptyDescription": "Artifacts will appear here when they are available.",
       "emptyTitle": "No artifacts found",
-      "error": "Could not load artifacts. Try again later.",
+      "error": "Could not load artifacts.",
       "filters": {
         "avatar": "Avatars",
         "avatarAria": "Show avatar artifacts",
@@ -524,7 +525,8 @@
         "websiteAria": "Show website artifacts"
       },
       "kindIcon": "{{kind}} artifact",
-      "loading": "Loading artifacts"
+      "loading": "Loading artifacts",
+      "retry": "Try again"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -603,6 +605,7 @@
       "onlyMeDescription": "Only you can view this artifact",
       "organization": "Organization",
       "organizationDescription": "Anyone in {{organization}} with the link",
+      "organizationDescriptionUnnamed": "Anyone in your organization with the link",
       "permissionsUpdated": "Access updated",
       "publicAccess": "Public access",
       "publicDescription": "Anyone with the link can view",
@@ -646,7 +649,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import your own file",
       "importFileHint": "Reuse your file's design",
-      "importUnsupported": "Choose a {{formats}} file to make a template.",
       "multiAccent": "Multi-accent",
       "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
@@ -6531,7 +6533,6 @@
     "loadingAccess": "Loading Agent access…",
     "manage": "Manage VNC",
     "port": "Port",
-    "refresh": "Refresh",
     "retry": "Retry",
     "save": "Save",
     "saveRecovery": {

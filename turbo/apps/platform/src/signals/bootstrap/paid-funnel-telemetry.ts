@@ -1,9 +1,6 @@
-import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
-// Paid-onboarding product analytics. Marketing owns advertising delivery.
-import type { AdAttributionMetadata } from "@okouai/api-contracts/contracts/acquisition-attribution";
+// Paid-onboarding product analytics. Marketing owns attribution and advertising delivery.
 import { command } from "ccstate";
 import { capturePaidOnboardingEvent } from "../../lib/posthog.ts";
-import { readStoredAdAttributionMetadata$ } from "./ad-attribution.ts";
 import type { OnboardingRouteStep } from "../onboarding/onboarding-state.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 
@@ -23,32 +20,18 @@ const ONBOARDING_STEP_ORDER: readonly OnboardingRouteStep[] = [
 
 type TelemetryProperties = Record<string, string | number | boolean>;
 
-function attributionProperties(
-  attribution: AdAttributionMetadata | undefined,
-): TelemetryProperties {
-  const properties: TelemetryProperties = {
+function telemetryProperties(): TelemetryProperties {
+  return {
     flow: "paid_onboarding",
     route_path: window.location.pathname,
   };
-  if (!attribution) {
-    return properties;
-  }
-
-  for (const [key, value] of Object.entries(
-    compatibleGoogleAdsAttribution(attribution),
-  )) {
-    if (typeof value === "string" && value) {
-      properties[key] = value;
-    }
-  }
-  return properties;
 }
 
 export const capturePaidOnboardingStepViewed$ = command(
-  ({ set }, step: OnboardingRouteStep): void => {
+  (_context, step: OnboardingRouteStep): void => {
     const stepIndex = ONBOARDING_STEP_ORDER.indexOf(step);
     capturePaidOnboardingEvent("StepViewed", {
-      ...attributionProperties(set(readStoredAdAttributionMetadata$)),
+      ...telemetryProperties(),
       step_key: step,
       step_index: stepIndex,
       step_count: ONBOARDING_STEP_ORDER.length,
@@ -57,18 +40,18 @@ export const capturePaidOnboardingStepViewed$ = command(
 );
 
 export const capturePaidOnboardingCheckoutCreated$ = command(
-  ({ set }, checkoutSource: string): void => {
+  (_context, checkoutSource: string): void => {
     capturePaidOnboardingEvent("CheckoutCreated", {
-      ...attributionProperties(set(readStoredAdAttributionMetadata$)),
+      ...telemetryProperties(),
       checkout_source: checkoutSource,
     });
   },
 );
 
 export const capturePaidOnboardingRoleConfirmed$ = command(
-  ({ set }, role: string): void => {
+  (_context, role: string): void => {
     capturePaidOnboardingEvent("RoleConfirmed", {
-      ...attributionProperties(set(readStoredAdAttributionMetadata$)),
+      ...telemetryProperties(),
       role,
     });
   },
@@ -78,16 +61,16 @@ export const capturePaidOnboardingRedirectToStripe$ = command(
   ({ set }, checkoutSource: "onboarding_video" | "paywall"): void => {
     set(sendEvent$, "checkout-start");
     capturePaidOnboardingEvent("RedirectToStripe", {
-      ...attributionProperties(set(readStoredAdAttributionMetadata$)),
+      ...telemetryProperties(),
       checkout_source: checkoutSource,
     });
   },
 );
 
 export const capturePaidOnboardingAppHandoff$ = command(
-  ({ set }, prompt: string): void => {
+  (_context, prompt: string): void => {
     capturePaidOnboardingEvent("AppHandoff", {
-      ...attributionProperties(set(readStoredAdAttributionMetadata$)),
+      ...telemetryProperties(),
       destination: "app",
       prompt_present: prompt.trim().length > 0,
       prompt_length: prompt.length,

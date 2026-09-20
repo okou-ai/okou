@@ -24,6 +24,7 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "figma\0oauth": FeatureSwitchKey.FigmaConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
+  "monday-mcp\0automatic": FeatureSwitchKey.MondayConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,
   "netsuite\0api-token": FeatureSwitchKey.NetSuiteConnector,
   "paypal\0api-token": FeatureSwitchKey.PayPalConnector,

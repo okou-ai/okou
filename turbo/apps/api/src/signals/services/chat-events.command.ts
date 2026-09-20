@@ -36,6 +36,7 @@ import {
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -62,6 +63,8 @@ import type { AuthContext } from "../../types/auth";
 import {
   createQueueFirstAgentRun$,
   type AgentRunPreCreateSource,
+  type AgentRunRequestAgent,
+  type AuthorizedAgentRunRequestObservation,
 } from "./agent-runs-create.service";
 import { isQueueFirstRunClaimLost } from "./agent-run-create.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
@@ -124,8 +127,8 @@ import { appendQueuedRunAssistantMarker } from "./chat-queue-marker.service";
 import {
   discardUnclaimedUserMessage,
   loadNextUnclaimedQueuedUserMessage,
-  loadNextUnclaimedQueuedUserMessageId,
   lockUserMessageQueueThread,
+  type QueuedUserMessage,
 } from "./chat-queued-event.service";
 import {
   appendChatThreadEvent,
@@ -232,12 +235,22 @@ interface InterruptSendBody {
   readonly clientEventId?: string;
 }
 
-interface AgentForChatSend {
-  readonly id: string;
-  readonly orgId: string;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-}
+type AgentForChatSend = Pick<
+  AgentRunRequestAgent,
+  "id" | "orgId" | "owner" | "visibility"
+> &
+  Partial<
+    Pick<
+      AgentRunRequestAgent,
+      | "name"
+      | "defaultAgentId"
+      | "displayName"
+      | "description"
+      | "sound"
+      | "modelProviderId"
+      | "selectedModel"
+    >
+  >;
 
 type ThreadModelPin = ModelFirstPin;
 
@@ -312,6 +325,7 @@ interface PreparedNormalSend {
   readonly initialThinkingEnabled: boolean;
   readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
   readonly runConfiguration: ResolvedRunConfiguration;
+  readonly featureSwitchContext: FeatureSwitchContext;
   readonly clientEventPrechecked: boolean;
   readonly preflightClientEventConflict:
     | ReturnType<typeof duplicateClientEventIdResponse>
@@ -938,11 +952,19 @@ async function loadAgentForChatSend(
   const [agent] = await db
     .select({
       id: agents.id,
+      name: agents.name,
       orgId: agents.orgId,
+      defaultAgentId: orgMetadata.defaultAgentId,
       owner: agents.owner,
       visibility: agents.visibility,
+      displayName: agents.displayName,
+      description: agents.description,
+      sound: agents.sound,
+      modelProviderId: agents.modelProviderId,
+      selectedModel: agents.selectedModel,
     })
     .from(agents)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .where(eq(agents.id, agentId))
     .limit(1);
   return agent;
@@ -2086,6 +2108,33 @@ async function resolveLockedMcpSubmission(
   return undefined;
 }
 
+/**
+ * Clears the draft and re-proves, inside the event transaction, the same
+ * user/organization scope the request already authorized. The predicates must
+ * not narrow which threads the caller could already enqueue into; the thread's
+ * Agent is fixed at creation, so it is not re-checked here.
+ */
+async function authorizeChatThreadForEnqueue(
+  tx: ChatThreadEventTransaction,
+  params: AppendUnassociatedUserMessageParams,
+): Promise<boolean> {
+  const [thread] = await tx
+    .update(chatThreads)
+    .set({
+      draftUserMessage: null,
+      draftAttachments: null,
+    })
+    .where(
+      and(
+        eq(chatThreads.id, params.threadId),
+        eq(chatThreads.userId, params.userId),
+        chatThreadOrganizationCondition(tx, params.orgId),
+      ),
+    )
+    .returning({ id: chatThreads.id });
+  return thread !== undefined;
+}
+
 async function appendUnassociatedUserMessageTransaction(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
@@ -2094,25 +2143,19 @@ async function appendUnassociatedUserMessageTransaction(
   if (existing) {
     return existing;
   }
-  await measureApiDispatchTiming(
+  const authorizedThread = await measureApiDispatchTiming(
     params.timing,
     "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_clear_draft",
     "nested",
     () => {
-      return tx
-        .update(chatThreads)
-        .set({
-          draftUserMessage: null,
-          draftAttachments: null,
-        })
-        .where(
-          and(
-            eq(chatThreads.id, params.threadId),
-            eq(chatThreads.userId, params.userId),
-          ),
-        );
+      return authorizeChatThreadForEnqueue(tx, params);
     },
   );
+  if (!authorizedThread) {
+    // `conflict` is the duplicate-clientEventId answer. The request already
+    // authorized this thread, so losing it here is a broken invariant.
+    throw new Error("Authorized chat thread changed before enqueue");
+  }
 
   const explicitId = params.clientEventId ?? undefined;
   assertOfficialSourceClaim(params);
@@ -2196,6 +2239,10 @@ async function appendUnassociatedUserMessageTransaction(
             params.threadId,
             inserted.createdAt,
             params.chatThreadSortEventId,
+            {
+              userId: params.userId,
+              orgId: params.orgId,
+            },
           );
         },
       );
@@ -3189,6 +3236,7 @@ const prepareNormalSend$ = command(
       initialThinkingEnabled: initialThinkingForSend(args, featureSwitches),
       attachFileMetadata,
       runConfiguration,
+      featureSwitchContext: featureSwitches.featureSwitchContext,
       clientEventPrechecked: preflight.prechecked,
       preflightClientEventConflict: prior,
       triggerSource: normalSendTriggerSource(args.auth),
@@ -3718,6 +3766,34 @@ function requiredOfficialWorkflowRunArgs(
     : { requiredOfficialWorkflowIds: workflowIds };
 }
 
+function isFullyLoadedAgentRunRequest(
+  agent: AgentForChatSend,
+): agent is AgentRunRequestAgent {
+  return (
+    agent.name !== undefined &&
+    agent.defaultAgentId !== undefined &&
+    agent.displayName !== undefined &&
+    agent.description !== undefined &&
+    agent.sound !== undefined &&
+    agent.modelProviderId !== undefined &&
+    agent.selectedModel !== undefined
+  );
+}
+
+function authorizedAgentRunRequestObservation(params: {
+  readonly args: NormalSendArgs;
+  readonly prepared: PreparedNormalSend;
+}): AuthorizedAgentRunRequestObservation | undefined {
+  return isFullyLoadedAgentRunRequest(params.prepared.agent)
+    ? {
+        userId: params.args.userId,
+        orgId: params.args.orgId,
+        agent: params.prepared.agent,
+        featureSwitchContext: params.prepared.featureSwitchContext,
+      }
+    : undefined;
+}
+
 function buildCreateAgentRunArgs(params: {
   readonly args: NormalSendArgs;
   readonly prepared: PreparedNormalSend;
@@ -3744,9 +3820,13 @@ function buildCreateAgentRunArgs(params: {
     triggerSource: prepared.triggerSource,
     agentRunSource: prepared.agentRunSource,
   };
+  const authorizedRequestObservation =
+    authorizedAgentRunRequestObservation(params);
   return {
     auth: args.auth,
     apiStartTime: args.apiStartTime,
+    preloadedFeatureSwitchContext: prepared.featureSwitchContext,
+    ...(authorizedRequestObservation ? { authorizedRequestObservation } : {}),
     chatThreadId: prepared.thread.threadId,
     computerUseHostId: prepared.computerUseHostGrant?.hostId,
     modelProviderId: modelPin.modelProviderId ?? undefined,
@@ -3846,6 +3926,20 @@ async function resolveQueueFirstEventAfterLostClaim(params: {
   );
 }
 
+function resolveNormalQueueFirstLostClaim(
+  args: NormalSendArgs,
+  prepared: PreparedNormalSend,
+  eventId: string,
+) {
+  return resolveQueueFirstEventAfterLostClaim({
+    db: prepared.db,
+    orgId: args.orgId,
+    threadId: prepared.thread.threadId,
+    userId: args.userId,
+    eventId,
+  });
+}
+
 function createdNormalChatRunResponse(params: {
   readonly runId: string;
   readonly threadId: string;
@@ -3897,23 +3991,55 @@ async function buildNormalChatRunArgs(
   prepared: PreparedNormalSend,
   signal: AbortSignal,
 ) {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    prepared.db,
-    args.orgId,
-    args.userId,
-  );
-  signal.throwIfAborted();
-
   const createRunArgs = await buildTimedCreateAgentRunArgs({
     args,
     prepared,
     realAgentInPreviewEnabled: isFeatureEnabled(
       FeatureSwitchKey.RealAgentInPreview,
-      featureSwitchContext,
+      prepared.featureSwitchContext,
     ),
   });
   signal.throwIfAborted();
   return createRunArgs;
+}
+
+function optimisticQueuedMessage(
+  db: Db,
+  threadId: string,
+  preloaded: QueuedUserMessage | undefined,
+): Promise<QueuedUserMessage | null> {
+  return preloaded
+    ? Promise.resolve(preloaded)
+    : loadNextUnclaimedQueuedUserMessage(db, threadId);
+}
+
+async function rejectUnavailableQueuedMessage(
+  params: {
+    readonly args: NormalSendArgs;
+    readonly prepared: PreparedNormalSend;
+    readonly autonomyBudget: Exclude<
+      QueuedUserMessage["autonomyBudget"],
+      { readonly kind: "ok" }
+    >;
+    readonly queueFirstEventId: string;
+  },
+  signal: AbortSignal,
+) {
+  const discarded = await discardUnclaimedUserMessage(params.prepared.db, {
+    threadId: params.prepared.thread.threadId,
+    eventId: params.queueFirstEventId,
+  });
+  signal.throwIfAborted();
+  if (!discarded) {
+    return await resolveNormalQueueFirstLostClaim(
+      params.args,
+      params.prepared,
+      params.queueFirstEventId,
+    );
+  }
+  return params.autonomyBudget.kind === "exhausted"
+    ? autonomyBudgetExhausted()
+    : badRequestMessage(params.autonomyBudget.message);
 }
 
 const createNormalChatRun$ = command(
@@ -3924,6 +4050,8 @@ const createNormalChatRun$ = command(
       readonly prepared: PreparedNormalSend;
       /** Queue-first sends replace this queued message at dispatch time. */
       readonly queueFirstEventId: string;
+      /** Optimistic preparation only; final queue authority remains locked. */
+      readonly preloadedQueuedMessage?: QueuedUserMessage;
     },
     signal: AbortSignal,
   ) => {
@@ -3947,29 +4075,29 @@ const createNormalChatRun$ = command(
       });
     }
 
-    const queuedMessage = await loadNextUnclaimedQueuedUserMessage(
+    const queuedMessage = await optimisticQueuedMessage(
       prepared.db,
       prepared.thread.threadId,
+      params.preloadedQueuedMessage,
     );
     signal.throwIfAborted();
     if (!queuedMessage || queuedMessage.id !== queueFirstEventId) {
-      return await resolveQueueFirstEventAfterLostClaim({
-        db: prepared.db,
-        orgId: args.orgId,
-        threadId: prepared.thread.threadId,
-        userId: args.userId,
-        eventId: queueFirstEventId,
-      });
+      return await resolveNormalQueueFirstLostClaim(
+        args,
+        prepared,
+        queueFirstEventId,
+      );
     }
     if (queuedMessage.autonomyBudget.kind !== "ok") {
-      await discardUnclaimedUserMessage(prepared.db, {
-        threadId: prepared.thread.threadId,
-        eventId: queueFirstEventId,
-      });
-      signal.throwIfAborted();
-      return queuedMessage.autonomyBudget.kind === "exhausted"
-        ? autonomyBudgetExhausted()
-        : badRequestMessage(queuedMessage.autonomyBudget.message);
+      return await rejectUnavailableQueuedMessage(
+        {
+          args,
+          prepared,
+          autonomyBudget: queuedMessage.autonomyBudget,
+          queueFirstEventId,
+        },
+        signal,
+      );
     }
     const createRunArgs = await buildNormalChatRunArgs(args, prepared, signal);
 
@@ -3984,7 +4112,6 @@ const createNormalChatRun$ = command(
       createQueueFirstAgentRun$,
       {
         ...createRunArgs,
-        apiStartTime: args.apiStartTime,
         agentRunMetadata: {
           autonomyBudget: queuedMessage.autonomyBudget.autonomyBudget,
         },
@@ -3999,13 +4126,11 @@ const createNormalChatRun$ = command(
     );
     signal.throwIfAborted();
     if (isQueueFirstRunClaimLost(runResult)) {
-      return await resolveQueueFirstEventAfterLostClaim({
-        db: prepared.db,
-        orgId: args.orgId,
-        threadId: prepared.thread.threadId,
-        userId: args.userId,
-        eventId: queueFirstEventId,
-      });
+      return await resolveNormalQueueFirstLostClaim(
+        args,
+        prepared,
+        queueFirstEventId,
+      );
     }
     if (runResult.status !== 201) {
       return runResult;
@@ -4186,19 +4311,25 @@ const sendQueueFirstNormalEvent$ = command(
       args.timing,
       "api_dispatch_pre_create_agent_web_chat_queue_first_check_dispatchable",
       "nested",
-      async (): Promise<"self" | "wait" | "drain"> => {
+      async (): Promise<
+        | { readonly kind: "self"; readonly queuedMessage: QueuedUserMessage }
+        | { readonly kind: "wait" }
+        | { readonly kind: "drain" }
+      > => {
         if (await chatThreadAdmissionBlocked(prepared.db, { threadId })) {
-          return "wait";
+          return { kind: "wait" };
         }
-        const headEventId = await loadNextUnclaimedQueuedUserMessageId(
+        const queuedMessage = await loadNextUnclaimedQueuedUserMessage(
           prepared.db,
           threadId,
         );
-        return headEventId === queuedEventId ? "self" : "drain";
+        return queuedMessage?.id === queuedEventId
+          ? { kind: "self", queuedMessage }
+          : { kind: "drain" };
       },
     );
     signal.throwIfAborted();
-    if (dispatch === "wait") {
+    if (dispatch.kind === "wait") {
       await publishChatEventCreated({
         userId: args.userId,
         orgId: args.orgId,
@@ -4216,7 +4347,7 @@ const sendQueueFirstNormalEvent$ = command(
       signal.throwIfAborted();
       return response;
     }
-    if (dispatch === "drain") {
+    if (dispatch.kind === "drain") {
       // The thread is idle but an older unclaimed message holds the queue
       // head (e.g. left behind by a cancelled run). Dispatch the head so the
       // thread keeps draining; this message stays queued behind it (#21392).
@@ -4240,7 +4371,12 @@ const sendQueueFirstNormalEvent$ = command(
 
     const result = await set(
       createNormalChatRun$,
-      { args, prepared, queueFirstEventId: queuedEventId },
+      {
+        args,
+        prepared,
+        queueFirstEventId: queuedEventId,
+        preloadedQueuedMessage: dispatch.queuedMessage,
+      },
       signal,
     );
     signal.throwIfAborted();

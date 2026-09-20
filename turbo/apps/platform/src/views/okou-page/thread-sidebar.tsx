@@ -135,6 +135,7 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
   const close = useSet(sidebar.close$);
   const openCatalogArtifact = useSet(sidebar.openCatalogArtifact$);
   const loadMore = useSet(sidebar.artifactCatalog.loadMore$);
+  const reloadCatalog = useSet(sidebar.artifactCatalog.reload$);
   const pageSignal = useGet(pageSignal$);
 
   // useLastLoadable keeps the previously resolved pages rendered while the
@@ -186,7 +187,7 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
       >
         {artifacts === null ? (
           catalogLoadable.state === "hasError" ? (
-            <ArtifactCatalogError />
+            <ArtifactCatalogError onRetry={reloadCatalog} />
           ) : (
             <ArtifactCatalogSkeleton />
           )

@@ -459,6 +459,7 @@
       "description": "Ele pode ser privado ou não estar mais disponível.",
       "help": "Peça à pessoa que compartilhou este link para verificar o acesso.",
       "signedInAs": "Conectado como {{email}}",
+      "signedInDescription": "Ele pode não existir ou ter sido compartilhado com outra conta ou organização.",
       "signIn": "Entrar",
       "signInFailed": "Não foi possível abrir o login. Tente novamente.",
       "switchAccount": "Trocar de conta",
@@ -520,7 +521,7 @@
       "description": "Navegue por tudo o que você criou aqui.",
       "emptyDescription": "Os artefatos aparecerão aqui quando estiverem disponíveis.",
       "emptyTitle": "Nenhum artefato encontrado",
-      "error": "Não foi possível carregar os artefatos. Tente novamente mais tarde.",
+      "error": "Não foi possível carregar os artefatos.",
       "filters": {
         "avatar": "Avatares",
         "avatarAria": "Mostrar artefatos de avatar",
@@ -539,7 +540,8 @@
         "websiteAria": "Mostrar artefatos de site"
       },
       "kindIcon": "Artefato do tipo {{kind}}",
-      "loading": "Carregando artefatos"
+      "loading": "Carregando artefatos",
+      "retry": "Tentar novamente"
     },
     "fileBadges": {
       "artwork": "ART",
@@ -621,6 +623,7 @@
       "onlyMeDescription": "Somente você pode ver este artefato",
       "organization": "Organização",
       "organizationDescription": "Qualquer pessoa de {{organization}} com o link",
+      "organizationDescriptionUnnamed": "Qualquer pessoa da sua organização com o link",
       "permissionsUpdated": "Acesso atualizado",
       "publicAccess": "Acesso público",
       "publicDescription": "Qualquer pessoa com o link pode ver",
@@ -665,7 +668,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Importe seu próprio arquivo",
       "importFileHint": "Reutilize o design do seu arquivo",
-      "importUnsupported": "Escolha um arquivo {{formats}} para criar um modelo.",
       "multiAccent": "Várias cores de destaque",
       "needPro": "Requer Pro",
       "nextSlide": "Visualizar próximo slide",
@@ -6611,7 +6613,6 @@
     "loadingAccess": "Carregando acesso dos agentes…",
     "manage": "Gerenciar VNC",
     "port": "Porta",
-    "refresh": "Atualizar",
     "retry": "Tentar novamente",
     "save": "Salvar",
     "saveRecovery": {

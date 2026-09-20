@@ -1026,26 +1026,39 @@ async def test_platform_mcp_rejects_broad_platform_firewall_base(
         pytest.param("/other", id="unlisted-platform-path"),
     ],
 )
+@pytest.mark.parametrize(
+    "hook_lifecycle",
+    [
+        pytest.param("request-only", id="request-only"),
+        pytest.param("requestheaders-to-request", id="requestheaders-to-request"),
+    ],
+)
 async def test_non_allowlisted_platform_paths_auto_allow_before_firewall_auth(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, path
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    path,
+    hook_lifecycle,
 ):
     reg_path = _write_registry(
         tmp_path,
         client_ip="10.200.0.1",
         sandbox_info=_single_firewall_sandbox(
             tmp_path,
-            run_id="run-platform-api",
-            sandbox_marker="tok-platform",
-            firewall_name="platform-api",
+            run_id="run-excluded-platform-path",
+            sandbox_marker="tok-excluded-platform-path",
+            firewall_name="excluded-platform-path",
             custom_connector_id=_PLATFORM_MCP_CUSTOM_CONNECTOR_ID,
             api_entry={
-                "base": "https://api.okou.ai",
+                "base": f"https://api.okou.ai{path}",
                 "auth": {
                     "headers": {
-                        "Authorization": "Bearer ${{ secrets.PLATFORM_API_TOKEN }}",
+                        "Authorization": "Bearer ${{ secrets.EXCLUDED_PLATFORM_PATH_TOKEN }}",
                     }
                 },
-                "permissions": [{"name": "runs", "rules": ["GET /api/runs"]}],
+                "permissions": [{"name": "exact-resource", "rules": ["ANY /"]}],
             },
             network_policy=None,
         ),
@@ -1064,6 +1077,11 @@ async def test_non_allowlisted_platform_paths_auto_allow_before_firewall_auth(
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
         fake_firewall_headers() as auth_fetch,
     ):
+        if hook_lifecycle == "requestheaders-to-request":
+            assert mitm_addon.requestheaders(flow) is None
+            auth_fetch.assert_not_called()
+        else:
+            assert hook_lifecycle == "request-only"
         await mitm_addon.request(flow)
 
     auth_fetch.assert_not_called()

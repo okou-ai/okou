@@ -101,6 +101,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
+  [FeatureSwitchKey.MondayConnector]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable the Monday.com MCP connector",
+    enabled: false,
+  },
   [FeatureSwitchKey.PlaudConnector]: {
     maintainer: "liangyou@okou.ai",
     description: "Enable the Plaud MCP connector",
@@ -399,6 +404,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Allow personal Codex and Claude Code subscriptions to store and manually switch between multiple accounts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.AgentPhoneEntry]: {
+    maintainer: "linghan@okou.ai",
+    description: "Show the AgentPhone entry point on the Works page.",
+    enabled: false,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",

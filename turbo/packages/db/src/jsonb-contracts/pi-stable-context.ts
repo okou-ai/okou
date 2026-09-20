@@ -58,6 +58,7 @@ export interface PiStableContextPromptInputs {
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly presentationConvertEnabled: boolean;
   readonly customConnectorMcpEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;

@@ -72,9 +72,11 @@ async function createAgentReadFixture(
     chatThreadsContract,
   );
   const threadIds: string[] = [];
-  // Bound same-actor requests and drain them before propagating errors or
-  // changing identities, without flooding the pool or event sequence row lock.
-  const batchSize = 4;
+  // Keep one batch below the ten-connection API pool and drain it before
+  // propagating errors or changing identities. Eight leaves capacity for the
+  // fixture's other database work while keeping high-cardinality cases within
+  // the ordinary test budget under shared-runner load.
+  const batchSize = 8;
   for (let start = 0; start < threadCount; start += batchSize) {
     signal.throwIfAborted();
     const batch = await Promise.allSettled(

@@ -55,6 +55,83 @@ class _BlockingConnectSocket(FakeSocket):
         self._release.set()
 
 
+class _SocketBackedForwardSocket(FakeSocket):
+    def __init__(
+        self,
+        client_socket,
+        connection_closed: threading.Event,
+    ) -> None:
+        super().__init__(b"")
+        self._client_socket = client_socket
+        self._connection_closed = connection_closed
+
+    def settimeout(self, timeout: float | None) -> None:
+        super().settimeout(timeout)
+        self._client_socket.settimeout(timeout)
+
+    def sendall(self, data: bytes) -> None:
+        self.sent.extend(data)
+        self._client_socket.sendall(data)
+
+    def makefile(self, *args, **kwargs):
+        return self._client_socket.makefile(*args, **kwargs)
+
+    def shutdown(self, how: int) -> None:
+        super().shutdown(how)
+        self._client_socket.shutdown(how)
+
+    def close(self) -> None:
+        super().close()
+        self._client_socket.close()
+        self._connection_closed.set()
+
+
+class _TricklingResponseServer:
+    def __init__(self, response_head: bytes) -> None:
+        self.client_socket, self.server_socket = forwarder.socket.socketpair()
+        self.connection_closed = threading.Event()
+        self.response_started = threading.Event()
+        self.response_body = bytes(range(256))
+        self.sent_body_bytes: list[bytes] = []
+        self.socket = _SocketBackedForwardSocket(
+            self.client_socket,
+            self.connection_closed,
+        )
+        self._response_head = response_head
+        self.thread = threading.Thread(
+            target=self._serve,
+            name="auth-base-trickle-server",
+        )
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def _serve(self) -> None:
+        try:
+            request = bytearray()
+            while b"\r\n\r\n" not in request:
+                chunk = self.server_socket.recv(4096)
+                if not chunk:
+                    return
+                request.extend(chunk)
+            self.server_socket.sendall(self._response_head)
+            for byte in self.response_body:
+                self.server_socket.sendall(bytes((byte,)))
+                self.sent_body_bytes.append(bytes((byte,)))
+                self.response_started.set()
+                time.sleep(0.01)
+        except OSError:
+            # Deadline or shutdown intentionally closes the peer while it is sending.
+            pass
+        finally:
+            self.server_socket.close()
+
+    async def close(self) -> None:
+        self.client_socket.close()
+        self.server_socket.close()
+        await asyncio.to_thread(self.thread.join, 2)
+
+
 class _RecordingSocket(forwarder.socket.socket):
     def __init__(self) -> None:
         super().__init__()
@@ -511,83 +588,96 @@ class TestForwardRequestAsyncWrapper:
         assert socket.shutdown_calls == [forwarder.socket.SHUT_RDWR]
         assert socket.closed
 
-    async def test_absolute_deadline_stops_trickling_socket_response(self):
-        client_socket, server_socket = forwarder.socket.socketpair()
-        sent_body_bytes: list[bytes] = []
-        response_body = bytes(range(256))
-
-        class SocketBackedForwardSocket(FakeSocket):
-            def settimeout(self, timeout: float | None) -> None:
-                super().settimeout(timeout)
-                client_socket.settimeout(timeout)
-
-            def sendall(self, data: bytes) -> None:
-                self.sent.extend(data)
-                client_socket.sendall(data)
-
-            def makefile(self, *args, **kwargs):
-                return client_socket.makefile(*args, **kwargs)
-
-            def shutdown(self, how: int) -> None:
-                super().shutdown(how)
-                client_socket.shutdown(how)
-
-            def close(self) -> None:
-                super().close()
-                client_socket.close()
-
-        def serve_trickling_response() -> None:
-            try:
-                request = bytearray()
-                while b"\r\n\r\n" not in request:
-                    chunk = server_socket.recv(4096)
-                    if not chunk:
-                        return
-                    request.extend(chunk)
-                server_socket.sendall(
-                    b"HTTP/1.1 200 OK\r\n"
-                    + f"Content-Length: {len(response_body)}\r\n\r\n".encode()
-                )
-                for byte in response_body:
-                    server_socket.sendall(bytes((byte,)))
-                    sent_body_bytes.append(bytes((byte,)))
-                    time.sleep(0.01)
-            except OSError:
-                # Deadline expiry intentionally closes the peer while this thread is sending.
-                pass
-            finally:
-                server_socket.close()
-
-        server_thread = threading.Thread(
-            target=serve_trickling_response,
-            name="auth-base-trickle-server",
-        )
-        socket = SocketBackedForwardSocket(b"")
-        server_thread.start()
+    @pytest.mark.parametrize(
+        "response_head",
+        [
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 256\r\n\r\n",
+            b"HTTP/1.0 200 OK\r\nContent-Length: 256\r\n\r\n",
+            b"HTTP/1.1 200 OK\r\n\r\n",
+        ],
+        ids=("connection-close", "http-1.0", "eof-delimited"),
+    )
+    async def test_absolute_deadline_stops_detached_trickling_response(
+        self,
+        response_head: bytes,
+    ):
+        server = _TricklingResponseServer(response_head)
+        sockets = iter((server.socket, FakeSocket(http_response())))
+        server.start()
         try:
             with (
+                patch.object(forwarder, "MAX_CONCURRENT_AUTH_BASE_FORWARDS", 1),
                 patch.object(
                     forwarder,
                     "AUTH_BASE_FORWARD_DEADLINE_SECONDS",
-                    0.5,
+                    0.2,
                 ),
-                fake_forwarder_upstream(socket_factory=lambda: socket),
-                pytest.raises(forwarder.AuthBaseForwardingDeadlineExceededError),
+                fake_forwarder_upstream(socket_factory=lambda: next(sockets)),
             ):
-                await forwarder.forward_request(
-                    "https://example.com",
-                    "GET",
-                    [],
-                    None,
+                with pytest.raises(forwarder.AuthBaseForwardingDeadlineExceededError):
+                    await asyncio.wait_for(
+                        forwarder.forward_request(
+                            "https://example.com",
+                            "GET",
+                            [],
+                            None,
+                        ),
+                        timeout=1,
+                    )
+
+                assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
+                status, body, _headers = await asyncio.wait_for(
+                    forwarder.forward_request(
+                        "https://example.com",
+                        "GET",
+                        [],
+                        None,
+                    ),
+                    timeout=1,
                 )
         finally:
-            client_socket.close()
-            server_socket.close()
-            await asyncio.to_thread(server_thread.join, 2)
+            await server.close()
 
-        assert not server_thread.is_alive()
-        assert 2 <= len(sent_body_bytes) < len(response_body)
-        assert socket.shutdown_calls == [forwarder.socket.SHUT_RDWR]
+        assert status == 200
+        assert body == b"ok"
+        assert server.connection_closed.is_set()
+        assert server.response_started.is_set()
+        assert not server.thread.is_alive()
+        assert 2 <= len(server.sent_body_bytes) < len(server.response_body)
+        assert server.socket.shutdown_calls == [forwarder.socket.SHUT_RDWR]
+
+    async def test_shutdown_stops_detached_trickling_response(self):
+        server = _TricklingResponseServer(
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 256\r\n\r\n"
+        )
+        server.start()
+        try:
+            with fake_forwarder_upstream(socket_factory=lambda: server.socket):
+                task = asyncio.create_task(
+                    forwarder.forward_request(
+                        "https://example.com",
+                        "GET",
+                        [],
+                        None,
+                    )
+                )
+                assert await asyncio.to_thread(server.connection_closed.wait, 1)
+                assert await asyncio.to_thread(server.response_started.wait, 1)
+
+                forwarder.shutdown_forward_request_workers(wait=False)
+
+                with pytest.raises(RuntimeError, match="workers are shut down"):
+                    await asyncio.wait_for(task, timeout=1)
+        finally:
+            await server.close()
+
+        assert server.response_started.is_set()
+        assert not server.thread.is_alive()
+        assert 1 <= len(server.sent_body_bytes) < len(server.response_body)
+        assert server.socket.shutdown_calls == [forwarder.socket.SHUT_RDWR]
+        assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
+        with forwarder._forward_request_active_handles_lock:
+            assert not forwarder._forward_request_active_handles
 
     async def test_deadline_does_not_abort_unrelated_forward(self):
         first_entered = threading.Event()

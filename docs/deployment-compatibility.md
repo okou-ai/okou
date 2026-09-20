@@ -2759,9 +2759,18 @@ fields, including old privacy receipts; Marketing retains authoritative
 withdrawal state. Historical rows and external objects are not erased in this
 change.
 
+The final App cleanup removes its remaining click/UTM parser, attribution
+session-storage reader/writer, auth redirect propagation, and explicit PostHog
+attribution properties. Existing product
+analytics, PostHog user/organization identity, and `/api/events` business facts
+remain. Marketing is the single URL boundary: it omits acquisition parameters
+from App links while preserving product deep links. App does not add a second
+sanitizer for arbitrary incoming query strings or a migration that cleans
+historical browser state.
+
 Coordinate the Marketing single-sender cutover with this App/API deployment.
 Verify the replacement App is live before setting a later client floor; an
-already-open old bundle can otherwise continue sending browser conversions.
+already-open old bundle can otherwise continue collecting browser attribution.
 This PR does not select a floor or change production provider settings.
 
 ## X resource protocol cleanup

@@ -165,6 +165,31 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
+  it("keeps the Monday MCP connector off until explicitly enabled", () => {
+    expect(FeatureSwitchKey.MondayConnector).toBe("mondayConnector");
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.MondayConnector, context)).toBe(
+        false,
+      );
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
+        overrides: { [FeatureSwitchKey.MondayConnector]: true },
+      }),
+    ).toBe(true);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.MondayConnector],
+    ).toEqual({
+      maintainer: "liangyou@okou.ai",
+      description: "Enable the Monday.com MCP connector",
+      rolloutStage: "alpha",
+    });
+  });
+
   it("should return true when orgId hash matches enabledOrgIdHashes", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Lab, {
