@@ -2142,9 +2142,10 @@ and polling stop, its popup closes when the browser still permits access, busy c
 released, and unfinished local continuations (including account naming and Chat
 callbacks) must not start or update a newer attempt. The dialog's Close control
 and Escape have the same meaning; outside presses do not cancel pending work.
-The App exposes no separate Cancel action during connector authorization.
-Provider isolation policies can sever the popup handle, so closing that external
-window is best-effort and is not required to release the App's attempt.
+Connector authorization progress surfaces add no separate Cancel action; forms
+that already provide a general Cancel action keep it. Provider isolation
+policies can sever the popup handle, so closing that external window is
+best-effort and is not required to release the App's attempt.
 
 This is **local cancellation**, not a provider revocation or an API transaction
 rollback. The API may already have claimed OAuth state and may finish persisting
