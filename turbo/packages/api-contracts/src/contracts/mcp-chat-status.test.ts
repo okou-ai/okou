@@ -1,6 +1,41 @@
 import { describe, expect, it } from "vitest";
 
-import { mcpChatLifecycleSchema } from "./mcp-chat-status";
+import {
+  mcpChatLifecycleSchema,
+  mcpGetChatStatusOutputSchema,
+  type McpGetChatStatusOutput,
+} from "./mcp-chat-status";
+
+const threadId = "00000000-0000-4000-8000-000000000001";
+const runId = "00000000-0000-4000-8000-000000000002";
+const messages = {
+  tool: "get_chat_messages" as const,
+  arguments: { threadId, runId, limit: 20 as const },
+};
+const messagePage = {
+  messages: [],
+  olderCursor: null,
+  newerCursor: null,
+};
+const waitMetrics = {
+  requestedMs: 1000,
+  effectiveMs: 1000,
+  elapsedMs: 500,
+  observations: 2,
+};
+
+function statusOutput(overrides: Partial<McpGetChatStatusOutput>): unknown {
+  return {
+    threadId,
+    observedAt: "2026-09-20T00:00:00.000Z",
+    lifecycle: { phase: "idle", outcome: null, output: "none" },
+    messages: null,
+    wait: null,
+    messagePage: null,
+    retryAfterMs: null,
+    ...overrides,
+  };
+}
 
 const validLifecycles = [
   { phase: "idle", outcome: null, output: "none" },
@@ -38,5 +73,119 @@ describe("MCP chat lifecycle contract", () => {
 
   it.each(invalidLifecycles)("rejects $phase/$outcome/$output", (lifecycle) => {
     expect(mcpChatLifecycleSchema.safeParse(lifecycle).success).toBeFalsy();
+  });
+});
+
+describe("MCP chat status response coherence", () => {
+  it.each([
+    statusOutput({}),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      retryAfterMs: 2000,
+    }),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      messages,
+      retryAfterMs: 2000,
+    }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
+      messages,
+    }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
+      messages,
+      wait: {
+        ...waitMetrics,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage,
+    }),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      retryAfterMs: 2000,
+      wait: {
+        ...waitMetrics,
+        outcome: "deadline",
+        returnReason: "application_deadline",
+      },
+    }),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      retryAfterMs: 2000,
+      wait: {
+        ...waitMetrics,
+        outcome: "status",
+        returnReason: "waiter_limit",
+      },
+    }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "failed", output: "none" },
+      messages,
+      wait: {
+        ...waitMetrics,
+        outcome: "status",
+        returnReason: "non_retryable_state",
+      },
+    }),
+  ])("accepts a coherent complete response", (status) => {
+    expect(mcpGetChatStatusOutputSchema.safeParse(status).success).toBeTruthy();
+  });
+
+  it.each([
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+    }),
+    statusOutput({ retryAfterMs: 2000 }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
+    }),
+    statusOutput({ messages }),
+    statusOutput({ messagePage }),
+    statusOutput({
+      lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
+      messages,
+      wait: {
+        ...waitMetrics,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+    }),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      retryAfterMs: 2000,
+      wait: {
+        ...waitMetrics,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage,
+    }),
+    statusOutput({
+      wait: {
+        ...waitMetrics,
+        outcome: "ready",
+        returnReason: "application_deadline",
+      },
+    }),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      retryAfterMs: 2000,
+      wait: {
+        ...waitMetrics,
+        outcome: "status",
+        returnReason: "non_retryable_state",
+      },
+    }),
+    statusOutput({
+      wait: {
+        ...waitMetrics,
+        outcome: "status",
+        returnReason: "waiter_limit",
+      },
+    }),
+  ])("rejects a contradictory complete response", (status) => {
+    expect(mcpGetChatStatusOutputSchema.safeParse(status).success).toBeFalsy();
   });
 });
