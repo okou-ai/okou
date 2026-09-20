@@ -79,11 +79,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Convert an HTML presentation into an editable pptx from the CLI.",
     enabled: false,
-    // Held to the maintainer while fidelity is still being measured against
-    // real decks: conversion succeeds, but what a viewer without the deck's
-    // fonts makes of the result is only known for the decks tried so far.
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
