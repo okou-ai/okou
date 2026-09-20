@@ -2781,6 +2781,9 @@ pub mod webhooks {
                 /// The CLI requires reconnecting.
                 #[serde(rename = "reconnect_required")]
                 ReconnectRequired,
+                /// Codex sent an access-program selector unavailable to the account.
+                #[serde(rename = "codex_access_program_unavailable")]
+                CodexAccessProgramUnavailable,
                 /// The selected model is unsupported.
                 #[serde(rename = "unsupported_model")]
                 UnsupportedModel,

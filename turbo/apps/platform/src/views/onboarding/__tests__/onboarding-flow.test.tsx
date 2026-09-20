@@ -814,7 +814,7 @@ test("Custom workflow onboarding preserves an explicit assistant mention", async
   );
 });
 
-test("Onboarding OAuth can be cancelled and retried", async () => {
+test("Onboarding OAuth can be closed and retried", async () => {
   mockOAuthCompletions(context);
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
@@ -848,7 +848,7 @@ test("Onboarding OAuth can be cancelled and retried", async () => {
   const progress = screen.getByRole("dialog", {
     name: "Connecting your account",
   });
-  click(within(progress).getByText("Cancel", { selector: "button" }));
+  click(within(progress).getByLabelText("Close"));
   await waitFor(() => {
     expect(connectButton).toBeEnabled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

@@ -1,7 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import type { ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +11,6 @@ import {
   connectorConnectionProgressVisible$,
   cancelConnectorConnection$,
   connectorConnectionAttempt$,
-  connectorConnectionCompleted$,
 } from "../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionStatus } from "./connector-connection-dialog-body.tsx";
 
@@ -53,42 +51,8 @@ export function ConnectorConnectionProgress() {
           </DialogTitle>
         </DialogHeader>
         <ConnectorConnectionStatus />
-        <ConnectorConnectionCancelButton />
       </DialogContent>
     </Dialog>
-  );
-}
-
-export function ConnectorConnectionCancelButton({
-  onCancel,
-}: {
-  readonly onCancel?: () => void;
-}) {
-  const cancelConnection = useSet(cancelConnectorConnection$);
-  const attempt = useGet(connectorConnectionAttempt$);
-  const completed = useGet(connectorConnectionCompleted$);
-  const { t } = useTranslation();
-  if (attempt === null) {
-    return null;
-  }
-  return (
-    <div className="flex justify-end">
-      <Button
-        variant="outline"
-        onClick={() => {
-          cancelConnection(attempt);
-          onCancel?.();
-        }}
-      >
-        {completed
-          ? t(($) => {
-              return $.connectors.actions.close;
-            })
-          : t(($) => {
-              return $.connectors.actions.cancel;
-            })}
-      </Button>
-    </div>
   );
 }
 
