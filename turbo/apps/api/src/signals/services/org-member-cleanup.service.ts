@@ -44,6 +44,14 @@ export async function cleanupOrgMemberResources(
   // the configuration for a deliberate re-enable or reassignment, and an
   // explicit enable recomputes the schedule, so the `next_run_at` left behind
   // cannot fire on its own.
+  //
+  // An official installation is excluded because it does not own its enabled
+  // bit: official reconciliation drives it from `official_intended_enabled`,
+  // and this same cleanup already ends the installation's authority above by
+  // marking the Morning Brief enrollment `departed` and revoking its native
+  // schedule, collection and delivery ownership. Disabling the row here would
+  // both contend with that reconciler and silently pause the brief of a member
+  // who rejoins.
   await db
     .update(workflowAutomations)
     .set({ enabled: false, updatedAt: currentTime })
@@ -52,6 +60,7 @@ export async function cleanupOrgMemberResources(
         eq(workflowAutomations.orgId, args.orgId),
         eq(workflowAutomations.ownerUserId, args.userId),
         eq(workflowAutomations.enabled, true),
+        isNull(workflowAutomations.officialBlueprintKey),
       ),
     );
   signal.throwIfAborted();
