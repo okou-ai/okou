@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.205.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.204.0...runner-rs-v0.205.0) (2026-09-20)
+
+
+### Features
+
+* **rfb-client:** add policy-driven x509 authentication ([#35626](https://github.com/okou-ai/okou/issues/35626)) ([dd6da89](https://github.com/okou-ai/okou/commit/dd6da89572b08a00884d2851f15b9c7efd7db3f3))
+
+
+### Bug Fixes
+
+* **runner:** persist built-in omission-only updates ([#35635](https://github.com/okou-ai/okou/issues/35635)) ([c141d99](https://github.com/okou-ai/okou/commit/c141d99ef53c1beb6e0b2414e25c89f5530457e4))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+
+
+### Performance Improvements
+
+* **runner:** observe storage history overlap eligibility ([#35567](https://github.com/okou-ai/okou/issues/35567)) ([14a43e3](https://github.com/okou-ai/okou/commit/14a43e3202e1f74771be2e88821982983c200e9f))
+
 ## [0.204.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.203.1...runner-rs-v0.204.0) (2026-09-20)
 
 

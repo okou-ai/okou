@@ -1,5 +1,26 @@
 # Changelog
 
+## [8.688.0](https://github.com/okou-ai/okou/compare/core-v8.687.1...core-v8.688.0) (2026-09-20)
+
+
+### Features
+
+* **core:** enable run usage for staff ([#35631](https://github.com/okou-ai/okou/issues/35631)) ([cce6b0f](https://github.com/okou-ai/okou/commit/cce6b0f68412f17acf67db685671a0cdbef7a32d))
+* **platform:** link plain urls in user messages ([#35564](https://github.com/okou-ai/okou/issues/35564)) ([3d8a17a](https://github.com/okou-ai/okou/commit/3d8a17a1633ece078a943ae0ad99c39cf5b4e62a))
+
+
+### Refactoring
+
+* **api:** remove durable pi inference and its sandbox switch ([#35599](https://github.com/okou-ai/okou/issues/35599)) ([4ad646b](https://github.com/okou-ai/okou/commit/4ad646b42ead7c91fab8861220f1fef818071d99))
+* remove the stripe marketplace oauth feature switch ([#35623](https://github.com/okou-ai/okou/issues/35623)) ([cc48fcf](https://github.com/okou-ai/okou/commit/cc48fcf04b8972204e619837915a59316d4b2326))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.478.2
+
 ## [8.687.1](https://github.com/okou-ai/okou/compare/core-v8.687.0...core-v8.687.1) (2026-09-20)
 
 
