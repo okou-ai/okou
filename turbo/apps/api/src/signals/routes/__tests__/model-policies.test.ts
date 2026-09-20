@@ -165,6 +165,31 @@ async function makeLimitedFreeWorkspace(
   }
 }
 
+/**
+ * Every workspace is seeded with the same built-in models, so a limited-free-1
+ * workspace owns rows whose built-in route its plan could not configure today.
+ * Reading the list first both seeds those rows and mirrors the client, which
+ * re-sends the whole list on every write.
+ */
+async function listSeededLimitedFreePolicies(): Promise<{
+  readonly fixture: ModelPolicyFixture;
+  readonly stored: OrgModelPoliciesResponse;
+}> {
+  const fixture = seedFixture();
+  await makeLimitedFreeWorkspace(fixture);
+  useSession(fixture);
+  const stored = await accept(
+    apiClient().list({ headers: authHeaders() }),
+    [200],
+  );
+  expect(
+    stored.body.policies.map((policy) => {
+      return policy.model;
+    }),
+  ).toContain("gpt-6-astra");
+  return { fixture, stored: stored.body };
+}
+
 describe("GET/PUT /api/model-policies", () => {
   it.each([
     ["claude-fable-5", "claude-fable-5-1"],
@@ -822,6 +847,156 @@ describe("GET/PUT /api/model-policies", () => {
         routeStatus: "valid",
       }),
     );
+  });
+
+  it("adds a BYOK route while a limited-free-1 workspace re-sends its stored restricted rows", async () => {
+    const { fixture, stored } = await listSeededLimitedFreePolicies();
+    const openAiProviderId = await createOrgProvider(fixture, "openai-api-key");
+
+    const response = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            ...toUpdate(stored),
+            {
+              ...makeBuiltInPolicy("gpt-5.6-sol"),
+              defaultProviderType: "openai-api-key",
+              credentialScope: "org",
+              modelProviderId: openAiProviderId,
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body.workspaceDefaultModel).toBe(
+      LIMITED_FREE1_DEFAULT_RUN_MODEL,
+    );
+    expect(response.body.policies).toContainEqual(
+      expect.objectContaining({
+        model: "claude-fable-5-1",
+        isDefault: false,
+        defaultProviderType: "built-in",
+      }),
+    );
+    expect(response.body.policies).toContainEqual(
+      expect.objectContaining({
+        model: "gpt-6-astra",
+        isDefault: false,
+        defaultProviderType: "built-in",
+      }),
+    );
+    expect(response.body.policies).toContainEqual(
+      expect.objectContaining({
+        model: "gpt-5.6-sol",
+        isDefault: false,
+        defaultProviderType: "openai-api-key",
+        modelProviderId: openAiProviderId,
+        routeStatus: "valid",
+      }),
+    );
+  });
+
+  it("rejects promoting a stored restricted built-in row to the workspace default", async () => {
+    const { stored } = await listSeededLimitedFreePolicies();
+
+    const response = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: toUpdate(stored).map((policy) => {
+            return { ...policy, isDefault: policy.model === "gpt-6-astra" };
+          }),
+        },
+      }),
+      [402],
+    );
+    const afterRejected = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+
+    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(afterRejected.body.workspaceDefaultModel).toBe(
+      LIMITED_FREE1_DEFAULT_RUN_MODEL,
+    );
+  });
+
+  it("rejects returning a stored restricted BYOK row to the built-in route", async () => {
+    const { fixture, stored } = await listSeededLimitedFreePolicies();
+    const openAiProviderId = await createOrgProvider(fixture, "openai-api-key");
+    const routed = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: toUpdate(stored).map((policy) => {
+            return policy.model === "gpt-6-astra"
+              ? {
+                  ...policy,
+                  defaultProviderType: "openai-api-key" as const,
+                  credentialScope: "org" as const,
+                  modelProviderId: openAiProviderId,
+                }
+              : policy;
+          }),
+        },
+      }),
+      [200],
+    );
+
+    const response = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: toUpdate(routed.body).map((policy) => {
+            return policy.model === "gpt-6-astra"
+              ? makeBuiltInPolicy("gpt-6-astra")
+              : policy;
+          }),
+        },
+      }),
+      [402],
+    );
+    const afterRejected = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+
+    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(afterRejected.body.policies).toContainEqual(
+      expect.objectContaining({
+        model: "gpt-6-astra",
+        defaultProviderType: "openai-api-key",
+        modelProviderId: openAiProviderId,
+      }),
+    );
+  });
+
+  it("rejects adding a restricted built-in model to a seeded limited-free-1 workspace", async () => {
+    const { stored } = await listSeededLimitedFreePolicies();
+
+    const response = await accept(
+      apiClient().update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(stored), makeBuiltInPolicy("gpt-5.6-sol")],
+        },
+      }),
+      [402],
+    );
+    const afterRejected = await accept(
+      apiClient().list({ headers: authHeaders() }),
+      [200],
+    );
+
+    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+    expect(
+      afterRejected.body.policies.map((policy) => {
+        return policy.model;
+      }),
+    ).not.toContain("gpt-5.6-sol");
   });
 
   it("keeps Claude Sonnet 4.6 selectable", async () => {

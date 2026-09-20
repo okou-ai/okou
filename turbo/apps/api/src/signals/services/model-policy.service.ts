@@ -225,32 +225,60 @@ async function lockPolicyParents(db: Db, orgId: string): Promise<void> {
     .for("no key update");
 }
 
+function policiesByModel(
+  rows: readonly OrgModelPolicyRow[],
+): Map<string, OrgModelPolicyRow> {
+  return new Map(
+    rows.map((row) => {
+      return [row.model, row];
+    }),
+  );
+}
+
+function routeIdentityUnchanged(
+  policy: Pick<
+    UpdateOrgModelPolicy,
+    "defaultProviderType" | "credentialScope" | "modelProviderId"
+  >,
+  existing: OrgModelPolicyRow | undefined,
+): boolean {
+  return (
+    existing !== undefined &&
+    existing.defaultProviderType === policy.defaultProviderType &&
+    existing.credentialScope === policy.credentialScope &&
+    (existing.modelProviderId ?? null) === (policy.modelProviderId ?? null)
+  );
+}
+
 function resolveOmittedModelProviderSurfaceIds(
   policies: readonly UpdateOrgModelPolicy[],
   existingRows: readonly OrgModelPolicyRow[],
 ): UpdateOrgModelPolicy[] {
-  const existingByModel = new Map(
-    existingRows.map((row) => {
-      return [row.model, row];
-    }),
-  );
+  const existingByModel = policiesByModel(existingRows);
   return policies.map((policy) => {
     if (policy.modelProviderSurfaceId !== undefined) {
       return policy;
     }
     const existing = existingByModel.get(policy.model);
-    const routeIdentityUnchanged =
-      existing !== undefined &&
-      existing.defaultProviderType === policy.defaultProviderType &&
-      existing.credentialScope === policy.credentialScope &&
-      (existing.modelProviderId ?? null) === policy.modelProviderId;
     return {
       ...policy,
-      modelProviderSurfaceId: routeIdentityUnchanged
-        ? existing.modelProviderSurfaceId
+      modelProviderSurfaceId: routeIdentityUnchanged(policy, existing)
+        ? (existing?.modelProviderSurfaceId ?? null)
         : null,
     };
   });
+}
+
+/** True when the write keeps an already-stored route exactly as persisted. */
+function storedRouteUnchanged(
+  policy: UpdateOrgModelPolicy,
+  existing: OrgModelPolicyRow | undefined,
+): boolean {
+  return (
+    routeIdentityUnchanged(policy, existing) &&
+    (existing?.modelProviderSurfaceId ?? null) ===
+      (policy.modelProviderSurfaceId ?? null)
+  );
 }
 
 function modelPolicyCapabilities(
@@ -731,6 +759,39 @@ async function validateOrgProviderRoute(
   return null;
 }
 
+/**
+ * Plan restrictions gate what a workspace may newly configure, not what it
+ * already stores. Every workspace is seeded with the same built-in models, so a
+ * restricted plan owns rows its plan could not add today, and the client always
+ * re-sends the full list. Re-validating those untouched rows would freeze the
+ * list and block writes the plan does allow, such as adding a BYOK route. Only
+ * an added or re-routed policy has to satisfy the plan, and a restricted route
+ * may never be promoted into the workspace default it was not already holding.
+ */
+function planRestrictedWrite(params: {
+  readonly policy: UpdateOrgModelPolicy;
+  readonly providerType: ModelProviderType;
+  readonly existing: OrgModelPolicyRow | undefined;
+  readonly capabilities: Pick<
+    OrgPlanCapabilities,
+    "restrictedBuiltInModels" | "supportByok"
+  >;
+}): boolean {
+  if (
+    modelRouteAllowedForOrgPlan(
+      params.policy.model,
+      params.providerType,
+      params.capabilities,
+    )
+  ) {
+    return false;
+  }
+  if (!storedRouteUnchanged(params.policy, params.existing)) {
+    return true;
+  }
+  return params.policy.isDefault && params.existing?.isDefault !== true;
+}
+
 async function validateUpdatePolicies(
   db: Db,
   orgId: string,
@@ -739,11 +800,13 @@ async function validateUpdatePolicies(
     OrgPlanCapabilities,
     "restrictedBuiltInModels" | "supportByok"
   >,
+  existingRows: readonly OrgModelPolicyRow[],
 ): Promise<ServiceResult<UpdateOrgModelPolicy[]>> {
   if (policies.length === 0) {
     return bad("Request must include at least one model");
   }
 
+  const existingByModel = policiesByModel(existingRows);
   const seenModels = new Set<string>();
   let defaultCount = 0;
 
@@ -759,7 +822,12 @@ async function validateUpdatePolicies(
       return bad(`Unknown model provider type "${policy.defaultProviderType}"`);
     }
     if (
-      !modelRouteAllowedForOrgPlan(policy.model, providerType, capabilities)
+      planRestrictedWrite({
+        policy,
+        providerType,
+        existing: existingByModel.get(policy.model),
+        capabilities,
+      })
     ) {
       return planRestricted();
     }
@@ -1208,6 +1276,7 @@ export const updateOrgModelPolicies$ = command(
         params.orgId,
         policies,
         capabilities,
+        existing,
       );
       signal.throwIfAborted();
       if (!validation.ok) {
