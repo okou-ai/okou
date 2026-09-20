@@ -873,7 +873,7 @@ interface TerminalChatCallbackWork {
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
   readonly githubDeliveryCallbackId?: string;
-  readonly deferredSideEffects?: () => Promise<void>;
+  readonly deferredSideEffects?: (signal: AbortSignal) => Promise<void>;
 }
 
 type DrainOutcome =
@@ -4210,7 +4210,7 @@ async function prepareCompletedTerminalChatCallbackWork(
     telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: completed.githubDeliveryCallbackId,
-    deferredSideEffects: () => {
+    deferredSideEffects: (deferredSignal) => {
       return runCompletedChatCallbackSideEffects(
         {
           db: args.db,
@@ -4224,13 +4224,13 @@ async function prepareCompletedTerminalChatCallbackWork(
               args.runId,
               args.run.prompt,
               resultText,
-              signal,
+              deferredSignal,
             );
           },
           dispatchChatRunFinishedAutomations:
             args.dependencies.dispatchChatRunFinishedAutomations,
         },
-        signal,
+        deferredSignal,
       );
     },
   };
@@ -4311,7 +4311,7 @@ async function prepareFailedTerminalChatCallbackWork(
     telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: failed.githubDeliveryCallbackId,
-    deferredSideEffects: () => {
+    deferredSideEffects: (deferredSignal) => {
       return runFailedChatCallbackSideEffects(
         {
           db: args.db,
@@ -4326,7 +4326,7 @@ async function prepareFailedTerminalChatCallbackWork(
           dispatchChatRunFinishedAutomations:
             args.dependencies.dispatchChatRunFinishedAutomations,
         },
-        signal,
+        deferredSignal,
       );
     },
   };
@@ -4833,19 +4833,22 @@ async function processTerminalChatCallback(
     signal,
   );
 
-  const deferredSideEffects = work.deferredSideEffects;
-  if (deferredSideEffects) {
-    await runTerminalChatCallbackSideEffects({
-      runId,
-      status: callbackStatus,
-      run: () => {
-        return deferredSideEffects();
-      },
-    });
-  }
-
   if (!drainResult.ok) {
     throw drainResult.error;
+  }
+
+  const deferredSideEffects = work.deferredSideEffects;
+  if (deferredSideEffects) {
+    const backgroundSignal = new AbortController().signal;
+    waitUntil(
+      runTerminalChatCallbackSideEffects({
+        runId,
+        status: callbackStatus,
+        run: () => {
+          return deferredSideEffects(backgroundSignal);
+        },
+      }),
+    );
   }
 }
 
@@ -5026,16 +5029,18 @@ const createQueuedRunForChatCallback$ = command(
   },
 );
 
-function handleChatInternalCallback(
+async function handleChatInternalCallback(
   args: {
     readonly db: Db;
     readonly callback: InternalRunCallbackEnvelope;
     readonly dependencies: ChatCallbackDependencies;
+    readonly awaitTerminalProcessing?: boolean;
   },
   signal: AbortSignal,
-):
+): Promise<
   | { readonly success: true }
-  | { readonly success: false; readonly error: string } {
+  | { readonly success: false; readonly error: string }
+> {
   const payload = chatCallbackPayloadSchema.safeParse(args.callback.payload);
   if (!payload.success) {
     return {
@@ -5075,35 +5080,30 @@ function handleChatInternalCallback(
   }
 
   signal.throwIfAborted();
-  // The webhook sender (dispatchRunCallbacks) awaits this response only to
-  // record delivery; it does not retry and nothing downstream reads the body.
-  // The frontend learns about new messages through Ably realtime signals, not
-  // this HTTP response. Acknowledge before
-  // running heavy terminal processing (message persistence, LLM generation,
-  // and push delivery) in the background, mirroring webhooks-agent-complete.
-  // Use a detached signal so request cancellation cannot interrupt the
-  // idempotency marker -> queued auto-send sequence after acknowledgement.
-  const backgroundSignal = new AbortController().signal;
-  waitUntil(
-    tapError(
-      processTerminalChatCallback(
-        {
-          db: args.db,
-          callback: args.callback,
-          payload: payload.data,
-          dependencies: args.dependencies,
+  const processingInput = {
+    db: args.db,
+    callback: args.callback,
+    payload: payload.data,
+    dependencies: args.dependencies,
+  };
+  if (args.awaitTerminalProcessing) {
+    // The completion endpoint owns durable terminal delivery and may only ACK
+    // after lifecycle projection and queue handling have succeeded.
+    await processTerminalChatCallback(processingInput, signal);
+  } else {
+    const backgroundSignal = new AbortController().signal;
+    waitUntil(
+      tapError(
+        processTerminalChatCallback(processingInput, backgroundSignal),
+        (error) => {
+          log.error("Failed to process terminal chat callback", {
+            runId: args.callback.runId,
+            error,
+          });
         },
-        backgroundSignal,
       ),
-      (error) => {
-        log.error("Failed to process terminal chat callback", {
-          runId: args.callback.runId,
-          status: args.callback.status,
-          error,
-        });
-      },
-    ),
-  );
+    );
+  }
 
   return { success: true };
 }
@@ -5215,6 +5215,7 @@ export async function handleChatInternalCallbackWithoutCcstate(
   db: Db,
   callback: InternalRunCallbackEnvelope,
   signal = new AbortController().signal,
+  options?: { readonly awaitTerminalProcessing?: boolean },
 ): Promise<
   | { readonly success: true }
   | { readonly success: false; readonly error: string }
@@ -5223,6 +5224,7 @@ export async function handleChatInternalCallbackWithoutCcstate(
     {
       db,
       callback,
+      awaitTerminalProcessing: options?.awaitTerminalProcessing,
       dependencies: {
         releaseBrowsersForRun: (args, inputSignal) => {
           return createStore().set(
@@ -5461,6 +5463,7 @@ export const handleChatInternalCallback$ = command(
     input: {
       readonly callback: InternalRunCallbackEnvelope;
       readonly drainThreadQueue?: ChatCallbackDependencies["drainThreadQueue"];
+      readonly awaitTerminalProcessing?: boolean;
     },
     signal: AbortSignal,
   ): Promise<
@@ -5477,6 +5480,7 @@ export const handleChatInternalCallback$ = command(
         db,
         callback: input.callback,
         dependencies,
+        awaitTerminalProcessing: input.awaitTerminalProcessing,
       },
       signal,
     );

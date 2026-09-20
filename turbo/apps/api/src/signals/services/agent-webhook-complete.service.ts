@@ -37,11 +37,12 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { safeSync, tapError } from "../utils";
+import { safeSync, settle, tapError } from "../utils";
 import {
   chatCallbackIdForRun,
   dispatchFailedRunCallbacks,
   dispatchRunCallbacks$,
+  undeliveredChatCallbackIdForRun,
 } from "./agent-run-callback.service";
 import { drainChatThreadQueueForRun$ } from "./chat-thread-queue-drain.service";
 import {
@@ -115,6 +116,8 @@ export type CompleteSideEffectsInput = (
 
 export type DispatchCompleteSideEffectsInput = CompleteSideEffectsInput & {
   readonly apiStartTime?: number;
+  readonly skipChatCallback?: true;
+  readonly chatThreadQueueHandled?: true;
 };
 
 interface CompletionSuccessResponse {
@@ -133,6 +136,7 @@ type CompletionResponse =
 interface RunRecord {
   readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
+  readonly error: string | null;
   readonly orgId: string;
   readonly sessionId: string;
   readonly status: RunStatus;
@@ -359,6 +363,7 @@ async function loadCompletionRun(
   const [run] = await db
     .select({
       apiStartedAt: agentRuns.apiStartedAt,
+      error: agentRuns.error,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -433,6 +438,7 @@ async function lockCompletionRun(
   const [run] = await tx
     .select({
       apiStartedAt: agentRuns.apiStartedAt,
+      error: agentRuns.error,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -620,6 +626,17 @@ async function lockCompletionPiMemoryStorage(
   }
 }
 
+function persistedTerminalError(
+  run: RunRecord,
+): { readonly transitionError: string } | Record<string, never> {
+  if (run.status !== "failed") {
+    return {};
+  }
+  return {
+    transitionError: run.error?.trim() || "Run failed without error message",
+  };
+}
+
 async function completeAgentRunTransition(
   tx: Tx,
   input: CompleteAgentRunInput,
@@ -714,6 +731,7 @@ async function completeAgentRunTransition(
       run,
       transitioned: false,
       responseStatus: run.status === "completed" ? "completed" : "failed",
+      ...persistedTerminalError(run),
       finalization,
     },
   };
@@ -722,13 +740,14 @@ async function completeAgentRunTransition(
 function completionResponse(
   runId: string,
   commit: CompletionCommit,
+  redriveTerminalChatCallback: boolean,
 ): CompletionResponse {
   let sideEffects: CompleteSideEffectsInput | undefined;
   const piCleanup =
     commit.run.launchSnapshot?.framework === "pi"
       ? ({ cleanupPiApiFirstTurn: true } as const)
       : {};
-  if (commit.transitioned) {
+  if (commit.transitioned || redriveTerminalChatCallback) {
     sideEffects = {
       kind: "terminal",
       runId,
@@ -793,10 +812,96 @@ function settledRunCompletionResponse(run: RunRecord): CompletionResponse {
   };
 }
 
+export type RequiredTerminalChatCallbackResult =
+  | { readonly success: true; readonly chatThreadQueueHandled: boolean }
+  | {
+      readonly success: false;
+      readonly chatThreadQueueHandled: boolean;
+      readonly error: string;
+    };
+
+/**
+ * Finish the canonical chat projection before the completion webhook is
+ * acknowledged. Other callbacks and accounting remain background side
+ * effects, but this durable callback owns the lifecycle marker and thread
+ * queue wakeup.
+ */
+export const dispatchRequiredTerminalChatCallback$ = command(
+  async (
+    { set },
+    input: TerminalSideEffectsInput & {
+      readonly apiStartTime: number;
+    },
+    signal: AbortSignal,
+  ): Promise<RequiredTerminalChatCallbackResult> => {
+    const db = set(writeDb$);
+    const chatCallbackId = await undeliveredChatCallbackIdForRun(
+      db,
+      input.runId,
+    );
+    signal.throwIfAborted();
+    if (chatCallbackId === undefined) {
+      return { success: true, chatThreadQueueHandled: false };
+    }
+
+    const [callbackResult] = await set(
+      dispatchRunCallbacks$,
+      {
+        db,
+        runId: input.runId,
+        status: input.status,
+        error: input.error,
+        redriveChatCallbackId: chatCallbackId,
+        awaitTerminalChatProcessing: true,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (callbackResult?.success) {
+      return { success: true, chatThreadQueueHandled: true };
+    }
+    if (
+      callbackResult === undefined &&
+      (await undeliveredChatCallbackIdForRun(db, input.runId)) === undefined
+    ) {
+      signal.throwIfAborted();
+      return { success: true, chatThreadQueueHandled: false };
+    }
+
+    const drained = await settle(
+      set(
+        drainChatThreadQueueForRun$,
+        {
+          runId: input.runId,
+          dispatchFailedCallbacks: dispatchFailedRunCallbacks,
+          apiStartTime: input.apiStartTime,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!drained.ok) {
+      L.error("Failed to drain chat thread queue after callback failure", {
+        runId: input.runId,
+        error: drained.error,
+      });
+    }
+    return {
+      success: false,
+      chatThreadQueueHandled: drained.ok,
+      error: callbackResult?.error ?? "Canonical terminal chat callback failed",
+    };
+  },
+);
+
 const dispatchTerminalCompleteSideEffects$ = command(
   async (
     { set },
-    input: TerminalSideEffectsInput & { readonly apiStartTime: number },
+    input: TerminalSideEffectsInput & {
+      readonly apiStartTime: number;
+      readonly skipChatCallback?: true;
+      readonly chatThreadQueueHandled?: true;
+    },
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
@@ -810,7 +915,9 @@ const dispatchTerminalCompleteSideEffects$ = command(
     }
     const callbackStatus =
       input.status === "completed" ? "completed" : "failed";
-    const chatCallbackId = await chatCallbackIdForRun(db, input.runId);
+    const chatCallbackId = input.skipChatCallback
+      ? undefined
+      : await chatCallbackIdForRun(db, input.runId);
     signal.throwIfAborted();
     const callbackResults = await tapError(
       set(
@@ -820,6 +927,7 @@ const dispatchTerminalCompleteSideEffects$ = command(
           runId: input.runId,
           status: callbackStatus,
           error: input.error,
+          skipChatCallback: input.skipChatCallback,
         },
         signal,
       ),
@@ -832,9 +940,11 @@ const dispatchTerminalCompleteSideEffects$ = command(
     );
     signal.throwIfAborted();
 
-    const chatCallbackDrained = callbackResults?.some((result) => {
-      return result.callbackId === chatCallbackId && result.success;
-    });
+    const chatCallbackDrained =
+      input.chatThreadQueueHandled === true ||
+      callbackResults?.some((result) => {
+        return result.callbackId === chatCallbackId && result.success;
+      });
     if (!chatCallbackDrained) {
       await tapError(
         set(
@@ -1054,6 +1164,16 @@ export const completeAgentRun$ = command(
         activeInputFinalized: commit.finalization.finalized,
       });
     }
-    return completionResponse(input.body.runId, commit);
+    const redriveTerminalChatCallback =
+      !commit.transitioned &&
+      (commit.run.status === "completed" || commit.run.status === "failed") &&
+      (await undeliveredChatCallbackIdForRun(db, input.body.runId)) !==
+        undefined;
+    signal.throwIfAborted();
+    return completionResponse(
+      input.body.runId,
+      commit,
+      redriveTerminalChatCallback,
+    );
   },
 );
