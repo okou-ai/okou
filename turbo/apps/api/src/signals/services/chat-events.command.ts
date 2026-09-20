@@ -1947,7 +1947,6 @@ interface AppendUnassociatedUserMessageParams {
   readonly threadId: string;
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
   readonly prompt: string;
   readonly attachFileMetadata: ChatEventAttachFileMetadata[] | null;
   readonly clientEventId: string | undefined;
@@ -2080,7 +2079,6 @@ async function resolveLockedMcpSubmission(
         and(
           eq(chatThreads.id, params.threadId),
           eq(chatThreads.userId, params.userId),
-          eq(chatThreads.agentId, params.agentId),
           chatThreadOrganizationCondition(tx, params.orgId),
         ),
       )
@@ -2107,6 +2105,12 @@ async function resolveLockedMcpSubmission(
   return undefined;
 }
 
+/**
+ * Clears the draft and re-proves, inside the event transaction, the same
+ * user/organization scope the request already authorized. The predicates must
+ * not narrow which threads the caller could already enqueue into; the thread's
+ * Agent is fixed at creation, so it is not re-checked here.
+ */
 async function authorizeChatThreadForEnqueue(
   tx: ChatThreadEventTransaction,
   params: AppendUnassociatedUserMessageParams,
@@ -2121,7 +2125,6 @@ async function authorizeChatThreadForEnqueue(
       and(
         eq(chatThreads.id, params.threadId),
         eq(chatThreads.userId, params.userId),
-        eq(chatThreads.agentId, params.agentId),
         chatThreadOrganizationCondition(tx, params.orgId),
       ),
     )
@@ -2146,7 +2149,9 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (!authorizedThread) {
-    return { kind: "conflict" };
+    // `conflict` is the duplicate-clientEventId answer. The request already
+    // authorized this thread, so losing it here is a broken invariant.
+    throw new Error("Authorized chat thread changed before enqueue");
   }
 
   const explicitId = params.clientEventId ?? undefined;
@@ -2234,7 +2239,6 @@ async function appendUnassociatedUserMessageTransaction(
             {
               userId: params.userId,
               orgId: params.orgId,
-              agentId: params.agentId,
             },
           );
         },
@@ -3261,7 +3265,6 @@ async function queueUnassociatedNormalEvent(params: {
     threadId: params.prepared.thread.threadId,
     userId: params.userId,
     orgId: params.orgId,
-    agentId: params.prepared.agent.id,
     prompt: params.body.prompt,
     attachFileMetadata: params.prepared.attachFileMetadata,
     clientEventId: params.body.clientEventId,

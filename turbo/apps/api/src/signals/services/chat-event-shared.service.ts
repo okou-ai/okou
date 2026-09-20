@@ -104,10 +104,15 @@ export function inferMimetype(filename: string): string {
     : "application/octet-stream";
 }
 
+/**
+ * Supplies the organization the caller already authorized for this thread, so
+ * the sort event does not rediscover it. The predicates only re-prove that
+ * same scope; they must not narrow which threads the caller could already
+ * touch.
+ */
 interface AuthorizedChatThreadTouchScope {
   readonly userId: string;
   readonly orgId: string;
-  readonly agentId: string;
 }
 
 export async function touchChatThreadLastMessageAt(
@@ -129,7 +134,6 @@ export async function touchChatThreadLastMessageAt(
         authorizedScope
           ? and(
               eq(chatThreads.userId, authorizedScope.userId),
-              eq(chatThreads.agentId, authorizedScope.agentId),
               chatThreadOrganizationCondition(tx, authorizedScope.orgId),
             )
           : undefined,
