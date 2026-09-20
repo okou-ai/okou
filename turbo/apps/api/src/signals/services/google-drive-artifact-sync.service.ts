@@ -924,12 +924,14 @@ function resolveHostedArtifactContent(
     if (isPrivate && deployment.manifest.access !== "owner-private-v1") {
       throw new Error("Private hosted deployment has an invalid access policy");
     }
-    // Private presentations bundle their images and fonts next to index.html.
-    if (isPrivate || metadata.artifactKind === "hosted-site") {
+    // A publication that references stylesheets, images, fonts or sibling pages
+    // loses them if only its entry document is uploaded. A self-contained page
+    // has nothing to bundle, so it stays a page Drive can open on its own.
+    const files = Object.values(deployment.manifest.files).sort((a, b) => {
+      return a.path.localeCompare(b.path);
+    });
+    if (files.length > 1) {
       const entries: ZipEntry[] = [];
-      const files = Object.values(deployment.manifest.files).sort((a, b) => {
-        return a.path.localeCompare(b.path);
-      });
       for (const file of files) {
         const content = await get(
           downloadHostedSitesS3Buffer(

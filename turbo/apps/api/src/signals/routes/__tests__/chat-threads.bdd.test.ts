@@ -4138,6 +4138,79 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     },
   );
 
+  it("exports a self-contained hosted page to Google Drive as that page", async () => {
+    const { actor, agentId } = await entitledChatActor(
+      "Single page Drive owner",
+    );
+    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "Create a self-contained HTML artifact",
+    });
+    const objectStore = chatCallbacks.acceptChatObjectStorage();
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/hosted-upload?sig=test",
+    );
+    const index =
+      "<!doctype html><style>h1{color:green}</style><h1>Report</h1>";
+    const bearer = okouCapabilityHeaders(actor, run.runId, [
+      "host:write",
+    ]).authorization;
+    const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
+      site: `single-page-${randomUUID().slice(0, 8)}`,
+      artifactKind: "presentation-html",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", index)],
+    });
+    objectStore.addObject({
+      bucket: "test-hosted-sites",
+      key: `private-sites/okou/${prepared.deploymentId}/index.html`,
+      size: Buffer.byteLength(index),
+      body: Buffer.from(index),
+    });
+    await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
+    const artifacts = await chat.listThreadArtifacts(actor, run.threadId);
+    const artifact = artifacts.runs
+      .flatMap((item) => {
+        return item.files;
+      })
+      .find((file) => {
+        return file.url === prepared.url;
+      });
+    if (!artifact) {
+      throw new Error("Expected a hosted artifact");
+    }
+    mockGoogleDriveConnectorOAuth();
+    const start = await connectorsApi.startOauth(
+      actor,
+      "google-drive",
+      "oauth",
+    );
+    await connectorsApi.completeOauthCallback("google-drive", {
+      code: "drive-ok",
+      state: stateFromAuthorizationUrl(start.authorizationUrl),
+    });
+    await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "single-page-drive-file",
+      name: "report.html",
+    });
+    await chat.requestSyncThreadArtifact(
+      actor,
+      run.threadId,
+      { runId: run.runId, fileId: artifact.id },
+      [200],
+    );
+
+    const multipart = Buffer.from(upload.bodies[0]!).toString("utf8");
+    expect(multipart).toContain("text/html");
+    expect(multipart).not.toContain("application/zip");
+    expect(multipart).toContain(index);
+  });
+
   it("groups run uploads and reports google drive sync status", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       "Artifacts drive status agent",
