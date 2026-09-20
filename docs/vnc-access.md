@@ -4,7 +4,8 @@ VNC is an independent remote-access capability alongside SSH. The
 `VncAccess` (`vncAccess`) feature switch is disabled by default, including for
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
-Runner sockets and operations remain #34780; UI and CLI remain #34782/#34781.
+The base X509Vnc Runner, CLI and UI path is delivered. X509Plain Runner
+execution and owner-facing exposure remain #35620 and #35621.
 
 ## Owner API
 
@@ -110,9 +111,10 @@ Deploy the existing VNC APIs before this app UI. An unavailable/disabled API
 shows an unavailable state; network and server failures remain retryable load
 errors. The UI does not change the default-off switch or existing data.
 Real Agent/server interoperability, two-client admission, mixed versions and
-retained-data rollback are tracked separately in
-[#35299](https://github.com/vm0-ai/okou/issues/35299); merging the UI is not
-production activation evidence.
+retained-data rollback for the base profile were verified in
+[#35299](https://github.com/vm0-ai/okou/issues/35299). X509Plain full-path
+verification remains #35621; merging its UI is not production activation
+evidence.
 
 ## Secret inventory
 

@@ -52,7 +52,7 @@ try {
     INSERT INTO agent_vnc_access VALUES ('org','owner','00000000-0000-4000-8000-000000000004');
   `);
 
-  await client.query(await migration("1176_reset_vnc_configuration.sql"));
+  await client.query(await migration("1181_reset_vnc_configuration.sql"));
   for (const table of [
     "agent_vnc_access",
     "vnc_connections",
@@ -70,7 +70,7 @@ try {
   );
 
   await client.query(
-    (await migration("1177_condemned_union_jack.sql")).replaceAll(
+    (await migration("1182_motionless_ares.sql")).replaceAll(
       '"public".',
       `"${schema}".`,
     ),
