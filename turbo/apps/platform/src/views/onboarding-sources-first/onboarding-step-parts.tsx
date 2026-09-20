@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Check } from "lucide-react";
 import { Card, Radio, surfaceVariants, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "../okou-page/components/settings/settings-icon-assets.ts";
 
@@ -70,8 +71,24 @@ export function ProductMark({
 }
 
 /**
- * A step whose answer is one of two options leads with the mark and keeps the
- * radio with the label, so the card itself is the target.
+ * The mark for an answer with no product behind it: one icon, carrying the same
+ * weight as the brand marks beside it.
+ */
+export function OnboardingChoiceMark({ icon }: { readonly icon: ReactNode }) {
+  return (
+    <span
+      className="flex size-16 items-center justify-center rounded-full bg-muted text-muted-foreground"
+      aria-hidden="true"
+    >
+      {icon}
+    </span>
+  );
+}
+
+/**
+ * A step whose answer is one of a few options: the card itself is the control,
+ * so it leads with the mark and the chosen one is lit rather than ticked in a
+ * circle. The radio stays behind it for the keyboard and screen readers.
  */
 export function OnboardingPosterCard({
   value,
@@ -90,19 +107,27 @@ export function OnboardingPosterCard({
     <label
       className={cn(
         surfaceVariants({ interactive: true }),
-        "flex min-h-[340px] flex-col overflow-hidden",
-        selected && "border-primary",
+        "relative flex min-h-[300px] flex-col overflow-hidden text-center",
+        selected && "border-primary bg-state-selected",
       )}
     >
-      <span className="flex flex-1 items-center justify-center px-6 pb-8 pt-10">
+      <Radio value={value} className="sr-only" />
+      {selected ? (
+        <span
+          className="absolute right-4 top-4 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground"
+          aria-hidden="true"
+        >
+          <Check size={14} />
+        </span>
+      ) : null}
+      <span className="flex flex-1 items-center justify-center px-6 pb-6 pt-10">
         {mark}
       </span>
-      <span className="block px-5 pb-5">
-        <span className="flex items-center gap-3">
-          <Radio value={value} />
-          <span className="text-sm font-medium text-foreground">{title}</span>
+      <span className="block px-5 pb-6">
+        <span className="block text-sm font-medium text-foreground">
+          {title}
         </span>
-        <span className="mt-1 block pl-7 text-sm leading-5 text-muted-foreground">
+        <span className="mt-1 block text-sm leading-5 text-muted-foreground">
           {description}
         </span>
       </span>
