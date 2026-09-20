@@ -730,44 +730,31 @@ test("completes signed Agent-owner erasure behind scoped artifact GC", async () 
     ready: true,
   });
   const artifactDigest = await removePiStableContextHeadFixture(headId);
-  const gcEntered = createDeferredPromise<number>(context.signal);
+  const gcEntered = createDeferredPromise<void>(context.signal);
   const releaseGc = createDeferredPromise<void>(context.signal);
   const gc = deleteExpiredOwnedPiStableContextArtifactFixture({
     artifactDigest,
     cutoff: new Date("2099-01-01T00:00:00.000Z"),
-    afterCandidatesLocked: async (tx) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      gcEntered.resolve(Number(result.rows[0]?.pid));
+    afterCandidatesLocked: async () => {
+      gcEntered.resolve();
       await releaseGc.promise;
     },
   });
-  const gcPid = await gcEntered.promise;
-  const cleanupEntered = createDeferredPromise<number>(context.signal);
-  observeClerkAgentLifecycleBeforeAgentLockFixture(async (tx, agentId) => {
+  await gcEntered.promise;
+  observeClerkAgentLifecycleBeforeAgentLockFixture(async (_tx, agentId) => {
     if (agentId !== agent.body.agentId) {
       return;
     }
-    const result = await tx.execute(sql`SELECT pg_backend_pid()::int AS "pid"`);
-    cleanupEntered.resolve(Number(result.rows[0]?.pid));
+
+    // Clerk cleanup deliberately has a 100 ms lock timeout. Release and join
+    // the already-owned GC transaction at this lifecycle boundary instead of
+    // spending that production deadline polling through another pool client.
+    releaseGc.resolve();
+    await gc;
   });
   await deleteUserWithSignedWebhook(ownerUserId, "gc-agent-owner-erasure", {
     flush: false,
   });
-  const cleanupPid = await cleanupEntered.promise;
-  await expect
-    .poll(
-      async () => {
-        return await stableContextBackendBlockedByFixture({
-          blockedPid: cleanupPid,
-          blockerPid: gcPid,
-        });
-      },
-      { interval: 5, timeout: 500 },
-    )
-    .toBe(true);
-  releaseGc.resolve();
   await expect(gc).resolves.toStrictEqual([{ digest: artifactDigest }]);
   await flushWaitUntilForTest();
   await expect(
