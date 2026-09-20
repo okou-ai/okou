@@ -1447,7 +1447,9 @@
           },
           "connector": {
             "confirm": "Lihat semua konektor",
-            "description": "Hubungkan salah satu alat Anda supaya {{assistantName}} bisa bekerja di dalamnya.",
+            "connected": "Terhubung",
+            "description": "Pilih satu dan {{assistantName}} mulai bekerja di dalamnya.",
+            "notConnected": "Belum terhubung",
             "pickerFailed": "Konektor gagal dimuat. Buka halaman konektor untuk mencoba lagi.",
             "pickerLoading": "Memuat konektor…",
             "title": "{{assistantName}} bekerja di dalam alat yang sudah Anda pakai"

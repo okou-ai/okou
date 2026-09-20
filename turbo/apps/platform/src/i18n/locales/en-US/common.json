@@ -1448,7 +1448,9 @@
           },
           "connector": {
             "confirm": "Browse all connectors",
-            "description": "Connect one of your tools so {{assistantName}} can work in it.",
+            "connected": "Connected",
+            "description": "Pick one and {{assistantName}} starts working in it.",
+            "notConnected": "Not connected",
             "pickerFailed": "Connectors could not be loaded. Open the connectors page to try again.",
             "pickerLoading": "Loading connectors…",
             "title": "{{assistantName}} works inside the tools you already use"
