@@ -1421,6 +1421,8 @@
     },
     "agentPage": {
       "getStarted": {
+        "addedState": "{{amount}} जोड़े गए",
+        "checkedIn": "चेक इन हो गया",
         "checkin": {
           "action": "चेक इन करें",
           "description": "दिन में एक बार चेक इन करें। 00:00 UTC पर रीसेट होता है।",
@@ -1430,11 +1432,12 @@
         "connector": {
           "action": "कनेक्ट करें",
           "description": "Gmail, Notion और 100+ अन्य",
-          "name": "कनेक्टर जोड़ें",
+          "name": "एक टूल कनेक्ट करें",
           "unit": "प्रति कनेक्टर"
         },
+        "earned": "{{amount}} अर्जित",
+        "howRewardsWork": "इनाम कैसे काम करते हैं",
         "inReview": "समीक्षा में",
-        "inReviewDescription": "भेजा गया, समीक्षा बाकी है",
         "intro": {
           "checkin": {
             "amount": "+{{amount}} क्रेडिट",
@@ -1490,16 +1493,13 @@
           "name": "अपनी टीम को बुलाएँ",
           "unit": "प्रति सदस्य"
         },
-        "pendingInvitations": "लंबित निमंत्रण: {{amount}}",
-        "personalBalanceNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
-        "progressLabel": "शुरुआत की प्रगति",
-        "rejectedDescription": "यह पोस्ट योग्य नहीं है। Okou का उल्लेख करने वाली कोई दूसरी सार्वजनिक पोस्ट भेजें।",
-        "reward": "+{{amount}}",
-        "rewardedConnections": "पुरस्कृत कनेक्टर: {{amount}}",
+        "notEligible": "पात्र नहीं",
+        "pendingState": "{{amount}} लंबित",
+        "rewardsNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
         "share": {
           "action": "शेयर करें",
           "description": "पोस्ट करें, फिर लिंक यहाँ चिपकाएँ",
-          "name": "{{assistantName}} को X पर शेयर करें"
+          "name": "X पर शेयर करें"
         },
         "shareDialog": {
           "description": "समीक्षा के लिए सार्वजनिक पोस्ट भेजें। हर व्यक्ति को एक स्वीकृत इनाम मिल सकता है।",
@@ -1512,11 +1512,12 @@
         "slack": {
           "action": "जोड़ें",
           "description": "जहाँ आपकी टीम पहले से काम करती है",
-          "name": "{{assistantName}} को Slack में जोड़ें"
+          "name": "Slack में जोड़ें"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "कोई काम आज़माएँ और क्रेडिट पाएँ।",
+        "streak": "{{amount}} दिन लगातार",
         "title": "शुरू करें",
+        "toGo": "{{amount}} बाकी",
         "workflow": {
           "action": "बनाएँ",
           "description": "बार-बार होने वाले काम को दोबारा इस्तेमाल होने वाली स्किल बनाएँ",
