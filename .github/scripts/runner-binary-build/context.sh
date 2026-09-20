@@ -20,11 +20,12 @@ is_safe_git_path() {
 is_excluded_path() {
   local path=$1
 
-  # Keep this denylist limited to audited paths outside the build entry points.
-  if [[ "$path" == crates/runner/mitm-addon/tests/* ]]; then
+  # Complete tests directory segments are an audited repository convention
+  # outside production build entry points. Test-named files remain included.
+  if [[ "$path" == */tests/* ]]; then
     return 0
   fi
-  if [[ "$path" =~ ^crates/[^/]+/(tests|benches|examples)/ ]]; then
+  if [[ "$path" =~ ^crates/[^/]+/(benches|examples)/ ]]; then
     return 0
   fi
   return 1

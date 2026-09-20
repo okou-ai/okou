@@ -159,6 +159,7 @@ printf 'changed bench\n' >> "${repo}/crates/guest-one/benches/bench.rs"
 printf 'changed runner test\n' >> "${repo}/crates/runner/tests/integration.rs"
 printf 'changed mitm test\n' >> "${repo}/crates/runner/mitm-addon/tests/test_runtime.py"
 printf 'changed other package test\n' >> "${repo}/crates/other-one/tests/integration.rs"
+printf 'changed nested source test\n' >> "${repo}/crates/other-one/src/feature/tests/input.txt"
 printf 'changed unrelated\n' >> "${repo}/README.md"
 commit_all "$repo" excluded-changes
 [ "$(digest_value "$repo" aarch64-unknown-linux-musl)" = "$baseline" ] \
@@ -188,8 +189,6 @@ assert_text_change_affects_digest \
   "$repo" "crates/other-one/src/lib.rs" "other-package-entry-change"
 assert_text_change_affects_digest \
   "$repo" "crates/other-one/src/additional.rs" "other-package-source-change"
-assert_text_change_affects_digest \
-  "$repo" "crates/other-one/src/feature/tests/input.txt" "nested-source-test-path-change"
 assert_text_change_affects_digest \
   "$repo" ".github/scripts/runner-binary-build/contract.env" "contract-change"
 
@@ -283,8 +282,8 @@ jq -e \
   || fail "expected other workspace package entry"
 [ -f "${context_root}/crates/other-one/src/additional.rs" ] \
   || fail "default inclusion must retain other workspace package source"
-[ -f "${context_root}/crates/other-one/src/feature/tests/input.txt" ] \
-  || fail "only package top-level test trees may be excluded"
+[ ! -e "${context_root}/crates/other-one/src/feature/tests/input.txt" ] \
+  || fail "materialization must exclude nested tests directories"
 [ -f "${context_root}/${weird_relative}" ] \
   || fail "expected unusual tracked filename"
 [ ! -x "${context_root}/crates/runner/scripts/tool.sh" ] \
@@ -345,6 +344,8 @@ RUNNER_BINARY_CONTEXT_ROOT="$actual_context" \
   || fail "actual context must contain runner source"
 [ ! -e "${actual_context}/crates/runner/mitm-addon/tests" ] \
   || fail "actual context must exclude runner mitm tests"
+[ ! -e "${actual_context}/crates/runner/src/executor/tests" ] \
+  || fail "actual context must exclude nested runner tests"
 [ -f "${actual_context}/crates/sandbox-mock/src/lib.rs" ] \
   || fail "actual context must retain all workspace package entries"
 [ -f "${actual_context}/crates/sandbox-mock/src/call_records.rs" ] \
@@ -355,8 +356,8 @@ workflow_toolchain=$(awk '
   in_compile && /^      image: / { sub(/^      image: /, ""); print; exit }
 ' "${REPO_ROOT}/.github/workflows/runner-image.yml")
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
-[ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "2" ] \
-  || fail "runner binary input schema must start generation 2"
+[ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "3" ] \
+  || fail "runner binary input schema must start generation 3"
 [ "$workflow_toolchain" = 'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825' ] \
   || fail "Runner Image workflow toolchain must derive its owner from GitHub context"
 expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-toolchain-rust:20260825"
