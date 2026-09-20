@@ -1123,7 +1123,7 @@ describe("okou mcp command", () => {
     expect(outputText(consoleError)).not.toContain("xxxx");
   });
 
-  it("rejects unstructured tool errors without retrying or losing the result", async () => {
+  it("handles MCP-standard unstructured tool errors without inferring from text", async () => {
     const toolError = {
       content: [{ type: "text", text: "invalid query" }],
       isError: true,
@@ -1157,9 +1157,9 @@ describe("okou mcp command", () => {
       JSON.stringify({
         status: "error",
         error: {
-          kind: "protocol",
-          code: "invalid_tool_error",
-          message: "MCP tool returned an invalid structured error",
+          kind: "tool",
+          code: "tool_error",
+          message: "MCP tool returned an error",
           retryable: false,
         },
         result: toolError,

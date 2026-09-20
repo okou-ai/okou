@@ -45,21 +45,16 @@ function toolFailure(result: CallToolResult): McpJsonFailure {
   const structured = mcpToolErrorContentSchema.safeParse(
     result.structuredContent,
   );
-  if (!structured.success) {
-    return {
-      status: "error",
-      error: {
-        kind: "protocol",
-        code: "invalid_tool_error",
-        message: "MCP tool returned an invalid structured error",
+  const error = structured.success
+    ? structured.data.error
+    : {
+        code: "tool_error",
+        message: "MCP tool returned an error",
         retryable: false,
-      },
-      result,
-    };
-  }
+      };
   return {
     status: "error",
-    error: { kind: "tool", ...structured.data.error },
+    error: { kind: "tool", ...error },
     result,
   };
 }
@@ -289,6 +284,6 @@ Notes:
   - Runner remains execution authority; authorization changes may require a new Run
   - Runner applies endpoint policy and injects connector credentials
   - Successful call JSON is the raw MCP result; failed --json calls use a stable error envelope
-  - Tool errors require valid structured error details, preserve the raw result, and exit nonzero
+  - Tool errors preserve the raw MCP result and exit nonzero; Okou structured details are used when present
   - Tool calls are never automatically retried`,
   );
