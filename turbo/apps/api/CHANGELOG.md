@@ -8,6 +8,24 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.639.1](https://github.com/vm0-ai/okou/compare/api-v1.639.0...api-v1.639.1) (2026-09-20)
+
+
+### Refactoring
+
+* **connectors:** remove retained v3 catalog reader ([#35426](https://github.com/vm0-ai/okou/issues/35426)) ([68511f3](https://github.com/vm0-ai/okou/commit/68511f32835feba7b653b81ba72ba740ab70c71e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.1
+    * @okouai/connectors bumped to 3.14.1
+    * @okouai/core bumped to 8.684.1
+    * @okouai/db bumped to 1.279.1
+    * @okouai/pi-agent-runtime bumped to 1.33.25
+
 ## [1.639.0](https://github.com/vm0-ai/okou/compare/api-v1.638.0...api-v1.639.0) (2026-09-19)
 
 

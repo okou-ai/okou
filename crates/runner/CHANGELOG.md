@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.202.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.201.0...runner-rs-v0.202.0) (2026-09-20)
+
+
+### Features
+
+* **vnc:** retain authentication timeout stages ([#35423](https://github.com/vm0-ai/okou/issues/35423)) ([6628561](https://github.com/vm0-ai/okou/commit/662856111e607397edd681142fc6af42287bfba5))
+
 ## [0.201.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.200.4...runner-rs-v0.201.0) (2026-09-19)
 
 

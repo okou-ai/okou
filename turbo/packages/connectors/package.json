@@ -1,6 +1,6 @@
 {
   "name": "@okouai/connectors",
-  "version": "3.14.0",
+  "version": "3.14.1",
   "private": true,
   "type": "module",
   "exports": {

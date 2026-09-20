@@ -3413,7 +3413,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "des",
  "flate2",
@@ -3521,7 +3521,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.201.0"
+version = "0.202.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",

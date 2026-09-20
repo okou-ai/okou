@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.346.0](https://github.com/vm0-ai/okou/compare/cli-v9.345.0...cli-v9.346.0) (2026-09-20)
+
+
+### Features
+
+* **vnc:** retain authentication timeout stages ([#35423](https://github.com/vm0-ai/okou/issues/35423)) ([6628561](https://github.com/vm0-ai/okou/commit/662856111e607397edd681142fc6af42287bfba5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.476.1
+    * @okouai/connectors bumped to 3.14.1
+    * @okouai/core bumped to 8.684.1
+    * @okouai/pi-agent-runtime bumped to 1.33.25
+
 ## [9.345.0](https://github.com/vm0-ai/okou/compare/cli-v9.344.0...cli-v9.345.0) (2026-09-19)
 
 

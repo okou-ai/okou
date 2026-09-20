@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.923.1](https://github.com/vm0-ai/okou/compare/app-v0.923.0...app-v0.923.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **platform:** unify artifact fullscreen portals and preserve reading position ([#35392](https://github.com/vm0-ai/okou/issues/35392)) ([1f8b094](https://github.com/vm0-ai/okou/commit/1f8b094f3b5e64871e7db919a302e29af93c3a3a))
+
+
+### Refactoring
+
+* **platform:** remove activity polling and automatic scrolling ([#35435](https://github.com/vm0-ai/okou/issues/35435)) ([5446387](https://github.com/vm0-ai/okou/commit/544638741e790f19e8faa9418eab595143d3ea22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.476.1
+    * @okouai/connectors bumped to 3.14.1
+    * @okouai/core bumped to 8.684.1
+    * @okouai/ui bumped to 1.10.2
+
 ## [0.923.0](https://github.com/vm0-ai/okou/compare/app-v0.922.0...app-v0.923.0) (2026-09-19)
 
 
