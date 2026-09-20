@@ -607,9 +607,14 @@ The shared inner container protects vertical scrolling even when caller layout
 classes include `overflow-hidden`. Short panels must keep their footer actions
 reachable by scrolling; clipping the popup to its safe boundary is not enough.
 Use `showCloseButton` instead of CSS selectors that hide the close control.
-Business code must import the shared dialog rather than Base UI's dialog
-primitives; ESLint enforces this boundary. Preserve Base UI's focus, nested
-portal, outside-press, and animation-completion ownership when changing it.
+`hideWhenNestedOpen` takes the popup out of view for as long as a dialog opened
+from inside it is on top, reading Base UI's `data-nested-dialog-open` state on
+the popup. Take it where the nested dialog is the same surface seen closer and
+is narrower, so the uncovered edges would otherwise read as a second panel
+behind it; both dialogs keep their own backdrop either way. Business code must
+import the shared dialog rather than Base UI's dialog primitives; ESLint
+enforces this boundary. Preserve Base UI's focus, nested portal, outside-press,
+and animation-completion ownership when changing it.
 
 The windowed popup's radius is `rounded-2xl`, and a layer inset from one of its
 edges derives its own from that figure: inner radius = 16px minus the inset it

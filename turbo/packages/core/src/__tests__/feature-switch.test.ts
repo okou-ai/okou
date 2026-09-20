@@ -188,17 +188,23 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("keeps the Monday MCP connector off until explicitly enabled", () => {
+  it("enables the Monday MCP connector for staff and honors explicit overrides", () => {
     expect(FeatureSwitchKey.MondayConnector).toBe("mondayConnector");
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(isFeatureEnabled(FeatureSwitchKey.MondayConnector, context)).toBe(
         false,
       );
     }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.MondayConnector, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.MondayConnector]: false },
+      }),
+    ).toBe(false);
     expect(
       isFeatureEnabled(FeatureSwitchKey.MondayConnector, {
         overrides: { [FeatureSwitchKey.MondayConnector]: true },
@@ -209,8 +215,39 @@ describe("isFeatureEnabled", () => {
     ).toEqual({
       maintainer: "liangyou@okou.ai",
       description: "Enable the Monday.com MCP connector",
-      rolloutStage: "alpha",
+      rolloutStage: "beta",
     });
+  });
+
+  it("enables the Plaud MCP connector for staff and honors explicit overrides", () => {
+    expect(FeatureSwitchKey.PlaudConnector).toBe("plaudConnector");
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.PlaudConnector, context)).toBe(
+        false,
+      );
+    }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.PlaudConnector]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PlaudConnector, {
+        overrides: { [FeatureSwitchKey.PlaudConnector]: true },
+      }),
+    ).toBe(true);
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PlaudConnector]).toEqual(
+      {
+        maintainer: "liangyou@okou.ai",
+        description: "Enable the Plaud MCP connector",
+        rolloutStage: "beta",
+      },
+    );
   });
 
   it("should return true when orgId hash matches enabledOrgIdHashes", () => {
@@ -233,18 +270,18 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Lab, {})).toBe(false);
   });
 
-  it("should enable the Welcome Thread switch for the staff org only", () => {
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-      }),
-    ).toBe(true);
+  it("should enable the Welcome Thread switch for every workspace", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
         orgId: "org_nonexistent",
       }),
+    ).toBe(true);
+    expect(isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {})).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
+        overrides: { [FeatureSwitchKey.WelcomeThread]: false },
+      }),
     ).toBe(false);
-    expect(isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {})).toBe(false);
   });
 
   it("should default Langfuse tracing off for every org and accept user overrides", () => {
@@ -391,6 +428,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
@@ -414,6 +452,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
@@ -551,7 +590,12 @@ describe("getFeatureSwitchMetadata", () => {
       "released",
     );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
-    expect(metadata[FeatureSwitchKey.WelcomeThread].rolloutStage).toBe("beta");
+    expect(metadata[FeatureSwitchKey.WelcomeThread].rolloutStage).toBe(
+      "released",
+    );
+    expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
+      "beta",
+    );
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );

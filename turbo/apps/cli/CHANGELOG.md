@@ -1,5 +1,37 @@
 # Changelog
 
+## [9.348.1](https://github.com/okou-ai/okou/compare/cli-v9.348.0...cli-v9.348.1) (2026-09-20)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.1
+    * @okouai/core bumped to 8.687.1
+    * @okouai/pi-agent-runtime bumped to 1.33.28
+
+## [9.348.0](https://github.com/okou-ai/okou/compare/cli-v9.347.0...cli-v9.348.0) (2026-09-20)
+
+
+### Features
+
+* retire the fal-ai/qwen-image image model ([#35581](https://github.com/okou-ai/okou/issues/35581)) ([86aca4f](https://github.com/okou-ai/okou/commit/86aca4fee17614ab8743b990fe214df6ce98259d))
+
+
+### Bug Fixes
+
+* **cli:** surface failed mcp calls ([#35562](https://github.com/okou-ai/okou/issues/35562)) ([f92d366](https://github.com/okou-ai/okou/commit/f92d3665968bb3a9e03bb1a8d579c5b1405fb586))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.478.0
+    * @okouai/core bumped to 8.687.0
+    * @okouai/pi-agent-runtime bumped to 1.33.27
+
 ## [9.347.0](https://github.com/vm0-ai/okou/compare/cli-v9.346.1...cli-v9.347.0) (2026-09-20)
 
 

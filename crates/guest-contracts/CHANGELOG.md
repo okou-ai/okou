@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.22](https://github.com/okou-ai/okou/compare/guest-contracts-v0.14.21...guest-contracts-v0.14.22) (2026-09-20)
+
+
+### Bug Fixes
+
+* classify codex access-program rejections ([#35512](https://github.com/okou-ai/okou/issues/35512)) ([fc5e3a2](https://github.com/okou-ai/okou/commit/fc5e3a213970835ae0a5108f4943c0f34d1cadd2))
+
 ## [0.14.21](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.20...guest-contracts-v0.14.21) (2026-09-19)
 
 ## [0.14.20](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.19...guest-contracts-v0.14.20) (2026-09-18)

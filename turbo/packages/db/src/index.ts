@@ -90,6 +90,8 @@ import * as orgMembersSchema from "./schema/org-members-metadata";
 import * as orgMembersCacheSchema from "./schema/org-members-cache";
 import * as userCacheSchema from "./schema/user-cache";
 import * as exportJobSchema from "./schema/export-job";
+import * as backgroundJobSchema from "./schema/background-job";
+import * as userExportEntrySchema from "./schema/user-export-entry";
 import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as skillSchema from "./schema/skill";
 import * as usagePricingSchema from "./schema/usage-pricing";
@@ -247,6 +249,8 @@ export const schema = {
   ...orgMembersCacheSchema,
   ...userCacheSchema,
   ...exportJobSchema,
+  ...backgroundJobSchema,
+  ...userExportEntrySchema,
   ...emailSuppressionSchema,
   ...skillSchema,
   ...usagePricingSchema,

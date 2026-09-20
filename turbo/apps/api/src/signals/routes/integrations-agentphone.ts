@@ -18,9 +18,15 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
 import type { RouteEntry } from "../route-entry";
+import {
+  consumeAgentPhoneConnectionCode,
+  createAgentPhoneConnectionCode,
+  isAgentPhoneConnectionCodeMessage,
+  type AgentPhoneConnectionCodeConsumeResult,
+} from "../services/agentphone-connection-code.service";
 import {
   buildAgentPhoneConnectUrl,
   describeAgentPhoneHandleShape,
@@ -31,6 +37,7 @@ import {
   normalizeAgentPhoneHandle,
   publishAgentPhoneUserChanged,
   resolveAgentPhoneUserLinkForEvent,
+  sendAgentPhoneText,
   storeInboundAgentPhoneMessage,
   verifyAgentPhoneConnectSignature,
   verifyAgentPhoneWebhook,
@@ -38,7 +45,10 @@ import {
   type AgentPhoneChannel,
   type AgentPhoneMessageEvent,
 } from "../services/agentphone.service";
-import { isAgentPhoneMentionText } from "../services/agentphone-shared.service";
+import {
+  isAgentPhoneMentionText,
+  type AgentPhoneUserLink,
+} from "../services/agentphone-shared.service";
 import { safeJsonParse, tapError } from "../utils";
 
 interface AgentPhoneConfig {
@@ -255,6 +265,46 @@ const getLinkStatus$ = computed(async (get) => {
   };
 });
 
+const createLinkCode$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const config = getAgentPhoneConfig();
+  if (!config.configured || !config.agentPhoneNumber) {
+    return notConfigured();
+  }
+
+  const [currentLink] = await get(db$)
+    .select({ id: agentphoneUserLinks.id })
+    .from(agentphoneUserLinks)
+    .where(
+      and(
+        eq(agentphoneUserLinks.userId, auth.userId),
+        eq(agentphoneUserLinks.orgId, auth.orgId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+
+  if (currentLink) {
+    return connectConflict("org-linked");
+  }
+
+  const code = await createAgentPhoneConnectionCode(set(writeDb$), {
+    userId: auth.userId,
+    orgId: auth.orgId,
+    publicBrand: PUBLIC_BRAND,
+    secret: env("SECRETS_ENCRYPTION_KEY"),
+  });
+  signal.throwIfAborted();
+
+  return {
+    status: 200 as const,
+    body: {
+      code: code.code,
+      expiresAt: code.expiresAt.toISOString(),
+    },
+  };
+});
+
 const sendAgentPhoneVerificationText$ = command(
   async (
     { set },
@@ -462,19 +512,41 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 
-function connectConflict(reason: LinkConflictReason) {
-  const brandName = PUBLIC_BRAND_PRESENTATION.brandName;
-  const message =
-    reason === "phone-handle-linked"
-      ? `This phone number is already connected to another ${brandName} account or organization. Disconnect it first.`
-      : reason === "org-linked"
-        ? `Your ${brandName} account is already connected to another phone number in this organization. Disconnect it first.`
-        : "This phone number link already exists. Disconnect it first and try again.";
+type LinkConflictReason = "phone-handle-linked" | "org-linked" | "conflict";
 
-  return conflict(message);
+function agentPhoneLinkConflictMessage(reason: LinkConflictReason): string {
+  const brandName = PUBLIC_BRAND_PRESENTATION.brandName;
+  return reason === "phone-handle-linked"
+    ? `This phone number is already connected to another ${brandName} account or organization. Disconnect it first.`
+    : reason === "org-linked"
+      ? `Your ${brandName} account is already connected to another phone number in this organization. Disconnect it first.`
+      : "This phone number link already exists. Disconnect it first and try again.";
 }
 
-type LinkConflictReason = "phone-handle-linked" | "org-linked" | "conflict";
+function connectConflict(reason: LinkConflictReason) {
+  return conflict(agentPhoneLinkConflictMessage(reason));
+}
+
+function agentPhoneConnectedMessage(): string {
+  return `Your phone number is now connected to ${PUBLIC_BRAND_PRESENTATION.brandName}.
+
+You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.
+
+It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.
+
+A few things to try right now:
+- "Summarize my unread Gmail from today"
+- "What's on my Google Calendar tomorrow?"
+- "List the open issues in my GitHub repo"
+- "Find my meeting notes in Notion"
+- "Catch me up on my unread Slack messages"
+- "Triage my latest Sentry error and open a GitHub PR to fix it"
+- "What's trending on X about [topic]?"
+
+No tool connected yet? Just ask me anything and I'll still help, then point you to whatever I need access to.
+
+What would you like to start with?`;
+}
 
 const connectAgentPhone$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -531,24 +603,7 @@ const connectAgentPhone$ = command(
         {
           agentphoneAgentId: body.agentphoneAgentId,
           toNumber: phoneHandle,
-          body: `Your phone number is now connected to ${PUBLIC_BRAND_PRESENTATION.brandName}.
-
-You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.
-
-It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.
-
-A few things to try right now:
-- "Summarize my unread Gmail from today"
-- "What's on my Google Calendar tomorrow?"
-- "List the open issues in my GitHub repo"
-- "Find my meeting notes in Notion"
-- "Catch me up on my unread Slack messages"
-- "Triage my latest Sentry error and open a GitHub PR to fix it"
-- "What's trending on X about [topic]?"
-
-No tool connected yet? Just ask me anything and I'll still help, then point you to whatever I need access to.
-
-What would you like to start with?`,
+          body: agentPhoneConnectedMessage(),
         },
         signal,
       ),
@@ -576,6 +631,22 @@ function textResponse(body: string, status: number): Response {
 
 function okText(): Response {
   return textResponse("OK", 200);
+}
+
+function agentPhoneConnectionCodeReply(
+  result: Exclude<AgentPhoneConnectionCodeConsumeResult, { kind: "not-code" }>,
+): string {
+  switch (result.kind) {
+    case "linked": {
+      return agentPhoneConnectedMessage();
+    }
+    case "invalid": {
+      return "This connection code is invalid or expired. Open Okou to get a new code.";
+    }
+    case "conflict": {
+      return agentPhoneLinkConflictMessage(result.reason);
+    }
+  }
 }
 
 function valueObject(value: unknown): Record<string, unknown> {
@@ -877,6 +948,69 @@ function shouldDispatchAgentPhoneEvent(event: AgentPhoneMessageEvent): boolean {
   return !(event.channel === "imessage" && event.isGroup && !event.mentioned);
 }
 
+/** A connection code binds an unlinked sender, so a sender that already has a
+ *  link keeps the normal prompt path even when the body looks like a code. */
+function isAgentPhoneConnectionCodeCandidate(
+  event: AgentPhoneMessageEvent,
+  userLink: AgentPhoneUserLink | null,
+): boolean {
+  return (
+    userLink === null &&
+    !event.isGroup &&
+    isAgentPhoneConnectionCodeMessage(event.body)
+  );
+}
+
+function agentPhoneEventForStorage(
+  event: AgentPhoneMessageEvent,
+  userLink: AgentPhoneUserLink | null,
+): AgentPhoneMessageEvent {
+  if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
+    return event;
+  }
+  return { ...event, body: "[connection code redacted]" };
+}
+
+async function handleAgentPhoneConnectionCode(
+  db: Db,
+  event: AgentPhoneMessageEvent,
+  userLink: AgentPhoneUserLink | null,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (!isAgentPhoneConnectionCodeCandidate(event, userLink)) {
+    return false;
+  }
+
+  const result = await consumeAgentPhoneConnectionCode(db, {
+    message: event.body,
+    phoneHandle: event.fromNumber,
+    channel: event.channel,
+    secret: env("SECRETS_ENCRYPTION_KEY"),
+  });
+  signal.throwIfAborted();
+  if (result.kind === "not-code") {
+    return false;
+  }
+
+  if (result.kind === "linked") {
+    await publishAgentPhoneUserChanged(result.userId);
+    signal.throwIfAborted();
+  }
+
+  await tapError(
+    sendAgentPhoneText(event, agentPhoneConnectionCodeReply(result), signal),
+    (error) => {
+      log.warn("Handled AgentPhone connection code but reply failed", {
+        result: result.kind,
+        phoneHandle: maskPhoneHandle(event.fromNumber),
+        error,
+      });
+    },
+  );
+  signal.throwIfAborted();
+  return true;
+}
+
 const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const apiStartTime = now();
   const publicBrand = PUBLIC_BRAND;
@@ -949,12 +1083,16 @@ const webhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   const stored = await storeInboundAgentPhoneMessage(writeDb, {
-    event,
+    event: agentPhoneEventForStorage(event, userLink),
     userLinkId: userLink?.id ?? null,
     publicBrand,
   });
   signal.throwIfAborted();
   if (!stored.inserted) {
+    return okText();
+  }
+
+  if (await handleAgentPhoneConnectionCode(writeDb, event, userLink, signal)) {
     return okText();
   }
 
@@ -994,6 +1132,10 @@ export const integrationsAgentPhoneRoutes: readonly RouteEntry[] = [
   {
     route: integrationsAgentPhoneContract.startLink,
     handler: authRoute(agentPhoneAuthOptions, startLink$),
+  },
+  {
+    route: integrationsAgentPhoneContract.createLinkCode,
+    handler: authRoute(agentPhoneAuthOptions, createLinkCode$),
   },
   {
     route: integrationsAgentPhoneContract.unlink,

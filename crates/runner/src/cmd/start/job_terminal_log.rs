@@ -511,6 +511,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
                     | FailureReason::ResponseConnectionLost
                     | FailureReason::SafetyPolicyRefusal
                     | FailureReason::ReconnectRequired
+                    | FailureReason::CodexAccessProgramUnavailable
                     | FailureReason::UnsupportedModel
                     | FailureReason::UsageLimit
             )
@@ -719,6 +720,7 @@ mod tests {
             FailureReason::ResponseConnectionLost,
             FailureReason::SafetyPolicyRefusal,
             FailureReason::ReconnectRequired,
+            FailureReason::CodexAccessProgramUnavailable,
             FailureReason::UnsupportedModel,
             FailureReason::UsageLimit,
         ] {
@@ -1121,6 +1123,7 @@ mod tests {
             FailureReason::ResponseConnectionLost,
             FailureReason::SafetyPolicyRefusal,
             FailureReason::ReconnectRequired,
+            FailureReason::CodexAccessProgramUnavailable,
             FailureReason::UnsupportedModel,
             FailureReason::UsageLimit,
         ] {

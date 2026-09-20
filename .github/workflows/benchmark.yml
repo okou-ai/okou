@@ -1,0 +1,113 @@
+name: Benchmark
+
+# PR comparisons and main baselines do not occupy the staging deployment lock
+# or delay merge-group validation.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: benchmark-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  npm_config_audit: "false"
+
+jobs:
+  detect-turbo-ts-checks:
+    if: |
+      !startsWith(github.head_ref, 'release-please--branches--') &&
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'chore: release'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      turbo-ts-checks-needed: ${{ steps.detect.outputs.turbo-ts-checks-needed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+
+      - name: Detect Turbo TypeScript check need
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CHECKOUT_REF: ${{ github.ref }}
+          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          selection=$(bash .github/scripts/detect-native-only.sh)
+          printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
+
+  bench-api:
+    needs: [detect-turbo-ts-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+    services:
+      postgres:
+        image: ghcr.io/${{ github.repository_owner }}/pgvector@sha256:d229d4e975e7102b7df031cbfcf5c4463ee21c84d0373d7a736191a2603dddfd
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 3s
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-init
+      - name: Run Database Migrations
+        working-directory: turbo
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm --filter @okouai/db db:migrate
+      - name: Bench API
+        working-directory: turbo
+        env:
+          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm -F api exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
+      - name: Print bench summary
+        if: success() || failure()
+        working-directory: turbo/apps/api
+        run: node scripts/print-bench-summary.mjs bench-results-p90.json
+      - name: Upload bench results
+        if: success() || failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-api-results
+          path: |
+            turbo/apps/api/bench-results.json
+            turbo/apps/api/bench-results-p90.json
+          if-no-files-found: warn
+  bench-app:
+    needs: [detect-turbo-ts-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-init
+      - name: Bench App
+        working-directory: turbo
+        run: pnpm -F @okouai/app exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
+      - name: Print bench summary
+        if: success() || failure()
+        working-directory: turbo/apps/platform
+        run: node scripts/print-bench-summary.mjs bench-results-p90.json
+      - name: Upload bench results
+        if: success() || failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-app-results
+          path: |
+            turbo/apps/platform/bench-results.json
+            turbo/apps/platform/bench-results-p90.json
+          if-no-files-found: warn

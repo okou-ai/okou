@@ -98,7 +98,7 @@ jobs:
     needs: resolve-target
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain-rust:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825
     permissions:
       contents: read
     environment: production
@@ -203,7 +203,7 @@ jobs:
     needs: resolve-target
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/vm0-ai/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
     permissions:
       contents: read
       deployments: write

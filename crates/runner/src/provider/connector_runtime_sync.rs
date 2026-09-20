@@ -11,8 +11,8 @@
 //! A sync response must contain each requested target exactly once. Valid
 //! builtin policy and custom firewall updates are prepared independently, then
 //! committed through one registry transaction that holds their registration
-//! and generations current through the atomic write. Authoritative custom
-//! absence removes only that candidate, while unresolved results retain
+//! and generations current through the atomic write. Authoritative absence
+//! removes only the matching candidate, while unresolved results retain
 //! last-known-good state and retry. Transport, validation, queue, and registry
 //! publication failures also retain last-known-good state and install a capped,
 //! jittered retry. Older queued or in-flight work cannot clear a newer realtime
@@ -1011,6 +1011,20 @@ impl ConnectorRuntimeSyncCore {
                             network_policy: network_policy.clone(),
                         })
                     }
+                }
+                (
+                    ConnectorRuntimeTarget::Builtin { connector_slug },
+                    ConnectorRuntimeSyncState::Absent { reason },
+                ) => {
+                    info!(
+                        run_id = %run_id,
+                        target = %target.target.log_identity(),
+                        reason = ?reason,
+                        "builtin connector runtime target is authoritatively absent"
+                    );
+                    Ok(ConnectorRuntimeRegistryUpdate::BuiltinAbsent {
+                        connector_slug: connector_slug.clone(),
+                    })
                 }
                 (
                     ConnectorRuntimeTarget::Custom {
@@ -4121,6 +4135,148 @@ mod tests {
         );
         assert!(active_runs[&run_id].sync_tasks.contains_key(&target));
         drop(active_runs);
+        core.unregister_run(run_id).await;
+    }
+
+    #[tokio::test]
+    async fn builtin_target_becomes_terminally_absent_and_restores_from_wakeup() {
+        let server = MockServer::start();
+        let (core, mut requests) = core_without_worker(&server);
+        let run_id = RunId::nil();
+        let target = builtin_target("slack");
+        let registration = builtin_runtime_target_registration("slack");
+        let absent_sync = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"))
+                .json_body(json!({ "targets": [registration.clone()] }));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "results": [{
+                        "target": target.clone(),
+                        "state": "absent",
+                        "reason": "connector-unavailable",
+                    }],
+                }));
+        });
+        let firewalls = vec![FirewallEntry::Builtin {
+            name: "slack".to_string(),
+            base_url_vars: None,
+            source_id: None,
+        }];
+        let policies = HashMap::from([(
+            "slack".to_string(),
+            NetworkPolicy {
+                allow: vec!["chat:write".to_string()],
+                deny: vec![],
+                ask: vec![],
+                unknown_policy: "allow".to_string(),
+            },
+        )]);
+        let (_dir, registry, registry_path) = registered_runtime_registry_with_targets(
+            run_id,
+            &firewalls,
+            &policies,
+            std::slice::from_ref(&registration),
+        )
+        .await;
+
+        core.register_run(ConnectorRuntimeSyncRegistration {
+            run_id,
+            source_ip: "10.200.0.2",
+            registry,
+            targets: std::slice::from_ref(&registration),
+            refreshes: None,
+        })
+        .await;
+        core.notify_connector_runtime_sync(run_id, target.clone())
+            .await;
+        let request = recv_sync_request(&mut requests).await;
+
+        let (keep_run, events) =
+            capture_sync_events(core.sync_connector_runtime_batch_now(run_id, &request.targets))
+                .await;
+        assert!(keep_run);
+        assert_eq!(warning_count(&events), 0);
+        let absent = captured_event(
+            &events,
+            "builtin connector runtime target is authoritatively absent",
+        );
+        assert_eq!(absent.level, tracing::Level::INFO);
+        assert_connector_field(absent, "target", "builtin:slack");
+        assert_connector_field(absent, "reason", "Connector");
+        absent_sync.assert_calls(1);
+
+        let absent_registry: serde_json::Value = serde_json::from_str(
+            &tokio::fs::read_to_string(&registry_path)
+                .await
+                .expect("registry should be readable"),
+        )
+        .expect("registry should be valid JSON");
+        let absent_sandbox = &absent_registry["sandboxes"]["10.200.0.2"];
+        assert_eq!(absent_sandbox["omittedBuiltinFirewalls"], json!(["slack"]));
+        assert_eq!(
+            absent_sandbox["firewalls"],
+            json!([{"kind": "builtin", "name": "slack"}])
+        );
+        assert!(absent_sandbox["networkPolicies"].get("slack").is_none());
+        assert!(
+            !core.inner.active_runs.lock().await[&run_id]
+                .sync_tasks
+                .contains_key(&target)
+        );
+        assert!(matches!(
+            requests.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
+        absent_sync.delete_async().await;
+        let available_sync = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"))
+                .json_body(json!({ "targets": [registration.clone()] }));
+            then.status(200)
+                .header("content-type", "application/json")
+                .json_body(json!({
+                    "results": [{
+                        "target": target.clone(),
+                        "state": "available",
+                        "networkPolicy": {
+                            "allow": ["chat:write", "files:write"],
+                            "deny": [],
+                            "ask": [],
+                            "unknownPolicy": "allow",
+                        },
+                        "nextSyncAt": "2999-01-01T00:00:00Z",
+                    }],
+                }));
+        });
+        core.notify_connector_runtime_sync(run_id, target.clone())
+            .await;
+        let request = recv_sync_request(&mut requests).await;
+        assert!(
+            core.sync_connector_runtime_batch_now(run_id, &request.targets)
+                .await
+        );
+        available_sync.assert_calls(1);
+
+        let restored_registry: serde_json::Value = serde_json::from_str(
+            &tokio::fs::read_to_string(&registry_path)
+                .await
+                .expect("registry should be readable"),
+        )
+        .expect("registry should be valid JSON");
+        let restored_sandbox = &restored_registry["sandboxes"]["10.200.0.2"];
+        assert!(restored_sandbox.get("omittedBuiltinFirewalls").is_none());
+        assert_eq!(
+            restored_sandbox["networkPolicies"]["slack"]["allow"],
+            json!(["chat:write", "files:write"])
+        );
+        assert!(
+            core.inner.active_runs.lock().await[&run_id]
+                .sync_tasks
+                .contains_key(&target)
+        );
         core.unregister_run(run_id).await;
     }
 

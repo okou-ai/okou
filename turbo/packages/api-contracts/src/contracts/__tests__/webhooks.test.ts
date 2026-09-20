@@ -744,6 +744,7 @@ describe("agent completion failure reasons", () => {
       "response_connection_lost",
       "safety_policy_refusal",
       "reconnect_required",
+      "codex_access_program_unavailable",
       "unsupported_model",
       "usage_limit",
     ]);

@@ -23,6 +23,7 @@ import {
   usagePackCreditsAsync$,
 } from "../../signals/okou-page/billing.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { getStartedSummary$ } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -259,24 +260,48 @@ function AdminGrowthEntry() {
   return <GrowthEntry slackInstalled={slackInstalled} />;
 }
 
+/**
+ * Whether Get started will draw a control of its own.
+ *
+ * The switch alone does not settle it: the server can still withhold the
+ * quests, and the entry renders nothing when it has none. Only a pending
+ * answer counts as showing, so the corner never offers the split control and
+ * then swaps it out once the quests arrive. A failed status request never
+ * becomes data, so it hands the corner back rather than emptying it.
+ */
+function useGetStartedShown(questsEnabled: boolean): boolean {
+  const summaryLoadable = useLastLoadable(getStartedSummary$);
+  if (!questsEnabled) {
+    return false;
+  }
+  if (summaryLoadable.state === "loading") {
+    return true;
+  }
+  return summaryLoadable.state === "hasData" && summaryLoadable.data.total > 0;
+}
+
 export function GrowthEntryHeader() {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
   const features = useGet(featureSwitch$);
   const questsEnabled = features[FeatureSwitchKey.GetStartedQuests];
+  const getStartedShown = useGetStartedShown(questsEnabled);
+  // The corner names one thing. Get started already carries inviting and
+  // Slack as its own rows, so wherever it appears it replaces the split
+  // control — for every role, since a member can connect, build, share and
+  // check in alone. Where it does not, the split control remains the admin's
+  // entry and a member's corner stays empty.
+  const showGrowthEntry = isAdmin && !getStartedShown;
   return (
     <>
       {/* Match the former in-flow header's 16px + 32px + 8px height. The
           slot exists from the first render so async role and entry resolution
           cannot move the home content. The corner controls stay absolute. */}
       <div aria-hidden className="hidden h-14 shrink-0 md:block" />
-      {/* Getting started is offered to every role — a member can connect,
-          build, share and check in on their own — while the workspace controls
-          beside it stay admin-only. */}
       {questsEnabled || isAdmin ? (
         <CornerHeader>
           {questsEnabled ? <GetStartedEntry /> : null}
-          {isAdmin ? <AdminGrowthEntry /> : null}
+          {showGrowthEntry ? <AdminGrowthEntry /> : null}
         </CornerHeader>
       ) : null}
     </>

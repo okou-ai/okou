@@ -56,7 +56,7 @@ jobs:
           file: ./docker/toolchain/Dockerfile
           target: toolchain
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/vm0-ai/vm0-toolchain,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/vm0-toolchain,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           labels: |
@@ -71,7 +71,7 @@ jobs:
           file: ./docker/toolchain/Dockerfile
           target: toolchain-rust
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/vm0-ai/vm0-toolchain-rust,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/vm0-toolchain-rust,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           labels: |
@@ -86,7 +86,7 @@ jobs:
           file: ./docker/toolchain/Dockerfile
           target: development
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ env.REGISTRY }}/vm0-ai/vm0-dev,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/vm0-dev,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           labels: |
@@ -153,7 +153,7 @@ jobs:
             refs=()
             for digest_file in /tmp/digests/digests-*/"$image"/*; do
               digest=$(basename "$digest_file")
-              refs+=("${REGISTRY}/vm0-ai/${repo}@sha256:${digest}")
+              refs+=("${REGISTRY}/${{ github.repository_owner }}/${repo}@sha256:${digest}")
             done
 
             if [ "${#refs[@]}" -eq 0 ]; then
@@ -162,8 +162,8 @@ jobs:
             fi
 
             docker buildx imagetools create \
-              --tag "${REGISTRY}/vm0-ai/${repo}:latest" \
-              --tag "${REGISTRY}/vm0-ai/${repo}:${SHA_SHORT}" \
-              --tag "${REGISTRY}/vm0-ai/${repo}:${DATE}" \
+              --tag "${REGISTRY}/${{ github.repository_owner }}/${repo}:latest" \
+              --tag "${REGISTRY}/${{ github.repository_owner }}/${repo}:${SHA_SHORT}" \
+              --tag "${REGISTRY}/${{ github.repository_owner }}/${repo}:${DATE}" \
               "${refs[@]}"
           done

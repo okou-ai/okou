@@ -1038,7 +1038,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "./generated/resources/reverse-template/SKILL.md",
     );
     expect(appendSystemPrompt).toContain(
-      "https://github.com/vm0-ai/Template-artifact/tree/<commit>/reverse-template",
+      "https://github.com/okou-ai/Template-artifact/tree/<commit>/reverse-template",
     );
     expect(appendSystemPrompt).toContain(
       "do not pull or compare the registry copy",

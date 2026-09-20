@@ -1,18 +1,10 @@
-import { fetchResource } from "../../lib/resource-fetch.ts";
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { PresentationTemplateItem } from "@okouai/core/presentation-template-items";
 import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef, tapError } from "../utils.ts";
-import type { TemplatePreviewRuntime } from "./template-preview-runtime.ts";
-import {
-  parsePresentationPreviewDraft,
-  previewPresentationHtml,
-  type PresentationPreviewDraft,
-} from "../../views/okou-page/presentation-html-preview.ts";
-import { readableAttachmentResourceUrl } from "../../views/okou-page/attachment-url.ts";
+import { onRef } from "../utils.ts";
+import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createAvatarTemplatePickerSignals } from "./avatar-template-picker.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
 import { createModelPickerMenuSignals } from "./model-picker-menu.ts";
@@ -103,15 +95,6 @@ export const resetNewThreadComputerAccess$ = command(({ set }) => {
 
 // -- Model picker open state ------------------------------------------------
 
-export interface TemplateCardHtmlPreviewState {
-  readonly slug: string;
-  readonly embedUrl: string;
-  readonly themeId: string;
-  readonly loading: boolean;
-  readonly frameUrl: string | null;
-  readonly slideCount: number;
-}
-
 export interface OpenTemplatePickerDialogOptions {
   readonly category: string;
   readonly referenceValue: GenerationTemplateRequest | null;
@@ -121,157 +104,6 @@ export type OpenTemplatePickerDialogCommand = Command<
   void,
   [OpenTemplatePickerDialogOptions]
 >;
-
-interface TemplateCardHoverState {
-  readonly slug: string;
-  readonly index: number;
-}
-
-interface TemplateDetailHtmlPreviewState {
-  readonly slug: string;
-  readonly embedUrl: string;
-  readonly themeId: string;
-  readonly themeCss: string;
-  readonly index: number;
-  readonly loading: boolean;
-  readonly frameLoaded: boolean;
-  readonly frameUrl: string | null;
-  readonly previousFrameSlideIndex: number | null;
-  readonly previousFrameUrl: string | null;
-  readonly slideCount: number;
-}
-
-interface PresentationTemplateDetailSelection {
-  readonly embedUrl: string;
-  readonly index: number;
-  readonly slug: string;
-  readonly themeCss: string;
-  readonly themeId: string;
-}
-
-interface PresentationTemplateDetailSelectionParams {
-  readonly index: number;
-  readonly item: PresentationTemplateItem;
-  readonly runtime: TemplatePreviewRuntime;
-  readonly themeCss: string;
-  readonly themeId: string;
-}
-
-interface LoadedTemplateDetailFrame {
-  readonly slideIndex: number;
-  readonly url: string;
-}
-
-function presentationTemplateDetailSlideCount(
-  item: PresentationTemplateItem,
-): number {
-  return Math.max(item.slideCount ?? item.previewImages.length, 1);
-}
-
-function presentationTemplateDetailPreviewState(params: {
-  readonly draft: PresentationPreviewDraft;
-  readonly item: PresentationTemplateItem;
-  readonly selection: PresentationTemplateDetailSelection;
-}): TemplateDetailHtmlPreviewState {
-  const slide =
-    params.draft.slides[
-      Math.min(params.selection.index, params.draft.slides.length - 1)
-    ];
-  if (slide === undefined) {
-    throw new Error("Presentation template preview draft has no slides");
-  }
-  const frameUrl = URL.createObjectURL(
-    new Blob(
-      [
-        previewPresentationHtml({
-          activeSlideId: slide.id,
-          additionalHeadStyle: params.selection.themeCss,
-          html: params.draft.html,
-        }),
-      ],
-      { type: "text/html;charset=utf-8" },
-    ),
-  );
-  return {
-    slug: params.item.slug,
-    embedUrl: params.item.embedUrl,
-    themeId: params.selection.themeId,
-    themeCss: params.selection.themeCss,
-    index: params.selection.index,
-    loading: false,
-    frameLoaded: false,
-    frameUrl,
-    previousFrameSlideIndex: null,
-    previousFrameUrl: null,
-    slideCount: params.draft.slides.length,
-  };
-}
-
-function previousTemplateDetailFrame(
-  current: TemplateDetailHtmlPreviewState | null,
-): LoadedTemplateDetailFrame | null {
-  if (current?.frameLoaded && current.frameUrl !== null) {
-    return { slideIndex: current.index, url: current.frameUrl };
-  }
-  if (
-    current?.previousFrameUrl !== null &&
-    current?.previousFrameUrl !== undefined &&
-    current.previousFrameSlideIndex !== null
-  ) {
-    return {
-      slideIndex: current.previousFrameSlideIndex,
-      url: current.previousFrameUrl,
-    };
-  }
-  return null;
-}
-
-function templateDetailFrameUrls(
-  preview: TemplateDetailHtmlPreviewState | null,
-): ReadonlySet<string> {
-  const frameUrls = new Set<string>();
-  if (preview?.frameUrl !== null && preview?.frameUrl !== undefined) {
-    frameUrls.add(preview.frameUrl);
-  }
-  if (
-    preview?.previousFrameUrl !== null &&
-    preview?.previousFrameUrl !== undefined
-  ) {
-    frameUrls.add(preview.previousFrameUrl);
-  }
-  return frameUrls;
-}
-
-function revokeUnusedTemplateDetailFrameUrls(
-  frameUrls: ReadonlySet<string>,
-  retainedFrameUrls: ReadonlySet<string>,
-): void {
-  for (const frameUrl of frameUrls) {
-    if (!retainedFrameUrls.has(frameUrl)) {
-      URL.revokeObjectURL(frameUrl);
-    }
-  }
-}
-
-async function loadPresentationTemplateHtmlPreview(
-  params: {
-    readonly item: PresentationTemplateItem;
-  },
-  signal: AbortSignal,
-): Promise<PresentationPreviewDraft | null> {
-  const response = await fetchResource(
-    readableAttachmentResourceUrl(params.item.embedUrl),
-    {
-      mode: "cors",
-    },
-    signal,
-  );
-  if (!response.ok) {
-    throw new Error(`Failed to load template HTML (${response.status})`);
-  }
-  const draft = parsePresentationPreviewDraft(await response.text());
-  return draft.slides.length > 0 ? draft : null;
-}
 
 type MediaModelCategory = "image" | "video";
 
@@ -488,16 +320,6 @@ function createTemplatePickerListSignals() {
     },
   );
 
-  const internalTemplatePickerPreviewSlug$ = state<string | null>(null);
-  const templatePickerPreviewSlug$ = computed((get) => {
-    return get(internalTemplatePickerPreviewSlug$);
-  });
-  const setTemplatePickerPreviewSlug$ = command(
-    ({ set }, slug: string | null) => {
-      set(internalTemplatePickerPreviewSlug$, slug);
-    },
-  );
-
   const internalTemplatePickerPresentationScrollTop$ = state(0);
   const setTemplatePickerPresentationScrollTop$ = command(
     ({ set }, scrollTop: number) => {
@@ -536,25 +358,23 @@ function createTemplatePickerListSignals() {
       setTemplatePickerSearch$,
       templatePickerWorkflowCategory$,
       setTemplatePickerWorkflowCategory$,
-      templatePickerPreviewSlug$,
-      setTemplatePickerPreviewSlug$,
       setTemplatePickerPresentationScrollTop$,
       restoreTemplatePickerPresentationScroll$,
       illustrationVariantIndex$,
       setIllustrationVariantIndex$,
       ...avatarTemplates,
     },
-    internalTemplatePickerPreviewSlug$,
   };
 }
 
 function createOpenTemplatePickerDialogCommand(
   dialog: ReturnType<typeof createTemplatePickerDialogSignals>,
   list: ReturnType<typeof createTemplatePickerListSignals>,
+  previews: ReturnType<typeof createPresentationTemplatePreviewSignals>,
 ): OpenTemplatePickerDialogCommand {
   return command(({ set }, options: OpenTemplatePickerDialogOptions): void => {
     set(list.signals.setTemplatePickerSearch$, "");
-    set(list.signals.setTemplatePickerPreviewSlug$, null);
+    set(previews.clearPresentationTemplatePreviews$);
     set(dialog.setTemplatePickerReferenceValue$, options.referenceValue);
     set(list.signals.setTemplatePickerCategory$, options.category);
     set(dialog.setTemplatePickerOpen$, true);
@@ -562,57 +382,6 @@ function createOpenTemplatePickerDialogCommand(
 }
 
 function createTemplateCardSignals() {
-  const internalTemplateCardHover$ = state<TemplateCardHoverState | null>(null);
-  const templateCardHover$ = computed((get) => {
-    return get(internalTemplateCardHover$);
-  });
-  const setTemplateCardHover$ = command(
-    ({ set }, value: TemplateCardHoverState | null) => {
-      set(internalTemplateCardHover$, value);
-    },
-  );
-
-  const internalTemplateCardHtmlPreview$ =
-    state<TemplateCardHtmlPreviewState | null>(null);
-  const templateCardHtmlPreview$ = computed((get) => {
-    return get(internalTemplateCardHtmlPreview$);
-  });
-  const setTemplateCardHtmlPreview$ = command(
-    ({ set }, value: TemplateCardHtmlPreviewState | null) => {
-      set(internalTemplateCardHtmlPreview$, value);
-    },
-  );
-
-  const internalTemplateCardLoadedHtmlFrameUrls$ = state<
-    Readonly<Record<string, string>>
-  >({});
-  const templateCardLoadedHtmlFrameUrls$ = computed((get) => {
-    return get(internalTemplateCardLoadedHtmlFrameUrls$);
-  });
-  const setTemplateCardLoadedHtmlFrameUrl$ = command(
-    ({ get, set }, key: string, frameUrl: string) => {
-      set(internalTemplateCardLoadedHtmlFrameUrls$, {
-        ...get(internalTemplateCardLoadedHtmlFrameUrls$),
-        [key]: frameUrl,
-      });
-    },
-  );
-
-  const clearTemplateCardHtmlPreviewFrames$ = command(({ get, set }) => {
-    const activeFrameUrl = get(internalTemplateCardHtmlPreview$)?.frameUrl;
-    const frameUrls = new Set(
-      Object.values(get(internalTemplateCardLoadedHtmlFrameUrls$)),
-    );
-    if (activeFrameUrl !== null && activeFrameUrl !== undefined) {
-      frameUrls.add(activeFrameUrl);
-    }
-    for (const frameUrl of frameUrls) {
-      URL.revokeObjectURL(frameUrl);
-    }
-    set(internalTemplateCardHtmlPreview$, null);
-    set(internalTemplateCardLoadedHtmlFrameUrls$, {});
-  });
-
   const internalTemplateCardThemeIdBySlug$ = state<
     Readonly<Record<string, string>>
   >({});
@@ -631,299 +400,9 @@ function createTemplateCardSignals() {
 
   return {
     signals: {
-      templateCardHover$,
-      setTemplateCardHover$,
-      templateCardHtmlPreview$,
-      setTemplateCardHtmlPreview$,
-      templateCardLoadedHtmlFrameUrls$,
-      setTemplateCardLoadedHtmlFrameUrl$,
       templateCardThemeIdBySlug$,
       setTemplateCardThemeId$,
     },
-    internalTemplateCardHover$,
-    clearTemplateCardHtmlPreviewFrames$,
-  };
-}
-
-function createTemplateDetailStateSignals() {
-  const internalTemplateDetailHtmlPreview$ =
-    state<TemplateDetailHtmlPreviewState | null>(null);
-  const templateDetailHtmlPreview$ = computed((get) => {
-    return get(internalTemplateDetailHtmlPreview$);
-  });
-  const replaceTemplateDetailHtmlPreview$ = command(
-    ({ get, set }, value: TemplateDetailHtmlPreviewState | null) => {
-      const current = get(internalTemplateDetailHtmlPreview$);
-      if (value === null) {
-        revokeUnusedTemplateDetailFrameUrls(
-          templateDetailFrameUrls(current),
-          new Set(),
-        );
-        set(internalTemplateDetailHtmlPreview$, null);
-        return;
-      }
-
-      const previousFrame = previousTemplateDetailFrame(current);
-      const retainedFrameUrls = new Set<string>();
-      if (value.frameUrl !== null) {
-        retainedFrameUrls.add(value.frameUrl);
-      }
-      if (previousFrame !== null) {
-        retainedFrameUrls.add(previousFrame.url);
-      }
-      revokeUnusedTemplateDetailFrameUrls(
-        templateDetailFrameUrls(current),
-        retainedFrameUrls,
-      );
-      set(internalTemplateDetailHtmlPreview$, {
-        ...value,
-        previousFrameSlideIndex: previousFrame?.slideIndex ?? null,
-        previousFrameUrl: previousFrame?.url ?? null,
-      });
-    },
-  );
-
-  const settlePresentationTemplateDetailPreviewFrame$ = command(
-    ({ get, set }, frameUrl: string): void => {
-      const current = get(internalTemplateDetailHtmlPreview$);
-      if (current?.frameUrl !== frameUrl) {
-        return;
-      }
-      if (current.previousFrameUrl !== null) {
-        URL.revokeObjectURL(current.previousFrameUrl);
-      }
-      set(internalTemplateDetailHtmlPreview$, {
-        ...current,
-        frameLoaded: true,
-        previousFrameSlideIndex: null,
-        previousFrameUrl: null,
-      });
-    },
-  );
-
-  return {
-    signals: {
-      templateDetailHtmlPreview$,
-      settlePresentationTemplateDetailPreviewFrame$,
-    },
-    internalTemplateDetailHtmlPreview$,
-    replaceTemplateDetailHtmlPreview$,
-  };
-}
-
-function createTemplatePreviewResourceSignals(
-  list: ReturnType<typeof createTemplatePickerListSignals>,
-  cards: ReturnType<typeof createTemplateCardSignals>,
-  detail: ReturnType<typeof createTemplateDetailStateSignals>,
-) {
-  const releaseTemplatePickerPreviewResources$ = command(
-    ({ set }, runtime: TemplatePreviewRuntime) => {
-      const preview = runtime.presentation;
-      preview.detailRequestToken = null;
-      for (const animationFrame of preview.pendingSlideAnimationFrames.values()) {
-        window.cancelAnimationFrame(animationFrame);
-      }
-      preview.pendingSlideAnimationFrames.clear();
-      preview.pendingSlideIndexes.clear();
-      preview.activeIndexes.clear();
-      preview.activeTokens.clear();
-      set(cards.clearTemplateCardHtmlPreviewFrames$);
-      set(cards.internalTemplateCardHover$, null);
-      set(detail.replaceTemplateDetailHtmlPreview$, null);
-      set(list.internalTemplatePickerPreviewSlug$, null);
-    },
-  );
-
-  const ownTemplatePickerPreviewResources$ = command(
-    ({ set }, runtime: TemplatePreviewRuntime, signal: AbortSignal): void => {
-      const preview = runtime.presentation;
-      if (preview.previewOwnerSignal === signal) {
-        return;
-      }
-      preview.previewOwnerSignal = signal;
-      signal.addEventListener(
-        "abort",
-        () => {
-          if (preview.previewOwnerSignal !== signal) {
-            return;
-          }
-          preview.previewOwnerSignal = null;
-          set(releaseTemplatePickerPreviewResources$, runtime);
-        },
-        { once: true },
-      );
-    },
-  );
-
-  return {
-    releaseTemplatePickerPreviewResources$,
-    ownTemplatePickerPreviewResources$,
-  };
-}
-
-function createApplyPresentationTemplateDetailSelectionSignal(
-  detail: ReturnType<typeof createTemplateDetailStateSignals>,
-) {
-  return command(
-    (
-      { set },
-      runtime: TemplatePreviewRuntime,
-      item: PresentationTemplateItem,
-      selection: PresentationTemplateDetailSelection,
-    ) => {
-      const draft = runtime.presentation.drafts.get(item.embedUrl);
-      if (draft !== undefined) {
-        set(
-          detail.replaceTemplateDetailHtmlPreview$,
-          presentationTemplateDetailPreviewState({
-            draft,
-            item,
-            selection,
-          }),
-        );
-        return;
-      }
-
-      const failed = runtime.presentation.failed.has(item.embedUrl);
-      set(detail.replaceTemplateDetailHtmlPreview$, {
-        slug: item.slug,
-        embedUrl: item.embedUrl,
-        themeId: selection.themeId,
-        themeCss: selection.themeCss,
-        index: selection.index,
-        loading: !failed,
-        frameLoaded: false,
-        frameUrl: null,
-        previousFrameSlideIndex: null,
-        previousFrameUrl: null,
-        slideCount: presentationTemplateDetailSlideCount(item),
-      });
-    },
-  );
-}
-
-function createOpenPresentationTemplateDetailPreviewSignal(
-  list: ReturnType<typeof createTemplatePickerListSignals>,
-  detail: ReturnType<typeof createTemplateDetailStateSignals>,
-  resources: ReturnType<typeof createTemplatePreviewResourceSignals>,
-  applySelection$: ReturnType<
-    typeof createApplyPresentationTemplateDetailSelectionSignal
-  >,
-) {
-  return command(
-    async (
-      { get, set },
-      params: PresentationTemplateDetailSelectionParams,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      const cache = params.runtime.presentation;
-      set(resources.ownTemplatePickerPreviewResources$, params.runtime, signal);
-      const token = Symbol(params.item.embedUrl);
-      const selection: PresentationTemplateDetailSelection = {
-        embedUrl: params.item.embedUrl,
-        index: params.index,
-        slug: params.item.slug,
-        themeCss: params.themeCss,
-        themeId: params.themeId,
-      };
-      cache.detailRequestToken = token;
-      set(applySelection$, params.runtime, params.item, selection);
-      set(list.internalTemplatePickerPreviewSlug$, params.item.slug);
-
-      if (
-        cache.drafts.has(params.item.embedUrl) ||
-        cache.failed.has(params.item.embedUrl)
-      ) {
-        return;
-      }
-
-      let pendingLoad = cache.pendingLoads.get(params.item.embedUrl);
-      if (pendingLoad === undefined) {
-        pendingLoad = loadPresentationTemplateHtmlPreview(
-          {
-            item: params.item,
-          },
-          signal,
-        );
-        cache.pendingLoads.set(params.item.embedUrl, pendingLoad);
-      }
-
-      const result = await tapError(
-        pendingLoad.finally(() => {
-          if (cache.pendingLoads.get(params.item.embedUrl) === pendingLoad) {
-            cache.pendingLoads.delete(params.item.embedUrl);
-          }
-        }),
-      );
-      signal.throwIfAborted();
-
-      if (result === undefined || result === null) {
-        cache.failed.add(params.item.embedUrl);
-      } else {
-        cache.drafts.set(params.item.embedUrl, result);
-      }
-
-      if (cache.detailRequestToken !== token) {
-        return;
-      }
-      const activeDetail = get(detail.internalTemplateDetailHtmlPreview$);
-      if (
-        activeDetail === null ||
-        activeDetail.embedUrl !== params.item.embedUrl ||
-        activeDetail.slug !== params.item.slug
-      ) {
-        return;
-      }
-      set(applySelection$, params.runtime, params.item, {
-        embedUrl: activeDetail.embedUrl,
-        index: activeDetail.index,
-        slug: activeDetail.slug,
-        themeCss: activeDetail.themeCss,
-        themeId: activeDetail.themeId,
-      });
-    },
-  );
-}
-
-function createPresentationTemplateDetailNavigationSignals(
-  list: ReturnType<typeof createTemplatePickerListSignals>,
-  detail: ReturnType<typeof createTemplateDetailStateSignals>,
-  applySelection$: ReturnType<
-    typeof createApplyPresentationTemplateDetailSelectionSignal
-  >,
-) {
-  const selectPresentationTemplateDetailPreview$ = command(
-    ({ get, set }, params: PresentationTemplateDetailSelectionParams) => {
-      const activeDetail = get(detail.internalTemplateDetailHtmlPreview$);
-      if (
-        activeDetail === null ||
-        activeDetail.embedUrl !== params.item.embedUrl ||
-        activeDetail.slug !== params.item.slug
-      ) {
-        return;
-      }
-      set(applySelection$, params.runtime, params.item, {
-        embedUrl: params.item.embedUrl,
-        index: params.index,
-        slug: params.item.slug,
-        themeCss: params.themeCss,
-        themeId: params.themeId,
-      });
-    },
-  );
-
-  const closePresentationTemplateDetailPreview$ = command(
-    ({ set }, runtime: TemplatePreviewRuntime) => {
-      runtime.presentation.detailRequestToken = null;
-      set(detail.replaceTemplateDetailHtmlPreview$, null);
-      set(list.internalTemplatePickerPreviewSlug$, null);
-    },
-  );
-
-  return {
-    selectPresentationTemplateDetailPreview$,
-    closePresentationTemplateDetailPreview$,
   };
 }
 
@@ -932,19 +411,9 @@ export function createComposerUiSignals() {
   const dialog = createTemplatePickerDialogSignals();
   const list = createTemplatePickerListSignals();
   const cards = createTemplateCardSignals();
-  const detail = createTemplateDetailStateSignals();
+  const previews = createPresentationTemplatePreviewSignals();
   const importedPresentationTemplates =
     createImportedPresentationTemplateSignals();
-  const resources = createTemplatePreviewResourceSignals(list, cards, detail);
-  const applySelection$ =
-    createApplyPresentationTemplateDetailSelectionSignal(detail);
-  const openPresentationTemplateDetailPreview$ =
-    createOpenPresentationTemplateDetailPreviewSignal(
-      list,
-      detail,
-      resources,
-      applySelection$,
-    );
 
   return {
     model: basic.model,
@@ -952,21 +421,14 @@ export function createComposerUiSignals() {
     openTemplatePickerDialog$: createOpenTemplatePickerDialogCommand(
       dialog,
       list,
+      previews,
     ),
     template: {
       ...dialog,
       ...list.signals,
       ...cards.signals,
-      ...detail.signals,
+      ...previews,
       ...importedPresentationTemplates,
-      ...resources,
-      loadPresentationTemplateHtmlPreview,
-      openPresentationTemplateDetailPreview$,
-      ...createPresentationTemplateDetailNavigationSignals(
-        list,
-        detail,
-        applySelection$,
-      ),
     },
   };
 }
