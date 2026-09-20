@@ -7767,6 +7767,91 @@ async fn park_rejects_severe_balloon_retention_after_pausing() {
 }
 
 #[tokio::test]
+async fn severe_park_retries_terminal_snapshot_after_failed_progress_probe() {
+    let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
+    let target_mib = 4096 - balloon::MIN_GUEST_MIB;
+    let low_free_stats = |actual_mib| {
+        MockBalloonStats::new(target_mib, actual_mib).with_memory(mib(100), mib(3000), mib(4096))
+    };
+    let mut api = MockLifecycleApi::with_stats(
+        std::collections::VecDeque::new(),
+        std::collections::VecDeque::from([
+            MockBalloonStatsReply::Ok(low_free_stats(0)),
+            MockBalloonStatsReply::Ok(low_free_stats(1200)),
+        ]),
+    );
+    let (guest, mut guest_stream) = connected_mock_guest().await;
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    let mut is_parked = false;
+    tokio::time::pause();
+    let (result, snapshot) = {
+        let park = park_inner_with_guest(
+            &mut is_parked,
+            4096,
+            api.socket_path(),
+            "failed-progress-probe-terminal-retry",
+            PhysicalParkRequest {
+                guest,
+                handoff: None,
+                memory_policy: ParkMemoryPolicy::Reclaim,
+                state_rx: state_rx.clone(),
+            },
+            SandboxFinalExecParkSubstageEvents::new(None),
+        );
+        tokio::pin!(park);
+
+        let progress_probe = advance_balloon_wait_to_fresh_guest_snapshot(
+            park.as_mut(),
+            &captured,
+            &mut guest_stream,
+        )
+        .await;
+        assert_eq!(progress_probe.msg_type, MSG_MEMORY_SNAPSHOT);
+        let failed_response =
+            guest_control_proto::encode(MSG_PONG, progress_probe.seq, &[]).unwrap();
+        guest_stream.write_all(&failed_response).await.unwrap();
+
+        let terminal_probe = tokio::select! {
+            request = read_vsock_message(&mut guest_stream) => request,
+            _ = park.as_mut() => {
+                panic!("park completed without retrying the terminal snapshot")
+            }
+        };
+        assert_eq!(terminal_probe.msg_type, MSG_MEMORY_SNAPSHOT);
+        assert_ne!(terminal_probe.seq, progress_probe.seq);
+        let snapshot = test_guest_memory_snapshot();
+        let terminal_response = guest_control_proto::encode(
+            MSG_MEMORY_SNAPSHOT_RESULT,
+            terminal_probe.seq,
+            &snapshot.encode_payload(),
+        )
+        .unwrap();
+        guest_stream.write_all(&terminal_response).await.unwrap();
+
+        let (_, result) = park.as_mut().await;
+        (result, snapshot)
+    };
+    drop(guard);
+    let diagnostics = expect_severe_memory_retention(result.unwrap());
+    assert!(diagnostics.guest_memory_snapshot_attempted);
+    assert_eq!(
+        diagnostics.guest_memory_snapshot,
+        Some(guest_memory_snapshot(snapshot))
+    );
+    assert!(is_parked);
+
+    let requests = api.drain_requests();
+    let pause = patches(&requests)
+        .into_iter()
+        .find(|request| request.path == "/vm")
+        .expect("severe park should pause after collecting terminal memory evidence");
+    assert!(pause.body.contains("Paused"));
+}
+
+#[tokio::test]
 async fn severe_park_collects_terminal_guest_memory_before_pause() {
     let (_state_tx, state_rx) = watch::channel(SandboxState::Running);
     let target_mib = 2048 - balloon::MIN_GUEST_MIB;

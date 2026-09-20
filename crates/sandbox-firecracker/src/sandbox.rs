@@ -4868,7 +4868,7 @@ async fn park_inner_with_guest_and_handoff<'observer>(
                         SandboxParkOutcome::NonReusable(
                             SandboxParkNonReusableReason::SevereMemoryRetention(diagnostics),
                         ) => {
-                            if !diagnostics.guest_memory_snapshot_attempted {
+                            if diagnostics.guest_memory_snapshot.is_none() {
                                 diagnostics.guest_memory_snapshot_attempted = true;
                                 diagnostics.guest_memory_snapshot =
                                     terminal_guest_memory_snapshot(&guest, log_id).await;
