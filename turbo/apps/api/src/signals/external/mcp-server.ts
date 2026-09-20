@@ -207,15 +207,15 @@ function reusableSchemaKey(value: unknown): string | null {
   return null;
 }
 
-const schemaMapKeywords = new Set([
+const schemaMapKeywords = [
   "$defs",
   "definitions",
   "dependentSchemas",
   "patternProperties",
   "properties",
-]);
-const schemaArrayKeywords = new Set(["allOf", "anyOf", "oneOf", "prefixItems"]);
-const schemaValueKeywords = new Set([
+] as const;
+const schemaArrayKeywords = ["allOf", "anyOf", "oneOf", "prefixItems"] as const;
+const schemaValueKeywords = [
   "additionalItems",
   "additionalProperties",
   "contains",
@@ -228,7 +228,11 @@ const schemaValueKeywords = new Set([
   "then",
   "unevaluatedItems",
   "unevaluatedProperties",
-]);
+] as const;
+
+function includesString(values: readonly string[], value: string): boolean {
+  return values.includes(value);
+}
 
 function forEachJsonObject(
   value: unknown,
@@ -254,7 +258,7 @@ function forEachJsonSchemaChild(
   insideDefinitions: boolean,
 ): void {
   for (const [keyword, value] of Object.entries(schema)) {
-    if (schemaMapKeywords.has(keyword) && isJsonObject(value)) {
+    if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
       const childInsideDefinitions =
         insideDefinitions || keyword === "$defs" || keyword === "definitions";
       for (const child of Object.values(value)) {
@@ -264,7 +268,7 @@ function forEachJsonSchemaChild(
       }
       continue;
     }
-    if (schemaArrayKeywords.has(keyword) && Array.isArray(value)) {
+    if (includesString(schemaArrayKeywords, keyword) && Array.isArray(value)) {
       for (const child of value) {
         if (isJsonObject(child)) {
           visit(child, insideDefinitions);
@@ -272,7 +276,7 @@ function forEachJsonSchemaChild(
       }
       continue;
     }
-    if (schemaValueKeywords.has(keyword)) {
+    if (includesString(schemaValueKeywords, keyword)) {
       forEachJsonObject(value, (child) => {
         visit(child, insideDefinitions);
       });
@@ -290,7 +294,7 @@ function replaceJsonSchemaChildren(
 ): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(schema).map(([keyword, value]) => {
-      if (schemaMapKeywords.has(keyword) && isJsonObject(value)) {
+      if (includesString(schemaMapKeywords, keyword) && isJsonObject(value)) {
         const childInsideDefinitions =
           insideDefinitions || keyword === "$defs" || keyword === "definitions";
         return [
@@ -307,7 +311,10 @@ function replaceJsonSchemaChildren(
           ),
         ];
       }
-      if (schemaArrayKeywords.has(keyword) && Array.isArray(value)) {
+      if (
+        includesString(schemaArrayKeywords, keyword) &&
+        Array.isArray(value)
+      ) {
         return [
           keyword,
           value.map((child) => {
@@ -317,7 +324,7 @@ function replaceJsonSchemaChildren(
           }),
         ];
       }
-      if (schemaValueKeywords.has(keyword)) {
+      if (includesString(schemaValueKeywords, keyword)) {
         if (isJsonObject(value)) {
           return [keyword, replace(value, insideDefinitions)];
         }
