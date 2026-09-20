@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}} 枚",
       "importFile": "自分のファイルをインポート",
       "importFileHint": "ファイルのデザインを再利用",
-      "importUnsupported": "テンプレートを作成するには {{formats}} のファイルを選択してください。",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",

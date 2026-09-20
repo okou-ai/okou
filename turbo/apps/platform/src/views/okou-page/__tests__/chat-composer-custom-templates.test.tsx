@@ -1025,38 +1025,6 @@ test("Choosing a source leaves the picker for the thread it starts", async () =>
   });
 });
 
-test("A source no kind is made from is refused before it is uploaded", async () => {
-  mockCustomTemplates([]);
-  const { dialog, capture } = await openCustomPanel();
-
-  click(tabByText("Custom"));
-  const entry = await within(dialog).findByLabelText("Import your own file");
-  // Fired rather than uploaded through userEvent on purpose: `accept` is a
-  // filter the browser offers, not one it enforces, so the refusal has to hold
-  // for a file that reaches the input anyway.
-  fireEvent.change(entry, {
-    target: {
-      files: [
-        new File(["sheet"], "figures.xlsx", {
-          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        }),
-      ],
-    },
-  });
-
-  await expect(
-    screen.findByText(
-      "Choose a .pptx, .ppt, .pdf, .docx, .doc, .png, .jpg, .jpeg, .webp, .bmp file to make a template.",
-    ),
-  ).resolves.toBeVisible();
-  // Refused before the bytes are spent, not after a run has already started on
-  // a file that cannot become a template.
-  expect(capture.runPrompts).toStrictEqual([]);
-  // The toast asks for a different file, and the entry that takes one is in
-  // this picker, so the refusal does not take it away.
-  expect(within(dialog).getByLabelText("Import your own file")).toBeVisible();
-});
-
 test("Uploading stays in Presentation while the switch is off", async () => {
   mockCustomTemplates([customTemplate()]);
 

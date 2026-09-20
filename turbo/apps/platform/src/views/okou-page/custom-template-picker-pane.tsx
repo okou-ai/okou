@@ -48,7 +48,6 @@ import {
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   CUSTOM_TEMPLATE_IMPORT_ACCEPT,
-  canImportCustomTemplate,
   importPresentationTemplateDeck$,
 } from "../../signals/okou-page/presentation-template-import.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -316,12 +315,9 @@ function CustomTemplateFileInput({
           return;
         }
         // The import attaches the file and sends, so the member is answered in
-        // the thread rather than here; a picker left over that thread hides the
-        // run they were just handed. A file the import will refuse instead
-        // keeps the picker, because its toast asks for another one.
-        if (canImportCustomTemplate(file)) {
-          onImported();
-        }
+        // the thread rather than here; a picker left over that thread hides
+        // the run they were just handed.
+        onImported();
         detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
       }}
     />
@@ -350,9 +346,8 @@ function CustomTemplateUploadCard({
   // where every other tile carries its meta, so it is read down a column of
   // "who can see this"; the accept list read as prose was both a different
   // kind of line and longer than the tile, and it grew by one extension every
-  // time the import learned a format. Which files are allowed stays enforced
-  // by the input's `accept` and spelled out by `importUnsupported` when a
-  // member reaches for one that is not.
+  // time the import learned a format. Which files are allowed stays with the
+  // input's `accept`, which is where the file chooser reads it.
   const hint = t(($) => {
     return $.artifacts.templates.importFileHint;
   });

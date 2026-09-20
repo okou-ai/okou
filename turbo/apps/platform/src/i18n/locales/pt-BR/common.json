@@ -665,7 +665,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Importe seu próprio arquivo",
       "importFileHint": "Reutilize o design do seu arquivo",
-      "importUnsupported": "Escolha um arquivo {{formats}} para criar um modelo.",
       "multiAccent": "Várias cores de destaque",
       "needPro": "Requer Pro",
       "nextSlide": "Visualizar próximo slide",

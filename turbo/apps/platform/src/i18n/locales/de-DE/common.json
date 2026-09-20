@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Eigene Datei importieren",
       "importFileHint": "Design Ihrer Datei wiederverwenden",
-      "importUnsupported": "Wählen Sie eine {{formats}}-Datei, um eine Vorlage zu erstellen.",
       "multiAccent": "Multi-Akzent",
       "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",

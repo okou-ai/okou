@@ -665,7 +665,6 @@
       "importedSlides_other": "{{count}} diapositives",
       "importFile": "Importer votre propre fichier",
       "importFileHint": "Réutilisez le design de votre fichier",
-      "importUnsupported": "Choisissez un fichier {{formats}} pour créer un modèle.",
       "multiAccent": "Multi-accents",
       "needPro": "Pro requis",
       "nextSlide": "Aperçu de la diapositive suivante",
