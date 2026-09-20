@@ -4150,7 +4150,7 @@
       "experience": {
         "copy": "すでに払っているプランをつなげば、仕事は Okou クレジットではなくそちらで動きます。",
         "no": "いいえ、はじめてです",
-        "noCopy": "設定は不要です。Okou が最初のタスクを選びます。",
+        "noCopy": "Okou が最初のタスクを選びます。",
         "title": "Codex か Claude Code を使ったことはありますか？"
       },
       "industries": {
@@ -4587,7 +4587,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "このプランで実行するので、Okou クレジットを使いません。"
+        "rowCopy": "Okou クレジットではなく、このプランで動きます。"
       },
       "team": {
         "copy": "今すぐ誘っても、後からワークスペースのメニューで誘ってもかまいません。",

@@ -4150,7 +4150,7 @@
       "experience": {
         "copy": "Hubungkan paket yang sudah Anda bayar dan pekerjaan Anda berjalan di sana, bukan memakai kredit Okou.",
         "no": "Belum, ini yang pertama",
-        "noCopy": "Lewati penyiapan. Okou yang memilihkan tugas pertama untuk Anda.",
+        "noCopy": "Okou memilihkan tugas pertama untuk Anda.",
         "title": "Pernah memakai Codex atau Claude Code?"
       },
       "industries": {
@@ -4587,7 +4587,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Menjalankan pekerjaan Anda di paket ini, jadi tidak memakai kredit Okou."
+        "rowCopy": "Berjalan di paket Anda, bukan kredit Okou."
       },
       "team": {
         "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",

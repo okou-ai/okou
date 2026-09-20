@@ -4218,7 +4218,7 @@
       "experience": {
         "copy": "Connectez l'offre que vous payez déjà : le travail s'exécute là-bas, pas sur vos crédits Okou.",
         "no": "Non, c'est nouveau pour moi",
-        "noCopy": "Passez la configuration. Okou choisit une première tâche à votre place.",
+        "noCopy": "Okou choisit une première tâche pour vous.",
         "title": "Avez-vous déjà utilisé Codex ou Claude Code ?"
       },
       "industries": {
@@ -4655,7 +4655,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Exécute votre travail sur cette offre, sans consommer de crédits Okou."
+        "rowCopy": "S'exécute sur votre offre, pas sur vos crédits Okou."
       },
       "team": {
         "copy": "Invitez un collègue maintenant, ou plus tard depuis le menu de l'espace de travail.",

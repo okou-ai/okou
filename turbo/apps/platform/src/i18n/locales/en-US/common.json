@@ -4155,7 +4155,7 @@
       "experience": {
         "copy": "Connect the plan you already pay for and your work runs there, not on Okou credits.",
         "no": "No, I’m new to this",
-        "noCopy": "Skip the setup. Okou picks a first task for you instead.",
+        "noCopy": "Okou picks a first task for you.",
         "title": "Have you used Codex or Claude Code?"
       },
       "industries": {
@@ -4592,7 +4592,7 @@
       "subscription": {
         "claudeCode": "Claude Code",
         "codex": "Codex",
-        "rowCopy": "Runs your work on this plan, so it doesn’t spend Okou credits."
+        "rowCopy": "Runs on your plan, not on Okou credits."
       },
       "team": {
         "copy": "Invite a teammate now, or do it later from the workspace menu.",
