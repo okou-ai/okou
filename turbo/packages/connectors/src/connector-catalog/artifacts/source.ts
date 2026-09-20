@@ -2,11 +2,7 @@ import { z } from "zod";
 
 import { connectorAuthMethodIdSchema } from "../../connector-identity";
 
-import {
-  connectorCatalogVersionSchema,
-  connectorSlugSchema,
-  privateNameSchema,
-} from "./common";
+import { connectorCatalogVersionSchema, privateNameSchema } from "./common";
 import { ConnectorCatalogRelationshipError } from "./relationship-error";
 
 export const publicFieldIdSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/u);
@@ -61,10 +57,6 @@ export const connectorMcpSchema = z
         );
       }, "MCP endpoint must be a canonical fixed public HTTPS URL"),
   })
-  .strict();
-
-export const connectorReplacementSchema = z
-  .object({ connectorSlug: connectorSlugSchema })
   .strict();
 
 const connectorAutomaticTokenBindingsSchema = z
@@ -327,7 +319,6 @@ export const connectorSourceSchema = z
     generation: z.array(connectorGenerationTypeSchema),
     tags: z.array(z.string().min(1)),
     mcp: connectorMcpSchema.optional(),
-    replaces: connectorReplacementSchema.optional(),
     authMethods: z.array(connectorAuthMethodSourceSchema).min(1),
   })
   .strict();
@@ -630,10 +621,7 @@ export function validateConnectorSourceSemantics(args: {
   readonly connectorSlug: string;
   readonly source: ConnectorSource;
 }): void {
-  validateConnectorProtocolSemantics({
-    connectorSlug: args.connectorSlug,
-    ...args.source,
-  });
+  validateConnectorProtocolSemantics(args.source);
   assertUnique({
     values: args.source.authMethods.map((authMethod) => {
       return authMethod.id;
@@ -704,21 +692,9 @@ function validateAutomaticTokenStorage(
 
 /** Protocol declarations are explicit; slug suffixes have no consumer meaning. */
 export function validateConnectorProtocolSemantics(args: {
-  readonly connectorSlug: string;
   readonly mcp?: ConnectorSource["mcp"];
-  readonly replaces?: ConnectorSource["replaces"];
   readonly authMethods: readonly ConnectorProtocolAuthMethod[];
 }): void {
-  if (
-    args.replaces !== undefined &&
-    (args.mcp === undefined ||
-      args.replaces.connectorSlug === args.connectorSlug)
-  ) {
-    throw new ConnectorCatalogRelationshipError(
-      "invalid-replacement",
-      "Replacement requires an MCP connector and a distinct predecessor",
-    );
-  }
   for (const method of args.authMethods) {
     const generic =
       method.grant.kind === "none" || method.grant.kind === "automatic";

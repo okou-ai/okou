@@ -158,9 +158,6 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
       generation: connector.generation,
       tags: connector.tags,
       ...(connector.mcp === undefined ? {} : { mcp: connector.mcp }),
-      ...(connector.replaces === undefined
-        ? {}
-        : { replaces: connector.replaces }),
       authMethods: connector.authMethods.map((method) => {
         return {
           id: method.id,
