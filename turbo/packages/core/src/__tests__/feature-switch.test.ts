@@ -290,6 +290,26 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
+  it("should offer color themes to every workspace and accept an opt-out", () => {
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.GradientColorThemes, {
+        orgId: "org_nonexistent",
+      }),
+    ).toBe(true);
+    expect(isFeatureEnabled(FeatureSwitchKey.GradientColorThemes, {})).toBe(
+      true,
+    );
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.GradientColorThemes, {
+        overrides: { [FeatureSwitchKey.GradientColorThemes]: false },
+      }),
+    ).toBe(false);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.GradientColorThemes]
+        .rolloutStage,
+    ).toBe("released");
+  });
+
   it("should default Langfuse tracing off for every org and accept user overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
@@ -438,7 +458,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
-    expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
@@ -464,7 +484,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(

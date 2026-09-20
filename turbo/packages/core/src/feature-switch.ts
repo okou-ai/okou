@@ -397,7 +397,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ming@okou.ai",
     description:
       "Apply a palette-derived tint across interface surfaces, borders, states, and workspace ambience.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
