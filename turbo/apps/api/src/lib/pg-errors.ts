@@ -1,6 +1,7 @@
 const PG_FOREIGN_KEY_VIOLATION = "23503";
 const PG_LOCK_NOT_AVAILABLE = "55P03";
 const PG_UNIQUE_VIOLATION = "23505";
+const PG_QUERY_CANCELED = "57014";
 /** SQLSTATE is a fixed five-character class code; longer driver text is not. */
 const SQL_STATE_PATTERN = /^[0-9A-Z]{5}$/u;
 
@@ -23,6 +24,20 @@ export function isForeignKeyViolation(error: unknown): boolean {
 
 export function isLockNotAvailable(error: unknown): boolean {
   return pgErrorCode(error) === PG_LOCK_NOT_AVAILABLE;
+}
+
+/** 57014 also covers pg_cancel_backend; only the server deadline is retryable. */
+export function isStatementTimeout(error: unknown): boolean {
+  if (pgErrorCode(error) !== PG_QUERY_CANCELED || !(error instanceof Error)) {
+    return false;
+  }
+  const { cause } = error;
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "message" in cause &&
+    cause.message === "canceling statement due to statement timeout"
+  );
 }
 
 export function isUniqueViolation(error: unknown): boolean {

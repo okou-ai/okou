@@ -17,6 +17,37 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Chat search GIN maintenance (2026-09-20)
+
+Apply `1178_chat_search_gin_statistics` before promoting the API that calls
+`public.pgstatginindex`. The migration only installs `pgstattuple` in `public`;
+it does not change indexes, drain the pending list, or backfill messages. The
+API database role must be able to execute `public.pgstatginindex(regclass)`
+and own the search index for `gin_clean_pending_list`. The Neon branch
+experiment verified these operations with the branch's database owner.
+
+Old API/new DB remains compatible. New API/old DB is not a serving combination:
+the release must complete the additive migration before API promotion. Rollback
+keeps the extension installed and rolls back only the API. There are no browser,
+Runner, or search-response changes. The existing cron `deferredThreads` count
+now also includes statement deadlines and candidates postponed by GIN maintenance.
+
+Maintenance runs before the first candidate and between committed per-thread
+transactions, under a nonblocking index-specific advisory lock. It drains at
+512 KiB while retaining `fastupdate` and the default 4 MiB foreground threshold.
+One tick shares a 30-second maintenance budget and a 1-second lock timeout;
+exhaustion or a maintenance deadline defers untouched candidates to the next
+tick. A projection statement timeout rolls back just that thread and continues
+with other candidates. User cancellation and unrelated failures still propagate.
+
+Branch experiments covered 4,400 synthetic messages across 316 INSERTs with
+at most 14 messages per INSERT, plus 22 successful cleanups. This does not bound
+a production-sized 1,000-event thread batch or a cold cache. A pre-existing
+4.3 MiB backlog exceeded the 30-second cleanup budget in the branch; rollout
+must inspect pending size and arrange a separately authorized initial drain if
+needed. This migration performs no such drain. Monitor pending-list growth and
+cron convergence after release; a deferred watermark is never advanced.
+
 ## Pi stable-context schema rollout and rollback
 
 Migration 1168, following retained main migrations through
