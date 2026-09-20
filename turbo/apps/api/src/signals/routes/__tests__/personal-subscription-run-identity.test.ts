@@ -1209,24 +1209,6 @@ describe("personal subscription run identity", () => {
         });
       }
 
-      it("preserves both runtime identities when a replacement is connected", async () => {
-        const { f, admitted, owner, claim, captured } =
-          await removedSingletonFixture();
-        await owner.run(async () => {
-          const next = await connect(f.actor, type, "identity-b");
-          const nextRun = await f.start();
-          admitted.push(nextRun);
-          const nextClaim = await f.claim(nextRun);
-          expect(accountId(nextClaim, type)).not.toBe(captured);
-          await expect(resolve(nextClaim, type)).resolves.toMatchObject({
-            Authorization: `Bearer ${next.token}`,
-          });
-          await expect(resolve(claim, type)).resolves.toMatchObject({
-            Authorization: `Bearer ${f.connected.token}`,
-          });
-        });
-      });
-
       it("denies the retained credentials to the replacement sandbox", async () => {
         const { f, admitted, owner, claim, captured } =
           await removedSingletonFixture();

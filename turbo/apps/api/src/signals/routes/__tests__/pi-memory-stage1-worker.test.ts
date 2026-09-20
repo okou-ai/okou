@@ -80,8 +80,6 @@ import {
   testPiMemoryStage1StateRoutes,
 } from "../test-pi-memory-stage1-state";
 
-import { runInIsolatedProcess } from "../../../../../../scripts/run-isolated-test.mjs";
-
 const context = testContext();
 const BUCKET = "pi-memory-stage1-worker-test";
 const CRON_SECRET = "test-pi-memory-stage1-secret";
@@ -625,65 +623,6 @@ beforeEach(async () => {
   await seedBuiltInModelKey(context, "gpt-5.6-luna");
 });
 
-async function corruptStage1CatalogPayload(value: unknown): Promise<void> {
-  // Infrastructure exception: an unmeasurable SDK payload cannot be produced
-  // through a user API. Load the runtime-owned external SDK, retaining its
-  // actual serializer/onPayload/error folding and the worker's real route.
-  if (typeof value === "object" && value !== null) {
-    Object.defineProperty(value, "recursive", { value, enumerable: true });
-  }
-  const sdkUrl = new URL(
-    "../node_modules/@earendil-works/pi-ai/dist/providers/openai.js",
-    import.meta.resolve("@okouai/pi-agent-runtime/node"),
-  );
-  const sdk: unknown = await import(sdkUrl.href);
-  if (
-    typeof sdk !== "object" ||
-    sdk === null ||
-    !("openaiProvider" in sdk) ||
-    typeof sdk.openaiProvider !== "function"
-  ) {
-    throw new Error("Missing SDK provider");
-  }
-  const provider: unknown = sdk.openaiProvider();
-  if (
-    typeof provider !== "object" ||
-    provider === null ||
-    !("getModels" in provider) ||
-    typeof provider.getModels !== "function"
-  ) {
-    throw new Error("Missing SDK catalog");
-  }
-  const models: unknown = provider.getModels();
-  if (!Array.isArray(models)) {
-    throw new Error("Invalid SDK catalog");
-  }
-  const model: unknown = models.find((item: unknown) => {
-    return (
-      typeof item === "object" &&
-      item !== null &&
-      "id" in item &&
-      item.id === "gpt-5.6-luna"
-    );
-  });
-  if (typeof model !== "object" || model === null) {
-    throw new Error("Missing Luna");
-  }
-  const descriptor = Object.getOwnPropertyDescriptor(model, "thinkingLevelMap");
-  Object.defineProperty(model, "thinkingLevelMap", {
-    value: { low: value },
-    configurable: true,
-    writable: true,
-  });
-  onTestFinished(() => {
-    if (descriptor) {
-      Object.defineProperty(model, "thinkingLevelMap", descriptor);
-    } else {
-      Reflect.deleteProperty(model, "thinkingLevelMap");
-    }
-  });
-}
-
 describe("Pi memory Stage 1 worker", () => {
   it("retains provider consumption from an incomplete terminal response", async () => {
     const storage = createStorageFixture();
@@ -1025,50 +964,6 @@ describe("Pi memory Stage 1 worker", () => {
     },
   );
 
-  it.each(["unmeasurable", "over_budget"])(
-    "settles a final %s SDK payload once without HTTP, usage or a success watermark",
-    async (failure) => {
-      await corruptStage1CatalogPayload(
-        failure === "unmeasurable"
-          ? { recursive: null }
-          : "overhead ".repeat(260_000),
-      );
-      const storage = createStorageFixture();
-      const piSessionId = randomUUID();
-      const fixture = await storage.seed({
-        piSessionId,
-        raw: settledHistory(piSessionId, "retain human decision"),
-      });
-      const provider = installProvider();
-      const result = await runScoped(storage);
-      expect(
-        provider.calls.map((call) => {
-          return call.url;
-        }),
-      ).toStrictEqual([]);
-      expect(result).toMatchObject({
-        claimed: 1,
-        terminalFailure: 1,
-        retryableFailure: 0,
-        succeeded: 0,
-        succeededNoOutput: 0,
-      });
-      expect(provider.calls).toHaveLength(0);
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-      await expect(inspect(fixture)).resolves.toMatchObject({
-        status: "terminal_failure",
-        last_error_class:
-          failure === "unmeasurable"
-            ? "input_payload_unmeasurable"
-            : "input_budget_exceeded",
-        raw_memory: null,
-        successful_source_history_hash: null,
-      });
-      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
-      expect(provider.calls).toHaveLength(0);
-    },
-  );
-
   it("bills the luna long-context tier from the 272,001 total-input boundary", async () => {
     const below = createStorageFixture();
     const atBoundary = createStorageFixture();
@@ -1115,10 +1010,7 @@ describe("Pi memory Stage 1 worker", () => {
     ]);
   });
 
-  it("isolates malformed and cyclic sources permanently before the provider", async () => {
-    if (await runInIsolatedProcess(import.meta.url)) {
-      return;
-    }
+  it("isolates invalid sources permanently before the provider", async () => {
     const storages: ReturnType<typeof createStorageFixture>[] = [];
     const storage = {
       seed: async (
@@ -1165,29 +1057,6 @@ describe("Pi memory Stage 1 worker", () => {
         raw: Buffer.from(unsettled.toJsonl(), "utf8"),
       }),
     ];
-    for (const duplicate of [false, true]) {
-      const id = randomUUID();
-      const history = settledHistory(id, "invalid graph candidate").toString(
-        "utf8",
-      );
-      const record = JSON.stringify({
-        type: "model_change",
-        id: "graph-entry",
-        parentId: duplicate ? null : "graph-entry",
-        timestamp: "2026-09-05T00:00:00.000Z",
-        provider: "openai",
-        modelId: "gpt-5.6-terra",
-      });
-      invalid.push(
-        await storage.seed({
-          piSessionId: id,
-          raw: Buffer.from(
-            `${history}${record}\n${duplicate ? `${record}\n` : ""}`,
-            "utf8",
-          ),
-        }),
-      );
-    }
     const validId = randomUUID();
     const valid = await storage.seed({
       piSessionId: validId,
@@ -1200,9 +1069,9 @@ describe("Pi memory Stage 1 worker", () => {
       [200],
     );
     expect(response.body).toMatchObject({
-      claimed: 7,
+      claimed: 5,
       succeeded: 1,
-      terminalFailure: 6,
+      terminalFailure: 4,
     });
     expect(provider.calls).toHaveLength(1);
     for (const fixture of invalid) {

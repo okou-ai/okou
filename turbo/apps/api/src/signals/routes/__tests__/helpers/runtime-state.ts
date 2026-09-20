@@ -459,16 +459,6 @@ export async function readChatEventRowsAsPreviousApiFixture(
   return response.previous_api_chat_event_rows ?? [];
 }
 
-export async function corruptOfficialWorkflowRevisionPayloadFixture(
-  context: TestContext,
-  definitionName: string,
-): Promise<void> {
-  await postAction(context, {
-    action: "corrupt-official-workflow-revision-payload",
-    definition_name: definitionName,
-  });
-}
-
 export async function setOfficialWorkflowAutomationAdmissionStateFixture(
   context: TestContext,
   automationId: string,
@@ -606,18 +596,6 @@ export async function installOfficialWorkflowRunGateFixture(
 
 export async function resetDatabasePool(context: TestContext): Promise<void> {
   await postAction(context, { action: "reset-database-pool" });
-}
-
-export async function mutateRunnerJobSecretValueEnvironmentKeys(
-  context: TestContext,
-  runId: string,
-  mode: "remove" | "invalid",
-): Promise<void> {
-  await postAction(context, {
-    action: "mutate-runner-job-secret-value-environment-keys",
-    run_id: runId,
-    mode,
-  });
 }
 
 export async function setRunnerJobPiContextAsVersionedWriter(

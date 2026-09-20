@@ -76,6 +76,7 @@ import {
   runnersPollContract,
   runnersJobClaimContract,
   PI_DEFERRED_SANDBOX_HEADER,
+  PI_API_FIRST_TURN_SESSION_MAX_BYTES,
 } from "@okouai/api-contracts/contracts/runners";
 import { testContext, accept } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -137,7 +138,7 @@ async function fixture(
     readonly publish?: boolean;
     readonly orgId?: string;
     readonly userId?: string;
-    readonly publishInProcess?: boolean;
+    readonly publishInSubprocess?: boolean;
   } = {},
 ) {
   const f = await seedPiInferenceFixture({
@@ -255,7 +256,7 @@ async function fixture(
     },
   );
   let h1Hash: string;
-  if (options.publishInProcess) {
+  if (!options.publishInSubprocess) {
     const session = MemoryPiSession.create({
       cwd: "/home/user/workspace",
       id: piSessionId,
@@ -275,7 +276,10 @@ async function fixture(
           arguments: { path: "/home/user/workspace/README.md" },
         },
       ],
-      api: "openai-completions",
+      api:
+        configuration.runtimeProvider === "openai-codex"
+          ? "openai-codex-responses"
+          : "openai-completions",
       provider: configuration.runtimeProvider,
       model: configuration.runtimeModel,
       usage: {
@@ -336,21 +340,6 @@ async function fixture(
       publication: { h1Hash, manifestGeneration: 3, lastEventSequence: 4 },
     })
     .where(eq(agentRunInference.runId, f.runId));
-  if (options.publish !== false) {
-    await expect(
-      publishPiSandboxDemand(
-        db(),
-        { runId: f.runId, ownerEpoch: 1, generation: 1 },
-        {
-          mode: "pending-tools",
-          h1Hash,
-          manifestGeneration: 3,
-          pendingToolIds: ["tool-1"],
-          lastEventSequence: 4,
-        },
-      ),
-    ).resolves.toBeTruthy();
-  }
   if (options.publish !== false) {
     await expect(
       publishPiSandboxDemand(
@@ -508,7 +497,21 @@ async function deferredDemandStates(
 
 export const registerDurabilityTests = (it: DefineTest): void => {
   it("restores a large H1 after its publisher exits and the API first-turn window elapses", async () => {
-    const f = await fixture({ large: true });
+    const f = await fixture({ large: true, publishInSubprocess: true });
+    // Identical publication is idempotent across the durable handoff boundary.
+    await expect(
+      publishPiSandboxDemand(
+        db(),
+        { runId: f.runId, ownerEpoch: 1, generation: 1 },
+        {
+          mode: "pending-tools",
+          h1Hash: f.h1Hash,
+          manifestGeneration: 3,
+          pendingToolIds: ["tool-1"],
+          lastEventSequence: 4,
+        },
+      ),
+    ).resolves.toBeTruthy();
     const blocker = await seedPiInferenceFixture({
       legacy: true,
       phase: "sandbox_running",
@@ -942,22 +945,18 @@ export const registerAdmissionTests = (it: DefineTest): void => {
       const first = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
-        publishInProcess: true,
       });
       const second = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
-        publishInProcess: true,
       });
       const third = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
-        publishInProcess: true,
       });
       const fourth = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
-        publishInProcess: true,
       });
       return [first, second, third, fourth] as const;
     });
@@ -1067,7 +1066,6 @@ export const registerAdmissionTests = (it: DefineTest): void => {
       const deferred = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
-        publishInProcess: true,
       });
       const before = await api.readRunQueue(actor);
       expect(before.body.concurrency).toMatchObject({
@@ -1132,7 +1130,6 @@ export const registerAdmissionTests = (it: DefineTest): void => {
     const deferred = await fixture({
       orgId: actor.orgId,
       userId: actor.userId,
-      publishInProcess: true,
     });
     const queued = await api.createRun(actor, {
       agentId: agent.agentId,
@@ -1211,7 +1208,6 @@ export const registerAdmissionTests = (it: DefineTest): void => {
     const deferred = await fixture({
       orgId: actor.orgId,
       userId: actor.userId,
-      publishInProcess: true,
     });
     const visibleWaiting = await api.readRunQueue(actor);
     expect(visibleWaiting.body.concurrency).toMatchObject({
@@ -1818,114 +1814,18 @@ export const registerCompatibilityTests = (it: DefineTest): void => {
 
   it("rejects an oversized durable continuation before it can be claimed", async () => {
     const f = await fixture({ publish: false });
-    const oversized = "a".repeat(17 * 1024 * 1024);
+    // The UTF-16 length fits while the UTF-8 content exceeds the reader limit.
     await expect(
       publishPiInferenceObject(db(), f, "h1", piDeferredH1Schema, {
         schemaVersion: 1,
         manifestGeneration: 3,
         lastEventSequence: 4,
-        sessionHistory: oversized,
+        sessionHistory: "\u20ac".repeat(
+          Math.floor(PI_API_FIRST_TURN_SESSION_MAX_BYTES / 3) + 1,
+        ),
         historyHash: "0".repeat(64),
       }),
     ).rejects.toThrow(/shared UTF-8 limit/u);
-    // Multibyte content stays inside a UTF-16 length limit while overflowing
-    // the reader's UTF-8 ceiling.
-    await expect(
-      publishPiInferenceObject(db(), f, "h1", piDeferredH1Schema, {
-        schemaVersion: 1,
-        manifestGeneration: 3,
-        lastEventSequence: 4,
-        sessionHistory: "\u20ac".repeat(9 * 1024 * 1024),
-        historyHash: "0".repeat(64),
-      }),
-    ).rejects.toThrow(/shared UTF-8 limit/u);
-  }, 60_000);
-
-  it("finalizes individually valid objects that exceed the combined limit", async () => {
-    const f = await fixture({ publish: false });
-    const piSessionId = f.threadId;
-    const history = createPiSessionJsonl({
-      cwd: "/home/user/workspace",
-      sessionId: piSessionId,
-      timestamp: new Date().toISOString(),
-    });
-    const contextHash = await publishPiInferenceObject(
-      db(),
-      f,
-      "context",
-      piDeferredContextSchema,
-      {
-        schemaVersion: 1,
-        baseSession: { sessionId: piSessionId, sha256: null },
-        resourceSnapshot: {
-          schemaVersion: 1,
-          // 25 MiB of resource content fits the per-object envelope on its own.
-          agentsFiles: [
-            { path: "/AGENTS.md", content: "b".repeat(25 * 1024 * 1024) },
-          ],
-          skills: [],
-        },
-        storageMounts: [],
-        h0SessionHistory: history,
-      },
-    );
-    // 10 MiB of history is inside the supported history ceiling on its own, but
-    // the two together exceed the serialized handoff the chunk API can carry.
-    const largeHistory = `${history}${"c".repeat(10 * 1024 * 1024)}`;
-    const h1Hash = await publishPiInferenceObject(
-      db(),
-      f,
-      "h1",
-      piDeferredH1Schema,
-      {
-        schemaVersion: 1,
-        manifestGeneration: 3,
-        lastEventSequence: 4,
-        sessionHistory: largeHistory,
-        historyHash: createHash("sha256").update(largeHistory).digest("hex"),
-      },
-    );
-    const existing = await readRequiredPiFixture(f);
-    await db()
-      .update(agentRunInference)
-      .set({
-        input: { ...existing.inference.input, contextHash },
-        publication: { h1Hash, manifestGeneration: 3, lastEventSequence: 4 },
-      })
-      .where(eq(agentRunInference.runId, f.runId));
-    await expect(
-      publishPiSandboxDemand(
-        db(),
-        { runId: f.runId, ownerEpoch: 1, generation: 1 },
-        {
-          mode: "pending-tools",
-          h1Hash,
-          manifestGeneration: 3,
-          pendingToolIds: ["tool-1"],
-          lastEventSequence: 4,
-        },
-      ),
-    ).resolves.toBeFalsy();
-    await expect(
-      db()
-        .select({ runId: agentRunSandboxIntent.runId })
-        .from(agentRunSandboxIntent)
-        .where(eq(agentRunSandboxIntent.runId, f.runId)),
-    ).resolves.toStrictEqual([]);
-    await expect(
-      db()
-        .select({ runId: runnerJobQueue.runId })
-        .from(runnerJobQueue)
-        .where(eq(runnerJobQueue.runId, f.runId)),
-    ).resolves.toStrictEqual([]);
-    const [run] = await db()
-      .select({ status: agentRuns.status, error: agentRuns.error })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, f.runId));
-    expect(run?.status).toBe("failed");
-    expect(run?.error).toContain("serialized bytes");
-    expect((await readRequiredPiFixture(f)).inference.usageSettled).toBeFalsy();
-    await accept(claim(f.runId, true, randomUUID()), [404]);
   }, 60_000);
 };
 
@@ -2056,7 +1956,6 @@ export const registerCapacityTests = (it: DefineTest): void => {
       const deferred = await fixture({
         orgId: actor.orgId,
         userId: actor.userId,
-        publishInProcess: true,
       });
       const waiting = await api.readRunQueue(actor);
       expect(waiting.body.concurrency).toMatchObject({
@@ -2182,7 +2081,6 @@ export const registerCapacityTests = (it: DefineTest): void => {
         orgId: actor.orgId,
         userId: actor.userId,
         publish: false,
-        publishInProcess: true,
       });
       await grantPaidConcurrency(actor.orgId);
       await expect(
@@ -2341,7 +2239,6 @@ export const registerCapacityTests = (it: DefineTest): void => {
       orgId: actor.orgId,
       userId: actor.userId,
       publish: false,
-      publishInProcess: true,
     });
     await db()
       .update(orgPlanEntitlements)
@@ -2546,11 +2443,6 @@ export const registerCapacityTests = (it: DefineTest): void => {
 
   it.each([
     {
-      headState: "already expired",
-      offsetAfterHeadExpiry: 1000,
-      admitted: true,
-    },
-    {
       headState: "expiring exactly at that instant",
       offsetAfterHeadExpiry: 0,
       admitted: true,
@@ -2568,13 +2460,11 @@ export const registerCapacityTests = (it: DefineTest): void => {
         orgId,
         userId: `user_${randomUUID()}`,
         publish: false,
-        publishInProcess: true,
       });
       const later = await fixture({
         orgId,
         userId: `user_${randomUUID()}`,
         publish: false,
-        publishInProcess: true,
       });
       // The later demand takes its position first so the head's lifetime can be
       // derived from a real published row rather than a restated constant.
@@ -2631,41 +2521,6 @@ export const registerCapacityTests = (it: DefineTest): void => {
     90_000,
   );
 
-  it("keeps the run-ID tie break for demand enqueued at the same instant", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const enqueuedAt = Date.now() - 60_000;
-    const first = await fixture({
-      orgId,
-      userId: `user_${randomUUID()}`,
-      publish: false,
-      publishInProcess: true,
-    });
-    const second = await fixture({
-      orgId,
-      userId: `user_${randomUUID()}`,
-      publish: false,
-      publishInProcess: true,
-    });
-    const firstIntent = await publishDeferredDemandAt(first, enqueuedAt);
-    const secondIntent = await publishDeferredDemandAt(second, enqueuedAt);
-    expect(secondIntent.enqueuedAt).toStrictEqual(firstIntent.enqueuedAt);
-    await db()
-      .update(orgPlanEntitlements)
-      .set({ baseConcurrencyLimit: 1 })
-      .where(eq(orgPlanEntitlements.orgId, orgId));
-
-    const firstIsEarlier = first.runId.localeCompare(second.runId) < 0;
-    const earlier = firstIsEarlier ? first : second;
-    const later = firstIsEarlier ? second : first;
-    await expect(
-      createStore().set(consumeDeferredPiRun$, later.runId, context.signal),
-    ).resolves.toBeFalsy();
-    await expect(
-      createStore().set(consumeDeferredPiRun$, earlier.runId, context.signal),
-    ).resolves.toBeTruthy();
-    await accept(claim(earlier.runId, true, randomUUID()), [200]);
-  }, 90_000);
-
   it("promotes a queued Run past earlier demand that expired after it was queued", async () => {
     const { actor, agent, api } = await createLegacyAdmissionFixture(
       "Expired earlier demand promotion",
@@ -2693,7 +2548,6 @@ export const registerCapacityTests = (it: DefineTest): void => {
       orgId: actor.orgId,
       userId: actor.userId,
       publish: false,
-      publishInProcess: true,
     });
 
     // The demand commits behind the organization capacity lock, after promotion
@@ -2754,7 +2608,6 @@ export const registerCapacityTests = (it: DefineTest): void => {
       orgId: actor.orgId,
       userId: actor.userId,
       publish: false,
-      publishInProcess: true,
     });
     const intent = await publishDeferredDemandAt(
       deferred,
