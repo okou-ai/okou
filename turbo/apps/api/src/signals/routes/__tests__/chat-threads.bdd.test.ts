@@ -2107,11 +2107,8 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     // no product API can move an entitled org onto it, so downgrade the tier
     // through the shared system-config seed while keeping the pro balance.
     const billingStatus = await api.readBillingStatus(actor);
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "limited-free-1",
-      credits: billingStatus.credits,
-    });
+    // Configure the workspace while it can still add a Pro-only built-in model,
+    // so the downgraded plan keeps one configured route the plan itself gates.
     await api.updateOrgModelPolicies(actor, [
       {
         model: "deepseek-v4-flash",
@@ -2127,30 +2124,58 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         credentialScope: "org",
         modelProviderId: null,
       },
+      {
+        model: "gpt-6-astra",
+        isDefault: false,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
     ]);
+    await seedOrgMetadata({
+      orgId: actor.orgId,
+      tier: "limited-free-1",
+      credits: billingStatus.credits,
+    });
 
     const thread = await chat.createThread(actor, {
       agentId,
       model: "deepseek-v4-flash",
       title: "limited free model pin",
     });
+    const restrictedSelection = await chat.requestUpdateThreadModelSelection(
+      actor,
+      thread.id,
+      "gpt-6-astra",
+      [402],
+    );
+    expectApiError(restrictedSelection.body);
+    expect(restrictedSelection.body.error).toStrictEqual({
+      message:
+        "Insufficient credits. Add credits or configure your own API key to continue.",
+      code: "INSUFFICIENT_CREDITS",
+    });
+    await expect(chat.readThread(actor, thread.id)).resolves.not.toHaveProperty(
+      "selectedModel",
+    );
+
     for (const selectedModel of [
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
     ] as const) {
-      const restrictedSelection = await chat.requestUpdateThreadModelSelection(
-        actor,
-        thread.id,
-        selectedModel,
-        [402],
-      );
-      expectApiError(restrictedSelection.body);
-      expect(restrictedSelection.body.error).toStrictEqual({
-        message:
-          "Insufficient credits. Add credits or configure your own API key to continue.",
-        code: "INSUFFICIENT_CREDITS",
+      const unconfiguredSelection =
+        await chat.requestUpdateThreadModelSelection(
+          actor,
+          thread.id,
+          selectedModel,
+          [400],
+        );
+      expectApiError(unconfiguredSelection.body);
+      expect(unconfiguredSelection.body.error).toStrictEqual({
+        message: "The selected model is not available in this workspace",
+        code: "BAD_REQUEST",
       });
 
       await expect(
