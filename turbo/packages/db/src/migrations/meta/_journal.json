@@ -687,6 +687,13 @@
       "when": 1789897069111,
       "tag": "1175_resumable_user_exports",
       "breakpoints": true
+    },
+    {
+      "idx": 1176,
+      "version": "7",
+      "when": 1789900303239,
+      "tag": "1176_retire_gemini_2_5_flash_image_pricing",
+      "breakpoints": true
     }
   ]
 }
