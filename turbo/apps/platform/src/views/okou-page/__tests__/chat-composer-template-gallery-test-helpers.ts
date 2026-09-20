@@ -26,7 +26,6 @@ import {
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
-  mockUrlObjectMethods,
   tabByText,
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
@@ -115,14 +114,6 @@ export async function openTemplatePicker(
     await user.click(tabByText(category));
   }
   return dialog;
-}
-
-export function mockTemplateObjectUrls(): void {
-  let nextUrl = 0;
-  mockUrlObjectMethods(() => {
-    nextUrl += 1;
-    return `blob:https://app.okou.ai/presentation-preview-${nextUrl}`;
-  });
 }
 
 function presentationHtml(slideTitles: readonly string[]): string {
