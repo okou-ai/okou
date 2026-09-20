@@ -1,0 +1,1 @@
+ALTER TABLE "vnc_connections" ALTER COLUMN "auth_method" DROP DEFAULT;

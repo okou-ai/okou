@@ -263,6 +263,47 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
   });
 
+  it("keeps persisted X509Plain unavailable before KMS and Runner handoff", async () => {
+    const f = await api.fixture();
+    const kms = useSecretKmsProbe();
+    const plain = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          id: randomUUID(),
+          displayName: "Plain desktop",
+          host: "plain.example.com",
+          credential: {
+            create: {
+              name: "Plain credential",
+              authentication: {
+                method: "username_password",
+                username: "operator",
+                password: " private secret ",
+              },
+            },
+          },
+          security: {
+            type: "x509_plain",
+            trust: { mode: "system" },
+          },
+        },
+      }),
+      [201],
+    );
+    await expect(
+      api.resolve(f, { connectionId: plain.body.id }),
+    ).resolves.toStrictEqual({ outcome: "unsupported_profile" });
+    expect(
+      (
+        await check(f, plain.body.generation, {
+          connectionId: plain.body.id,
+        })
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+    expect(kms.decryptCalls).toBe(0);
+  });
+
   it("rejects inactive and unclaimed Runs without requiring chat provenance", async () => {
     const f = await api.fixture();
     const { generation } = await api.resolved(f);
