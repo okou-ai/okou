@@ -42,7 +42,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, withMockNowForTest } from "../../../lib/time";
+import {
+  clearMockMonotonicNow,
+  mockMonotonicNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -1335,7 +1340,10 @@ describe("MCP chat status", () => {
       agentId: f.agent.agentId,
     });
     const before = await f.chat.readThread(f.actor, thread.id);
-    const status = await getStatus(f.auth.token(), { threadId: thread.id });
+    const status = await getStatus(f.auth.token(), {
+      threadId: thread.id,
+      waitMs: 0,
+    });
     expect(status).toMatchObject({
       threadId: thread.id,
       input: null,
@@ -1348,6 +1356,8 @@ describe("MCP chat status", () => {
         reason: "no_associated_run",
       },
       messages: null,
+      wait: null,
+      messagePage: null,
       retryAfterMs: null,
     });
     expect(Number.isNaN(Date.parse(status.observedAt))).toBeFalsy();
@@ -1453,6 +1463,16 @@ describe("MCP chat status", () => {
           return message.ref;
         }),
     ).toStrictEqual(ready.output.messageRefs);
+    const waited = await getStatus(token, { ...args, waitMs: 60_000 });
+    expect(waited.wait).toStrictEqual({
+      requestedMs: 60_000,
+      effectiveMs: 8000,
+      elapsedMs: expect.any(Number),
+      observations: 1,
+      outcome: "ready",
+      returnReason: "output_ready",
+    });
+    expect(waited.messagePage).toStrictEqual(messages);
     await expect(
       getStatus(token, { threadId: thread.id }),
     ).resolves.toMatchObject({
@@ -1460,6 +1480,8 @@ describe("MCP chat status", () => {
       runSelection: "latest",
       run: { id: runId, status: "completed" },
       output: { state: "ready" },
+      wait: null,
+      messagePage: null,
     });
     const invalidRefs = [
       { ...sent.inputRef, eventId: randomUUID() },
@@ -1492,6 +1514,353 @@ describe("MCP chat status", () => {
       threadId: thread.id,
       input: { ref: sent.inputRef, runId },
       run: { id: runId, status: "completed" },
+    });
+  });
+
+  it("rereads after a bounded delay and returns ready content from the fresh snapshot", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Wait for the canonical result",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              content: [{ type: "text", text: "Bounded wait result" }],
+            },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    context.mocks.signalTimers.delay.mockImplementationOnce(
+      async (_ms, options) => {
+        options?.signal?.throwIfAborted();
+        await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+          lastEventSequence: 0,
+        });
+        await flushWaitUntilForTest();
+      },
+    );
+
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+
+    expect(status).toMatchObject({
+      run: { id: runId, status: "completed" },
+      output: { state: "ready" },
+      wait: {
+        requestedMs: 5000,
+        effectiveMs: 5000,
+        observations: 2,
+        outcome: "ready",
+        returnReason: "output_ready",
+      },
+      messagePage: {
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: "assistant",
+            text: "Bounded wait result",
+          }),
+        ]),
+      },
+      retryAfterMs: null,
+    });
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledOnce();
+  });
+
+  it("returns a fresh deadline status and exposes output that arrives later", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Finish after the bounded wait",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    let monotonicMs = 1000;
+    mockMonotonicNow(monotonicMs);
+    onTestFinished(() => {
+      clearMockMonotonicNow();
+    });
+    context.mocks.signalTimers.delay.mockImplementation(
+      (milliseconds, options) => {
+        options?.signal?.throwIfAborted();
+        monotonicMs += milliseconds;
+        mockMonotonicNow(monotonicMs);
+        return Promise.resolve();
+      },
+    );
+
+    const deadline = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+
+    expect(deadline).toMatchObject({
+      run: { id: runId, status: "running" },
+      output: { state: "pending" },
+      wait: {
+        requestedMs: 5000,
+        effectiveMs: 5000,
+        elapsedMs: 5000,
+        observations: 4,
+        outcome: "deadline",
+        returnReason: "application_deadline",
+      },
+      messagePage: null,
+      retryAfterMs: 2000,
+    });
+    expect(
+      context.mocks.signalTimers.delay.mock.calls.map(([milliseconds]) => {
+        return milliseconds;
+      }),
+    ).toStrictEqual([2000, 2000, 1000]);
+
+    clearMockMonotonicNow();
+    await f.webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: { content: [{ type: "text", text: "Late result" }] },
+          },
+        ],
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await f.completeChatRunOk(runId, claimed.sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    const late = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 5000,
+    });
+    expect(late.wait).toMatchObject({
+      observations: 1,
+      outcome: "ready",
+      returnReason: "output_ready",
+    });
+    expect(late.messagePage?.messages).toContainEqual(
+      expect.objectContaining({ role: "assistant", text: "Late result" }),
+    );
+  });
+
+  it("returns current status when principal wait capacity is full and reuses released slots", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Keep bounded waiters pending",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let heldWaiters = 0;
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+      options?.signal?.throwIfAborted();
+      if (heldWaiters < 2) {
+        heldWaiters += 1;
+        if (heldWaiters === 2) {
+          entered.resolve();
+        }
+        return release.promise;
+      }
+      return Promise.resolve();
+    });
+    const args = {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    };
+
+    const first = getStatus(token, args);
+    const second = getStatus(token, args);
+    await entered.promise;
+    const exhausted = await getStatus(token, args);
+    expect(exhausted.wait).toMatchObject({
+      observations: 1,
+      outcome: "status",
+      returnReason: "waiter_limit",
+    });
+    expect(exhausted.output.state).toBe("pending");
+
+    release.resolve();
+    await expect(Promise.all([first, second])).resolves.toStrictEqual([
+      expect.objectContaining({
+        wait: expect.objectContaining({
+          outcome: "status",
+          returnReason: "observation_limit",
+        }),
+      }),
+      expect.objectContaining({
+        wait: expect.objectContaining({
+          outcome: "status",
+          returnReason: "observation_limit",
+        }),
+      }),
+    ]);
+    await expect(getStatus(token, args)).resolves.toMatchObject({
+      wait: {
+        outcome: "status",
+        returnReason: "observation_limit",
+      },
+    });
+  });
+
+  it("cancels only a disconnected waiter and releases its admission slot", async () => {
+    const auth = await fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await f.entitledChatActor({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
+    const thread = await f.chat.createThread(actor.actor, {
+      agentId: actor.agentId,
+    });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Keep running after the waiter disconnects",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
+    const runId = sent.runId;
+    const controller = new AbortController();
+    onTestFinished(async () => {
+      controller.abort();
+      context.mocks.signalTimers.delay.mockReset();
+      await f.api.requestCancelRun(actor.actor, runId, [200, 400, 404]);
+    });
+    const delayStarted = createDeferredPromise<void>(context.signal);
+    const delayAborted = createDeferredPromise<void>(context.signal);
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
+      const waitSignal = options?.signal;
+      if (!waitSignal) {
+        throw new Error("Expected the waiter delay to own a signal");
+      }
+      const held = createDeferredPromise<void>(waitSignal);
+      waitSignal.addEventListener(
+        "abort",
+        () => {
+          delayAborted.resolve();
+        },
+        { once: true },
+      );
+      delayStarted.resolve();
+      return held.promise;
+    });
+    const app = createAppWithRoutes({
+      routes: mcpServerRoutes,
+      signal: context.signal,
+    });
+    const pending = settleIncludingAbort(
+      (async () => {
+        const response = await app.request(
+          new Request(resource, {
+            method: "POST",
+            headers: {
+              ...protocolHeaders(token, "tools/call", true, "get_chat_status"),
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(
+              requestBody("tools/call", true, {
+                name: "get_chat_status",
+                arguments: {
+                  threadId: thread.id,
+                  inputRef: sent.inputRef,
+                  waitMs: 8000,
+                },
+              }),
+            ),
+            signal: controller.signal,
+          }),
+        );
+        return { status: response.status, body: await response.text() };
+      })(),
+    );
+
+    await delayStarted.promise;
+    controller.abort(new DOMException("Caller disconnected", "AbortError"));
+    await delayAborted.promise;
+    await pending;
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+    const after = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    });
+    expect(after.wait?.returnReason).toBe("observation_limit");
+    await expect(f.api.readRun(actor.actor, runId)).resolves.toMatchObject({
+      status: expect.not.stringMatching(/cancel/u),
     });
   });
 
@@ -1574,10 +1943,18 @@ describe("MCP chat status", () => {
       userId: auth.userId,
       orgId: auth.orgId,
     });
-    const sent = await f.sendChatRun(actor.actor, {
+    const thread = await f.chat.createThread(actor.actor, {
       agentId: actor.agentId,
-      prompt: "Fail before producing output",
     });
+    const token = auth.token({ scope: defaultScopes });
+    const sent = await sendMessage(token, {
+      threadId: thread.id,
+      requestId: randomUUID(),
+      text: "Fail before producing output",
+    });
+    if (!sent.runId) {
+      throw new Error("Expected the submitted input to launch a run");
+    }
     const claimed = await f.claimChatRun(actor.runnerGroup, sent.runId);
     await f.failChatRun(
       sent.runId,
@@ -1585,10 +1962,20 @@ describe("MCP chat status", () => {
       "PRIVATE_RAW_ERROR",
     );
     await flushWaitUntilForTest();
-    const status = await getStatus(auth.token(), { threadId: sent.threadId });
+    const status = await getStatus(token, {
+      threadId: thread.id,
+      inputRef: sent.inputRef,
+      waitMs: 8000,
+    });
     expect(status).toMatchObject({
       run: { id: sent.runId, status: "failed" },
       output: { state: "unavailable", reason: "no_output", messageRefs: [] },
+      wait: {
+        observations: 1,
+        outcome: "status",
+        returnReason: "non_retryable_state",
+      },
+      messagePage: null,
       retryAfterMs: null,
     });
     expect(JSON.stringify(status)).not.toContain("PRIVATE_RAW_ERROR");
