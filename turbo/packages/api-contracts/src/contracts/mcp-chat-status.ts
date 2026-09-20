@@ -240,6 +240,12 @@ function waitStatusCoherenceIssues(
     });
   }
   if (status.messagePage && status.messages) {
+    if (status.messagePage.messages.length > status.messages.arguments.limit) {
+      issues.push({
+        path: ["messagePage", "messages"],
+        message: "messagePage must honor the handoff message limit",
+      });
+    }
     for (const [index, message] of status.messagePage.messages.entries()) {
       if (message.ref.threadId !== status.threadId) {
         issues.push({
