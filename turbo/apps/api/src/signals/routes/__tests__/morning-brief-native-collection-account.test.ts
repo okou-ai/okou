@@ -94,13 +94,15 @@ const CALENDAR_EVENTS_URL =
   "https://www.googleapis.com/calendar/v3/calendars/:calendarId/events";
 
 /**
- * The membership latency one production run actually observed.
+ * The deterministic cost this fixture charges one membership answer.
  *
- * The trace on #35656 recorded a repeating post-collection cycle at roughly
- * 170 ms with a ~120 ms Clerk membership fetch inside it, 92 of them in the
- * single run. This is that boundary cost, made deterministic: the clock moves
- * by a fixed amount per membership answer instead of by however long a real
- * network happened to take.
+ * The defect is about how much authority work fits inside a budget, so the
+ * clock moves by a fixed amount per membership answer rather than by however
+ * long a real network happened to take. Production measured roughly 120 ms per
+ * Clerk membership fetch and 92 of them in one run; this fixture carries fewer
+ * sources and retained endpoints than that owner did, so it charges more per
+ * answer to reach a comparable total authority cost. It stands in for that
+ * cost and is not a claim about the observed per-call latency.
  */
 const MEMBERSHIP_LATENCY_MS = 500;
 
@@ -590,8 +592,10 @@ describe("native Morning Brief collection account", () => {
       expect(executed.body.claimed).toBe(1);
       expect(executed.body.settled).toBe(1);
 
-      // The attempt genuinely spent more than the retired ceiling on authority
-      // work alone. Without that, this case proves nothing.
+      // A guard on the fixture, not the proof: the tick has to charge more for
+      // membership answers than the retired ceiling allowed, or the scenario
+      // never reaches the bound it is about. The proof that this reproduces
+      // #35656 is that every assertion below fails on the parent commit.
       expect(membership.calls() * MEMBERSHIP_LATENCY_MS).toBeGreaterThan(
         RETIRED_REVALIDATION_CEILING_MS,
       );
