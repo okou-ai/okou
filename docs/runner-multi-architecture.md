@@ -140,18 +140,32 @@ steps:
     r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
 ```
 
-The `architecture` input is the runner architecture-group ID, not an arbitrary
-cache prefix:
+The `architecture` input selects the CPU-specific cache prefix, not an
+arbitrary prefix or a claim that every consumer uses the same Rust target:
 
-| Architecture input | Rust target                  | sccache prefix           |
+| Architecture input | Runner Image Rust target     | sccache prefix           |
 | ------------------ | ---------------------------- | ------------------------ |
 | `arm64`            | `aarch64-unknown-linux-musl` | `runner-sccache/arm64/`  |
 | `x86_64`           | `x86_64-unknown-linux-musl`  | `runner-sccache/x86_64/` |
 
+The Crates `check` job uses the `x86_64` prefix for its native GNU compiler.
+The target and compiler arguments participate in sccache's keys, so sharing the
+CPU prefix does not make native GNU and Runner Image musl outputs
+interchangeable.
+
 Callers pass the existing R2 configuration explicitly. They do not pass a raw
 prefix or add job, crate, branch, or commit namespaces. Use the action only once
-per job so the server keeps the startup credentials for the complete compiler
-lifetime without exposing them to later build steps.
+per job, after checkout and any Cargo snapshot restore, so the server keeps the
+startup credentials for the complete compiler lifetime without exposing them to
+later build steps.
+
+Trusted `check` events use the shared action while retaining the existing
+`rust-cache` snapshot. External-fork and Dependabot pull requests do not receive
+the repository R2 credentials, so they skip only sccache setup and run the same
+checks on the existing uncached path. For cached runs, supported library and
+metadata outputs can be reused. Final binaries and test executables, proc-macro
+outputs, unsupported compiler forms, and rustdoc generation remain uncached and
+must not be included in compiler-cache speedup claims.
 
 This avoids GitHub's branch-scoped compiler cache and shared storage quota.
 The additional Cargo dependency cache still uses GitHub and saves only on main;

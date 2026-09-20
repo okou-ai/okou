@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKFLOW="${REPO_ROOT}/.github/workflows/runner-image.yml"
+CRATES_WORKFLOW="${REPO_ROOT}/.github/workflows/crates.yml"
 ACTION="${REPO_ROOT}/.github/actions/setup-r2-sccache/action.yml"
 
 fail() {
@@ -13,6 +14,7 @@ fail() {
 
 command -v yq >/dev/null || fail "yq is required"
 workflow_json=$(yq -o=json '.' "$WORKFLOW")
+crates_workflow_json=$(yq -o=json '.' "$CRATES_WORKFLOW")
 action_json=$(yq -o=json '.' "$ACTION")
 
 # Exercise the workflow's input detector with a transport-only Git change.
@@ -306,6 +308,71 @@ if "${cache_start_env[@]}" SCCACHE_ARCHITECTURE=ppc64 bash -eo pipefail -c "$cac
   fail "cache startup must reject an unsupported architecture"
 fi
 [ ! -e "${cache_dir}/started" ] || fail "unsupported architecture must not start a local cache"
+
+# The Crates check job retains its Cargo snapshot and complete validation
+# surface. Trusted contexts add one shared cache startup before compiler work;
+# external forks and Dependabot retain the same commands without R2 secrets.
+jq -e '
+  .jobs.check as $check |
+  ($check.steps | map(.uses // .name)) as $order |
+  $check["runs-on"] == "ubuntu-latest" and
+  $check["timeout-minutes"] == 20 and
+  $check.container.image == "ghcr.io/vm0-ai/vm0-toolchain-rust:20260825" and
+  ([
+    $check.steps[] |
+    select(.uses == "./.github/actions/setup-r2-sccache")
+  ] | length) == 1 and
+  any($check.steps[];
+    .name == "Setup R2 sccache" and
+    (.if | contains("github.event_name != '\''pull_request'\''")) and
+    (.if | contains("github.event.pull_request.head.repo.full_name == github.repository")) and
+    (.if | contains("github.actor != '\''dependabot[bot]'\''")) and
+    .with.architecture == "x86_64" and
+    .with["r2-access-key-id"] == "${{ secrets.R2_ACCESS_KEY_ID }}" and
+    .with["r2-secret-access-key"] == "${{ secrets.R2_SECRET_ACCESS_KEY }}" and
+    .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
+    .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
+  ) and
+  any($check.steps[];
+    .uses == "Swatinem/rust-cache@v2" and
+    .with.workspaces == "crates -> target" and
+    .with["shared-key"] == "check" and
+    .with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}"
+  ) and
+  (($order | index("Swatinem/rust-cache@v2")) <
+    ($order | index("./.github/actions/setup-r2-sccache"))) and
+  (($order | index("./.github/actions/setup-r2-sccache")) <
+    ($order | index("Check Rust module paths"))) and
+  any($check.steps[];
+    .name == "Run clippy" and
+    (.run | contains("cargo clippy --all-targets --all-features"))
+  ) and
+  any($check.steps[];
+    .name == "Lint guest-control-server production configuration" and
+    (.if | contains("needs.detect.outputs.ci-changed == '\''true'\''")) and
+    (.run | contains("cargo clippy -p guest-control-server --release --no-default-features --all-targets"))
+  ) and
+  any($check.steps[];
+    .name == "Build documentation" and
+    (.run | contains("cargo doc --workspace --all-features --no-deps"))
+  ) and
+  any($check.steps[];
+    .name == "Run ably-subscriber smoke test" and
+    (.if | contains("needs.detect.outputs.ci-changed == '\''true'\''")) and
+    (.run | contains("cargo run -p ably-subscriber --example smoke_test"))
+  ) and
+  any($check.steps[];
+    .name == "Run guest-control-server production configuration tests" and
+    (.if | contains("needs.detect.outputs.ci-changed == '\''true'\''")) and
+    ([.run | scan("cargo test -p guest-control-server")] | length) == 4
+  ) and
+  ($check.steps[-1] |
+    .name == "Report peak memory" and
+    .if == "always()" and
+    .["continue-on-error"] == true and
+    .uses == "./.github/actions/report-memory-peak"
+  )
+' <<<"$crates_workflow_json" >/dev/null || fail "Crates check must preserve validation while using trusted R2 sccache"
 
 jq -e '
   ([.jobs | to_entries[] |
