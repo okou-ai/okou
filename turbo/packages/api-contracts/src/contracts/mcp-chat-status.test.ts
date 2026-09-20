@@ -8,6 +8,7 @@ import {
 
 const threadId = "00000000-0000-4000-8000-000000000001";
 const runId = "00000000-0000-4000-8000-000000000002";
+const otherThreadId = "00000000-0000-4000-8000-000000000003";
 const messages = {
   tool: "get_chat_messages" as const,
   arguments: { threadId, runId, limit: 20 as const },
@@ -142,6 +143,14 @@ describe("MCP chat status response coherence", () => {
       lifecycle: { phase: "settled", outcome: "completed", output: "ready" },
     }),
     statusOutput({ messages }),
+    statusOutput({
+      lifecycle: { phase: "queued", outcome: null, output: "pending" },
+      messages: {
+        ...messages,
+        arguments: { ...messages.arguments, threadId: otherThreadId },
+      },
+      retryAfterMs: 2000,
+    }),
     statusOutput({ messagePage }),
     statusOutput({
       lifecycle: { phase: "settled", outcome: "completed", output: "ready" },

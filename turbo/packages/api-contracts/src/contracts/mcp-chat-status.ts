@@ -177,6 +177,15 @@ function coreStatusCoherenceIssues(
       message: "messages must be null when lifecycle has no selected run",
     });
   }
+  if (
+    status.messages !== null &&
+    status.messages.arguments.threadId !== status.threadId
+  ) {
+    issues.push({
+      path: ["messages", "arguments", "threadId"],
+      message: "messages must belong to the status threadId",
+    });
+  }
   return issues;
 }
 
