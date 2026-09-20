@@ -786,13 +786,13 @@ test("The workflow pane draws the connectors this workspace has", async () => {
   await waitFor(() => {
     expect(
       diagramNodes().map((node) => {
-        return node.getAttribute("data-connector");
+        return node.dataset.connector;
       }),
     ).toContain("ahrefs");
   });
   expect(
     diagramNodes().map((node) => {
-      return node.getAttribute("data-connector");
+      return node.dataset.connector;
     }),
   ).toContain("openai");
   // The drawing keeps its shape whatever the workspace has connected, so the
