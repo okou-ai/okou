@@ -21,7 +21,7 @@ jq -e '
   $coverage["runs-on"] == "ubuntu-latest-8-cores" and
   $coverage["timeout-minutes"] == 20 and
   $coverage.env.CARGO_PROFILE_TEST_DEBUG == "line-tables-only" and
-  $coverage.container.image == "ghcr.io/vm0-ai/vm0-toolchain-rust:20260825" and
+  $coverage.container.image == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825" and
   $coverage.needs == ["detect"] and
   $coverage.if == "needs.detect.outputs.any-changed == '\''true'\''" and
   any($coverage.steps[];
