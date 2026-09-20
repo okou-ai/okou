@@ -21,10 +21,11 @@
 //! ## Compatibility behavior
 //!
 //! `storageMounts` is required, so a legacy object containing only `storages` and/or `artifacts`
-//! does not deserialize. Missing `cleanupPaths` and `instructionCleanups` arrays default to empty.
-//! Serialization always includes `cleanupPaths` and omits `instructionCleanups` when it is empty.
-//! Unknown top-level and mount fields are ignored during deserialization so future fields can be
-//! added compatibly.
+//! does not deserialize. Missing `cleanupPaths` and `instructionCleanups` arrays default to empty,
+//! and a missing `historyOverlapShadow` defaults to no observation. Serialization always includes
+//! `cleanupPaths`, omits `instructionCleanups` when it is empty, and omits
+//! `historyOverlapShadow` when no observation was requested. Unknown top-level and mount fields are
+//! ignored during deserialization so future fields can be added compatibly.
 //!
 //! `storageId` is optional in canonical `storageMounts` input. For a `writeback: true` mount,
 //! omitting `storageId` defaults the value to `None` and preserves it as

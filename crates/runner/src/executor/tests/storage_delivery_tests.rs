@@ -380,7 +380,7 @@ async fn overlap_shadow_budget_omission_preserves_required_decoded_delivery() {
     let sandbox = MockSandbox::new("decoded-shadow-budget");
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
     let roots = (0..16)
-        .map(|index| format!("/{index:04}{}", "x".repeat(3995)))
+        .map(|index| format!("/{index:04}{}", "x".repeat(4090)))
         .collect();
     manifest.history_overlap_shadow =
         Some(HistoryOverlapShadow::new("/history".into(), roots).unwrap());
@@ -396,6 +396,42 @@ async fn overlap_shadow_budget_omission_preserves_required_decoded_delivery() {
     let delivered: Manifest = serde_json::from_slice(json).unwrap();
     assert!(delivered.history_overlap_shadow.is_none());
     assert_eq!(storage_files::decode(payload).unwrap().len(), 1);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn oversized_split_json_request_keeps_overlap_shadow_without_binary_budget() {
+    let fixture = DeliveryFixture::new(3, 3, 35_000).await;
+    let sandbox = MockSandbox::new("decoded-shadow-json-first");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    manifest.cleanup_paths.push("/cleanup".into());
+    let roots = (0..16)
+        .map(|index| format!("/{index:04}{}", "x".repeat(4090)))
+        .collect();
+    manifest.history_overlap_shadow =
+        Some(HistoryOverlapShadow::new("/history".into(), roots).unwrap());
+
+    let transport = download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+
+    assert_eq!(transport, HistoryOverlapShadowTransport::Attached);
+    let calls = sandbox.storage_manifest_calls();
+    assert!(calls.len() > 1);
+    let first_call = calls.first().unwrap();
+    assert!(
+        !first_call
+            .manifest_json
+            .starts_with(storage_files::INPUT_MAGIC)
+    );
+    assert!(first_call.manifest_json.len() > storage_files::MAX_MANIFEST_BYTES);
+    let first: Manifest = serde_json::from_slice(&first_call.manifest_json).unwrap();
+    assert!(first.history_overlap_shadow.is_some());
+    for call in calls.iter().skip(1) {
+        let json = storage_files::split_input(&call.manifest_json).unwrap().0;
+        let batch: Manifest = serde_json::from_slice(json).unwrap();
+        assert!(batch.history_overlap_shadow.is_none());
+    }
     fixture.shutdown().await;
 }
 

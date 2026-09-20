@@ -113,9 +113,8 @@ fn storage_inputs(
     };
     let json = manifest_json(&manifest)?;
     if files.is_empty() {
-        if let Some(shadow) = pending_shadow.take() {
-            manifest.history_overlap_shadow = Some(shadow);
-            shadow_transport = HistoryOverlapShadowTransport::Attached;
+        attach_shadow_to_json_request(&mut manifest, &mut pending_shadow, &mut shadow_transport);
+        if matches!(shadow_transport, HistoryOverlapShadowTransport::Attached) {
             return Ok(StorageInputs {
                 inputs: vec![StorageInput::Json(manifest_json(&manifest)?)],
                 shadow_transport,
@@ -163,11 +162,7 @@ fn storage_inputs(
         || !manifest.cleanup_paths.is_empty()
         || !manifest.instruction_cleanups.is_empty()
     {
-        attach_shadow_within_binary_budget(
-            &mut manifest,
-            &mut pending_shadow,
-            &mut shadow_transport,
-        )?;
+        attach_shadow_to_json_request(&mut manifest, &mut pending_shadow, &mut shadow_transport);
         inputs.push(StorageInput::Json(manifest_json(&manifest)?));
     }
     let mut batch = empty_storage_manifest();
@@ -210,6 +205,17 @@ fn storage_inputs(
         inputs,
         shadow_transport,
     })
+}
+
+fn attach_shadow_to_json_request(
+    manifest: &mut Manifest,
+    pending_shadow: &mut Option<guest_contracts::storage_manifest::HistoryOverlapShadow>,
+    transport: &mut HistoryOverlapShadowTransport,
+) {
+    if let Some(shadow) = pending_shadow.take() {
+        manifest.history_overlap_shadow = Some(shadow);
+        *transport = HistoryOverlapShadowTransport::Attached;
+    }
 }
 
 fn attach_shadow_within_binary_budget(
