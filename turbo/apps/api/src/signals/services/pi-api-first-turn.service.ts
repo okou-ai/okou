@@ -3431,6 +3431,9 @@ const failApiFirstTurn$ = command(async function failApiFirstTurn(
           runId: args.activation.runId,
         },
         executionOwner: "api-first",
+        ...(failure instanceof PiApiFirstTurnModelFailureError
+          ? { modelFailureDiagnostic: failure.diagnostic }
+          : {}),
         body: {
           runId: args.activation.runId,
           exitCode: 1,
