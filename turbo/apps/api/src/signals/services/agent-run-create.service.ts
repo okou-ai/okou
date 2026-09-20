@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { readDisabledPaidTools } from "./paid-tools.service";
 import {
@@ -15,8 +14,6 @@ import {
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
-  createPiSessionJsonl,
-  inspectPiSessionJsonl,
   measurePiPreparation,
   measurePiPreparationSync,
   startPiPreparationObservation,
@@ -45,20 +42,17 @@ import { command, computed, type Computed } from "ccstate";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CODEX_HOME_DIR,
-  CANONICAL_WORKING_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
   DEFAULT_PROFILE,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type PiMemoryRecallSelection,
   type PiMemoryPhase2Maintenance,
-  type PiResourceSnapshot,
   type PiLaunchConfig,
   type PiApiFirstTurnConfig,
   type PiModelConfig,
   type PiModelConfigLegacy,
   type ConnectorRuntimeTargetRegistration,
-  PI_API_FIRST_TURN_SESSION_MAX_BYTES,
   PI_MEMORY_ROOT,
   piMemoryRecallSelectionSchema,
   PI_SKILLS_ROOT,
@@ -205,7 +199,6 @@ import {
   count,
   desc,
   eq,
-  gt,
   inArray,
   isNotNull,
   or,
@@ -238,10 +231,7 @@ import {
   type SystemSkillStorageResolution,
 } from "../context/system-skill-storage-resolution";
 import { writeDb$, type Db } from "../external/db";
-import {
-  downloadS3BufferWithMaxBytes,
-  generatePresignedGetUrl,
-} from "../external/s3";
+import { generatePresignedGetUrl } from "../external/s3";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { now, nowDate } from "../../lib/time";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
@@ -309,17 +299,12 @@ import { PiNativeConfigurationError } from "./pi-native-model-config";
 import {
   piResourceDiscoveryMounts,
   piResourceSnapshotDigest,
-  preparePiResourceSnapshot,
-  PiResourceSnapshotPreparationError,
-  UnsupportedPiResourceError,
 } from "./pi-resource-snapshot.service";
-import { preparePiStableContext } from "./pi-stable-context.service";
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
 import {
   PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
-  type PiApiFirstTurnActivation,
 } from "./pi-api-first-turn-config";
 import {
   activePersonalModelProviderAccount,
@@ -408,26 +393,12 @@ import {
 import {
   isCompressedSessionHistoryBlobEncoding,
   normalizeSessionHistoryBlobEncoding,
-  resumeSessionHistoryBlobKey,
-  SESSION_HISTORY_ENCODING_GZIP,
-  SESSION_HISTORY_ENCODING_IDENTITY,
-  SESSION_HISTORY_ENCODING_ZSTD,
   type CompressedSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
-import {
-  gunzipSessionHistoryBufferWithMaxBytes,
-  unzstdSessionHistoryBufferWithMaxBytes,
-} from "./session-history-decompression";
 import type { Tx } from "../../lib/db-types";
-import type {
-  PiApiFirstTurnPreparation,
-  PiPreparationDiscardReason,
-} from "./pi-api-first-turn-preparation";
+import type { PiPreparationDiscardReason } from "./pi-api-first-turn-preparation";
 import { waitUntil } from "../context/wait-until";
-import {
-  dispatchConfiguredPiApiFirstTurn$,
-  prepareConfiguredPiApiFirstTurn$,
-} from "./pi-api-first-turn-dispatch.service";
+import { prepareConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
@@ -1304,19 +1275,6 @@ function concurrentRunLimit(): ApiErrorResponse<429, "CONCURRENT_RUN_LIMIT"> {
       error: {
         message: "Concurrent run limit reached",
         code: "CONCURRENT_RUN_LIMIT",
-      },
-    },
-  };
-}
-
-function piInferenceBusy(): ApiErrorResponse<429, "PI_INFERENCE_BUSY"> {
-  return {
-    status: 429,
-    body: {
-      error: {
-        message:
-          "Direct inference is temporarily busy. Retry this input after an earlier inference settles.",
-        code: "PI_INFERENCE_BUSY",
       },
     },
   };
@@ -11734,7 +11692,7 @@ export const prepareAgentRun$ = command(
 
 export const completeAgentRun$ = command(
   async (
-    { get, set },
+    { set },
     input: CompleteAgentRunArgs,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {

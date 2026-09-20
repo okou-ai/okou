@@ -27,7 +27,6 @@ import { historicalRunGroupId } from "./run-event-provenance.service";
 import {
   withRunContentWrite,
   prepareRunOutputOwnership,
-  RunContentOwnershipChangedError,
   type RunOutputDiagnostics,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";

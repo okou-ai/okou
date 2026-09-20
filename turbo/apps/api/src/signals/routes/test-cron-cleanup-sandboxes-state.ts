@@ -32,15 +32,11 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
 import { and, eq, inArray, notExists, sql } from "drizzle-orm";
-import { z } from "zod";
 
-import { executeRawRows } from "../../lib/db-raw-rows";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
-import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
 import type { RouteEntry } from "../route-entry";
 import {
   encryptQueuedRunnerJobPayload,
@@ -58,7 +54,6 @@ import {
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
-import { createDeferredPromise, settle } from "../utils";
 
 const actionBody$ = bodyResultOf(testCronCleanupSandboxesStateContract.action);
 const cleanupBody$ = bodyResultOf(
@@ -86,20 +81,6 @@ type CronCleanupSandboxesActionHandler = (
   body: Record<string, unknown>,
   signal: AbortSignal,
 ) => Promise<CronCleanupSandboxesActionResponse>;
-
-interface HeldPiTestLock {
-  held: boolean;
-  pid: number | undefined;
-  readonly release: {
-    readonly promise: Promise<void>;
-    readonly resolve: (value: void) => void;
-    readonly settled: () => boolean;
-  };
-}
-
-const heldPiTestLocks = singleton(() => {
-  return new Map<string, HeldPiTestLock>();
-});
 
 function readString(body: Record<string, unknown>, key: string): string | null {
   const value = body[key];
@@ -1066,8 +1047,6 @@ async function getExportJobForAction(
   signal.throwIfAborted();
   return actionOk({ export_job: job ?? null });
 }
-
-type AgentRunRow = typeof agentRuns.$inferSelect;
 
 const TEST_TERMINAL_RUN_STATUSES = [
   "completed",

@@ -47,7 +47,7 @@ import {
   UnsupportedPiSessionVersionError,
 } from "@okouai/pi-agent-runtime/api";
 import { command } from "ccstate";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import {
@@ -112,7 +112,6 @@ import {
   receiveAgentEvents$,
 } from "./agent-webhook-events.service";
 import { decryptPersistentSecretsMap } from "./crypto.utils";
-import { reservePendingPiApiFirstTurnInput } from "./active-input-delivery.service";
 import {
   gunzipSessionHistoryBufferWithMaxBytes,
   unzstdSessionHistoryBufferWithMaxBytes,
@@ -127,7 +126,6 @@ import {
 } from "./session-history-blobs";
 import {
   PI_API_FIRST_TURN_API_OWNERSHIP_TIMEOUT_MS,
-  PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
   piApiFirstTurnObjectKey,
   type PiApiFirstTurnActivation,
 } from "./pi-api-first-turn-config";
@@ -156,7 +154,6 @@ import {
 
 const MODEL_COMMIT_BUDGET_MS = 2000;
 const FAILURE_COMMIT_TIMEOUT_MS = 10_000;
-const DURABLE_PUBLICATION_TIMEOUT_MS = 2 * 60 * 1000;
 const L = logger("pi-api-first-turn");
 
 function sha256(buffer: Buffer): string {

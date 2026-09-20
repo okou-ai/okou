@@ -17,7 +17,7 @@ export async function stopErasureClosedComputeRun(
   tx: Tx,
   runId: string,
 ): Promise<void> {
-  const transitioned = await tx
+  await tx
     .update(agentRuns)
     .set({
       status: "cancelled",

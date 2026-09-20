@@ -1,6 +1,3 @@
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import {} from "../services/agent-run-create.service";
-import { getSandboxAuthForRun } from "./agent-webhook-auth";
 import {
   NATIVE_GPT_6_SOL_HEADER,
   claimCompatibleStoredExecutionContextSchema,
@@ -1373,7 +1370,7 @@ async function transitionClaimedJobToRunning(
   signal: AbortSignal,
   timing: ClaimRouteTimingCollector,
 ): Promise<ClaimTransitionResult> {
-  const { runId, owner } = args;
+  const { runId } = args;
   const query = buildClaimTransitionSql(
     runId,
     runnerAttribution?.runnerIdentity.runnerId ?? null,
