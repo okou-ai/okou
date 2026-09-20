@@ -698,22 +698,8 @@ export async function holdAgentRowFixture(
 }
 
 /**
- * Block the real candidate SELECT without changing any candidate row.
- *
- * Infrastructure exception: candidate discovery is an MVCC plain SELECT, so no
- * row writer can make it wait. A short table lock is the only way to exercise
- * its actual PostgreSQL wait/timeout path; the fixture releases as soon as
- * `pg_blocking_pids` proves arrival and never fabricates a query result.
- */
-export async function holdChatCandidateDiscoveryFixture(signal: AbortSignal) {
-  return await holdDeferredRow(signal, async (tx) => {
-    await tx.execute(sql`LOCK TABLE ${chatThreads} IN ACCESS EXCLUSIVE MODE`);
-  });
-}
-
-/**
  * Block the canonical ownership SELECT used by the final local authority gate.
- * This is the same narrow infrastructure exception as candidate discovery.
+ * This table-level fixture is limited to the focused final-authority proof.
  */
 export async function holdMorningBriefOwnershipReadFixture(
   signal: AbortSignal,
