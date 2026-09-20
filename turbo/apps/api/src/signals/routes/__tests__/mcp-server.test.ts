@@ -101,8 +101,8 @@ const requiredScopes = `${orgScope} ${readScope}`;
 const defaultScopes =
   "openid email profile user:org:read okou:chat:read okou:chat:send okou:chat:manage okou:run:cancel offline_access";
 const modernVersion = "2026-07-28";
-// Full-scope tools/list before this optimization on main at 67a701ca94c6.
-const fullCatalogBaselineBytes = 43_997;
+// Full-scope tools/list before this optimization on main at 20ac28bd53.
+const fullCatalogBaselineBytes = 47_144;
 const fullCatalogMaximumBytes = Math.floor(fullCatalogBaselineBytes * 0.8);
 
 function jsonBytes(value: unknown): number {
@@ -5681,6 +5681,10 @@ describe("external MCP entry", () => {
             /32 MiB/iu,
           ],
           get_chat_status: [
+            /waitMs/iu,
+            /current state, not a run outcome/iu,
+            /messagePage/iu,
+            /Disconnect cancels only the waiter/iu,
             /retryAfterMs/iu,
             /ready means current materialized output/iu,
             /neither marks read nor changes or cancels/iu,
