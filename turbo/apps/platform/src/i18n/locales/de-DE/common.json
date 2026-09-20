@@ -3492,21 +3492,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Autorisierter Absender",
+        "codeExpiry": "Läuft in 10 Minuten ab",
         "connectAria": "Telefon anschließen",
-        "connectDescription": "Senden Sie von dem Telefon, das Sie verbinden möchten, eine Nachricht an diese AgentPhone-Nummer.",
+        "connectDescription": "Scannen Sie den Code oder öffnen Sie Nachrichten und senden Sie dann den vorausgefüllten Code.",
         "connectTitle": "Telefon anschließen",
         "copyAria": "Kopieren Sie {{phone}}",
+        "copyCodeAria": "Verbindungscode {{code}} kopieren",
+        "copyCodeError": "Verbindungscode konnte nicht kopiert werden",
+        "copyCodeSuccess": "Verbindungscode kopiert",
         "copyError": "Telefonnummer konnte nicht kopiert werden",
         "copySuccess": "Telefonnummer kopiert",
+        "createCodeError": "Verbindungscode konnte nicht erstellt werden. Versuchen Sie es erneut.",
+        "creatingCode": "Verbindungscode wird erstellt…",
         "description": "SMS-Zugriff auf {{assistantName}}",
         "destination": "iMessage oder SMS an",
-        "messageInstruction": "Senden Sie „hi“",
+        "manualSend": "oder senden Sie",
+        "manualSendTo": "an",
         "openMessages": "Nachrichten öffnen",
         "options": "Telefonoptionen",
         "phoneLabel": "Telefon",
-        "replyInstruction": "Öffnen Sie den Verbindungslink innerhalb von 10 Minuten, um die Verbindung abzuschließen.",
-        "replyTitle": "Öffnen Sie unsere Antwort",
-        "risk": "Verwenden Sie nach Möglichkeit iMessage. SMS- und MMS-Antworten kommen möglicherweise nicht zuverlässig an."
+        "qrTitle": "Scannen, um Nachrichten mit dem vorausgefüllten Verbindungscode zu öffnen",
+        "risk": "Verwenden Sie nach Möglichkeit iMessage. SMS- und MMS-Antworten kommen möglicherweise nicht zuverlässig an.",
+        "tryAgain": "Erneut versuchen"
       },
       "catalogDiagnostics": {
         "fields": {

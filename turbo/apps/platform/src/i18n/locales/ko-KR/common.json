@@ -3479,21 +3479,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "승인된 발신자",
+        "codeExpiry": "10분 후 만료",
         "connectAria": "전화 연결",
-        "connectDescription": "연결하려는 휴대폰에서 이 AgentPhone 번호로 메시지를 보내세요.",
+        "connectDescription": "코드를 스캔하거나 메시지 앱을 연 다음, 미리 입력된 코드를 보내세요.",
         "connectTitle": "전화 연결",
         "copyAria": "{{phone}} 복사",
+        "copyCodeAria": "연결 코드 {{code}} 복사",
+        "copyCodeError": "연결 코드를 복사하지 못했습니다",
+        "copyCodeSuccess": "연결 코드를 복사했습니다",
         "copyError": "전화번호 복사 실패",
         "copySuccess": "전화번호가 복사되었습니다",
+        "createCodeError": "연결 코드를 만들지 못했습니다. 다시 시도하세요.",
+        "creatingCode": "연결 코드 만드는 중…",
         "description": "{{assistantName}}에 문자 메시지 접근",
         "destination": "iMessage 또는 SMS 수신처",
-        "messageInstruction": "“hi” 보내기",
+        "manualSend": "또는",
+        "manualSendTo": "코드를 다음 번호로 전송:",
         "openMessages": "메시지 열기",
         "options": "전화 옵션",
         "phoneLabel": "전화",
-        "replyInstruction": "10분 안에 연결 링크를 열어 완료하세요.",
-        "replyTitle": "답장 열기",
-        "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다."
+        "qrTitle": "스캔하여 연결 코드가 미리 입력된 메시지 앱 열기",
+        "risk": "가능하면 iMessage를 사용하세요. SMS 및 MMS 답장은 안정적으로 도착하지 않을 수 있습니다.",
+        "tryAgain": "다시 시도"
       },
       "catalogDiagnostics": {
         "fields": {

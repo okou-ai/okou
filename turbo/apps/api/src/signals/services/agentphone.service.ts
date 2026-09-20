@@ -987,7 +987,7 @@ function appendAgentPhoneSlashCommandRiskWarning(
   return [body, AGENTPHONE_SMS_MMS_SLASH_COMMAND_RISK_MESSAGE].join("\n\n");
 }
 
-async function sendAgentPhoneText(
+export async function sendAgentPhoneText(
   event: AgentPhoneMessageEvent,
   body: string,
   signal: AbortSignal,

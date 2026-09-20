@@ -3547,21 +3547,28 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "Expéditeur autorisé",
+        "codeExpiry": "Expire dans 10 minutes",
         "connectAria": "Connecter le téléphone",
-        "connectDescription": "Envoyez un message à ce numéro AgentPhone depuis le téléphone que vous souhaitez connecter.",
+        "connectDescription": "Scannez le code ou ouvrez Messages, puis envoyez le code prérempli.",
         "connectTitle": "Connecter le téléphone",
         "copyAria": "Copier {{phone}}",
+        "copyCodeAria": "Copier le code de connexion {{code}}",
+        "copyCodeError": "Impossible de copier le code de connexion",
+        "copyCodeSuccess": "Code de connexion copié",
         "copyError": "Échec de la copie du numéro de téléphone",
         "copySuccess": "Numéro de téléphone copié",
+        "createCodeError": "Impossible de créer un code de connexion. Réessayez.",
+        "creatingCode": "Création du code de connexion…",
         "description": "Accès aux messages texte pour {{assistantName}}",
         "destination": "iMessage ou SMS à",
-        "messageInstruction": "Envoyez « hi »",
+        "manualSend": "ou envoyez",
+        "manualSendTo": "au",
         "openMessages": "Ouvrir Messages",
         "options": "Options de téléphone",
         "phoneLabel": "Téléphone",
-        "replyInstruction": "Ouvrez le lien de connexion dans les 10 minutes pour terminer.",
-        "replyTitle": "Ouvrez notre réponse",
-        "risk": "Utilisez iMessage lorsque c’est possible. Les réponses par SMS et MMS peuvent ne pas arriver de manière fiable."
+        "qrTitle": "Scannez pour ouvrir Messages avec le code de connexion prérempli",
+        "risk": "Utilisez iMessage lorsque c’est possible. Les réponses par SMS et MMS peuvent ne pas arriver de manière fiable.",
+        "tryAgain": "Réessayer"
       },
       "catalogDiagnostics": {
         "fields": {
