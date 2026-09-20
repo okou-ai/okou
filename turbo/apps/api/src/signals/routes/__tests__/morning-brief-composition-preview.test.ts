@@ -37,7 +37,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
  * handler, its production gate, authentication and ownership checks.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectorApi = createConnectorBddApi(context);
 

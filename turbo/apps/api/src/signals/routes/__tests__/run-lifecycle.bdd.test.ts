@@ -201,7 +201,7 @@ import { createRouteMocks } from "./helpers/route-test";
  * billing status API, so no DB fixtures are involved.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const callbackStore = createStore();
 const fixtureStore = createStore();
 // `sandbox-op-log.ts` composes this name from AXIOM_DATASET_SUFFIX, which the

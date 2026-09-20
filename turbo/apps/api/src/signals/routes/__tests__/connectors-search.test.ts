@@ -15,7 +15,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const store = createStore();
 

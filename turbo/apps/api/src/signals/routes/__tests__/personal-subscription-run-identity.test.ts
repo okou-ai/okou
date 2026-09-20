@@ -71,7 +71,7 @@ import {
 } from "./helpers/api-bdd-run-timeout";
 
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const runs = createRunsApi(context);
 const support = createAuthDeviceSupportApi(context);
 const firewall = createFirewallApi(context);

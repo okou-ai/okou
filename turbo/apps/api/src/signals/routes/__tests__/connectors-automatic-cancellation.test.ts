@@ -18,7 +18,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const headers = { authorization: "Bearer clerk-session" } as const;
 
 describe.each([false, true])(

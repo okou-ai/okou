@@ -80,7 +80,7 @@ import {
   testPiMemoryStage1StateRoutes,
 } from "../test-pi-memory-stage1-state";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const BUCKET = "pi-memory-stage1-worker-test";
 const CRON_SECRET = "test-pi-memory-stage1-secret";
 const INPUT_SECRET = "sk-proj-inputsecretabcdefghijklmnopqrstuvwxyz";

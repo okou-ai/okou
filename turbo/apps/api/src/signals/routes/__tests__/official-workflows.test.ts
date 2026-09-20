@@ -177,7 +177,7 @@ import {
   settleIncludingAbort,
 } from "../../utils";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const workflowBdd = createWorkflowsBddApi(context);

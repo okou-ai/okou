@@ -64,7 +64,7 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-a
 import { webhooksAgentSessionOutputRoutes } from "../../routes/webhooks-agent-session-output";
 import { webhooksAgentStorageRoutes } from "../../routes/webhooks-agent-storage";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const guestEnvironment = guestBoundaryEnvironment();
 const repo = resolve(
   fileURLToPath(new URL("../../../../../../..", import.meta.url)),

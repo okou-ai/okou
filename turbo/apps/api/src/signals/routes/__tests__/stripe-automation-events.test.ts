@@ -41,7 +41,7 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { webhooksStripeAutomationEventsRoutes } from "../webhooks-stripe-automation-events";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);

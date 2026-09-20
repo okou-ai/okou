@@ -12,10 +12,6 @@ import {
 import { clearMockNow } from "../lib/time";
 import { server } from "../mocks/server";
 import { clearAllDetached } from "../signals/utils";
-import {
-  installApiTestConnectorCatalog,
-  mockApiTestConnectorProviderConfiguration,
-} from "../test-fixtures/connector-catalog";
 
 const testDataKey = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
@@ -43,16 +39,13 @@ aroundEach(async (runTest) => {
   await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
 });
 
-beforeAll(async () => {
-  mockApiTestConnectorProviderConfiguration();
-  await installApiTestConnectorCatalog();
+beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
   // SDK transports can import named HTTP exports instead of the CJS module.
   syncBuiltinESMExports();
 });
 
 beforeEach(() => {
-  mockApiTestConnectorProviderConfiguration();
   mockEnv("SECRETS_KMS_KEY_ID", "alias/okou-secrets-test");
 });
 

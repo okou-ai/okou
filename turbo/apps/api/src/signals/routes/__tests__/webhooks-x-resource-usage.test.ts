@@ -54,6 +54,7 @@ interface RunFixture {
 }
 
 const context = testContext({
+  connectorCatalog: true,
   dbFixtures: [usageEventCompactionDbFixture, xResourceAdmissionDbFixture],
 });
 const bdd = createBddApi(context);

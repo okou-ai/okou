@@ -37,7 +37,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
 describe("builtin MCP account surfaces", () => {
-  const context = testContext();
+  const context = testContext({ connectorCatalog: true });
   const mocks = createRouteMocks(context);
   const headers = { authorization: "Bearer clerk-session" };
   const target = { kind: "builtin", connectorSlug: "public-mcp" } as const;

@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, afterEach, aroundEach, expect } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  aroundEach,
+  beforeAll,
+  beforeEach,
+  expect,
+} from "vitest";
 
 import { closeDbPool } from "../lib/db";
 import { clearMockedEnv } from "../lib/env";
@@ -16,6 +23,7 @@ export interface TestContext {
 }
 
 interface TestContextOptions {
+  readonly connectorCatalog?: boolean;
   readonly dbFixtures?: readonly DbFixture[];
 }
 
@@ -65,6 +73,7 @@ async function runWithDbFixtures(
 }
 
 export function testContext({
+  connectorCatalog = false,
   dbFixtures = [],
 }: TestContextOptions = {}): TestContext {
   let controller = new AbortController();
@@ -76,6 +85,23 @@ export function testContext({
     mocks: getApiTestMocks(),
     sessionHistoryBlobs: new Map<string, Uint8Array>(),
   };
+
+  if (connectorCatalog) {
+    beforeAll(async () => {
+      const {
+        installApiTestConnectorCatalog,
+        mockApiTestConnectorProviderConfiguration,
+      } = await import("../test-fixtures/connector-catalog");
+      mockApiTestConnectorProviderConfiguration();
+      await installApiTestConnectorCatalog();
+    });
+
+    beforeEach(async () => {
+      const { mockApiTestConnectorProviderConfiguration } =
+        await import("../test-fixtures/connector-catalog");
+      mockApiTestConnectorProviderConfiguration();
+    });
+  }
 
   if (dbFixtures.length > 0) {
     aroundEach(async (runTest) => {

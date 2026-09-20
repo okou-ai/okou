@@ -68,6 +68,7 @@ import {
 } from "./helpers/connector-credential-storage-state";
 
 const context = testContext({
+  connectorCatalog: true,
   dbFixtures: [usageEventCompactionDbFixture],
 });
 const TERMINAL_RUN_STATUSES = [

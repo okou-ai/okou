@@ -67,7 +67,7 @@ import {
 } from "../../../test-fixtures/connector-catalog";
 import { withStableAgentPromptBuildCountFixture } from "../../../test-fixtures/pi-stable-context";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const billing = createBillingMediaApi(context);
 const workflows = createWorkflowsBddApi(context);
 const {

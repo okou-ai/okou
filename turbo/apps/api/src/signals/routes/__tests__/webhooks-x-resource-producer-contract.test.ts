@@ -45,7 +45,7 @@ const examples = z
 
 type UsagePayload = z.infer<typeof webhookUsageEventContract.send.body>;
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const billing = createBillingMediaApi(context);

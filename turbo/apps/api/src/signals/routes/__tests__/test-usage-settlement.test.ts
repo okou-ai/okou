@@ -25,7 +25,7 @@ import {
   type UsageStateFixture,
 } from "./helpers/usage-state";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 
 function client(usagePricingResolution?: UsagePricingFixture["resolution"]) {

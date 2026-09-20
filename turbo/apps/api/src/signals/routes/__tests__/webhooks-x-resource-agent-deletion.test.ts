@@ -15,6 +15,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext({
+  connectorCatalog: true,
   dbFixtures: [usageEventCompactionDbFixture],
 });
 const bdd = createBddApi(context);

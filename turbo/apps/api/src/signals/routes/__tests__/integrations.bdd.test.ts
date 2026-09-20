@@ -66,7 +66,7 @@ helper gap:
   can be covered without diagnostic fixture routes.
 */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);

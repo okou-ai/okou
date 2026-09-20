@@ -125,7 +125,7 @@ import type { AgentEvent } from "../../../lib/event-consumer/verify";
 // unique synthetic infrastructure faults are seeded below; admission, creation,
 // promotion, claim, billing metadata and PostgreSQL are never mocked.
 describe("actual compute transactions versus the B1 projector", () => {
-  const context = testContext();
+  const context = testContext({ connectorCatalog: true });
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
   const agentsApi = createAuthOrgAgentsBddApi(context);

@@ -171,6 +171,14 @@ sockets/streams, detached work, and temporary files. Such cleanup bounds
 residue and resource lifetime; it must not delete, overwrite, or restore
 pre-existing shared state to make an assertion pass.
 
+Connector catalog state is not part of the default API test environment. Files
+that exercise built-in connectors, connector-backed workflows, catalog reads,
+or firewall authorization opt in with
+`testContext({ connectorCatalog: true })`. This installs the complete accepted
+test catalog once for that file and restores provider configuration before each
+test. Do not enable it for unrelated route tests or create a smaller implicit
+global catalog.
+
 Tests that hold usage-compaction or X-resource admission across concurrent
 operations opt in through `testContext({ dbFixtures: [...] })`. Each fixture
 provides a UUID-owned async-local lock namespace around the complete test,

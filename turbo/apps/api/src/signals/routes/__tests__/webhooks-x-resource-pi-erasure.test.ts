@@ -21,6 +21,7 @@ import { piResponsesTextSse } from "./helpers/pi-responses";
 import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
 
 const context = testContext({
+  connectorCatalog: true,
   dbFixtures: [xResourceAdmissionDbFixture],
 });
 const fixture = createChatEventsFixture(context);

@@ -19,7 +19,7 @@ import { mockAutomaticMcpOAuthProvider } from "./helpers/api-bdd-connectors";
 import { installAutomaticMcpCatalog } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 const routes = [

@@ -34,7 +34,7 @@ import { chatThreadRenameRoutes } from "../chat-threads-rename";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);

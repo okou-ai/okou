@@ -75,7 +75,7 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  *   org's credits below the threshold while keeping the tier active.
  */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",

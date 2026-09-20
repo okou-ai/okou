@@ -26,7 +26,7 @@ helper gap:
   the visible read model for the selected default agent.
 */
 
-const context = testContext();
+const context = testContext({ connectorCatalog: true });
 const api = createAuthOrgAgentsBddApi(context);
 const bdd = createBddApi(context);
 const runsApi = createRunsApi(context);
