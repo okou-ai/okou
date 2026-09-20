@@ -333,11 +333,13 @@ test("The growth menu reflects installed Slack and offers invitations", async ()
   ).resolves.toBeVisible();
 });
 
-test("Get started replaces the workspace growth entry", async () => {
+test("An admin keeps the growth entry when the org has no quests", async () => {
+  // The switch is on, but the server withholds the quests, so Get started
+  // draws nothing and the corner would otherwise be empty.
   configureGrowthPage(context, {
     role: "admin",
     slack: slackStatus({
-      connected: true,
+      connected: false,
       installed: true,
       workspaceAdmin: true,
     }),
@@ -348,19 +350,11 @@ test("Get started replaces the workspace growth entry", async () => {
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
 
-  await expect(
-    waitFor(() => {
-      return screen.getByTestId("get-started-entry");
-    }),
-  ).resolves.toBeVisible();
-
-  expect(screen.queryByTestId("growth-entry")).toBeNull();
-  expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
-  expect(
-    queryAllByRoleFast("button").find((candidate) => {
-      return normalizedText(candidate) === "Invite humans 🤝";
-    }),
-  ).toBeUndefined();
+  const invitePeople = await waitFor(() => {
+    return actionNamed("button", "Invite humans 🤝");
+  });
+  expect(invitePeople).toBeVisible();
+  expect(screen.queryByTestId("get-started-entry")).toBeNull();
 });
 
 test("A non-admin does not see the workspace growth entry", async () => {
