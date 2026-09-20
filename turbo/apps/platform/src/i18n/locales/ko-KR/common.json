@@ -5479,7 +5479,7 @@
         "starting": "내보내기 시작 중"
       },
       "backToAssistant": "{{assistantName}}로 돌아가기",
-      "description": "{{assistantName}}에서 생성한 파일과 텍스트 기록을 다운로드하세요.",
+      "description": "{{assistantName}}에서 내 대화와 메모리, 접근할 수 있는 에이전트 및 워크플로의 지침을 다운로드하세요.",
       "documentTitle": "데이터 내보내기",
       "duration": {
         "soon": "곧"
@@ -5490,11 +5490,12 @@
         "startFailed": "내보내기 시작 실패"
       },
       "scope": {
-        "agentInstructions": "에이전트 지침 문서",
-        "artifactsExcluded": "아티팩트는 이 내보내기에 포함되지 않습니다.",
-        "chatMessages": "사용자 및 AI 팀원 텍스트 채팅 메시지",
-        "memoryFiles": "메모리 파일",
-        "workflowInstructions": "워크플로 SKILL.md 지침 및 파일"
+        "agentInstructions": "접근할 수 있는 에이전트의 지침",
+        "chatMessages": "내 채팅 메시지",
+        "chatThreads": "내 채팅 스레드",
+        "filesExcluded": "아티팩트, 첨부 파일 및 워크플로 보조 파일은 포함되지 않습니다.",
+        "memoryFiles": "현재 메모리 파일",
+        "workflowInstructions": "접근할 수 있는 워크플로의 지침"
       },
       "status": {
         "checkingDescription": "최근 내보내기 상태가 여기에 표시됩니다.",

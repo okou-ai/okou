@@ -426,8 +426,14 @@ export function listS3ObjectsUnderPrefix(
 export function deleteS3Objects(
   bucket: string,
   keys: readonly string[],
+  signal?: AbortSignal,
 ): Computed<Promise<void>> {
-  return deleteS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, keys);
+  return deleteS3ObjectsWithClient(
+    s3ClientForBucket(bucket),
+    bucket,
+    keys,
+    signal,
+  );
 }
 
 export function deleteArtifactSnapshotObjects(
@@ -1464,11 +1470,13 @@ export function putHostedSitesS3Object(
 export function downloadManifest(
   bucket: string,
   s3Key: string,
+  signal?: AbortSignal,
 ): Computed<Promise<S3StorageManifest>> {
   return computed(async (get): Promise<S3StorageManifest> => {
     const manifestBuffer = await get(
-      downloadS3Buffer(bucket, `${s3Key}/manifest.json`),
+      downloadS3Buffer(bucket, `${s3Key}/manifest.json`, signal),
     );
+    signal?.throwIfAborted();
     return JSON.parse(manifestBuffer.toString("utf8")) as S3StorageManifest;
   });
 }

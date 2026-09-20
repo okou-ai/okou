@@ -5479,7 +5479,7 @@
         "starting": "Memulai ekspor"
       },
       "backToAssistant": "Kembali ke {{assistantName}}",
-      "description": "Unduh file dan catatan teks yang Anda buat di {{assistantName}}.",
+      "description": "Unduh percakapan, memori, serta instruksi agen dan alur kerja yang dapat Anda akses di {{assistantName}}.",
       "documentTitle": "Ekspor data",
       "duration": {
         "soon": "segera"
@@ -5490,11 +5490,12 @@
         "startFailed": "Gagal memulai ekspor"
       },
       "scope": {
-        "agentInstructions": "Dokumen instruksi agen",
-        "artifactsExcluded": "Artefak tidak disertakan dalam ekspor ini.",
-        "chatMessages": "Pesan chat teks pengguna dan asisten",
-        "memoryFiles": "File memori",
-        "workflowInstructions": "Instruksi dan file SKILL.md alur kerja"
+        "agentInstructions": "Instruksi agen yang dapat Anda akses",
+        "chatMessages": "Pesan chat Anda",
+        "chatThreads": "Percakapan chat Anda",
+        "filesExcluded": "Artefak, lampiran, dan file pendukung alur kerja tidak disertakan.",
+        "memoryFiles": "File memori Anda saat ini",
+        "workflowInstructions": "Instruksi alur kerja yang dapat Anda akses"
       },
       "status": {
         "checkingDescription": "Status ekspor terbaru Anda akan muncul di sini.",

@@ -18,7 +18,7 @@ import { createStoragesBddApi } from "./api-bdd-storages";
 
 interface MemoryFile {
   readonly path: string;
-  readonly content: string;
+  readonly content: string | Buffer;
 }
 
 interface CommittedMemoryVersion {
@@ -42,7 +42,10 @@ export async function commitMemoryVersion(
   }
   const storagesApi = createStoragesBddApi(context);
   const entries = files.map((file) => {
-    const content = Buffer.from(file.content, "utf8");
+    const content =
+      typeof file.content === "string"
+        ? Buffer.from(file.content, "utf8")
+        : file.content;
     return {
       path: file.path,
       hash: createHash("sha256").update(content).digest("hex"),

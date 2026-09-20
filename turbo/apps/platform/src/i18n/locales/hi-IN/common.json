@@ -5492,7 +5492,7 @@
         "starting": "निर्यात शुरू हो रहा है"
       },
       "backToAssistant": "{{assistantName}} पर वापस जाएँ",
-      "description": "{{assistantName}} में आपके द्वारा बनाई गई फ़ाइलें और टेक्स्ट रिकॉर्ड डाउनलोड करें।",
+      "description": "{{assistantName}} में अपनी बातचीत, मेमोरी और उन एजेंटों तथा वर्कफ़्लो के निर्देश डाउनलोड करें जिन तक आपकी पहुँच है।",
       "documentTitle": "डेटा निर्यात करें",
       "duration": {
         "soon": "जल्द ही"
@@ -5503,11 +5503,12 @@
         "startFailed": "निर्यात प्रारंभ करने में विफल"
       },
       "scope": {
-        "agentInstructions": "एजेंट अनुदेश दस्तावेज़",
-        "artifactsExcluded": "आर्टिफ़ैक्ट इस निर्यात में शामिल नहीं हैं।",
-        "chatMessages": "उपयोगकर्ता और सहायक टेक्स्ट चैट संदेश",
-        "memoryFiles": "मेमोरी फ़ाइलें",
-        "workflowInstructions": "वर्कफ़्लो SKILL.md निर्देश और फ़ाइलें"
+        "agentInstructions": "आपकी पहुँच वाले एजेंटों के निर्देश",
+        "chatMessages": "आपके चैट संदेश",
+        "chatThreads": "आपकी चैट बातचीत",
+        "filesExcluded": "आर्टिफ़ैक्ट, अटैचमेंट और वर्कफ़्लो की सहायक फ़ाइलें शामिल नहीं हैं।",
+        "memoryFiles": "आपकी वर्तमान मेमोरी फ़ाइलें",
+        "workflowInstructions": "आपकी पहुँच वाले वर्कफ़्लो के निर्देश"
       },
       "status": {
         "checkingDescription": "आपकी नवीनतम निर्यात स्थिति यहां दिखाई देगी.",

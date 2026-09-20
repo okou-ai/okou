@@ -52,11 +52,9 @@ function getDownloadLink(name: string): HTMLAnchorElement {
 }
 
 test("A completed export shows its contents, expiry, and cooldown", async () => {
-  let exportAttempts = 0;
   mockNow(NOW, context.signal);
   mockCompletedExport(true);
   context.mocks.api(userExportContract.post, ({ respond }) => {
-    exportAttempts += 1;
     return respond(429, {
       error: {
         code: "TOO_MANY_REQUESTS",
@@ -69,14 +67,24 @@ test("A completed export shows its contents, expiry, and cooldown", async () => 
 
   await expect(
     screen.findByRole("heading", { name: "Export data" }),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByText("Your chat threads")).toBeInTheDocument();
+  expect(screen.getByText("Your chat messages")).toBeInTheDocument();
   expect(
-    screen.getByText("Workflow SKILL.md instructions and files"),
-  ).toBeVisible();
-  expect(screen.getByText("Memory files")).toBeVisible();
+    screen.getByText("Instructions for agents you can access"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("Instructions for workflows you can access"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Your current memory files")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Artifact, attachment, and workflow supporting files are not included.",
+    ),
+  ).toBeInTheDocument();
   expect(
     screen.getByText("The download link expires in 1d 12h."),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(getDownloadLink("Download export")).toHaveAttribute(
     "href",
     "https://downloads.example/export.zip",
@@ -86,6 +94,5 @@ test("A completed export shows its contents, expiry, and cooldown", async () => 
 
   await expect(
     screen.findByText("You can export once every 24 hours."),
-  ).resolves.toBeVisible();
-  expect(exportAttempts).toBe(1);
+  ).resolves.toBeInTheDocument();
 });

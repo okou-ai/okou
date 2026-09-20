@@ -354,6 +354,12 @@ function ExportScopeList() {
   const { t } = useTranslation();
   const items = [
     t(($) => {
+      return $.settings.export.scope.chatThreads;
+    }),
+    t(($) => {
+      return $.settings.export.scope.chatMessages;
+    }),
+    t(($) => {
       return $.settings.export.scope.agentInstructions;
     }),
     t(($) => {
@@ -361,9 +367,6 @@ function ExportScopeList() {
     }),
     t(($) => {
       return $.settings.export.scope.memoryFiles;
-    }),
-    t(($) => {
-      return $.settings.export.scope.chatMessages;
     }),
   ];
 
@@ -379,7 +382,7 @@ function ExportScopeList() {
       })}
       <p className="pt-1 text-xs leading-5 text-muted-foreground">
         {t(($) => {
-          return $.settings.export.scope.artifactsExcluded;
+          return $.settings.export.scope.filesExcluded;
         })}
       </p>
     </div>

@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { gzipSync } from "node:zlib";
 
-import AdmZip from "adm-zip";
 import { HttpResponse } from "msw";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
 import {
   PI_MEMORY_CITATION_OPEN,
   PI_MEMORY_CITATION_CLOSE,
@@ -38,6 +41,12 @@ import {
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import {
+  installUserExportStorage,
+  readExportChatRows,
+  readUserExportZip,
+} from "./helpers/user-export-storage";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -124,81 +133,24 @@ async function archiveAndRetain(
   ).resolves.toHaveLength(0);
 }
 
-function commandInput(command: unknown): Record<string, unknown> {
-  if (
-    typeof command === "object" &&
-    command !== null &&
-    "input" in command &&
-    typeof command.input === "object" &&
-    command.input !== null
-  ) {
-    return command.input as Record<string, unknown>;
+function installAgentStorage(): void {
+  const snapshots = context.mocks.s3.send.getMockImplementation();
+  createMiscRoutesApi(context);
+  const objects = context.mocks.s3.send.getMockImplementation();
+  if (!snapshots || !objects) {
+    throw new Error("Expected snapshot and instruction storage mocks");
   }
-  return {};
-}
-
-function byteStream(bytes: Buffer): AsyncIterable<Buffer> {
-  return {
-    async *[Symbol.asyncIterator]() {
-      yield bytes;
-    },
-  };
-}
-
-function installEmptyStorageArchives(): void {
-  const manifest = Buffer.from(
-    JSON.stringify({
-      version: "archive-consumer-fixture",
-      createdAt: new Date(0).toISOString(),
-      files: [],
-      totalSize: 0,
-      fileCount: 0,
-    }),
-  );
-  const archive = gzipSync(Buffer.alloc(1024));
-  const fallback = context.mocks.s3.send.getMockImplementation();
   context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (typeof command !== "object" || command === null) {
-      return fallback?.(command) ?? Promise.resolve({});
-    }
-    const key = commandInput(command).Key;
     if (
-      command.constructor.name !== "GetObjectCommand" ||
-      (typeof key === "string" && key.startsWith("chat-events/"))
+      (command instanceof GetObjectCommand ||
+        command instanceof HeadObjectCommand ||
+        command instanceof PutObjectCommand) &&
+      !command.input.Key?.startsWith("chat-events/")
     ) {
-      return fallback?.(command) ?? Promise.resolve({});
+      return objects(command);
     }
-    const bytes =
-      typeof key === "string" && key.endsWith("/manifest.json")
-        ? manifest
-        : archive;
-    return Promise.resolve({
-      Body: byteStream(bytes),
-      ContentLength: bytes.length,
-    });
+    return snapshots(command);
   });
-}
-
-function exportZip(exportKey: string): AdmZip {
-  const putInput = context.mocks.s3.send.mock.calls
-    .map(([command]) => {
-      return commandInput(command);
-    })
-    .find((input) => {
-      return input.Key === exportKey;
-    });
-  if (!Buffer.isBuffer(putInput?.Body)) {
-    throw new Error("Expected archived user export ZIP upload");
-  }
-  return new AdmZip(putInput.Body);
-}
-
-function zipText(zip: AdmZip, name: string): string {
-  const entry = zip.getEntry(name);
-  if (entry === null) {
-    throw new Error(`Expected ZIP entry ${name}`);
-  }
-  return entry.getData().toString("utf8");
 }
 
 describe("archived chat event consumers", () => {
@@ -208,7 +160,7 @@ describe("archived chat event consumers", () => {
     recordedPuts.length = 0;
     mockEnv("GIT_COMMIT_SHA", "b".repeat(40));
     installFakeChatEventR2(context, recordedPuts);
-    installEmptyStorageArchives();
+    installAgentStorage();
   });
 
   it("exports snapshot history plus the PostgreSQL tail after archived source rows are gone", async () => {
@@ -227,13 +179,14 @@ describe("archived chat event consumers", () => {
     await archiveAndRetain(fixture.threadId, [archivedEventId]);
     const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
     const tailText = withHiddenCitation(tailVisible);
-    await store.set(
+    const tailEventId = await store.set(
       seedRetentionOutputEvent$,
       { chatThreadId: fixture.threadId, content: tailText },
       context.signal,
     );
 
     const exportApi = createOpsLogsApi(context);
+    installUserExportStorage(context);
     const started = await exportApi.requestPostUserExport(fixture.actor, [202]);
     await flushWaitUntilForTest();
     const status = await exportApi.requestGetUserExport(fixture.actor, [200]);
@@ -241,16 +194,27 @@ describe("archived chat event consumers", () => {
       id: started.body.jobId,
       status: "completed",
     });
-    const zip = exportZip(
+    const zip = readUserExportZip(
+      context,
       `exports/${fixture.actor.userId}/${started.body.jobId}.zip`,
     );
-    const messages = JSON.parse(
-      zipText(zip, `conversations/chat-thread-${fixture.threadId}.json`),
-    ) as readonly { readonly role: string; readonly content: string }[];
+    const messages = readExportChatRows(zip, fixture.threadId);
     expect(messages).toMatchObject([
-      { role: "assistant", content: archivedVisible },
-      { role: "assistant", content: tailVisible },
+      {
+        id: archivedEventId,
+        chatThreadId: fixture.threadId,
+        eventType: "output.message",
+        payload: { content: archivedText },
+      },
+      {
+        id: tailEventId,
+        chatThreadId: fixture.threadId,
+        eventType: "output.message",
+        payload: { content: tailText },
+      },
     ]);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.seqId).toBeLessThan(messages[1]?.seqId ?? 0);
   }, 60_000);
 
   it("shares archived selections with a fixed title when the title provider is unavailable", async () => {
