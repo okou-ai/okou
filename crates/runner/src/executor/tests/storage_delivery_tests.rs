@@ -551,19 +551,17 @@ async fn oversized_split_json_request_keeps_overlap_shadow_without_binary_budget
         .unwrap();
 
     assert_eq!(transport, HistoryOverlapShadowTransport::Attached);
-    let calls = sandbox.storage_manifest_calls();
-    assert!(calls.len() > 1);
-    let first_call = calls.first().unwrap();
-    assert!(
-        !first_call
-            .manifest_json
-            .starts_with(storage_files::INPUT_MAGIC)
-    );
-    assert!(first_call.manifest_json.len() > storage_files::MAX_MANIFEST_BYTES);
-    let first: Manifest = serde_json::from_slice(&first_call.manifest_json).unwrap();
+    let writes = sandbox.write_file_calls();
+    assert_eq!(writes.len(), 1);
+    assert_eq!(writes[0].path, guest::STORAGE_MANIFEST);
+    assert!(writes[0].content.len() > storage_files::MAX_MANIFEST_BYTES);
+    let first: Manifest = serde_json::from_slice(&writes[0].content).unwrap();
     assert!(first.history_overlap_shadow.is_some());
     assert_eq!(first.storages.len(), 1);
-    for call in calls.iter().skip(1) {
+
+    let calls = sandbox.storage_manifest_calls();
+    assert!(!calls.is_empty());
+    for call in calls {
         let json = storage_files::split_input(&call.manifest_json).unwrap().0;
         let batch: Manifest = serde_json::from_slice(json).unwrap();
         assert!(batch.history_overlap_shadow.is_none());
