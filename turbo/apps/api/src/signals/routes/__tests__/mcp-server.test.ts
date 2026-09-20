@@ -850,8 +850,8 @@ describe("MCP chat discovery and creation", () => {
       replayed: false,
       input: {
         inputRef: { threadId: args.requestId, eventId: expect.any(String) },
-        disposition: "rejected",
-        runId: null,
+        disposition: "associated",
+        runId: expect.any(String),
       },
       nextAction: {
         tool: "get_chat_status",
@@ -873,9 +873,7 @@ describe("MCP chat discovery and creation", () => {
     ).toBe(24 * 60 * 60 * 1000);
     expect(
       (await getMessages(token, { threadId: args.requestId })).messages,
-    ).toMatchObject([
-      { text: args.message, eventType: "input.rejected", runId: null },
-    ]);
+    ).toMatchObject([{ text: args.message }]);
 
     await f.runs.updateOrgModelPolicies(f.actor, [
       {
@@ -906,8 +904,8 @@ describe("MCP chat discovery and creation", () => {
       replayed: true,
       input: {
         inputRef: created.input.inputRef,
-        disposition: "rejected",
-        runId: null,
+        disposition: "associated",
+        runId: created.input.runId,
       },
     });
     expect(
