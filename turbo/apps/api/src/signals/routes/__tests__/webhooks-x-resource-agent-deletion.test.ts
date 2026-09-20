@@ -5,6 +5,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
+import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
 import { holdUsageEventCompactionLockFixture } from "../../../test-fixtures/usage-event-compaction";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -13,7 +14,9 @@ import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
-const context = testContext();
+const context = testContext({
+  dbFixtures: [usageEventCompactionDbFixture],
+});
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const billing = createBillingMediaApi(context);

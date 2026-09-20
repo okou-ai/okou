@@ -7,6 +7,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { xResourceAdmissionDbFixture } from "../../../test-fixtures/db-fixture";
 import { holdXResourceClaimForTest } from "../../../test-fixtures/x-resource-admission";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
@@ -19,7 +20,9 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { piResponsesTextSse } from "./helpers/pi-responses";
 import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
 
-const context = testContext();
+const context = testContext({
+  dbFixtures: [xResourceAdmissionDbFixture],
+});
 const fixture = createChatEventsFixture(context);
 
 async function completedPiRun() {
