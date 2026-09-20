@@ -1,20 +1,10 @@
 import { createHash } from "node:crypto";
 import { command, computed } from "ccstate";
-import {
-  and,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   artifactShareReferencePath,
-  artifactReferencePath,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
@@ -60,8 +50,8 @@ import {
 
 import {
   artifactFileReference,
+  privateArtifactPreviewImageUrl,
   privateArtifactRecord,
-  privateArtifactUrl,
 } from "./private-artifact-storage.service";
 import {
   ArtifactDeliveryAliasConflict,
@@ -408,7 +398,7 @@ const privateFileSnapshot$ = command(
         url,
         sourceKey: file.key,
         previewImageUrl: await get(
-          privateFileSnapshotPreviewImage(file, signal),
+          privateArtifactPreviewImageUrl(file, signal),
         ),
         deliveryUrl: resourceUrl(args.publicBrand, token, target),
       };
@@ -424,53 +414,6 @@ const privateFileSnapshot$ = command(
     return null;
   },
 );
-
-function privateFileSnapshotPreviewImage(
-  file: Pick<
-    typeof runUploadedFiles.$inferSelect,
-    "id" | "userId" | "metadata" | "previewImageUrl"
-  > & {
-    readonly orgId: string;
-    readonly filename: string;
-    readonly contentType: string;
-  },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
-    if (file.previewImageUrl || !file.contentType.startsWith("video/")) {
-      return file.previewImageUrl;
-    }
-    const paths = [
-      privateArtifactUrl(file.id, file.filename, file.metadata),
-      artifactReferencePath(file.id, file.filename),
-    ];
-    // Run associations can be separate from the private storage identity.
-    // Match that exact file, never another artifact with the same filename.
-    const [row] = await get(db$)
-      .select({ previewImageUrl: runUploadedFiles.previewImageUrl })
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.userId, file.userId),
-          eq(runUploadedFiles.orgId, file.orgId),
-          isNotNull(runUploadedFiles.previewImageUrl),
-          or(
-            eq(runUploadedFiles.externalId, file.id),
-            inArray(
-              runUploadedFiles.url,
-              paths.flatMap((path) => {
-                return [path, new URL(path, env("APP_URL")).href];
-              }),
-            ),
-          ),
-        ),
-      )
-      .orderBy(desc(runUploadedFiles.updatedAt), desc(runUploadedFiles.id))
-      .limit(1);
-    signal.throwIfAborted();
-    return row?.previewImageUrl ?? null;
-  });
-}
 
 function ownedHostedDeployment(
   args: SnapshotOwner,

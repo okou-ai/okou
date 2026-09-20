@@ -466,6 +466,22 @@ describe("video Artifact previews", () => {
       const reference = await resolvePrivatePreviewReference(
         artifact?.thumbnail?.url ?? "",
       );
+      const videoReference = parseArtifactReference(file.url, env("APP_URL"));
+      if (!videoReference) {
+        throw new Error("Expected a private video reference");
+      }
+      const resolvedVideo = await accept(
+        setupApp({ context, routes: artifactReferenceRoutes })(
+          artifactReferencesContract,
+        ).resolve({
+          headers: { authorization: "Bearer clerk-session" },
+          params: {
+            reference: `${videoReference.hash}${videoReference.extension}`,
+          },
+        }),
+        [200],
+      );
+      expect(resolvedVideo.body.previewImageUrl).toBe(artifact?.thumbnail?.url);
       expect(
         owner.objectStore.puts.filter((put) => {
           return put.contentType === "image/jpeg";

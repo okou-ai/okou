@@ -5,7 +5,7 @@ import {
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command, computed } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
@@ -286,6 +286,55 @@ export function privateArtifactRecord(id: string) {
       contentType: row.contentType,
       ...metadata,
     };
+  });
+}
+
+/**
+ * Resolve a generated preview whether it lives on the private ownership row or
+ * on a separate run association for that exact file.
+ */
+export function privateArtifactPreviewImageUrl(
+  file: Pick<
+    typeof runUploadedFiles.$inferSelect,
+    "id" | "userId" | "metadata" | "previewImageUrl"
+  > & {
+    readonly orgId: string;
+    readonly filename: string;
+    readonly contentType: string;
+  },
+  signal: AbortSignal,
+) {
+  return computed(async (get) => {
+    if (file.previewImageUrl || !file.contentType.startsWith("video/")) {
+      return file.previewImageUrl;
+    }
+    const paths = [
+      privateArtifactUrl(file.id, file.filename, file.metadata),
+      artifactReferencePath(file.id, file.filename),
+    ];
+    const [row] = await get(db$)
+      .select({ previewImageUrl: runUploadedFiles.previewImageUrl })
+      .from(runUploadedFiles)
+      .where(
+        and(
+          eq(runUploadedFiles.userId, file.userId),
+          eq(runUploadedFiles.orgId, file.orgId),
+          isNotNull(runUploadedFiles.previewImageUrl),
+          or(
+            eq(runUploadedFiles.externalId, file.id),
+            inArray(
+              runUploadedFiles.url,
+              paths.flatMap((path) => {
+                return [path, new URL(path, env("APP_URL")).href];
+              }),
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(runUploadedFiles.updatedAt), desc(runUploadedFiles.id))
+      .limit(1);
+    signal.throwIfAborted();
+    return row?.previewImageUrl ?? null;
   });
 }
 

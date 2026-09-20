@@ -16,7 +16,10 @@ import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
-import { privateArtifactRecord } from "../services/private-artifact-storage.service";
+import {
+  privateArtifactPreviewImageUrl,
+  privateArtifactRecord,
+} from "../services/private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "../services/private-hosted-preview.service";
 import {
   resolveArtifactShare$,
@@ -71,12 +74,17 @@ const resolveFileReference$ = command(
         }),
       );
       signal.throwIfAborted();
+      const previewImageUrl = await get(
+        privateArtifactPreviewImageUrl(file, signal),
+      );
+      signal.throwIfAborted();
       return {
         status: 200 as const,
         body: {
           ...preview,
           filename: file.filename,
           contentType: file.contentType,
+          ...(previewImageUrl ? { previewImageUrl } : {}),
           target: { kind: "file" as const, id },
         },
       };
