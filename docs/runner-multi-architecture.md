@@ -174,20 +174,9 @@ repo-level image-cache configuration outside the environment and transfers the
 encrypted credentials into the environment-bound job. Release-asset compilation
 must not replace or redirect that handoff.
 
-Both the production release job and `.github/workflows/runner-release-build.yml`
-invoke `.github/scripts/runner-release-build.sh` for separate guest and embedded
-Runner phases. The build-only workflow runs automatically for relevant internal
-pull-request changes and can be dispatched manually for another revision. It
-uses the same toolchain, targets, release profile, repo-level R2 configuration,
-and rust-cache keys, but restores without saving the rust-cache snapshot and has
-no release creation, asset upload, Slack notification, production environment,
-or deployment authority.
-
-Run the build-only workflow twice on an unchanged revision to compare initial
-population with warm compiler-cache behavior. Use the reported sccache hits,
-misses, and errors to classify the runs; do not assume the shared prefix was
-empty. Record guest and Runner step durations separately because the warm Runner
-step still includes non-cacheable final executable, full-LTO, and link work.
+The production release job retains its separate guest and embedded Runner
+compilation phases together with the existing release creation, asset upload,
+Slack notification, and deployment behavior.
 
 This avoids GitHub's branch-scoped compiler cache and shared storage quota.
 The additional Cargo dependency cache still uses GitHub and saves only on main;

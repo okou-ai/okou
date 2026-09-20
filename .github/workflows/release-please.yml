@@ -2027,12 +2027,29 @@ jobs:
       - name: Cross-compile guest binaries for ${{ matrix.target }}
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
-        run: .github/scripts/runner-release-build.sh guests
+        run: |
+          . .github/scripts/runner-guest-binaries.sh
+          runner_guest_binaries_load
+          guest_cargo_args=()
+          for package in "${RUNNER_GUEST_PACKAGES[@]}"; do
+            guest_cargo_args+=("-p" "$package")
+          done
+          cd crates
+          cargo build --release --target "$TARGET_TRIPLE" "${guest_cargo_args[@]}"
 
       - name: Cross-compile runner with embedded guests for ${{ matrix.target }}
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
-        run: .github/scripts/runner-release-build.sh runner
+        run: |
+          . .github/scripts/runner-guest-binaries.sh
+          runner_guest_binaries_load
+          cd crates
+          TARGET_DIR="target/${TARGET_TRIPLE}/release"
+          guest_env=()
+          for index in "${!RUNNER_GUEST_BINARIES[@]}"; do
+            guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=${TARGET_DIR}/${RUNNER_GUEST_BINARIES[$index]}")
+          done
+          env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner
 
       - name: Upload runner binary to GitHub Release
         env:
