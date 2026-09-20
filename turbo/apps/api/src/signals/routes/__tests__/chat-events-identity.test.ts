@@ -221,7 +221,7 @@ describe("CHAT-02: default assistant identity", () => {
         "https://api.github.com/repos/:owner/:repo/issues/:issueNumber/comments",
         async ({ request, params }) => {
           expect(params.owner).toBe("okou-ai");
-          expect(params.repo).toBe("vm0");
+          expect(params.repo).toBe("okou");
           const body = (await request.json()) as Record<string, unknown>;
           if (typeof body.body !== "string") {
             return HttpResponse.json(
