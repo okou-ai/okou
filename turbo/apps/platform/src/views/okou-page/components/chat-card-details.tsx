@@ -43,7 +43,7 @@ export function ChatCardDetails({
           className="shrink-0"
           aria-label={label}
         >
-          {compact ? <Info size={14} /> : label}
+          {compact ? <Info size={16} /> : label}
         </Button>
       </DialogTrigger>
       <DialogContent
