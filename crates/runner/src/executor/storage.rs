@@ -55,17 +55,30 @@ pub(super) async fn download_storages_with_files(
     context: &ExecutionContext,
     manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
-) -> RunnerResult<()> {
+) -> RunnerResult<HistoryOverlapShadowTransport> {
     // Validate and encode every batch before the first storage-apply operation.
-    for input in storage_inputs(manifest, files)? {
+    let prepared = storage_inputs(manifest, files)?;
+    for input in &prepared.inputs {
         apply_storage_input(sandbox, context, &input).await?;
     }
-    Ok(())
+    Ok(prepared.shadow_transport)
 }
 
 enum StorageInput {
     Json(Vec<u8>),
     Files(Vec<u8>),
+}
+
+struct StorageInputs {
+    inputs: Vec<StorageInput>,
+    shadow_transport: HistoryOverlapShadowTransport,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HistoryOverlapShadowTransport {
+    Absent,
+    Attached,
+    DescriptorBudget,
 }
 
 fn manifest_json(manifest: &Manifest) -> RunnerResult<Vec<u8>> {
@@ -84,23 +97,49 @@ fn empty_storage_manifest() -> Manifest {
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
+        history_overlap_shadow: None,
     }
 }
 
 fn storage_inputs(
     mut manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
-) -> RunnerResult<Vec<StorageInput>> {
+) -> RunnerResult<StorageInputs> {
+    let mut pending_shadow = manifest.history_overlap_shadow.take();
+    let mut shadow_transport = if pending_shadow.is_some() {
+        HistoryOverlapShadowTransport::DescriptorBudget
+    } else {
+        HistoryOverlapShadowTransport::Absent
+    };
     let json = manifest_json(&manifest)?;
     if files.is_empty() {
-        return Ok(vec![StorageInput::Json(json)]);
+        if let Some(shadow) = pending_shadow.take() {
+            manifest.history_overlap_shadow = Some(shadow);
+            shadow_transport = HistoryOverlapShadowTransport::Attached;
+            return Ok(StorageInputs {
+                inputs: vec![StorageInput::Json(manifest_json(&manifest)?)],
+                shadow_transport,
+            });
+        }
+        return Ok(StorageInputs {
+            inputs: vec![StorageInput::Json(json)],
+            shadow_transport,
+        });
     }
     let groups = files
         .iter()
         .map(|(mount, files)| (mount.as_str(), files.files.as_slice()))
         .collect::<Vec<_>>();
     if json.len() <= storage_files::MAX_MANIFEST_BYTES {
-        return Ok(vec![files_input(&json, &groups)?]);
+        attach_shadow_within_binary_budget(
+            &mut manifest,
+            &mut pending_shadow,
+            &mut shadow_transport,
+        )?;
+        return Ok(StorageInputs {
+            inputs: vec![files_input(&manifest_json(&manifest)?, &groups)?],
+            shadow_transport,
+        });
     }
     // A split request alone cannot see conflicts with entries in another batch.
     storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
@@ -124,6 +163,11 @@ fn storage_inputs(
         || !manifest.cleanup_paths.is_empty()
         || !manifest.instruction_cleanups.is_empty()
     {
+        attach_shadow_within_binary_budget(
+            &mut manifest,
+            &mut pending_shadow,
+            &mut shadow_transport,
+        )?;
         inputs.push(StorageInput::Json(manifest_json(&manifest)?));
     }
     let mut batch = empty_storage_manifest();
@@ -145,17 +189,45 @@ fn storage_inputs(
         let entry_bytes = single_bytes - empty_bytes;
         let comma_bytes = usize::from(!batch.storages.is_empty());
         if batch_bytes + comma_bytes + entry_bytes > storage_files::MAX_MANIFEST_BYTES {
+            attach_shadow_within_binary_budget(
+                &mut batch,
+                &mut pending_shadow,
+                &mut shadow_transport,
+            )?;
             inputs.push(encode_storage_batch(&batch, &files_by_mount)?);
             batch.storages.clear();
+            batch.history_overlap_shadow = None;
             batch_bytes = empty_bytes;
         }
         batch_bytes += usize::from(!batch.storages.is_empty()) + entry_bytes;
         batch.storages.push(entry);
     }
     if !batch.storages.is_empty() {
+        attach_shadow_within_binary_budget(&mut batch, &mut pending_shadow, &mut shadow_transport)?;
         inputs.push(encode_storage_batch(&batch, &files_by_mount)?);
     }
-    Ok(inputs)
+    Ok(StorageInputs {
+        inputs,
+        shadow_transport,
+    })
+}
+
+fn attach_shadow_within_binary_budget(
+    manifest: &mut Manifest,
+    pending_shadow: &mut Option<guest_contracts::storage_manifest::HistoryOverlapShadow>,
+    transport: &mut HistoryOverlapShadowTransport,
+) -> RunnerResult<()> {
+    let Some(shadow) = pending_shadow.take() else {
+        return Ok(());
+    };
+    manifest.history_overlap_shadow = Some(shadow);
+    if manifest_json(manifest)?.len() <= storage_files::MAX_MANIFEST_BYTES {
+        *transport = HistoryOverlapShadowTransport::Attached;
+    } else {
+        manifest.history_overlap_shadow = None;
+        *transport = HistoryOverlapShadowTransport::DescriptorBudget;
+    }
+    Ok(())
 }
 
 fn encode_storage_batch(

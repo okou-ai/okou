@@ -2,11 +2,11 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::sync::Arc;
 
 use guest_contracts::storage_files;
-use guest_contracts::storage_manifest::{Manifest, StorageEntry};
+use guest_contracts::storage_manifest::{HistoryOverlapShadow, Manifest, StorageEntry};
 use sandbox::ExecResult;
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 
-use super::super::storage::download_storages_with_files;
+use super::super::storage::{HistoryOverlapShadowTransport, download_storages_with_files};
 use super::super::{ExecutorConfig, guest_runtime_dir};
 use super::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, api_storage, create_overridden_sandbox, minimal_context,
@@ -329,6 +329,73 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
         assert_eq!(metadata.mtime(), 1234);
     }
     assert_binary_calls(&sandbox, 3);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn split_decoded_batches_carry_overlap_shadow_only_on_first_request() {
+    let fixture = DeliveryFixture::new(3, 3, 35_000).await;
+    let sandbox = MockSandbox::new("decoded-shadow-first-only");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    manifest.history_overlap_shadow = Some(
+        HistoryOverlapShadow::new(
+            "/home/user/.codex/sessions".into(),
+            manifest
+                .storages
+                .iter()
+                .map(|entry| entry.mount_path.clone())
+                .collect(),
+        )
+        .unwrap(),
+    );
+
+    let transport = download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+
+    assert_eq!(transport, HistoryOverlapShadowTransport::Attached);
+    let calls = sandbox.storage_manifest_calls();
+    assert!(calls.len() > 1);
+    let shadows = calls
+        .iter()
+        .enumerate()
+        .map(|(index, call)| {
+            let json = if call.manifest_json.starts_with(storage_files::INPUT_MAGIC) {
+                storage_files::split_input(&call.manifest_json).unwrap().0
+            } else {
+                call.manifest_json.as_slice()
+            };
+            let batch: Manifest = serde_json::from_slice(json).unwrap();
+            (index, batch.history_overlap_shadow.is_some())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(shadows.iter().filter(|(_, present)| *present).count(), 1);
+    assert_eq!(shadows[0], (0, true));
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn overlap_shadow_budget_omission_preserves_required_decoded_delivery() {
+    let fixture = DeliveryFixture::new(1, 1, 604).await;
+    let sandbox = MockSandbox::new("decoded-shadow-budget");
+    let (mut manifest, files) = fixture.prepare(&sandbox).await;
+    let roots = (0..16)
+        .map(|index| format!("/{index:04}{}", "x".repeat(3995)))
+        .collect();
+    manifest.history_overlap_shadow =
+        Some(HistoryOverlapShadow::new("/history".into(), roots).unwrap());
+
+    let transport = download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+
+    assert_eq!(transport, HistoryOverlapShadowTransport::DescriptorBudget);
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    let (json, payload) = storage_files::split_input(&calls[0].manifest_json).unwrap();
+    let delivered: Manifest = serde_json::from_slice(json).unwrap();
+    assert!(delivered.history_overlap_shadow.is_none());
+    assert_eq!(storage_files::decode(payload).unwrap().len(), 1);
     fixture.shutdown().await;
 }
 

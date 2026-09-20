@@ -36,6 +36,13 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of conservative storage write roots carried by one overlap observation.
+pub const HISTORY_OVERLAP_SHADOW_MAX_ROOTS: usize = 1024;
+/// Maximum UTF-8 byte length of one overlap-observation path.
+pub const HISTORY_OVERLAP_SHADOW_MAX_PATH_BYTES: usize = 4096;
+/// Maximum aggregate UTF-8 path bytes carried by one overlap observation.
+pub const HISTORY_OVERLAP_SHADOW_MAX_TOTAL_PATH_BYTES: usize = 64 * 1024;
+
 /// In-memory execution projection behind the canonical storage manifest wire contract.
 ///
 /// Although this type separates storages from artifacts, its custom Serde implementations exchange
@@ -51,6 +58,8 @@ pub struct Manifest {
     pub cleanup_paths: Vec<String>,
     /// Instruction-specific cleanup operations.
     pub instruction_cleanups: Vec<InstructionCleanupEntry>,
+    /// Optional observation-only storage/history write-root descriptor.
+    pub history_overlap_shadow: Option<HistoryOverlapShadow>,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +70,8 @@ struct ManifestWire {
     cleanup_paths: Vec<String>,
     #[serde(default)]
     instruction_cleanups: Vec<InstructionCleanupEntry>,
+    #[serde(default)]
+    history_overlap_shadow: Option<HistoryOverlapShadow>,
 }
 
 #[derive(Serialize)]
@@ -70,6 +81,8 @@ struct CanonicalManifest<'a> {
     cleanup_paths: &'a [String],
     #[serde(skip_serializing_if = "instruction_cleanup_slice_is_empty")]
     instruction_cleanups: &'a [InstructionCleanupEntry],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    history_overlap_shadow: &'a Option<HistoryOverlapShadow>,
 }
 
 fn instruction_cleanup_slice_is_empty(value: &&[InstructionCleanupEntry]) -> bool {
@@ -91,6 +104,7 @@ impl Serialize for Manifest {
             storage_mounts,
             cleanup_paths: &self.cleanup_paths,
             instruction_cleanups: &self.instruction_cleanups,
+            history_overlap_shadow: &self.history_overlap_shadow,
         }
         .serialize(serializer)
     }
@@ -106,6 +120,7 @@ impl<'de> Deserialize<'de> for Manifest {
             wire.storage_mounts,
             wire.cleanup_paths,
             wire.instruction_cleanups,
+            wire.history_overlap_shadow,
         )
         .map_err(serde::de::Error::custom)
     }
@@ -116,8 +131,12 @@ impl Manifest {
         storage_mounts: Vec<StorageMountEntry>,
         cleanup_paths: Vec<String>,
         instruction_cleanups: Vec<InstructionCleanupEntry>,
+        history_overlap_shadow: Option<HistoryOverlapShadow>,
     ) -> Result<Self, String> {
         validate_unique_mount_paths(&storage_mounts)?;
+        if let Some(shadow) = &history_overlap_shadow {
+            shadow.validate()?;
+        }
 
         let mut storages = Vec::new();
         let mut artifacts = Vec::new();
@@ -165,7 +184,64 @@ impl Manifest {
             artifacts,
             cleanup_paths,
             instruction_cleanups,
+            history_overlap_shadow,
         })
+    }
+}
+
+/// Bounded private input for observing storage/session-history path independence.
+///
+/// These paths are resolved inside the guest and must never be copied into telemetry or
+/// diagnostics. The descriptor is observation-only and does not authorize concurrent writes.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryOverlapShadow {
+    /// Conservative session-history write root for the planned restore.
+    pub history_root: String,
+    /// Conservative roots covering every storage-manifest filesystem effect.
+    pub storage_write_roots: Vec<String>,
+}
+
+impl HistoryOverlapShadow {
+    /// Construct a descriptor after enforcing its fixed allocation bounds.
+    pub fn new(history_root: String, storage_write_roots: Vec<String>) -> Result<Self, String> {
+        let value = Self {
+            history_root,
+            storage_write_roots,
+        };
+        value.validate()?;
+        Ok(value)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if self.history_root.is_empty()
+            || self.history_root.len() > HISTORY_OVERLAP_SHADOW_MAX_PATH_BYTES
+        {
+            return Err("history overlap shadow history root exceeds bounds".to_string());
+        }
+        if self.storage_write_roots.is_empty()
+            || self.storage_write_roots.len() > HISTORY_OVERLAP_SHADOW_MAX_ROOTS
+        {
+            return Err("history overlap shadow storage root count exceeds bounds".to_string());
+        }
+        if self
+            .storage_write_roots
+            .iter()
+            .any(|path| path.is_empty() || path.len() > HISTORY_OVERLAP_SHADOW_MAX_PATH_BYTES)
+        {
+            return Err("history overlap shadow storage root exceeds bounds".to_string());
+        }
+        let total_bytes = self
+            .storage_write_roots
+            .iter()
+            .try_fold(self.history_root.len(), |total, path| {
+                total.checked_add(path.len())
+            })
+            .ok_or_else(|| "history overlap shadow path bytes exceed bounds".to_string())?;
+        if total_bytes > HISTORY_OVERLAP_SHADOW_MAX_TOTAL_PATH_BYTES {
+            return Err("history overlap shadow path bytes exceed bounds".to_string());
+        }
+        Ok(())
     }
 }
 
@@ -335,7 +411,10 @@ fn is_false(value: &bool) -> bool {
 mod tests {
     use serde_json::json;
 
-    use super::{ArtifactEntry, InstructionCleanupEntry, Manifest, StorageEntry};
+    use super::{
+        ArtifactEntry, HISTORY_OVERLAP_SHADOW_MAX_PATH_BYTES, HISTORY_OVERLAP_SHADOW_MAX_ROOTS,
+        HistoryOverlapShadow, InstructionCleanupEntry, Manifest, StorageEntry,
+    };
 
     #[test]
     fn canonical_manifest_preserves_wire_shape() {
@@ -364,6 +443,7 @@ mod tests {
                 mount_path: "/home/user/.codex".into(),
                 target_filename: Some("AGENTS.md".into()),
             }],
+            history_overlap_shadow: None,
         };
 
         assert_eq!(
@@ -398,6 +478,73 @@ mod tests {
                 }]
             })
         );
+    }
+
+    #[test]
+    fn history_overlap_shadow_round_trips_with_canonical_field_names() {
+        let shadow = HistoryOverlapShadow::new(
+            "/home/user/.codex/sessions".into(),
+            vec!["/home/user/workspace".into(), "/data".into()],
+        )
+        .unwrap();
+        let manifest = Manifest {
+            storages: Vec::new(),
+            artifacts: Vec::new(),
+            cleanup_paths: Vec::new(),
+            instruction_cleanups: Vec::new(),
+            history_overlap_shadow: Some(shadow.clone()),
+        };
+
+        let value = serde_json::to_value(&manifest).unwrap();
+        assert_eq!(
+            value["historyOverlapShadow"],
+            json!({
+                "historyRoot": "/home/user/.codex/sessions",
+                "storageWriteRoots": ["/home/user/workspace", "/data"]
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<Manifest>(value)
+                .unwrap()
+                .history_overlap_shadow,
+            Some(shadow)
+        );
+    }
+
+    #[test]
+    fn history_overlap_shadow_rejects_unbounded_values_without_echoing_paths() {
+        let path_error = HistoryOverlapShadow::new(
+            "/history".into(),
+            vec!["x".repeat(HISTORY_OVERLAP_SHADOW_MAX_PATH_BYTES + 1)],
+        )
+        .unwrap_err();
+        assert_eq!(
+            path_error,
+            "history overlap shadow storage root exceeds bounds"
+        );
+
+        let count_error = HistoryOverlapShadow::new(
+            "/history".into(),
+            vec!["/storage".into(); HISTORY_OVERLAP_SHADOW_MAX_ROOTS + 1],
+        )
+        .unwrap_err();
+        assert_eq!(
+            count_error,
+            "history overlap shadow storage root count exceeds bounds"
+        );
+
+        let json = json!({
+            "storageMounts": [],
+            "historyOverlapShadow": {
+                "historyRoot": "/history",
+                "storageWriteRoots": ["x".repeat(HISTORY_OVERLAP_SHADOW_MAX_PATH_BYTES + 1)]
+            }
+        });
+        let error = serde_json::from_value::<Manifest>(json)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("history overlap shadow storage root exceeds bounds"));
+        assert!(!error.contains(&"x".repeat(64)));
     }
 
     #[test]
