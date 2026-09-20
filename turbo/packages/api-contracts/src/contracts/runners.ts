@@ -1,7 +1,4 @@
-import {
-  piApiHandoffUsageSchema,
-  piSandboxContinuationSchema,
-} from "./pi-inference-lifecycle";
+import { piApiHandoffUsageSchema } from "./pi-inference-lifecycle";
 import { z } from "zod";
 import { piCredentialHeaderSchema } from "./pi-credential";
 import { piModelConfigV4Schema } from "./pi-native";

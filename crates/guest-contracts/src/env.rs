@@ -318,12 +318,6 @@ pub const PI_LAUNCH_PAYLOAD_PRIVATE_DIR_NAME: &str = "pi-launch-payload";
 /// Private runtime filename used by [`PI_LAUNCH_PAYLOAD_FILE_ENV`].
 pub const PI_LAUNCH_PAYLOAD_FILENAME: &str = "payload.json";
 
-/// Path to the private authenticated deferred Pi handoff JSON file.
-///
-/// The guest-agent writes this file with its private Sandbox control token and
-/// passes only the path to the Pi CLI child. The control token itself remains
-/// guest-owned and is never added to the child environment.
-
 /// Runner-owned bootstrap key carrying non-secret Pi model metadata into the
 /// Pi CLI child environment.
 pub const PI_MODEL_CONFIG_ENV: &str = "OKOU_PI_MODEL_CONFIG";
