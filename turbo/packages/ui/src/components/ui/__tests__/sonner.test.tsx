@@ -39,9 +39,7 @@ describe("Toaster", () => {
     ).toBe("0px");
     expect(
       (toaster as HTMLElement).style.getPropertyValue("--mobile-offset-bottom"),
-    ).toBe(
-      "calc(var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) + 16px)",
-    );
+    ).toBe("calc(var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) + 16px)");
   });
 
   it("calls onReady only once when its callback identity changes", async () => {

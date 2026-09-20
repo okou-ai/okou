@@ -453,7 +453,8 @@
       --spacing(--value(integer))
   );
   padding-bottom: calc(
-    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) + --value([length], [*])
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+      --value([length], [*])
   );
 }
 
@@ -475,7 +476,8 @@
     (
         var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
           --spacing(--value(integer))
-      ) * -1
+      ) *
+      -1
   );
 }
 
@@ -496,7 +498,8 @@
       --spacing(--value(integer))
   );
   bottom: calc(
-    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) + --value([length], [*])
+    var(--okou-safe-b, env(safe-area-inset-bottom, 0px)) +
+      --value([length], [*])
   );
 }
 

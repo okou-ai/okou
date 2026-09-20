@@ -974,11 +974,11 @@ rather than the height the rest of the app measures.
 a surface reaches an inset. Naming follows the ecosystem convention, so the side
 is carried by the property prefix rather than repeated in a token name:
 
-| Form                | Emits                | Use when                                               |
-| ------------------- | -------------------- | ------------------------------------------------------ |
-| `*-safe`            | the inset            | the surface owes exactly the system reserve            |
-| `*-safe-or-{n}`     | `max(inset, n)`      | a design gutter and the reserve are the same blank     |
-| `*-safe-offset-{n}` | `calc(inset + n)`    | the content must clear the reserve and keep its margin |
+| Form                | Emits             | Use when                                               |
+| ------------------- | ----------------- | ------------------------------------------------------ |
+| `*-safe`            | the inset         | the surface owes exactly the system reserve            |
+| `*-safe-or-{n}`     | `max(inset, n)`   | a design gutter and the reserve are the same blank     |
+| `*-safe-offset-{n}` | `calc(inset + n)` | the content must clear the reserve and keep its margin |
 
 Pick between the last two by asking whether the gutter and the reserve are one
 visual blank. A page's bottom scroll gutter is: on a device with no indicator it
