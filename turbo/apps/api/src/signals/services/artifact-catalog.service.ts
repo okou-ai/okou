@@ -38,7 +38,10 @@ import {
   hostedSites,
   privateHostedDeployments,
 } from "@okouai/db/runtime/hosted-site";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import {
+  runUploadedFiles,
+  type CanonicalAssetClassification,
+} from "@okouai/db/schema/run-uploaded-file";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { z } from "zod";
 
@@ -97,6 +100,7 @@ interface CatalogFileRow {
   readonly url: string | null;
   readonly previewImageUrl: string | null;
   readonly metadata: Record<string, unknown>;
+  readonly classification: CanonicalAssetClassification | null;
   readonly createdAt: Date;
 }
 
@@ -106,6 +110,30 @@ function metadataString(
 ): string | null {
   const value = metadata[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * Whether a stored file belongs in the catalog at all. The database trigger
+ * queues every `run_uploaded_files` row that gains a URL, so attachments the
+ * user handed to the agent arrive here alongside the agent's own outputs; this
+ * is where the two are separated.
+ *
+ * An upload declaring `purpose: "artifact"` is one. A chat or integration
+ * attachment is not, and neither is a private upload's ownership record that
+ * no run has produced — a composer attachment still sitting in a draft.
+ *
+ * Only versioned private storage identifies that ownership record. A row
+ * without the storage marker was written by an earlier API version, whose
+ * uploads reach the catalog exactly as they did before.
+ */
+function isCatalogArtifactFile(row: CatalogFileRow): boolean {
+  if (metadataString(row.metadata, "purpose") === "artifact") {
+    return true;
+  }
+  if (row.classification === "input") {
+    return false;
+  }
+  return metadataString(row.metadata, "storage") === null || row.runId !== null;
 }
 
 /**
@@ -274,6 +302,7 @@ async function readCatalogFileRow(
       url: runUploadedFiles.url,
       previewImageUrl: runUploadedFiles.previewImageUrl,
       metadata: runUploadedFiles.metadata,
+      classification: runUploadedFiles.classification,
       createdAt: runUploadedFiles.createdAt,
     })
     .from(runUploadedFiles)
@@ -587,6 +616,21 @@ async function removeHostedRunShadowArtifacts(
   signal.throwIfAborted();
 }
 
+/**
+ * A file can become an attachment after it was already cataloged: the composer
+ * uploads first and only the send marks the row as input. Removing the
+ * projection here keeps the catalog converging on the current classification
+ * instead of retaining whatever the first sync observed.
+ */
+async function removeAttachmentArtifacts(
+  db: Db,
+  fileId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  await db.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
+  signal.throwIfAborted();
+}
+
 async function finishPendingArtifactFile(
   db: Db,
   fileId: string,
@@ -605,6 +649,12 @@ async function syncArtifactCatalogFile(
 ): Promise<void> {
   const row = await readCatalogFileRow(db, fileId, signal);
   if (!row?.url || !row.orgId) {
+    await finishPendingArtifactFile(db, fileId, signal);
+    return;
+  }
+
+  if (!isCatalogArtifactFile(row)) {
+    await removeAttachmentArtifacts(db, fileId, signal);
     await finishPendingArtifactFile(db, fileId, signal);
     return;
   }

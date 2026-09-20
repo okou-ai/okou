@@ -1215,6 +1215,9 @@ function ArtifactPreviewDialogThreadResolver({
         : undefined,
       filename: navigationItem.filename,
       preview: navigationItem.preview,
+      // Navigation never leaves the event group it started in, so a user
+      // message's images stay attachments as the viewer steps through them.
+      shareAvailable: imageNavigation.role !== "user",
       threadId: thread.threadId,
       url: navigationItem.url,
     });
@@ -1551,11 +1554,13 @@ export function FileAttachmentChip({
   contentType,
   filename,
   preview,
+  shareAvailable,
   url,
 }: {
   contentType?: string;
   filename: string;
   preview?: AttachmentPreviewSignals;
+  shareAvailable?: boolean;
   url: string;
 }) {
   const { t } = useTranslation();
@@ -1572,6 +1577,7 @@ export function FileAttachmentChip({
             filename,
             url,
             ...(preview ? { preview } : {}),
+            ...(shareAvailable === undefined ? {} : { shareAvailable }),
           });
           return;
         }
@@ -1954,6 +1960,9 @@ function AttachmentChip({
               url: previewUrl,
               filename: attachment.filename,
               preview: imagePreview,
+              // An attachment is the user's own input, not a published
+              // artifact, so it carries no sharing controls.
+              shareAvailable: false,
               splitViewAvailable: false,
               ...(annotationEnabled && !uploading
                 ? {

@@ -25,6 +25,8 @@ import {
   mockSplitAttachmentChats,
   privateAttachmentUrl,
   publicArtifactUrl,
+  queryNamedButton,
+  queryNamedLink,
   type AttachmentChatEvent,
 } from "./chat-attachment-test-helpers.ts";
 
@@ -668,6 +670,101 @@ test("Image navigation remains inside its split-view chat", async () => {
       "src",
       "https://private-files.example/left-shared.png?signature=first",
     );
+  });
+});
+
+test("A user's attachment preview withholds the sharing an agent artifact offers", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const firstAttachment = "share-gate-attachment-first";
+  const secondAttachment = "share-gate-attachment-second";
+  const agentImageUrl = publicArtifactUrl("agent-chart.png");
+  mockAttachmentChat(context, {
+    chatEvents: [
+      userImageMessage("share-gate-user-message", [
+        {
+          type: "file",
+          fileId: firstAttachment,
+          filenameSnapshot: "brief.png",
+          contentType: "image/png",
+        },
+        {
+          type: "file",
+          fileId: secondAttachment,
+          filenameSnapshot: "sketch.png",
+          contentType: "image/png",
+        },
+        { type: "text", text: "Reference images" },
+      ]),
+      assistantMessage(`![agent-chart.png](${agentImageUrl})`),
+    ],
+    artifacts: [
+      artifactFile("brief.png", {
+        id: firstAttachment,
+        contentType: "image/png",
+        url: privateAttachmentUrl(firstAttachment),
+      }),
+      artifactFile("sketch.png", {
+        id: secondAttachment,
+        contentType: "image/png",
+        url: privateAttachmentUrl(secondAttachment),
+      }),
+      artifactFile("agent-chart.png", {
+        id: "share-gate-agent-image",
+        contentType: "image/png",
+        url: agentImageUrl,
+      }),
+    ],
+  });
+  mockPrivateUrlSequence(context, {
+    [firstAttachment]: ["https://private-files.example/brief.png"],
+    [secondAttachment]: ["https://private-files.example/sketch.png"],
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  click(await findNamedLink("Preview brief.png"));
+  const briefDialog = await screen.findByRole("dialog", {
+    name: "brief.png preview",
+  });
+  // The resolved private address proves the token the share action reads has
+  // already settled, so a missing control is a decision, not a pending state.
+  await waitFor(() => {
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "src",
+      "https://private-files.example/brief.png",
+    );
+  });
+  expect(getNamedButton("Download options", briefDialog)).toBeInTheDocument();
+  expect(queryNamedLink("Share", briefDialog)).toBeNull();
+  expect(queryNamedButton("Share", briefDialog)).toBeNull();
+
+  click(await findNamedButton("Next image artifact", briefDialog));
+  const sketchDialog = await screen.findByRole("dialog", {
+    name: "sketch.png preview",
+  });
+  await waitFor(() => {
+    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      "src",
+      "https://private-files.example/sketch.png",
+    );
+  });
+  expect(queryNamedLink("Share", sketchDialog)).toBeNull();
+  expect(queryNamedButton("Share", sketchDialog)).toBeNull();
+
+  await closeFocusedPreview();
+
+  const agentImage = await screen.findByAltText("agent-chart.png");
+  const agentPreview = agentImage.closest<HTMLElement>("a, button");
+  if (!agentPreview) {
+    throw new Error("Expected the agent image to open a preview");
+  }
+  click(agentPreview);
+  const agentDialog = await screen.findByRole("dialog", {
+    name: "agent-chart.png preview",
+  });
+  click(await findNamedLink("Share", agentDialog));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([agentImageUrl]);
   });
 });
 

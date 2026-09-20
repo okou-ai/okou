@@ -349,6 +349,20 @@ export function queryNamedButton(
   );
 }
 
+export function queryNamedLink(
+  name: string,
+  container: ParentNode = document.body,
+): HTMLElement | null {
+  return (
+    queryAllByRoleFast("link", container).find((candidate) => {
+      return (
+        candidate.getAttribute("aria-label") === name ||
+        candidate.textContent?.trim() === name
+      );
+    }) ?? null
+  );
+}
+
 export function getNamedLink(
   name: string,
   container: ParentNode = document.body,

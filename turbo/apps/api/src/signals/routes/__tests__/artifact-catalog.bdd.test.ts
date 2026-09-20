@@ -565,6 +565,78 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
+  it("catalogues an artifact upload but never a chat attachment", async () => {
+    const owner = await catalogActor("Artifact catalog attachment owner");
+    await createBillingMediaApi(context).updateFeatureSwitches(owner.actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    const storage = chatCallbacks.acceptChatObjectStorage();
+    const stagePrivateObject = (id: string, filename: string, size: number) => {
+      storage.addObject({
+        bucket: "test-private-artifacts",
+        key: `private-artifacts/${id}/${filename}`,
+        size,
+      });
+    };
+
+    // The composer uploads before the user sends, so the attachment exists as
+    // an owned file with no run and no declared purpose.
+    const attachment = await chat.prepareUpload(owner.actor, {
+      filename: "meeting-notes.png",
+      contentType: "image/png",
+      size: 2048,
+    });
+    stagePrivateObject(attachment.id, "meeting-notes.png", 2048);
+    await chat.completeUpload(owner.actor, { id: attachment.id });
+
+    const declaredArtifact = await chat.prepareUpload(owner.actor, {
+      filename: "quarterly-summary.html",
+      contentType: "text/html",
+      size: 4096,
+      purpose: "artifact",
+    });
+    stagePrivateObject(declaredArtifact.id, "quarterly-summary.html", 4096);
+    await chat.completeUpload(owner.actor, { id: declaredArtifact.id });
+
+    const beforeSend = await chat.listArtifactCatalog(owner.actor);
+    expect(beforeSend.artifacts).toStrictEqual([
+      expect.objectContaining({
+        kind: "file",
+        title: "quarterly-summary.html",
+      }),
+    ]);
+
+    // Sending marks the upload as chat input; that must not register it either.
+    await chat.requestSendEvent(
+      owner.actor,
+      {
+        agentId: owner.agentId,
+        prompt: "Review these notes",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "file",
+              fileId: attachment.id,
+              filenameSnapshot: "meeting-notes.png",
+              contentType: "image/png",
+            },
+            { type: "text", text: "Review these notes" },
+          ],
+        },
+      },
+      [201],
+    );
+
+    const afterSend = await chat.listArtifactCatalog(owner.actor);
+    expect(afterSend.artifacts).toStrictEqual([
+      expect.objectContaining({
+        kind: "file",
+        title: "quarterly-summary.html",
+      }),
+    ]);
+  }, 180_000);
+
   it("keeps repeated projections of one file URL as one artifact", async () => {
     const owner = await catalogActor("Artifact catalog repeated URL owner");
     const fileId = randomUUID();

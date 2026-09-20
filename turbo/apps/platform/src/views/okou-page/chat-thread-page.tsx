@@ -5994,6 +5994,7 @@ function MessageAttachment({
             url: a.url,
             filename: a.filename,
             preview: a.signals,
+            shareAvailable: false,
           });
         }}
         posterClassName="h-full w-full"
@@ -6015,6 +6016,7 @@ function MessageAttachment({
         url={a.url}
         kind={a.kind}
         preview={a.signals}
+        shareAvailable={false}
         text$={a.signals.text$}
       />
     );
@@ -6026,6 +6028,7 @@ function MessageAttachment({
         url={a.url}
         contentType={a.contentType}
         preview={a.signals}
+        shareAvailable={false}
       />
     );
   }
@@ -6035,6 +6038,7 @@ function MessageAttachment({
       url={a.url}
       contentType={a.contentType}
       preview={a.signals}
+      shareAvailable={false}
     />
   );
 }
@@ -6552,6 +6556,7 @@ function UserMessageFileReference({
             url: signals.url,
             filename: part.filenameSnapshot,
             preview: signals,
+            shareAvailable: false,
           });
         }}
         posterClassName="h-full w-full"
@@ -6572,6 +6577,7 @@ function UserMessageFileReference({
         url={signals.url}
         kind={signals.kind}
         preview={signals}
+        shareAvailable={false}
       />
     );
   } else if (signals.kind === "audio") {
@@ -6581,6 +6587,7 @@ function UserMessageFileReference({
         url={signals.url}
         contentType={part.contentType}
         preview={signals}
+        shareAvailable={false}
       />
     );
   } else {
@@ -6589,6 +6596,7 @@ function UserMessageFileReference({
         contentType={part.contentType}
         filename={part.filenameSnapshot}
         preview={signals}
+        shareAvailable={false}
         url={signals.url}
       />
     );
@@ -7196,6 +7204,9 @@ function PagedUserMessage({
       url: attachment.url,
       filename: attachment.filename,
       preview: attachment.signals,
+      // The user's own attachment, not a published artifact: previewing it
+      // offers no sharing controls.
+      shareAvailable: false,
     });
   };
   const copyEvent = useSet(thread.copyEvent$);
