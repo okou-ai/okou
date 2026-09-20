@@ -542,6 +542,7 @@ function recordWaitTelemetry(
     readonly returnReason:
       | WaitReturnReason
       | "request_cancelled"
+      | "conversation_not_found"
       | "observation_error";
     readonly principalOccupancy: number;
     readonly runtimeOccupancy: number;
@@ -693,7 +694,11 @@ function executeMcpChatStatus(
 function waitLogDetails(
   operation: WaitOperation,
   outcome: WaitOutcome | "cancelled" | "error",
-  returnReason: WaitReturnReason | "request_cancelled" | "observation_error",
+  returnReason:
+    | WaitReturnReason
+    | "request_cancelled"
+    | "conversation_not_found"
+    | "observation_error",
 ): Parameters<typeof recordWaitTelemetry>[1] {
   return {
     requestedMs: operation.requestedMs,
@@ -756,10 +761,15 @@ export function getMcpChatStatus(
             completed.wait.returnReason,
           ),
         );
-      } else if (!result.ok || completed === null) {
+      } else if (!result.ok) {
         recordWaitTelemetry(
           operation.latest,
           waitLogDetails(operation, "error", "observation_error"),
+        );
+      } else if (completed === null) {
+        recordWaitTelemetry(
+          operation.latest,
+          waitLogDetails(operation, "error", "conversation_not_found"),
         );
       }
     }
