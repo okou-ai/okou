@@ -626,7 +626,7 @@ async fn finalize_sandbox_for_completion_inner(
             match &reason {
                 sandbox::SandboxParkNonReusableReason::SevereMemoryRetention(diagnostics) => {
                     let guest = diagnostics.guest_memory_snapshot;
-                    warn!(
+                    info!(
                         run_id = %run_id,
                         sandbox_id = %sandbox_id,
                         runner_id = %runner_id,
@@ -1701,7 +1701,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn finalizer_emits_joined_severe_memory_retention_warning() {
+    async fn finalizer_emits_joined_severe_memory_retention_info() {
         let (_budget, lease) = test_budget_lease();
         let fixture = FinalizeTestFixture::new().await;
         let network_log_session = fixture.network_log_session().await;
@@ -1762,7 +1762,7 @@ mod tests {
             &events,
             "sandbox parked with severe memory retention, destroying sandbox",
         );
-        assert_eq!(event.level, Level::WARN);
+        assert_eq!(event.level, Level::INFO);
         assert_event_field(event, "run_id", &run_id.to_string());
         assert_event_field(event, "sandbox_id", &sandbox_id.to_string());
         assert_event_field(event, "runner_id", "runner-attribution-test");

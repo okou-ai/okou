@@ -4126,7 +4126,10 @@ fn log_balloon_settle_timeout(
         };
     }
 
-    if summary.reason() == "actual_progressing_timeout"
+    if matches!(
+        outcome,
+        SandboxParkOutcome::NonReusable(SandboxParkNonReusableReason::SevereMemoryRetention(_))
+    ) || summary.reason() == "actual_progressing_timeout"
         && matches!(outcome, SandboxParkOutcome::Reusable)
     {
         emit_timeout!(tracing::Level::INFO);

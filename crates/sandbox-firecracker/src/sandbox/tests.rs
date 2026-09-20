@@ -5501,7 +5501,7 @@ async fn wait_for_balloon_progress_extensions_stop_when_progress_stalls() {
         &events,
         "balloon inflate incomplete after 15s, pausing anyway",
     );
-    assert_eq!(event.level, Level::WARN);
+    assert_eq!(event.level, Level::INFO);
     assert_event_field(event, "actual", "Some(2314)");
     assert_event_field(event, "deficit_mib", "Some(758)");
     assert_event_field(event, "reason", "severe_deficit");
@@ -5578,7 +5578,7 @@ async fn wait_for_balloon_progress_extensions_stop_at_absolute_timeout() {
         &events,
         "balloon inflate incomplete after 30s, pausing anyway",
     );
-    assert_eq!(event.level, Level::WARN);
+    assert_eq!(event.level, Level::INFO);
     assert_event_field(event, "actual", "Some(500)");
     assert_event_field(event, "reason", "severe_deficit");
     assert_event_field(event, "admission_action", "reject_and_destroy");
@@ -5900,7 +5900,7 @@ async fn wait_for_balloon_stats_poll_is_bounded_by_settle_timeout() {
 }
 
 #[tokio::test]
-async fn wait_for_balloon_timeout_logs_severe_deficit_and_memory_stats() {
+async fn wait_for_balloon_timeout_logs_severe_deficit_at_info_with_memory_stats() {
     let target_mib = 2048 - balloon::MIN_GUEST_MIB;
     let stats = MockBalloonStats::new(target_mib, 600)
         .with_memory(mib(32), mib(0), mib(2048))
@@ -5944,7 +5944,7 @@ async fn wait_for_balloon_timeout_logs_severe_deficit_and_memory_stats() {
         &events,
         "balloon inflate incomplete after 5s, pausing anyway",
     );
-    assert_eq!(event.level, Level::WARN);
+    assert_eq!(event.level, Level::INFO);
     assert_event_field(event, "actual", "Some(600)");
     assert_event_field(event, "deficit_mib", "Some(424)");
     assert_event_field(event, "reported_free_mib", "Some(32)");
