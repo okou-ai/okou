@@ -26,6 +26,7 @@ const SITE = "https://app.okou.ai/artifacts/lightsite1.html#slide-2";
 const VIDEO = "https://app.okou.ai/artifacts/lightvid01.mp4#t=2";
 const IMAGE = "https://app.okou.ai/artifacts/lightimg01.png";
 const DOCUMENT = "https://app.okou.ai/artifacts/lightdoc01.pdf";
+const NOTE = "https://app.okou.ai/artifacts/lightnote1.md";
 const SITE_COVER = "https://app.okou.ai/artifacts/siteshot01.webp";
 const VIDEO_COVER = "https://app.okou.ai/artifacts/vidcover01.jpg";
 const R2_ORIGIN = `https://${"b".repeat(32)}.r2.cloudflarestorage.com`;
@@ -854,4 +855,38 @@ test("a prompt attachment opens in the conversation instead of a new tab", async
     within(dialog).findByTestId("attachment-lightbox-image"),
   ).resolves.toHaveAttribute("src", screenshotUrl);
   expect(within(dialog).getByText("screenshot.png")).toBeInTheDocument();
+});
+
+test("a shared note opens its Markdown body in the conversation", async () => {
+  const noteUrl = `${R2_ORIGIN}/snapshots/notes.md?X-Amz-Signature=preview`;
+  mockArtifactResource({
+    reference: "lightnote1.md",
+    url: noteUrl,
+    filename: "notes.md",
+    contentType: "text/markdown",
+  });
+  context.mocks.http.get(`${R2_ORIGIN}/snapshots/notes.md`, () => {
+    return HttpResponse.text(
+      "Ship on Friday, once the rollout window closes.",
+      {
+        headers: { "Content-Type": "text/markdown" },
+      },
+    );
+  });
+  mockSharedMessage(`![Launch notes](${NOTE})`);
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const card = await screen.findByTestId("markdown-artifact-preview-markdown");
+  expect(card).toHaveAttribute("href", NOTE);
+
+  click(card);
+
+  const dialog = await screen.findByRole("dialog");
+  await expect(
+    within(dialog).findByText(
+      "Ship on Friday, once the rollout window closes.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByText("Launch notes")).toBeInTheDocument();
 });

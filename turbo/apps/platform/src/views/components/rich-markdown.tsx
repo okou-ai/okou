@@ -563,18 +563,21 @@ function LinkedMediaLinkRenderer(
 ) {
   const { children, ...rest } = props;
   const node = props.node;
-  const artifact = node?.data?.linkedArtifact;
-  return artifact && node ? (
-    <SharedThreadArtifactLink
-      {...rest}
-      signals={artifact}
-      label={markdownNodeText(node)}
-    >
-      {children}
-    </SharedThreadArtifactLink>
-  ) : (
-    <PlainLink {...rest}>{children}</PlainLink>
-  );
+  if (node) {
+    const artifact = node.data?.linkedArtifact;
+    if (artifact) {
+      return (
+        <SharedThreadArtifactLink
+          {...rest}
+          signals={artifact}
+          label={markdownNodeText(node)}
+        >
+          {children}
+        </SharedThreadArtifactLink>
+      );
+    }
+  }
+  return <PlainLink {...rest}>{children}</PlainLink>;
 }
 
 function LinkedMediaImageRenderer(props: MarkdownImageProps) {

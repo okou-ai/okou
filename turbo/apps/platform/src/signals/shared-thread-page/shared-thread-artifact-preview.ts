@@ -37,9 +37,9 @@ function sharedArtifactPreviewState(
   if (!isTextPreviewKind(kind)) {
     return { ...base, kind };
   }
-  const text$ =
-    artifact.text$ ??
-    createTextPreviewComputed(base.url, artifact.resourceUrl$);
+  // Read the body through the credential the card already resolved: the URL
+  // argument only applies when no resource is supplied.
+  const text$ = createTextPreviewComputed(base.url, artifact.resourceUrl$);
   return kind === "markdown"
     ? { ...base, kind, text$, markdownTree$: createMarkdownPreviewTree(text$) }
     : { ...base, kind, text$ };
