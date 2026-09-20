@@ -93,15 +93,17 @@ Accepted changes to a connector's runtime-bearing `mcp`, `authMethods` or
 the current endpoint, credentials and firewall policy. Removal and later
 restoration use the same wakeup path.
 
-After the current accepted catalog loads successfully, an exact builtin runtime
-target that the catalog no longer contains resolves as terminal `absent`. The
-Runner removes only that connector's managed policy and credential injection,
-preserves the Run, sibling targets and target registration, and schedules no
-retry. A later restoration wakeup can therefore resolve the same target as
-`available` again. Catalog load, transport, parsing and validation failures are
-not absence. A catalog-present target whose account, credential or policy cannot
-currently resolve remains retryable `unresolved` and retains its last-known-good
-runtime state.
+After the current accepted catalog loads successfully, an exact catalog-owned
+builtin connector target that the catalog no longer contains resolves as
+terminal `absent`. The Runner removes only that connector's managed policy and
+credential injection, preserves the Run, sibling targets and target
+registration, and schedules no retry. A later restoration wakeup can therefore
+resolve the same target as `available` again. Catalog load, transport, parsing
+and validation failures are not absence. A catalog-present target whose account,
+credential or policy cannot currently resolve remains retryable `unresolved`
+and retains its last-known-good runtime state. Local `model-provider:*`
+firewalls are not connector runtime targets and remain outside this catalog
+absence classification.
 
 Removing a connector from the catalog removes that owner from request matching,
 without selecting another connector's credentials at the same destination.

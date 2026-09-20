@@ -1252,6 +1252,16 @@ describe("connector runtime synchronization contract", () => {
     ).toBe(false);
     expect(
       connectorRuntimeSyncResultSchema.safeParse({
+        target: {
+          kind: "builtin",
+          connectorSlug: "model-provider:anthropic-api-key",
+        },
+        state: "absent",
+        reason: "connector-unavailable",
+      }).success,
+    ).toBe(false);
+    expect(
+      connectorRuntimeSyncResultSchema.safeParse({
         target: builtinTarget,
         state: "unresolved",
         reason: "runtime-configuration-unavailable",

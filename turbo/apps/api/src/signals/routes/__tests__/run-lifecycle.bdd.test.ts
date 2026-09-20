@@ -13130,11 +13130,26 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(grantedContext.claim.networkPolicyRefreshes).not.toHaveProperty(
       "model-provider:anthropic-api-key",
     );
+    expect(
+      findFirewallEntry(
+        grantedContext.claim.firewalls,
+        "model-provider:anthropic-api-key",
+      ),
+    ).toMatchObject({
+      kind: "builtin",
+      name: "model-provider:anthropic-api-key",
+    });
     expect(grantedContext.claim.connectorRuntimeTargets).toContainEqual({
       kind: "builtin",
       connectorSlug: "slack",
       sourceId: expect.any(String),
     });
+    expect(grantedContext.claim.connectorRuntimeTargets).not.toContainEqual(
+      expect.objectContaining({
+        kind: "builtin",
+        connectorSlug: "model-provider:anthropic-api-key",
+      }),
+    );
     expect(granted.allow).toContain("chat:write");
     expect(granted.allow).toContain("files:read");
     expect(granted.deny).not.toContain("chat:write");
