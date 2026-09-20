@@ -1,17 +1,28 @@
 /// <reference types="node" />
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 // The shell's stylesheet is the only place these properties exist. A rendered
 // page cannot observe them: the test DOM never compiles or applies Tailwind, so
 // there is no computed value to read.
-const entrypointCss = readFileSync(
-  fileURLToPath(new URL("../index.css", import.meta.url)),
-  "utf8",
-);
+function readEntrypointCss(): string {
+  const candidates = [
+    join(process.cwd(), "src/views/css/index.css"),
+    join(process.cwd(), "apps/platform/src/views/css/index.css"),
+  ];
+  const path = candidates.find((candidate) => {
+    return existsSync(candidate);
+  });
+  if (path === undefined) {
+    throw new Error("Unable to locate the App entrypoint CSS");
+  }
+  return readFileSync(path, "utf8");
+}
+
+const entrypointCss = readEntrypointCss();
 
 /** Returns the declaration body of the first rule introduced by `selector`. */
 function readRuleBody(selector: string): string {
