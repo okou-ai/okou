@@ -474,7 +474,7 @@ describe("POST /api/welcome-chat-threads", () => {
           selectedModel: MODEL,
           serviceTier: null,
           selectedVideoModel: "MiniMax-H3",
-          selectedImageModel: "fal-ai/qwen-image",
+          selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
       }),
       [200],
@@ -490,7 +490,7 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(metadata.body).toMatchObject({
       selectedModel: MODEL,
       selectedVideoModel: "MiniMax-H3",
-      selectedImageModel: "fal-ai/qwen-image",
+      selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
   });
 });
