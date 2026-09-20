@@ -96,16 +96,28 @@ function detailPane(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-detail"]');
 }
 
+/** The flyout is portalled beside the menu, so it is a surface of its own. */
+function flyout(): HTMLElement | null {
+  return document.querySelector('[data-slot="slash-template-flyout"]');
+}
+
 function querySlashButton(name: string): HTMLElement | null {
-  const menu = screen.getByTestId("slash-workflow-menu");
-  return (
-    queryAllByRoleFast("button", menu).find((candidate) => {
+  const surfaces = [screen.getByTestId("slash-workflow-menu"), flyout()];
+  for (const surface of surfaces) {
+    if (!surface) {
+      continue;
+    }
+    const match = queryAllByRoleFast("button", surface).find((candidate) => {
       return (
         candidate.getAttribute("aria-label") === name ||
         candidate.textContent?.replace(/\s+/gu, " ").trim() === name
       );
-    }) ?? null
-  );
+    });
+    if (match) {
+      return match;
+    }
+  }
+  return null;
 }
 
 function slashButton(name: string): HTMLElement {
@@ -239,35 +251,69 @@ test("Hovering a website row previews the website catalog", async () => {
   ).toBeInTheDocument();
 });
 
-test("Hovering a workflow closes the preview pane", async () => {
+test("Hovering a workflow closes the flyout", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
-  expect(detailPane()).not.toBeNull();
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
   await user.hover(slashButton(`/${WORKFLOW_NAME}`));
   await waitFor(() => {
     expect(detailPane()).toBeNull();
   });
 });
 
-test("The closed preview pane stays closed when the panel leaves a still pointer", async () => {
+test("The pane floats beside the index instead of sharing its box", async () => {
   await openSlashMenu();
-  const workflow = slashButton(`/${WORKFLOW_NAME}`);
-  // The popover is content-width, so closing the pane narrows it. When the
-  // popover has been collision-shifted against a boundary, that narrowing
-  // re-pins it and the left column slides away from a pointer that never
-  // moved, which the browser reports as a leave at the move's own
-  // coordinates. Replayed here because jsdom has no layout to shift.
-  const still = { clientX: 300, clientY: 470 };
-  fireEvent.mouseOver(workflow, still);
-  fireEvent.mouseMove(workflow, still);
+  const menu = screen.getByTestId("slash-workflow-menu");
+  const pane = detailPane();
+  // jsdom has no layout, so the invariant is read off the structure: the pane
+  // is not inside the box Base UI measures, and that box declares the index's
+  // own width. A pane that shared it made the popover content-width, and a
+  // popover that changes width re-pins itself out from under the pointer.
+  expect(menu.className).toContain("w-[260px]");
+  expect(pane).not.toBeNull();
+  expect(menu.contains(pane)).toBeFalsy();
+  expect(flyout()?.contains(pane)).toBeTruthy();
+});
+
+test("Crossing the gap into the flyout does not close it", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  await user.hover(slashButton("Website"));
   await waitFor(() => {
-    expect(detailPane()).toBeNull();
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  const panel = document.querySelector('[data-slot="slash-panel"]');
+  if (!panel) {
+    throw new Error("Expected the panel");
+  }
+
+  // The two cards are separate elements, so the browser reports a leave the
+  // moment the pointer crosses between them — the panel has to read where it
+  // is going before it hands the preview back to the keyboard.
+  fireEvent.mouseOut(panel, { relatedTarget: flyout() });
+
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+});
+
+test("Leaving the panel hands the preview back to the keyboard selection", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu();
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
   });
 
-  fireEvent.mouseOut(workflow, { ...still, relatedTarget: document.body });
+  fireEvent.mouseOut(slashButton("Website"), {
+    clientX: 300,
+    clientY: 470,
+    relatedTarget: document.body,
+  });
 
-  expect(detailPane()).toBeNull();
-  expect(slashButton("Presentation")).not.toHaveAttribute("data-active");
+  // The pointer owns the mark only while it is inside the panel.
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "slides");
+  });
+  expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
 });
 
 test.each(WORKFLOW_NAVIGATION_CASES)(
