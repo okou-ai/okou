@@ -490,7 +490,7 @@ derive it but are not returned:
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lifecycle`    | Sole `{phase, outcome, output}` status result. Its strict union permits only documented combinations.                                                      |
 | `messages`     | A `get_chat_messages` call with the selected thread/run and limit 20. Follow its page and content cursors for complete bodies and existing artifact links. |
-| `wait`         | For positive `waitMs`, requested/effective wait, elapsed phase, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.              |
+| `wait`         | For positive `waitMs`, requested/effective wait, elapsed time, observation count, and the `ready`, `deadline`, or ordinary `status` outcome.               |
 | `messagePage`  | First bounded `get_chat_messages`-compatible page when a positive wait observes ready output; otherwise null.                                              |
 | `retryAfterMs` | Minimum suggested delay for another observation, or null when no automatic poll is suggested.                                                              |
 
@@ -527,9 +527,10 @@ are not fabricated as messages. Read `lifecycle.outcome` to distinguish
 success, failure, timeout and cancellation.
 
 `ready` describes the current materialized view, not an immutable final answer:
-late output can still arrive. Cancellation recovery reports `pending`,
-`complete` or `not_applicable`; a stale recovery barrier does not count as
-complete merely because the scheduler permits another run.
+late output can still arrive. Internally, cancellation recovery can be pending,
+complete or not applicable; a stale recovery barrier does not count as complete
+merely because the scheduler permits another run. Those details are not exposed
+in the public status response.
 
 Status uses the same verified archive plus live tail as message history, with
 run/receipt metadata inside that reader's repeatable-read, read-only snapshot.
