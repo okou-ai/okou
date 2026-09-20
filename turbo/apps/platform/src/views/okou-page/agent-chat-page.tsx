@@ -1,5 +1,6 @@
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { CSSProperties } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -202,9 +203,15 @@ function useTagline(
   return taglines[index % taglines.length];
 }
 
+/**
+ * One character every 40ms. The greeting's settle is timed off the same number,
+ * because what moves the avatar is the line arriving.
+ */
+const TAGLINE_TYPEWRITER_SPEED_MS = 40;
+
 function TypewriterText({
   text,
-  speed = 40,
+  speed = TAGLINE_TYPEWRITER_SPEED_MS,
 }: {
   text: string;
   speed?: number;
@@ -405,6 +412,17 @@ export function AgentChatPage() {
               one. Reduced motion keeps the offset off entirely, which resolves
               to the settled layout.
 
+              The travel lasts exactly as long as the line still has characters
+              to arrive, because the line is what is moving the avatar. A fixed
+              duration is the wrong length for a line of any other length, and
+              at 500ms it also outran the typing badly enough to be the whole of
+              why the move read as mechanical: the row slid left faster than the
+              text grew right, so the end of the line travelled backwards for
+              the first third of the move before it began to advance. Half a
+              sine over the typing run keeps the row slower than the text at
+              every point, which leaves the line growing out of its own centre
+              while the avatar drifts off it.
+
               While the offset is on, the reserved line hangs past the right
               edge; the scrollport above would answer that with a horizontal
               scrollbar, so the row clips its own axis. `clip` rather than
@@ -413,7 +431,17 @@ export function AgentChatPage() {
             <div
               data-testid="chat-greeting"
               data-settled={taglineStarted}
-              className="flex min-w-0 items-center gap-4 transition-transform duration-500 ease-in-out motion-safe:translate-x-[calc(50%_-_1.75rem)] data-[settled=true]:translate-x-0"
+              style={
+                {
+                  // One character has already landed when the travel starts, so
+                  // the run that is left to accompany is one shorter.
+                  "--chat-greeting-settle-duration": `${String(
+                    Math.max(tagline.length - 1, 0) *
+                      TAGLINE_TYPEWRITER_SPEED_MS,
+                  )}ms`,
+                } as CSSProperties
+              }
+              className="flex min-w-0 items-center gap-4 transition-transform duration-[var(--chat-greeting-settle-duration)] ease-[cubic-bezier(0.45,0.05,0.55,0.95)] motion-safe:translate-x-[calc(50%_-_1.75rem)] data-[settled=true]:translate-x-0"
             >
               <ChatAgentAvatar agentId={currentChatAgentId} />
               <h2
