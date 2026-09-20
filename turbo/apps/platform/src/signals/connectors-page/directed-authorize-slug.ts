@@ -3,7 +3,7 @@ import {
   connectorSlugSchema,
   type ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { accept } from "../../lib/accept.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -13,7 +13,7 @@ import {
   agentConnectorAuthorizations,
   reloadAgentConnectorAuthorizations$,
 } from "../okou-page/agent-connector-authorizations.ts";
-import { resetManualGrantForm$ } from "../okou-page/settings/connectors.ts";
+import { resetBuiltinManualGrantForm$ } from "../okou-page/settings/connectors.ts";
 
 /**
  * Connector slug extracted from `/connectors/:connectorSlug/authorize` route params.
@@ -76,7 +76,7 @@ export const directedAuthorizeConnectModalKey$ = computed((get) => {
 export const setDirectedAuthorizeConnectModalKey$ = command(
   ({ set }, key: DirectedAuthorizeConnectModalKey | null) => {
     if (key) {
-      set(resetManualGrantForm$, key.connectorSlug);
+      set(resetBuiltinManualGrantForm$, key.connectorSlug);
     }
     set(internalDirectedAuthorizeConnectModalKey$, key);
   },
@@ -91,7 +91,7 @@ export const authorizeConnector$ = command(
     signal: AbortSignal,
   ) => {
     const createClient = get(apiClient$);
-    const client = createClient(userConnectorsContract);
+    const client = createClient(userBuiltinConnectorsContract);
 
     await withCleanup(
       accept(

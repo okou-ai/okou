@@ -26,6 +26,14 @@ test("Okou production uses its own authentication URLs", async () => {
   });
 });
 
+test("The app shell preserves the OAuth consent form origin", () => {
+  const page = new DOMParser().parseFromString(indexHtml, "text/html");
+  expect(page.querySelector('meta[name="referrer"]')).toHaveAttribute(
+    "content",
+    "strict-origin-when-cross-origin",
+  );
+});
+
 test("App-started Clerk keeps browser navigation until a route owns it", async () => {
   context.mocks.clerk();
   await setupPage({
@@ -230,6 +238,7 @@ test("The inline bootstrap loads installed UI only for auth routes", () => {
     "/sign-in/tasks/choose-organization",
     "/sign-up",
     "/sign-up/tasks/choose-organization",
+    "/oauth-consent",
   ]) {
     const { appendedScripts } = runInlineBootstrap("app.okou.ai", pathname);
     expect(appendedScripts).toHaveLength(1);

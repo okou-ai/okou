@@ -12,8 +12,8 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { connectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { builtinConnectorsMainContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   chatThreadArtifactsContract,
   type ChatThreadArtifactRun,
@@ -199,7 +199,7 @@ export function mockArtifactConversation(
         })
       : respond(200, { browser });
   });
-  context.mocks.api(connectorsMainContract.list, ({ respond }) => {
+  context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [],
       connectorProvidedBindings: [],
@@ -230,8 +230,8 @@ export function liveBrowserSession(): BrowserSession {
 }
 
 export function googleDriveConnector(
-  connectionStatus: ConnectorResponse["connectionStatus"],
-): ConnectorResponse {
+  connectionStatus: BuiltinConnectorResponse["connectionStatus"],
+): BuiltinConnectorResponse {
   return {
     id: GOOGLE_DRIVE_CONNECTION_ID,
     slug: "google-drive",

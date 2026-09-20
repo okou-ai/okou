@@ -94,7 +94,7 @@ jobs:
           BASE_REF=$(.github/scripts/changed-base-ref.sh)
           echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
           # Check if the workflow file or ansible playbooks changed
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
             echo "ci-changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "ci-changed=false" >> "$GITHUB_OUTPUT"

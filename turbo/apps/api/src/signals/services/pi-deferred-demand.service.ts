@@ -79,6 +79,41 @@ export async function listDeferredPiCandidates(
  * Already expired demand is excluded so an ineligible head cannot block eligible
  * work until a consumer sweeps it.
  */
+function earlierDeferredDemandPredicate(
+  tx: Pick<Db, "select">,
+  orgId: string,
+  at: Date,
+  runId?: string,
+) {
+  return and(
+    eligibleDeferredPiDemandPredicate(tx, orgId, at),
+    runId === undefined
+      ? lte(agentRunSandboxIntent.enqueuedAt, at)
+      : or(
+          lt(agentRunSandboxIntent.enqueuedAt, at),
+          and(
+            eq(agentRunSandboxIntent.enqueuedAt, at),
+            lt(agentRunSandboxIntent.runId, runId),
+          ),
+        ),
+  );
+}
+
+/** Aggregate that can join another capacity read without a second round trip. */
+export function earlierDeferredDemandTotals(
+  db: Pick<Db, "select">,
+  orgId: string,
+  at: Date,
+  runId?: string,
+) {
+  return db
+    .select({ count: count().as("earlier_deferred_demand_count") })
+    .from(agentRunSandboxIntent)
+    .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
+    .where(earlierDeferredDemandPredicate(db, orgId, at, runId))
+    .as("earlier_deferred_demand_totals");
+}
+
 export async function countEarlierDeferredDemand(
   tx: Tx,
   orgId: string,
@@ -89,20 +124,7 @@ export async function countEarlierDeferredDemand(
     .select({ count: count() })
     .from(agentRunSandboxIntent)
     .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
-    .where(
-      and(
-        eligibleDeferredPiDemandPredicate(tx, orgId),
-        runId === undefined
-          ? lte(agentRunSandboxIntent.enqueuedAt, at)
-          : or(
-              lt(agentRunSandboxIntent.enqueuedAt, at),
-              and(
-                eq(agentRunSandboxIntent.enqueuedAt, at),
-                lt(agentRunSandboxIntent.runId, runId),
-              ),
-            ),
-      ),
-    );
+    .where(earlierDeferredDemandPredicate(tx, orgId, at, runId));
   if (!earlier) {
     throw new Error("Earlier deferred demand count query returned no row");
   }

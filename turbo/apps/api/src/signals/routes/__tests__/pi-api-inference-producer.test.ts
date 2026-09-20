@@ -1316,7 +1316,16 @@ describe("durable Pi API producer", () => {
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
-      apiFirstTurn: { continuation: { mode: "untouched-h0" } },
+      apiFirstTurn: {
+        continuation: {
+          mode: "untouched-h0",
+          apiUsage: {
+            schemaVersion: 1,
+            state: "no-inference",
+            sampledAt: expect.any(Number),
+          },
+        },
+      },
     });
     await api.requestCancelRun(actor, run.runId, [200], usagePricingResolution);
     await releaseDeferredPiRun(run.runId, runnerId, claim);
@@ -2226,7 +2235,23 @@ describe("durable Pi API producer", () => {
     );
     expect(claim.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
-      apiFirstTurn: { continuation: { mode: "settled-session" } },
+      apiFirstTurn: {
+        continuation: {
+          mode: "settled-session",
+          apiUsage: {
+            schemaVersion: 1,
+            state: "observed",
+            sampledAt: expect.any(Number),
+            coverage: "partial",
+            tokens: {
+              input: null,
+              cacheRead: null,
+              cacheCreation: null,
+              output: 3,
+            },
+          },
+        },
+      },
     });
     await api.requestCancelRun(actor, run.runId, [200], usagePricingResolution);
     await releaseDeferredPiRun(run.runId, runnerId, claim);
@@ -2374,6 +2399,18 @@ describe("durable Pi API producer", () => {
         continuation: {
           mode: "pending-tools",
           pendingToolIds: [expect.stringMatching(/^call_durable_pi_tool\|/u)],
+          apiUsage: {
+            schemaVersion: 1,
+            state: "observed",
+            sampledAt: expect.any(Number),
+            coverage: "partial",
+            tokens: {
+              input: null,
+              cacheRead: null,
+              cacheCreation: null,
+              output: 3,
+            },
+          },
         },
       },
     });

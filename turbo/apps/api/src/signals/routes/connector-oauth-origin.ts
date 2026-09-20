@@ -15,7 +15,7 @@ import {
   getOAuthWebOrigin,
 } from "../../lib/oauth-origin";
 
-export { getOAuthWebOrigin as getConnectorOAuthOrigin };
+export { getOAuthWebOrigin as getBuiltinConnectorOAuthOrigin };
 
 function resolveCallbackOrigin(
   request: Request,
@@ -31,7 +31,7 @@ function resolveCallbackOrigin(
   }
 }
 
-export function getConnectorOAuthCallbackUrlForMethod(args: {
+export function getBuiltinConnectorOAuthCallbackUrlForMethod(args: {
   readonly request: Request;
   readonly method: ConnectorAuthMethodRuntimeConfig;
   readonly connectorSlug: string;
@@ -58,7 +58,7 @@ export function getConnectorOAuthCallbackUrlForMethod(args: {
   ).toString();
 }
 
-export function getConnectorOpenIdCallbackOriginForMethod(args: {
+export function getBuiltinConnectorOpenIdCallbackOriginForMethod(args: {
   readonly request: Request;
   readonly method: ConnectorAuthMethodRuntimeConfig;
 }): string {
@@ -71,7 +71,7 @@ export function getConnectorOpenIdCallbackOriginForMethod(args: {
   );
 }
 
-export function getConnectorOAuthCanonicalRedirectUrlForMethods(
+export function getBuiltinConnectorOAuthCanonicalRedirectUrlForMethods(
   request: Request,
   methods: readonly ConnectorAuthMethodRuntimeConfig[],
 ): string | null {

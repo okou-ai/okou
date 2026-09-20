@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { connectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorNoAuthGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -44,8 +44,8 @@ async function runActor() {
 async function connectPublic(actor: ApiTestUser, agentId: string) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const response = await accept(
-    setupApp({ context, routes: connectorsRoutes })(
-      connectorNoAuthGrantContract,
+    setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorNoAuthGrantContract,
     ).connect({
       headers: { authorization: "Bearer clerk-session" },
       params: { connectorSlug: "public-mcp" },

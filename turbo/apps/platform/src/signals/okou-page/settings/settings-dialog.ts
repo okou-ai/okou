@@ -35,7 +35,6 @@ import {
 export const SETTINGS_SECTIONS = [
   "preference",
   "chat",
-  "paid-tools",
   "model",
   "debug",
   "general",
@@ -68,13 +67,11 @@ export function resolveAvailableSettingsSection(
   options: {
     readonly isAdmin: boolean;
     readonly chatPreferenceEnabled: boolean;
-    readonly paidToolControlsEnabled: boolean;
   },
 ): SettingsSection {
   if (
     (!options.isAdmin && isAdminOnlySettingsSection(section)) ||
-    (!options.chatPreferenceEnabled && section === "chat") ||
-    (!options.paidToolControlsEnabled && section === "paid-tools")
+    (!options.chatPreferenceEnabled && section === "chat")
   ) {
     return "preference";
   }
@@ -371,8 +368,6 @@ export const checkUnifiedSettingsParam$ = command(
       isAdmin,
       chatPreferenceEnabled:
         get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false,
-      paidToolControlsEnabled:
-        get(featureSwitch$)[FeatureSwitchKey.PaidToolControls] ?? false,
     });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");

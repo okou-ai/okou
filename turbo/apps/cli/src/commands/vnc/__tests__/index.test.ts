@@ -283,6 +283,26 @@ describe("VNC sessions and input", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
+  it("explains a certain timeout without claiming which component was silent", async () => {
+    helper.response = {
+      type: "result",
+      data: { outcome: "failed", reason: "timed_out" },
+    };
+    await createVncCommand().parseAsync(
+      ["session", "start", connectionId, "--mode", "shared"],
+      { from: "user" },
+    );
+    const message = errors.mock.calls.flat().join("\n");
+    expect(message).toContain("VNC failed: timed_out");
+    expect(message).toContain("Runner network");
+    expect(message).toContain("RFB banner");
+    expect(message).toContain("firewall or VNC server logs");
+    expect(message).toContain("does not identify which component was silent");
+    expect(message).not.toContain("may have taken effect");
+    expect(process.exitCode).toBe(1);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["shared", "exclusive"])(
     "forwards the explicit %s mode exactly once",
     async (mode) => {

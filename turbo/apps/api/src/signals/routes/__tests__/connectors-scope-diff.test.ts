@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { connectorScopeDiffContract } from "@okouai/api-contracts/contracts/connectors";
+import { builtinConnectorScopeDiffContract } from "@okouai/api-contracts/contracts/connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -16,7 +16,7 @@ import {
   mockGitHubConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { seedConnectorStorageRow } from "./helpers/connector-credential-storage-state";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -87,8 +87,8 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
       iat: seconds,
       exp: seconds + 60,
     });
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorScopeDiffContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorScopeDiffContract,
     );
     const response = await accept(
       client.getScopeDiff({

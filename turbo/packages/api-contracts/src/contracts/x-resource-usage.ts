@@ -14,7 +14,7 @@ const remainderReasonSchema = z.enum([
 ]);
 
 /** Resource-aware billing input. Validation, resource recording and atomic
- * accounting always apply; the feature switch controls billing deduplication.
+ * accounting always apply, including site-wide daily billing deduplication.
  * Observations are admitted for the current and previous UTC dates. */
 export const xResourceUsageEventSchema = z
   .object({

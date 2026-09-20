@@ -37,7 +37,7 @@ async function closePreview() {
   });
 }
 
-test("One image keeps distinct link labels and image previews in the same message", async () => {
+async function setupRepeatedImageMessage(): Promise<string> {
   const url = publicArtifactUrl("evidence.png");
   installMessage(
     [
@@ -60,9 +60,12 @@ test("One image keeps distinct link labels and image previews in the same messag
       `[evidence]: ${url}`,
     ].join("\n"),
   );
-
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  return url;
+}
 
+test("One image keeps distinct labels for every text link", async () => {
+  const url = await setupRepeatedImageMessage();
   const link = await findNamedLink("Key screenshot");
   expect(link).toHaveAttribute("href", url);
   expect(link.querySelector("strong")).toHaveTextContent("Key screenshot");
@@ -71,23 +74,24 @@ test("One image keeps distinct link labels and image previews in the same messag
   expect(getNamedLink("Quoted screenshot").closest("blockquote")).toBeVisible();
   expect(getNamedLink("Table screenshot").closest("td")).toBeVisible();
   expect(getNamedLink("Reference screenshot")).toHaveAttribute("href", url);
+  click(link);
+  await expect(
+    screen.findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", url);
+  await closePreview();
+});
 
+test("Repeated images share load state and open an image preview", async () => {
+  const url = await setupRepeatedImageMessage();
   const embedded = await screen.findByAltText("Embedded screenshot");
   const repeated = screen.getByAltText("Repeated screenshot");
   expect(screen.getAllByTestId("markdown-image-preview-loading")).toHaveLength(
     2,
   );
   fireEvent.load(embedded);
-  // Repeated occurrences observe the resource's completed image load.
   expect(screen.queryByTestId("markdown-image-preview-loading")).toBeNull();
   expect(embedded).toBeVisible();
   expect(repeated).toBeVisible();
-  click(link);
-  await expect(
-    screen.findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute("src", url);
-  await closePreview();
-
   const imageAction = embedded.closest("button");
   if (!imageAction) {
     throw new Error("Expected an image preview action");

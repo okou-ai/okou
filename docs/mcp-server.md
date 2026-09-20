@@ -4,7 +4,7 @@ The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
 official MCP SDK and serves `list_agents`, `list_models`, `create_chat_thread`,
 `list_chat_threads`, `get_chat_thread`,
 `get_chat_messages`, `search_chat_messages`, `get_chat_status`, `send_chat_message`,
-`revoke_queued_message` and `cancel_run`. The read tools query current
+`revoke_queued_message`, `cancel_run` and `update_chat_thread`. The read tools query current
 user/organization-owned conversations; mutations reuse the existing input queue
 and run lifecycle. The OAuth
 foundation shipped in #34931; discovery and current context are tracked by
@@ -81,6 +81,50 @@ event and publishes thread-list changes after commit. Once admitted, finite
 mutation work retains server ownership if the HTTP client disconnects; the
 client must use the same retry identity when the result was not received.
 
+## Updating conversation metadata
+
+`update_chat_thread` requires `okou:chat:manage` and accepts one explicit sparse
+patch:
+
+```json
+{
+  "requestId": "<new UUID for this intended update>",
+  "threadId": "<owned conversation UUID>",
+  "patch": {
+    "title": "Quarterly plan review",
+    "model": "<selectable model id, or null>"
+  }
+}
+```
+
+The patch must contain `title` and/or `model`. Omitted fields remain unchanged;
+`model: null` clears the thread model pin so later runs use the current member or
+organization default. A title is nonblank and at most 200 UTF-16 units. The patch
+never implicitly changes service tier, per-model reasoning settings, image/video
+models, computer-use or browser settings. A preserved setting that is incompatible
+with the requested model makes the whole update fail.
+
+Title and model validation, metadata changes and durable sidebar events commit in
+one transaction. Failure leaves both fields and their events unchanged. A title
+patch is a manual rename: it records rename precedence, so a title generation that
+finishes later cannot overwrite it. A model patch changes only later run creation.
+An existing run retains its run-scoped model, and a message steered into that run
+continues with the existing model.
+
+The result contains the current bounded title, selected/effective model and source,
+current service tier, update timestamp, authenticated App URL and retry metadata.
+Generate one UUID `requestId` for each intended patch. Retry an uncertain response
+with the identical request ID, thread ID, exact field presence and exact values
+within 24 hours. Concurrent identical requests converge. Exact replay does not
+reapply old intent: it returns current state, so retrying update A after update B
+cannot restore A. Reusing the key with a different patch conflicts.
+
+After the retry window, inspect `get_chat_thread` before making a new intended
+change. Do not automatically retry an uncertain old request. Deduplication is not
+promised beyond retained mutation identity. As with other MCP mutations, admitted
+finite work remains server-owned after HTTP disconnection, and thread-list
+invalidation is published only after a new commit.
+
 ## Conversation discovery
 
 `list_chat_threads` accepts these optional arguments:
@@ -136,8 +180,7 @@ archive-complete unread history. Missing activity does not prove a run succeeded
 `unread: false` does not prove every historical result was read.
 
 Listing and reading never mark a thread read, change recency or reconcile model
-settings. The MCP catalog replaces `get_indicators` with these two tools; the
-first-party indicators API and its existing sparse semantics remain unchanged.
+settings.
 
 ## Message history
 
@@ -583,24 +626,26 @@ consent or token issuance. Do not treat their success as completing this gate.
 
 ### Login and consent return
 
-Keep Clerk's default Account Portal OAuth consent page. The App derives its
-trusted Account Portal origin from the active Clerk publishable key and preserves
-only that instance's HTTPS `/oauth-consent` return. This origin is shared with
-Clerk's redirect validation; client callback URLs are not App login destinations.
-The original consent query survives login, registration and switching between
-them. A fully active session on a root auth route continues through
-`clerk.redirectWithAuth()`, which carries development browser authentication
-across origins. Pending session tasks, factor routes and explicit authentication
-or account-selection intents remain with Clerk's forms. Consent and organization
-selection still happen on Clerk's hosted page.
+Host Clerk's prebuilt `<OAuthConsent />` on the App's `/oauth-consent` route.
+The component keeps Clerk's consent metadata, organization selection, scope
+rendering, allow/deny submission and redirect validation while avoiding the
+Account Portal's separately challenged static assets. The App accepts only its
+own exact HTTPS `/oauth-consent` URL as a completed-session consent continuation;
+client callback URLs are not App login destinations. The original consent query
+survives login, registration and switching between them. A fully active session
+on a root auth route continues through `clerk.redirectWithAuth()`. Pending
+session tasks, factor routes and explicit authentication or account-selection
+intents remain with Clerk's forms.
 
 In the development Clerk Dashboard **Paths**, point sign-in and sign-up to the
 local App (`https://app.vm7.ai:8443/sign-in` and
-`https://app.vm7.ai:8443/sign-up`). The Marketing service does not host these
-pages. Keep OAuth consent on the default Account Portal. Production uses
+`https://app.vm7.ai:8443/sign-up`) and set **OAuth consent** to
+`/oauth-consent`; Clerk resolves that path on the configured local development
+host. The Marketing service does not host these pages. Production uses
 `https://app.okou.ai/sign-in`, `https://app.okou.ai/sign-up` and
-`https://accounts.okou.ai/oauth-consent`. No additional App environment variable
-is needed for the default hosted consent page.
+`https://app.okou.ai/oauth-consent`. Deploy the App route before changing either
+Clerk instance's path, then verify one allow and one deny flow in that environment.
+No additional App environment variable is required.
 
 ## HTTP behavior
 
@@ -633,16 +678,16 @@ metadata supports public cross-origin discovery.
 ## Acceptance evidence
 
 Automated route tests use real Hono routing, SDK transport, RSA signature checks,
-the membership service, feature overrides and the indicators projection. Only
-external provider/network boundaries are simulated. They cover both protocol
-eras, complete response consumption, invalid grants, scope/membership isolation,
-Origin checks and provider outages.
+the membership service and feature overrides. Only external provider/network
+boundaries are simulated. They cover both protocol eras, complete response
+consumption, invalid grants, scope/membership isolation, Origin checks and
+provider outages.
 
 Before enabling broader access, record a generic MCP client/Inspector check
 against a real hosted preview or staging endpoint, including complete JSON and
-SSE response delivery. Then record basic OAuth, discovery and indicators results
-for Claude, ChatGPT, Claude Code and Codex, with client version/account conditions.
-Local HTTP tests do not establish hosted-client reachability. OAuth foundation
-and discovery shipped separately in #34931 and #34932. The client matrix for the
-full tool set remains #34936; the new message-reader tests do not establish that
-broader hosted acceptance.
+SSE response delivery. Then record basic OAuth, discovery and current-tool
+workflow results for Claude, ChatGPT, Claude Code and Codex, with client
+version/account conditions. Local HTTP tests do not establish hosted-client
+reachability. OAuth foundation and discovery shipped separately in #34931 and
+#34932. The client matrix for the full tool set remains #34936; the new
+message-reader tests do not establish that broader hosted acceptance.

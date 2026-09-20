@@ -41,7 +41,6 @@ type AgentPhoneLaunchContextRow = Pick<
 > & {
   readonly agentId: string;
   readonly publicBrand: PublicBrand | null;
-  readonly legacyPublicBrand: PublicBrand;
 };
 
 function requiredAgentPhoneLaunchContext(
@@ -59,7 +58,8 @@ function requiredAgentPhoneLaunchContext(
     row.fromNumber === null ||
     row.toNumber === null ||
     row.userLinkId === null ||
-    row.agentphoneAgentId === null
+    row.agentphoneAgentId === null ||
+    row.publicBrand === null
   ) {
     return null;
   }
@@ -76,6 +76,7 @@ function requiredAgentPhoneLaunchContext(
     toNumber: row.toNumber,
     userLinkId: row.userLinkId,
     agentphoneAgentId: row.agentphoneAgentId,
+    publicBrand: row.publicBrand,
   };
 }
 
@@ -104,7 +105,6 @@ async function loadAgentPhoneLaunchContext(
       agentphoneAgentId: chatAgentphoneContext.agentphoneAgentId,
       agentId: agents.id,
       publicBrand: chatAgentphoneContext.publicBrand,
-      legacyPublicBrand: agentphoneUserLinks.publicBrand,
     })
     .from(chatEvents)
     .innerJoin(
@@ -168,12 +168,7 @@ export async function loadAgentPhoneQueuedLaunchMaterial(
       },
       context.threadContext,
     ),
-    // DB/API rollout compatibility: mixed versions have overlapped for up to
-    // about 102 minutes. An old API can write NULL after the additive migration,
-    // and that queued context can outlive the API deploy. Remove with #27750
-    // after old/rollback APIs can no longer write NULL and every pre-rollout
-    // AgentPhone queue item has drained.
-    publicBrand: context.publicBrand ?? context.legacyPublicBrand,
+    publicBrand: context.publicBrand,
     agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
       messageId: context.messageId,
       conversationId: context.conversationId,

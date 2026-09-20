@@ -5,10 +5,10 @@ import {
 import { Command, InvalidArgumentError, Option } from "commander";
 import chalk from "chalk";
 import {
-  connectConnectorManualGrant,
-  getConnector,
+  connectBuiltinConnectorManualGrant,
+  getBuiltinConnector,
   listConnectorCatalogStatus,
-  type ConnectorManualGrantAccountMutation,
+  type BuiltinConnectorManualGrantAccountMutation,
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
@@ -53,7 +53,7 @@ function parseReconnectConnectionId(value: string): string {
 
 function resolveAccountMutation(
   options: ConnectOptions,
-): ConnectorManualGrantAccountMutation | null {
+): BuiltinConnectorManualGrantAccountMutation | null {
   if (options.accountName !== undefined && !options.add) {
     throw new Error("--account-name requires --add");
   }
@@ -176,8 +176,8 @@ Find connection IDs:
       );
       const existingConnector = requestedAccount
         ? null
-        : await getConnector(connectorMetadata.slug);
-      const account: ConnectorManualGrantAccountMutation =
+        : await getBuiltinConnector(connectorMetadata.slug);
+      const account: BuiltinConnectorManualGrantAccountMutation =
         requestedAccount ??
         (existingConnector
           ? {
@@ -185,7 +185,7 @@ Find connection IDs:
               connectionId: existingConnector.id,
             }
           : { intent: "add" });
-      const connector = await connectConnectorManualGrant(
+      const connector = await connectBuiltinConnectorManualGrant(
         connectorMetadata.slug,
         authMethod.id,
         account,

@@ -263,13 +263,27 @@ describe("CHAT-02: interrupting active chat runs", () => {
     const firstClaim = await api.claimRunnerJob(first.runId);
     context.mocks.ably.publish.mockClear();
 
+    const peer = bdd.user({ orgId: actor.orgId });
+    const foreignInterrupt = await chat.requestSendEvent(
+      peer,
+      {
+        agentId,
+        threadId: first.threadId,
+        interruptsRunId: first.runId.toUpperCase(),
+        clientEventId: randomUUID(),
+      },
+      [404],
+    );
+    expectApiError(foreignInterrupt.body);
+    expect(foreignInterrupt.body.error.message).toBe("Chat thread not found");
+
     const interruptId = randomUUID();
     const interrupted = await chat.requestSendEvent(
       actor,
       {
         agentId,
         threadId: first.threadId,
-        interruptsRunId: first.runId,
+        interruptsRunId: first.runId.toUpperCase(),
         clientEventId: interruptId,
       },
       [201],
@@ -366,7 +380,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
       {
         agentId,
         threadId: first.threadId,
-        interruptsRunId: first.runId,
+        interruptsRunId: first.runId.toUpperCase(),
         clientEventId: randomUUID(),
       },
       [201],

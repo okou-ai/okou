@@ -150,7 +150,7 @@ describe.each([
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("preserves the complete scenario", async () => {
+    async function expectRecoveredDraft(): Promise<string> {
       const expected =
         recovery === "navigation" ? "Revised voice note." : "Recorded note.";
       const retainedText = recovery === "reload" ? "" : expected;
@@ -159,6 +159,16 @@ describe.each([
           screen.getByRole("textbox", { name: "Message" }).textContent,
         ).toBe(retainedText);
       });
+      return retainedText;
+    }
+
+    it("presents the expected draft after failed text saving and recovery", async () => {
+      await expectRecoveredDraft();
+      expect(queryButton("Retry")).toBeNull();
+    });
+
+    it("inserts a later recording after text draft saving recovers", async () => {
+      const retainedText = await expectRecoveredDraft();
 
       preparedScenario.canSave = true;
       expect(queryButton("Retry")).toBeNull();

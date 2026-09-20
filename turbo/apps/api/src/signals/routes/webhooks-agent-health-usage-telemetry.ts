@@ -14,8 +14,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { z } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -30,7 +28,6 @@ import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { settle } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -371,14 +368,7 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
     })
   ) {
     const db = set(writeDb$);
-    const deduplicationEnabled = isFeatureEnabled(
-      FeatureSwitchKey.XResourceDeduplication,
-      await loadUserFeatureSwitchContext(db, auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    const result = await settle(
-      ingestXResourceUsage(db, body, auth, deduplicationEnabled, signal),
-    );
+    const result = await settle(ingestXResourceUsage(db, body, auth, signal));
     signal.throwIfAborted();
     if (!result.ok) {
       if (result.error instanceof XResourceUsageError) {

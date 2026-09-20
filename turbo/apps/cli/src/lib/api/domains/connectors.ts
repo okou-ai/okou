@@ -13,9 +13,9 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  connectorManualGrantContract,
-  connectorsBySlugContract,
-  connectorsMainContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorsBySlugContract,
+  builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorCatalogContract,
@@ -51,13 +51,13 @@ import {
   type McpConnector,
 } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type {
-  ConnectorListResponse as ApiConnectorListResponse,
-  ConnectorResponse,
+  BuiltinConnectorListResponse as ApiBuiltinConnectorListResponse,
+  BuiltinConnectorResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import { getClientConfig, handleError } from "../core/client-factory";
 
-export type Connector = ConnectorResponse;
-type ConnectorListResponse = ApiConnectorListResponse;
+export type BuiltinConnector = BuiltinConnectorResponse;
+type BuiltinConnectorListResponse = ApiBuiltinConnectorListResponse;
 export type ConnectorCatalogItem =
   PublicConnectorCatalogListResponse["connectors"][number];
 export type ConnectorCatalogStatus = PublicConnectorCatalogStatusItem;
@@ -73,7 +73,7 @@ type ConnectorAccountConnectionsResult =
     }
   | { readonly state: "unavailable" };
 
-export type ConnectorManualGrantAccountMutation = Extract<
+export type BuiltinConnectorManualGrantAccountMutation = Extract<
   ConnectorAccountMutationIntent,
   { intent: "add" | "reconnect" }
 >;
@@ -144,9 +144,9 @@ export async function inspectConnectorAccounts(
 }
 
 /** List all connectors for the authenticated user. */
-export async function listConnectors(): Promise<ConnectorListResponse> {
+export async function listBuiltinConnectors(): Promise<BuiltinConnectorListResponse> {
   const config = await getClientConfig();
-  const client = initClient(connectorsMainContract, config);
+  const client = initClient(builtinConnectorsMainContract, config);
 
   const result = await client.list({ headers: {} });
 
@@ -264,11 +264,11 @@ export async function diagnoseConnectorCheck(
  * Get a connector by slug.
  * Returns null if not connected (404 response).
  */
-export async function getConnector(
+export async function getBuiltinConnector(
   connectorSlug: ConnectorSlug,
-): Promise<Connector | null> {
+): Promise<BuiltinConnector | null> {
   const config = await getClientConfig();
-  const client = initClient(connectorsBySlugContract, config);
+  const client = initClient(builtinConnectorsBySlugContract, config);
 
   const result = await client.get({
     params: { connectorSlug },
@@ -285,14 +285,14 @@ export async function getConnector(
   handleError(result, `Failed to get connector "${connectorSlug}"`);
 }
 
-export async function connectConnectorManualGrant(
+export async function connectBuiltinConnectorManualGrant(
   connectorSlug: ConnectorSlug,
   authMethod: ConnectorAuthMethodId,
-  account: ConnectorManualGrantAccountMutation,
+  account: BuiltinConnectorManualGrantAccountMutation,
   values: Record<string, string>,
-): Promise<Connector> {
+): Promise<BuiltinConnector> {
   const config = await getClientConfig();
-  const client = initClient(connectorManualGrantContract, config);
+  const client = initClient(builtinConnectorManualGrantContract, config);
 
   const result = await client.connect({
     params: { connectorSlug },

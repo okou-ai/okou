@@ -2,9 +2,9 @@ import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
 import type {
-  ConnectorResponse,
-  ConnectorOauthDeviceAuthSessionPollResponse,
-  ConnectorOauthDeviceAuthSessionStartResponse,
+  BuiltinConnectorResponse,
+  BuiltinConnectorOauthDeviceAuthSessionPollResponse,
+  BuiltinConnectorOauthDeviceAuthSessionStartResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
@@ -25,7 +25,7 @@ import type {
   OAuthDeviceAuthCompleteResultBase,
   OAuthDeviceAuthPollResultBase,
 } from "@okouai/connectors/auth-providers/provider-flow-types";
-import { connectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
+import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import { command } from "ccstate";
 import { and, eq, inArray, lt, or, sql } from "drizzle-orm";
 
@@ -39,8 +39,8 @@ import {
   encryptPersistentSecretValue,
 } from "./crypto.utils";
 import {
-  parseConnectorOauthDeviceProviderState,
-  serializeConnectorOauthDeviceProviderState,
+  parseBuiltinConnectorOauthDeviceProviderState,
+  serializeBuiltinConnectorOauthDeviceProviderState,
 } from "./connector-authorization-provider-state";
 import {
   connectorActionResolver,
@@ -49,9 +49,9 @@ import {
   type ResolvedConnectorActionMethod,
 } from "./connector-action-resolver.service";
 import {
-  connectorById,
+  builtinConnectorById,
   connectorConnectionWriteRejection,
-  upsertConnectorTokenConnection$,
+  upsertBuiltinConnectorTokenConnection$,
 } from "./connector-data.service";
 import { resolveOAuthRequestedScopeSnapshot } from "./connector-oauth-scope-snapshot.service";
 import { normalizeDeviceAuthStartOptionsWithMethod } from "./connector-catalog-form-fields.service";
@@ -75,39 +75,43 @@ const SUPERSEDED_SESSION_ERROR_MESSAGE =
   "OAuth device authorization session was superseded";
 
 const deviceAuthSessionSelection = Object.freeze({
-  id: connectorOauthDeviceAuthorizationSessions.id,
-  orgId: connectorOauthDeviceAuthorizationSessions.orgId,
-  userId: connectorOauthDeviceAuthorizationSessions.userId,
-  agentId: connectorOauthDeviceAuthorizationSessions.agentId,
-  authorizeAgent: connectorOauthDeviceAuthorizationSessions.authorizeAgent,
-  connectorSlug: connectorOauthDeviceAuthorizationSessions.connectorSlug,
-  authMethod: connectorOauthDeviceAuthorizationSessions.authMethod,
-  status: connectorOauthDeviceAuthorizationSessions.status,
-  sessionTokenHash: connectorOauthDeviceAuthorizationSessions.sessionTokenHash,
+  id: builtinConnectorOauthDeviceAuthorizationSessions.id,
+  orgId: builtinConnectorOauthDeviceAuthorizationSessions.orgId,
+  userId: builtinConnectorOauthDeviceAuthorizationSessions.userId,
+  agentId: builtinConnectorOauthDeviceAuthorizationSessions.agentId,
+  authorizeAgent:
+    builtinConnectorOauthDeviceAuthorizationSessions.authorizeAgent,
+  connectorSlug: builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug,
+  authMethod: builtinConnectorOauthDeviceAuthorizationSessions.authMethod,
+  status: builtinConnectorOauthDeviceAuthorizationSessions.status,
+  sessionTokenHash:
+    builtinConnectorOauthDeviceAuthorizationSessions.sessionTokenHash,
   encryptedProviderState:
-    connectorOauthDeviceAuthorizationSessions.encryptedProviderState,
+    builtinConnectorOauthDeviceAuthorizationSessions.encryptedProviderState,
   accountMutation: storedConnectorAccountMutationSelection(
-    connectorOauthDeviceAuthorizationSessions.accountMutation,
+    builtinConnectorOauthDeviceAuthorizationSessions.accountMutation,
   ),
   completedConnectorId:
-    connectorOauthDeviceAuthorizationSessions.completedConnectorId,
+    builtinConnectorOauthDeviceAuthorizationSessions.completedConnectorId,
   oauthRequestedScopes:
-    connectorOauthDeviceAuthorizationSessions.oauthRequestedScopes,
-  userCode: connectorOauthDeviceAuthorizationSessions.userCode,
-  verificationUri: connectorOauthDeviceAuthorizationSessions.verificationUri,
+    builtinConnectorOauthDeviceAuthorizationSessions.oauthRequestedScopes,
+  userCode: builtinConnectorOauthDeviceAuthorizationSessions.userCode,
+  verificationUri:
+    builtinConnectorOauthDeviceAuthorizationSessions.verificationUri,
   verificationUriComplete:
-    connectorOauthDeviceAuthorizationSessions.verificationUriComplete,
-  intervalSeconds: connectorOauthDeviceAuthorizationSessions.intervalSeconds,
-  errorCode: connectorOauthDeviceAuthorizationSessions.errorCode,
-  errorMessage: connectorOauthDeviceAuthorizationSessions.errorMessage,
-  createdAt: connectorOauthDeviceAuthorizationSessions.createdAt,
-  updatedAt: connectorOauthDeviceAuthorizationSessions.updatedAt,
-  expiresAt: connectorOauthDeviceAuthorizationSessions.expiresAt,
-  completedAt: connectorOauthDeviceAuthorizationSessions.completedAt,
+    builtinConnectorOauthDeviceAuthorizationSessions.verificationUriComplete,
+  intervalSeconds:
+    builtinConnectorOauthDeviceAuthorizationSessions.intervalSeconds,
+  errorCode: builtinConnectorOauthDeviceAuthorizationSessions.errorCode,
+  errorMessage: builtinConnectorOauthDeviceAuthorizationSessions.errorMessage,
+  createdAt: builtinConnectorOauthDeviceAuthorizationSessions.createdAt,
+  updatedAt: builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
+  expiresAt: builtinConnectorOauthDeviceAuthorizationSessions.expiresAt,
+  completedAt: builtinConnectorOauthDeviceAuthorizationSessions.completedAt,
 });
 
-type DeviceAuthSessionRow =
-  typeof connectorOauthDeviceAuthorizationSessions.$inferSelect;
+type BuiltinConnectorDeviceAuthSessionRow =
+  typeof builtinConnectorOauthDeviceAuthorizationSessions.$inferSelect;
 
 function deviceRequestedOauthScopes(
   storedScopes: string | null,
@@ -120,7 +124,7 @@ function deviceRequestedOauthScopes(
 }
 
 type PendingPollBody = Extract<
-  ConnectorOauthDeviceAuthSessionPollResponse,
+  BuiltinConnectorOauthDeviceAuthSessionPollResponse,
   { status: "pending" }
 >;
 
@@ -131,7 +135,7 @@ type PendingSuccess = {
 
 type PollSuccess = {
   readonly status: 200;
-  readonly body: ConnectorOauthDeviceAuthSessionPollResponse;
+  readonly body: BuiltinConnectorOauthDeviceAuthSessionPollResponse;
 };
 
 function deviceAuthStartResponse(args: {
@@ -142,7 +146,7 @@ function deviceAuthStartResponse(args: {
     ReturnType<typeof startConnectorDeviceAuthorizationWithMethod>
   >;
   readonly intervalSeconds: number;
-}): ConnectorOauthDeviceAuthSessionStartResponse {
+}): BuiltinConnectorOauthDeviceAuthSessionStartResponse {
   return {
     sessionId: args.sessionId,
     sessionToken: args.sessionToken,
@@ -172,26 +176,26 @@ function validatedDeviceAuthPollState(
   return pollState;
 }
 
-type ResolvedDeviceAuthClient = {
+type ResolvedBuiltinConnectorDeviceAuthClient = {
   readonly resolvedMethod: ResolvedConnectorActionMethod;
   readonly authClient: ConnectorAuthClient;
 };
 
-type PollClaimedSessionArgs = ResolvedDeviceAuthClient & {
+type PollClaimedSessionArgs = ResolvedBuiltinConnectorDeviceAuthClient & {
   readonly writeDb: Db;
   readonly orgId: string;
   readonly userId: string;
-  readonly session: DeviceAuthSessionRow;
+  readonly session: BuiltinConnectorDeviceAuthSessionRow;
   readonly claimStartedAt: Date;
   readonly persistConnector: (args: {
     readonly result: OAuthDeviceAuthCompleteResultBase;
   }) => Promise<
-    | { readonly ok: true; readonly connector: ConnectorResponse }
+    | { readonly ok: true; readonly connector: BuiltinConnectorResponse }
     | { readonly ok: false; readonly message: string }
   >;
 };
 
-type DeviceAuthSessionOwner = {
+type BuiltinConnectorDeviceAuthSessionOwner = {
   readonly connectorSlug: ConnectorSlug;
   readonly authMethod: ConnectorAuthMethodId;
   readonly orgId: string;
@@ -291,8 +295,8 @@ function generateSessionToken(): string {
 }
 
 function terminalErrorBody(
-  session: DeviceAuthSessionRow,
-): ConnectorOauthDeviceAuthSessionPollResponse {
+  session: BuiltinConnectorDeviceAuthSessionRow,
+): BuiltinConnectorOauthDeviceAuthSessionPollResponse {
   if (
     session.status !== "denied" &&
     session.status !== "expired" &&
@@ -310,19 +314,19 @@ function terminalErrorBody(
 }
 
 function pendingBody(
-  session: Pick<DeviceAuthSessionRow, "intervalSeconds">,
+  session: Pick<BuiltinConnectorDeviceAuthSessionRow, "intervalSeconds">,
 ): PendingPollBody {
   return { status: "pending", interval: session.intervalSeconds };
 }
 
 function pendingResponse(
-  session: Pick<DeviceAuthSessionRow, "intervalSeconds">,
+  session: Pick<BuiltinConnectorDeviceAuthSessionRow, "intervalSeconds">,
 ): PendingSuccess {
   return { status: 200, body: pendingBody(session) };
 }
 
 function shouldWaitBeforeProviderPoll(
-  session: DeviceAuthSessionRow,
+  session: BuiltinConnectorDeviceAuthSessionRow,
   now: Date,
 ): boolean {
   return (
@@ -332,7 +336,7 @@ function shouldWaitBeforeProviderPoll(
 }
 
 function isFreshPollingSession(
-  session: DeviceAuthSessionRow,
+  session: BuiltinConnectorDeviceAuthSessionRow,
   now: Date,
 ): boolean {
   return (
@@ -343,7 +347,9 @@ function isFreshPollingSession(
 
 function resolveRequiredAuthClient(
   resolvedMethod: ResolvedConnectorActionMethod,
-): ResolvedDeviceAuthClient | ReturnType<typeof internalServerError> {
+):
+  | ResolvedBuiltinConnectorDeviceAuthClient
+  | ReturnType<typeof internalServerError> {
   if (
     resolvedMethod.method.grant.kind !== "device-auth" ||
     resolvedMethod.method.client === undefined
@@ -401,7 +407,7 @@ async function resolveStoredDeviceAuthMethod(args: {
 }
 
 async function lockDeviceAuthSessionOwner(
-  args: DeviceAuthSessionOwner & {
+  args: BuiltinConnectorDeviceAuthSessionOwner & {
     readonly writeDb: Db;
   },
 ): Promise<void> {
@@ -411,13 +417,13 @@ async function lockDeviceAuthSessionOwner(
 }
 
 async function markActiveSessionsSuperseded(
-  args: DeviceAuthSessionOwner & {
+  args: BuiltinConnectorDeviceAuthSessionOwner & {
     readonly writeDb: Db;
     readonly now: Date;
   },
 ): Promise<void> {
   await args.writeDb
-    .update(connectorOauthDeviceAuthorizationSessions)
+    .update(builtinConnectorOauthDeviceAuthorizationSessions)
     .set({
       status: "error",
       errorCode: SUPERSEDED_SESSION_ERROR_CODE,
@@ -427,17 +433,20 @@ async function markActiveSessionsSuperseded(
     })
     .where(
       and(
-        eq(connectorOauthDeviceAuthorizationSessions.orgId, args.orgId),
-        eq(connectorOauthDeviceAuthorizationSessions.userId, args.userId),
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.orgId, args.orgId),
         eq(
-          connectorOauthDeviceAuthorizationSessions.connectorSlug,
+          builtinConnectorOauthDeviceAuthorizationSessions.userId,
+          args.userId,
+        ),
+        eq(
+          builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug,
           args.connectorSlug,
         ),
         eq(
-          connectorOauthDeviceAuthorizationSessions.authMethod,
+          builtinConnectorOauthDeviceAuthorizationSessions.authMethod,
           args.authMethod,
         ),
-        inArray(connectorOauthDeviceAuthorizationSessions.status, [
+        inArray(builtinConnectorOauthDeviceAuthorizationSessions.status, [
           ...ACTIVE_DEVICE_AUTHORIZATION_SESSION_STATUSES,
         ]),
       ),
@@ -454,7 +463,7 @@ async function markClaimAwaiting(
   signal: AbortSignal,
 ): Promise<boolean> {
   const [session] = await args.writeDb
-    .update(connectorOauthDeviceAuthorizationSessions)
+    .update(builtinConnectorOauthDeviceAuthorizationSessions)
     .set({
       status: "awaiting_user_authorization",
       intervalSeconds: args.intervalSeconds,
@@ -462,15 +471,15 @@ async function markClaimAwaiting(
     })
     .where(
       and(
-        eq(connectorOauthDeviceAuthorizationSessions.id, args.sessionId),
-        eq(connectorOauthDeviceAuthorizationSessions.status, "polling"),
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.sessionId),
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
         eq(
-          connectorOauthDeviceAuthorizationSessions.updatedAt,
+          builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
           args.claimStartedAt,
         ),
       ),
     )
-    .returning({ id: connectorOauthDeviceAuthorizationSessions.id });
+    .returning({ id: builtinConnectorOauthDeviceAuthorizationSessions.id });
   signal.throwIfAborted();
   return Boolean(session);
 }
@@ -485,21 +494,24 @@ async function loadOwnedSession(
     readonly sessionToken: string;
   },
   signal: AbortSignal,
-): Promise<DeviceAuthSessionRow | null> {
+): Promise<BuiltinConnectorDeviceAuthSessionRow | null> {
   const [session] = await args.writeDb
     .select(deviceAuthSessionSelection)
-    .from(connectorOauthDeviceAuthorizationSessions)
+    .from(builtinConnectorOauthDeviceAuthorizationSessions)
     .where(
       and(
-        eq(connectorOauthDeviceAuthorizationSessions.id, args.sessionId),
-        eq(connectorOauthDeviceAuthorizationSessions.orgId, args.orgId),
-        eq(connectorOauthDeviceAuthorizationSessions.userId, args.userId),
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.sessionId),
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.orgId, args.orgId),
         eq(
-          connectorOauthDeviceAuthorizationSessions.connectorSlug,
+          builtinConnectorOauthDeviceAuthorizationSessions.userId,
+          args.userId,
+        ),
+        eq(
+          builtinConnectorOauthDeviceAuthorizationSessions.connectorSlug,
           args.connectorSlug,
         ),
         eq(
-          connectorOauthDeviceAuthorizationSessions.sessionTokenHash,
+          builtinConnectorOauthDeviceAuthorizationSessions.sessionTokenHash,
           sessionTokenHash(args.sessionToken),
         ),
       ),
@@ -512,13 +524,13 @@ async function loadOwnedSession(
 async function expireSession(
   args: {
     readonly writeDb: Db;
-    readonly session: DeviceAuthSessionRow;
+    readonly session: BuiltinConnectorDeviceAuthSessionRow;
     readonly now: Date;
   },
   signal: AbortSignal,
 ): Promise<PollSuccess> {
   const [expiredSession] = await args.writeDb
-    .update(connectorOauthDeviceAuthorizationSessions)
+    .update(builtinConnectorOauthDeviceAuthorizationSessions)
     .set({
       status: "expired",
       errorCode: "expired_token",
@@ -528,13 +540,19 @@ async function expireSession(
     })
     .where(
       and(
-        eq(connectorOauthDeviceAuthorizationSessions.id, args.session.id),
+        eq(
+          builtinConnectorOauthDeviceAuthorizationSessions.id,
+          args.session.id,
+        ),
         or(
           eq(
-            connectorOauthDeviceAuthorizationSessions.status,
+            builtinConnectorOauthDeviceAuthorizationSessions.status,
             "awaiting_user_authorization",
           ),
-          eq(connectorOauthDeviceAuthorizationSessions.status, "polling"),
+          eq(
+            builtinConnectorOauthDeviceAuthorizationSessions.status,
+            "polling",
+          ),
         ),
       ),
     )
@@ -556,29 +574,35 @@ async function expireSession(
 async function claimSession(
   args: {
     readonly writeDb: Db;
-    readonly session: DeviceAuthSessionRow;
+    readonly session: BuiltinConnectorDeviceAuthSessionRow;
     readonly claimStartedAt: Date;
   },
   signal: AbortSignal,
-): Promise<DeviceAuthSessionRow | null> {
+): Promise<BuiltinConnectorDeviceAuthSessionRow | null> {
   const staleBefore = new Date(
     args.claimStartedAt.getTime() - POLLING_STALE_MS,
   );
   const [claimedSession] = await args.writeDb
-    .update(connectorOauthDeviceAuthorizationSessions)
+    .update(builtinConnectorOauthDeviceAuthorizationSessions)
     .set({ status: "polling", updatedAt: args.claimStartedAt })
     .where(
       and(
-        eq(connectorOauthDeviceAuthorizationSessions.id, args.session.id),
+        eq(
+          builtinConnectorOauthDeviceAuthorizationSessions.id,
+          args.session.id,
+        ),
         or(
           eq(
-            connectorOauthDeviceAuthorizationSessions.status,
+            builtinConnectorOauthDeviceAuthorizationSessions.status,
             "awaiting_user_authorization",
           ),
           and(
-            eq(connectorOauthDeviceAuthorizationSessions.status, "polling"),
+            eq(
+              builtinConnectorOauthDeviceAuthorizationSessions.status,
+              "polling",
+            ),
             lt(
-              connectorOauthDeviceAuthorizationSessions.updatedAt,
+              builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
               staleBefore,
             ),
           ),
@@ -591,7 +615,7 @@ async function claimSession(
 }
 
 async function parseEncryptedProviderState(args: {
-  readonly session: DeviceAuthSessionRow;
+  readonly session: BuiltinConnectorDeviceAuthSessionRow;
   readonly connectorSlug: ConnectorSlug;
 }) {
   const decrypted = await decryptPersistentSecretValue(
@@ -601,7 +625,7 @@ async function parseEncryptedProviderState(args: {
       userId: args.session.userId,
     },
   );
-  return parseConnectorOauthDeviceProviderState({
+  return parseBuiltinConnectorOauthDeviceProviderState({
     serializedState: decrypted,
     connectorSlug: args.connectorSlug,
   });
@@ -617,11 +641,13 @@ async function claimStillCurrent(
 ): Promise<boolean> {
   const [currentClaim] = await args.writeDb
     .select({
-      status: connectorOauthDeviceAuthorizationSessions.status,
-      updatedAt: connectorOauthDeviceAuthorizationSessions.updatedAt,
+      status: builtinConnectorOauthDeviceAuthorizationSessions.status,
+      updatedAt: builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
     })
-    .from(connectorOauthDeviceAuthorizationSessions)
-    .where(eq(connectorOauthDeviceAuthorizationSessions.id, args.sessionId))
+    .from(builtinConnectorOauthDeviceAuthorizationSessions)
+    .where(
+      eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.sessionId),
+    )
     .limit(1);
   signal.throwIfAborted();
 
@@ -634,14 +660,16 @@ async function claimStillCurrent(
 async function claimNoLongerCurrentResponse(
   args: {
     readonly writeDb: Db;
-    readonly session: DeviceAuthSessionRow;
+    readonly session: BuiltinConnectorDeviceAuthSessionRow;
   },
   signal: AbortSignal,
 ): Promise<PollSuccess> {
   const [currentSession] = await args.writeDb
     .select(deviceAuthSessionSelection)
-    .from(connectorOauthDeviceAuthorizationSessions)
-    .where(eq(connectorOauthDeviceAuthorizationSessions.id, args.session.id))
+    .from(builtinConnectorOauthDeviceAuthorizationSessions)
+    .where(
+      eq(builtinConnectorOauthDeviceAuthorizationSessions.id, args.session.id),
+    )
     .limit(1);
   signal.throwIfAborted();
 
@@ -658,7 +686,7 @@ async function claimNoLongerCurrentResponse(
 async function markClaimTerminal(
   args: {
     readonly writeDb: Db;
-    readonly session: DeviceAuthSessionRow;
+    readonly session: BuiltinConnectorDeviceAuthSessionRow;
     readonly claimStartedAt: Date;
     readonly result: Extract<
       OAuthDeviceAuthPollResultBase,
@@ -671,7 +699,7 @@ async function markClaimTerminal(
 ): Promise<PollSuccess> {
   const completedAt = nowDate();
   const [terminalSession] = await args.writeDb
-    .update(connectorOauthDeviceAuthorizationSessions)
+    .update(builtinConnectorOauthDeviceAuthorizationSessions)
     .set({
       status: args.result.status,
       errorCode: args.result.error,
@@ -681,10 +709,13 @@ async function markClaimTerminal(
     })
     .where(
       and(
-        eq(connectorOauthDeviceAuthorizationSessions.id, args.session.id),
-        eq(connectorOauthDeviceAuthorizationSessions.status, "polling"),
         eq(
-          connectorOauthDeviceAuthorizationSessions.updatedAt,
+          builtinConnectorOauthDeviceAuthorizationSessions.id,
+          args.session.id,
+        ),
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
+        eq(
+          builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
           args.claimStartedAt,
         ),
       ),
@@ -707,15 +738,15 @@ async function markClaimTerminal(
 async function markClaimComplete(
   args: {
     readonly writeDb: Db;
-    readonly session: DeviceAuthSessionRow;
+    readonly session: BuiltinConnectorDeviceAuthSessionRow;
     readonly claimStartedAt: Date;
-    readonly connector: ConnectorResponse;
+    readonly connector: BuiltinConnectorResponse;
   },
   signal: AbortSignal,
 ): Promise<PollSuccess> {
   const completedAt = nowDate();
   const [completedSession] = await args.writeDb
-    .update(connectorOauthDeviceAuthorizationSessions)
+    .update(builtinConnectorOauthDeviceAuthorizationSessions)
     .set({
       status: "complete",
       completedConnectorId: args.connector.id,
@@ -724,10 +755,13 @@ async function markClaimComplete(
     })
     .where(
       and(
-        eq(connectorOauthDeviceAuthorizationSessions.id, args.session.id),
-        eq(connectorOauthDeviceAuthorizationSessions.status, "polling"),
         eq(
-          connectorOauthDeviceAuthorizationSessions.updatedAt,
+          builtinConnectorOauthDeviceAuthorizationSessions.id,
+          args.session.id,
+        ),
+        eq(builtinConnectorOauthDeviceAuthorizationSessions.status, "polling"),
+        eq(
+          builtinConnectorOauthDeviceAuthorizationSessions.updatedAt,
           args.claimStartedAt,
         ),
       ),
@@ -751,17 +785,17 @@ async function markClaimComplete(
 }
 
 async function completeClaimedSession(
-  args: DeviceAuthSessionOwner & {
+  args: BuiltinConnectorDeviceAuthSessionOwner & {
     readonly writeDb: Db;
     readonly orgId: string;
     readonly userId: string;
-    readonly session: DeviceAuthSessionRow;
+    readonly session: BuiltinConnectorDeviceAuthSessionRow;
     readonly claimStartedAt: Date;
     readonly result: OAuthDeviceAuthCompleteResultBase;
     readonly persistConnector: (args: {
       readonly result: OAuthDeviceAuthCompleteResultBase;
     }) => Promise<
-      | { readonly ok: true; readonly connector: ConnectorResponse }
+      | { readonly ok: true; readonly connector: BuiltinConnectorResponse }
       | { readonly ok: false; readonly message: string }
     >;
   },
@@ -823,7 +857,7 @@ async function completeClaimedSession(
 
 async function completeSessionResponse(
   args: {
-    readonly connectorLoader: () => Promise<ConnectorResponse | null>;
+    readonly connectorLoader: () => Promise<BuiltinConnectorResponse | null>;
   },
   signal: AbortSignal,
 ): Promise<PollSuccess> {
@@ -841,7 +875,7 @@ const authorizeDeviceSessionConnector$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly session: DeviceAuthSessionRow;
+      readonly session: BuiltinConnectorDeviceAuthSessionRow;
       readonly connectorSlug: ConnectorSlug;
     },
     signal: AbortSignal,
@@ -871,7 +905,7 @@ const completedDeviceSessionResponse$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly session: DeviceAuthSessionRow;
+      readonly session: BuiltinConnectorDeviceAuthSessionRow;
       readonly method: ResolvedConnectorActionMethod;
     },
     signal: AbortSignal,
@@ -885,7 +919,7 @@ const completedDeviceSessionResponse$ = command(
             );
           }
           return get(
-            connectorById({
+            builtinConnectorById({
               orgId: args.orgId,
               userId: args.userId,
               connectorSlug: args.method.connectorSlug,
@@ -1068,7 +1102,7 @@ async function createDeviceAuthSession(
       now: args.now,
     });
     const [session] = await tx
-      .insert(connectorOauthDeviceAuthorizationSessions)
+      .insert(builtinConnectorOauthDeviceAuthorizationSessions)
       .values({
         orgId: args.orgId,
         userId: args.userId,
@@ -1089,7 +1123,7 @@ async function createDeviceAuthSession(
         updatedAt: args.now,
         expiresAt: args.expiresAt,
       })
-      .returning({ id: connectorOauthDeviceAuthorizationSessions.id });
+      .returning({ id: builtinConnectorOauthDeviceAuthorizationSessions.id });
     if (!session) {
       throw new Error("Failed to create OAuth device authorization session");
     }
@@ -1097,7 +1131,7 @@ async function createDeviceAuthSession(
   });
 }
 
-export const startConnectorOauthDeviceAuthSession$ = command(
+export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
   async (
     { get, set },
     args: {
@@ -1164,7 +1198,7 @@ export const startConnectorOauthDeviceAuthSession$ = command(
     const expiresAt = new Date(now.getTime() + startResult.expiresIn * 1000);
     const pollState = validatedDeviceAuthPollState(startResult.pollState);
     const encryptedProviderState = await encryptPersistentSecretValue(
-      serializeConnectorOauthDeviceProviderState({
+      serializeBuiltinConnectorOauthDeviceProviderState({
         connectorSlug: resolvedMethod.connectorSlug,
         deviceCode: startResult.deviceCode,
         pollState,
@@ -1221,7 +1255,7 @@ export const startConnectorOauthDeviceAuthSession$ = command(
   },
 );
 
-export const pollConnectorOauthDeviceAuthSession$ = command(
+export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
   async (
     { get, set },
     args: {
@@ -1318,7 +1352,7 @@ export const pollConnectorOauthDeviceAuthSession$ = command(
         claimStartedAt,
         persistConnector: async ({ result }) => {
           const connectorResult = await set(
-            upsertConnectorTokenConnection$,
+            upsertBuiltinConnectorTokenConnection$,
             {
               orgId: args.orgId,
               userId: args.userId,

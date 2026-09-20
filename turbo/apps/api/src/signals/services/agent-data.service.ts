@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { agents } from "@okouai/db/schema/agent";
-import { userConnectors } from "@okouai/db/schema/user-connector";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -154,16 +154,16 @@ export function agentEnabledConnectorSlugs(args: {
 }): Computed<Promise<readonly ConnectorSlug[]>> {
   return computed(async (get): Promise<readonly ConnectorSlug[]> => {
     const rows = await get(db$)
-      .select({ connectorSlug: userConnectors.connectorSlug })
-      .from(userConnectors)
+      .select({ connectorSlug: userBuiltinConnectors.connectorSlug })
+      .from(userBuiltinConnectors)
       .where(
         and(
-          eq(userConnectors.orgId, args.orgId),
-          eq(userConnectors.userId, args.userId),
-          eq(userConnectors.agentId, args.agentId),
+          eq(userBuiltinConnectors.orgId, args.orgId),
+          eq(userBuiltinConnectors.userId, args.userId),
+          eq(userBuiltinConnectors.agentId, args.agentId),
         ),
       )
-      .orderBy(asc(userConnectors.connectorSlug));
+      .orderBy(asc(userBuiltinConnectors.connectorSlug));
 
     return rows.map((row) => {
       return connectorSlugSchema.parse(row.connectorSlug);

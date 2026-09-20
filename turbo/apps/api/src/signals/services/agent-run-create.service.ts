@@ -287,8 +287,8 @@ import {
   customConnectorValueMarkerKey,
   loadCustomConnectorRuntimeData,
   renderCustomConnectorRuntimePrefix,
-  renderTemplateForRuntime,
-  type StoredValueRow,
+  renderCustomConnectorTemplateForRuntime,
+  type CustomConnectorStoredValueRow,
 } from "./custom-connector.service";
 import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
@@ -343,7 +343,7 @@ import {
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
 import {
-  connectorRuntimeCredentialStatusWithMethod,
+  builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
 } from "./connector-credential-status.service";
 import {
@@ -353,11 +353,11 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import {
-  connectorCredentialSecretReadCondition,
-  resolveConnectorCredentialAccess,
-  type ConnectorCredentialAccess,
-  type ConnectorCredentialReadGroup,
-} from "./connector-credential-access.service";
+  builtinConnectorCredentialSecretReadCondition,
+  resolveBuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialAccess,
+  type BuiltinConnectorCredentialReadGroup,
+} from "./builtin-connector-credential-access.service";
 import {
   connectorAccountTargetKey,
   resolveConnectorAccounts,
@@ -386,7 +386,6 @@ import {
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
-import { countEarlierDeferredDemand } from "./pi-deferred-demand.service";
 import {
   admitNewComputeRun,
   lockComputeSessionSnapshot,
@@ -398,7 +397,7 @@ import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import { resolveMediaModelsForRun } from "./run-media-model.service";
 import {
   cappedBaseConcurrencyLimit,
-  loadOrgConcurrencyState,
+  loadOrgConcurrencyAdmissionState,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
@@ -1213,7 +1212,7 @@ function assertThreadBoundRunHasQueueAssociation(
   }
 }
 
-interface ConnectorRuntimeContext {
+interface BuiltinConnectorRuntimeContext {
   readonly secrets: Record<string, string> | undefined;
   readonly vars: Record<string, string> | undefined;
   readonly secretConnectorMap: Record<string, string> | undefined;
@@ -2676,16 +2675,8 @@ async function builtInModelProviderEnvironment(
     return null;
   }
   const route =
-    resolvedRoute ??
-    (await resolveBuiltInModelRuntimeRoute(
-      db,
-      selectedModel,
-      featureSwitchContext,
-    ));
-  if (
-    !route ||
-    !isBuiltInModelRuntimeRoutePermitted(route, featureSwitchContext)
-  ) {
+    resolvedRoute ?? (await resolveBuiltInModelRuntimeRoute(db, selectedModel));
+  if (!route || !isBuiltInModelRuntimeRoutePermitted(route)) {
     return null;
   }
   const [key] = await db
@@ -3513,7 +3504,8 @@ function filterSecretConnectorMetadataMap(args: {
 }
 
 interface StoredConnectorRuntimeRow {
-  readonly access: ConnectorCredentialAccess;
+  readonly automaticAuthType: "none" | "oauth" | null;
+  readonly access: BuiltinConnectorCredentialAccess;
   readonly connectorSlug: ConnectorSlug;
   readonly connectorStateRevision: bigint;
   readonly authMethod: ConnectorAuthMethodId;
@@ -3524,6 +3516,7 @@ interface StoredConnectorRuntimeRow {
 }
 
 interface StoredConnectorRuntimeRowCandidate {
+  readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorId: string;
   readonly connectorSlug: string;
   readonly authMethod: string;
@@ -3548,7 +3541,7 @@ const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
 );
 
 interface ConnectorEnvBindingSet {
-  readonly access: ConnectorCredentialAccess;
+  readonly access: BuiltinConnectorCredentialAccess;
   readonly connectorSlug: ConnectorSlug;
   readonly connectorStateRevision: bigint;
   readonly authMethod: ConnectorAuthMethodId;
@@ -3588,7 +3581,7 @@ interface ResolvedStoredConnectorMetadata {
   readonly environment: Record<string, string>;
 }
 
-function emptyConnectorRuntimeContext(): ConnectorRuntimeContext {
+function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeContext {
   return {
     secrets: undefined,
     vars: undefined,
@@ -3608,9 +3601,10 @@ function allowedStoredConnectorRows(
   now: Date,
 ): readonly StoredConnectorRuntimeRow[] {
   const validRows = rows.flatMap((row) => {
-    const accessResult = resolveConnectorCredentialAccess({
+    const accessResult = resolveBuiltinConnectorCredentialAccess({
       snapshot,
       stored: {
+        automaticAuthType: row.automaticAuthType,
         authMethodId: row.authMethod,
         connectorId: row.connectorId,
         connectorSlug: row.connectorSlug,
@@ -3629,6 +3623,7 @@ function allowedStoredConnectorRows(
         connectorSlug: access.runtimeMethod.connectorSlug,
         connectorStateRevision: row.connectorStateRevision,
         authMethod: access.runtimeMethod.authMethodId,
+        automaticAuthType: row.automaticAuthType,
         runtimeMethod: access.runtimeMethod,
         isMcp:
           getConnectorRuntimeConnector(snapshot, row.connectorSlug)
@@ -3650,8 +3645,9 @@ function storedConnectorRuntimeCredentialStatus(
   row: StoredConnectorRuntimeRow,
   now: Date,
 ): ConnectorCredentialStatus {
-  return connectorRuntimeCredentialStatusWithMethod({
+  return builtinConnectorRuntimeCredentialStatusWithMethod({
     method: row.runtimeMethod.method,
+    automaticAuthType: row.automaticAuthType,
     storedNeedsReconnect: row.needsReconnect,
     tokenExpiresAt: row.tokenExpiresAt,
     now,
@@ -3727,7 +3723,7 @@ function storedConnectorCredentialReadGroups(args: {
   readonly bindingSets: readonly ConnectorEnvBindingSet[];
   readonly kind: "secret" | "variable";
   readonly names?: ReadonlySet<string>;
-}): readonly ConnectorCredentialReadGroup[] {
+}): readonly BuiltinConnectorCredentialReadGroup[] {
   return args.bindingSets.flatMap((bindingSet) => {
     const names = storedConnectorCredentialNames({
       runtimeBindings: bindingSet.runtimeBindings,
@@ -3818,7 +3814,7 @@ async function loadStoredConnectorEncryptedSecretRows(
     })
     .from(secretsTable)
     .where(
-      connectorCredentialSecretReadCondition({
+      builtinConnectorCredentialSecretReadCondition({
         db,
         groups,
       }),
@@ -3985,9 +3981,9 @@ function resolveStoredConnectorMetadata(
 
 function storedConnectorContextFromSnapshot(
   snapshot: StoredConnectorMaterializationSnapshot | null,
-): ConnectorRuntimeContext {
+): BuiltinConnectorRuntimeContext {
   if (!snapshot) {
-    return emptyConnectorRuntimeContext();
+    return emptyBuiltinConnectorRuntimeContext();
   }
   return {
     secrets: undefined,
@@ -4051,9 +4047,9 @@ async function materializeStoredConnectorContext(
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
   timing?: ApiDispatchTimingCollector,
-): Promise<ConnectorRuntimeContext> {
+): Promise<BuiltinConnectorRuntimeContext> {
   if (!snapshot) {
-    return emptyConnectorRuntimeContext();
+    return emptyBuiltinConnectorRuntimeContext();
   }
 
   const availableSecretNames = availableStoredConnectorSecretNames(
@@ -4131,7 +4127,7 @@ function eagerStoredConnectorSecretNames(args: {
 async function materializeEagerStoredConnectorSecrets(
   db: Db,
   snapshot: StoredConnectorMaterializationSnapshot | null,
-  context: ConnectorRuntimeContext,
+  context: BuiltinConnectorRuntimeContext,
   args: {
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly eagerStoredEnvironment: Record<string, string> | undefined;
@@ -4143,7 +4139,7 @@ async function materializeEagerStoredConnectorSecrets(
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
   timing?: ApiDispatchTimingCollector,
-): Promise<ConnectorRuntimeContext> {
+): Promise<BuiltinConnectorRuntimeContext> {
   if (!snapshot) {
     return context;
   }
@@ -4188,7 +4184,7 @@ async function materializeEagerStoredConnectorSecrets(
 function eagerStoredConnectorSecretInputs(args: {
   readonly content: AgentExecutionConfig;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
 }): {
   readonly eagerStoredEnvironment: Record<string, string> | undefined;
   readonly referencedEnvironmentSecretAliases: ReadonlySet<string>;
@@ -4260,6 +4256,7 @@ function storedConnectorSnapshotQuery(
           .mapWith(pgTextDecoder)
           .as("connector_slug"),
         authMethod: connectors.authMethod,
+        automaticAuthType: connectors.automaticAuthType,
         connectorStateRevision: sql`(
             EXTRACT(EPOCH FROM ${connectors.updatedAt})
             * 1000000
@@ -4327,6 +4324,7 @@ function storedConnectorSnapshotQuery(
       connectorId: selectedConnectors.connectorId,
       connectorSlug: selectedConnectors.connectorSlug,
       authMethod: selectedConnectors.authMethod,
+      automaticAuthType: selectedConnectors.automaticAuthType,
       connectorStateRevision: selectedConnectors.connectorStateRevision,
       needsReconnect: selectedConnectors.needsReconnect,
       orgId: selectedConnectors.orgId,
@@ -4659,7 +4657,7 @@ function customConnectorRuntimeAuth(args: {
       return { headers: {}, query: {} };
     }
     if (args.row.credentialAccess.resolvedAuthMethod === "oauth") {
-      const authorization = renderTemplateForRuntime({
+      const authorization = renderCustomConnectorTemplateForRuntime({
         template: `Bearer {{oauth.${CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME}}}`,
         connectorId: args.row.connector.id,
         fields: args.row.connector.fields,
@@ -4673,7 +4671,7 @@ function customConnectorRuntimeAuth(args: {
   return {
     headers: Object.fromEntries(
       args.row.connector.headerInjections.flatMap((header) => {
-        const rendered = renderTemplateForRuntime({
+        const rendered = renderCustomConnectorTemplateForRuntime({
           template: header.valueTemplate,
           connectorId: args.row.connector.id,
           fields: args.row.connector.fields,
@@ -4683,7 +4681,7 @@ function customConnectorRuntimeAuth(args: {
     ),
     query: Object.fromEntries(
       args.row.connector.queryInjections.flatMap((queryInjection) => {
-        const rendered = renderTemplateForRuntime({
+        const rendered = renderCustomConnectorTemplateForRuntime({
           template: queryInjection.valueTemplate,
           connectorId: args.row.connector.id,
           fields: args.row.connector.fields,
@@ -4787,7 +4785,10 @@ function resolveCustomConnectorBaseUrlVars(args: {
   const prefixValues = args.row.values.filter(
     (
       value,
-    ): value is Extract<StoredValueRow, { readonly kind: "variable" }> => {
+    ): value is Extract<
+      CustomConnectorStoredValueRow,
+      { readonly kind: "variable" }
+    > => {
       return value.kind === "variable" && variableKeys.includes(value.key);
     },
   );
@@ -5896,7 +5897,7 @@ async function checkRunConcurrencyLimit(
   orgId: string,
 ): Promise<CreateRunErrorResult | null> {
   const at = nowDate();
-  const state = await loadOrgConcurrencyState(tx, {
+  const state = await loadOrgConcurrencyAdmissionState(tx, {
     orgId,
     at,
     activePendingAfter: new Date(at.getTime() - PENDING_RUN_TTL_MS),
@@ -5908,8 +5909,7 @@ async function checkRunConcurrencyLimit(
   if (limit === 0) {
     return null;
   }
-  const earlierDeferredDemand = await countEarlierDeferredDemand(tx, orgId, at);
-  return state.activeRunCount + earlierDeferredDemand >= limit
+  return state.activeRunCount + state.earlierDeferredDemand >= limit
     ? concurrentRunLimit()
     : null;
 }
@@ -6809,7 +6809,7 @@ async function buildStoredExecutionContextDraft(args: {
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -7086,7 +7086,7 @@ export function recordThreadSessionBindingRetryTelemetry(
 }
 
 function buildStoredExecutionSecrets(args: {
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly bodySecrets: Record<string, string> | undefined;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
@@ -7288,7 +7288,7 @@ interface BuildRunnerJobPayloadInput {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -8041,6 +8041,59 @@ function preparedLaunchRowsArgs(args: {
   };
 }
 
+interface PreparedAtomicLaunchRows {
+  readonly rowsArgs: LaunchRunRowsArgs;
+  readonly metadata: RunMetadataValues;
+}
+
+interface PreparedAtomicLaunchPersistence {
+  readonly payload: RunnerJobPayload;
+  readonly rows: Readonly<
+    Record<
+      Extract<LaunchRunStatus, "pending" | "queued">,
+      PreparedAtomicLaunchRows
+    >
+  >;
+  readonly diagnosticRegistrationPayload: z.infer<
+    typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
+  >;
+}
+
+interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
+  readonly persistence: PreparedAtomicLaunchPersistence;
+}
+
+function prepareAtomicLaunchPersistence(
+  commit: CommitPreparedLaunchArgs,
+): PreparedAtomicLaunchPersistence {
+  const payload = queuedRunnerJobPayload({
+    ...commit.launch.runnerJobPayload,
+    reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
+  });
+  const prepareRows = (
+    status: Extract<LaunchRunStatus, "pending" | "queued">,
+  ): PreparedAtomicLaunchRows => {
+    const rowsArgs = preparedLaunchRowsArgs({
+      commit,
+      status,
+      runnerGroup: payload.runnerGroup,
+    });
+    return { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) };
+  };
+  return {
+    payload,
+    rows: {
+      pending: prepareRows("pending"),
+      queued: prepareRows("queued"),
+    },
+    diagnosticRegistrationPayload:
+      agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
+        version: 1,
+        targets: payload.executionContext.connectorRuntimeTargets,
+      }),
+  };
+}
+
 interface ValidatedPreparedLaunchAdmission {
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
   readonly validatedAccountIdentity: string | null;
@@ -8048,7 +8101,7 @@ interface ValidatedPreparedLaunchAdmission {
 
 interface PersistAtomicLaunchRowsArgs extends ValidatedPreparedLaunchAdmission {
   readonly tx: DbTransaction;
-  readonly commit: CommitPreparedLaunchArgs;
+  readonly commit: PreparedCommitPreparedLaunchArgs;
   readonly status: Extract<LaunchRunStatus, "pending" | "queued">;
   readonly payload: RunnerJobPayload;
 }
@@ -8110,11 +8163,8 @@ function launchThreadBindingCte(args: {
 }
 
 function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
-  const rowsArgs = preparedLaunchRowsArgs({
-    commit: args.commit,
-    status: args.status,
-    runnerGroup: args.payload.runnerGroup,
-  });
+  const preparedRows = args.commit.persistence.rows[args.status];
+  const { rowsArgs, metadata } = preparedRows;
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
   const insertedSession = rowsArgs.identity.shouldCreateSession
@@ -8131,7 +8181,6 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
     ctes.push(insertedSession);
   }
 
-  const metadata = launchRunMetadataValues(rowsArgs);
   const insertedRun = args.tx.$with("inserted_launch_run").as(
     args.tx
       .insert(agentRuns)
@@ -8146,11 +8195,6 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
   );
   ctes.push(insertedRun);
 
-  const diagnosticRegistrationPayload =
-    agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
-      version: 1,
-      targets: args.payload.executionContext.connectorRuntimeTargets,
-    });
   const insertedDiagnosticRegistration = args.tx
     .$with("inserted_launch_connector_diagnostic_registration")
     .as(
@@ -8158,7 +8202,7 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
         .insert(agentRunConnectorDiagnosticRegistrations)
         .values({
           runId: returnedCteId(insertedRun),
-          payload: diagnosticRegistrationPayload,
+          payload: args.commit.persistence.diagnosticRegistrationPayload,
           createdAt,
         })
         .returning({ id: agentRunConnectorDiagnosticRegistrations.runId }),
@@ -8849,7 +8893,7 @@ async function validateThreadSessionSnapshot(
 
 async function commitQueuedPreparedLaunch(
   tx: DbTransaction,
-  args: CommitPreparedLaunchArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
   queueFirstClaim: QueueFirstRunClaimed | undefined,
   admission: ValidatedPreparedLaunchAdmission,
@@ -8881,7 +8925,7 @@ async function commitQueuedPreparedLaunch(
 
 async function commitPendingPreparedLaunch(
   tx: DbTransaction,
-  args: CommitPreparedLaunchArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
   queueFirstClaim: QueueFirstRunClaimed | undefined,
   admission: ValidatedPreparedLaunchAdmission,
@@ -8987,19 +9031,22 @@ async function validateCapturedSubscriptionAccount(
 
 async function commitPreparedLaunchUnderLock(
   tx: DbTransaction,
-  args: CommitPreparedLaunchArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
 ): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
-  const officialAdmissionFailure = await validateOfficialWorkflowRunForInsert(
-    tx,
-    {
-      observation: args.context.officialWorkflowRun,
-      orgId: args.createArgs.orgId,
-      userId: args.createArgs.userId,
-      agentId: args.context.resolved.agentId,
-      automationId: args.createArgs.agentRunMetadata?.workflowAutomationId,
-      runStorageMounts: args.launch.runStorageMounts,
-      allowMissingMountsForFailedRun: false,
+  const officialAdmissionFailure = await args.timing.measure(
+    "api_dispatch_validate_official_workflow_admission",
+    "nested",
+    async () => {
+      return await validateOfficialWorkflowRunForInsert(tx, {
+        observation: args.context.officialWorkflowRun,
+        orgId: args.createArgs.orgId,
+        userId: args.createArgs.userId,
+        agentId: args.context.resolved.agentId,
+        automationId: args.createArgs.agentRunMetadata?.workflowAutomationId,
+        runStorageMounts: args.launch.runStorageMounts,
+        allowMissingMountsForFailedRun: false,
+      });
     },
   );
   if (officialAdmissionFailure) {
@@ -9010,22 +9057,27 @@ async function commitPreparedLaunchUnderLock(
     identity: args.identity,
     timing: args.timing,
   });
-  if (
-    !(await validateNewComputeSession(
-      tx,
-      {
-        userId: args.createArgs.userId,
-        orgId: args.createArgs.orgId,
-        agentId: args.context.resolved.agentId,
-        existingSessionId: args.identity.shouldCreateSession
-          ? undefined
-          : args.identity.sessionId,
-      },
-      threadSessionValidation?.kind === "validated-thread-session-snapshot"
-        ? threadSessionValidation.lockedSession
-        : undefined,
-    ))
-  ) {
+  const validComputeSession = await args.timing.measure(
+    "api_dispatch_validate_compute_session",
+    "nested",
+    async () => {
+      return await validateNewComputeSession(
+        tx,
+        {
+          userId: args.createArgs.userId,
+          orgId: args.createArgs.orgId,
+          agentId: args.context.resolved.agentId,
+          existingSessionId: args.identity.shouldCreateSession
+            ? undefined
+            : args.identity.sessionId,
+        },
+        threadSessionValidation?.kind === "validated-thread-session-snapshot"
+          ? threadSessionValidation.lockedSession
+          : undefined,
+      );
+    },
+  );
+  if (!validComputeSession) {
     return conflict("Run admission is unavailable");
   }
   let capturedIdentity: string | null = null;
@@ -9059,7 +9111,7 @@ async function commitPreparedLaunchUnderLock(
 
 async function commitValidatedPreparedLaunch(
   tx: DbTransaction,
-  args: CommitPreparedLaunchArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
   threadSessionValidation: Awaited<
     ReturnType<typeof validateThreadSessionSnapshot>
@@ -9157,55 +9209,73 @@ async function commitValidatedPreparedLaunch(
 async function commitPreparedLaunch(
   args: CommitPreparedLaunchArgs,
 ): Promise<AtomicLaunchCommitCompletion> {
+  const persistence = await args.timing.measure(
+    "api_dispatch_prepare_atomic_launch_persistence",
+    "nested",
+    () => {
+      return Promise.resolve(prepareAtomicLaunchPersistence(args));
+    },
+  );
+  const preparedArgs: PreparedCommitPreparedLaunchArgs = {
+    ...args,
+    persistence,
+  };
   const committed = await withComputeOwnershipRetry(() => {
-    return args.db.transaction(async (tx) => {
-      if (
-        !(await admitNewComputeRun(tx, {
-          userId: args.createArgs.userId,
-          orgId: args.createArgs.orgId,
-          agentId: args.context.resolved.agentId,
-          ownerUserId: args.context.resolved.ownerUserId,
-          agentOrgId: args.context.resolved.orgId,
-          maintenanceStorageId:
-            args.createArgs.piMemoryPhase2Maintenance?.memoryStorageId,
-          existingSessionId: args.identity.shouldCreateSession
-            ? undefined
-            : args.identity.sessionId,
-        }))
-      ) {
+    return preparedArgs.db.transaction(async (tx) => {
+      const admitted = await preparedArgs.timing.measure(
+        "api_dispatch_compute_erasure_admission",
+        "nested",
+        async () => {
+          return await admitNewComputeRun(tx, {
+            userId: preparedArgs.createArgs.userId,
+            orgId: preparedArgs.createArgs.orgId,
+            agentId: preparedArgs.context.resolved.agentId,
+            ownerUserId: preparedArgs.context.resolved.ownerUserId,
+            agentOrgId: preparedArgs.context.resolved.orgId,
+            maintenanceStorageId:
+              preparedArgs.createArgs.piMemoryPhase2Maintenance
+                ?.memoryStorageId,
+            existingSessionId: preparedArgs.identity.shouldCreateSession
+              ? undefined
+              : preparedArgs.identity.sessionId,
+          });
+        },
+      );
+      if (!admitted) {
         return {
           result: conflict("Run admission is unavailable"),
           admissionLockHeldStartedAt: now(),
         };
       }
-      const payload = queuedRunnerJobPayload({
-        ...args.launch.runnerJobPayload,
-        reuseKey: runnerReuseKey(args.createArgs.chatThreadId),
-      });
+      const payload = preparedArgs.persistence.payload;
       await acquireOfficialWorkflowRunCatalogAdmissionLock(
         tx,
-        args.context.officialWorkflowRun,
+        preparedArgs.context.officialWorkflowRun,
       );
-      await args.timing.measure(
+      await preparedArgs.timing.measure(
         "api_dispatch_admission_lock_wait",
         "nested",
         async () => {
-          await lockPreparedLaunchAdmission(tx, args.createArgs.orgId);
+          await lockPreparedLaunchAdmission(tx, preparedArgs.createArgs.orgId);
         },
       );
       const admissionLockHeldStartedAt = now();
-      const result = await commitPreparedLaunchUnderLock(tx, args, payload);
+      const result = await commitPreparedLaunchUnderLock(
+        tx,
+        preparedArgs,
+        payload,
+      );
       if (
         "kind" in result &&
         (result.kind === "pending" || result.kind === "queued")
       ) {
         await requestPiMemoryStage1Day(tx, {
           ...result.run,
-          userId: args.createArgs.userId,
-          orgId: args.createArgs.orgId,
-          chatThreadId: args.createArgs.chatThreadId ?? null,
-          triggerSource: args.context.body.triggerSource,
-          launchSnapshot: args.context.launchSnapshot,
+          userId: preparedArgs.createArgs.userId,
+          orgId: preparedArgs.createArgs.orgId,
+          chatThreadId: preparedArgs.createArgs.chatThreadId ?? null,
+          triggerSource: preparedArgs.context.body.triggerSource,
+          launchSnapshot: preparedArgs.context.launchSnapshot,
           completedAt: null,
         });
       }
@@ -9319,7 +9389,7 @@ interface PreparedRunContext {
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -9608,7 +9678,7 @@ async function loadRunConnectorContexts(
   signal: AbortSignal,
 ): Promise<{
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: ConnectorRuntimeContext;
+  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
 }> {
   const [storedConnectorSnapshot, customConnectorContext] = await Promise.all([
@@ -9749,7 +9819,7 @@ function validateRunEnvironmentReferences(args: {
   readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly validateEnvironmentReferences: boolean | undefined;
@@ -9781,7 +9851,7 @@ async function buildPreparedPermissionManifest(args: {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly body: CreateRunBody;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly storedConnectorMetadataContext: ConnectorRuntimeContext;
+  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly timing: ApiDispatchTimingCollector;
 }): Promise<PermissionManifest | undefined | CreateRunErrorResult> {
@@ -9862,7 +9932,7 @@ interface PreparedRunBodyContext {
 interface PreparedRuntimeContext {
   readonly framework: SupportedFramework;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
   readonly billableFirewalls: readonly string[];
@@ -9872,7 +9942,7 @@ interface PreparedRuntimeContext {
 }
 
 interface PreparedConnectorContext {
-  readonly connectorContext: ConnectorRuntimeContext;
+  readonly connectorContext: BuiltinConnectorRuntimeContext;
   readonly permissionManifest: PermissionManifest | undefined;
 }
 
@@ -10204,7 +10274,8 @@ async function prepareRunConnectorContexts(
             ]);
           return {
             storedConnectorSnapshot,
-            storedConnectorMetadataContext: emptyConnectorRuntimeContext(),
+            storedConnectorMetadataContext:
+              emptyBuiltinConnectorRuntimeContext(),
             customConnectorContext,
           };
         }
@@ -10578,7 +10649,7 @@ async function materializePreparedConnectorContext(args: {
   readonly content: AgentExecutionConfig;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
-  readonly storedConnectorMetadataContext: ConnectorRuntimeContext;
+  readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;

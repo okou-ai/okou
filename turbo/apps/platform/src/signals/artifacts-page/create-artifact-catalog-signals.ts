@@ -1,6 +1,7 @@
 import {
+  createAttachmentPreviewRegistry,
   createAttachmentPreviewSignals,
-  createAttachmentResourceUrl$,
+  type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import {
   command,
@@ -18,12 +19,14 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 
 import { accept } from "../../lib/accept.ts";
+import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "../api-client.ts";
 import { onRejection } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
+import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
 
 // First screen and every scroll step request the same page size. The server
 // orders by `(createdAt, id)` and never reorders on update, so a cursor stays
@@ -39,6 +42,8 @@ export type CatalogArtifact = ArtifactSummary & {
    */
   readonly thumbnailLoad: ImageLoadSignals;
   readonly thumbnailUrl$: Computed<Promise<string | null>>;
+  /** Original video graph reused when this card opens in the viewer. */
+  readonly videoPreview: AttachmentPreviewSignals | null;
   readonly videoUrl$: Computed<Promise<string | null>>;
 };
 
@@ -53,6 +58,9 @@ function withThumbnailLoad(page: {
 }): ArtifactCatalogPage {
   return {
     artifacts: page.artifacts.map((artifact) => {
+      const videoPreview = artifact.videoSourceUrl
+        ? createAttachmentPreviewSignals(artifact.videoSourceUrl)
+        : null;
       return {
         ...artifact,
         thumbnailLoad: createImageLoadSignals(),
@@ -65,10 +73,9 @@ function withThumbnailLoad(page: {
               )
             : null;
         }),
+        videoPreview,
         videoUrl$: computed(async (get) => {
-          return artifact.videoSourceUrl
-            ? await get(createAttachmentResourceUrl$(artifact.videoSourceUrl))
-            : null;
+          return videoPreview ? await get(videoPreview.resourceUrl$) : null;
         }),
       };
     }),
@@ -84,7 +91,12 @@ export interface ArtifactCatalogSignals {
   readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
   readonly loadThroughArtifact$: Command<Promise<void>, [string, AbortSignal]>;
   readonly selectArtifact$: Command<void, [string | null]>;
+  readonly ensureSelectedArtifactPreview$: Command<
+    Promise<AttachmentPreviewSignals | null>,
+    [string, AbortSignal]
+  >;
   readonly selectedArtifactDetail$: Computed<Promise<ArtifactDetail | null>>;
+  readonly selectedArtifactPreview$: Computed<AttachmentPreviewSignals | null>;
 }
 
 interface CatalogPagingState {
@@ -194,6 +206,98 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
   return { catalog$, loadMore$ };
 }
 
+function createCatalogSelectionSignals(
+  catalog$: Computed<Promise<ArtifactCatalogPage>>,
+  reloadVersion$: State<number>,
+): Pick<
+  ArtifactCatalogSignals,
+  | "selectArtifact$"
+  | "ensureSelectedArtifactPreview$"
+  | "selectedArtifactDetail$"
+  | "selectedArtifactPreview$"
+> {
+  const internalSelectedArtifactId$ = state<string | null>(null);
+  const internalSelectedArtifactPreview$ =
+    state<AttachmentPreviewSignals | null>(null);
+  const previews = createAttachmentPreviewRegistry();
+
+  const selectArtifact$ = command(({ get, set }, artifactId: string | null) => {
+    if (get(internalSelectedArtifactId$) === artifactId) {
+      return;
+    }
+    set(internalSelectedArtifactId$, artifactId);
+    set(internalSelectedArtifactPreview$, null);
+  });
+
+  const selectedArtifactDetail$ = computed(
+    async (get): Promise<ArtifactDetail | null> => {
+      get(reloadVersion$);
+      const artifactId = get(internalSelectedArtifactId$);
+      if (!artifactId) {
+        return null;
+      }
+      const client = get(apiClient$)(artifactCatalogContract);
+      const result = await accept(
+        client.get({
+          params: { artifactId },
+        }),
+        [200, 404],
+      );
+      return result.status === 404 ? null : result.body;
+    },
+  );
+
+  const ensureSelectedArtifactPreview$ = command(
+    async ({ get, set }, artifactId: string, signal: AbortSignal) => {
+      if (get(internalSelectedArtifactId$) !== artifactId) {
+        return null;
+      }
+      const detail = await get(selectedArtifactDetail$);
+      signal.throwIfAborted();
+      if (get(internalSelectedArtifactId$) !== artifactId) {
+        return null;
+      }
+      if (!detail) {
+        set(internalSelectedArtifactPreview$, null);
+        return null;
+      }
+      const source = artifactDetailPreview(detail);
+      let preview: AttachmentPreviewSignals | undefined;
+      if (detail.kind === "video" || detail.kind === "avatar") {
+        const catalog = await get(catalog$);
+        signal.throwIfAborted();
+        const card = catalog.artifacts.find((artifact) => {
+          return artifact.id === detail.id;
+        });
+        if (
+          card?.videoPreview &&
+          card.videoSourceUrl &&
+          publicAttachmentUrl(card.videoSourceUrl) === source.url
+        ) {
+          preview = card.videoPreview;
+        }
+      }
+      const registered = set(previews.register$, {
+        url: source.url,
+        ...(preview ? { preview } : {}),
+      });
+      if (get(internalSelectedArtifactId$) === artifactId) {
+        set(internalSelectedArtifactPreview$, registered);
+      }
+      return registered;
+    },
+  );
+
+  return {
+    selectArtifact$,
+    ensureSelectedArtifactPreview$,
+    selectedArtifactDetail$,
+    selectedArtifactPreview$: computed((get) => {
+      return get(internalSelectedArtifactPreview$);
+    }),
+  };
+}
+
 /**
  * One independent catalog view. The `/artifacts` page holds a module-global
  * instance over the whole org catalog; each chat thread sidebar holds its own
@@ -210,7 +314,6 @@ export function createArtifactCatalogSignals(
   // Cursors already handed to the server. Scroll events fire faster than a
   // page resolves, so this keeps one request per cursor without a loading flag.
   const internalFetchedCursors$ = state<ReadonlySet<string>>(new Set());
-  const internalSelectedArtifactId$ = state<string | null>(null);
 
   const resetPages$ = command(({ set }) => {
     set(internalPages$, []);
@@ -245,6 +348,7 @@ export function createArtifactCatalogSignals(
     pages$: internalPages$,
     fetchedCursors$: internalFetchedCursors$,
   });
+  const selection = createCatalogSelectionSignals(catalog$, internalReload$);
 
   const loadThroughArtifact$ = command(
     async ({ get, set }, artifactId: string, signal: AbortSignal) => {
@@ -275,33 +379,6 @@ export function createArtifactCatalogSignals(
     },
   );
 
-  const selectArtifact$ = command(({ set }, artifactId: string | null) => {
-    set(internalSelectedArtifactId$, artifactId);
-  });
-
-  /**
-   * Kind-specific detail for the opened card. Null while nothing is selected
-   * or when the artifact no longer exists, so the list never pays for detail
-   * queries it does not render and a deleted artifact renders as unavailable.
-   */
-  const selectedArtifactDetail$ = computed(
-    async (get): Promise<ArtifactDetail | null> => {
-      get(internalReload$);
-      const artifactId = get(internalSelectedArtifactId$);
-      if (!artifactId) {
-        return null;
-      }
-      const client = get(apiClient$)(artifactCatalogContract);
-      const result = await accept(
-        client.get({
-          params: { artifactId },
-        }),
-        [200, 404],
-      );
-      return result.status === 404 ? null : result.body;
-    },
-  );
-
   return {
     selectedKind$: computed((get) => {
       return get(internalKind$);
@@ -311,7 +388,6 @@ export function createArtifactCatalogSignals(
     catalog$,
     loadMore$,
     loadThroughArtifact$,
-    selectArtifact$,
-    selectedArtifactDetail$,
+    ...selection,
   };
 }

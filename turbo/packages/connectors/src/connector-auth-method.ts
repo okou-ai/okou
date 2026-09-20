@@ -71,6 +71,37 @@ function addConnectorPrivateValueRef(
   privateNames.add(connectorVariableNameFromValueRef(valueRef));
 }
 
+function addAccessPrivateNames(
+  access: ConnectorAccessConfig,
+  privateNames: Set<string>,
+): void {
+  if ("envBindings" in access) {
+    for (const [envName, binding] of Object.entries(access.envBindings)) {
+      privateNames.add(envName);
+      addConnectorPrivateValueRef(
+        typeof binding === "string" ? binding : binding.valueRef,
+        privateNames,
+      );
+    }
+    for (const platformSecret of access.platformSecrets ?? []) {
+      privateNames.add(platformSecret);
+    }
+  }
+  if (access.kind === "refresh-token" || access.kind === "automatic") {
+    for (const valueRef of Object.values(access.inputs)) {
+      addConnectorPrivateValueRef(valueRef, privateNames);
+    }
+    for (const valueRef of Object.values(access.outputs)) {
+      addConnectorPrivateValueRef(valueRef, privateNames);
+    }
+  }
+  if (access.kind === "refresh-token") {
+    for (const refreshableSecret of access.refreshableSecrets) {
+      privateNames.add(refreshableSecret);
+    }
+  }
+}
+
 /**
  * Returns implementation-owned names that must not leak into public form ids.
  */
@@ -93,31 +124,7 @@ export function connectorAuthMethodPrivateNames(
     }
   }
 
-  if (method.access.kind !== "none") {
-    for (const [envName, binding] of Object.entries(
-      method.access.envBindings,
-    )) {
-      privateNames.add(envName);
-      addConnectorPrivateValueRef(
-        typeof binding === "string" ? binding : binding.valueRef,
-        privateNames,
-      );
-    }
-    for (const platformSecret of method.access.platformSecrets ?? []) {
-      privateNames.add(platformSecret);
-    }
-  }
-  if (method.access.kind === "refresh-token") {
-    for (const valueRef of Object.values(method.access.inputs)) {
-      addConnectorPrivateValueRef(valueRef, privateNames);
-    }
-    for (const valueRef of Object.values(method.access.outputs)) {
-      addConnectorPrivateValueRef(valueRef, privateNames);
-    }
-    for (const refreshableSecret of method.access.refreshableSecrets) {
-      privateNames.add(refreshableSecret);
-    }
-  }
+  addAccessPrivateNames(method.access, privateNames);
 
   if (method.revoke.kind === "token-revoke") {
     for (const valueRef of Object.values(method.revoke.inputs)) {
@@ -145,6 +152,7 @@ function connectorAccessEnvBindings(
     case "refresh-token":
       return access.envBindings;
     case "none":
+    case "automatic":
       return {};
   }
 }
@@ -163,11 +171,17 @@ function connectorAccessPlatformSecrets(
     case "refresh-token":
       return access.platformSecrets ?? [];
     case "none":
+    case "automatic":
       return [];
   }
 }
 
 export type ConnectorAuthMethodAccessMetadata =
+  | {
+      readonly kind: "automatic";
+      readonly envBindings: ConnectorRuntimeEnvBindings;
+      readonly platformSecrets: readonly ConnectorPlatformSecretName[];
+    }
   | {
       readonly kind: "static";
       readonly envBindings: ConnectorRuntimeEnvBindings;
@@ -232,7 +246,7 @@ export type ConnectorAuthMethodGrantMetadata =
       readonly outputs: Readonly<Record<string, ConnectorGrantOutputMetadata>>;
     }
   | {
-      readonly kind: "none" | "manual" | "managed";
+      readonly kind: "none" | "manual" | "managed" | "automatic";
       readonly outputs: Readonly<Record<string, ConnectorGrantOutputMetadata>>;
     };
 
@@ -405,8 +419,9 @@ export function connectorAuthMethodAccessMetadata(
         platformSecrets: method.access.platformSecrets ?? [],
       };
     case "none":
+    case "automatic":
       return {
-        kind: "none",
+        kind: method.access.kind,
         envBindings: {},
         platformSecrets: [],
       };
@@ -431,6 +446,7 @@ export function connectorAuthMethodGrantMetadata(
     case "openid-auth":
     case "external-code":
     case "device-auth":
+    case "automatic":
       return {
         kind: method.grant.kind,
         outputs: connectorGrantOutputMetadataMap(method.grant.outputs),
@@ -754,6 +770,7 @@ export function connectorGrantScopes(
       return grant.scopes;
     case "openid-auth":
     case "none":
+    case "automatic":
     case "manual":
     case "managed":
     case undefined:

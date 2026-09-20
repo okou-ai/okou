@@ -71,6 +71,7 @@ type TextPreviewProps = {
   filename: string;
   url: string;
   kind: "text" | "json";
+  preview: AttachmentPreviewSignals;
   text$?: TextPreviewComputed;
 };
 
@@ -79,12 +80,19 @@ const MEDIA_PREVIEW_CARD_CLASS =
 const MEDIA_PREVIEW_CARD_HOVER_CLASS =
   "hover:scale-[1.015] hover:border-foreground/20";
 
-function TextPreview({ filename, kind, text$, url }: TextPreviewProps) {
+function TextPreview({
+  filename,
+  kind,
+  preview,
+  text$,
+  url,
+}: TextPreviewProps) {
   return (
     <AttachmentAnchorChip
       filename={filename}
       url={url}
       kind={kind}
+      preview={preview}
       text$={text$}
     />
   );
@@ -156,11 +164,13 @@ function AttachmentAnchorChip({
   filename,
   url,
   kind,
+  preview,
   text$,
 }: {
   filename: string;
   url: string;
   kind: AttachmentAnchorChipKind;
+  preview: AttachmentPreviewSignals;
   text$?: TextPreviewComputed;
 }) {
   const { t } = useTranslation();
@@ -205,6 +215,7 @@ function AttachmentAnchorChip({
           kind,
           url,
           filename,
+          preview,
           ...(text$ ? { text$ } : {}),
         });
       }}
@@ -481,6 +492,7 @@ function DocumentThumbnailPreview({
       filename={filename}
       url={url}
       kind={kind}
+      preview={preview}
       text$={text$}
     />
   );
@@ -532,10 +544,12 @@ function FileThumbnailPreview({
 function AudioPreview({
   contentType,
   filename,
+  preview,
   url,
 }: {
   contentType?: string;
   filename: string;
+  preview: AttachmentPreviewSignals;
   url: string;
 }) {
   const { t } = useTranslation();
@@ -551,7 +565,7 @@ function AudioPreview({
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        openAudioLightbox({ url, filename });
+        openAudioLightbox({ url, filename, preview });
       }}
       disabled={lightboxOpen}
       title={filename}
@@ -586,23 +600,25 @@ function AudioPreview({
 function VideoThumbnailPreview({
   contentType,
   filename,
+  preview,
   url,
 }: {
   contentType?: string;
   filename: string;
+  preview: AttachmentPreviewSignals;
   url: string;
 }) {
   const { t } = useTranslation();
   const openVideoLightbox = useSet(openVideoLightbox$);
   const lightboxOpen = useGet(lightboxUrl$) !== null;
-  const videoUrl = publicAttachmentUrl(url);
+  const videoUrl = useLastResolved(preview.resourceUrl$);
 
   return (
     <button
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        openVideoLightbox({ url, filename });
+        openVideoLightbox({ url, filename, preview });
       }}
       disabled={lightboxOpen}
       title={filename}
@@ -697,6 +713,7 @@ export function AttachmentPreview({
           filename={attachment.filename}
           url={attachment.url}
           kind="text"
+          preview={preview}
           text$={text$}
         />
       );
@@ -707,6 +724,7 @@ export function AttachmentPreview({
           filename={attachment.filename}
           url={attachment.url}
           kind="json"
+          preview={preview}
           text$={text$}
         />
       );
@@ -750,6 +768,7 @@ export function AttachmentPreview({
         <AudioPreview
           contentType={attachment.contentType}
           filename={attachment.filename}
+          preview={preview}
           url={attachment.url}
         />
       );
@@ -759,6 +778,7 @@ export function AttachmentPreview({
         <VideoThumbnailPreview
           contentType={attachment.contentType}
           filename={attachment.filename}
+          preview={preview}
           url={attachment.url}
         />
       );

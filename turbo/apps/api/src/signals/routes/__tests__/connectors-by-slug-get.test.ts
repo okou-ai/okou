@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
-  connectorManualGrantContract,
-  connectorsBySlugContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { createStore } from "ccstate";
 import { afterEach } from "vitest";
@@ -21,7 +21,7 @@ import { seedConnectorStorageRow } from "./helpers/connector-credential-storage-
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { connectorsRoutes } from "../connectors";
+import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
 const store = createStore();
@@ -62,8 +62,8 @@ async function seedSandboxJwtFixture(): Promise<AuthenticatedFixture> {
 async function connectOpenai(fixture: AuthenticatedFixture): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   await accept(
-    setupApp({ context, routes: connectorsRoutes })(
-      connectorManualGrantContract,
+    setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorManualGrantContract,
     ).connect({
       params: { connectorSlug: "openai" },
       body: {
@@ -117,8 +117,8 @@ describe("GET /api/connectors/:connectorSlug", () => {
   });
 
   it("returns 401 when not authenticated", async () => {
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorsBySlugContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
     );
     const response = await accept(
       client.get({ params: { connectorSlug: "github" }, headers: {} }),
@@ -131,8 +131,8 @@ describe("GET /api/connectors/:connectorSlug", () => {
   it("returns 401 when the authenticated session has no organization", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, null);
 
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorsBySlugContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
     );
     const response = await accept(
       client.get({
@@ -149,8 +149,8 @@ describe("GET /api/connectors/:connectorSlug", () => {
     const fixture = seedAuthenticatedFixture();
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorsBySlugContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
     );
     const response = await accept(
       client.get({
@@ -169,8 +169,8 @@ describe("GET /api/connectors/:connectorSlug", () => {
     await connectOpenai(fixture);
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorsBySlugContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
     );
     const response = await accept(
       client.get({
@@ -199,8 +199,8 @@ describe("GET /api/connectors/:connectorSlug", () => {
     });
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorsBySlugContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
     );
     const response = await accept(
       client.get({
@@ -222,8 +222,8 @@ describe("GET /api/connectors/:connectorSlug", () => {
     await invalidateApiTestConnectorCatalogCompatibility();
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorsBySlugContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
     );
     const response = await accept(
       client.get({
@@ -252,8 +252,8 @@ describe("GET /api/connectors/:connectorSlug", () => {
       exp: seconds + 60,
     });
 
-    const client = setupApp({ context, routes: connectorsRoutes })(
-      connectorsBySlugContract,
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
     );
     const response = await accept(
       client.get({

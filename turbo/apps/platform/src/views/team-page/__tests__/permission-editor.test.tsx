@@ -6,8 +6,8 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogPermissionDetail,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   type ApplyUserPermissionGrant,
   type ApplyUserPermissionGrantsRequest,
@@ -71,7 +71,7 @@ function agentFixture(): AgentResponse {
   };
 }
 
-function connectedSlackFixture(): ConnectorResponse {
+function connectedSlackFixture(): BuiltinConnectorResponse {
   return {
     id: CONNECTION_ID,
     slug: "slack",
@@ -152,10 +152,13 @@ function setupPermissionEditor(
     expect(params.id).toBe(AGENT_ID);
     return respond(200, agentFixture());
   });
-  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
-    expect(params.id).toBe(AGENT_ID);
-    return respond(200, { enabledConnectorSlugs: ["slack"] });
-  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.get,
+    ({ params, respond }) => {
+      expect(params.id).toBe(AGENT_ID);
+      return respond(200, { enabledConnectorSlugs: ["slack"] });
+    },
+  );
   context.mocks.api(
     connectorCatalogContract.permissions,
     ({ params, respond }) => {

@@ -18,7 +18,7 @@ import {
   listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
-import { connectorCatalogConnectionList } from "../services/connector-data.service";
+import { builtinConnectorCatalogConnectionList } from "../services/connector-data.service";
 import { notFound, providerUnavailable } from "../../lib/error";
 import { settle } from "../utils";
 
@@ -110,7 +110,7 @@ const listConnectorCatalogStatusInner$ = command(
 
     const connectorState = await settleConnectorCatalogRead(
       get(
-        connectorCatalogConnectionList({
+        builtinConnectorCatalogConnectionList({
           orgId: auth.orgId,
           userId: auth.userId,
         }),
@@ -147,7 +147,7 @@ const discoverConnectorCatalogInner$ = command(
 
     const connectorState = await settleConnectorCatalogRead(
       get(
-        connectorCatalogConnectionList({
+        builtinConnectorCatalogConnectionList({
           orgId: auth.orgId,
           userId: auth.userId,
         }),
@@ -198,7 +198,7 @@ const getConnectorCatalogInner$ = command(
 
     const connectorState = await settleConnectorCatalogRead(
       get(
-        connectorCatalogConnectionList({
+        builtinConnectorCatalogConnectionList({
           orgId: auth.orgId,
           userId: auth.userId,
         }),

@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
@@ -19,7 +18,6 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-healt
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const examples = z
   .object({
@@ -67,13 +65,6 @@ async function createRun() {
   if (!actor.orgId) {
     throw new Error("X resource test requires an organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.XResourceDeduplication]: true,
-    },
-  );
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {

@@ -1,21 +1,15 @@
 import {
+  attachmentPreviewSignalsFor,
   createAttachmentPreviewSignals,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
-import {
-  command,
-  computed,
-  state,
-  type Command,
-  type Computed,
-  type State,
-} from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import {
   createArtifactCatalogSignals,
   type ArtifactCatalogSignals,
 } from "../artifacts-page/create-artifact-catalog-signals.ts";
-import { artifactDetailPreview } from "../artifacts-page/artifact-catalog-signals.ts";
+import { artifactDetailPreview } from "../artifacts-page/artifact-catalog-preview.ts";
 import {
   createTextPreviewComputed,
   fetchPreviewText,
@@ -132,7 +126,7 @@ function materializeArtifactRef(
   if (!("file" in input)) {
     return withTextPreview({
       url: input.url,
-      ...(input.preview ?? createAttachmentPreviewSignals(input.url)),
+      ...attachmentPreviewSignalsFor(input),
       kind: classifyChatAttachment({
         contentType: input.contentType,
         filename: input.filename,
@@ -172,19 +166,15 @@ export type ThreadSidebarTarget =
   | { readonly type: "browser" }
   | { readonly type: "automations" };
 
-export type ThreadSidebarOpenTarget =
-  | Exclude<ThreadSidebarTarget, { readonly type: "artifact" }>
-  | {
-      readonly type: "artifact";
-      readonly source: Extract<
-        ThreadSidebarArtifactSource,
-        { readonly kind: "catalog" }
-      >;
-    };
+export type ThreadSidebarOpenTarget = Exclude<
+  ThreadSidebarTarget,
+  { readonly type: "artifact" }
+>;
 
 export interface ThreadSidebarSignals {
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
+  readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
   readonly openAttachment$: Command<void, [ArtifactRefInput, AbortSignal]>;
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
@@ -223,22 +213,13 @@ export interface ThreadSidebarSignals {
 
 function createCatalogArtifactPreviewSignals(
   artifactCatalog: ArtifactCatalogSignals,
-  internalArtifactPreviewVersion$: State<number>,
 ) {
-  const selectedArtifactPreview$ = computed(async (get) => {
-    get(internalArtifactPreviewVersion$);
-    const detail = await get(artifactCatalog.selectedArtifactDetail$);
-    return detail
-      ? createAttachmentPreviewSignals(artifactDetailPreview(detail).url)
-      : null;
-  });
-
   const resourceUrl$ = computed(async (get) => {
-    const preview = await get(selectedArtifactPreview$);
+    const preview = await get(artifactCatalog.selectedArtifactPreview$);
     return preview ? await get(preview.resourceUrl$) : null;
   });
   const shareUrl$ = computed(async (get) => {
-    const preview = await get(selectedArtifactPreview$);
+    const preview = await get(artifactCatalog.selectedArtifactPreview$);
     return preview ? await get(preview.shareUrl$) : null;
   });
 
@@ -279,23 +260,15 @@ export function createThreadSidebarSignals(
   const internalEditingAutomationId$ = state<string | null>(null);
   const internalClaimedAutoOpenCandidateKey$ = state<string | null>(null);
   const resetSidebarSessionSignal$ = resetSignal();
-  const internalArtifactPreviewVersion$ = state(0);
   const imageCanvas = createZoomableImageCanvasSignals();
   const artifactCatalog = createArtifactCatalogSignals({
     chatThreadId: threadId,
   });
-  const preview = createCatalogArtifactPreviewSignals(
-    artifactCatalog,
-    internalArtifactPreviewVersion$,
-  );
+  const preview = createCatalogArtifactPreviewSignals(artifactCatalog);
 
   const startSession$ = command(({ set }, signal: AbortSignal): AbortSignal => {
     signal.throwIfAborted();
-    const sessionSignal = set(resetSidebarSessionSignal$, signal);
-    set(internalArtifactPreviewVersion$, (version) => {
-      return version + 1;
-    });
-    return sessionSignal;
+    return set(resetSidebarSessionSignal$, signal);
   });
 
   const publishTarget$ = command(
@@ -322,6 +295,24 @@ export function createThreadSidebarSignals(
     },
   );
 
+  const openCatalogArtifact$ = command(
+    async ({ set }, artifactId: string, signal: AbortSignal): Promise<void> => {
+      const sessionSignal = set(startSession$, signal);
+      set(artifactCatalog.selectArtifact$, artifactId);
+      set(publishTarget$, {
+        type: "artifact",
+        source: { kind: "catalog", artifactId },
+      });
+      await set(
+        artifactCatalog.ensureSelectedArtifactPreview$,
+        artifactId,
+        sessionSignal,
+      );
+      signal.throwIfAborted();
+      sessionSignal.throwIfAborted();
+    },
+  );
+
   const openAttachment$ = command(
     ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
       const sessionSignal = set(startSession$, signal);
@@ -337,9 +328,6 @@ export function createThreadSidebarSignals(
 
   const close$ = command(({ set }) => {
     set(resetSidebarSessionSignal$);
-    set(internalArtifactPreviewVersion$, (version) => {
-      return version + 1;
-    });
     set(internalTarget$, null);
     set(internalAnimateEntry$, false);
     set(internalFullscreen$, false);
@@ -362,6 +350,7 @@ export function createThreadSidebarSignals(
       return get(internalTarget$);
     }),
     open$,
+    openCatalogArtifact$,
     openAttachment$,
     close$,
     animateEntry$: computed((get) => {

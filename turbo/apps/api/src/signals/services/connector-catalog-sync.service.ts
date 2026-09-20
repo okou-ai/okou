@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type {
   ConnectorCatalogSyncFailureCode,
   ConnectorCatalogDiagnostics,
@@ -9,9 +11,11 @@ import {
 } from "@okouai/db/schema/connector-catalog";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
+import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -26,6 +30,7 @@ import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
+  type ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
@@ -260,16 +265,100 @@ async function publishCatalogPermissionBundleWakeupsInner(args: {
   });
 }
 
-async function publishCatalogPermissionBundleWakeups(args: {
+function mcpRuntimeConfig(
+  connector: ConnectorCatalogArtifactConnector | undefined,
+) {
+  return connector
+    ? {
+        mcp: connector.mcp,
+        authMethods: connector.authMethods,
+        firewall: connector.firewall,
+      }
+    : undefined;
+}
+
+async function publishMcpCatalogWakeups(args: {
   readonly db: Db;
   readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
   readonly currentArtifact: ConnectorCatalogArtifact;
 }): Promise<void> {
-  const result = await settle(publishCatalogPermissionBundleWakeupsInner(args));
-  if (!result.ok) {
-    log.warn("Failed to publish Custom connector catalog wakeups", {
-      error: result.error,
-    });
+  const previous = new Map(
+    args.previousSnapshot?.acceptedSnapshot.artifact.connectors.map(
+      (connector) => {
+        return [connector.slug, connector] as const;
+      },
+    ),
+  );
+  const current = new Map(
+    args.currentArtifact.connectors.map((connector) => {
+      return [connector.slug, connector] as const;
+    }),
+  );
+  const changedSlugs = [
+    ...new Set([...previous.keys(), ...current.keys()]),
+  ].filter((slug) => {
+    const before = previous.get(slug);
+    const after = current.get(slug);
+    return (
+      (before?.mcp !== undefined || after?.mcp !== undefined) &&
+      !isDeepStrictEqual(mcpRuntimeConfig(before), mcpRuntimeConfig(after))
+    );
+  });
+  if (changedSlugs.length === 0) {
+    return;
+  }
+  const accounts = await args.db
+    .selectDistinct({
+      orgId: connectors.orgId,
+      connectorSlug: sql`${connectors.connectorSlug}`
+        .mapWith(pgTextDecoder)
+        .as("connector_slug"),
+    })
+    .from(connectors)
+    .where(
+      and(
+        isNull(connectors.customConnectorId),
+        inArray(connectors.connectorSlug, changedSlugs),
+      ),
+    );
+  const byOrg = new Map<string, string[]>();
+  for (const account of accounts) {
+    const slugs = byOrg.get(account.orgId) ?? [];
+    slugs.push(account.connectorSlug);
+    byOrg.set(account.orgId, slugs);
+  }
+  const pending = byOrg.entries();
+  async function publishOrgWakeups() {
+    for (const [orgId, slugs] of pending) {
+      await publishConnectorRuntimeSyncWakeups({
+        db: args.db,
+        scope: { orgId },
+        targets: slugs.map((connectorSlug) => {
+          return { kind: "builtin" as const, connectorSlug };
+        }),
+      });
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(4, byOrg.size) }, publishOrgWakeups),
+  );
+}
+
+async function publishCatalogRuntimeWakeups(args: {
+  readonly db: Db;
+  readonly previousSnapshot: ConnectorRuntimeSnapshot | undefined;
+  readonly currentArtifact: ConnectorCatalogArtifact;
+}): Promise<void> {
+  const results = await Promise.all([
+    settle(publishCatalogPermissionBundleWakeupsInner(args)),
+    settle(publishMcpCatalogWakeups(args)),
+  ]);
+  for (const result of results) {
+    if (!result.ok) {
+      log.warn("Failed to publish connector catalog runtime wakeups", {
+        error: result.error,
+      });
+    }
   }
 }
 
@@ -1111,8 +1200,8 @@ async function commitValidatedCandidate(
   },
   signal: AbortSignal,
 ): Promise<SyncAttemptResult> {
-  // The sync baseline is v4-only; retained v3 may still be serving before the
-  // first v4 acceptance. Compare permission bundles against the serving state.
+  // Compare permission bundles against the accepted v4 serving state. A cold
+  // catalog has no previous runtime snapshot.
   const previousSnapshotResult = await settle(
     loadConnectorRuntimeSnapshot(runtime.db),
     signal,
@@ -1172,7 +1261,7 @@ async function commitValidatedCandidate(
     compressedBytes: catalogGzip.byteLength,
     outcome,
   });
-  await publishCatalogPermissionBundleWakeups({
+  await publishCatalogRuntimeWakeups({
     db: runtime.db,
     currentArtifact: args.candidate.artifact,
     previousSnapshot: previousSnapshotResult.ok

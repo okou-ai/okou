@@ -73,10 +73,7 @@ function PaidToolNoticeContent({
             variant="ghost"
             size="sm"
             onClick={() => {
-              return detach(
-                openSettings("paid-tools", signal),
-                Reason.DomCallback,
-              );
+              return detach(openSettings("chat", signal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -94,7 +91,10 @@ export function PaidToolNotice({
 }: {
   readonly tools: readonly PaidToolId[];
 }) {
-  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.PaidToolControls];
+  const features = useGet(featureSwitch$);
+  const enabled =
+    features[FeatureSwitchKey.ChatPreference] &&
+    features[FeatureSwitchKey.PaidToolControls];
   return enabled && tools.length > 0 ? (
     <PaidToolNoticeContent tools={tools} />
   ) : null;

@@ -695,6 +695,21 @@ export function createAssistantErrorRecoverySignals(deps: {
     deps.visibleRenderedChatGroups$,
     deps.runDetails$,
   );
+  /**
+   * Which event the recovery will attach to follows from the transcript alone,
+   * while the recovery itself waits on the run detail and the account behind
+   * it. Publishing the identity separately lets the one card that is waiting
+   * say so, instead of every error card in the thread reacting to the same
+   * pending read.
+   */
+  const assistantErrorRecoveryEventId$ = computed(
+    async (get): Promise<string | null> => {
+      const candidate = latestAssistantErrorCandidate(
+        await get(deps.visibleRenderedChatGroups$),
+      );
+      return candidate?.event.id ?? null;
+    },
+  );
   const sendContinueMessage$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       const meta = get(threadMeta$);
@@ -724,6 +739,11 @@ export function createAssistantErrorRecoverySignals(deps: {
           prompt: CONTINUE_PROMPT,
           hasTextContent: true,
           userMessage,
+          // The recovery card's model picker writes the thread selection, so
+          // the continue run already uses it. Sending it here is what lets the
+          // optimistic event carry the run-model annotation the transcript's
+          // model-change divider reads, instead of waiting for the server copy.
+          selectedModel: meta.selectedModel,
           ...(runOptions ? { runOptions } : {}),
           ...(features[FeatureSwitchKey.RealAgentInPreview]
             ? { realAgentInPreview: true }
@@ -769,6 +789,7 @@ export function createAssistantErrorRecoverySignals(deps: {
 
   return {
     assistantErrorRecovery$,
+    assistantErrorRecoveryEventId$,
     retryAssistantError$,
     resetCodexSubscriptionAndRetry$,
   };

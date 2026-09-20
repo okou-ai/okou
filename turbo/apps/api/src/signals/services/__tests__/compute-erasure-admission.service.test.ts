@@ -58,6 +58,11 @@ import {
   withActivityCommitBarrierFixture,
   advanceRunActivityClockFixture,
 } from "../../../test-fixtures/run-activity";
+import {
+  barrierQueryBinds,
+  barrierQueryText,
+  withDatabaseTransactionBarrierFixture,
+} from "../../../test-fixtures/account-erasure-subject";
 import { closeDbPool } from "../../../lib/db";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate, mockNow, clearMockNow } from "../../../lib/time";
@@ -615,6 +620,61 @@ describe("actual compute transactions versus the B1 projector", () => {
       });
     },
   );
+
+  it("coalesces ordinary Agent claim ownership locks into one statement", async () => {
+    const w = await writerFixture("claim");
+    const runId = w.runId;
+    if (!runId) {
+      throw new Error("Missing synthetic run");
+    }
+    // Driver-level exception: the production HTTP boundary cannot expose SQL
+    // statement count. Enter through the real claim endpoint and retain its
+    // successful response while measuring this explicit latency contract.
+    const selectedStatements: string[] = [];
+    await withDatabaseTransactionBarrierFixture(
+      {
+        select: (queryArgs) => {
+          const text = barrierQueryText(queryArgs);
+          return (
+            barrierQueryBinds(queryArgs, runId) &&
+            text.includes('from "agent_runs"') &&
+            text.includes('inner join "agent_sessions"') &&
+            text.includes('left join "agents"') &&
+            !text.includes('"runner_job_queue"')
+          );
+        },
+        stopAt: (queryArgs, _selectingStatement, transaction) => {
+          if (barrierQueryText(queryArgs) !== "commit") {
+            return false;
+          }
+          selectedStatements.push(...transaction.statements);
+          return true;
+        },
+        work: async (barrier) => {
+          const claiming = api.requestClaimRunnerJob(true, runId, [200]);
+          await barrier.entered;
+          barrier.release();
+          await claiming;
+        },
+      },
+      context.signal,
+    );
+    expect(selectedStatements).toHaveLength(6);
+    expect(selectedStatements[0]).toContain('from "agent_runs"');
+    expect(
+      selectedStatements.filter((statement) => {
+        return statement.includes("pg_advisory_xact_lock_shared");
+      }),
+    ).toHaveLength(2);
+    expect(selectedStatements[3]).toContain('from "account_erasure_jobs"');
+    expect(selectedStatements[4]).toStrictEqual(
+      expect.stringContaining("with locked_resource as materialized"),
+    );
+    expect(selectedStatements[4]).toContain('for key share of "agents"');
+    expect(selectedStatements[4]).toContain('for update of "agent_runs"');
+    expect(selectedStatements[4]).toContain('for update of "agent_sessions"');
+    expect(selectedStatements[5]).toContain('delete from "runner_job_queue"');
+  });
 
   it("promotes a surviving queued item behind a closed corrupt payload and retains its locator", async () => {
     const f = await fixture();

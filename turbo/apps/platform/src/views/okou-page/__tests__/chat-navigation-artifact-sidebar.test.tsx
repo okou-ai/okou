@@ -671,6 +671,17 @@ test("Preview a hosted site artifact in the thread sidebar", async () => {
   await waitFor(() => {
     expect(buttonNamed("Preview Launch site", artifactList())).toBeVisible();
   });
+  click(buttonNamed("Enter fullscreen", artifactList()));
+  await waitFor(() => {
+    expect(buttonNamed("Exit fullscreen", artifactList())).toBeInTheDocument();
+    expect(
+      buttonNamed("Preview Launch site", artifactList()),
+    ).toBeInTheDocument();
+  });
+  click(buttonNamed("Exit fullscreen", artifactList()));
+  await waitFor(() => {
+    expect(buttonNamed("Enter fullscreen", artifactList())).toBeInTheDocument();
+  });
   click(buttonNamed("Preview Launch site", artifactList()));
 
   await waitFor(() => {
@@ -684,7 +695,7 @@ test("Preview a hosted site artifact in the thread sidebar", async () => {
   });
 });
 
-test("Zoom and reset an image artifact preview", async () => {
+test("Keep image preview controls usable when toggling fullscreen", async () => {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,
   );
@@ -729,6 +740,39 @@ test("Zoom and reset an image artifact preview", async () => {
     expect(buttonNamed("Zoom in", artifactPreview())).toBeVisible();
     expect(buttonNamed("Zoom out", artifactPreview())).toBeVisible();
     expect(buttonNamed("Reset zoom", artifactPreview())).toBeVisible();
+    expect(
+      within(artifactPreview()).getByTestId(
+        "artifact-sidebar-image-zoom-level",
+      ),
+    ).toHaveTextContent("100%");
+  });
+
+  click(buttonNamed("Zoom in", artifactPreview()));
+  await waitFor(() => {
+    expect(
+      within(artifactPreview()).getByTestId(
+        "artifact-sidebar-image-zoom-level",
+      ),
+    ).toHaveTextContent("115%");
+  });
+
+  click(buttonNamed("Enter fullscreen", artifactPreview()));
+  await waitFor(() => {
+    expect(
+      buttonNamed("Exit fullscreen", artifactPreview()),
+    ).toBeInTheDocument();
+    expect(
+      within(artifactPreview()).getByTestId(
+        "artifact-sidebar-image-zoom-level",
+      ),
+    ).toHaveTextContent("100%");
+  });
+
+  click(buttonNamed("Exit fullscreen", artifactPreview()));
+  await waitFor(() => {
+    expect(
+      buttonNamed("Enter fullscreen", artifactPreview()),
+    ).toBeInTheDocument();
     expect(
       within(artifactPreview()).getByTestId(
         "artifact-sidebar-image-zoom-level",

@@ -22,7 +22,6 @@ import { server } from "../../../mocks/server";
 import {
   findPendingChatEventByPromptFixture,
   findTelegramChatEventByPromptFixture,
-  clearTelegramPublicBrandFixture,
   readChatEventContextFixture,
   setTelegramThinkingMessageIdFixture,
 } from "../../../test-fixtures/chat-events";
@@ -1554,10 +1553,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       telegramRootMessageId: `direct-message:${fixture.composeId}:claude-sonnet-5`,
       telegramUserLinkKind: "custom",
     });
-    // The current production API cannot create the old persisted shape after
-    // this schema ships. Clear only the additive field to emulate queued work
-    // admitted by an old API and prove it still launches during rollout.
-    await clearTelegramPublicBrandFixture(queuedParams.eventId);
     await setTelegramThinkingMessageIdFixture(queuedParams.eventId, "701");
     await completeCanonicalChatRun({
       runId: firstRunId,

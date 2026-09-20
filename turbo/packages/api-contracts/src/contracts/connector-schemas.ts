@@ -27,7 +27,7 @@ export type ConnectorReconnectReason = z.infer<
   typeof connectorReconnectReasonSchema
 >;
 
-export const connectorResponseSchema = z.object({
+export const builtinConnectorResponseSchema = z.object({
   id: z.uuid(),
   slug: connectorSlugSchema,
   authMethod: connectorAuthMethodIdSchema,
@@ -42,7 +42,9 @@ export const connectorResponseSchema = z.object({
   updatedAt: z.string(),
 });
 
-export type ConnectorResponse = z.infer<typeof connectorResponseSchema>;
+export type BuiltinConnectorResponse = z.infer<
+  typeof builtinConnectorResponseSchema
+>;
 
 export const connectorProvidedBindingNamespaceSchema = z.enum([
   "secrets",
@@ -100,14 +102,16 @@ export function guaranteedConnectorProvidedBindingNames(args: {
 /**
  * List connectors response
  */
-export const connectorListResponseSchema = z.object({
-  connectors: z.array(connectorResponseSchema),
+export const builtinConnectorListResponseSchema = z.object({
+  connectors: z.array(builtinConnectorResponseSchema),
   connectorProvidedBindings: z
     .array(connectorProvidedBindingSchema)
     .default([]),
 });
 
-export type ConnectorListResponse = z.infer<typeof connectorListResponseSchema>;
+export type BuiltinConnectorListResponse = z.infer<
+  typeof builtinConnectorListResponseSchema
+>;
 
 /**
  * Scope diff response schema
@@ -121,41 +125,44 @@ export const scopeDiffResponseSchema = z.object({
 
 export type ScopeDiffResponse = z.infer<typeof scopeDiffResponseSchema>;
 
-export const connectorOauthStartResponseSchema = z.object({
+export const builtinConnectorOauthStartResponseSchema = z.object({
   authorizationUrl: z.string(),
   connectionId: z.uuid().optional(),
   oauthAttemptId: z.uuid(),
 });
 
-export type ConnectorOauthStartResponse = z.infer<
-  typeof connectorOauthStartResponseSchema
+export type BuiltinConnectorOauthStartResponse = z.infer<
+  typeof builtinConnectorOauthStartResponseSchema
 >;
 
-export const connectorOauthDeviceAuthSessionStartResponseSchema = z.object({
-  sessionId: z.uuid(),
-  sessionToken: z.string(),
-  connectorSlug: connectorSlugSchema,
-  status: z.literal("pending"),
-  userCode: z.string(),
-  verificationUri: z.string(),
-  verificationUriComplete: z.string().optional(),
-  expiresIn: z.number(),
-  interval: z.number(),
-});
+export const builtinConnectorOauthDeviceAuthSessionStartResponseSchema =
+  z.object({
+    sessionId: z.uuid(),
+    sessionToken: z.string(),
+    connectorSlug: connectorSlugSchema,
+    status: z.literal("pending"),
+    userCode: z.string(),
+    verificationUri: z.string(),
+    verificationUriComplete: z.string().optional(),
+    expiresIn: z.number(),
+    interval: z.number(),
+  });
 
-export type ConnectorOauthDeviceAuthSessionStartResponse = z.infer<
-  typeof connectorOauthDeviceAuthSessionStartResponseSchema
+export type BuiltinConnectorOauthDeviceAuthSessionStartResponse = z.infer<
+  typeof builtinConnectorOauthDeviceAuthSessionStartResponseSchema
 >;
 
-export const connectorOauthDeviceAuthSessionPollRequestSchema = z.object({
-  sessionToken: z.string(),
-});
+export const builtinConnectorOauthDeviceAuthSessionPollRequestSchema = z.object(
+  {
+    sessionToken: z.string(),
+  },
+);
 
-export type ConnectorOauthDeviceAuthSessionPollRequest = z.infer<
-  typeof connectorOauthDeviceAuthSessionPollRequestSchema
+export type BuiltinConnectorOauthDeviceAuthSessionPollRequest = z.infer<
+  typeof builtinConnectorOauthDeviceAuthSessionPollRequestSchema
 >;
 
-export const connectorOauthDeviceAuthSessionPollResponseSchema =
+export const builtinConnectorOauthDeviceAuthSessionPollResponseSchema =
   z.discriminatedUnion("status", [
     z.object({
       status: z.literal("pending"),
@@ -163,7 +170,7 @@ export const connectorOauthDeviceAuthSessionPollResponseSchema =
     }),
     z.object({
       status: z.literal("complete"),
-      connector: connectorResponseSchema,
+      connector: builtinConnectorResponseSchema,
     }),
     z.object({
       status: z.literal("denied"),
@@ -182,11 +189,11 @@ export const connectorOauthDeviceAuthSessionPollResponseSchema =
     }),
   ]);
 
-export type ConnectorOauthDeviceAuthSessionPollResponse = z.infer<
-  typeof connectorOauthDeviceAuthSessionPollResponseSchema
+export type BuiltinConnectorOauthDeviceAuthSessionPollResponse = z.infer<
+  typeof builtinConnectorOauthDeviceAuthSessionPollResponseSchema
 >;
 
-export const connectorExternalCodeSessionStartResponseSchema = z.object({
+export const builtinConnectorExternalCodeSessionStartResponseSchema = z.object({
   sessionId: z.uuid(),
   sessionToken: z.string(),
   connectorSlug: connectorSlugSchema,
@@ -195,24 +202,26 @@ export const connectorExternalCodeSessionStartResponseSchema = z.object({
   expiresIn: z.number(),
 });
 
-export type ConnectorExternalCodeSessionStartResponse = z.infer<
-  typeof connectorExternalCodeSessionStartResponseSchema
+export type BuiltinConnectorExternalCodeSessionStartResponse = z.infer<
+  typeof builtinConnectorExternalCodeSessionStartResponseSchema
 >;
 
-export const connectorExternalCodeSessionCompleteRequestSchema = z.object({
-  sessionToken: z.string(),
-  code: z.string().trim().min(1).max(4096),
-});
+export const builtinConnectorExternalCodeSessionCompleteRequestSchema =
+  z.object({
+    sessionToken: z.string(),
+    code: z.string().trim().min(1).max(4096),
+  });
 
-export type ConnectorExternalCodeSessionCompleteRequest = z.infer<
-  typeof connectorExternalCodeSessionCompleteRequestSchema
+export type BuiltinConnectorExternalCodeSessionCompleteRequest = z.infer<
+  typeof builtinConnectorExternalCodeSessionCompleteRequestSchema
 >;
 
-export const connectorExternalCodeSessionCompleteResponseSchema = z.object({
-  status: z.literal("complete"),
-  connector: connectorResponseSchema,
-});
+export const builtinConnectorExternalCodeSessionCompleteResponseSchema =
+  z.object({
+    status: z.literal("complete"),
+    connector: builtinConnectorResponseSchema,
+  });
 
-export type ConnectorExternalCodeSessionCompleteResponse = z.infer<
-  typeof connectorExternalCodeSessionCompleteResponseSchema
+export type BuiltinConnectorExternalCodeSessionCompleteResponse = z.infer<
+  typeof builtinConnectorExternalCodeSessionCompleteResponseSchema
 >;

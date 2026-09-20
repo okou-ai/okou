@@ -1,7 +1,7 @@
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
-import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import {
   mailContract,
   type MailDraft,
@@ -143,7 +143,7 @@ function connectorResponse(args: {
   readonly email: string;
   readonly reconnectRequired: boolean;
   readonly updatedAt: string;
-}): ConnectorResponse {
+}): BuiltinConnectorResponse {
   return {
     id: args.connectionId,
     slug: "gmail",
@@ -238,7 +238,7 @@ describe("reconnecting the exact Gmail account required by a persisted mail card
     const completedAttempts = mockOAuthCompletions(context);
     const oauthAccounts: ConnectorAccountMutationIntent[] = [];
     context.mocks.api(
-      connectorOauthStartContract.start,
+      builtinConnectorOauthStartContract.start,
       ({ body, respond }) => {
         oauthAccounts.push(body.account);
         return respond(200, {
