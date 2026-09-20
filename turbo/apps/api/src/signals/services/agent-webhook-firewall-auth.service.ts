@@ -248,18 +248,18 @@ interface PreparedNonCustomFirewallAuth {
   readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
-interface PreparedBuiltinConnectorAutomaticFirewallAuth {
-  readonly kind: "connector-automatic";
-  readonly catalogAuth: "none" | "oauth";
+interface PreparedBuiltinMcpFirewallAuth {
+  readonly kind: "connector-mcp";
+  readonly authShape: "none" | "oauth";
   readonly connectorSlug: string;
   readonly connectorId: string;
   readonly authMethodId: string;
-  readonly expiresAt: number | null;
+  readonly expiresAt: number;
 }
 
 type PreparedFirewallAuth =
   | PreparedCustomFirewallAuth
-  | PreparedBuiltinConnectorAutomaticFirewallAuth
+  | PreparedBuiltinMcpFirewallAuth
   | PreparedNonCustomFirewallAuth;
 
 type MissingResolvedSecretFailure =
@@ -5844,7 +5844,18 @@ function applyCustomConnectorRoutingVariables(args: {
   return secrets;
 }
 
-function requestedAutomaticMcpCatalogAuth(args: {
+function requestedFirewallAuth(body: FirewallAuthBody) {
+  return {
+    ...(Object.keys(body.authHeaders).length === 0
+      ? {}
+      : { headers: body.authHeaders }),
+    ...(body.authBase === undefined ? {} : { base: body.authBase }),
+    ...(body.authQuery === undefined ? {} : { query: body.authQuery }),
+    ...(body.authAwsSigv4 === undefined ? {} : { awsSigv4: body.authAwsSigv4 }),
+  };
+}
+
+function requestedBuiltinMcpAuthShape(args: {
   readonly snapshot: ConnectorRuntimeSnapshot;
   readonly body: FirewallAuthBody;
 }): "none" | "oauth" | "mismatch" | null {
@@ -5855,40 +5866,133 @@ function requestedAutomaticMcpCatalogAuth(args: {
   }
   const mcpEndpoint = getConnectorRuntimeConnector(args.snapshot, connectorSlug)
     ?.catalogConnector.mcp?.endpoint;
-  if (matchedBase !== mcpEndpoint) {
+  if (mcpEndpoint === undefined || matchedBase !== mcpEndpoint) {
     return null;
   }
-  const currentCatalogApi = args.snapshot.serverFirewalls
-    .getRuntimeFirewall(connectorSlug)
-    ?.apis.find((api) => {
-      return api.base === matchedBase;
-    });
-  const catalogAuth = isDeepStrictEqual(
-    currentCatalogApi?.auth,
-    AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
-  )
-    ? "oauth"
-    : isDeepStrictEqual(currentCatalogApi?.auth, {})
-      ? "none"
-      : null;
-  if (catalogAuth === null) {
+  const requestedAuth = requestedFirewallAuth(args.body);
+  return isDeepStrictEqual(requestedAuth, {})
+    ? "none"
+    : isDeepStrictEqual(requestedAuth, AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH)
+      ? "oauth"
+      : "mismatch";
+}
+
+type BuiltinMcpFirewallAuthPreparation =
+  | {
+      readonly ok: true;
+      readonly prepared: PreparedBuiltinMcpFirewallAuth | null;
+      readonly expiresAt: number | null;
+    }
+  | { readonly ok: false; readonly response: ResolveFirewallAuthResult };
+
+function expectedBuiltinMcpCredentialAuth(
+  runtimeMethod: ConnectorRuntimeMethod,
+) {
+  if (
+    runtimeMethod.method.grant.kind !== "manual" ||
+    runtimeMethod.method.access.kind !== "static"
+  ) {
     return null;
   }
-  const requestedAuth = {
-    ...(Object.keys(args.body.authHeaders).length === 0
-      ? {}
-      : { headers: args.body.authHeaders }),
-    ...(args.body.authBase === undefined ? {} : { base: args.body.authBase }),
-    ...(args.body.authQuery === undefined
-      ? {}
-      : { query: args.body.authQuery }),
-    ...(args.body.authAwsSigv4 === undefined
-      ? {}
-      : { awsSigv4: args.body.authAwsSigv4 }),
+  const secretBindings = connectorAuthMethodRuntimeMetadata(
+    runtimeMethod.method,
+  ).runtimeBindings.filter((binding) => {
+    return binding.source.kind === "connector-secret";
+  });
+  const [binding] = secretBindings;
+  if (binding === undefined || secretBindings.length !== 1) {
+    return null;
+  }
+  return {
+    headers: {
+      Authorization: ["Bearer $", `{{ secrets.${binding.envName} }}`].join(""),
+    },
   };
-  return isDeepStrictEqual(requestedAuth, currentCatalogApi?.auth)
-    ? catalogAuth
-    : "mismatch";
+}
+
+async function prepareBuiltinMcpFirewallAuth(args: {
+  readonly db: Db;
+  readonly auth: SandboxAuth;
+  readonly body: FirewallAuthBody;
+  readonly orgId: string;
+  readonly snapshot: ConnectorRuntimeSnapshot;
+}): Promise<BuiltinMcpFirewallAuthPreparation> {
+  const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+  const runtimeConnector = connectorSlug
+    ? getConnectorRuntimeConnector(args.snapshot, connectorSlug)
+    : undefined;
+  if (
+    connectorSlug === undefined ||
+    runtimeConnector?.catalogConnector.mcp === undefined
+  ) {
+    return { ok: true, prepared: null, expiresAt: null };
+  }
+  // Account deletion or reconnect must end cached MCP credential authorization,
+  // including static credentials whose provider token has no expiry. Start
+  // the lease before reading the account so slow resolution cannot extend it.
+  const expiresAt =
+    Math.floor(nowDate().getTime() / 1000) + BUILTIN_MCP_AUTH_LEASE_SECONDS;
+  const requestedAuthShape = requestedBuiltinMcpAuthShape({
+    snapshot: args.snapshot,
+    body: args.body,
+  });
+  const sourceId = args.body.matchedFirewall?.sourceId;
+  if (sourceId === undefined || requestedAuthShape === null) {
+    return { ok: false, response: connectorNotConfigured() };
+  }
+  const [account] = await args.db
+    .select({
+      id: connectors.id,
+      authMethod: connectors.authMethod,
+      automaticAuthType: connectors.automaticAuthType,
+    })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, sourceId),
+        eq(connectors.connectorSlug, connectorSlug),
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.auth.userId),
+      ),
+    )
+    .limit(1);
+  const runtimeMethod = account
+    ? runtimeConnector.methods.get(account.authMethod)
+    : undefined;
+  if (!account || !runtimeMethod) {
+    return { ok: false, response: connectorNotConfigured() };
+  }
+  const grantKind = runtimeMethod.method.grant.kind;
+  if (grantKind === "none" || grantKind === "automatic") {
+    const expectedAuthShape =
+      grantKind === "none" ? "none" : account.automaticAuthType;
+    if (
+      expectedAuthShape === null ||
+      expectedAuthShape !== requestedAuthShape
+    ) {
+      return { ok: false, response: connectorNotConfigured() };
+    }
+    return {
+      ok: true,
+      prepared: {
+        kind: "connector-mcp",
+        authShape: requestedAuthShape,
+        connectorSlug,
+        connectorId: account.id,
+        authMethodId: account.authMethod,
+        expiresAt,
+      },
+      expiresAt,
+    };
+  }
+  const expectedAuth = expectedBuiltinMcpCredentialAuth(runtimeMethod);
+  if (
+    expectedAuth === null ||
+    !isDeepStrictEqual(requestedFirewallAuth(args.body), expectedAuth)
+  ) {
+    return { ok: false, response: connectorNotConfigured() };
+  }
+  return { ok: true, prepared: null, expiresAt };
 }
 
 async function prepareNonCustomFirewallAuth(args: {
@@ -5900,71 +6004,22 @@ async function prepareNonCustomFirewallAuth(args: {
   readonly forceRefreshStartedAtMicros: bigint | null;
 }): Promise<
   FirewallAuthPreparation<
-    | PreparedNonCustomFirewallAuth
-    | PreparedBuiltinConnectorAutomaticFirewallAuth
+    PreparedNonCustomFirewallAuth | PreparedBuiltinMcpFirewallAuth
   >
 > {
   const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
-  const connectorSlug = args.body.matchedFirewall?.connectorSlug;
-  const requestedAutomaticMcpAuth = requestedAutomaticMcpCatalogAuth({
-    snapshot: connectorCatalogSnapshot,
+  const builtinMcp = await prepareBuiltinMcpFirewallAuth({
+    db: args.db,
+    auth: args.auth,
     body: args.body,
+    orgId: args.orgId,
+    snapshot: connectorCatalogSnapshot,
   });
-  // Account deletion or reconnect must end cached MCP credential authorization,
-  // including static credentials whose provider token has no expiry. Start
-  // the lease before reading the account so slow resolution cannot extend it.
-  const builtinMcpExpiresAt =
-    connectorSlug !== undefined &&
-    getConnectorRuntimeConnector(connectorCatalogSnapshot, connectorSlug)
-      ?.catalogConnector.mcp !== undefined
-      ? Math.floor(nowDate().getTime() / 1000) + BUILTIN_MCP_AUTH_LEASE_SECONDS
-      : null;
-  if (
-    connectorSlug !== undefined &&
-    builtinMcpExpiresAt !== null &&
-    requestedAutomaticMcpAuth !== null
-  ) {
-    const sourceId = args.body.matchedFirewall?.sourceId;
-    if (sourceId === undefined) {
-      return { ok: false, response: connectorNotConfigured() };
-    }
-    const [account] = await args.db
-      .select({
-        id: connectors.id,
-        authMethod: connectors.authMethod,
-      })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, sourceId),
-          eq(connectors.connectorSlug, connectorSlug),
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.auth.userId),
-        ),
-      )
-      .limit(1);
-    if (
-      account &&
-      getConnectorRuntimeConnector(
-        connectorCatalogSnapshot,
-        connectorSlug,
-      )?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
-    ) {
-      if (requestedAutomaticMcpAuth === "mismatch") {
-        return { ok: false, response: connectorNotConfigured() };
-      }
-      return {
-        ok: true,
-        prepared: {
-          kind: "connector-automatic",
-          catalogAuth: requestedAutomaticMcpAuth,
-          connectorSlug,
-          connectorId: account.id,
-          authMethodId: account.authMethod,
-          expiresAt: builtinMcpExpiresAt,
-        },
-      };
-    }
+  if (!builtinMcp.ok) {
+    return builtinMcp;
+  }
+  if (builtinMcp.prepared !== null) {
+    return { ok: true, prepared: builtinMcp.prepared };
   }
   const decrypted = await decryptFirewallAuthSecrets(
     args.db,
@@ -5995,12 +6050,7 @@ async function prepareNonCustomFirewallAuth(args: {
     ok: true,
     prepared: {
       kind: "non-custom",
-      builtinMcpExpiresAt:
-        connectorSlug !== undefined &&
-        prepared.context.connectorAccessBySlug.get(connectorSlug)?.runtimeMethod
-          .method.grant.kind !== "none"
-          ? builtinMcpExpiresAt
-          : null,
+      builtinMcpExpiresAt: builtinMcp.expiresAt,
       connectorCatalogSnapshot,
       featureSwitchContext: decrypted.featureSwitchContext,
       secrets: decrypted.secrets,
@@ -6161,14 +6211,14 @@ async function resolveFirewallAuthMaterial(args: {
   readonly referenced: ReferencedAuthKeys;
   readonly prepared: PreparedFirewallAuth;
 }): Promise<FirewallAuthMaterialResolution> {
-  if (args.prepared.kind === "connector-automatic") {
-    if (args.prepared.catalogAuth === "none") {
+  if (args.prepared.kind === "connector-mcp") {
+    if (args.prepared.authShape === "none") {
       return {
         ok: true,
         material: {
           secrets: {},
           vars: {},
-          expiresAt: null,
+          expiresAt: args.prepared.expiresAt,
           refreshedConnectors: [],
           refreshedSecrets: [],
           missingSecretFailure: { kind: "connector-not-configured" },

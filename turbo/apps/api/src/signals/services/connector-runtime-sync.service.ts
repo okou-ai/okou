@@ -58,6 +58,18 @@ type BuiltinRuntimeTargetRegistration = Extract<
   { readonly kind: "builtin" }
 >;
 
+type ConnectorAccountResolution =
+  Awaited<ReturnType<typeof resolveConnectorAccounts>> extends ReadonlyMap<
+    string,
+    infer Resolution
+  >
+    ? Resolution
+    : never;
+
+type BuiltinConnectorCredentialAccessResult = ReturnType<
+  typeof resolveBuiltinConnectorCredentialAccess
+>;
+
 type ConnectorRuntimeCustomSyncResult = Extract<
   ConnectorRuntimeSyncResult,
   { readonly target: { readonly kind: "custom" } }
@@ -201,22 +213,23 @@ function authResolvesAtNetworkBoundary(auth: FirewallApi["auth"]): boolean {
 function builtinMcpCredentialResolution(args: {
   readonly snapshot: ConnectorRuntimeSelection | undefined;
   readonly registration: BuiltinRuntimeTargetRegistration;
-  readonly credentialAvailable: boolean;
+  readonly accountResolution: ConnectorAccountResolution | undefined;
+  readonly credentialAccess: BuiltinConnectorCredentialAccessResult | undefined;
 }): "network-boundary" | "none" | undefined {
   if (
     !args.snapshot ||
-    !args.credentialAvailable ||
+    args.credentialAccess?.kind !== "ok" ||
     !args.snapshot.serverFirewalls.isMcp(args.registration.connectorSlug)
   ) {
     return undefined;
   }
-  const credentialed =
-    args.snapshot.serverFirewalls
-      .getRuntimeFirewall(args.registration.connectorSlug)
-      ?.apis.some((api) => {
-        return authResolvesAtNetworkBoundary(api.auth);
-      }) ?? false;
-  return credentialed ? "network-boundary" : "none";
+  const grantKind =
+    args.credentialAccess.access.runtimeMethod.method.grant.kind;
+  return (args.accountResolution?.kind === "resolved" &&
+    args.accountResolution.account.automaticAuthType === "oauth") ||
+    (grantKind !== "none" && grantKind !== "automatic")
+    ? "network-boundary"
+    : "none";
 }
 
 async function loadCustomSnapshot(args: {
@@ -550,7 +563,8 @@ async function resolveConnectorRuntimeTargetStates(args: {
     const credentialResolution = builtinMcpCredentialResolution({
       snapshot: builtinCatalogSelection,
       registration,
-      credentialAvailable: credentialAccess?.kind === "ok",
+      accountResolution,
+      credentialAccess,
     });
     resolvedTargets.push({
       kind: "builtin",

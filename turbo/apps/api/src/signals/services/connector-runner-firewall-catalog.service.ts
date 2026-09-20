@@ -58,6 +58,9 @@ function createCatalog(
   const connectorFirewalls = snapshot.artifact.connectors.flatMap(
     (connector) => {
       const firewall = connectorCatalogFirewallConfig(connector);
+      // Pre-inline MCP Runs still carry named references resolved by draining
+      // Runners. Keep serving their published generated firewall until those
+      // sandboxes drain and the rollback floor is inline-capable; see #35654.
       return firewall === null ? [] : [projectRunnerRuntimeFirewall(firewall)];
     },
   );
