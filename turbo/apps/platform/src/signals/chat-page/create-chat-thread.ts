@@ -147,6 +147,7 @@ import {
   embedMermaidSignals,
   type MermaidDiagramRegistry,
 } from "../mermaid-diagram.ts";
+import { openDiagramLightbox$ } from "../okou-page/attachment-chips.ts";
 import { embedMarkdownArtifacts$ } from "./markdown-artifacts.ts";
 import {
   createImageLoadRegistry,
@@ -2185,7 +2186,7 @@ function createPagedEventResources({
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
-  const mermaidDiagrams = createMermaidDiagramRegistry();
+  const mermaidDiagrams = createMermaidDiagramRegistry(openDiagramLightbox$);
   const imageLoads = createImageLoadRegistry();
 
   const registerChatEvent$ = command(

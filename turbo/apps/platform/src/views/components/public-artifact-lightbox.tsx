@@ -18,32 +18,32 @@ import {
 import { useTranslation } from "react-i18next";
 
 import type {
-  SharedThreadArtifactPreview,
-  SharedThreadArtifactPreviewSignals,
-} from "../../signals/shared-thread-page/shared-thread-artifact-preview.ts";
+  PublicArtifactPreview,
+  PublicArtifactPreviewSignals,
+} from "../../signals/public-artifact-preview.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ArtifactPreviewBody } from "../okou-page/attachment-chips.tsx";
 import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
 
-/** Public-share dialog, with no owner sharing, editing, or Drive actions. */
-export function SharedThreadArtifactLightbox({
+/** Public-page dialog, with no owner sharing, editing, or Drive actions. */
+export function PublicArtifactLightbox({
   signals,
 }: {
-  readonly signals: SharedThreadArtifactPreviewSignals;
+  readonly signals: PublicArtifactPreviewSignals;
 }) {
   const current = useGet(signals.current$);
   return current ? (
-    <SharedThreadArtifactDialog signals={signals} current={current} />
+    <PublicArtifactDialog signals={signals} current={current} />
   ) : null;
 }
 
-function SharedThreadArtifactDialog({
+function PublicArtifactDialog({
   signals,
   current,
 }: {
-  readonly signals: SharedThreadArtifactPreviewSignals;
-  readonly current: SharedThreadArtifactPreview;
+  readonly signals: PublicArtifactPreviewSignals;
+  readonly current: PublicArtifactPreview;
 }) {
   const { t } = useTranslation();
   const visible = useGet(signals.visible$);
@@ -75,7 +75,7 @@ function SharedThreadArtifactDialog({
         mode={fullscreen ? "fullscreen" : "windowed"}
         overlayClassName="[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))] bg-gray-900/45 dark:bg-gray-900/45"
         contentClassName="flex flex-col gap-0 overflow-hidden bg-background p-0"
-        data-testid="shared-thread-artifact-lightbox"
+        data-testid="public-artifact-lightbox"
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
           <div className="min-w-0 flex-1">
@@ -93,8 +93,9 @@ function SharedThreadArtifactDialog({
                 : artifactFallbackSubtitle(current.preview.kind, current.title)}
             </div>
           </div>
-          <SharedThreadArtifactActions
+          <PublicArtifactActions
             signals={signals}
+            shareAvailable={current.source === "stored"}
             downloading={downloadState.state === "loading"}
             downloadAvailable={resource.state === "hasData"}
             onDownload={() => {
@@ -130,13 +131,15 @@ function SharedThreadArtifactDialog({
   );
 }
 
-function SharedThreadArtifactActions({
+function PublicArtifactActions({
   signals,
+  shareAvailable,
   downloading,
   downloadAvailable,
   onDownload,
 }: {
-  readonly signals: SharedThreadArtifactPreviewSignals;
+  readonly signals: PublicArtifactPreviewSignals;
+  readonly shareAvailable: boolean;
   readonly downloading: boolean;
   readonly downloadAvailable: boolean;
   readonly onDownload: () => void;
@@ -149,19 +152,21 @@ function SharedThreadArtifactActions({
   const pageSignal = useGet(pageSignal$);
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Button
-        variant="quiet"
-        size="icon-sm"
-        showTooltip
-        aria-label={t(($) => {
-          return $.artifacts.sharing.copyLink;
-        })}
-        onClick={() => {
-          detach(copyLink(pageSignal), Reason.DomCallback);
-        }}
-      >
-        <Share2 size={18} />
-      </Button>
+      {shareAvailable ? (
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          showTooltip
+          aria-label={t(($) => {
+            return $.artifacts.sharing.copyLink;
+          })}
+          onClick={() => {
+            detach(copyLink(pageSignal), Reason.DomCallback);
+          }}
+        >
+          <Share2 size={18} />
+        </Button>
+      ) : null}
       <Button
         variant="quiet"
         size="icon-sm"
