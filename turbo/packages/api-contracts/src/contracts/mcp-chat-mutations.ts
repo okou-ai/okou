@@ -2,9 +2,14 @@ import { z } from "zod";
 
 import { mcpChatMessageSchema } from "./mcp-chat-messages";
 
+export const mcpChatMessageTextSchema = z
+  .string()
+  .max(32_000)
+  .regex(/\S/u, "Message text must not be blank");
+
 export const mcpSendChatMessageInputSchema = z.strictObject({
   threadId: z.uuid().toLowerCase(),
-  text: z.string().max(32_000).regex(/\S/u, "Message text must not be blank"),
+  text: mcpChatMessageTextSchema,
   requestId: z.uuid().toLowerCase(),
 });
 
@@ -23,6 +28,11 @@ export const mcpSendChatMessageOutputSchema = z.strictObject({
   ]),
   runId: z.uuid().nullable(),
   url: z.url(),
+});
+
+export const mcpChatInputReceiptSchema = mcpSendChatMessageOutputSchema.omit({
+  replayed: true,
+  url: true,
 });
 
 export const mcpRevokeQueuedMessageInputSchema = z.strictObject({

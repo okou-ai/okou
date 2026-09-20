@@ -17,20 +17,47 @@ describe("MCP chat input schemas", () => {
       },
     });
     expect(z.toJSONSchema(mcpCreateChatThreadInputSchema)).toMatchObject({
-      properties: {
-        title: {
-          type: "string",
-          minLength: 1,
-          maxLength: 200,
-          pattern: "\\S",
+      anyOf: [
+        {
+          properties: {
+            title: {
+              type: "string",
+              minLength: 1,
+              maxLength: 200,
+              pattern: "\\S",
+            },
+            model: {
+              type: "string",
+              minLength: 1,
+              maxLength: 255,
+              pattern: "\\S",
+            },
+          },
+          required: ["requestId", "agentId", "title", "model"],
         },
-        model: {
-          type: "string",
-          minLength: 1,
-          maxLength: 255,
-          pattern: "\\S",
+        {
+          properties: {
+            title: {
+              type: "string",
+              minLength: 1,
+              maxLength: 200,
+              pattern: "\\S",
+            },
+            model: {
+              type: "string",
+              minLength: 1,
+              maxLength: 255,
+              pattern: "\\S",
+            },
+            message: {
+              type: "string",
+              maxLength: 32_000,
+              pattern: "\\S",
+            },
+          },
+          required: ["requestId", "title", "message"],
         },
-      },
+      ],
     });
     expect(z.toJSONSchema(mcpUpdateChatThreadInputSchema)).toMatchObject({
       properties: {
@@ -82,7 +109,7 @@ describe("MCP chat input schemas", () => {
 
     const create = z.toJSONSchema(mcpCreateChatThreadInputSchema);
     const update = z.toJSONSchema(mcpUpdateChatThreadInputSchema);
-    expect(JSON.stringify(create.properties?.model)).not.toContain('"enum"');
+    expect(JSON.stringify(create)).not.toContain('"enum"');
     expect(JSON.stringify(update.properties?.patch)).not.toContain('"enum"');
   });
 

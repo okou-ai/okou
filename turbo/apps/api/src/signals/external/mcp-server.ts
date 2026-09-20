@@ -573,30 +573,30 @@ function registerManageTools(
     "create_chat_thread",
     {
       description:
-        "Create an empty conversation without sending or starting a run. Choose a visible agent and selectable model from the discovery tools. Use one UUID requestId per intended conversation; within 24 hours, retry only the identical agent, exact title, and model. Replay returns current settings without reverting edits; expired, deleted, or conflicting identities fail. The threadId equals requestId. Follow nextAction to send; admission is checked then.",
+        "Create a conversation in the authorized organization, optionally with its first message. Without message, supply an explicit visible agentId and selectable model; this preserves empty-thread creation and returns a send_chat_message handoff. With message, agentId and model may be omitted: the visible organization default Agent is stored, while an omitted model follows current member/workspace defaults. Thread and first input are accepted atomically, then dispatch is attempted; follow get_chat_status because acceptance does not prove delivery or run success. Generate one UUID requestId per intended operation and retry within 24 hours only with the identical mode, exact values and optional-field presence. The threadId is the requestId and the input reference is stable. Deleted, expired or conflicting requests fail; never automatically retry uncertain old work.",
       inputSchema: mcpCreateChatThreadInputSchema,
       outputSchema: mcpCreateChatThreadOutputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
-        openWorldHint: false,
+        openWorldHint: true,
       },
     },
     (input, context) => {
       return mutationTool(
         access,
-        "okou:chat:manage",
+        "message" in input ? "okou:chat:send" : "okou:chat:manage",
         (signal) => {
           return access.createThread(input, signal);
         },
         AbortSignal.any([requestSignal, context.mcpReq.signal]),
         {
           summarize(data) {
-            return `Created chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}. Next: send_chat_message.`;
+            return `Created chat thread ${data.threadId}${data.replayed ? " (replayed request)" : ""}. Next: ${data.nextAction.tool}.`;
           },
           unavailableMessage:
-            "Creation result is unavailable. Retry the identical requestId, Agent, exact title and model within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
+            "Creation result is unavailable. Retry the identical requestId, mode, exact values and optional-field presence within 24 hours; inspect that threadId before creating new work. Never automatically retry an uncertain old request.",
         },
       );
     },

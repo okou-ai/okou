@@ -819,6 +819,166 @@ describe("MCP chat discovery and creation", () => {
     expect(sent.inputRef.threadId).toBe(requestId);
   });
 
+  it("atomically creates a conversation with its first message and resolves defaults", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      title: "Start from organization defaults",
+      message: "  Preserve this exact first message. 中文 😀  ",
+    };
+    const created = await createThread(token, args);
+    expect(created).toMatchObject({
+      threadId: args.requestId,
+      agentId: f.agent.agentId,
+      title: args.title,
+      model: {
+        selectedModel: null,
+        effectiveModel: "claude-sonnet-5",
+        source: "org_default",
+        admission: "checked_on_send",
+      },
+      replayed: false,
+      input: {
+        inputRef: { threadId: args.requestId, eventId: expect.any(String) },
+        disposition: expect.stringMatching(
+          /^(queued|reserved|associated|rejected|revoked)$/,
+        ),
+      },
+      nextAction: {
+        tool: "get_chat_status",
+        arguments: {
+          threadId: args.requestId,
+          inputRef: expect.objectContaining({ threadId: args.requestId }),
+        },
+      },
+    });
+    if (!("input" in created)) {
+      throw new Error("Expected the combined creation response");
+    }
+    expect(created.nextAction.arguments.inputRef).toStrictEqual(
+      created.input.inputRef,
+    );
+    expect(
+      Date.parse(created.input.retryUntil) -
+        Date.parse(created.input.acceptedAt),
+    ).toBe(24 * 60 * 60 * 1000);
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toMatchObject([{ text: args.message }]);
+
+    const replay = await createThread(token, args);
+    expect(replay).toMatchObject({
+      threadId: args.requestId,
+      replayed: true,
+      input: { inputRef: created.input.inputRef },
+    });
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toHaveLength(1);
+  });
+
+  it("deduplicates simultaneous combined creation and conflicts on changed intent or mode", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({ scope: defaultScopes });
+    const args = {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "One combined operation",
+      model: "claude-sonnet-5",
+      message: "Create and submit exactly once",
+    };
+    const results = await Promise.all([
+      createThread(token, args),
+      createThread(token, args),
+    ]);
+    expect(
+      results
+        .map((result) => {
+          return result.replayed;
+        })
+        .sort(),
+    ).toStrictEqual([false, true]);
+    const inputRefs = results.map((result) => {
+      if (!("input" in result)) {
+        throw new Error("Expected combined creation responses");
+      }
+      return result.input.inputRef;
+    });
+    expect(inputRefs[0]).toStrictEqual(inputRefs[1]);
+    expect(
+      (await getMessages(token, { threadId: args.requestId })).messages,
+    ).toHaveLength(1);
+
+    for (const conflicting of [
+      { ...args, title: "Changed title" },
+      { ...args, message: "Changed message" },
+      { ...args, agentId: undefined },
+      { ...args, model: undefined },
+      {
+        requestId: args.requestId,
+        agentId: args.agentId,
+        title: args.title,
+        model: args.model,
+      },
+    ]) {
+      expect(
+        structuredToolError(
+          await callTool(token, "create_chat_thread", conflicting),
+        ),
+      ).toMatchObject({ code: "request_id_conflict", retryable: false });
+    }
+
+    const emptyRequestId = randomUUID();
+    const empty = {
+      requestId: emptyRequestId,
+      agentId: f.agent.agentId,
+      title: "Empty mode stays empty",
+      model: "claude-sonnet-5",
+    };
+    await createThread(token, empty);
+    expect(
+      structuredToolError(
+        await callTool(token, "create_chat_thread", {
+          ...empty,
+          message: "Changing to combined mode must conflict",
+        }),
+      ),
+    ).toMatchObject({ code: "request_id_conflict", retryable: false });
+  });
+
+  it("requires send scope only for the message branch", async () => {
+    const f = await creationFixture();
+    const token = f.auth.token({
+      scope: `${requiredScopes} okou:chat:manage`,
+    });
+    const empty = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "Manage-only empty conversation",
+      model: "claude-sonnet-5",
+    });
+    expect(empty.nextAction.tool).toBe("send_chat_message");
+
+    const combinedId = randomUUID();
+    expect(
+      structuredToolError(
+        await callTool(token, "create_chat_thread", {
+          requestId: combinedId,
+          title: "Must not be created",
+          message: "Send scope is required",
+        }),
+      ),
+    ).toMatchObject({ code: "insufficient_scope", retryable: false });
+    expect(
+      (await listThreads(f.auth.token({ scope: defaultScopes }))).threads.map(
+        (thread) => {
+          return thread.threadId;
+        },
+      ),
+    ).not.toContain(combinedId);
+  });
+
   it("deduplicates simultaneous creation and replays current mutable settings without overwriting them", async () => {
     const f = await creationFixture();
     const args = {
@@ -1376,6 +1536,16 @@ describe("MCP chat discovery and creation", () => {
       { ...args, requestId: undefined },
       { ...args, prompt: "Must not execute" },
       { ...args, orgId: f.auth.orgId },
+      {
+        requestId: randomUUID(),
+        title: "Blank initial input",
+        message: "  ",
+      },
+      {
+        requestId: randomUUID(),
+        title: "Oversized initial input",
+        message: "x".repeat(32_001),
+      },
     ]) {
       const result = await callTool(token, "create_chat_thread", invalid);
       expect(structuredToolError(result)).toMatchObject({
@@ -5589,16 +5759,38 @@ describe("external MCP entry", () => {
                   {
                     name: "create_chat_thread",
                     inputSchema: {
-                      properties: {
-                        title: { pattern: "\\S" },
-                        model: {
-                          minLength: 1,
-                          maxLength: 255,
-                          pattern: "\\S",
+                      anyOf: [
+                        {
+                          properties: {
+                            title: { pattern: "\\S" },
+                            model: {
+                              minLength: 1,
+                              maxLength: 255,
+                              pattern: "\\S",
+                            },
+                          },
                         },
-                      },
+                        {
+                          properties: {
+                            title: { pattern: "\\S" },
+                            model: {
+                              minLength: 1,
+                              maxLength: 255,
+                              pattern: "\\S",
+                            },
+                            message: {
+                              maxLength: 32_000,
+                              pattern: "\\S",
+                            },
+                          },
+                        },
+                      ],
                     },
-                    annotations: { readOnlyHint: false, idempotentHint: true },
+                    annotations: {
+                      readOnlyHint: false,
+                      idempotentHint: true,
+                      openWorldHint: true,
+                    },
                   },
                   {
                     name: "update_chat_thread",
