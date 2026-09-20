@@ -376,12 +376,29 @@ export function AgentChatPage() {
     <div className="relative flex flex-1 flex-col min-h-0">
       <GrowthEntryHeader />
 
-      <main className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6">
+      <main className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 sm:px-6">
+        {/* Below `sm` the composer is the page's footer. Every text tool a
+            phone user already has puts the field within thumb reach at the
+            bottom of the screen, and this page was the one surface that asked
+            them to reach back up to the top of the viewport for it.
+
+            The reordering is CSS, not DOM: the composer keeps its authored
+            position so a screen reader still meets the field right after the
+            tagline that invites it, and `order` only decides where the box
+            paints. `flex-1` gives the column the scrollport's height so the
+            greeting's auto margins below have free space to take; the column
+            still grows past it when the content is taller, and auto margins
+            collapse to nothing there, so the composer scrolls with the page
+            instead of holding the floor. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-[900px] flex flex-col items-stretch gap-10 pt-8 pb-safe-or-12 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
+          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:flex-none sm:gap-10 sm:pt-[20vh] sm:pb-safe-or-[10vh]"
         >
-          <div className="flex w-full justify-center overflow-x-clip">
+          {/* The greeting keeps the space the composer left behind rather than
+              staying pinned under the header with a screen-deep hole under it.
+              Both margins are auto, so the free space is split above and below
+              it and the line lands in the middle of what is left. */}
+          <div className="flex w-full justify-center overflow-x-clip my-auto sm:my-0">
             <div
               data-slot="chat-greeting"
               className="flex max-w-full items-center gap-4 motion-safe:translate-x-[var(--chat-greeting-offset,calc(50%-1.75rem))]"
@@ -397,13 +414,26 @@ export function AgentChatPage() {
             </div>
           </div>
 
-          <ChatComposer signals={composerSignals} />
+          {/* The same two the thread page's footer carries.
+              `data-chat-composer` names the box the soft keyboard has to
+              reveal, and `pb-safe-or-2` takes the larger of the gutter and the
+              home indicator's reserve — the reserve being keyboard-aware, so
+              the card clears the gesture bar without floating above the
+              keyboard. */}
+          <div
+            data-chat-composer
+            className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
+          >
+            <ChatComposer signals={composerSignals} />
+          </div>
 
-          {taskChipsEnabled ? (
-            <ComposerTaskChips signals={composerSignals} />
-          ) : (
-            <StartCards onSelectPrompt={handleInputChange} />
-          )}
+          <div className="order-2 sm:order-none">
+            {taskChipsEnabled ? (
+              <ComposerTaskChips signals={composerSignals} />
+            ) : (
+              <StartCards onSelectPrompt={handleInputChange} />
+            )}
+          </div>
         </div>
       </main>
       <PersonalClaudeCodeDeviceAuthDialog />

@@ -8922,6 +8922,14 @@ function composerLayoutHeightClassNames(
   // On the start page the composer is the subject of the screen rather than a
   // dock under a transcript, so it opens 48px taller. The forward dialog shares
   // these signals and is not that page, so it keeps the compact shell.
+  //
+  // That reading only holds while the page has room to make it the subject.
+  // Under 600px the start page's composer sits on the floor of the screen with
+  // the starting ideas above it — the same job the docked composer does — and
+  // 196px of mostly empty field there reads as a demand for a long message
+  // rather than an invitation. So the narrow end of both start-page shells is
+  // the height the docked composer already uses, and the taller opening is
+  // moved behind `composer-wide`, which is where it was always describing.
   const startPage = !singleLineOnMobile && !forwardComposer;
   if (hasTemplateAttachment) {
     return singleLineOnMobile
@@ -8931,8 +8939,8 @@ function composerLayoutHeightClassNames(
         }
       : startPage
         ? {
-            input: "min-h-[162px]",
-            shell: "min-h-[234px]",
+            input: "min-h-[86px] composer-wide:min-h-[162px]",
+            shell: "min-h-[158px] composer-wide:min-h-[234px]",
           }
         : {
             input: "min-h-[114px]",
@@ -8946,8 +8954,8 @@ function composerLayoutHeightClassNames(
       }
     : startPage
       ? {
-          input: "min-h-[124px]",
-          shell: "min-h-[196px]",
+          input: "min-h-12 composer-wide:min-h-[124px]",
+          shell: "min-h-[120px] composer-wide:min-h-[196px]",
         }
       : {
           input: "min-h-[76px]",

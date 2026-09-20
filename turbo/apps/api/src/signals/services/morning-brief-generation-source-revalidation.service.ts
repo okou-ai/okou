@@ -18,10 +18,11 @@ import {
   morningBriefSourcesToRevalidate,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
-import { revalidateMorningBriefRetainedSources } from "./morning-brief-source-revalidation.service";
+import {
+  morningBriefRetainedCheckBudgetMs,
+  revalidateMorningBriefRetainedSources,
+} from "./morning-brief-source-revalidation.service";
 import { slackUserInstallation } from "./slack-data.service";
-
-const STORED_SOURCE_REVALIDATION_MS = 5000;
 
 type MorningBriefStoredSourceRefusal =
   | "result-not-found"
@@ -204,8 +205,11 @@ export const revalidateMorningBriefStoredGenerationSources$ = command(
       return null;
     }
 
+    // Sized for the sources this stored result actually has to re-prove. One
+    // constant spent on every source count is what let a five-source brief
+    // fail its own delivery admission while a one-source brief passed.
     const deadline = startMorningBriefSourceDeadline(
-      STORED_SOURCE_REVALIDATION_MS,
+      morningBriefRetainedCheckBudgetMs(proof.descriptors.length),
     );
     const admissionArgs = {
       db,
@@ -274,7 +278,10 @@ export const revalidateMorningBriefStoredGenerationSources$ = command(
       },
       signal,
     );
-    if (checked.kind === "owner-lost") {
+    if (checked.kind !== "checked") {
+      // A refusal and an unanswered check are both fail-closed here: this fence
+      // guards content that is about to be released, so it never treats an
+      // exhausted or unavailable check as proof the authority still holds.
       return "owner-revoked";
     }
     return checked.revoked.length > 0 ? "binding-changed" : null;
