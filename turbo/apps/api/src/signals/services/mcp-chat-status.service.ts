@@ -184,9 +184,7 @@ function runLifecycle(evidence: LifecycleEvidence): McpChatLifecycle {
   }
 }
 
-function deriveMcpChatLifecycle(
-  evidence: LifecycleEvidence,
-): McpChatLifecycle {
+function deriveMcpChatLifecycle(evidence: LifecycleEvidence): McpChatLifecycle {
   return inputLifecycle(evidence) ?? runLifecycle(evidence);
 }
 
