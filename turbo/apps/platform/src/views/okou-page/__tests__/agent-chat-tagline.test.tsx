@@ -57,3 +57,35 @@ test("The tagline holds its full line while it types", async () => {
   });
   expect(reserved?.textContent).toBe(fullLine);
 });
+
+/**
+ * The avatar reaches the row before the line does, because the line needs the
+ * agent's name, so it stands centred on its own until that resolves and the
+ * reserved line then moves it left by half of what the line occupies. The
+ * travel is a CSS transition, which jsdom has no layout to run; what it can
+ * hold is the pair of values the transition is written against, and that both
+ * of them come from the line this page is rendering rather than from anything
+ * an earlier visit left behind.
+ */
+test("The greeting settles against the line it is rendering", async () => {
+  mountedAgent();
+
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+
+  const greeting = await screen.findByTestId("chat-greeting");
+  const fullLine = screen
+    .getByTestId("chat-tagline")
+    .getAttribute("aria-label");
+  expect(fullLine).toBeTruthy();
+
+  // The row is settled because the line is on it, so the avatar is left where
+  // the layout puts it rather than held at the centre of an empty row.
+  expect(greeting.dataset.settled).toBe("true");
+
+  // The travel accompanies the typing, so its length is the line's own: one
+  // character every 40ms. A duration read from anywhere else would drift from
+  // the run it is supposed to last as long as.
+  expect(
+    greeting.style.getPropertyValue("--chat-greeting-settle-duration"),
+  ).toBe(`${String((fullLine ?? "").length * 40)}ms`);
+});

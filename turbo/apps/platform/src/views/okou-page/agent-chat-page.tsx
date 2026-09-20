@@ -1,5 +1,6 @@
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
+import type { CSSProperties } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -201,9 +202,15 @@ function useTagline(
   return taglines[index % taglines.length];
 }
 
+/**
+ * One character every 40ms. The greeting's settle is timed off the same number,
+ * because what moves the avatar is the line arriving.
+ */
+const TAGLINE_TYPEWRITER_SPEED_MS = 40;
+
 function TypewriterText({
   text,
-  speed = 40,
+  speed = TAGLINE_TYPEWRITER_SPEED_MS,
 }: {
   text: string;
   speed?: number;
@@ -404,27 +411,79 @@ export function AgentChatPage() {
           {/* The greeting keeps the space the composer left behind rather than
               staying pinned under the header with a screen-deep hole under it.
               Both margins are auto, so the free space is split above and below
-              it and the line lands in the middle of what is left. */}
-          <div className="flex w-full items-center justify-center gap-4 my-auto sm:my-0">
-            <ChatAgentAvatar agentId={currentChatAgentId} />
-            <h2
-              aria-label={tagline}
-              data-testid="chat-tagline"
-              className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+              it and the line lands in the middle of what is left.
+
+              While the offset below is on, the reserved line hangs past the
+              right edge; the scrollport above would answer that with a
+              horizontal scrollbar, so this row clips its own axis. `clip`
+              rather than `hidden` leaves the vertical axis visible for the pin
+              button. */}
+          <div className="flex w-full justify-center overflow-x-clip my-auto sm:my-0">
+            {/* The avatar is on the row before the line is: the tagline needs
+              the agent's name, so the frame stands alone for as long as that
+              takes to resolve. Centred alone and centred against a full line
+              are two different places, and the step between them is what this
+              animates.
+
+              `calc(50% - 1.75rem)` is that step, written without measuring
+              anything. 50% of this box puts its left edge on the row's centre,
+              and 1.75rem is half of the avatar frame's `h-14`, so together they
+              land the avatar's own centre there. The percentage resolves
+              against the box as it is painted, so the frame that widens this
+              box with the reserved line still draws the avatar exactly centred,
+              and the settle runs from that position rather than from a stale
+              one. Reduced motion keeps the offset off entirely, which resolves
+              to the settled layout.
+
+              The offset is held by the line the page is currently rendering,
+              rather than by how far the typewriter has got. The typed text is
+              module state with no page lifetime, and the route boundary only
+              drops the committed page when the route itself changes, so moving
+              between two agents' chats would read the previous visit's line and
+              render this row already settled.
+
+              The travel lasts exactly as long as the line takes to arrive,
+              because the line is what is moving the avatar. A fixed duration is
+              the wrong length for a line of any other length, and at 500ms it
+              also outran the typing badly enough to be the whole of why the
+              move read as mechanical: the row slid left faster than the text
+              grew right, so the end of the line travelled backwards for the
+              first third of the move before it began to advance. Half a sine
+              over the typing run keeps the row slower than the text at every
+              point, which leaves the line growing out of its own centre while
+              the avatar drifts off it. */}
+            <div
+              data-testid="chat-greeting"
+              data-settled={tagline !== ""}
+              style={
+                {
+                  "--chat-greeting-settle-duration": `${String(
+                    tagline.length * TAGLINE_TYPEWRITER_SPEED_MS,
+                  )}ms`,
+                } as CSSProperties
+              }
+              className="flex min-w-0 items-center gap-4 transition-transform duration-[var(--chat-greeting-settle-duration)] ease-[cubic-bezier(0.45,0.05,0.55,0.95)] motion-safe:translate-x-[calc(50%_-_1.75rem)] data-[settled=true]:translate-x-0"
             >
-              {/* The tagline is typed one character at a time. Centred, every
-                  character would widen the row and slide the avatar left, so
-                  the full line holds the box from the first frame and the typed
-                  text paints over it. The reserving copy stays in flow: it has
-                  to wrap exactly the way the visible text will, which a
-                  measured width could not promise. */}
-              <span aria-hidden className="invisible">
-                {tagline}
-              </span>
-              <span className="absolute inset-0">
-                <TypewriterText text={tagline} />
-              </span>
-            </h2>
+              <ChatAgentAvatar agentId={currentChatAgentId} />
+              <h2
+                aria-label={tagline}
+                data-testid="chat-tagline"
+                className="relative min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+              >
+                {/* The tagline is typed one character at a time. Centred, every
+                    character would widen the row and slide the avatar left, so
+                    the full line holds the box from the first frame and the
+                    typed text paints over it. The reserving copy stays in flow:
+                    it has to wrap exactly the way the visible text will, which a
+                    measured width could not promise. */}
+                <span aria-hidden className="invisible">
+                  {tagline}
+                </span>
+                <span className="absolute inset-0">
+                  <TypewriterText text={tagline} />
+                </span>
+              </h2>
+            </div>
           </div>
 
           {/* The same two the thread page's footer carries.
