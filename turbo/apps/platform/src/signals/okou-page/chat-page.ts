@@ -51,67 +51,70 @@ function taglineProgress(progress: number): number {
 
 function taglinePrefixWidth(range: Range, end: number): number {
   range.setEnd(range.startContainer, end);
-  const rects = Array.from(range.getClientRects());
-  const left = rects[0]?.left ?? 0;
-  return Math.max(
-    0,
-    ...rects.map((rect) => {
-      return rect.right - left;
-    }),
-  );
+  const lineWidths = new Map<number, number>();
+  for (const rect of range.getClientRects()) {
+    // A logical prefix may occupy separate bidi fragments on the same line.
+    // Count only selected glyphs, not the unrevealed space between fragments.
+    lineWidths.set(rect.top, (lineWidths.get(rect.top) ?? 0) + rect.width);
+  }
+  return Math.max(0, ...lineWidths.values());
 }
 
 function moveTagline(
-  element: HTMLElement,
+  heading: HTMLElement,
   row: HTMLElement,
   range: Range,
-  ends: number[],
-  position: number,
+  segment: Intl.SegmentData,
+  fraction: number,
 ): void {
-  const index = Math.floor(position);
-  const fullLength = ends.at(-1) ?? 0;
-  const previousWidth = taglinePrefixWidth(range, ends[index - 1] ?? 0);
-  const nextWidth = taglinePrefixWidth(range, ends[index] ?? fullLength);
-  const fullWidth = taglinePrefixWidth(range, fullLength);
-  const width =
-    previousWidth + (nextWidth - previousWidth) * (position - index);
+  const previousWidth = taglinePrefixWidth(range, segment.index);
+  const nextWidth = taglinePrefixWidth(
+    range,
+    segment.index + segment.segment.length,
+  );
+  const fullWidth = taglinePrefixWidth(range, segment.input.length);
+  const width = previousWidth + (nextWidth - previousWidth) * fraction;
   // Preserve the final line wrapping. Once the longest line has unfolded,
   // the remaining lines can type without moving the avatar any farther.
-  const headingWidth =
-    element.parentElement?.getBoundingClientRect().width ?? 0;
+  const headingWidth = heading.getBoundingClientRect().width;
   const visibleWidth = fullWidth === 0 ? 0 : (width / fullWidth) * headingWidth;
-  const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
-  const gapProgress = Math.min(1, position);
+  const gapProgress = segment.index === 0 ? fraction : 1;
+  // The row owns gap-4, so centering needs half of its four spacing units.
   row.style.setProperty(
     "--chat-greeting-offset",
-    `calc(50% - 1.75rem - ${(visibleWidth + gap * gapProgress) / 2}px)`,
+    `calc(50% - 1.75rem - ${visibleWidth / 2}px - var(--spacing) * ${gapProgress * 2})`,
   );
 }
 
 const startTaglineTypewriter$ = command(
   ({ set }, element: HTMLElement, signal: AbortSignal) => {
-    const text = element.textContent ?? "";
     const row = element.closest<HTMLElement>('[data-slot="chat-greeting"]');
     if (!row) {
       throw new Error("The tagline must be mounted inside its greeting row");
     }
+    const heading = element.parentElement;
+    if (!heading) {
+      throw new Error("The tagline must be mounted inside its heading");
+    }
     row.style.setProperty("--chat-greeting-offset", "calc(50% - 1.75rem)");
+
+    const node = element.firstChild;
+    if (node === null) {
+      set(internalTaglineDisplayed$, { text: "", displayed: "" });
+      return;
+    }
+    if (!(node instanceof Text)) {
+      throw new Error("The tagline measurement must contain its complete text");
+    }
+    const text = node.data;
     set(internalTaglineDisplayed$, { text, displayed: "" });
     if (!text) {
       return;
     }
-
-    const node = element.firstChild;
-    if (!(node instanceof Text)) {
-      throw new Error("The tagline measurement must contain its complete text");
-    }
     const range = document.createRange();
     range.setStart(node, 0);
-    const ends = Array.from(
+    const segments = Array.from(
       new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text),
-      ({ index, segment }) => {
-        return index + segment.length;
-      },
     );
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const startedAt = now();
@@ -134,21 +137,25 @@ const startTaglineTypewriter$ = command(
         if (progress === 0) {
           return false;
         }
-        const position = taglineProgress(progress) * ends.length;
-        moveTagline(element, row, range, ends, position);
+        const position = taglineProgress(progress) * segments.length;
         const index = Math.floor(position);
+        const segment = segments[index];
+        if (!segment) {
+          throw new Error("The reveal position must name an existing grapheme");
+        }
+        moveTagline(heading, row, range, segment, position - index);
         if (index !== displayedIndex) {
           displayedIndex = index;
           set(internalTaglineDisplayed$, {
             text,
-            displayed: text.slice(0, ends[index - 1] ?? 0),
+            displayed: text.slice(0, segment.index),
           });
         }
         return false;
       },
       TAGLINE_FRAME_MS,
       signal,
-      { testIntervalMs: TAGLINE_FRAME_MS },
+      { retryTransientErrors: false, testIntervalMs: TAGLINE_FRAME_MS },
     );
   },
 );
