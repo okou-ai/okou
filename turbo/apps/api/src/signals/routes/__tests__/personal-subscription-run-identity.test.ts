@@ -1,4 +1,3 @@
-import { convertPiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
 import {
   createHistoricalPinnedSubscriptionRunFixture,
   historicalClaudeSecretFirstFixture,
@@ -1116,31 +1115,17 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  it.each(
-    (
-      [
-        "user.banned",
-        "user.deleted",
-        "organization.deleted",
-        "organizationMembership.deleted",
-      ] as const
-    ).flatMap((eventType) => {
-      return (["legacy", "ready", "sandbox_waiting"] as const).map((phase) => {
-        return {
-          eventType,
-          phase,
-        };
-      });
-    }),
-  )(
-    "keeps $eventType as a hard revocation for a retained $phase subscription",
-    async ({ eventType, phase }) => {
+  it.each([
+    "user.banned",
+    "user.deleted",
+    "organization.deleted",
+    "organizationMembership.deleted",
+  ] as const)(
+    "keeps %s as a hard revocation for a retained subscription",
+    async (eventType) => {
       const f = await fixture("codex-oauth-token");
       const runId = await f.start();
       const claim = await f.claim(runId);
-      if (phase !== "legacy") {
-        await convertPiInferenceFixture(runId, phase);
-      }
       await support.deletePersonalModelProviderAccount(
         f.actor,
         accountId(claim, f.type),
@@ -1232,43 +1217,6 @@ describe("personal subscription run identity", () => {
           expect(denied.status).toBe(424);
         });
       });
-    },
-  );
-
-  it.each(["ready", "sandbox_waiting"] as const)(
-    "retains the captured account for %s until its final terminal reference",
-    async (phase) => {
-      const f = await fixture("codex-oauth-token");
-      const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, f.type);
-      await convertPiInferenceFixture(runId, phase);
-      expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
-        providerType: f.type,
-        credentialScope: "member",
-        account: { status: "connected", id: captured },
-      });
-      await support.deletePersonalModelProviderAccount(f.actor, captured);
-      await expect(resolve(claim, f.type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-      });
-      await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
-        status: "pending",
-        source: {
-          providerType: f.type,
-          credentialScope: "member",
-          account: { status: "unavailable" },
-        },
-      });
-      await runs.requestCancelRun(f.actor, runId, [200]);
-      expect(
-        (await runs.readRun(f.actor, runId)).source?.account,
-      ).toStrictEqual({
-        status: "unavailable",
-      });
-      expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
-        captured,
-      );
     },
   );
 

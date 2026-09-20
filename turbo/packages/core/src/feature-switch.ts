@@ -45,6 +45,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.DurableUserExport]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Resume user exports across bounded background job invocations. Enable after outgoing export cleanup workers have drained.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",
@@ -230,12 +236,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Spotify connector integration",
     enabled: false,
   },
-  [FeatureSwitchKey.StripeMarketplaceOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Show Stripe Marketplace OAuth as a sign-in option for the Stripe connector.",
-    enabled: false,
-  },
   [FeatureSwitchKey.OkouDebug]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -318,12 +318,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
-    enabled: false,
-  },
-  [FeatureSwitchKey.PiDeferredSandbox]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Allow Pi inference before Sandbox admission after lifecycle activation prerequisites are met.",
     enabled: false,
   },
   [FeatureSwitchKey.PiLoop]: {

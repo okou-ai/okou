@@ -65,6 +65,8 @@ surface; the index does not replace their detailed rules.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
   dated sink/copy inventory, provider capability gaps, and the parent-worker
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
+- [User data export](./user-data-export.md): ZIP v2 contents, readable instruction
+  scope, canonical chat history, checksum semantics, and download compatibility.
 - [Browser authorization request creation](./account-erasure-browser-authorization-creation.md):
   account-erasure admission, retained thread/run identity, SQL cost inventory
   and failure boundaries for minting cloud-browser authorization links.
@@ -157,7 +159,6 @@ surface; the index does not replace their detailed rules.
   thread-scoped card signals, and rendering rich interactive cards.
 - [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
   ordering, delayed events, visibility, and the newest-20 boundary.
-- [Durable Pi Sandbox consumer](./pi-deferred-sandbox-consumer.md): captured objects, demand admission, continuation readers and release proof.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):

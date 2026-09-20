@@ -27,10 +27,12 @@ const PROMPT = "Analyse this file and save it as a reusable template.";
 
 /**
  * What the run is told on top of that request, and the member is not: which
- * guide reads the file, and which catalog the result belongs in.
+ * guide reads the file — the dispatcher, not the single-branch copy the
+ * registry archive shares a name with — and which catalog the result belongs
+ * in.
  */
 const GUIDANCE =
-  "Analyse this file with the `reverse-template` skill. Publish the result with `okou user-template publish`, not the `okou presentation-template publish` that guide names, so it appears under Custom.";
+  "Analyse this file with the `reverse-template` dispatcher in `okou-ai/vm0-skills`: read `reverse-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 
 function additionalInfo(message: UserMessageDocument): string[] {
   return message.parts.flatMap((part) => {
@@ -994,7 +996,10 @@ test("Every source is sent with one message that lets the guide sort it", async 
   // long whatever the file turns out to be.
   expect(capture.runPrompts[0]).toBe(PROMPT);
   // The catalog still has to be said, because the guide's presentation branch
-  // names the other one — so it is said where only the run reads it.
+  // names the other one — so it is said where only the run reads it, along
+  // with the `--kind` a document needs to avoid the flag's presentation
+  // default, and the repository that tells the dispatcher apart from the
+  // registry's presentation-only copy.
   expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 

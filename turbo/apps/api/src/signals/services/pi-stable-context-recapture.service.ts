@@ -96,6 +96,10 @@ function featurePromptInputs(
       FeatureSwitchKey.PrivateArtifacts,
       featureContext,
     ),
+    runUsageEnabled: isFeatureEnabled(
+      FeatureSwitchKey.RunUsage,
+      featureContext,
+    ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, featureContext),
     vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext),
     larkEnabled: isFeatureEnabled(

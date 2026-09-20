@@ -17,7 +17,6 @@ import {
   materializeRunOutputEvents$,
   publishMaterializedChatProjection,
   type MaterializedChatProjection,
-  type RunOutputInferenceFence,
 } from "./agent-event-consumer-run-output.service";
 import {
   AgentEventRunNotFoundError,
@@ -49,7 +48,6 @@ interface AgentEventsBody {
 interface ReceiveAgentEventsParams {
   readonly auth: SandboxAuth;
   readonly body: AgentEventsBody;
-  readonly inferenceFence?: RunOutputInferenceFence;
 }
 
 type DispatchableConsumer =
@@ -211,9 +209,6 @@ export const receiveAgentEvents$ = command(
           diagnostics,
           suppliedCitations:
             params.body.piMemoryCitationTransport?.citations ?? [],
-          ...(params.inferenceFence
-            ? { inferenceFence: params.inferenceFence }
-            : {}),
         },
         signal,
       ),

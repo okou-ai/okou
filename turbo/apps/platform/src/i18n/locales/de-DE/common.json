@@ -5502,7 +5502,7 @@
         "starting": "Export wird gestartet"
       },
       "backToAssistant": "Zurück zu {{assistantName}}",
-      "description": "Laden Sie die Dateien und Textdatensätze herunter, die Sie in {{assistantName}} erstellt haben.",
+      "description": "Laden Sie Ihre Unterhaltungen, Erinnerungen und die Anweisungen der Agenten und Workflows herunter, auf die Sie in {{assistantName}} zugreifen können.",
       "documentTitle": "Daten exportieren",
       "duration": {
         "soon": "bald"
@@ -5513,11 +5513,12 @@
         "startFailed": "Der Export konnte nicht gestartet werden"
       },
       "scope": {
-        "agentInstructions": "Unterlagen zur Agentenanweisung",
-        "artifactsExcluded": "Artefakte sind in diesem Export nicht enthalten.",
-        "chatMessages": "Text-Chat-Nachrichten für Benutzer und Assistenten",
-        "memoryFiles": "Speicherdateien",
-        "workflowInstructions": "Anweisungen und Dateien für den Workflow SKILL.md"
+        "agentInstructions": "Anweisungen der Agenten, auf die Sie zugreifen können",
+        "chatMessages": "Ihre Chatnachrichten",
+        "chatThreads": "Ihre Chatverläufe",
+        "filesExcluded": "Artefakte, Anhänge und zusätzliche Workflow-Dateien sind nicht enthalten.",
+        "memoryFiles": "Ihre aktuellen Speicherdateien",
+        "workflowInstructions": "Anweisungen der Workflows, auf die Sie zugreifen können"
       },
       "status": {
         "checkingDescription": "Ihr aktueller Exportstatus wird hier angezeigt.",
@@ -6503,7 +6504,6 @@
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",
     "close": "Schließen",
-    "configurationHelp": "Beim Speichern eines Hosts wird die Verbindung nicht getestet. Agents wählen beim Sitzungsstart den gemeinsamen oder exklusiven Modus; der VNC-Server entscheidet über die Zulassung.",
     "configured": "Konfiguriert",
     "credential": {
       "add": "Zugangsdaten hinzufügen",
@@ -6525,6 +6525,8 @@
       "select": "Zugangsdaten auswählen",
       "sharedHelp_one": "Von {{count}} Host verwendet. Passwortänderungen betreffen diesen Host.",
       "sharedHelp_other": "Von {{count}} Hosts verwendet. Passwortänderungen betreffen alle diese Hosts.",
+      "summary_one": "{{count}} Zugangsdaten-Satz konfiguriert",
+      "summary_other": "{{count}} Zugangsdaten-Sätze konfiguriert",
       "unused": "Von keinem gespeicherten Host verwendet."
     },
     "credentialsTab": "Anmeldeinformationen",

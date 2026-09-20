@@ -5489,7 +5489,7 @@
         "starting": "Memulai ekspor"
       },
       "backToAssistant": "Kembali ke {{assistantName}}",
-      "description": "Unduh file dan catatan teks yang Anda buat di {{assistantName}}.",
+      "description": "Unduh percakapan, memori, serta instruksi agen dan alur kerja yang dapat Anda akses di {{assistantName}}.",
       "documentTitle": "Ekspor data",
       "duration": {
         "soon": "segera"
@@ -5500,11 +5500,12 @@
         "startFailed": "Gagal memulai ekspor"
       },
       "scope": {
-        "agentInstructions": "Dokumen instruksi agen",
-        "artifactsExcluded": "Artefak tidak disertakan dalam ekspor ini.",
-        "chatMessages": "Pesan chat teks pengguna dan asisten",
-        "memoryFiles": "File memori",
-        "workflowInstructions": "Instruksi dan file SKILL.md alur kerja"
+        "agentInstructions": "Instruksi agen yang dapat Anda akses",
+        "chatMessages": "Pesan chat Anda",
+        "chatThreads": "Percakapan chat Anda",
+        "filesExcluded": "Artefak, lampiran, dan file pendukung alur kerja tidak disertakan.",
+        "memoryFiles": "File memori Anda saat ini",
+        "workflowInstructions": "Instruksi alur kerja yang dapat Anda akses"
       },
       "status": {
         "checkingDescription": "Status ekspor terbaru Anda akan muncul di sini.",
@@ -6483,7 +6484,6 @@
     "add": "Tambahkan host",
     "cancel": "Batal",
     "close": "Tutup",
-    "configurationHelp": "Menyimpan host tidak menguji koneksinya. Agen memilih mode bersama atau eksklusif saat memulai sesi; server VNC menentukan apakah koneksi diterima.",
     "configured": "Terkonfigurasi",
     "credential": {
       "add": "Tambah kredensial",
@@ -6505,6 +6505,7 @@
       "select": "Pilih kredensial",
       "sharedHelp_one": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi host ini.",
       "sharedHelp_other": "Digunakan oleh {{count}} host. Perubahan kata sandi memengaruhi semuanya.",
+      "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host tersimpan mana pun."
     },
     "credentialsTab": "Kredensial",

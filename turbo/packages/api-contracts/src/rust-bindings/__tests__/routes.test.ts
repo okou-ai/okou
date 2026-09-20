@@ -42,21 +42,9 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/runners/jobs/:id/release",
-    rustModulePath: ["runners", "jobs", "by_id", "release"],
-    rustConstName: "RELEASE",
-  },
-  {
-    method: "POST",
     path: "/api/runners/jobs/:id/claim",
     rustModulePath: ["runners", "jobs", "by_id", "claim"],
     rustConstName: "CLAIM",
-  },
-  {
-    method: "GET",
-    path: "/api/runners/jobs/:id/pi-handoff/:offset",
-    rustModulePath: ["runners", "jobs", "by_id", "pi_handoff", "by_offset"],
-    rustConstName: "GET",
   },
   {
     method: "POST",

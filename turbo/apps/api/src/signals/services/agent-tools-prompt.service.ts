@@ -104,6 +104,7 @@ export function buildAgentToolsPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
+  readonly runUsageEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -122,6 +123,11 @@ export function buildAgentToolsPrompt(args: {
         ]
       : []),
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
+    ...(args.runUsageEnabled
+      ? [
+          "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
+        ]
+      : []),
     ...(args.vncEnabled
       ? [
           "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",

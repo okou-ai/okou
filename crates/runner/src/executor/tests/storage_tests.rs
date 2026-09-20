@@ -16,6 +16,7 @@ fn empty_manifest() -> Manifest {
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),
         instruction_cleanups: Vec::new(),
+        history_overlap_shadow: None,
     }
 }
 

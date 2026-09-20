@@ -5489,7 +5489,7 @@
         "starting": "エクスポートの開始"
       },
       "backToAssistant": "{{assistantName}} に戻る",
-      "description": "{{assistantName}} で作成したファイルとテキスト レコードをダウンロードします。",
+      "description": "{{assistantName}} の自分の会話、メモリ、アクセス可能なエージェントとワークフローの指示をダウンロードします。",
       "documentTitle": "データのエクスポート",
       "duration": {
         "soon": "すぐに"
@@ -5500,11 +5500,12 @@
         "startFailed": "エクスポートの開始に失敗しました"
       },
       "scope": {
-        "agentInstructions": "エージェントの指示文書",
-        "artifactsExcluded": "このエクスポートにはアーティファクトは含まれません。",
-        "chatMessages": "ユーザーとアシスタントのテキスト チャット メッセージ",
-        "memoryFiles": "メモリファイル",
-        "workflowInstructions": "ワークフロー SKILL.md の手順とファイル"
+        "agentInstructions": "アクセス可能なエージェントの指示",
+        "chatMessages": "自分のチャットメッセージ",
+        "chatThreads": "自分のチャットスレッド",
+        "filesExcluded": "アーティファクト、添付ファイル、ワークフローの補助ファイルは含まれません。",
+        "memoryFiles": "現在のメモリファイル",
+        "workflowInstructions": "アクセス可能なワークフローの指示"
       },
       "status": {
         "checkingDescription": "最新のエクスポート状態がここに表示されます。",
@@ -6483,7 +6484,6 @@
     "add": "ホストを追加",
     "cancel": "キャンセル",
     "close": "閉じる",
-    "configurationHelp": "保存しても接続テストは行われません。Agent が接続時に共有または排他モードを選び、VNC サーバーが接続の可否を決めます。",
     "configured": "設定済み",
     "credential": {
       "add": "認証情報を追加",
@@ -6505,6 +6505,7 @@
       "select": "認証情報を選択",
       "sharedHelp_one": "{{count}} 台のホストで使用中です。パスワード変更はこのホストに影響します。",
       "sharedHelp_other": "{{count}} 台のホストで使用中です。パスワード変更はすべてに影響します。",
+      "summary_other": "{{count}} 件の認証情報を設定済み",
       "unused": "使用しているホストはありません。"
     },
     "credentialsTab": "認証情報",

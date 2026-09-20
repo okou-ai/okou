@@ -5561,7 +5561,7 @@
         "starting": "Avvio dell'esportazione"
       },
       "backToAssistant": "Torna a {{assistantName}}",
-      "description": "Scarica i file e i record di testo che hai creato in {{assistantName}}.",
+      "description": "Scarica le tue conversazioni, la memoria e le istruzioni degli agenti e dei flussi di lavoro a cui puoi accedere in {{assistantName}}.",
       "documentTitle": "Esporta dati",
       "duration": {
         "soon": "presto"
@@ -5572,11 +5572,12 @@
         "startFailed": "Impossibile avviare l'esportazione"
       },
       "scope": {
-        "agentInstructions": "Documenti di istruzione dell'agente",
-        "artifactsExcluded": "Gli artefatti non sono inclusi in questa esportazione.",
-        "chatMessages": "Messaggi di chat di testo dell'utente e dell'assistente",
-        "memoryFiles": "File di memoria",
-        "workflowInstructions": "Istruzioni e file del flusso di lavoro SKILL.md"
+        "agentInstructions": "Istruzioni degli agenti a cui puoi accedere",
+        "chatMessages": "I tuoi messaggi di chat",
+        "chatThreads": "Le tue conversazioni di chat",
+        "filesExcluded": "Artefatti, allegati e file di supporto dei flussi di lavoro non sono inclusi.",
+        "memoryFiles": "I tuoi file di memoria attuali",
+        "workflowInstructions": "Istruzioni dei flussi di lavoro a cui puoi accedere"
       },
       "status": {
         "checkingDescription": "Il tuo ultimo stato di esportazione verrà visualizzato qui.",
@@ -6574,7 +6575,6 @@
     "add": "Aggiungi host",
     "cancel": "Annulla",
     "close": "Chiudi",
-    "configurationHelp": "Il salvataggio di un host non verifica la connessione. Gli agenti scelgono la modalità condivisa o esclusiva all’avvio della sessione; il server VNC controlla l’ammissione.",
     "configured": "Configurato",
     "credential": {
       "add": "Aggiungi credenziali",
@@ -6597,6 +6597,9 @@
       "sharedHelp_one": "Usate da {{count}} host. Le modifiche alla password interessano questo host.",
       "sharedHelp_many": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
       "sharedHelp_other": "Usate da {{count}} host. Le modifiche alla password li interessano tutti.",
+      "summary_one": "{{count}} credenziale configurata",
+      "summary_many": "{{count}} credenziali configurate",
+      "summary_other": "{{count}} credenziali configurate",
       "unused": "Nessun host salvato usa queste credenziali."
     },
     "credentialsTab": "Credenziali",

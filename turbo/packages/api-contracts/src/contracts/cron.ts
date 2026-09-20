@@ -829,3 +829,18 @@ export {
   cronMaterializeMemorySummariesResponseSchema,
   cronExtractPiMemoryStage1ResponseSchema,
 };
+
+/** Durable jobs are claimed with short leases; every invocation has a fixed work budget. */
+export const cronProcessBackgroundJobsContract = c.router({
+  process: {
+    method: "GET",
+    path: "/api/cron/process-background-jobs",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({ processed: z.number(), cleaned: z.number() }),
+      401: apiErrorSchema,
+    },
+    summary:
+      "Resume compatible background jobs and reclaim terminal export resources",
+  },
+});

@@ -120,6 +120,13 @@ import {
 } from "../../../test-fixtures/workflow-queue";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import {
+  installUserExportStorage,
+  readExportJsonLines,
+  readUserExportZip,
+} from "./helpers/user-export-storage";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
@@ -5406,6 +5413,69 @@ describe("Official Workflow installations", () => {
       [200],
     );
     expect(customStorage.body.storage_state).toBeNull();
+  });
+
+  it("exports the accepted Official Workflow instruction after a catalog revision", async () => {
+    const { actor, definitionName, headers, installed, zeroBlueprintName } =
+      await installOfficialWorkflowLifecycleScenario();
+    // The setup helper acknowledges agent writes without retaining reads.
+    // Replay those exact external uploads into a readable object store.
+    const uploads = context.mocks.s3.send.mock.calls
+      .map(([command]) => {
+        return command;
+      })
+      .filter((command): command is PutObjectCommand => {
+        return command instanceof PutObjectCommand;
+      });
+    const objects = createMiscRoutesApi(context);
+    for (const upload of uploads) {
+      objects.putS3Object(
+        requiredS3ObjectKey(upload.input.Key),
+        s3BodyBuffer(upload.input.Body),
+      );
+    }
+    const instruction = "Use the newly accepted official instruction.";
+    await syncCatalog(
+      catalog([
+        activeDefinition(
+          definitionName,
+          [scheduledBlueprint(true), onceBlueprint(), loopBlueprint()],
+          instruction,
+        ),
+        activeDefinition(zeroBlueprintName, []),
+      ]),
+    );
+    const current = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    expect(current.body.workflow.instruction).toBe(instruction);
+
+    const exports = createOpsLogsApi(context);
+    installUserExportStorage(context);
+    const started = await exports.requestPostUserExport(actor, [202]);
+    await flushWaitUntilForTest();
+    const status = await exports.requestGetUserExport(actor, [200]);
+    expect(status.body.job).toMatchObject({
+      id: started.body.jobId,
+      status: "completed",
+    });
+    const zip = readUserExportZip(
+      context,
+      `exports/${actor.userId}/${started.body.jobId}.zip`,
+    );
+    expect(readExportJsonLines(zip, "workflows.jsonl")).toContainEqual(
+      expect.objectContaining({
+        id: current.body.workflow.id,
+        officialDefinitionName: definitionName,
+        displayName: current.body.workflow.displayName,
+        description: current.body.workflow.description,
+        instruction,
+      }),
+    );
   });
 
   it("rejects duplicate Official Workflow installation on the same agent", async () => {

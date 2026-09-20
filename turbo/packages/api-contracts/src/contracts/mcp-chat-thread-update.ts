@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 import { chatThreadServiceTierSchema } from "./chat-threads";
+import { mcpChatModelIdSchema } from "./mcp-chat-discovery";
 import { mcpChatThreadSchema } from "./mcp-chat-threads";
-import { supportedRunModelSchema } from "./model-providers";
 
 export const mcpUpdateChatThreadInputSchema = z.strictObject({
   requestId: z.uuid().toLowerCase(),
@@ -13,18 +13,17 @@ export const mcpUpdateChatThreadInputSchema = z.strictObject({
         .string()
         .min(1)
         .max(200)
-        .refine((title) => {
-          return title.trim().length > 0;
-        }, "Provide a nonblank title")
+        .regex(/\S/u, "Provide a nonblank title")
         .optional(),
-      model: supportedRunModelSchema.nullable().optional(),
+      model: mcpChatModelIdSchema.nullable().optional(),
     })
     .refine(
       (patch) => {
         return Object.hasOwn(patch, "title") || Object.hasOwn(patch, "model");
       },
       { message: "Provide title and/or model" },
-    ),
+    )
+    .meta({ minProperties: 1 }),
 });
 
 export const mcpUpdateChatThreadOutputSchema = z.strictObject({

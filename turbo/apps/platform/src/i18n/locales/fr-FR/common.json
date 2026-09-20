@@ -5561,7 +5561,7 @@
         "starting": "Démarrage de l'exportation"
       },
       "backToAssistant": "Retour à {{assistantName}}",
-      "description": "Téléchargez les fichiers et les enregistrements texte que vous avez créés dans {{assistantName}}.",
+      "description": "Téléchargez vos conversations, votre mémoire et les instructions des agents et workflows auxquels vous avez accès dans {{assistantName}}.",
       "documentTitle": "Exporter les données",
       "duration": {
         "soon": "bientôt"
@@ -5572,11 +5572,12 @@
         "startFailed": "Échec du démarrage de l'export"
       },
       "scope": {
-        "agentInstructions": "Documents d'instruction pour l'agent",
-        "artifactsExcluded": "Les artéfacts ne sont pas inclus dans cet export.",
-        "chatMessages": "Messages de chat texte utilisateur et assistant",
-        "memoryFiles": "Fichiers de mémoire",
-        "workflowInstructions": "Instructions et fichiers du workflow SKILL.md"
+        "agentInstructions": "Instructions des agents auxquels vous avez accès",
+        "chatMessages": "Vos messages de chat",
+        "chatThreads": "Vos conversations de chat",
+        "filesExcluded": "Les artéfacts, les pièces jointes et les fichiers complémentaires des workflows ne sont pas inclus.",
+        "memoryFiles": "Vos fichiers de mémoire actuels",
+        "workflowInstructions": "Instructions des workflows auxquels vous avez accès"
       },
       "status": {
         "checkingDescription": "L'état de votre dernière exportation apparaîtra ici.",
@@ -6574,7 +6575,6 @@
     "add": "Ajouter un hôte",
     "cancel": "Annuler",
     "close": "Fermer",
-    "configurationHelp": "L’enregistrement d’un hôte ne teste pas sa connexion. Les agents choisissent le mode partagé ou exclusif au démarrage d’une session ; le serveur VNC contrôle l’admission.",
     "configured": "Configuré",
     "credential": {
       "add": "Ajouter des identifiants",
@@ -6597,6 +6597,9 @@
       "sharedHelp_one": "Utilisés par {{count}} hôte. Les changements de mot de passe affectent cet hôte.",
       "sharedHelp_many": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
       "sharedHelp_other": "Utilisés par {{count}} hôtes. Les changements de mot de passe les affectent tous.",
+      "summary_one": "{{count}} identifiant configuré",
+      "summary_many": "{{count}} identifiants configurés",
+      "summary_other": "{{count}} identifiants configurés",
       "unused": "Aucun hôte enregistré n’utilise ces identifiants."
     },
     "credentialsTab": "Identifiants",
