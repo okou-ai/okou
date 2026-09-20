@@ -5,6 +5,7 @@ import {
   useLastLoadable,
   useLastResolved,
   useLoadable,
+  useResolved,
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -701,7 +702,7 @@ function ArtifactDialogImageBody({
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
 }) {
-  const resourceUrl = useLastResolved(preview.resourceUrl$) ?? null;
+  const resourceUrl = useResolved(preview.resourceUrl$) ?? null;
   return (
     <ArtifactDialogImageStage
       filename={filename}
