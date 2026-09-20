@@ -752,16 +752,19 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: crates -> target
-          shared-key: ${{ matrix.cacheSuffix }}-rootfs-process
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          shared-key: ${{ matrix.cacheSuffix }}-rootfs-process-local
+          # Seed an isolated PR cache for the controlled warm-profile measurement.
+          # Restore main-only persistence after recording the candidate evidence.
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
 
       - name: Cross-compile rootfs process tests for ${{ matrix.label }}
         working-directory: crates
         run: |
-          TEST_BIN=$(cargo test --no-run --profile ci --target "$TARGET_TRIPLE" \
+          TEST_BIN=$(cargo test --no-run --profile local --target "$TARGET_TRIPLE" \
             -p runner --bin runner --message-format=json | \
             jq -r 'select(.reason == "compiler-artifact" and .target.name == "runner" and .profile.test) | .executable // empty')
           test -n "$TEST_BIN"
+          echo "Rootfs process test executable: $(stat -c '%s' "$TEST_BIN") bytes ($TEST_BIN)"
           cp "$TEST_BIN" target/runner-rootfs-process-test
           echo "TEST_BIN=crates/target/runner-rootfs-process-test" >> "$GITHUB_ENV"
 

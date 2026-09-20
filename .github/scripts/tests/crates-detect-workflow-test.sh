@@ -131,6 +131,17 @@ jq -e '
   ($rootfs_process.if | contains("needs.detect.outputs.runner-changed")) and
   ($rootfs_process.if | contains("needs.detect.outputs.ci-changed")) and
   any($rootfs_process.steps[]?;
+    ((.uses // "") | startswith("Swatinem/rust-cache@")) and
+    .with["shared-key"] == "${{ matrix.cacheSuffix }}-rootfs-process-local"
+  ) and
+  any($rootfs_process.steps[]?;
+    (.name // "" | startswith("Cross-compile rootfs process tests")) and
+    (.run | contains("--profile local")) and
+    (.run | contains("stat -c")) and
+    (.run | contains("%s")) and
+    (.run | contains(".target.name == \"runner\" and .profile.test"))
+  ) and
+  any($rootfs_process.steps[]?;
     .name == "Run rootfs process ownership tests on metal" and
     (.run | contains("sudo unshare --mount --pid --fork --kill-child --mount-proc")) and
     (.run | contains("--ignored --exact")) and
