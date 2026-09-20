@@ -1710,17 +1710,24 @@ async fn prepare_guest_storage(
                 let mut guest_manifest = prepared.plan.into_guest_manifest();
                 guest_manifest.history_overlap_shadow = shadow;
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
+                let download_result =
+                    super::storage::download_storages_with_files_observing_transport(
+                        sandbox,
+                        context,
+                        guest_manifest,
+                        &files,
+                        |transport| {
+                            record_storage_history_overlap_transport(telemetry, transport);
+                        },
+                    )
+                    .await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
                     download_result.is_ok(),
                     download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
                 );
-                download_result.map(|transport| {
-                    record_storage_history_overlap_transport(telemetry, transport);
-                    deferred
-                })
+                download_result.map(|_| deferred)
             }
         } else {
             let runtime_dir = guest_runtime_dir(context.run_id)?;
@@ -1754,17 +1761,24 @@ async fn prepare_guest_storage(
                 let mut guest_manifest = plan.into_guest_manifest();
                 guest_manifest.history_overlap_shadow = shadow;
                 let download_started = Instant::now();
-                let download_result = super::storage::download_storages_with_files(sandbox, context, guest_manifest, &files).await;
+                let download_result =
+                    super::storage::download_storages_with_files_observing_transport(
+                        sandbox,
+                        context,
+                        guest_manifest,
+                        &files,
+                        |transport| {
+                            record_storage_history_overlap_transport(telemetry, transport);
+                        },
+                    )
+                    .await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
                     download_result.is_ok(),
                     download_result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
                 );
-                download_result.map(|transport| {
-                    record_storage_history_overlap_transport(telemetry, transport);
-                    deferred
-                })
+                download_result.map(|_| deferred)
             }
         }
     }

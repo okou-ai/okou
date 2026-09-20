@@ -37,11 +37,11 @@ pub(crate) fn classify(shadow: &HistoryOverlapShadow) -> Classification {
         return Classification::IneligibleLogicalOverlap;
     }
 
-    let Ok(history_physical) = resolve_existing_directory(&history_logical) else {
+    let Ok(history_physical) = resolve_physical_identity(&history_logical) else {
         return Classification::IneligibleUnresolvedIdentity;
     };
     for storage in &storage_logical {
-        let Ok(storage_physical) = resolve_existing_directory(storage) else {
+        let Ok(storage_physical) = resolve_physical_identity(storage) else {
             return Classification::IneligibleUnresolvedIdentity;
         };
         if paths_conflict(&history_physical, &storage_physical) {
@@ -77,16 +77,33 @@ fn normalize_absolute(path: &str) -> Result<PathBuf, ()> {
     Ok(normalized)
 }
 
-fn resolve_existing_directory(path: &Path) -> Result<PathBuf, ()> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| ())?;
-    if !metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
-        return Err(());
+/// Resolve the existing prefix through Guest symlinks, then append the missing suffix without
+/// creating it. A non-directory or otherwise unresolved prefix fails closed.
+fn resolve_physical_identity(path: &Path) -> Result<PathBuf, ()> {
+    let mut existing = path;
+    let mut missing = Vec::new();
+    loop {
+        match fs::symlink_metadata(existing) {
+            Ok(metadata) => {
+                if !metadata.file_type().is_dir() && !metadata.file_type().is_symlink() {
+                    return Err(());
+                }
+                let mut physical = fs::canonicalize(existing).map_err(|_| ())?;
+                if !fs::metadata(&physical).map_err(|_| ())?.is_dir() {
+                    return Err(());
+                }
+                for component in missing.iter().rev() {
+                    physical.push(component);
+                }
+                return Ok(physical);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(existing.file_name().ok_or(())?.to_os_string());
+                existing = existing.parent().ok_or(())?;
+            }
+            Err(_) => return Err(()),
+        }
     }
-    let canonical = fs::canonicalize(path).map_err(|_| ())?;
-    if !fs::metadata(&canonical).map_err(|_| ())?.is_dir() {
-        return Err(());
-    }
-    Ok(canonical)
 }
 
 fn paths_conflict(left: &Path, right: &Path) -> bool {
@@ -159,20 +176,44 @@ mod tests {
     }
 
     #[test]
-    fn missing_and_dangling_roots_are_unresolved_without_creation() {
+    fn missing_descendants_resolve_from_existing_ancestors_without_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let history = dir.path().join("history").join("session");
+        let storage = dir.path().join("storage").join("mount");
+
+        assert_eq!(
+            classify(&shadow(&history, &[&storage])),
+            Classification::EligibleDisjoint
+        );
+        assert!(!dir.path().join("history").exists());
+        assert!(!dir.path().join("storage").exists());
+    }
+
+    #[test]
+    fn missing_descendants_beneath_symlink_aliases_are_physical_conflicts() {
+        let dir = tempfile::tempdir().unwrap();
+        let physical = dir.path().join("physical");
+        fs::create_dir_all(&physical).unwrap();
+        let alias = dir.path().join("alias");
+        symlink(&physical, &alias).unwrap();
+        let history = physical.join("missing").join("session");
+        let storage = alias.join("missing").join("session");
+
+        assert_eq!(
+            classify(&shadow(&history, &[&storage])),
+            Classification::IneligiblePhysicalOverlap
+        );
+        assert!(!physical.join("missing").exists());
+    }
+
+    #[test]
+    fn dangling_roots_are_unresolved() {
         let dir = tempfile::tempdir().unwrap();
         let history = dir.path().join("history");
-        let missing = dir.path().join("missing").join("storage");
         fs::create_dir_all(&history).unwrap();
-        assert_eq!(
-            classify(&shadow(&history, &[&missing])),
-            Classification::IneligibleUnresolvedIdentity
-        );
-        assert!(!missing.exists());
-        assert!(!dir.path().join("missing").exists());
-
         let dangling = dir.path().join("dangling");
         symlink(dir.path().join("absent"), &dangling).unwrap();
+
         assert_eq!(
             classify(&shadow(&history, &[&dangling])),
             Classification::IneligibleUnresolvedIdentity

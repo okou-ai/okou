@@ -6,7 +6,10 @@ use guest_contracts::storage_manifest::{HistoryOverlapShadow, Manifest, StorageE
 use sandbox::ExecResult;
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 
-use super::super::storage::{HistoryOverlapShadowTransport, download_storages_with_files};
+use super::super::storage::{
+    HistoryOverlapShadowTransport, download_storages_with_files,
+    download_storages_with_files_observing_transport,
+};
 use super::super::{ExecutorConfig, guest_runtime_dir};
 use super::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, api_storage, create_overridden_sandbox, minimal_context,
@@ -400,6 +403,76 @@ async fn unsplit_json_request_carries_overlap_shadow() {
 }
 
 #[tokio::test]
+async fn json_shadow_budget_omission_preserves_dedicated_transport() {
+    let sandbox = MockSandbox::new("json-shadow-budget");
+    let roots = (0..16)
+        .map(|index| format!("/{index:04}{}", "x".repeat(2990)))
+        .collect::<Vec<_>>();
+    let mut manifest = Manifest {
+        storages: Vec::new(),
+        artifacts: Vec::new(),
+        cleanup_paths: roots.clone(),
+        instruction_cleanups: Vec::new(),
+        history_overlap_shadow: None,
+    };
+    let original_json = serde_json::to_vec(&manifest).unwrap();
+    assert!(original_json.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES);
+    manifest.history_overlap_shadow =
+        Some(HistoryOverlapShadow::new("/history".into(), roots).unwrap());
+    assert!(
+        serde_json::to_vec(&manifest).unwrap().len() > guest_control_proto::MAX_EXEC_STDIN_BYTES
+    );
+
+    let transport = download_storages_with_files(&sandbox, &minimal_context(), manifest, &[])
+        .await
+        .unwrap();
+
+    assert_eq!(transport, HistoryOverlapShadowTransport::DescriptorBudget);
+    assert!(sandbox.write_file_calls().is_empty());
+    assert!(sandbox.exec_calls().is_empty());
+    let calls = sandbox.storage_manifest_calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].manifest_json, original_json);
+}
+
+#[tokio::test]
+async fn shadow_transport_is_observed_before_storage_failure() {
+    let sandbox = MockSandbox::new("json-shadow-failure");
+    sandbox.push_exec_result(Ok(ExecResult::new(
+        1,
+        Vec::new(),
+        b"storage preparation failed".to_vec(),
+    )));
+    let roots = (0..16)
+        .map(|index| format!("/{index:04}{}", "x".repeat(2990)))
+        .collect::<Vec<_>>();
+    let manifest = Manifest {
+        storages: Vec::new(),
+        artifacts: Vec::new(),
+        cleanup_paths: roots.clone(),
+        instruction_cleanups: Vec::new(),
+        history_overlap_shadow: Some(HistoryOverlapShadow::new("/history".into(), roots).unwrap()),
+    };
+    let mut observed = None;
+
+    let error = download_storages_with_files_observing_transport(
+        &sandbox,
+        &minimal_context(),
+        manifest,
+        &[],
+        |transport| observed = Some(transport),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error.to_string().contains("storage download failed"));
+    assert_eq!(
+        observed,
+        Some(HistoryOverlapShadowTransport::DescriptorBudget)
+    );
+}
+
+#[tokio::test]
 async fn unsplit_decoded_request_carries_overlap_shadow() {
     let fixture = DeliveryFixture::new(1, 1, 604).await;
     let sandbox = MockSandbox::new("decoded-shadow-unsplit");
@@ -457,7 +530,16 @@ async fn oversized_split_json_request_keeps_overlap_shadow_without_binary_budget
     let fixture = DeliveryFixture::new(3, 3, 35_000).await;
     let sandbox = MockSandbox::new("decoded-shadow-json-first");
     let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
-    files.pop().unwrap();
+    let (ordinary_mount, _) = files.pop().unwrap();
+    let ordinary_entry = manifest
+        .storages
+        .iter_mut()
+        .find(|entry| entry.mount_path == ordinary_mount)
+        .unwrap();
+    ordinary_entry.archive_url = Some(format!(
+        "https://storage.example/archive?signature={}",
+        "x".repeat(storage_files::MAX_MANIFEST_BYTES)
+    ));
     let roots = (0..16)
         .map(|index| format!("/{index:04}{}", "x".repeat(4090)))
         .collect();

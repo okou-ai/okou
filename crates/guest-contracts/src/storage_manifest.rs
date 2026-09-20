@@ -534,6 +534,16 @@ mod tests {
             "history overlap shadow storage root count exceeds bounds"
         );
 
+        let total_error = HistoryOverlapShadow::new(
+            "/history".into(),
+            vec!["x".repeat(HISTORY_OVERLAP_SHADOW_MAX_PATH_BYTES); 17],
+        )
+        .unwrap_err();
+        assert_eq!(
+            total_error,
+            "history overlap shadow path bytes exceed bounds"
+        );
+
         let json = json!({
             "storageMounts": [],
             "historyOverlapShadow": {
