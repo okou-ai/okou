@@ -1338,6 +1338,17 @@ generic server/overload evidence from exact terminal text. It cannot undo
 retries already performed by an old SDK. No new protocol, database column or
 session format is introduced, and local-deadline handoff is unchanged.
 
+Codex access-program rejection adds `codex_access_program_unavailable` under
+that same open-token contract. The API accepts and persists future snake-case
+tokens, so a new Runner talking to an older API remains functional but receives
+generic failure presentation and the older unknown-token warning policy. An old
+Runner talking to a new API omits the reason and keeps its existing behavior.
+With both artifacts updated, the exact trusted terminal
+`access_programs.cyber` rejection receives specific guidance, Runner INFO
+telemetry, and no API WARN/ERROR. The run remains failed and retains its original
+error. There is no schema migration, historical backfill, replay, retry,
+credential change, rollout switch, or production-observation authorization.
+
 Queued or active commit-addressed contexts can retain the old CLI. Release
 acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
 the controlled fixture against that artifact, and observe a fixed 24-hour
