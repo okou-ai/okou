@@ -6288,7 +6288,13 @@ describe("external MCP entry", () => {
       expect(status).toMatchObject({
         structuredContent: {
           threadId: sent.threadId,
-          input: { ref: receipt.inputRef, state: "rejected" },
+          lifecycle: {
+            phase: "settled",
+            outcome: "rejected",
+            output: "none",
+          },
+          messages: null,
+          retryAfterMs: null,
         },
       });
       const representativeResults = [

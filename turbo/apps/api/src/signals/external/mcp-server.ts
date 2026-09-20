@@ -1045,20 +1045,20 @@ function registerSearchAndStatusTools(
         "inputRef, observes the latest run. Set waitMs for an exact input only to add a bounded " +
         "wait/read after the first observation; zero or omission stays immediate, and the server " +
         "clamps positive waits to 8 seconds with at most 5 observations. wait reports ready, " +
-        "deadline or ordinary status; deadline and waiter capacity are successful current-state " +
-        "reads, not run outcomes. Missing input associations never select another run. " +
+        "deadline or ordinary status; deadline or waiter capacity returns current state, not a " +
+        "run outcome. Missing input associations never select another run. " +
         "queued does not prove delivery, launch provenance or model compliance. " +
         "Internal input, run, cancellation-recovery and output observations are not returned. " +
         "Several inputs can share a run and its output. A terminal run may still have pending/partial " +
         "output, including cancellation recovery. ready means current materialized output is readable; " +
         "late output may still arrive. Positive waits return the first bounded messagePage on ready; " +
         "follow its cursors and the messages tool handoff for complete content. Disconnect cancels " +
-        "only this read waiter, never the accepted run. Honor retryAfterMs and back off repeated polls. " +
+        "only the waiter, never the accepted run. Honor retryAfterMs and back off repeated polls. " +
         "Original references survive live retention " +
         "through retained archives within the same 8 MiB gzip, 32 MiB history, 50,000-event and " +
         "15-second limits as get_chat_messages; absent linkage is unavailable and archive failures " +
         "are explicit errors. Status-only data is bounded to 16 KiB and status with messagePage to " +
-        "192 KiB. This read does not mark read, change execution or cancel runs.",
+        "192 KiB. Reading neither marks read nor changes or cancels execution.",
       inputSchema: mcpGetChatStatusInputSchema,
       outputSchema: mcpGetChatStatusOutputSchema,
       annotations: readAnnotations,
@@ -1073,7 +1073,7 @@ function registerSearchAndStatusTools(
         signal,
         (data) => {
           const outcome = data.lifecycle.outcome
-            ? `; outcome ${data.lifecycle.outcome}`
+            ? `/${data.lifecycle.outcome}`
             : "";
           const wait = data.wait
             ? `; wait ${data.wait.outcome} (${data.wait.returnReason})`
@@ -1081,7 +1081,7 @@ function registerSearchAndStatusTools(
           const retry = data.retryAfterMs
             ? `; retry after ${data.retryAfterMs} ms`
             : "";
-          return `Chat ${data.threadId}: phase ${data.lifecycle.phase}${outcome}; output ${data.lifecycle.output}${wait}${retry}.`;
+          return `Chat ${data.threadId}: ${data.lifecycle.phase}${outcome}/${data.lifecycle.output}${wait}${retry}.`;
         },
         "Chat status is temporarily unavailable. Retry later.",
       );
